@@ -34,6 +34,36 @@ public struct HostSettings: Codable, Hashable, Sendable {
         }
     }
 
+    /// Settings ▸ Subagents ▸ Defaults: what a subagent starts with unless its profile says.
+    public struct SubagentDefaults: Codable, Hashable, Sendable {
+        /// How subagents start: in a fresh context or forked from the parent's.
+        public enum Context: String, Codable, Hashable, Sendable, CaseIterable {
+            case fresh, fork
+        }
+
+        public static let concurrencyRange = 1...16
+
+        /// How many run at once, in `concurrencyRange`.
+        public var concurrency: Int
+        /// "provider/id"; nil inherits the parent's.
+        public var model: String?
+        /// nil inherits the parent's.
+        public var thinking: ThinkingLevel?
+        public var context: Context
+
+        public init(concurrency: Int = 4, model: String? = nil, thinking: ThinkingLevel? = nil, context: Context = .fresh) {
+            self.concurrency = concurrency
+            self.model = model
+            self.thinking = thinking
+            self.context = context
+        }
+    }
+
+    /// Settings ▸ Worktrees ▸ Deleting a worktree agent: ask, or the delete the dialog remembered.
+    public enum WorktreeDeleteAction: String, Codable, Hashable, Sendable, CaseIterable {
+        case ask, keepWorktree, removeWorktree
+    }
+
     /// "0.4.2": the host's Shepherd.
     public var shepherdVersion: String?
     /// "0.87.1": the pi the host runs, once it has read it.
@@ -70,6 +100,28 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var mergePRAutomatically: Bool
     public var mergeMethod: MergeMethod
 
+    /// Settings ▸ Experiments ▸ Design tool (`designToolExperimentCapability`). Older hosts omit
+    /// it, which reads as false.
+    public var designToolEnabled: Bool
+    /// Settings ▸ Experiments ▸ Missions (`missionsExperimentCapability`). Older hosts: false.
+    public var missionsEnabled: Bool
+    /// A mission is planning, running or publishing: the host refuses to turn Missions off.
+    public var missionsActive: Bool
+
+    /// The fields below need `hostSettingsV2Capability`; an older host omits them and they read
+    /// as the Mac's own defaults.
+    public var subagentDefaults: SubagentDefaults
+    public var worktreeDeleteAction: WorktreeDeleteAction
+    /// Settings ▸ Skills ▸ Skills in the / menu.
+    public var skillsInSlashMenu: Bool
+    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json.
+    public var mcpProjectConfig: Bool
+    /// Every slash command a pi on the host has listed since its app started (Settings ▸ Slash
+    /// commands), hidden or not.
+    public var slashCommands: [NativeCommand]
+    /// The names, without the slash, left out of the / menu.
+    public var hiddenSlashCommands: [String]
+
     public var bundledExtensions: [BundledExtension]
     /// The pi packages and extensions the host's pi loads from its own settings, as declared
     /// there ("npm:@example/pi-tools@1.0.0", "~/pi/checks.ts").
@@ -85,6 +137,10 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
                 mergeMethod: MergeMethod = .squash,
+                designToolEnabled: Bool = false, missionsEnabled: Bool = false, missionsActive: Bool = false,
+                subagentDefaults: SubagentDefaults = SubagentDefaults(), worktreeDeleteAction: WorktreeDeleteAction = .ask,
+                skillsInSlashMenu: Bool = true, mcpProjectConfig: Bool = false,
+                slashCommands: [NativeCommand] = [], hiddenSlashCommands: [String] = [],
                 bundledExtensions: [BundledExtension] = [], installedExtensions: [String] = [],
                 updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false) {
         self.shepherdVersion = shepherdVersion
@@ -105,6 +161,15 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.deleteLocalBranch = deleteLocalBranch
         self.mergePRAutomatically = mergePRAutomatically
         self.mergeMethod = mergeMethod
+        self.designToolEnabled = designToolEnabled
+        self.missionsEnabled = missionsEnabled
+        self.missionsActive = missionsActive
+        self.subagentDefaults = subagentDefaults
+        self.worktreeDeleteAction = worktreeDeleteAction
+        self.skillsInSlashMenu = skillsInSlashMenu
+        self.mcpProjectConfig = mcpProjectConfig
+        self.slashCommands = slashCommands
+        self.hiddenSlashCommands = hiddenSlashCommands
         self.bundledExtensions = bundledExtensions
         self.installedExtensions = installedExtensions
         self.updatePiDaily = updatePiDaily
@@ -117,6 +182,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
+        case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
+        case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,6 +207,15 @@ public struct HostSettings: Codable, Hashable, Sendable {
         deleteLocalBranch = try c.decode(Bool.self, forKey: .deleteLocalBranch)
         mergePRAutomatically = try c.decode(Bool.self, forKey: .mergePRAutomatically)
         mergeMethod = try c.decode(MergeMethod.self, forKey: .mergeMethod)
+        designToolEnabled = try c.decodeIfPresent(Bool.self, forKey: .designToolEnabled) ?? false
+        missionsEnabled = try c.decodeIfPresent(Bool.self, forKey: .missionsEnabled) ?? false
+        missionsActive = try c.decodeIfPresent(Bool.self, forKey: .missionsActive) ?? false
+        subagentDefaults = (try? c.decodeIfPresent(SubagentDefaults.self, forKey: .subagentDefaults)) ?? nil ?? SubagentDefaults()
+        worktreeDeleteAction = (try? c.decodeIfPresent(WorktreeDeleteAction.self, forKey: .worktreeDeleteAction)) ?? nil ?? .ask
+        skillsInSlashMenu = try c.decodeIfPresent(Bool.self, forKey: .skillsInSlashMenu) ?? true
+        mcpProjectConfig = try c.decodeIfPresent(Bool.self, forKey: .mcpProjectConfig) ?? false
+        slashCommands = try c.decodeIfPresent([NativeCommand].self, forKey: .slashCommands) ?? []
+        hiddenSlashCommands = try c.decodeIfPresent([String].self, forKey: .hiddenSlashCommands) ?? []
         bundledExtensions = try c.decode([BundledExtension].self, forKey: .bundledExtensions)
         installedExtensions = try c.decode([String].self, forKey: .installedExtensions)
         updatePiDaily = try c.decode(Bool.self, forKey: .updatePiDaily)
@@ -169,6 +245,20 @@ public struct HostSettings: Codable, Hashable, Sendable {
             if let index = bundledExtensions.firstIndex(where: { $0.id == id }) { bundledExtensions[index].on = on }
         case .updatePiDaily(let on): updatePiDaily = on
         case .updateExtensionsDaily(let on): updateExtensionsDaily = on
+        case .designToolEnabled(let on): designToolEnabled = on
+        case .missionsEnabled(let on):
+            // The host refuses Missions off under a live mission; a client shows that at once.
+            if on || !missionsActive { missionsEnabled = on }
+        case .subagentDefaults(var defaults):
+            defaults.concurrency = min(SubagentDefaults.concurrencyRange.upperBound, max(SubagentDefaults.concurrencyRange.lowerBound, defaults.concurrency))
+            subagentDefaults = defaults
+        case .worktreeDeleteAction(let action): worktreeDeleteAction = action
+        case .skillsInSlashMenu(let on): skillsInSlashMenu = on
+        case .mcpProjectConfig(let on): mcpProjectConfig = on
+        case .slashCommand(let name, let on):
+            var hidden = Set(hiddenSlashCommands)
+            if on { hidden.remove(name) } else { hidden.insert(name) }
+            hiddenSlashCommands = hidden.sorted()
         }
     }
 }
@@ -200,6 +290,18 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case bundledExtension(id: String, on: Bool)
     case updatePiDaily(Bool)
     case updateExtensionsDaily(Bool)
+    /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
+    case designToolEnabled(Bool)
+    /// `RemoteProtocol.missionsExperimentCapability`. Off is refused while a mission is active
+    /// (`HostSettings.missionsActive`).
+    case missionsEnabled(Bool)
+    /// The cases below need `RemoteProtocol.hostSettingsV2Capability`.
+    case subagentDefaults(HostSettings.SubagentDefaults)
+    case worktreeDeleteAction(HostSettings.WorktreeDeleteAction)
+    case skillsInSlashMenu(Bool)
+    case mcpProjectConfig(Bool)
+    /// Lists (`on`) or hides one slash command, by name without the slash.
+    case slashCommand(name: String, on: Bool)
 
     /// The capability a host must advertise, beyond `hostSettingsCapability`, before the change is
     /// sent to it; nil when none.
@@ -208,6 +310,10 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .goalsEnabled: RemoteProtocol.goalExperimentCapability
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
+        case .designToolEnabled: RemoteProtocol.designToolExperimentCapability
+        case .missionsEnabled: RemoteProtocol.missionsExperimentCapability
+        case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand:
+            RemoteProtocol.hostSettingsV2Capability
         default: nil
         }
     }

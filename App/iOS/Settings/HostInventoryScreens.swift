@@ -5,35 +5,179 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // A host's inventory on iPhone and iPad (home track): Settings ▸ MCP, Subagents and Sign-in, the
-// Mac's Settings ▸ MCP, Subagents and Pi ▸ Sign-in as the host reads them (`hostInventory.v1`),
-// read-only. Each page says what the Mac shows and where to change it; nothing here holds a
-// key, a token or a server's secret.
+// Mac's Settings ▸ MCP, Subagents and Pi ▸ Sign-in as the host reads them (`hostInventory.v1`).
+// A host with `hostConfig.v1` takes changes from here (`ClientHostConfig`): servers added,
+// edited, switched, signed in or removed; profiles edited, deleted or restored; keys saved and
+// accounts signed in. A secret typed here goes to the host in one request and is never kept.
 
 /// Settings ▸ MCP: the host's servers, each with its last known status and sign-in column.
 struct MCPServersScreen: View {
     @Environment(MobileHosts.self) private var hosts
+    @State private var editor: MCPEditor?
 
     var body: some View {
-        HostInventoryPage(store: SettingsStore.of(hosts), page: .mcp, request: .mcp,
-                          explanation: "The MCP servers a host's agents can use, as its last check found them.") { result, host in
-            if case .mcp(let inventory) = result {
+        let store = SettingsStore.of(hosts)
+        let config = store.hostConfig
+        HostConfigPage(store: store, page: .mcp, configPage: .mcp,
+                       explanation: "The MCP servers a host's agents can use, as its last check found them.") { host in
+            if let inventory = config.mcp[host.id] {
+                let editable = config.canEdit(host)
                 if let problem = inventory.problem {
                     SHBanner(.failed, title: problem)
+                }
+                HostSignInPanel(config: config, host: host, page: .mcp,
+                                codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1).")
+                if let editor {
+                    MCPServerEditor(editor: editor, busy: config.busy.contains(host.id)) { json, secrets in
+                        Task {
+                            if await config.perform(.mcpSave(json: json, secrets: secrets, replacing: editor.replacing), on: host) != nil {
+                                self.editor = nil
+                            }
+                        }
+                    } cancel: { self.editor = nil }
                 }
                 if inventory.servers.isEmpty {
                     SettingsFootnote("No MCP servers on \(host.name) yet.")
                 } else {
                     SHListCard {
                         ForEach(inventory.servers) { server in
-                            MCPServerLine(server: server)
+                            HStack(spacing: SH.Space.s) {
+                                MCPServerLine(server: server)
+                                if editable {
+                                    MCPServerControls(server: server, config: config, host: host) {
+                                        Task {
+                                            if case .mcpEntry(let json)? = await config.perform(.mcpEntry(name: server.name), on: host) {
+                                                editor = MCPEditor(replacing: server.name, json: json)
+                                            }
+                                        }
+                                    }
+                                    .padding(.trailing, SH.Space.l)
+                                }
+                            }
                         }
                     }
                 }
-                SettingsFootnote(HostInventoryPresentation.mcpGuidance(host: host.name, configPath: inventory.configPath))
+                if editable {
+                    HStack(spacing: SH.Space.l) {
+                        Button("Add server") { editor = MCPEditor(replacing: nil, json: MCPEditor.template) }
+                            .buttonStyle(.sh(.secondary))
+                            .disabled(editor != nil)
+                        Button("Check again") { Task { await config.perform(.mcpRefresh, on: host) } }
+                            .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                            .disabled(config.busy.contains(host.id))
+                    }
+                    SettingsFootnote("Servers are kept in \(inventory.configPath) on \(host.name). Secrets go to its Keychain.")
+                } else {
+                    SettingsFootnote(HostInventoryPresentation.mcpGuidance(host: host.name, configPath: inventory.configPath))
+                }
                 if let checked = inventory.checkedAt {
                     SettingsFootnote("Last checked \(Date(timeIntervalSince1970: checked).formatted(date: .omitted, time: .shortened)) on \(host.name).")
                 }
             }
+        }
+    }
+}
+
+/// A server being added (`replacing` nil) or edited, as `{"mcpServers": …}` JSON.
+struct MCPEditor: Equatable {
+    var replacing: String?
+    var json: String
+    static let template = "{\n  \"mcpServers\": {\n    \"name\": { \"type\": \"http\", \"url\": \"https://\" }\n  }\n}"
+}
+
+/// The server's JSON, and its secrets: each a variable or header name with the value the host
+/// keeps in its Keychain.
+private struct MCPServerEditor: View {
+    let editor: MCPEditor
+    let busy: Bool
+    let save: (String, [String: String]) -> Void
+    let cancel: () -> Void
+    @State private var json = ""
+    @State private var secretName = ""
+    @State private var secretValue = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(editor.replacing.map { "Edit \($0)" } ?? "Add a server")
+                .font(.sh(.ui, weight: .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+            TextEditor(text: $json)
+                .font(.sh(.mono))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: MobileLayout.instructionsEditorMinHeight)
+                .shField(focused: false)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .accessibilityLabel("Server JSON")
+            Text("A secret: name a variable or header from the JSON, and its value is kept in the host's Keychain.")
+                .shText(.caption)
+                .foregroundStyle(Color.sh.textTertiary)
+            TextField("Variable or header", text: $secretName)
+                .textFieldStyle(SHTextFieldStyle(mono: true))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            SecureField("Secret value", text: $secretValue)
+                .textFieldStyle(SHTextFieldStyle(mono: true))
+            HStack(spacing: SH.Space.l) {
+                Button("Save") {
+                    let name = secretName.trimmingCharacters(in: .whitespaces)
+                    save(json, name.isEmpty || secretValue.isEmpty ? [:] : [name: secretValue])
+                }
+                .buttonStyle(.sh(.primary))
+                .disabled(busy || json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Cancel", action: cancel).buttonStyle(.sh(.secondary))
+            }
+        }
+        .padding(SH.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: SHListMetrics.cardRadius)
+        .onAppear { json = editor.json }
+    }
+}
+
+/// A server's switch and its menu: Edit, sign in or out, how agents find its tools, Remove.
+private struct MCPServerControls: View {
+    let server: HostMCPServer
+    let config: ClientHostConfig
+    let host: SettingsHost
+    let edit: () -> Void
+    @State private var removing = false
+
+    var body: some View {
+        let run: (RemoteHostConfigRequest) -> Void = { request in Task { await config.perform(request, on: host) } }
+        HStack(spacing: SH.Space.s) {
+            Toggle("\(server.name) on", isOn: Binding(get: { server.enabled }, set: { run(.mcpSetEnabled(name: server.name, on: $0)) }))
+                .toggleStyle(.shSwitch)
+                .labelsHidden()
+            Menu {
+                Button("Edit…", action: edit)
+                if server.oauth == true {
+                    if server.signedIn == true {
+                        Button("Sign out") { run(.mcpSignOut(name: server.name)) }
+                    } else {
+                        Button("Sign in") { run(.mcpSignIn(name: server.name)) }
+                    }
+                }
+                if let exposure = server.exposure {
+                    Picker("Tools", selection: Binding(get: { exposure }, set: { run(.mcpSetExposure(name: server.name, exposure: $0)) })) {
+                        Text("Search when needed").tag(HostMCPExposure.proxy)
+                        Text("In every prompt").tag(HostMCPExposure.direct)
+                    }
+                }
+                Divider()
+                Button("Remove…", role: .destructive) { removing = true }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .frame(minWidth: SHListMetrics.rowHeight, minHeight: SHListMetrics.rowHeight)
+            }
+            .accessibilityLabel("\(server.name) actions")
+        }
+        .confirmationDialog("Remove \(server.name) from \(host.name)?", isPresented: $removing) {
+            Button("Remove", role: .destructive) { run(.mcpRemove(name: server.name)) }
+        } message: {
+            Text("Its Keychain secrets and sign-in go with it.")
         }
     }
 }
@@ -79,15 +223,18 @@ private struct MCPServerLine: View {
     private var tone: AgentState { AgentState(rawValue: HostInventoryPresentation.tone(server.status).rawValue) ?? .idle }
 }
 
-/// Settings ▸ Subagents: the host's profiles, each opening its Markdown read-only.
+/// Settings ▸ Subagents: the host's profiles, each opening its Markdown.
 struct SubagentProfilesScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @State private var restoring = false
 
     var body: some View {
-        HostInventoryPage(store: SettingsStore.of(hosts), page: .subagents, request: .subagents,
-                          explanation: "A subagent is a Markdown file: a name, a description and the instructions it runs with. An agent starts one by name. These are the host's profiles; its live runs show in each thread.") { result, host in
-            if case .subagents(let profiles) = result {
+        let store = SettingsStore.of(hosts)
+        let config = store.hostConfig
+        HostConfigPage(store: store, page: .subagents, configPage: .subagents,
+                       explanation: "A subagent is a Markdown file: a name, a description and the instructions it runs with. An agent starts one by name. These are the host's profiles; its live runs show in each thread.") { host in
+            if let profiles = config.profiles[host.id] {
                 if profiles.isEmpty {
                     SettingsFootnote("No subagents on \(host.name).")
                 } else {
@@ -103,22 +250,96 @@ struct SubagentProfilesScreen: View {
                         }
                     }
                 }
-                SettingsFootnote("Edit, add, delete or restore profiles in Settings ▸ Subagents on \(host.name).")
+                if config.canEdit(host) {
+                    HStack(spacing: SH.Space.l) {
+                        Button("New profile") { navigator.open(.settings(.subagent(SubagentProfileScreen.newFile))) }
+                            .buttonStyle(.sh(.secondary))
+                        if profiles.contains(where: \.isDefault) || profiles.isEmpty {
+                            Button("Restore defaults…") { restoring = true }
+                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                        }
+                    }
+                    .confirmationDialog("Restore the default subagents on \(host.name)?", isPresented: $restoring) {
+                        Button("Restore defaults", role: .destructive) {
+                            let expected = Dictionary(profiles.filter(\.isDefault).compactMap { p in p.fingerprint.map { (p.file, $0) } },
+                                                      uniquingKeysWith: { first, _ in first })
+                            Task { await config.perform(.subagentRestoreDefaults(expected: expected), on: host) }
+                        }
+                    } message: {
+                        Text("scout, reviewer, planner and worker go back to how Shepherd ships them. Your own profiles stay.")
+                    }
+                } else {
+                    SettingsFootnote("Edit, add, delete or restore profiles in Settings ▸ Subagents on \(host.name).")
+                }
             }
         }
     }
 }
 
-/// One profile's Markdown, read-only.
+/// One profile's Markdown: editable on a host that takes changes, fenced to the version read.
 struct SubagentProfileScreen: View {
+    /// The route's file for a new profile.
+    static let newFile = "+new"
+
     let file: String
     @Environment(MobileHosts.self) private var hosts
+    @Environment(\.dismiss) private var dismiss
+    @State private var loaded: HostSubagentProfileText?
+    @State private var text = ""
+    @State private var name = ""
+    @State private var deleting = false
+
+    private var isNew: Bool { file == Self.newFile }
 
     var body: some View {
-        HostInventoryPage(store: SettingsStore.of(hosts), page: .subagents, request: .subagent(file: file), title: file,
-                          explanation: nil) { result, host in
-            if case .subagent(let text) = result {
-                Text(text.text)
+        let store = SettingsStore.of(hosts)
+        let config = store.hostConfig
+        HostConfigPage(store: store, page: .subagents, configPage: nil, title: isNew ? "New profile" : file, explanation: nil) { host in
+            let editable = config.canEdit(host)
+            if isNew {
+                TextField("File name, like reviewer.md", text: $name)
+                    .textFieldStyle(SHTextFieldStyle(mono: true))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+            if editable {
+                TextEditor(text: $text)
+                    .font(.sh(.mono))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: MobileLayout.instructionsEditorMinHeight)
+                    .shField(focused: false)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .accessibilityLabel("Profile Markdown")
+                HStack(spacing: SH.Space.l) {
+                    Button("Save") {
+                        let target = isNew ? name.trimmingCharacters(in: .whitespaces) : file
+                        Task {
+                            if case .subagent(let saved)? = await config.perform(
+                                .subagentSave(file: target, text: text, fingerprint: isNew ? nil : loaded?.fingerprint), on: host) {
+                                loaded = saved
+                                if isNew { dismiss() }
+                            }
+                        }
+                    }
+                    .buttonStyle(.sh(.primary))
+                    .disabled(config.busy.contains(host.id) || (!isNew && text == loaded?.text) || (isNew && name.isEmpty))
+                    if !isNew, loaded != nil {
+                        Button("Delete…", role: .destructive) { deleting = true }
+                            .buttonStyle(.sh(.secondary))
+                    }
+                }
+                .confirmationDialog("Delete \(file) on \(host.name)?", isPresented: $deleting) {
+                    Button("Delete", role: .destructive) {
+                        guard let fingerprint = loaded?.fingerprint else { return }
+                        Task {
+                            if await config.perform(.subagentDelete(file: file, fingerprint: fingerprint), on: host) != nil { dismiss() }
+                        }
+                    }
+                }
+                SettingsFootnote("A file changed on \(host.name) since it was opened here isn't overwritten: open it again.")
+            } else if let loaded {
+                Text(loaded.text)
                     .font(.sh(.mono))
                     .foregroundStyle(Color.sh.textPrimary)
                     .textSelection(.enabled)
@@ -128,6 +349,15 @@ struct SubagentProfileScreen: View {
                     .shCard(radius: SHListMetrics.cardRadius)
                 SettingsFootnote("Edit it in Settings ▸ Subagents on \(host.name).")
             }
+            Color.clear.frame(height: 0)
+                .task(id: host.id) {
+                    if isNew {
+                        if text.isEmpty { text = "---\nname: \ndescription: \ntools: [read, grep, find, ls]\n---\n" }
+                    } else if let read = await config.profile(file, on: host) {
+                        loaded = read
+                        text = read.text
+                    }
+                }
         }
     }
 }
@@ -135,22 +365,62 @@ struct SubagentProfileScreen: View {
 /// Settings ▸ Sign-in: each provider of the host's pi and whether it is signed in; never a value.
 struct ProvidersScreen: View {
     @Environment(MobileHosts.self) private var hosts
+    @State private var keyFor: String?
+    @State private var key = ""
 
     var body: some View {
-        HostInventoryPage(store: SettingsStore.of(hosts), page: .signIn, request: .providers,
-                          explanation: "Subscriptions and API keys for agents on a host. They live in the host's own pi.") { result, host in
-            if case .providers(let providers) = result {
+        let store = SettingsStore.of(hosts)
+        let config = store.hostConfig
+        HostConfigPage(store: store, page: .signIn, configPage: .providers,
+                       explanation: "Subscriptions and API keys for agents on a host. They live in the host's own pi.") { host in
+            if let providers = config.providers[host.id] {
+                let editable = config.canEdit(host)
+                HostSignInPanel(config: config, host: host, page: .providers,
+                                codePrompt: "After signing in, paste the code (or the whole address) the page shows.")
+                if let provider = keyFor {
+                    VStack(alignment: .leading, spacing: SH.Space.m) {
+                        Text("API key for \(providers.first { $0.id == provider }?.name ?? provider)")
+                            .font(.sh(.ui, weight: .semibold))
+                            .foregroundStyle(Color.sh.textPrimary)
+                        SecureField("Key, or $VARIABLE set on the host", text: $key)
+                            .textFieldStyle(SHTextFieldStyle(mono: true))
+                        HStack(spacing: SH.Space.l) {
+                            Button("Save") {
+                                let value = key
+                                key = ""
+                                Task {
+                                    if await config.perform(.providerKey(provider: provider, key: value), on: host) != nil { keyFor = nil }
+                                }
+                            }
+                            .buttonStyle(.sh(.primary))
+                            .disabled(key.isEmpty || config.busy.contains(host.id))
+                            Button("Cancel") { key = ""; keyFor = nil }.buttonStyle(.sh(.secondary))
+                        }
+                        SettingsFootnote("The host checks the key with the provider before saving it.")
+                    }
+                    .padding(SH.Space.l)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .shCard(radius: SHListMetrics.cardRadius)
+                }
                 let groups = Dictionary(grouping: providers, by: \.badge)
                 ForEach(["Subscription", "API key", "Custom"], id: \.self) { badge in
                     if let rows = groups[badge], !rows.isEmpty {
                         SettingsSection(badge == "Subscription" ? "Subscriptions" : badge == "API key" ? "API keys" : "Custom providers") {
                             SHListCard {
                                 ForEach(rows) { provider in
-                                    SHListRow(provider.name, subtitle: provider.problem ?? HostInventoryPresentation.providerLine(provider),
-                                              subtitleMono: false,
-                                              subtitleTone: provider.problem != nil ? .failed : provider.auth == .expired ? .attention : nil,
-                                              leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(provider.auth).rawValue) ?? .idle),
-                                              chevron: false)
+                                    HStack(spacing: SH.Space.s) {
+                                        SHListRow(provider.name, subtitle: provider.problem ?? HostInventoryPresentation.providerLine(provider),
+                                                  subtitleMono: false,
+                                                  subtitleTone: provider.problem != nil ? .failed : provider.auth == .expired ? .attention : nil,
+                                                  leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(provider.auth).rawValue) ?? .idle),
+                                                  chevron: false)
+                                        if editable, badge != "Custom" {
+                                            ProviderAction(provider: provider, subscription: badge == "Subscription") { request in
+                                                Task { await config.perform(request, on: host) }
+                                            } setKey: { keyFor = provider.id }
+                                            .padding(.trailing, SH.Space.l)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -159,36 +429,119 @@ struct ProvidersScreen: View {
                 if providers.isEmpty {
                     SettingsFootnote("\(host.name) has no sign-ins yet.")
                 }
-                SettingsFootnote(HostInventoryPresentation.providersGuidance(host: host.name))
+                if !editable {
+                    SettingsFootnote(HostInventoryPresentation.providersGuidance(host: host.name))
+                }
             }
+        }
+    }
+}
+
+/// A provider's one action: Sign in or Sign out for a subscription, Set key or Remove for a key.
+private struct ProviderAction: View {
+    let provider: HostProviderStatus
+    let subscription: Bool
+    let run: (RemoteHostConfigRequest) -> Void
+    let setKey: () -> Void
+
+    var body: some View {
+        let signedIn = provider.auth == .signedIn || provider.auth == .apiKey
+        if signedIn {
+            Button(subscription ? "Sign out" : "Remove") { run(.providerSignOut(provider: provider.id)) }
+                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+        } else if subscription {
+            Button(provider.auth == .expired ? "Sign in again" : "Sign in") { run(.providerSignIn(provider: provider.id)) }
+                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+        } else {
+            Button("Set key") { setKey() }
+                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+        }
+    }
+}
+
+/// A sign-in the host runs for this device: the page to open (or the device code to enter), the
+/// code or address to send back, then how it ended. Followed while it shows.
+private struct HostSignInPanel: View {
+    let config: ClientHostConfig
+    let host: SettingsHost
+    let page: ClientHostConfig.Page
+    let codePrompt: String
+    @Environment(\.openURL) private var openURL
+    @State private var code = ""
+
+    var body: some View {
+        if let progress = config.signIns[host.id] {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                Text("Sign in to \(progress.name)")
+                    .font(.sh(.ui, weight: .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                switch progress.phase {
+                case .starting:
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                case .waiting:
+                    if let device = progress.deviceCode {
+                        Text(device)
+                            .font(.sh(.mono, weight: .semibold))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .textSelection(.enabled)
+                        SettingsFootnote("Enter this code on the page.")
+                    }
+                    if let address = progress.authorizationURL.flatMap(URL.init(string:)) {
+                        Button(progress.deviceCode == nil ? "Open sign-in page" : "Open the page") { openURL(address) }
+                            .buttonStyle(.sh(.primary))
+                    }
+                    if progress.wantsCode {
+                        SettingsFootnote(codePrompt)
+                        TextField("Code or address", text: $code)
+                            .textFieldStyle(SHTextFieldStyle(mono: true))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        Button("Send") {
+                            let value = code
+                            code = ""
+                            Task { await config.complete(signInOn: host, with: value) }
+                        }
+                        .buttonStyle(.sh(.secondary))
+                        .disabled(code.isEmpty)
+                    }
+                    Button("Cancel") { Task { await config.cancelSignIn(on: host) } }
+                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                case .done:
+                    SettingsFootnote("Signed in on \(host.name).")
+                    Button("Done") { config.clearSignIn(on: host) }.buttonStyle(.sh(.secondary))
+                case .failed:
+                    SettingsFootnote(progress.message ?? "The sign-in didn't finish.", tone: .failed)
+                    Button("OK") { config.clearSignIn(on: host) }.buttonStyle(.sh(.secondary))
+                }
+            }
+            .padding(SH.Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shCard(radius: SHListMetrics.cardRadius)
+            .task(id: progress.id) { await config.follow(signInOn: host, page: page) }
         }
     }
 }
 
 // MARK: The page
 
-/// A read of a host's inventory: its explanation, which host when there are several, then the
-/// answer, or why there is none. Read again when the host reconnects or the page is pulled.
-private struct HostInventoryPage<Content: View>: View {
+/// A page of a host's configuration: its explanation, which host when there are several, the
+/// host's last problem, then the page, or why there is none. Read again when the host
+/// reconnects or the page is pulled.
+private struct HostConfigPage<Content: View>: View {
     let store: SettingsStore
     let page: SettingsPage
-    let request: RemoteHostInventoryRequest
+    /// What the page reads on appearing; nil for a page that reads its own.
+    let configPage: ClientHostConfig.Page?
     var title: String?
     let explanation: String?
-    @ViewBuilder let content: (RemoteHostInventoryResult, SettingsHost) -> Content
+    @ViewBuilder let content: (SettingsHost) -> Content
     @Environment(\.settingsColumn) private var inColumn
     @Environment(MobileNavigator.self) private var navigator
-    @State private var phase: Phase = .loading
     @State private var generation = 0
-
-    private enum Phase: Equatable {
-        case loading
-        case loaded(RemoteHostInventoryResult)
-        case failed(String)
-    }
 
     var body: some View {
         let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
+        let config = store.hostConfig
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 if let explanation {
@@ -202,19 +555,19 @@ private struct HostInventoryPage<Content: View>: View {
                     HostChooser(store: store)
                 }
                 if let host {
+                    if let problem = config.problems[host.id] {
+                        SHBanner(.failed, title: problem) {
+                            Button("OK") { config.dismissProblem(on: host) }.buttonStyle(.sh(.secondary))
+                        }
+                    }
                     if !host.isConnected {
                         SettingsFootnote("\(host.name) is offline. This shows once it's back.")
-                    } else if !host.serves(RemoteProtocol.hostInventoryCapability) {
+                    } else if !config.canRead(host) {
                         SettingsFootnote("\(host.name)'s Shepherd is too old to share this. Update it to see it here.")
                     } else {
-                        switch phase {
-                        case .loading:
-                            ProgressView().progressViewStyle(SHSpinnerStyle())
-                                .frame(maxWidth: .infinity)
-                        case .loaded(let result):
-                            content(result, host)
-                        case .failed(let reason):
-                            SettingsFootnote(reason, tone: .failed)
+                        content(host)
+                        if !config.canEdit(host) {
+                            SettingsFootnote("Changing this from here needs a newer Shepherd on \(host.name).")
                         }
                     }
                 } else {
@@ -229,11 +582,10 @@ private struct HostInventoryPage<Content: View>: View {
         }
         .refreshable { generation += 1 }
         .background(Color.sh.bgWindow)
-        .shAnimation(.content, value: phase)
         .navigationTitle(title ?? (inColumn ? page.listTitle : page.title))
         .navigationBarTitleDisplayMode(inColumn && title == nil ? .inline : title == nil ? .large : .inline)
         .task(id: Load(host: host?.id, connected: host?.isConnected == true, generation: generation)) {
-            await load(host)
+            if let host, let configPage { await config.refresh(configPage, on: host) }
         }
     }
 
@@ -241,18 +593,5 @@ private struct HostInventoryPage<Content: View>: View {
         var host: UUID?
         var connected: Bool
         var generation: Int
-    }
-
-    private func load(_ host: SettingsHost?) async {
-        guard let host, let client = host.client as? RemoteHostClient, host.serves(RemoteProtocol.hostInventoryCapability) else { return }
-        if case .loaded = phase {} else { phase = .loading }
-        do {
-            let result = try await client.hostInventory(request)
-            guard !Task.isCancelled else { return }
-            phase = .loaded(result)
-        } catch {
-            guard !Task.isCancelled else { return }
-            phase = .failed(settingsProblem(error))
-        }
     }
 }

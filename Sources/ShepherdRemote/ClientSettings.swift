@@ -14,6 +14,21 @@ public protocol SettingsClient: SkillsClient {
     func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings
     func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot
+    /// The host's MCP servers, subagent profiles and providers (`hostInventory.v1`).
+    func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult
+    /// Changes them (`hostConfig.v1`).
+    func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult
+}
+
+extension SettingsClient {
+    /// A stand-in that has no inventory.
+    public func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
+        throw RemoteHostClientError.rejected(code: "update_required", message: "This host has no inventory to share.")
+    }
+
+    public func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
+        throw RemoteHostClientError.rejected(code: "update_required", message: "This host's configuration can't be changed from here.")
+    }
 }
 
 extension RemoteHostClient: SettingsClient {}
@@ -124,8 +139,8 @@ public final class ClientHostSettings {
     }
 
     private func show(_ change: HostSettingChange, on host: SettingsHost) -> Bool {
-        if case .goalsEnabled = change, !host.serves(RemoteProtocol.goalExperimentCapability) { return false }
-        if case .projectsEnabled = change, !host.serves(RemoteProtocol.projectsExperimentCapability) { return false }
+        // An older host refuses a change it doesn't know: it is never sent there.
+        if let needed = change.capability, !host.serves(needed) { return false }
         guard !forgotten.contains(host.id), case .loaded(var settings)? = loaded[host.id] else { return false }
         settings.apply(change)
         loaded[host.id] = .loaded(settings)

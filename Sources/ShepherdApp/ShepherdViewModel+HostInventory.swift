@@ -41,13 +41,18 @@ extension ShepherdViewModel {
             let opened = try await Task.detached(priority: .userInitiated) { try store.open(file) }.value
             return .subagent(HostSubagentProfileText(file: opened.file, text: opened.text, fingerprint: opened.fingerprint))
         case .providers:
-            await yourPi.refresh()
-            await piAuth.refreshAccounts()
-            let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
-            let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
-                                         needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts)
-            return .providers((page.subscriptions + page.apiKeys + page.customProviders).map(HostInventoryMapping.provider))
+            return .providers(await hostProviders())
         }
+    }
+
+    /// Settings ▸ Sign-in's rows, read afresh, as a client sees them.
+    func hostProviders() async -> [HostProviderStatus] {
+        await yourPi.refresh()
+        await piAuth.refreshAccounts()
+        let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
+        let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
+                                     needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts)
+        return (page.subscriptions + page.apiKeys + page.customProviders).map(HostInventoryMapping.provider)
     }
 }
 
@@ -56,11 +61,11 @@ extension ShepherdViewModel {
 enum HostInventoryMapping {
     static func mcp(_ store: MCPStore) -> HostMCPInventory {
         let checkedAt: Double? = if case .done(let date) = store.listing { date.timeIntervalSince1970 } else { nil }
-        return HostMCPInventory(servers: store.rows.map(server), configPath: store.configPath,
+        return HostMCPInventory(servers: store.rows.map { server($0, entry: store.entry($0.name), store: store) }, configPath: store.configPath,
                                 problem: store.invalidMessage ?? store.problem, checkedAt: checkedAt)
     }
 
-    static func server(_ row: MCPServerRowModel) -> HostMCPServer {
+    static func server(_ row: MCPServerRowModel, entry: MCPServerEntry? = nil, store: MCPStore? = nil) -> HostMCPServer {
         let note: String? = switch row.note {
         case .starting(let text)?: text
         case .error(let text)?: text
@@ -68,7 +73,11 @@ enum HostInventoryMapping {
         }
         return HostMCPServer(name: row.name, kind: row.kind == .remote ? .remote : .local, endpoint: row.endpoint,
                              status: HostMCPServer.Status(rawValue: row.status.rawValue) ?? .idle, note: note,
-                             signIn: signIn(row.signIn), tools: row.tools, enabled: row.enabled)
+                             signIn: signIn(row.signIn), tools: row.tools, enabled: row.enabled,
+                             exposure: entry.map { $0.settings.exposure == .direct ? .direct : .proxy },
+                             toolNames: entry.flatMap { store?.toolNames(of: $0) }, allowedTools: entry?.settings.tools,
+                             oauth: entry.flatMap { store?.usesOAuth($0) },
+                             signedIn: { if case .account = row.signIn { true } else { false } }())
     }
 
     /// The Sign-in column in words, never a value.
@@ -90,7 +99,7 @@ enum HostInventoryMapping {
     static func profile(_ definition: SubagentDefinitionsStore.Definition) -> HostSubagentProfile {
         HostSubagentProfile(file: definition.file, name: definition.name, description: definition.description, tools: definition.tools,
                             context: definition.context, error: definition.error, disabled: definition.disabled ?? false,
-                            isDefault: definition.isDefault)
+                            isDefault: definition.isDefault, fingerprint: definition.fingerprint)
     }
 
     static func provider(_ row: ProviderRowModel) -> HostProviderStatus {

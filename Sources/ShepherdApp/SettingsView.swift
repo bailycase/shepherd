@@ -168,7 +168,30 @@ struct SettingsView: View {
         app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
+    /// The page, under the host picker on a host-level page (a remote host draws its own page)
+    /// and a line saying a client-local page is this Mac's own, when there are remote hosts.
     @ViewBuilder private var page: some View {
+        let section = vm.settingsSection
+        if section.isHostLevel, !vm.remoteHosts.connections.isEmpty {
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                SettingsHostPicker(vm: vm)
+                if let host = vm.remoteSettingsHost {
+                    RemoteHostSettingsPage(section: section, host: host, settings: vm.remoteHostSettings, config: vm.remoteHostConfig)
+                } else {
+                    localPage
+                }
+            }
+        } else if section.isClientLocal, !vm.remoteHosts.connections.isEmpty {
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                localPage
+                SettingsNote(text: "These settings are this Mac's own. Each host keeps its own.")
+            }
+        } else {
+            localPage
+        }
+    }
+
+    @ViewBuilder private var localPage: some View {
         switch vm.settingsSection {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)

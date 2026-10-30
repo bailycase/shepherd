@@ -3,7 +3,8 @@ import ShepherdCore
 
 // A host's inventory as a client reads it (Settings on the iPhone and the iPad): its MCP servers
 // and their status, its subagent profiles, and its providers' sign-in state. Read-only: what the
-// Mac's Settings ▸ MCP, Subagents and Sign-in show, never what they change, and never a secret.
+// Mac's Settings ▸ MCP, Subagents and Sign-in show, never a secret. Changes go through
+// `RemoteRequest.hostConfig` (HostConfig.swift).
 // The host's GUI answers (`SessionServer.onRemoteHostInventory`); a headless host has none.
 
 /// What a client asks of a host's inventory (`RemoteRequest.hostInventory`,
@@ -51,11 +52,26 @@ public struct HostMCPServer: Codable, Hashable, Sendable, Identifiable {
     /// How many tools it offers; nil until known.
     public var tools: Int?
     public var enabled: Bool
+    /// The fields below are sent by hosts with `hostConfigCapability`; nil from an older one.
+    public var exposure: HostMCPExposure?
+    /// The tools it offers, by name, once known.
+    public var toolNames: [String]?
+    /// The tools agents may use; nil for every one.
+    public var allowedTools: [String]?
+    /// A remote server that signs in with OAuth (`RemoteHostConfigRequest.mcpSignIn`).
+    public var oauth: Bool?
+    public var signedIn: Bool?
 
     public var id: String { name }
 
     public init(name: String, kind: Kind, endpoint: String, status: Status, note: String? = nil, signIn: String? = nil,
-                tools: Int? = nil, enabled: Bool = true) {
+                tools: Int? = nil, enabled: Bool = true, exposure: HostMCPExposure? = nil, toolNames: [String]? = nil,
+                allowedTools: [String]? = nil, oauth: Bool? = nil, signedIn: Bool? = nil) {
+        self.exposure = exposure
+        self.toolNames = toolNames
+        self.allowedTools = allowedTools
+        self.oauth = oauth
+        self.signedIn = signedIn
         self.name = name
         self.kind = kind
         self.endpoint = endpoint
@@ -100,11 +116,15 @@ public struct HostSubagentProfile: Codable, Hashable, Sendable, Identifiable {
     public var disabled: Bool
     /// One Shepherd ships (scout, reviewer, planner, worker).
     public var isDefault: Bool
+    /// The host's fingerprint of the file, for Restore defaults to check against; nil from an
+    /// older host.
+    public var fingerprint: String?
 
     public var id: String { file }
 
     public init(file: String, name: String, description: String? = nil, tools: [String]? = nil, context: String? = nil,
-                error: String? = nil, disabled: Bool = false, isDefault: Bool = false) {
+                error: String? = nil, disabled: Bool = false, isDefault: Bool = false, fingerprint: String? = nil) {
+        self.fingerprint = fingerprint
         self.file = file
         self.name = name
         self.description = description

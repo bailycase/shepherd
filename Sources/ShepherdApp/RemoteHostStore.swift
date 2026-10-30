@@ -169,6 +169,10 @@ final class RemoteHostStore {
         var supportsProjectTrust: Bool { client?.capabilities.contains(RemoteProtocol.projectTrustCapability) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
+        /// What Settings' host picker reads and changes the host's settings through, while it's connected.
+        var settingsClient: (any SettingsClient)? { phase == .connected ? client : nil }
+        /// What the host told this Mac it can do, while connected.
+        var capabilities: Set<String> { phase == .connected ? Set(client?.capabilities ?? []) : [] }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
         var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
         var supportsCreateAgentServiceTier: Bool { client?.capabilities.contains(RemoteProtocol.createAgentServiceTierCapability) == true }

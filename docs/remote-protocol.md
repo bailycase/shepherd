@@ -136,10 +136,34 @@
     adds the speed for new threads, the session naming model and Compact at (missing from an
     older host: Standard, Automatic, pi's default); `HostSettingChange.capability` names what a
     change needs, and an older host refuses the change as unknown.
+    `hostSettings.v2` adds Subagent defaults, Deleting a worktree agent, Skills in the / menu, a
+    repo's `.mcp.json`, and the slash commands with their switches (missing from an older host:
+    the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while
+    the tool is off (it is not one of `designCapabilities`), and turning it on re-offers
+    `designs.v1` with `capabilitiesChanged`. `experiments.missions.v1` switches Missions;
+    `HostSettings.missionsActive` says a mission is planning, running or publishing, and the host
+    refuses Missions off then (`settings_failed`), as the Mac's own card does. The bundled
+    extension list gains `designReferences`.
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
     `providers`), answered by the GUI. A sign-in column in words, a key's variable name but never
-    its mask, account counts but no identifiers; nothing here changes the host. The additive
+    its mask, account counts but no identifiers; nothing here changes the host. With
+    `hostConfig.v1` it adds each server's exposure, tool names, allowed tools and OAuth state, and
+    each profile's fingerprint.
+  - `hostConfig` (`hostConfig.v1`, `RemoteHostConfigRequest`): changes what `hostInventory`
+    reads, answered by the GUI through the stores its own Settings uses. MCP: read one entry's
+    JSON (Keychain secrets stay `${keychain:…}` references), save (add, or edit with `replacing`;
+    `secrets` go to the host's Keychain and the file gets references), on/off, exposure, tools,
+    remove, import, check again, sign in and out. Subagent profiles: save, delete and restore
+    defaults, each fenced by the fingerprint the client read. Providers: save an API key (checked
+    with the provider first; `$NAME` names a login-shell variable), sign out, and an account
+    sign-in. A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
+    `HostSignInProgress`: the page to open on the client, a device code, or that the host waits
+    for `signIn(.complete)` with the code the page shows (a provider's pasted-code flow; nothing
+    opens on the host) or, for an MCP server, the loopback address the browser ended on, which the
+    host relays only when it matches pi's `redirect_uri` and `state`. At most four run at once and
+    each is gone 330 seconds after it starts. A reply never carries a secret; a client that lacks
+    the capability refuses before sending. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and

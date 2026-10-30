@@ -96,6 +96,53 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     }
 }
 
+/// A host's inventory and configuration in memory: one server, a sign-in that finishes on its
+/// first poll.
+final class FakeConfigClient: SettingsClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var log: [String] = []
+    private var server = HostMCPServer(name: "github", kind: .remote, endpoint: "https://x", status: .connected)
+    private var signedIn = false
+    var refuses = false
+    var requests: [String] { lock.withLock { log } }
+
+    func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult { throw RemoteHostClientError.disconnected }
+    func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings { HostSettings() }
+    func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot { InstructionsSnapshot(directory: "~") }
+    func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot { SuggestionsSnapshot() }
+
+    func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
+        lock.withLock {
+            log.append("inventory.\(request)")
+            switch request {
+            case .providers: return .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription",
+                                                                   auth: signedIn ? .signedIn : .notSignedIn)])
+            default: return .mcp(HostMCPInventory(servers: [server], configPath: "~/mcp.json"))
+            }
+        }
+    }
+
+    func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
+        try lock.withLock {
+            log.append("config.\(String(describing: request).prefix { $0 != "(" })")
+            if refuses { throw RemoteHostClientError.rejected(code: "config_failed", message: "The host said no.") }
+            let id = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+            switch request {
+            case .mcpSetEnabled(_, let on):
+                server.enabled = on
+                return .mcp(HostMCPInventory(servers: [server], configPath: "~/mcp.json"))
+            case .providerSignIn:
+                return .signIn(HostSignInProgress(id: id, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai", wantsCode: true))
+            case .signIn:
+                signedIn = true
+                return .signIn(HostSignInProgress(id: id, phase: .done, name: "Anthropic"))
+            default:
+                return .providers([])
+            }
+        }
+    }
+}
+
 /// Deterministic request boundary: no timers, polling, sockets or UI.
 actor SettingsRequestGate {
     private var held = false
@@ -166,6 +213,56 @@ struct ClientSettingsTests {
         await model.change(.projectsEnabled(false), on: live)
         #expect(model.settings(of: live)?.projectsEnabled == false)
         #expect(client.requests.count == 4)
+    }
+
+    /// Every change that needs a newer host waits for that host: the Design tool and Missions
+    /// switches, and hostSettings.v2's rows. Missions stays on in the client under a live mission.
+    @Test func newerSwitchesReachOnlyHostsThatAdvertiseThem() async {
+        let client = FakeSettingsClient(settings: HostSettings(missionsEnabled: true, missionsActive: true))
+        let model = ClientHostSettings()
+        let old = Self.host("old", client)
+        await model.refresh(old)
+        for change: HostSettingChange in [.designToolEnabled(true), .missionsEnabled(false), .skillsInSlashMenu(false),
+                                          .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2))] {
+            #expect(model.post(change, on: old) == nil, "\(change)")
+        }
+        #expect(client.requests == ["settings.fetch"])
+        let live = Self.host("new", client, capabilities: Self.all.union([RemoteProtocol.designToolExperimentCapability,
+                                                                          RemoteProtocol.missionsExperimentCapability,
+                                                                          RemoteProtocol.hostSettingsV2Capability]))
+        await model.refresh(live)
+        await model.change(.designToolEnabled(true), on: live)
+        #expect(model.settings(of: live)?.designToolEnabled == true)
+        await model.change(.missionsEnabled(false), on: live)
+        #expect(model.settings(of: live)?.missionsEnabled == true, "a live mission keeps Missions on")
+        await model.change(.slashCommand(name: "review", on: false), on: live)
+        #expect(model.settings(of: live)?.hiddenSlashCommands == ["review"])
+    }
+
+    @Test func aHostsConfigurationIsReadOnlyUntilItAdvertisesHostConfig() async {
+        let client = FakeConfigClient()
+        let model = ClientHostConfig()
+        model.pollInterval = .zero
+        let old = SettingsHost(id: UUID(), name: "old", client: client, capabilities: [RemoteProtocol.hostInventoryCapability])
+        await model.refresh(.mcp, on: old)
+        #expect(model.mcp[old.id]?.servers.map(\.name) == ["github"])
+        #expect(!model.canEdit(old))
+        #expect(await model.perform(.mcpRemove(name: "github"), on: old) == nil)
+        #expect(client.requests == ["inventory.mcp"])
+
+        let live = SettingsHost(id: UUID(), name: "new", client: client,
+                                capabilities: [RemoteProtocol.hostInventoryCapability, RemoteProtocol.hostConfigCapability])
+        await model.perform(.mcpSetEnabled(name: "github", on: false), on: live)
+        #expect(model.mcp[live.id]?.servers.first?.enabled == false)
+        client.refuses = true
+        await model.perform(.providerSignOut(provider: "openai"), on: live)
+        #expect(model.problems[live.id] == "The host said no.")
+        client.refuses = false
+        await model.perform(.providerSignIn(provider: "anthropic"), on: live)
+        #expect(model.signIns[live.id]?.phase == .waiting)
+        await model.follow(signInOn: live, page: .providers)
+        #expect(model.signIns[live.id]?.phase == .done)
+        #expect(model.providers[live.id]?.first?.auth == .signedIn, "a finished sign-in reads the page again")
     }
 
     @Test func lateSettingsAndSuggestionReadsCannotRepopulateAForgottenHost() async {
