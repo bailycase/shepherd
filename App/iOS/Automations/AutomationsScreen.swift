@@ -181,7 +181,7 @@ struct AutomationListRowView: View, Equatable {
 
     var body: some View {
         let state = AgentState(row.tone)
-        SHAutomationRow(row.name, when: ([row.when, row.hostTag ?? row.place] + (row.unread > 0 ? ["\(row.unread) unread"] : [])).joined(separator: " · "),
+        SHAutomationRow(row.name, when: ((row.unread > 0 ? ["\(row.unread) unread"] : []) + [row.when, row.hostTag ?? row.place]).joined(separator: " · "),
                         status: row.status,
                         statusTone: row.tone == .stopped || row.tone == .off ? nil : state, clock: clock,
                         leading: row.tone == .running ? .running : .symbol("bolt", row.tone == .attention ? .attention : nil),

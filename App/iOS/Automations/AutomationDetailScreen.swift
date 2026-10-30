@@ -434,6 +434,7 @@ struct AutomationPendingRowView: View, Equatable {
                 if let url = event.url {
                     Link(event.summary, destination: url)
                         .font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
+                        .multilineTextAlignment(.leading)
                         .accessibilityHint("Opens it on GitHub")
                 } else {
                     Text(event.summary).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
