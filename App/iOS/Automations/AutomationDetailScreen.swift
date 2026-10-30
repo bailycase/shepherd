@@ -432,9 +432,10 @@ struct AutomationPendingRowView: View, Equatable {
         VStack(alignment: .leading, spacing: SH.Space.s) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 if let url = event.url {
-                    Link(event.summary, destination: url)
-                        .font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                    Link(destination: url) {
+                        Text(event.summary).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
                         .accessibilityHint("Opens it on GitHub")
                 } else {
                     Text(event.summary).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
@@ -442,8 +443,9 @@ struct AutomationPendingRowView: View, Equatable {
                 Text(event.when).font(.sh(.mono)).foregroundStyle(sh.textTertiary)
             }
             HStack(spacing: SH.Space.m) {
+                // Secondary: the footer's Run now stays the screen's one primary action.
                 Button("Run now", systemImage: "play.fill", action: run)
-                    .buttonStyle(.sh(.primary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                 Button("Dismiss", action: dismiss)
                     .buttonStyle(.sh(.secondary, size: .s))
             }

@@ -325,8 +325,12 @@ keep the version for real breaks.
   One automation shows its folder, prompt, the latest fourteen runs as a chart, and every run the
   host kept, each opening its thread while that thread exists; Run now (replacing a finished
   run), Stop (confirmed, while a run is live), Edit and Delete act on the host. `+` saves a new
-  one: a name, a prompt, and one of the host's spaces. The Mac has no schedules or triggers, so
-  neither does the form. On iPad the list sits beside
+  one: a name, a prompt, and one of the host's spaces. On a host with `automationTriggers.v1` the
+  form also sets the trigger (Manual, Schedule with presets or a custom RRULE and its next run,
+  or up to five GitHub triggers), where runs go, who can trigger, the limits and model pins; a
+  triggered automation's detail is its inbox (state with reason, Pause or Resume, waiting events
+  with Run now and Dismiss, runs with what fired them, their PR, an unread dot and why one didn't
+  start), and the list has Pause all triggers. An older host keeps the old form. On iPad the list sits beside
   the chosen automation. A host without `automations.v1` shows its automations read-only and
   says so.
 - **Windows (`Windows/`, iPad):** several Shepherd windows side by side in Split View or Stage
