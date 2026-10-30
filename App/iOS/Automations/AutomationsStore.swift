@@ -34,6 +34,15 @@ final class AutomationsStore {
     private(set) var pauseAllHosts: [AutomationsPauseAll.Host] = []
     /// Pause all triggers flipped here, until a status agrees or the change fails.
     private(set) var pendingAllPaused: [UUID: Bool] = [:]
+    /// Each host's time zone as its trigger statuses last said: a schedule's times on that host
+    /// (Next run, Checked, the editor's preview) are worked out in it, a new automation's too.
+    private(set) var hostZones: [UUID: String] = [:]
+    /// Under a detail's times, per host, while they are another zone's than this device's.
+    private(set) var zoneNotes: [UUID: String] = [:]
+    /// Runs whose thread has not been opened, by thread; and the automations whose trigger is
+    /// paused (its own, or Pause all): the sidebar's run groups roll them up.
+    private(set) var unreadRuns: Set<FleetRef> = []
+    private(set) var pausedTriggers: Set<AutomationKey> = []
     /// The last change a host refused.
     var failure: Failure?
     /// The automation the iPad shows beside the list; the first one when nil or gone.
@@ -95,6 +104,7 @@ final class AutomationsStore {
         store.runs = store.runs.filter { $0.key.host != host }
         store.readAt = store.readAt.filter { $0.key.host != host }
         store.statuses = store.statuses.filter { $0.key.host != host }
+        store.hostZones[host] = nil
         store.allPaused[host] = nil
         store.pendingAllPaused[host] = nil
         store.sessions[host] = nil
@@ -122,6 +132,11 @@ final class AutomationsStore {
     /// Pause all triggers as drawn on `host`.
     func isAllPaused(_ host: UUID) -> Bool {
         pendingAllPaused[host] ?? allPaused[host] ?? false
+    }
+
+    /// The zone `host`'s schedules run in: its own when a status said, else this device's.
+    func zone(_ host: UUID) -> AutomationHostZone {
+        AutomationHostZone(identifier: hostZones[host])
     }
 
     /// Whether `host` takes triggers from here (the editor's trigger sections, the inbox).
@@ -167,12 +182,23 @@ final class AutomationsStore {
         let next = AutomationsModel(hosts: inputs, runs: runs, statuses: statuses)
         var nextDetails: [AutomationKey: AutomationDetail] = [:]
         for row in next.rows {
-            nextDetails[row.key] = next.detail(row.key, runs: runs[row.key], status: statuses[row.key])
+            nextDetails[row.key] = next.detail(row.key, runs: runs[row.key], status: statuses[row.key],
+                                               timeZone: zone(row.key.host).timeZone)
         }
-        var paused: [UUID: Bool] = [:]
-        for (key, status) in statuses { paused[key.host] = status.allPaused }
-        for (host, value) in pendingAllPaused where paused[host] == value { pendingAllPaused[host] = nil }
-        if paused != allPaused { allPaused = paused }
+        var zoneLines: [UUID: String] = [:]
+        for host in inputs { zoneLines[host.id] = zone(host.id).note(hostName: host.name) }
+        if zoneLines != zoneNotes { zoneNotes = zoneLines }
+        var unread = Set<FleetRef>()
+        for (key, list) in runs {
+            for run in list where run.unread { if let agent = run.agentID { unread.insert(FleetRef(host: key.host, agent: agent)) } }
+        }
+        if unread != unreadRuns { unreadRuns = unread }
+        let paused = Set(statuses.filter { $0.value.allPaused || $0.value.state == .paused }.keys)
+        if paused != pausedTriggers { pausedTriggers = paused }
+        var hostsPaused: [UUID: Bool] = [:]
+        for (key, status) in statuses { hostsPaused[key.host] = status.allPaused }
+        for (host, value) in pendingAllPaused where hostsPaused[host] == value { pendingAllPaused[host] = nil }
+        if hostsPaused != allPaused { allPaused = hostsPaused }
         let pauseHosts = AutomationsPauseAll.hosts(next.rows)
         if pauseHosts != pauseAllHosts { pauseAllHosts = pauseHosts }
         var seen = Set<String>()
@@ -255,8 +281,11 @@ final class AutomationsStore {
             }
         }
         next = next.filter { !forgotten.contains($0.key.host) }
-        if next != statuses {
+        var zones = hostZones
+        for (key, status) in next { if let zone = status.timeZone { zones[key.host] = zone } }
+        if next != statuses || zones != hostZones {
             statuses = next
+            hostZones = zones
             derive()
         }
     }
@@ -302,6 +331,13 @@ final class AutomationsStore {
             derive()
         }
         Task { try? await client.automation(key.automation, request: .markRead(runID: runID)) }
+    }
+
+    /// A run's thread opened from the sidebar: its unread dot clears as from the detail.
+    func markRead(thread: FleetRef) {
+        for (key, list) in runs where key.host == thread.host {
+            if let run = list.first(where: { $0.agentID == thread.agent && $0.unread }) { return markRead(key, runID: run.id) }
+        }
     }
 
     /// Pause all triggers on `host` (the request names any of its automations).

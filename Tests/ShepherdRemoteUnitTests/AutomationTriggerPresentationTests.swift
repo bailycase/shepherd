@@ -128,10 +128,11 @@ struct AutomationTriggerPresentationTests {
         automation.limits = AutomationLimits(maxConcurrent: 3, maxPerDay: 40)
         automation.model = "m"
         automation.thinking = .high
+        automation.serviceTier = .fast
         let settings = AutomationSettings(of: automation)
-        var expected = settings
-        expected.serviceTier = nil
-        #expect(AutomationTriggerForm(settings).settings == expected)
+        #expect(AutomationTriggerForm(settings).settings == settings)
+        automation.serviceTier = nil
+        #expect(AutomationTriggerForm(AutomationSettings(of: automation)).settings.serviceTier == "", "unset is the default speed")
     }
 
     @Test func theFormChecksWhatTheHostWouldRefuse() {

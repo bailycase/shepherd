@@ -54,6 +54,9 @@ struct AutomationDetailContent: View {
                     // The inbox first: how the trigger stands, what waits, what ran; then its settings.
                     triggerBanner(trigger, row: row)
                     triggerHead(trigger, row: row, busy: busy, store: store)
+                    if let note = store.zoneNotes[key.host], trigger.next != nil || trigger.checked != nil {
+                        Text(note).shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    }
                     if !trigger.pending.isEmpty { pending(trigger, row: row, busy: busy, store: store) }
                     runs(detail)
                     triggerSettings(trigger, row: row)
@@ -446,8 +449,10 @@ struct AutomationPendingRowView: View, Equatable {
                 // Secondary: the footer's Run now stays the screen's one primary action.
                 Button("Run now", systemImage: "play.fill", action: run)
                     .buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Run now: \(event.summary)")
                 Button("Dismiss", action: dismiss)
                     .buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Dismiss: \(event.summary)")
             }
             .disabled(!enabled)
             .shTouchTarget(height: SH.Height.touch)

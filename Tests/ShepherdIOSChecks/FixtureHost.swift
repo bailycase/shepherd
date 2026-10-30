@@ -33,6 +33,10 @@ final class FixtureHost: @unchecked Sendable {
     /// Request kinds this host received, in order.
     var requests: [String] { lock.withLock { seen } }
 
+    /// The changes `FixtureHostData.accepts` took, exactly as sent, in order.
+    var accepted: [RemoteRequest] { lock.withLock { taken } }
+    private var taken: [RemoteRequest] = []
+
     /// Binds an ephemeral port. An offline host binds and closes one, so connecting is refused.
     func start() throws {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
@@ -199,7 +203,13 @@ final class FixtureHost: @unchecked Sendable {
     }
 
     /// The refusal for a request that would change the host, reported as a mutation; nil for a read.
+    /// A change the screen's check makes on purpose (`accepts`) is answered and recorded instead.
     private func refuse(_ request: RemoteRequest) -> [RemoteReply]? {
+        if let reply = data.accepts?(request) {
+            lock.withLock { taken.append(request) }
+            note("accepted." + Self.kind(request))
+            return [reply]
+        }
         let refused = "The fixture host changes nothing."
         switch request {
         case .nativeThread(let id, _, let command):

@@ -6,11 +6,14 @@ import ShepherdRemote
 
 /// The editor's trigger sections on a host that serves `automationTriggersCapability`: Trigger
 /// (Manual, Schedule, GitHub), then for a triggered one where its runs go, where they work, who
-/// can fire them, its limits, and the model and thinking pins. `check` comes from the form,
-/// worked out when it changes (never in `body`).
+/// can fire them, its limits, and the model, thinking and speed pins. `check` and
+/// `scheduleNote` come from the form in the host's time zone, worked out when either changes
+/// (never in `body`).
 struct AutomationTriggerSections: View {
     @Binding var form: AutomationTriggerForm
     let check: AutomationTriggerForm.Check
+    /// "Next run Today 09:00 (Eastern Time, build-01's time zone)." (`AutomationHostZone.footnote`).
+    let scheduleNote: String?
     let hostName: String
     let threads: [AutomationThreads.Choice]
     let models: [String]
@@ -36,8 +39,8 @@ struct AutomationTriggerSections: View {
             case .schedule:
                 if let error = check.error {
                     Text(error).foregroundStyle(Color.sh.failed)
-                } else if let next = check.next {
-                    Text("Next run \(next). Times are \(hostName)'s time zone.")
+                } else if let scheduleNote {
+                    Text(scheduleNote)
                 }
             case .github:
                 if let error = check.error {
@@ -229,6 +232,12 @@ struct AutomationTriggerSections: View {
             Picker("Thinking", selection: $form.thinking) {
                 Text("Default").tag("")
                 ForEach(ThinkingLevel.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
+            }
+            Picker("Speed", selection: $form.speed) {
+                Text("Default").tag("")
+                ForEach(ServiceTier.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
+                // A tier this build doesn't know, kept as saved.
+                if !form.speed.isEmpty, ServiceTier(rawValue: form.speed) == nil { Text(form.speed).tag(form.speed) }
             }
         } header: {
             Text("Model")

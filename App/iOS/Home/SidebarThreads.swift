@@ -47,14 +47,21 @@ final class SidebarThreads {
     }
 
     /// The groups for Home's model, derived once per change of either (as `PadDesigns.recents`), never per redraw.
-    func groups(_ model: FleetModel) -> FleetSidebarGroups {
-        if let cached = cache, cached.model == model, cached.state == state { return cached.groups }
-        let groups = state.groups(model)
-        cache = (model, state, groups)
+    /// `unread` and `paused` roll up into the run groups (`AutomationsStore.unreadRuns`, `pausedTriggers`).
+    func groups(_ model: FleetModel, unread: Set<FleetRef> = [], paused: Set<AutomationKey> = []) -> FleetSidebarGroups {
+        if let cached = cache, cached.model == model, cached.state == state, cached.unread == unread, cached.paused == paused {
+            return cached.groups
+        }
+        let groups = state.groups(model, unread: unread, paused: paused)
+        cache = (model, state, unread, paused, groups)
         return groups
     }
 
-    @ObservationIgnored private var cache: (model: FleetModel, state: FleetSidebarState, groups: FleetSidebarGroups)?
+    @ObservationIgnored private var cache: (model: FleetModel, state: FleetSidebarState, unread: Set<FleetRef>,
+                                            paused: Set<AutomationKey>, groups: FleetSidebarGroups)?
+
+    /// A run group's row was pressed.
+    func toggleRunGroup(_ key: AutomationKey) { mutate { $0.toggleRunGroup(key) } }
 
     func isPinned(_ ref: AgentRef) -> Bool { state.isPinned(Self.fleet(ref)) }
 
@@ -65,8 +72,18 @@ final class SidebarThreads {
         }
     }
 
-    /// The window's thread on screen changed (`MobileNavigator.selectedThread`).
-    func select(_ ref: AgentRef?) { mutate { $0.select(ref.map(Self.fleet)) } }
+    /// The window's thread on screen changed (`MobileNavigator.selectedThread`). A triggered run's opens its run group,
+    /// so the row on screen is there to see.
+    func select(_ ref: AgentRef?) {
+        let origin = ref.flatMap { ref in
+            hosts.host(ref.host)?.state.agents.first { $0.id == ref.agent }?.automationOrigin
+                .map { AutomationKey(host: ref.host, automation: $0.automationID) }
+        }
+        mutate { state in
+            state.select(ref.map(Self.fleet))
+            if let origin { state.openRunGroup(origin) }
+        }
+    }
 
     func markSeen(_ rows: [FleetThreadRow]) { mutate { $0.markSeen(rows.map(\.ref)) } }
 
