@@ -36,7 +36,7 @@ struct AutomationsScreen: View {
                         .padding(.horizontal, MobileLayout.gutter)
                         .padding(.bottom, MobileLayout.sectionSpacing)
                 }
-                .refreshable { await store.refreshRuns() }
+                .refreshable { await store.refresh() }
             }
         }
         .background(Color.sh.bgWindow)
@@ -103,6 +103,7 @@ private struct AutomationsList: View {
                     section("All", count: model.rows.count, rows: model.quiet)
                 }
             }
+            pauseAll
             if !store.readOnlyNotes.isEmpty {
                 VStack(alignment: .leading, spacing: SH.Space.xs) {
                     ForEach(store.readOnlyNotes, id: \.self) { note in
@@ -110,6 +111,33 @@ private struct AutomationsList: View {
                     }
                 }
                 .padding(.horizontal, SH.Space.xs)
+            }
+        }
+    }
+
+    /// Pause all triggers, per host that has triggered automations and takes the change.
+    @ViewBuilder private var pauseAll: some View {
+        let hosts = store.pauseAllHosts
+        if !hosts.isEmpty {
+            SHListCard {
+                ForEach(hosts, id: \.id) { host in
+                    HStack(spacing: SH.Space.m) {
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            Text(hosts.count > 1 ? "Pause all triggers on \(host.name)" : "Pause all triggers")
+                                .font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+                            Text("Schedules and GitHub start no runs while it's on.")
+                                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                        }
+                        .accessibilityHidden(true)
+                        Spacer(minLength: SH.Space.m)
+                        SHAutomationSwitch(hosts.count > 1 ? "Pause all triggers on \(host.name)" : "Pause all triggers",
+                                           isOn: store.isAllPaused(host.id),
+                                           toggle: host.enabled ? { store.setAllPaused(host: host.id, $0) } : nil)
+                    }
+                    .padding(.horizontal, SH.Space.l)
+                    .padding(.vertical, SH.Space.m)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     }
@@ -153,7 +181,8 @@ struct AutomationListRowView: View, Equatable {
 
     var body: some View {
         let state = AgentState(row.tone)
-        SHAutomationRow(row.name, when: [row.when, row.hostTag ?? row.place].joined(separator: " · "), status: row.status,
+        SHAutomationRow(row.name, when: ([row.when, row.hostTag ?? row.place] + (row.unread > 0 ? ["\(row.unread) unread"] : [])).joined(separator: " · "),
+                        status: row.status,
                         statusTone: row.tone == .stopped || row.tone == .off ? nil : state, clock: clock,
                         leading: row.tone == .running ? .running : .symbol("bolt", row.tone == .attention ? .attention : nil),
                         // Read-only (offline, or an older host): the "when" line says whether it is on.
@@ -197,7 +226,7 @@ private struct AutomationsSplit: View {
                 AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }
                     .padding(SH.Space.m)
             }
-            .refreshable { await store.refreshRuns() }
+            .refreshable { await store.refresh() }
         } detail: {
             AutomationDetailContent(key: current, pad: true)
         } single: {
@@ -209,7 +238,26 @@ private struct AutomationsSplit: View {
                 .padding(.horizontal, MobileLayout.gutter)
                 .padding(.bottom, MobileLayout.sectionSpacing)
             }
-            .refreshable { await store.refreshRuns() }
+            .refreshable { await store.refresh() }
+        }
+    }
+}
+
+
+/// The hosts that get a Pause all triggers switch: those with a triggered automation.
+enum AutomationsPauseAll {
+    struct Host: Equatable {
+        let id: UUID
+        let name: String
+        /// It's connected and takes trigger changes.
+        let enabled: Bool
+    }
+
+    static func hosts(_ rows: [AutomationListRow]) -> [Host] {
+        var seen = Set<UUID>()
+        return rows.filter(\.triggered).compactMap { row in
+            guard seen.insert(row.key.host).inserted else { return nil }
+            return Host(id: row.key.host, name: row.hostName, enabled: row.abilities.triggers)
         }
     }
 }

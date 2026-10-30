@@ -709,14 +709,31 @@ public final class RemoteHostClient: @unchecked Sendable {
                 code: "update_required", message: "Update Shepherd on the host to manage its automations from here."
             )
         }
+        if request.needsTriggers, !capabilities.contains(RemoteProtocol.automationTriggersCapability) {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to use automation triggers from here."
+            )
+        }
         // Run now spawns the run's agent on the host, which waits on its GUI, as creating one does.
-        let timeout: TimeInterval = request == .run ? 120 : RemoteHostClient.requestTimeout
+        let timeout: TimeInterval
+        switch request {
+        case .run, .runEvent: timeout = 120
+        default: timeout = RemoteHostClient.requestTimeout
+        }
         let reply = try await self.request(timeout: timeout) { .automation(id: $0, automationID: automationID, request: request) }
         switch reply {
         case .automationResult(_, let result): return result
         case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
         default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected automation reply")
         }
+    }
+
+    /// A triggered automation's trigger state, pending events and schedule.
+    public func automationStatus(_ automationID: AutomationID) async throws -> AutomationTriggerStatus {
+        guard case .status(let status) = try await automation(automationID, request: .status) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected automation reply")
+        }
+        return status
     }
 
     /// The runs the host kept for an automation, oldest first.
