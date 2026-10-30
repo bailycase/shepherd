@@ -109,8 +109,13 @@ extension ShepherdViewModel {
                                      repo: resyncs ? repo : nil, building: systemIsBuilding(namespace))
         case .remote(let ref):
             return remoteDesignSystemMenu(ref)
-        case .remoteBuild:
-            return DesignMenu(sections: [[DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")]])
+        case .remoteBuild(let ref):
+            let connection = remoteHosts.connections.first { $0.id == ref.hostID }
+            guard let connection, connection.supportsDesignCapability(RemoteProtocol.designSystemsCapability) else {
+                return DesignMenu(sections: [[DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")]])
+            }
+            let name = connection.state.designs.first { $0.id == ref.designID }?.name ?? "It"
+            return DesignMenu.system(name: name, builtIn: false, repo: nil, building: true)
         }
     }
 
@@ -415,8 +420,12 @@ extension ShepherdViewModel {
             let words = DeleteSystemWords(name: summary.info.title, components: summary.counts.components, usedBy: usedBy, repo: repo,
                                           building: systemIsBuilding(namespace))
             presentDesignSystemDelete(DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words))
-        case .remoteBuild:
-            return
+        case .remoteBuild(let ref):
+            guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+                  let build = connection.state.designs.first(where: { $0.id == ref.designID && $0.buildsSystem }) else { return }
+            let repo = build.sourceSpaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
+            presentDesignSystemDelete(DesignSystemDeleteRequest(
+                target: target, name: build.name, words: DeleteSystemWords(name: build.name, components: 0, usedBy: [], repo: repo, building: true)))
         case .remote(let ref):
             guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
                   let summary = connection.designs.listing?.systems.first(where: { $0.namespace == ref.namespace }), !summary.builtIn else { return }
@@ -442,7 +451,9 @@ extension ShepherdViewModel {
             || designSystems.summary(namespace)?.info.ownerDesignID.map { shownDesign?.id == $0 } == true
         case .build(let id): shownDesign?.id == id
         case .remote(let ref): shownDestination == .designSystem && shownRemoteSystem == ref
-        case .remoteBuild: false
+        case .remoteBuild(let ref): selectedRemoteAgent.flatMap { selected in
+            remoteHosts.connections.first { $0.id == ref.hostID }?.state.agents.first { $0.id == selected.agentID }?.designID
+        } == ref.designID
         }
         if shown { openDestination(.designs) }
         do {
@@ -452,7 +463,11 @@ extension ShepherdViewModel {
             case .remote(let ref):
                 try await changeRemoteSystem(ref, .deleteSystem(namespace: ref.namespace))
                 return
-            case .remoteBuild:
+            case .remoteBuild(let ref):
+                guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else {
+                    throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
+                }
+                _ = try await Self.remoteDesign(library, .deleteSystemBuild(designID: ref.designID))
                 return
             }
             sessions.stateDidChange(server.state)

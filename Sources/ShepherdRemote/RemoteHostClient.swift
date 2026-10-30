@@ -518,7 +518,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         let before = value.supportedActions
         for (capability, action) in [(RemoteProtocol.checkpointRecoveryCapability, "checkpointRecovery"), (RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
                                      (RemoteProtocol.nativeServiceTierCapability, "setServiceTier"), (RemoteProtocol.nativeGoalCapability, "goal"),
-                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent")]
+                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent"),
+                                     (RemoteProtocol.designReferencesCapability, "designReferences")]
         where !capabilities.contains(capability) {
             value.supportedActions.removeAll { $0 == action }
         }

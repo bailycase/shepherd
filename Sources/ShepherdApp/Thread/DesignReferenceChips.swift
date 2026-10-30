@@ -249,11 +249,7 @@ final class DesignReferenceChips {
 
     /// design › board › element, from what a message's record says.
     static func crumbs(_ record: DesignReferenceRecord) -> [String] {
-        var crumbs = [record.design ?? "Design"]
-        if let page = record.page { crumbs.append("Page · " + (record.pageTitle ?? page)) }
-        if let board = record.board { crumbs.append(record.boardTitle ?? DesignPath(board)?.stem ?? board) }
-        if record.element != nil { crumbs.append(record.elementLabel.map { "“\($0)”" } ?? "element") }
-        return crumbs
+        DesignReferencePresentation.crumbs(record)
     }
 
     /// A composer chip's crumbs, from its label ("Checkout › A · Funnel first › button “Pay”").

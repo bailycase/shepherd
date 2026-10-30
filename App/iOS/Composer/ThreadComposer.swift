@@ -149,6 +149,8 @@ struct ThreadComposer: View {
         }
         .onChange(of: store.queue, initial: true) { _, queue in state.update(queue: queue) }
         .onChange(of: store.draft, initial: true) { _, draft in state.update(draft: draft, commands: store.commands) }
+        // A pasted design reference to this host's own design becomes a chip (RefPasted), pinned by the host.
+        .onChange(of: store.draft) { old, new in pasteReferences(store: store, state: state, from: old, to: new) }
         .onChange(of: store.commands) { _, commands in state.update(draft: store.draft, commands: commands) }
         // Whether the thread's model takes a thinking level: the host's catalog, once per connection.
         .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
@@ -181,6 +183,12 @@ struct ThreadComposer: View {
             .scrollIndicators(.hidden)
             .shTransition(.content)
         }
+        if !store.attachedReferences.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: SH.Space.s) { referenceChips(store) }
+            }
+            .scrollIndicators(.hidden)
+        }
         if !state.attachments.isEmpty {
             attachments(state)
         }
@@ -200,6 +208,7 @@ struct ThreadComposer: View {
 
     private func card(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
         SHComposer(isFocused: focused) {
+            referenceChips(store)
             if !state.attachments.isEmpty { attachmentChips(state) }
         } field: {
             // A command draft shows in mono while its list is open (iPadPortrait).
@@ -350,6 +359,32 @@ struct ThreadComposer: View {
     private func attachmentChips(_ state: ComposerState) -> some View {
         ForEach(state.attachments) { attachment in
             SHAttachmentChip(attachment.image.name ?? "Image", thumbnail: attachment.thumbnail) { state.remove(attachment.id) }
+        }
+    }
+
+    /// The design references waiting beside the draft, first among the attachments (DesignRefStates' chip).
+    private func referenceChips(_ store: NativeThreadStore) -> some View {
+        ForEach(store.attachedReferences) { attached in
+            MobileReferenceChip(host: ref.host, reference: attached.reference, crumbs: DesignReferencePresentation.crumbs(label: attached.label),
+                                version: DesignReferencePresentation.version(attached.reference.revision)) {
+                store.detachReference(attached.id)
+            }
+        }
+    }
+
+    /// A paste that brought `shepherd-design-ref://` words: each becomes a chip (the words around
+    /// it stay), where the thread's host takes references to its designs.
+    private func pasteReferences(store: NativeThreadStore, state: ComposerState, from old: String, to new: String) {
+        guard store.supports("designReferences"), let pasted = ComposerReferencePaste.extract(new, previous: old) else { return }
+        store.draft = pasted.draft
+        let designs = MobileDesigns.of(hosts)
+        let host = ref.host
+        Task {
+            for reference in pasted.references {
+                do { try await designs.attachReference(reference, to: store, host: host) } catch {
+                    state.attachmentError = "That design reference didn't attach: \(MobileDesignsError.words(error))"
+                }
+            }
         }
     }
 

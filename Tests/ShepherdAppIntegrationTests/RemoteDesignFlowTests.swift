@@ -209,6 +209,33 @@ struct RemoteDesignFlowTests {
         let record = try #require(DesignReferenceFence.parse(prompt)?.records.first)
         #expect(record.design == "Checkout" && DesignReference(string: record.ref)?.host == .local)
         #expect(vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: thread.agent.id))
+
+        // The host's thread has chips and the @ picker for the host's designs, named as the host sees them.
+        let target = RemoteAgentRef(hostID: connection.id, agentID: thread.agent.id)
+        let chips = try #require(vm.remoteDesignReferenceChips(for: target))
+        #expect(vm.remoteDesignReferenceChips(for: RemoteAgentRef(hostID: connection.id, agentID: drawer.agent.id)) == nil,
+                "a design's own chat has none")
+        await chips.loadCatalog()
+        let row = try #require(chips.catalog?.designs.first)
+        #expect(row.title == "Checkout" && row.reference.host == .local)
+        chips.io.wantPictures(.design(design.id, name: design.name))
+        try await eventuallyOnMain("the design's boards in the picker", timeout: .seconds(30)) { chips.catalog?.boards[design.id]?.isEmpty == false }
+        let board = try #require(chips.catalog?.boards[design.id]?.first)
+        try await chips.io.attach(board.reference)
+        let store = vm.remoteThreadStores.store(for: target)
+        let attached = try #require(store.attachedReferences.first)
+        #expect(attached.reference.host == .local && attached.reference.revision != nil && attached.reference.board == board.reference.board)
+        // Another Mac's design never joins it.
+        await #expect(throws: DesignReferenceFailure.self) {
+            try await chips.io.attach(DesignReference(host: .remote(UUID()), designID: design.id)!)
+        }
+        store.detachReference(attached.id)
+
+        // A sent chip reads what the host kept.
+        let payloadID = try #require(record.payloadID)
+        await chips.loadSent(payloadID)
+        #expect(chips.sent[payloadID]?.crumbs.first == "Checkout")
+        #expect(chips.sent[payloadID]?.freshness == .current)
     }
 
     /// "Build one from a repo" in a host's space, from this Mac: the host starts the build, its
@@ -240,6 +267,15 @@ struct RemoteDesignFlowTests {
         let again = try await connection.designs.request(.buildSystem(spaceID: space.id))
         guard case .created(let answered, _) = again else { Issue.record("expected the build, got \(again)"); return }
         #expect(answered == existing.id && hostServer.state.designs.filter(\.buildsSystem).count == 1)
+
+        // Its card's Delete stops and deletes it on the host, after the build's dialog.
+        #expect(vm.designSystemMenu(building.id).items.contains { $0.action == .deleteSystem })
+        vm.requestDesignSystemDelete(building.id)
+        let request = try #require(vm.designSystemDeleteRequest)
+        #expect(request.words.confirm == "Stop and delete")
+        vm.confirmDesignSystemDelete(request)
+        try await eventuallyOnMain("the build gone on the host") { !hostServer.state.designs.contains(where: \.buildsSystem) }
+        #expect(vm.designToast == nil)
     }
 
     /// A Claude Design ZIP from this Mac is imported on the host as its own Import does: the
@@ -251,15 +287,16 @@ struct RemoteDesignFlowTests {
         let (_, connection, _, _) = try await host(local, remote)
         let hostServer = remote.host.server
         #expect(connection.supportsDesignCapability(RemoteProtocol.designImportCapability))
-        let zip = TestZip.make(DesignLifecycleFlowTests.project())
+        let zip = try makeScratchDirectory("zip").appendingPathComponent("checkout-funnel.zip")
+        try TestZip.make(DesignLifecycleFlowTests.project()).write(to: zip)
 
-        let (design, agent) = try await connection.designs.importProject(name: "checkout-funnel.zip", data: zip)
+        let (design, agent) = try await connection.designs.importProject(file: zip)
         let made = try #require(hostServer.state.designs.first { $0.id == design })
         #expect(made.name == "Checkout funnel" && made.importedFrom != nil)
         #expect(agent != nil)
         try await eventuallyOnMain("its agent on the host") { hostServer.state.agents.contains { $0.designID == design } }
 
-        let (copy, _) = try await connection.designs.importProject(name: "checkout-funnel.zip", data: zip)
+        let (copy, _) = try await connection.designs.importProject(file: zip)
         #expect(copy != design)
         #expect(hostServer.state.designs.first { $0.id == copy }?.name != made.name, "the same project again comes in as a copy")
     }

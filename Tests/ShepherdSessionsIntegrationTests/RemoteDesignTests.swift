@@ -626,6 +626,12 @@ extension RemoteDesignTests {
             Issue.record("expected a copy"); return
         }
         #expect(copy.info.namespace == "shepherd-design-copy" && !copy.builtIn)
+        // A system on disk serves the one file asked for, never its record.
+        guard case .chunk(let copied) = try await answer(raw, 60, .systemFile(namespace: copy.namespace, path: "tokens.json", offset: 0)) else {
+            Issue.record("expected the copy's file"); return
+        }
+        #expect(copied.data == tokens)
+        #expect(try await refusal(raw, 61, .systemFile(namespace: copy.namespace, path: "system.json", offset: 0)) == RemoteDesignCode.noSuchFile)
 
         #expect(try await refusal(raw, 7, .renameSystem(namespace: copy.namespace, title: "  ")) == "invalid_title")
         guard case .systemChanged(let renamed) = try await answer(raw, 8, .renameSystem(namespace: copy.namespace, title: " Acme ")) else {
@@ -674,6 +680,15 @@ extension RemoteDesignTests {
         }
         #expect(try await answer(raw, 4, .buildSystem(spaceID: web.id)) == .created(designID: build, agentID: agent))
         #expect(asked.current == [web.id])
+
+        // A build still reading its space goes, its agent with it; a design that isn't one is refused.
+        let reading = Design(name: "dashboard-web", createdAt: 2, buildsSystem: true, sourceSpaceID: web.id)
+        _ = try await host.server.createDesign(reading)
+        let plain = try await design(host)
+        #expect(try await refusal(raw, 6, .deleteSystemBuild(designID: plain)) != nil)
+        #expect(try await answer(raw, 7, .deleteSystemBuild(designID: reading.id)) == .ok)
+        #expect(!host.server.state.designs.contains { $0.id == reading.id })
+        #expect(host.server.state.designs.contains { $0.id == plain })
 
         host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designSystemsCapability }
         #expect(try await refusal(raw, 5, .buildSystem(spaceID: web.id)) == "unsupported")

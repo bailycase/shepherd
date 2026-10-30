@@ -9,6 +9,7 @@ struct DesignSystemsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @State private var problem: String?
+    @State private var deleting: (host: UUID, build: Design)?
 
     var body: some View {
         let designs = MobileDesigns.of(hosts)
@@ -16,6 +17,28 @@ struct DesignSystemsScreen: View {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 if let problem {
                     SHBanner(.failed, title: problem) { Button("OK") { self.problem = nil }.buttonStyle(.sh(.secondary)) }
+                }
+                // Builds still reading their space: each opens its agent's thread; a long press deletes it there.
+                let builds = designs.builds
+                if !builds.isEmpty {
+                    SHListHeader("Building", count: nil)
+                    SHListCard {
+                        ForEach(builds, id: \.build.id) { item in
+                            Button {
+                                if let agent = designs.buildAgent(host: item.host, build: item.build.id) { navigator.open(.thread(agent)) }
+                            } label: {
+                                SHDesignSystemRow(name: item.build.name, source: [item.space.map { "\($0) · building" } ?? "building", item.hostName]
+                                    .joined(separator: " · "))
+                            }
+                            .buttonStyle(.shRow(radius: 0))
+                            .contextMenu {
+                                if designs.supports(item.host, RemoteProtocol.designSystemsCapability) {
+                                    Button("Delete Design System…", systemImage: "trash", role: .destructive) { deleting = (item.host, item.build) }
+                                }
+                            }
+                        }
+                    }
+                    SHListHeader("Design systems", count: nil)
                 }
                 if designs.model.systems.isEmpty {
                     SHEmptyState(Text("No design systems"), message: "A host's design systems show here while it serves designs.",
@@ -35,6 +58,19 @@ struct DesignSystemsScreen: View {
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Design systems")
+        .confirmationDialog("Delete “\(deleting?.build.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Stop and delete", role: .destructive) {
+                guard let target = deleting else { return }
+                Task {
+                    do { try await designs.changeSystem(host: target.host, .deleteSystemBuild(designID: target.build.id)) } catch {
+                        problem = "Couldn't delete \(target.build.name): \(MobileDesignsError.words(error))"
+                    }
+                }
+            }
+        } message: {
+            Text("It’s still being built. Deleting stops the build and keeps nothing from it.")
+        }
         .toolbar {
             // "Build one from a repo" in a host's space (`design.systems.v1`): its build agent's thread opens.
             let buildable = designs.buildableSpaces

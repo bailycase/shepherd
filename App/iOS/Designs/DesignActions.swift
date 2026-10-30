@@ -128,7 +128,8 @@ struct DesignActionBanners: View {
             }
         }
         if let deleted = designs.deleted {
-            SHBanner(.idle, title: "Deleted \(deleted.name).", systemImage: "trash") {
+            SHBanner(.idle, title: "Deleted \(deleted.name).", message: "Undo brings it back on \(hosts.host(deleted.ref.host)?.name ?? "its host").",
+                     systemImage: "trash") {
                 Button("Undo") { Task { await designs.undoLastDelete() } }.buttonStyle(.sh(.secondary))
             }
         }

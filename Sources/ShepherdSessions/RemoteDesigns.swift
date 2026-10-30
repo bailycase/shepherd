@@ -138,8 +138,7 @@ struct RemoteDesignService: Sendable {
             return .ok
         case .systemFile(let namespace, let path, let offset):
             guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
-            // ponytail: reads the whole system for each piece; a per-file read if systems grow past a few MB.
-            guard let data = try await server.designSystemContents(namespace)[path] else {
+            guard let data = try await server.designSystemFile(namespace, path: path) else {
                 throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "\(namespace) has no \(path).")
             }
             guard offset <= data.count else { throw RemoteDesignRefusal.badOffset(offset, size: data.count) }
@@ -158,6 +157,27 @@ struct RemoteDesignService: Sendable {
             return .ok
         case .resyncSystem(let namespace):
             return .systemSynced(try await server.resyncDesignSystem(namespace))
+        case .deleteSystemBuild(let id):
+            try await server.deleteSystemBuild(id)
+            return .ok
+        case .referenceKept(let agentID, let payloadID):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            guard let kept = await server.designReferencePayload(agentID: agentID, payloadID: payloadID) else {
+                throw RemoteDesignRefusal("no_such_reference", "The thread holds no such reference.")
+            }
+            let freshness = await server.designReferenceFreshness(agentID: agentID, payloadID: payloadID)
+            // The picture rides along while it fits one reply; a larger one stays on the host.
+            let name = kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name
+            let url = name.map { kept.folder.appendingPathComponent($0) }
+            let size = url.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? .max
+            let picture = size <= RemoteProtocol.designChunkBytes ? url.flatMap { try? Data(contentsOf: $0) } : nil
+            return .referenceKept(kept.payload, picture: picture, freshness: freshness)
+        case .referenceFreshness(let reference):
+            guard reference.host == .local else { throw RemoteDesignRefusal("remote_design", "That design isn't on this host.") }
+            return .referenceFreshness(await server.designReferenceFreshness(reference))
+        case .referenceLookedAt(let agentID, let ref, let aspects):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            return .referenceLookedAt(await server.designReferenceLookedAt(agentID: agentID, ref: ref, aspects: Set(aspects)))
         case .pinReference(let reference):
             // Only this host's own design (`local` here), checked and resolved by the host itself.
             do {

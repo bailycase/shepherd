@@ -63,14 +63,20 @@ enum RemoteDesignSamples {
         .deleteSystem(namespace: "acme-web"),
         .resyncSystem(namespace: "acme-web"),
         .buildSystem(spaceID: SpaceID(rawValue: "space-1")),
+        .deleteSystemBuild(designID: design),
         .importBegin(name: "Checkout.zip", size: 400_000),
         .importChunk(uploadID: comment, offset: 262_144, data: Data([0x50, 0x4B, 0x03, 0x04])),
         .importFinish(uploadID: comment),
         .importCancel(uploadID: comment),
         .pinReference(DesignReference(designID: design, board: board, element: DesignElementID(board: board.viewName, tid: 5, path: [1, 1, 0]))!),
         .pinReference(DesignReference(designID: design, revision: 7)!),
+        .referenceKept(agentID: AgentID(rawValue: "thread"), payloadID: comment),
+        .referenceFreshness(DesignReference(designID: design, board: board, revision: 7)!),
+        .referenceLookedAt(agentID: AgentID(rawValue: "thread"), ref: "shepherd-design-ref://local/design-1/A@7", aspects: [.summary]),
     ]
 
+    static let keptPayload = DesignReferencePayload(agentID: AgentID(rawValue: "thread"), reference: DesignReference(designID: design, board: board, revision: 7)!,
+                                                    design: "Checkout funnel", revision: 7, capturedAt: 1_700_000_000_000)
     static let markup = DesignMarkup(strokes: [
         DesignMarkupStroke(kind: .circle, board: phone.viewName, element: DesignElementID(board: phone.viewName, tid: 31, path: [1, 1, 2]),
                            label: "Steps", note: "thicker bars on phone"),
@@ -116,6 +122,11 @@ enum RemoteDesignSamples {
         .systemChanged(system),
         .systemSynced(DesignSystemSyncResult(summary: system, changes: DesignSystemSyncChanges())),
         .importStarted(uploadID: comment),
+        .referenceKept(keptPayload, picture: Data([0x89, 0x50]), freshness: .updatedSince(latest: 9, changes: ["padding 24px → 20px"])),
+        .referenceKept(keptPayload, picture: nil, freshness: .deleted),
+        .referenceFreshness(.current),
+        .referenceLookedAt(DesignReferenceLookedAt.make(keptPayload, aspects: [.summary])),
+        .referenceLookedAt(nil),
         .referencePinned(RemoteDesignReferencePin(reference: DesignReference(designID: design, board: board, revision: 7)!,
                                                   label: "Checkout funnel › A · Funnel first", design: "Checkout funnel",
                                                   boardTitle: "A · Funnel first", pageTitle: nil, elementLabel: nil, elementName: nil,
@@ -148,7 +159,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .pinReference, .importBegin, .importChunk, .importFinish, .importCancel:
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel:
             Wire.caseName(request)
         }
     }
@@ -157,14 +168,14 @@ struct RemoteDesignMessageTests {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
              .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced,
-             .referencePinned, .importStarted, .ok:
+             .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 34)
-        #expect(Set(S.results.map(Self.caseName)).count == 21)
+        #expect(Set(S.requests.map(Self.caseName)).count == 38)
+        #expect(Set(S.results.map(Self.caseName)).count == 24)
     }
 
     @Test(arguments: [
@@ -222,9 +233,17 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designImportCapability)
                 #expect(request.writes)
                 #expect(request.designID == nil)
-            case .pinReference:
+            case .pinReference, .referenceFreshness:
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
+                #expect(request.designID == S.design)
+            case .referenceKept, .referenceLookedAt:
+                #expect(request.capability == RemoteProtocol.designReferencesCapability)
+                #expect(!request.writes)
+                #expect(request.designID == nil)
+            case .deleteSystemBuild:
+                #expect(request.capability == RemoteProtocol.designSystemsCapability)
+                #expect(request.writes)
                 #expect(request.designID == S.design)
             case .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem:
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)

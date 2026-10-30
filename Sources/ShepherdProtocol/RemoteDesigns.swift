@@ -321,6 +321,9 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// host's space `spaceID` (only read), its agent started by the host's app; a space with a
     /// build already answers that one. Answered `created(build, agent)`.
     case buildSystem(spaceID: SpaceID)
+    /// Deletes a system build still reading its space, its agent stopped, as the host's own
+    /// Delete design system does for a build (`designSystemsCapability`). Nothing to undo.
+    case deleteSystemBuild(designID: DesignID)
     /// Import a Claude Design project's ZIP on the host (`designImportCapability`): begin with its
     /// file name (`.zip`) and size (at most `designImportMaxBytes`), then its bytes in order
     /// (`importChunk`, each at most `designChunkBytes`, at the offset received so far), then
@@ -333,18 +336,28 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// Pins a piece of one of the host's designs (`designReferencesCapability`), named as the
     /// host sees it (`local`), at its revision now unless the reference names one.
     case pinReference(DesignReference)
+    /// What the host kept of a reference a thread was sent (`designReferencesCapability`): the
+    /// payload, its picture's bytes while they fit one reply, and how it stands now. A sent chip.
+    case referenceKept(agentID: AgentID, payloadID: UUID)
+    /// How a pinned reference (named `local`) stands against its design now: a composer chip's
+    /// "Send vN" (`designReferencesCapability`).
+    case referenceFreshness(DesignReference)
+    /// What a "Looked at…" line says: `aspects` of the copy of `ref` the thread was sent
+    /// (`designReferencesCapability`).
+    case referenceLookedAt(agentID: AgentID, ref: String, aspects: [DesignReferenceAspect])
 
     /// The design it touches, if one.
     public var designID: DesignID? {
         switch self {
         case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
              .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel: nil
-        case .pinReference(let reference): reference.designID
+        case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
+        case .referenceKept, .referenceLookedAt: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
              .sendMarkup(let id, _), .settleProposals(let id, _, _, _), .delete(let id), .undoDelete(let id),
-             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id):
+             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id), .deleteSystemBuild(let id):
             id
         }
     }
@@ -354,7 +367,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         switch self {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
              .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents,
-             .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem,
+             .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
              .importBegin, .importChunk, .importFinish, .importCancel: true
         default: false
         }
@@ -367,9 +380,9 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .delete, .undoDelete: RemoteProtocol.designDeleteCapability
         case .ensureAgent: RemoteProtocol.designAgentCapability
         case .duplicate, .removeFromRecents: RemoteProtocol.designLifecycleCapability
-        case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem:
+        case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild:
             RemoteProtocol.designSystemsCapability
-        case .pinReference: RemoteProtocol.designReferencesCapability
+        case .pinReference, .referenceKept, .referenceFreshness, .referenceLookedAt: RemoteProtocol.designReferencesCapability
         case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
         default: nil
         }
@@ -410,6 +423,12 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case systemSynced(DesignSystemSyncResult)
     /// A piece of the host's design, pinned (`pinReference`).
     case referencePinned(RemoteDesignReferencePin)
+    /// A sent reference's kept copy (`referenceKept`): its payload, its picture (nil when gone or
+    /// too large for one reply), and how it stands now.
+    case referenceKept(DesignReferencePayload, picture: Data?, freshness: DesignReferenceFreshness)
+    case referenceFreshness(DesignReferenceFreshness)
+    /// Nil when the thread holds no copy of it.
+    case referenceLookedAt(DesignReferenceLookedAt?)
     /// An import began (`importBegin`): send its bytes under this id.
     case importStarted(uploadID: UUID)
     case ok

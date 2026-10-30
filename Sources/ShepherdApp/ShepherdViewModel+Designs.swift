@@ -488,8 +488,7 @@ final class NewDesignState {
             do {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                let (design, agent) = try await connection.designs.importProject(name: url.lastPathComponent, data: data) { [weak self] share in
+                let (design, agent) = try await connection.designs.importProject(file: url) { [weak self] share in
                     Task { @MainActor in if self?.uploading != nil { self?.uploading = share } }
                 }
                 if let agent { vm.selectRemoteAgent(hostID: host, agentID: agent) } else { vm.openRemoteDesign(RemoteDesignRef(hostID: host, designID: design)) }

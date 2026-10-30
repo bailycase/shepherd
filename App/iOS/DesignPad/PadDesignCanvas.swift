@@ -79,6 +79,8 @@ final class PadDesignCanvas {
     @ObservationIgnored let markup = PadDesignMarkup()
     /// Proposals from markup on their way to the host (by their names joined).
     var applyingProposals: Set<String> = []
+    /// Implement in a Thread…'s sheet for a board picked whole, while it is up (`design.references.v1`).
+    var implementing: DesignImplementModel?
 
     static let restDelay: Duration = .milliseconds(120)
 

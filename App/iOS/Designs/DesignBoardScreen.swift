@@ -366,6 +366,41 @@ final class DesignBoardModel {
     }
 
     func dismissProblem() { problem = nil }
+
+    // MARK: References (design.references.v1)
+
+    /// Copy Reference's words, until dismissed.
+    var notice: String?
+    /// Implement in a Thread…'s sheet, while it is up.
+    var implementing: DesignImplementModel?
+
+    /// What Implement and Copy Reference hand over: the element picked (Tweak's or Comment's),
+    /// else the board on screen.
+    var referencePick: DesignReferencePick? {
+        guard let current else { return nil }
+        if let pick = tweakPick ?? draft, let element = DesignElementID(board: current.viewName, tid: pick.tid, path: pick.path),
+           let reference = DesignReference(designID: ref.design, board: current, element: element) {
+            return DesignReferencePick(ref: ref, reference: reference, piece: pick.name.map { "\(pick.noun) “\($0)”" } ?? pick.tag)
+        }
+        return DesignReference(designID: ref.design, board: current).map { DesignReferencePick(ref: ref, reference: $0, piece: label) }
+    }
+
+    var takesReferences: Bool { designs.supports(ref.host, RemoteProtocol.designReferencesCapability) }
+
+    func implement() {
+        guard let pick = referencePick else { return }
+        implementing = DesignImplementModel(pick: pick, threads: designs.referenceThreads(host: ref.host))
+    }
+
+    func copyReference() async {
+        guard let pick = referencePick else { return }
+        do {
+            notice = try await designs.copyReference(pick)
+            problem = nil
+        } catch {
+            problem = "Couldn't copy a reference: \(MobileDesignsError.words(error))"
+        }
+    }
 }
 
 /// Tweak previews on the board on screen, whichever it is.
@@ -440,6 +475,9 @@ private struct DesignBoardContent: View {
                     model.tweaking = false
                     ask()
                 }
+                .padding(.top, SH.Space.l)
+                // Opaque: the controls read over the board, not through it.
+                .presentationBackground(Color.sh.bgWindow)
                 .presentationDetents([.fraction(MobileDesignLayout.tweakSheetFraction), .large])
                 .presentationBackgroundInteraction(.enabled(upThrough: .fraction(MobileDesignLayout.tweakSheetFraction)))
             }
@@ -466,6 +504,11 @@ private struct DesignBoardContent: View {
                     if model.canPlay {
                         Button("Play", systemImage: "play") { model.play(true) }
                     }
+                    if model.takesReferences {
+                        Divider()
+                        Button("Implement in a Thread…", systemImage: "chevron.left.forwardslash.chevron.right") { model.implement() }
+                        Button("Copy Reference", systemImage: "link") { Task { await model.copyReference() } }
+                    }
                     Button("Duplicate Board…") { confirmingDuplicate = true }
                 } label: {
                     Label("Board actions", systemImage: "ellipsis")
@@ -481,6 +524,12 @@ private struct DesignBoardContent: View {
                 Button(format.title) { Task { await model.export(format) } }
             }
         }
+        .sheet(item: $model.implementing) { implementing in
+            DesignImplementSheet(model: implementing) { target, opens in
+                if opens { navigator.open(.thread(target)) }
+                else { model.notice = "Sent \(implementing.pick.piece) to \(model.designs.referenceThreads(host: target.host).first { $0.id == target.agent }?.name ?? "the thread")." }
+            }
+        }
         .sheet(item: $model.shared) { file in
             DesignShareSheet(url: file.url).ignoresSafeArea()
         }
@@ -489,6 +538,19 @@ private struct DesignBoardContent: View {
     /// The comment picked, or the one being written, over the board above the toolbar.
     @ViewBuilder private var cardLayer: some View {
         VStack(spacing: SH.Space.m) {
+            if let notice = model.notice {
+                Button { model.notice = nil } label: {
+                    Label(notice, systemImage: SHGlyph.resolved.symbolName).shText(.caption).foregroundStyle(Color.sh.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(SH.Space.l)
+                        .shPopover(radius: SHPhoneDesignMetrics.cardRadius)
+                }
+                .buttonStyle(.plain)
+                .task(id: notice) {
+                    try? await Task.sleep(for: MobileDesignLayout.noticeLifetime)
+                    if model.notice == notice { model.notice = nil }
+                }
+            }
             if let problem = model.problem {
                 Button { model.dismissProblem() } label: {
                     Text(problem).shText(.caption).foregroundStyle(Color.sh.failed)
@@ -606,7 +668,8 @@ private struct DesignBoardCanvas: View {
                         .offset(x: draft.rect.minX * scale, y: draft.rect.minY * scale)
                         .allowsHitTesting(false)
                 }
-                ForEach(model.pins) { comment in
+                // Playing, the board is the design as it runs: no pins over it.
+                ForEach(model.playing ? [] : model.pins) { comment in
                     if let rect = model.pinRects[comment.id] {
                         Button { model.selected = comment.id } label: { SHCommentPin(comment.number) }
                             .buttonStyle(.plain)

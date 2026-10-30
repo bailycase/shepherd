@@ -108,7 +108,7 @@ extension ShepherdViewModel {
     }
 
     /// How long a send waits for a thread's pi to serve (one just started boots in seconds).
-    static let referenceSendWait: Duration = .seconds(90)
+    static let referenceSendWait: Duration = NativeReferenceSend.wait
 
     /// Sends a message carrying `references` to a thread nothing on screen is showing: asks the
     /// host for the thread's session (waiting while its pi starts), then sends at it. While pi
@@ -121,24 +121,10 @@ extension ShepherdViewModel {
     /// `sendDirectly` through whatever serves the thread: this Mac's server, or a host.
     private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage],
                               thread: (NativeThreadRequest) async throws -> NativeThreadResult) async throws {
-        let deadline = ContinuousClock.now + Self.referenceSendWait
-        while true {
-            switch try await thread(.snapshot()) {
-            case .snapshot(let snapshot) where !snapshot.piSessionID.isEmpty:
-                let message = NativeAttachedFile.message(text, files: [], references: references.count)
-                let reply = try await thread(.send(
-                    expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: message,
-                    delivery: .followUp, images: images.isEmpty ? nil : images, designReferences: references.map(\.record)))
-                if case .failure(_, let why) = reply { throw DesignReferenceFailure(why) }
-                return
-            case .failure(let code, let why) where code != NativeThreadCode.starting:
-                throw DesignReferenceFailure(why)
-            default:
-                guard ContinuousClock.now < deadline else {
-                    throw DesignReferenceFailure("The thread's pi didn't start in time. Nothing was sent.")
-                }
-                try await Task.sleep(for: .milliseconds(200))
-            }
+        do {
+            try await NativeReferenceSend.send(references, text: text, images: images, thread: thread)
+        } catch let failure as NativeReferenceSend.Failure {
+            throw DesignReferenceFailure(failure.message)
         }
     }
 

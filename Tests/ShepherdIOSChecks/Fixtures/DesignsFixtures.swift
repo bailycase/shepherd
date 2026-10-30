@@ -68,6 +68,68 @@ extension FixtureCatalog {
             FixtureScreen(name: "new-design", hosts: quiet, presented: .designs(.newDesign(brief: "funnel", host: nil)), prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
+            // A design just deleted from the phone: Undo over the Designs screen while its host holds it.
+            FixtureScreen(name: "designs-undo", hosts: quiet, routes: [.designs(.list)], prepare: { app in
+                await DesignsFixtures.listed(app)
+                let designs = MobileDesigns.of(app.hosts)
+                designs.deleted = (DesignsFixtures.ref(DesignsFixtures.events), "Events explorer", UUID())
+                designs.report("Couldn't duplicate Settings redesign: The fixture host changes nothing.")
+                await DesignsFixtures.drawn(images: 3)
+            }),
+            // Tweak on the phone: the Steps list picked, the iPad's controls in the sheet over the board.
+            FixtureScreen(name: "design-board-tweak", hosts: quiet,
+                          routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { _ in
+                guard let model = await DesignsFixtures.board() else { return }
+                model.tweaking = true
+                await model.tap(at: CGPoint(x: 120, y: 330))
+                await FixtureWindows.wait("the Tweak controls", seconds: 10) { model.tweak?.presentation.isEmpty == false }
+                guard model.tweakPick != nil else { FixtureCheck.fail("Tweak's tap picked nothing") }
+                try? await Task.sleep(for: .seconds(1))
+            }),
+            // Play: the phone board takes its own touches; Done ends it.
+            FixtureScreen(name: "design-board-play", hosts: quiet,
+                          routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { _ in
+                guard let model = await DesignsFixtures.board() else { return }
+                model.play(true)
+                guard model.playing, model.live?.playing == true else { FixtureCheck.fail("The board didn't play") }
+            }),
+            // Implement in a Thread…: the board pinned by the host, its threads to pick from.
+            FixtureScreen(name: "design-implement", hosts: quiet,
+                          routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { _ in
+                guard let model = await DesignsFixtures.board() else { return }
+                model.implement()
+                guard let sheet = model.implementing else { FixtureCheck.fail("No Implement sheet") }
+                await FixtureWindows.wait("the piece pinned", seconds: 10) { sheet.canSend || sheet.error != nil }
+                if let error = sheet.error { FixtureCheck.fail("The pin failed: \(error)") }
+                try? await Task.sleep(for: .seconds(1))
+            }),
+            // Copy Reference: the host pins it and the board says so.
+            FixtureScreen(name: "design-copied", hosts: quiet,
+                          routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { _ in
+                guard let model = await DesignsFixtures.board() else { return }
+                await model.copyReference()
+                guard model.notice != nil else { FixtureCheck.fail("Copy Reference said nothing: \(model.problem ?? "")") }
+            }),
+            // Design systems with a build still reading its space (a long press deletes it there).
+            FixtureScreen(name: "design-systems-building", hosts: DesignsFixtures.buildingHosts(),
+                          routes: [.settings(.root), .designs(.systems)], prepare: { app in
+                await DesignsFixtures.listed(app)
+                guard !MobileDesigns.of(app.hosts).builds.isEmpty else { FixtureCheck.fail("No build listed") }
+            }),
+            // iPad: a design whose agent is gone on its host offers to start one there.
+            FixtureScreen(name: "pad-design-noagent", hosts: quiet,
+                          routes: [.padDesign(.list), .padDesign(.design(PadDesignRef(host: FixtureData.studio, design: DesignsFixtures.events)))], prepare: { app in
+                await DesignsFixtures.listed(app)
+                try? await Task.sleep(for: .seconds(2))
+            }),
+            // A host thread with a sent reference above its words and one waiting in the composer.
+            FixtureScreen(name: "thread-references", hosts: DesignsFixtures.referenceHosts(),
+                          routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: { app in
+                let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
+                await FixtureWindows.wait("the thread", seconds: 10) { store.snapshot != nil }
+                guard let piece = DesignReference(designID: DesignsFixtures.checkout, board: DesignsFixtures.wide, revision: 3) else { return }
+                store.attach(reference: NativeAttachedReference(reference: piece, label: "Checkout funnel dashboard › A · Funnel first"))
+            }),
         ]
     }
 }
@@ -129,7 +191,7 @@ enum DesignsFixtures {
                 wide: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · Funnel first"),
                 table: DesignIndex.Board(x: 1360, y: 0, w: 1280, h: 800, title: "B · Step table"),
                 trend: DesignIndex.Board(x: 2720, y: 0, w: 1280, h: 800, title: "C · Trend first"),
-                phone: DesignIndex.Board(x: 0, y: 920, w: 390, h: 844, title: "A · phone"),
+                phone: DesignIndex.Board(x: 0, y: 920, w: 390, h: 844, title: "A · phone", isInteractive: true),
             ], order: [wide, table, trend, phone]), files: [
                 wide.rawValue: Boards.funnel, table.rawValue: Boards.table, trend.rawValue: Boards.trend, phone.rawValue: Boards.phone,
             ], comments: comments(now: now)),
@@ -202,6 +264,29 @@ enum DesignsFixtures {
                           rect: DesignCommentRect(x: 18, y: 222, w: 354, h: 300),
                           text: "Make the bars thicker on phones. Hard to read at a glance.", createdAt: now - 20_000),
         ])
+    }
+
+    /// The design hosts, with a system build reading dashboard-web.
+    static func buildingHosts() -> [FixtureHostData] {
+        var hosts = hosts(updating: false)
+        let now = Date().timeIntervalSince1970 * 1000
+        hosts[0].state.designs.append(Design(id: DesignID(rawValue: "design-build"), name: "dashboard-web", createdAt: now - 60_000,
+                                             buildsSystem: true, sourceSpaceID: dashboardSpace.id))
+        return hosts
+    }
+
+    /// The design hosts, with the preview thread carrying a reference to the checkout's phone board.
+    static func referenceHosts() -> [FixtureHostData] {
+        var hosts = hosts(updating: false)
+        var record = DesignReferenceRecord(ref: DesignReference(designID: checkout, board: phone, revision: 3)!.string,
+                                           design: "Checkout funnel dashboard", board: phone.rawValue, boardTitle: "A · phone")
+        record.revision = 3
+        var message = FixtureData.user("r1", "Build this as the mobile checkout\n\n" + DesignReferenceFence.humanLine(count: 1))
+        message.designReferences = [record]
+        var thread = FixtureData.snapshot([message, FixtureData.assistant("r2", "On it: the phone board's steps list first.", at: 30_000)])
+        thread.supportedActions.append("designReferences")
+        hosts[0].threads[FixtureData.preview] = thread
+        return hosts
     }
 
     // MARK: Waiting for what a screen shows

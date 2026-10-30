@@ -140,21 +140,28 @@ public final class RemoteDesignLibrary {
         return files
     }
 
-    /// Uploads a Claude Design project's ZIP and has the host import it (`design.import.v1`), in
-    /// pieces in order; `progress` hears the share sent. A failure or cancellation leaves nothing
-    /// on the host. Answers the design and its agent there.
-    public func importProject(name: String, data: Data, progress: @escaping (Double) -> Void = { _ in }) async throws -> (DesignID, AgentID?) {
-        guard case .importStarted(let upload) = try await request(.importBegin(name: name, size: data.count)) else {
+    /// Uploads a Claude Design project's ZIP at `file` and has the host import it
+    /// (`design.import.v1`), read and sent a piece at a time, in order; `progress` hears the share
+    /// sent. A failure or cancellation leaves nothing on the host. Answers the design and its agent
+    /// there. The caller holds any security scope `file` needs for the whole call.
+    public func importProject(file: URL, progress: @escaping (Double) -> Void = { _ in }) async throws -> (DesignID, AgentID?) {
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        let size = Int(try handle.seekToEnd())
+        try handle.seek(toOffset: 0)
+        guard case .importStarted(let upload) = try await request(.importBegin(name: file.lastPathComponent, size: size)) else {
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
         }
         do {
             var offset = 0
-            while offset < data.count {
+            while offset < size {
                 try Task.checkCancellation()
-                let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
-                _ = try await request(.importChunk(uploadID: upload, offset: offset, data: data.subdata(in: offset..<end)))
-                offset = end
-                progress(Double(offset) / Double(data.count))
+                guard let piece = try handle.read(upToCount: min(RemoteProtocol.designChunkBytes, size - offset)), !piece.isEmpty else {
+                    throw RemoteHostClientError.rejected(code: "import_failed", message: "\(file.lastPathComponent) changed while it was sent.")
+                }
+                _ = try await request(.importChunk(uploadID: upload, offset: offset, data: piece))
+                offset += piece.count
+                progress(Double(offset) / Double(size))
             }
             guard case .created(let design, let agent) = try await request(.importFinish(uploadID: upload)) else {
                 throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")

@@ -30,6 +30,23 @@ extension FixtureCatalog {
                               await DesignPadFixtures.select(canvas, board: "A.dc.html", at: CGPoint(x: 400, y: 440))
                               canvas.paneTab = .tweak
                           }),
+            // A board picked whole: its actions bar with Implement…, and Implement in a Thread…'s sheet.
+            FixtureScreen(name: "design-pad-implement", hosts: DesignPadFixtures.hosts(),
+                          routes: [.padDesign(.list), .padDesign(.design(design))],
+                          prepare: { app in
+                              let canvas = await DesignPadFixtures.settle(app)
+                              canvas.pick(SHCanvasPick(board: "A.dc.html"))
+                              await FixtureWindows.wait("board picked", seconds: 10) { canvas.actionsBoard != nil }
+                              guard let path = canvas.actionsBoard, let reference = DesignReference(designID: design.design, board: path) else { return }
+                              let designs = MobileDesigns.of(app.hosts)
+                              let model = DesignImplementModel(pick: DesignReferencePick(ref: HostDesignRef(host: design.host, design: design.design),
+                                                                                         reference: reference, piece: canvas.title(path)),
+                                                               threads: designs.referenceThreads(host: design.host))
+                              canvas.implementing = model
+                              await FixtureWindows.wait("the piece pinned", seconds: 10) { model.canSend || model.error != nil }
+                              if let error = model.error { FixtureCheck.fail("The pin failed: \(error)") }
+                              try? await Task.sleep(for: .seconds(1))
+                          }),
             // The Comments tab, and a comment's thread open beside its pin.
             FixtureScreen(name: "design-pad-comments", hosts: DesignPadFixtures.hosts(),
                           routes: [.padDesign(.list), .padDesign(.design(design))],
@@ -361,8 +378,30 @@ struct FixtureDesigns: Sendable {
             return .success(.system(system))
         case .watch:
             return .success(.ok)
+        case .systemFile(let namespace, let path, _):
+            return .failure(Refusal(code: RemoteDesignCode.noSuchFile, message: "\(namespace) has no \(path) here"))
+        case .pinReference(let reference):
+            // Pinned at the design's revision, labelled as a host labels it.
+            return item(reference.designID).map { item in
+                var pinned = reference
+                pinned.revision = reference.revision ?? item.revision
+                let board = reference.board.flatMap { item.index.boards[$0]?.title }
+                let label = ([item.design.name] + [board].compactMap { $0 }).joined(separator: " › ")
+                return .referencePinned(RemoteDesignReferencePin(reference: pinned, label: label, design: item.design.name, boardTitle: board,
+                                                                 pageTitle: nil, elementLabel: nil, elementName: nil, width: nil, height: nil,
+                                                                 outline: DesignReferenceOutline(kind: pinned.kind, styles: 11, tokens: 6,
+                                                                                                 system: item.design.systemNamespace)))
+            }
+        case .referenceKept:
+            return .failure(Refusal(code: "no_such_reference", message: "The fixture keeps no copies."))
+        case .referenceFreshness:
+            return .success(.referenceFreshness(.current))
+        case .referenceLookedAt:
+            return .success(.referenceLookedAt(nil))
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions,
-             .create, .sendMarkup, .settleProposals, .delete, .undoDelete:
+             .create, .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents,
+             .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
+             .importBegin, .importChunk, .importFinish, .importCancel:
             return .failure(Refusal(code: "fixture", message: "The fixture host changes nothing."))
         }
     }

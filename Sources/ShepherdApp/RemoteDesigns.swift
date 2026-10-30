@@ -246,6 +246,7 @@ extension ShepherdViewModel {
     func loadRemoteDesigns() async {
         for connection in remoteHosts.connections where connection.supportsDesigns {
             await connection.designs.refresh()
+            remoteReferencesDesignsChanged(connection.id)
             guard let listing = connection.designs.listing, let rendering = remoteDesignRendering(connection.id) else { continue }
             for summary in listing.designs {
                 guard let first = summary.firstBoard else { continue }

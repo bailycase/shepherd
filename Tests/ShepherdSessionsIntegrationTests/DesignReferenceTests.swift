@@ -646,6 +646,27 @@ struct DesignReferenceIntegrationTests {
         try await eventually("the reference to reach pi") { lastRecord(pi)?.ref == pin.reference.string }
         #expect(lastRecord(pi)?.boardTitle == "A · Funnel first", "the host read it from its own design")
         #expect(!grants(r.host, pi.agent.id).isEmpty && !copies(r.host, pi.agent.id).isEmpty)
+
+        // The chips' reads: the copy kept (its picture with it), how it and a pin stand, a "Looked at…" line.
+        let payloadID = try #require(lastRecord(pi)?.payloadID)
+        func ask(_ id: Int, _ request: RemoteDesignRequest) async throws -> RemoteDesignResult? {
+            try client.send(.design(id: id, request: request))
+            let frames = try await client.frames { if case .design(id, _) = $0 { true } else if case .error(id, _, _) = $0 { true } else { false } }
+            if case .design(_, let result)? = frames.last { return result }
+            return nil
+        }
+        guard case .referenceKept(let payload, let picture, let freshness)? = try await ask(6, .referenceKept(agentID: pi.agent.id, payloadID: payloadID)) else {
+            Issue.record("expected the kept copy"); return
+        }
+        #expect(payload.id == payloadID && payload.boardTitle == "A · Funnel first" && freshness == .current)
+        #expect(picture != nil, "the picture rides along while it fits one reply")
+        #expect(try await ask(7, .referenceFreshness(pin.reference)) == .referenceFreshness(.current))
+        guard case .referenceLookedAt(let line?)? = try await ask(8, .referenceLookedAt(agentID: pi.agent.id, ref: pin.reference.string,
+                                                                                           aspects: [.summary])) else {
+            Issue.record("expected a Looked at line"); return
+        }
+        #expect(line.title.contains("A · Funnel first"))
+        #expect(try await ask(9, .referenceKept(agentID: AgentID(), payloadID: payloadID)) == nil, "another thread's copy is no thread's")
     }
 
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {

@@ -6743,6 +6743,13 @@ public final class SessionServer: @unchecked Sendable {
         return try await designSystems.contents(namespace).files
     }
 
+    /// One file of a design system by its path, or nil (`RemoteDesignRequest.systemFile`). Read on
+    /// the store's queue.
+    public func designSystemFile(_ namespace: String, path: String) async throws -> Data? {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        return try await designSystems.file(namespace, path: path)
+    }
+
     /// What `system_read` lists for a design's agent: every system, and the ones the design has
     /// installed, its own first.
     public func designSystemListing(_ designID: DesignID) async throws -> DesignSystemListing {

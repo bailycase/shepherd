@@ -25,8 +25,8 @@ final class MobileDesigns {
     private(set) var swatches: [String: [String]] = [:]
     /// The hosts serving designs now.
     private(set) var serving: Set<UUID> = []
-    /// The design deleted last, while its host holds it for Undo.
-    private(set) var deleted: (ref: HostDesignRef, name: String, id: UUID)?
+    /// The design deleted last, while its host holds it for Undo (the screenshot fixtures set it).
+    var deleted: (ref: HostDesignRef, name: String, id: UUID)?
     /// Why the last design action failed, until dismissed.
     private(set) var problem: String?
     /// Moves when a host's systems change: a system's page reads its system again.
@@ -345,6 +345,24 @@ final class MobileDesigns {
         return agent.map { AgentRef(host: host, agent: $0) }
     }
 
+    /// Each serving host's system builds still reading their space (their agent hasn't written a
+    /// system yet), for Design systems' Building section.
+    var builds: [(host: UUID, hostName: String, build: Design, space: String?)] {
+        hosts.hosts.filter { serving.contains($0.id) }.flatMap { host -> [(host: UUID, hostName: String, build: Design, space: String?)] in
+            let built = Set(library(host.id)?.listing?.systems.compactMap(\.info.ownerDesignID) ?? [])
+            return host.state.designs.filter { $0.buildsSystem && !built.contains($0.id) }.map { build in
+                (host.id, host.name, build, build.sourceSpaceID.flatMap { id in host.state.spaces.first { $0.id == id }?.name })
+            }
+        }
+    }
+
+    /// A build's agent there, while it has one.
+    func buildAgent(host: UUID, build: DesignID) -> AgentRef? {
+        guard let state = hosts.host(host)?.state, let design = state.designs.first(where: { $0.id == build }) else { return nil }
+        let agent = state.agents.first { $0.id == design.agentID } ?? state.agents.first { $0.designID == build }
+        return agent.map { AgentRef(host: host, agent: $0.id) }
+    }
+
     /// The spaces of each host that builds systems for other devices (`design.systems.v1`).
     var buildableSpaces: [(host: UUID, name: String, spaces: [Space])] {
         hosts.hosts.filter { supports($0.id, RemoteProtocol.designSystemsCapability) }.map { host in
@@ -357,8 +375,7 @@ final class MobileDesigns {
         guard let library = library(host) else { throw MobileDesignsError.offline }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        let (design, _) = try await library.importProject(name: url.lastPathComponent, data: data, progress: progress)
+        let (design, _) = try await library.importProject(file: url, progress: progress)
         await list(host)
         return HostDesignRef(host: host, design: design)
     }
@@ -391,6 +408,53 @@ final class MobileDesigns {
         case .systemSynced(let synced): return synced.summary
         default: return nil
         }
+    }
+
+    // MARK: References (design.references.v1)
+
+    /// A piece of `host`'s design pinned by the host (named `local`, as the host sees it).
+    func pinReference(host: UUID, _ reference: DesignReference) async throws -> RemoteDesignReferencePin {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        guard case .referencePinned(let pin) = try await library.request(.pinReference(reference)) else { throw MobileDesignsError.unexpected }
+        return pin
+    }
+
+    /// A pasted or picked reference for a thread on `host`, named as that host sees it: one this
+    /// device copied names the host (`remote(host)`), one from the host's own thread `local`; one
+    /// naming any other Mac is refused (that host can't read it).
+    static func onHost(_ reference: DesignReference, host: UUID) throws -> DesignReference {
+        switch reference.host {
+        case .local: return reference
+        case .remote(let id) where id == host: return reference.onHost(host) ?? reference
+        case .remote: throw RemoteHostClientError.rejected(code: "remote_design", message: RemoteHostClient.designReferencesRefusal)
+        }
+    }
+
+    /// Pins a reference and puts it beside the draft of a thread on that host.
+    func attachReference(_ reference: DesignReference, to store: NativeThreadStore, host: UUID) async throws {
+        let pin = try await pinReference(host: host, try Self.onHost(reference, host: host))
+        let attached = NativeAttachedReference(reference: pin.reference, label: pin.label ?? DesignReferencePresentation.crumbs(
+            DesignReferenceRecord(ref: pin.reference.string, design: pin.design, boardTitle: pin.boardTitle)).joined(separator: " › "),
+                                               outline: pin.outline)
+        guard store.attach(reference: attached) else {
+            throw RemoteHostClientError.rejected(code: "too_many", message: "A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
+        }
+    }
+
+    /// The host's ordinary threads a piece can go to: never a design's agent, a Project's
+    /// coordinator or worker, most recently active first.
+    func referenceThreads(host: UUID) -> [Agent] {
+        guard let state = hosts.host(host)?.state else { return [] }
+        let workers = state.projectWorkerIDs
+        return state.agents.filter { state.isSidebarThread($0, workers: workers) && $0.designID == nil }
+            .sorted { ($0.lastActiveAt ?? -1) > ($1.lastActiveAt ?? -1) }
+    }
+
+    /// Implement in a thread…: `references` (pinned, `local`) and `text` to one of the host's
+    /// threads now, waiting while its pi starts.
+    func sendReferences(_ references: [NativeAttachedReference], text: String, to agent: AgentRef) async throws {
+        guard let client = hosts.host(agent.host)?.connectedClient else { throw MobileDesignsError.offline }
+        try await NativeReferenceSend.send(references, text: text) { try await client.nativeThread(agentID: agent.agent, request: $0) }
     }
 
     // MARK: Lookups
