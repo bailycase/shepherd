@@ -279,6 +279,9 @@ enum RemoteSamples {
         .subagentSave(file: "reviewer.md", text: "---\nname: reviewer\n---\n", fingerprint: "ab12"),
         .subagentDelete(file: "team/scout.md", fingerprint: "cd34"), .subagentRestoreDefaults(expected: ["reviewer.md": "ab12"]),
         .providerKey(provider: "openai", key: "$OPENAI_API_KEY"), .providerSignOut(provider: "openai"), .providerSignIn(provider: "anthropic"),
+        .providerAccount(provider: "anthropic", action: .use(id: "a1")), .providerAccount(provider: "anthropic", action: .remove(id: "a1")),
+        .providerAccount(provider: "anthropic", action: .rename(id: "a1", name: "work")), .providerAccount(provider: "anthropic", action: .rotate(true)),
+        .providerAccount(provider: "anthropic", action: .add),
         .signIn(id: op, action: .poll), .signIn(id: op, action: .complete("code#state")), .signIn(id: op, action: .cancel),
     ]
     static let configResults: [RemoteHostConfigResult] = [
@@ -286,6 +289,10 @@ enum RemoteSamples {
         .subagents([HostSubagentProfile(file: "reviewer.md", name: "reviewer", isDefault: true, fingerprint: "ab12")]),
         .subagent(HostSubagentProfileText(file: "reviewer.md", text: "Review.\n", fingerprint: "ab12")),
         .providers([HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey)]),
+        .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .signedIn, accounts: 2, activeAccount: "work",
+                                       accountList: [HostProviderAccount(id: "a1", name: "work", active: true),
+                                                     HostProviderAccount(id: "a2", name: "home", active: false, limitedUntil: 1_700_000_000)],
+                                       rotate: true)]),
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai/oauth", wantsCode: true)),
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "GitHub Copilot", authorizationURL: "https://github.com/login/device", deviceCode: "AB-12")),
         .signIn(HostSignInProgress(id: op, phase: .failed, name: "linear", message: "Cancelled.")),

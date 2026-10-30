@@ -540,6 +540,7 @@ final class ShepherdViewModel {
     /// A remote host's settings and configuration as Settings shows them (`settingsHostID`).
     @ObservationIgnored let remoteHostSettings = ClientHostSettings()
     @ObservationIgnored let remoteHostConfig = ClientHostConfig()
+    @ObservationIgnored let remoteSuggestions = ClientSuggestions()
     var subagentDefinitions: SubagentDefinitionsModel {
         if let madeSubagentDefinitions { return madeSubagentDefinitions }
         let model = SubagentDefinitionsModel(pi: server.pi)

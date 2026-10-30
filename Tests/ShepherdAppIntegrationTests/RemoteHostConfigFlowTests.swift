@@ -125,4 +125,53 @@ struct RemoteHostConfigFlowTests {
         #expect(!profiles.contains { $0.file == "remote.md" })
         #expect(profiles.filter(\.isDefault).allSatisfy { $0.fingerprint != nil })
     }
+
+    /// A secret written literally into the host's file never reaches a client, and an edit that
+    /// carries the mask back keeps it.
+    @Test func aLiteralValueInTheHostsFileIsMaskedAndKeptThroughAnEdit() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let cli = MCPSettingsControlTests.RecordingCLI()
+        cli.list = MCPSettingsControlTests.listJSON([("pg", "connected", ["query"])])
+        let literal = "postgres://app:hunter2@db/prod"
+        let secrets = InMemorySecretStore()
+        let store = try MCPSettingsControlTests.store(config: #"{ "mcpServers": { "pg": { "command": "uvx", "args": ["postgres-mcp"], "env": { "DATABASE_URI": "\#(literal)" } } } }"#,
+                                                      cli: cli, pasteboard: MCPSettingsControlTests.Pasteboard(), secrets: secrets)
+        try await app.start(mcp: store)
+        let client = try await Self.connect(app)
+        defer { client.disconnect() }
+
+        guard case .mcpEntry(let json) = try await client.hostConfig(.mcpEntry(name: "pg")) else { Issue.record("expected JSON"); return }
+        #expect(!json.contains("hunter2") && json.contains(HostConfigMapping.mask))
+        _ = try await client.hostConfig(.mcpSave(json: json.replacingOccurrences(of: "postgres-mcp", with: "postgres-mcp-pro"), secrets: [:], replacing: "pg"))
+        #expect(store.entry("pg")?.args == ["postgres-mcp-pro"])
+        // Kept as it was, or moved to the Keychain as Settings moves every secret-looking value.
+        let kept = store.entry("pg")?.env["DATABASE_URI"]
+        #expect(kept == literal || (kept == "${keychain:pg/DATABASE_URI}" && secrets.value(for: "secret/pg/DATABASE_URI") == literal),
+                "the host kept its own value: \(kept ?? "none")")
+    }
+
+    /// Settings' one host choice reaches Instructions per host, and leaves Same on every host alone.
+    @Test func instructionsFollowTheSettingsHostPerHostOnly() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let host = UUID()
+        vm.instructions.sameEverywhere = true
+        vm.settingsHostID = host
+        vm.followSettingsHost(on: .instructions, entering: true)
+        #expect(vm.instructions.machine == .local)
+        vm.instructions.sameEverywhere = false
+        vm.followSettingsHost(on: .instructions, entering: true)
+        #expect(vm.instructions.machine == .remote(host))
+        vm.settingsHostID = nil
+        vm.followSettingsHost(on: .instructions, entering: false)
+        #expect(vm.instructions.machine == .local)
+        // Spaces keeps All hosts when its page opens, and follows a choice made with it open.
+        vm.projects.host = "all"
+        vm.followSettingsHost(on: .projects, entering: true)
+        #expect(vm.projects.host == "all")
+        vm.followSettingsHost(on: .projects, entering: false)
+        #expect(vm.projects.host == "local")
+    }
 }

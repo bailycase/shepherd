@@ -151,7 +151,7 @@ public struct HostSubagentProfileText: Codable, Hashable, Sendable {
 }
 
 /// One provider of a host's pi and how its sign-in stands, as Settings ▸ Sign-in's row says it.
-/// Never a key, token or account identifier: a client shows the state and says to sign in on the host.
+/// Never a key or token: the state, its words, and saved accounts by opaque id and name.
 public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     public enum Auth: String, Codable, Hashable, Sendable, CaseIterable {
         case signedIn
@@ -181,9 +181,15 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     /// How many accounts the host saved for it, and the active one's name when there are several.
     public var accounts: Int
     public var activeAccount: String?
+    /// The saved accounts, once there are two, with `hostConfigCapability`; nil from an older host.
+    public var accountList: [HostProviderAccount]?
+    /// Switches to the next account when the active one hits a limit.
+    public var rotate: Bool?
 
     public init(id: String, name: String, badge: String, auth: Auth, detail: String? = nil, problem: String? = nil,
-                accounts: Int = 0, activeAccount: String? = nil) {
+                accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil) {
+        self.accountList = accountList
+        self.rotate = rotate
         self.id = id
         self.name = name
         self.badge = badge
@@ -199,5 +205,21 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
         case .signedIn, .apiKey, .environment, .noKey: true
         case .expired, .notSignedIn, .signingIn: false
         }
+    }
+}
+
+/// One saved account of a provider: its opaque id and the name it was given; never a credential.
+public struct HostProviderAccount: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var active: Bool
+    /// Rotation skips it until then (seconds since 1970).
+    public var limitedUntil: Double?
+
+    public init(id: String, name: String, active: Bool, limitedUntil: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.active = active
+        self.limitedUntil = limitedUntil
     }
 }

@@ -27,11 +27,12 @@ extension ShepherdViewModel {
         switch request {
         case .mcpEntry(let name):
             mcp.reload()
-            guard let json = mcp.json(for: name) else { throw RemoteCreateAgentError("No MCP server is named \(name).") }
-            return .mcpEntry(json: json)
+            guard let entry = mcp.entry(name) else { throw RemoteCreateAgentError("No MCP server is named \(name).") }
+            return .mcpEntry(json: HostConfigMapping.maskedJSON(entry))
         case .mcpSave(let json, let secrets, let replacing):
             mcp.reload()
-            var entry = try HostConfigMapping.entry(json, secrets: secrets)
+            let parsedName = try HostConfigMapping.entry(json, secrets: [:], existing: nil, keepingMasks: true).name
+            var entry = try HostConfigMapping.entry(json, secrets: secrets, existing: mcp.entry(replacing ?? parsedName))
             if let replacing {
                 guard let old = mcp.entry(replacing) else { throw RemoteCreateAgentError("No MCP server is named \(replacing).") }
                 // An edit keeps the Mac's own switches (on, exposure, tools) unless it sets them.
@@ -117,6 +118,31 @@ extension ShepherdViewModel {
             }
             if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
             return .signIn(try remoteSignIns.startProvider(subscription, auth: piAuth))
+        case .providerAccount(let provider, let action):
+            try HostConfigMapping.requireProvider(provider)
+            switch action {
+            case .use(let id): await piAuth.switchAccount(provider, to: id)
+            case .remove(let id): await piAuth.removeAccount(provider, id)
+            case .rename(let id, let name):
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, trimmed.count <= 64 else { throw RemoteCreateAgentError("Enter a name of up to 64 characters.") }
+                await piAuth.renameAccount(provider, id, to: trimmed)
+            case .rotate(let on): await piAuth.setRotate(provider, on)
+            case .add:
+                guard let subscription = PiSignInCatalog.subscription(provider) else {
+                    throw RemoteCreateAgentError("Add another \(PiSignInCatalog.name(provider)) key on the host.")
+                }
+                if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
+                guard await piAuth.beginAddingRemotely(provider) else {
+                    throw RemoteCreateAgentError(piAuth.problems[provider] ?? "Couldn’t add an account.")
+                }
+                do { return .signIn(try remoteSignIns.startProvider(subscription, auth: piAuth)) } catch {
+                    piAuth.stopAdding(provider)
+                    throw error
+                }
+            }
+            if let problem = piAuth.problems[provider] { throw RemoteCreateAgentError(problem) }
+            return .providers(await hostProviders())
         case .signIn(let id, let action):
             return .signIn(try await remoteSignIns.act(id, action))
         }
@@ -183,9 +209,31 @@ extension ShepherdViewModel {
 enum HostConfigMapping {
     static let keyTimeout: Duration = .seconds(60)
 
+    /// What a remote read shows in place of a value written literally into the host's file.
+    static let mask = "••••••••"
+
+    /// A value a client may read: references (`${keychain:…}`, `${VAR}`), an auth scheme before
+    /// one ("Bearer ${…}") and empty values as written; anything else written literally is masked.
+    static func masked(_ value: String) -> String {
+        let rest = value.replacingOccurrences(of: #"\$\{[^}]*\}"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty || ["bearer", "token", "basic"].contains(rest.lowercased()) ? value : mask
+    }
+
+    /// One server's entry as `{"mcpServers": {name: …}}` JSON for a remote client, without
+    /// Shepherd's fields and with every literal env and header value masked.
+    static func maskedJSON(_ entry: MCPServerEntry) -> String {
+        var copy = entry
+        if !copy.env.isEmpty { copy.env = copy.env.mapValues(masked) }
+        if !copy.headers.isEmpty { copy.headers = copy.headers.mapValues(masked) }
+        return MCPJSON.write(.object([MCPConfigDocument.serversKey: .object([entry.name: .object(copy.withoutShepherd)])]))
+    }
+
     /// One server from `{"mcpServers": {name: …}}` JSON. A key named in `secrets` must be one of
-    /// its env or header keys; its value in the file becomes the Keychain reference.
-    static func entry(_ json: String, secrets: [String: String]) throws -> MCPServerEntry {
+    /// its env or header keys; its value in the file becomes the Keychain reference. A value the
+    /// client read masked (`mask`) keeps `existing`'s value for that key.
+    static func entry(_ json: String, secrets: [String: String], existing: MCPServerEntry? = nil,
+                      keepingMasks: Bool = false) throws -> MCPServerEntry {
         guard json.utf8.count <= 64 * 1024 else { throw RemoteCreateAgentError("The server's JSON is too long.") }
         let entries: [MCPServerEntry]
         switch MCPImport.parse(json) {
@@ -195,6 +243,16 @@ enum HostConfigMapping {
         guard entries.count == 1, var entry = entries.first else { throw RemoteCreateAgentError("Send one server at a time.") }
         guard MCPServerName.isValid(entry.name) else { throw RemoteCreateAgentError("Server names use letters, digits, - and _ only.") }
         var env = entry.env, headers = entry.headers
+        if !keepingMasks {
+            for (key, value) in env where value == mask {
+                guard let kept = existing?.env[key] else { throw RemoteCreateAgentError("Enter a value for \(key): the host has none to keep.") }
+                env[key] = kept
+            }
+            for (key, value) in headers where value == mask {
+                guard let kept = existing?.headers[key] else { throw RemoteCreateAgentError("Enter a value for \(key): the host has none to keep.") }
+                headers[key] = kept
+            }
+        }
         for key in secrets.keys {
             let reference = MCPSecretReference.reference(server: entry.name, name: key)
             if env[key] != nil { env[key] = reference } else if headers[key] != nil { headers[key] = reference } else {
@@ -321,6 +379,7 @@ final class RemoteSignIns {
                     bridge.close()
                 case .failed(let failure):
                     run.progress = HostSignInProgress(id: run.progress.id, phase: .failed, name: run.progress.name, message: failure.reason)
+                    auth.stopAdding(subscription.id)
                     bridge.close()
                 default: break
                 }
@@ -328,12 +387,14 @@ final class RemoteSignIns {
             if let run, run.isLive {
                 run.progress = HostSignInProgress(id: run.progress.id, phase: .failed, name: run.progress.name,
                                                   message: "The sign-in stopped before it finished.")
+                auth.stopAdding(subscription.id)
             }
         }
         run.cancel = {
             bridge.send(.cancel)
             bridge.close()
             reader.cancel()
+            auth.stopAdding(subscription.id)
         }
         run.complete = { [weak run] code in
             guard let run, let prompt = run.promptID, !code.isEmpty else {
@@ -350,6 +411,9 @@ final class RemoteSignIns {
 
     /// `pi mcp login` for one server. pi listens on this Mac's loopback for the browser's return;
     /// the client sends the address its browser ended on, and this Mac makes that one request.
+    /// pi's CLI also opens the page in this Mac's own browser: it has no flag or variable to stop
+    /// it (only its in-process `openUrl` option, which the CLI doesn't expose). That page is
+    /// harmless left alone; the client says so (docs/remote-protocol.md › hostConfig).
     func startMCP(_ name: String, store: MCPStore) throws -> HostSignInProgress {
         let run = try begin(key: "mcp:" + name, name: name)
         let task = Task { @MainActor [weak run, weak store] in

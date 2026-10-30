@@ -203,4 +203,49 @@ struct HostSettingsMappingTests {
             try HostConfigMapping.entry(#"{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}}}"#, secrets: [:])
         }
     }
+
+    /// A remote read never carries a value written literally into the host's file: references and
+    /// an auth scheme before one stay, anything else is masked.
+    @Test func aRemoteReadMasksLiteralValues() throws {
+        #expect(HostConfigMapping.masked("${keychain:gh/TOKEN}") == "${keychain:gh/TOKEN}")
+        #expect(HostConfigMapping.masked("${GITHUB_TOKEN}") == "${GITHUB_TOKEN}")
+        #expect(HostConfigMapping.masked("Bearer ${keychain:gh/Authorization}") == "Bearer ${keychain:gh/Authorization}")
+        #expect(HostConfigMapping.masked("") == "")
+        for literal in ["ghp_live123", "Bearer ghp_live123", "x ${VAR}", "debug"] {
+            #expect(HostConfigMapping.masked(literal) == HostConfigMapping.mask, "\(literal)")
+        }
+        var entry = MCPServerEntry.local("pg", command: "uvx", env: ["DATABASE_URI": "postgres://u:hunter2@db", "REF": "${keychain:pg/REF}"])
+        entry.json["shepherd"] = .object(["enabled": .bool(false)])
+        let json = HostConfigMapping.maskedJSON(entry)
+        #expect(!json.contains("hunter2") && json.contains(HostConfigMapping.mask) && json.contains("${keychain:pg/REF}"))
+        #expect(!json.contains("shepherd"))
+
+        // A save that carries the mask keeps the host's value; one with nothing to keep is refused.
+        let kept = try HostConfigMapping.entry(json, secrets: [:], existing: entry)
+        #expect(kept.env["DATABASE_URI"] == "postgres://u:hunter2@db" && kept.env["REF"] == "${keychain:pg/REF}")
+        #expect(throws: RemoteCreateAgentError.self) { try HostConfigMapping.entry(json, secrets: [:], existing: nil) }
+        let typed = try HostConfigMapping.entry(json.replacingOccurrences(of: HostConfigMapping.mask, with: "postgres://new"), secrets: [:], existing: entry)
+        #expect(typed.env["DATABASE_URI"] == "postgres://new")
+    }
+
+    /// A provider's saved accounts reach a client by opaque id and name, with rotation; one
+    /// account alone sends none.
+    @Test func aProvidersAccountsReachAClientWithoutCredentials() {
+        let list = PiAccountList(accounts: [PiAccount(id: "a1", name: "work"), PiAccount(id: "a2", name: "home", limitedUntil: Date(timeIntervalSince1970: 2_000_000_000))],
+                                 active: "a1", rotate: true)
+        var row = ProviderRowModel(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .signedIn(plan: "Claude Pro or Max"))
+        row.accounts = list
+        let status = HostInventoryMapping.provider(row)
+        #expect(status.accountList == [HostProviderAccount(id: "a1", name: "work", active: true),
+                                      HostProviderAccount(id: "a2", name: "home", active: false, limitedUntil: 2_000_000_000)])
+        #expect(status.rotate == true && status.activeAccount == "work")
+        row.accounts = PiAccountList(accounts: [PiAccount(id: "a1", name: "work")], active: "a1", rotate: false)
+        #expect(HostInventoryMapping.provider(row).accountList == nil)
+    }
+
+    /// The host's own words for a server's sign-in name no machine: a client may be another Mac.
+    @Test func aServersSignInColumnIsHostNeutral() {
+        #expect(HostInventoryMapping.signIn(.signIn) == "Not signed in")
+        #expect(HostInventoryMapping.signIn(.expired) == "Expired")
+    }
 }

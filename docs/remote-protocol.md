@@ -146,22 +146,29 @@
     extension list gains `designReferences`.
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
-    `providers`), answered by the GUI. A sign-in column in words, a key's variable name but never
-    its mask, account counts but no identifiers; nothing here changes the host. With
+    `providers`), answered by the GUI. A sign-in column in words that name no machine ("Not
+    signed in", "Expired"; an older host's "Sign in on the Mac" reads as the state alone),
+    a key's variable name but never its mask, account counts (with `hostConfig.v1`, each saved
+    account's opaque id and name), never a credential; nothing here changes the host. With
     `hostConfig.v1` it adds each server's exposure, tool names, allowed tools and OAuth state, and
     each profile's fingerprint.
   - `hostConfig` (`hostConfig.v1`, `RemoteHostConfigRequest`): changes what `hostInventory`
     reads, answered by the GUI through the stores its own Settings uses. MCP: read one entry's
-    JSON (Keychain secrets stay `${keychain:…}` references), save (add, or edit with `replacing`;
+    JSON (references such as `${keychain:…}` and `${VAR}` stay as written; any other env or header
+    value is masked as `••••••••`, and a save that carries the mask back keeps the host's value),
+    save (add, or edit with `replacing`;
     `secrets` go to the host's Keychain and the file gets references), on/off, exposure, tools,
     remove, import, check again, sign in and out. Subagent profiles: save, delete and restore
     defaults, each fenced by the fingerprint the client read. Providers: save an API key (checked
-    with the provider first; `$NAME` names a login-shell variable), sign out, and an account
-    sign-in. A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
+    with the provider first; `$NAME` names a login-shell variable), sign out, an account sign-in,
+    and the saved accounts (`providerAccount`: use, rename, remove, rotate, add another; their
+    ids are opaque and `HostProviderStatus.accountList` lists them once there are two). A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
     `HostSignInProgress`: the page to open on the client, a device code, or that the host waits
     for `signIn(.complete)` with the code the page shows (a provider's pasted-code flow; nothing
     opens on the host) or, for an MCP server, the loopback address the browser ended on, which the
-    host relays only when it matches pi's `redirect_uri` and `state`. At most four run at once and
+    host relays only when it matches pi's `redirect_uri` and `state`. `pi mcp login` also opens
+    the page in the host's own browser: pi's CLI has no flag or variable to stop it, so clients
+    say it can be left alone. At most four run at once and
     each is gone 330 seconds after it starts. A reply never carries a secret; a client that lacks
     the capability refuses before sending. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to

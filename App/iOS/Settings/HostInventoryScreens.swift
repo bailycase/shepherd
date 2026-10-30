@@ -26,7 +26,7 @@ struct MCPServersScreen: View {
                     SHBanner(.failed, title: problem)
                 }
                 HostSignInPanel(config: config, host: host, page: .mcp,
-                                codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1).")
+                                codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1). The page may also open in \(host.name)'s own browser; leave it.")
                 if let editor {
                     MCPServerEditor(editor: editor, busy: config.busy.contains(host.id)) { json, secrets in
                         Task {
@@ -205,7 +205,7 @@ private struct MCPServerLine: View {
                     .foregroundStyle(server.note != nil ? sh.failed : sh.textTertiary)
                     .lineLimit(2)
                     .truncationMode(.middle)
-                if let signIn = server.signIn {
+                if let signIn = HostInventoryPresentation.signInWord(server.signIn) {
                     Text(signIn)
                         .font(.sh(.caption))
                         .foregroundStyle(sh.textSecondary)
@@ -421,6 +421,11 @@ struct ProvidersScreen: View {
                                             .padding(.trailing, SH.Space.l)
                                         }
                                     }
+                                    if let accounts = provider.accountList {
+                                        ProviderAccounts(provider: provider, accounts: accounts, editable: editable) { action in
+                                            Task { await config.perform(.providerAccount(provider: provider.id, action: action), on: host) }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -437,6 +442,51 @@ struct ProvidersScreen: View {
     }
 }
 
+/// A provider's saved accounts, once there are two: each with Use, Rename and Remove, then
+/// whether the next takes over at a limit.
+private struct ProviderAccounts: View {
+    let provider: HostProviderStatus
+    let accounts: [HostProviderAccount]
+    let editable: Bool
+    let act: (HostProviderAccountAction) -> Void
+    @State private var renaming: HostProviderAccount?
+    @State private var name = ""
+
+    var body: some View {
+        ForEach(accounts) { account in
+            SettingsControlRow(account.name, note: HostInventoryPresentation.accountLine(account)) {
+                if editable {
+                    HStack(spacing: SH.Space.s) {
+                        if !account.active {
+                            Button("Use") { act(.use(id: account.id)) }
+                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                                .accessibilityLabel("Use \(account.name) for \(provider.name)")
+                        }
+                        Menu {
+                            Button("Rename…") { name = account.name; renaming = account }
+                            Button("Remove", role: .destructive) { act(.remove(id: account.id)) }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.sh(.ui))
+                                .foregroundStyle(Color.sh.textSecondary)
+                                .frame(minWidth: SHListMetrics.rowHeight, minHeight: SHListMetrics.rowHeight)
+                        }
+                        .accessibilityLabel("\(account.name) actions")
+                    }
+                }
+            }
+        }
+        SettingsSwitchRow("Switch accounts at a limit", note: "When the active account hits its limit, the next one takes over.",
+                          isOn: provider.rotate == true) { act(.rotate($0)) }
+            .disabled(!editable)
+            .alert("Rename \(renaming?.name ?? "account")", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField("Name", text: $name)
+                Button("Rename") { if let renaming { act(.rename(id: renaming.id, name: name)) } }
+                Button("Cancel", role: .cancel) {}
+            }
+    }
+}
+
 /// A provider's one action: Sign in or Sign out for a subscription, Set key or Remove for a key.
 private struct ProviderAction: View {
     let provider: HostProviderStatus
@@ -447,8 +497,16 @@ private struct ProviderAction: View {
     var body: some View {
         let signedIn = provider.auth == .signedIn || provider.auth == .apiKey
         if signedIn {
-            Button(subscription ? "Sign out" : "Remove") { run(.providerSignOut(provider: provider.id)) }
-                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+            Menu {
+                if subscription {
+                    Button("Add account") { run(.providerAccount(provider: provider.id, action: .add)) }
+                }
+                Button(subscription ? "Sign out" : "Remove", role: .destructive) { run(.providerSignOut(provider: provider.id)) }
+            } label: {
+                Text(subscription ? "Account" : "Key")
+                    .font(.sh(.caption, weight: .medium))
+                    .foregroundStyle(Color.sh.textSecondary)
+            }
         } else if subscription {
             Button(provider.auth == .expired ? "Sign in again" : "Sign in") { run(.providerSignIn(provider: provider.id)) }
                 .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))

@@ -38,6 +38,28 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Settings' one host choice reaches the pages that keep their own chooser: Instructions
+    /// (per host; Same on every host keeps editing every host), and Spaces (its filter, which
+    /// can still show All hosts). `entering` is a page opening: Spaces keeps its filter then.
+    func followSettingsHost(on section: SettingsSection, entering: Bool) {
+        switch section {
+        case .instructions:
+            guard !instructions.sameEverywhere else { return }
+            let machine: InstructionsModel.Machine = settingsHostID.map { .remote($0) } ?? .local
+            if instructions.machine != machine { instructions.machine = machine }
+        case .projects where !entering:
+            let id = settingsHostID?.uuidString ?? "local"
+            if projects.host != id, id == "local" || projects.hostOptions.contains(where: { $0.0 == id }) { projects.host = id }
+        default:
+            break
+        }
+    }
+
+    /// A page's own chooser moved: the Settings host follows it.
+    func adoptSettingsHost(_ id: UUID?) {
+        if settingsHostID != id { settingsHostID = id }
+    }
+
     /// The remote host a host-level page shows; nil for this Mac (or a host since removed).
     var remoteSettingsHost: SettingsHost? {
         settingsHostID.flatMap { id in settingsHosts.first { $0.id == id } }
@@ -73,6 +95,7 @@ struct RemoteHostSettingsPage: View {
     let host: SettingsHost
     let settings: ClientHostSettings
     let config: ClientHostConfig
+    let suggestions: ClientSuggestions
 
     var body: some View {
         Group {
@@ -83,12 +106,14 @@ struct RemoteHostSettingsPage: View {
                 case .mcp: RemoteMCPPage(host: host, config: config)
                 case .piSignIn: RemoteSignInPage(host: host, config: config)
                 case .subagents: RemoteSubagentsPage(host: host, settings: settings, config: config)
-                default: RemoteSettingsSectionPage(section: section, host: host, settings: settings)
+                default: RemoteSettingsSectionPage(section: section, host: host, settings: settings, suggestions: suggestions)
                 }
             }
         }
         .task(id: Load(host: host.id, connected: host.isConnected)) {
             await settings.refresh(host)
+            if [.agents, .subagents].contains(section) { await settings.loadModels(host) }
+            if section == .experiments { await suggestions.refresh([host]) }
         }
     }
 
@@ -118,6 +143,7 @@ private struct RemoteSettingsSectionPage: View {
     let section: SettingsSection
     let host: SettingsHost
     let settings: ClientHostSettings
+    let suggestions: ClientSuggestions
 
     var body: some View {
         switch settings.state(of: host) {
@@ -148,9 +174,10 @@ private struct RemoteSettingsSectionPage: View {
             let defaults = host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability)
             SettingsPage(title: "Agents", explanation: "What new threads on \(host.name) start with. Running threads keep their own.") {
                 SettingsGroup(title: "New threads") {
-                    SettingsRow(title: "Default model", subtitle: "\"provider/id\"; empty uses the agent's own default.") {
-                        CommitField(label: "Default model", prompt: "Agent's default", value: s.defaultModel ?? "") {
-                            settings.post(.defaultModel($0.isEmpty ? nil : $0), on: host)
+                    SettingsRow(title: "Default model") {
+                        ModelMenu(label: "Default model", none: "Agent's default", current: s.defaultModel,
+                                  models: settings.models(of: host, current: s.defaultModel)) {
+                            settings.post(.defaultModel($0), on: host)
                         }
                     }
                     SettingsRow(title: "Default thinking level") {
@@ -165,9 +192,10 @@ private struct RemoteSettingsSectionPage: View {
                             SHSegmentedPicker("Speed for new threads", selection: bind(s.defaultServiceTier) { .defaultServiceTier($0) },
                                               options: ServiceTier.allCases.map { ($0, $0.title) })
                         }
-                        SettingsRow(title: "Session naming model", subtitle: "Empty is Automatic.") {
-                            CommitField(label: "Session naming model", prompt: "Automatic", value: s.namingModel ?? "") {
-                                settings.post(.namingModel($0.isEmpty ? nil : $0), on: host)
+                        SettingsRow(title: "Session naming model") {
+                            ModelMenu(label: "Session naming model", none: "Automatic", current: s.namingModel,
+                                      models: settings.models(of: host, current: s.namingModel)) {
+                                settings.post(.namingModel($0), on: host)
                             }
                         }
                     }
@@ -289,7 +317,7 @@ private struct RemoteSettingsSectionPage: View {
                      RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability].allSatisfy(host.serves) {
                     NeedsNewer(host: host)
                 }
-                SettingsNote(text: "Suggested instructions is set per host from This Mac's Experiments page and the iPhone.")
+                RemoteSuggestions(host: host, model: suggestions)
             }
         default:
             EmptyView()
@@ -308,27 +336,22 @@ private struct RemoteSettingsSectionPage: View {
     }
 }
 
-/// A text field that sends its value when Return is pressed or it loses focus.
-private struct CommitField: View {
+/// A model menu from the host's own catalog (`listModels`): the "none" choice, then every model,
+/// the current one kept when the catalog lacks it.
+private struct ModelMenu: View {
     let label: String
-    let prompt: String
-    let value: String
-    let commit: (String) -> Void
-    @State private var text = ""
-    @FocusState private var focused: Bool
+    let none: String
+    let current: String?
+    let models: [String]
+    let choose: (String?) -> Void
 
     var body: some View {
-        SettingsTextField(label: label, prompt: prompt, text: $text, mono: true)
-            .focused($focused)
-            .onSubmit { send() }
-            .onChange(of: focused) { if !focused { send() } }
-            .onAppear { text = value }
-            .onChange(of: value) { if !focused { text = value } }
-    }
-
-    private func send() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed != value { commit(trimmed) }
+        SHPopupMenu(current ?? none, mono: current != nil, minWidth: AppLayout.settingsPopupWidth) {
+            Button(none) { choose(nil) }
+            Divider()
+            ForEach(models, id: \.self) { model in Button(model) { choose(model) } }
+        }
+        .accessibilityLabel(label)
     }
 }
 
@@ -354,9 +377,10 @@ private struct RemoteSubagentsPage: View {
                         SHStepper("Concurrency", value: Binding(get: { d.concurrency }, set: { var n = d; n.concurrency = $0; post(n) }),
                                   in: HostSettings.SubagentDefaults.concurrencyRange)
                     }
-                    SettingsRow(title: "Model", subtitle: "Empty inherits the parent's.") {
-                        CommitField(label: "Subagent model", prompt: "Inherit parent", value: d.model ?? "") {
-                            var n = d; n.model = $0.isEmpty ? nil : $0; post(n)
+                    SettingsRow(title: "Model") {
+                        ModelMenu(label: "Subagent model", none: "Inherit parent", current: d.model,
+                                  models: settings.models(of: host, current: d.model)) {
+                            var n = d; n.model = $0; post(n)
                         }
                     }
                     SettingsRow(title: "Thinking") {
@@ -478,7 +502,7 @@ private struct RemoteMCPPage: View {
         SettingsPage(title: "MCP servers", explanation: "The MCP servers agents on \(host.name) can use, as its last check found them.") {
             ConfigProblem(host: host, config: config)
             RemoteSignInPanel(host: host, config: config, page: .mcp,
-                              codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1).")
+                              codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1). The page may also open in \(host.name)'s own browser; leave it.")
             if let problem = inventory?.problem { SHBanner(.failed, title: problem) }
             if let editing {
                 SettingsGroup(title: replacing.map { "Edit \($0)" } ?? "Add a server",
@@ -514,7 +538,7 @@ private struct RemoteMCPPage: View {
             }
             SettingsGroup(title: "Servers", trailing: inventory?.configPath) {
                 ForEach(inventory?.servers ?? []) { server in
-                    SettingsRow(title: server.name, subtitle: server.signIn.map { "\(HostInventoryPresentation.serverLine(server)) · \($0)" }
+                    SettingsRow(title: server.name, subtitle: HostInventoryPresentation.signInWord(server.signIn).map { "\(HostInventoryPresentation.serverLine(server)) · \($0)" }
                                 ?? HostInventoryPresentation.serverLine(server)) {
                         if editable {
                             HStack(spacing: SH.Space.s) {
@@ -576,6 +600,13 @@ private struct RemoteSignInPage: View {
     let config: ClientHostConfig
     @State private var keyFor: String?
     @State private var key = ""
+    @State private var renaming: Renaming?
+    @State private var newName = ""
+
+    private struct Renaming: Equatable {
+        var provider: String
+        var account: HostProviderAccount
+    }
 
     var body: some View {
         let editable = config.canEdit(host)
@@ -584,6 +615,20 @@ private struct RemoteSignInPage: View {
             ConfigProblem(host: host, config: config)
             RemoteSignInPanel(host: host, config: config, page: .providers,
                               codePrompt: "After signing in, paste the code (or the whole address) the page shows.")
+            if let renaming {
+                SettingsGroup(title: "Rename \(renaming.account.name)") {
+                    SettingsRow(title: "Name") { SettingsTextField(label: "Account name", prompt: "Work", text: $newName) }
+                    SettingsActionRow {
+                        Button("Cancel") { self.renaming = nil }.buttonStyle(.sh(.secondary))
+                        Button("Rename") {
+                            run(.providerAccount(provider: renaming.provider, action: .rename(id: renaming.account.id, name: newName)))
+                            self.renaming = nil
+                        }
+                        .buttonStyle(.sh(.primary))
+                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
             if let provider = keyFor {
                 SettingsGroup(title: "API key for \(providers.first { $0.id == provider }?.name ?? provider)",
                               footnote: "\(host.name) checks the key with the provider before saving it.") {
@@ -607,15 +652,47 @@ private struct RemoteSignInPage: View {
                 if !rows.isEmpty {
                     SettingsGroup(title: badge == "Subscription" ? "Subscriptions" : badge == "API key" ? "API keys" : "Custom providers") {
                         ForEach(rows) { provider in
+                            let signedIn = provider.auth == .signedIn || provider.auth == .apiKey
                             SettingsRow(title: provider.name, subtitle: provider.problem ?? HostInventoryPresentation.providerLine(provider)) {
                                 if editable, badge != "Custom" {
-                                    let signedIn = provider.auth == .signedIn || provider.auth == .apiKey
-                                    Button(signedIn ? (badge == "Subscription" ? "Sign out" : "Remove") : badge == "Subscription" ? "Sign in" : "Set key") {
-                                        if signedIn { run(.providerSignOut(provider: provider.id)) }
-                                        else if badge == "Subscription" { run(.providerSignIn(provider: provider.id)) }
-                                        else { keyFor = provider.id }
+                                    HStack(spacing: SH.Space.s) {
+                                        if signedIn, badge == "Subscription" {
+                                            Button("Add account") { run(.providerAccount(provider: provider.id, action: .add)) }
+                                                .buttonStyle(.sh(.secondary))
+                                        }
+                                        Button(signedIn ? (badge == "Subscription" ? "Sign out" : "Remove") : badge == "Subscription" ? "Sign in" : "Set key") {
+                                            if signedIn { run(.providerSignOut(provider: provider.id)) }
+                                            else if badge == "Subscription" { run(.providerSignIn(provider: provider.id)) }
+                                            else { keyFor = provider.id }
+                                        }
+                                        .buttonStyle(.sh(.secondary))
                                     }
-                                    .buttonStyle(.sh(.secondary))
+                                }
+                            }
+                            if let accounts = provider.accountList {
+                                ForEach(accounts) { account in
+                                    SettingsRow(title: account.name, subtitle: HostInventoryPresentation.accountLine(account)) {
+                                        if editable {
+                                            HStack(spacing: SH.Space.s) {
+                                                if !account.active {
+                                                    Button("Use") { run(.providerAccount(provider: provider.id, action: .use(id: account.id))) }
+                                                        .buttonStyle(.sh(.secondary))
+                                                        .accessibilityLabel("Use \(account.name) for \(provider.name)")
+                                                }
+                                                SHPopupMenu("More", minWidth: AppLayout.settingsPopupWidth) {
+                                                    Button("Rename…") { renaming = Renaming(provider: provider.id, account: account); newName = account.name }
+                                                    Divider()
+                                                    Button("Remove") { run(.providerAccount(provider: provider.id, action: .remove(id: account.id))) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                SettingsRow(title: "Switch accounts at a limit", subtitle: "When the active \(provider.name) account hits its limit, the next one takes over.") {
+                                    SettingsSwitch(label: "Switch \(provider.name) accounts at a limit",
+                                                   isOn: Binding(get: { provider.rotate == true },
+                                                                 set: { run(.providerAccount(provider: provider.id, action: .rotate($0))) }))
+                                        .disabled(!editable)
                                 }
                             }
                         }
@@ -675,6 +752,72 @@ private struct RemoteSignInPanel: View {
                 }
             }
             .task(id: progress.id) { await config.follow(signInOn: host, page: page) }
+        }
+    }
+}
+
+/// Settings ▸ Experiments ▸ Suggested instructions on one remote host (`suggestions.v1` through
+/// `ClientSuggestions`): the switch, what it learns from and may suggest for, and the lines
+/// waiting there, each added to its file on the host or dismissed.
+private struct RemoteSuggestions: View {
+    let host: SettingsHost
+    let model: ClientSuggestions
+
+    var body: some View {
+        let hosts = [host]
+        if !host.serves(RemoteProtocol.suggestionsCapability) {
+            SettingsNote(text: "Suggested instructions needs a newer Shepherd on \(host.name).")
+        } else if let s = model.settings(hosts) {
+            let waiting = model.waiting(hosts)
+            SettingsGroup(title: "Suggested instructions",
+                          footnote: "Agents on \(host.name) draft a line for its root instructions when they learn something the hard way. Nothing is written until you add it.") {
+                SettingsRow(title: "Suggested instructions") {
+                    SettingsSwitch(label: "Suggested instructions",
+                                   isOn: Binding(get: { s.enabled }, set: { on in model.post(hosts) { $0.enabled = on } }))
+                }
+                if s.enabled {
+                    ForEach([SuggestionSource.Kind.thread, .automation], id: \.self) { kind in
+                        let title = kind == .thread ? "Learn from threads" : "Learn from automations"
+                        SettingsRow(title: title) {
+                            SettingsSwitch(label: title, isOn: Binding(get: { s.sources.contains(kind) },
+                                                                       set: { _ in model.post(hosts) { $0.sources.formSymmetricDifference([kind]) } }))
+                        }
+                    }
+                    ForEach(InstructionFile.allCases, id: \.self) { file in
+                        let title = "Can suggest for \(file.fileName)"
+                        SettingsRow(title: title) {
+                            SettingsSwitch(label: title, isOn: Binding(get: { s.files.contains(file) },
+                                                                       set: { _ in model.post(hosts) { $0.files.formSymmetricDifference([file]) } }))
+                        }
+                    }
+                }
+            }
+            if s.enabled || !waiting.isEmpty {
+                SettingsGroup(title: "Waiting for you") {
+                    if waiting.isEmpty {
+                        SettingsRow(title: "Nothing is waiting", subtitle: "When an agent learns something the hard way, its line shows up here.") { EmptyView() }
+                    }
+                    ForEach(waiting) { item in
+                        SettingsRow(title: item.suggestion.line, subtitle: "\(item.suggestion.file.fileName) · \(item.suggestion.reason)") {
+                            HStack(spacing: SH.Space.s) {
+                                Button("Dismiss") { Task { await model.dismiss(item, in: hosts) } }.buttonStyle(.sh(.secondary))
+                                Button("Add") { Task { await model.add(item, in: hosts) } }.buttonStyle(.sh(.primary))
+                            }
+                            .disabled(model.busy)
+                        }
+                    }
+                    if waiting.count > 1 {
+                        SettingsActionRow {
+                            Button("Add all") { Task { await model.addAll(hosts) } }.buttonStyle(.sh(.secondary)).disabled(model.busy)
+                        }
+                    }
+                }
+            }
+            if let problem = model.problem {
+                SHBanner(.failed, title: problem) { Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary)) }
+            }
+        } else {
+            SettingsNote(text: "Reading suggested instructions on \(host.name)…")
         }
     }
 }

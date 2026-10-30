@@ -30,11 +30,21 @@ struct RemoteHostSettingsPreviewTests {
         func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult { throw RemoteHostClientError.disconnected }
         func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings { settings }
         func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot { InstructionsSnapshot(directory: "~") }
-        func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot { SuggestionsSnapshot() }
+        func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot {
+            SuggestionsSnapshot(settings: SuggestedInstructionsSettings(enabled: true),
+                                waiting: [InstructionSuggestion(line: "- Run `swift test --filter` for the suite you touched.",
+                                                                reason: "The full suite took 20 minutes.", file: .agents,
+                                                                source: SuggestionSource(kind: .thread, name: "Fix the login flow"),
+                                                                suggestedAt: 1_700_000_000)])
+        }
+        func listModels() async throws -> ModelListing { ModelListing(models: ["anthropic/claude-opus-4", "openai/gpt-5"], defaultModel: nil) }
         func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
             switch request {
             case .providers:
-                return .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .signedIn, detail: "Claude Pro or Max"),
+                return .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .signedIn, detail: "Claude Pro or Max",
+                                                      accounts: 2, activeAccount: "work",
+                                                      accountList: [HostProviderAccount(id: "a1", name: "work", active: true),
+                                                                    HostProviderAccount(id: "a2", name: "home", active: false)], rotate: true),
                                    HostProviderStatus(id: "openai-codex", name: "OpenAI Codex", badge: "Subscription", auth: .notSignedIn, detail: "ChatGPT Plus or Pro"),
                                    HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey, detail: "$OPENAI_API_KEY")])
             case .subagents, .subagent:
@@ -58,7 +68,7 @@ struct RemoteHostSettingsPreviewTests {
                                      RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostInventoryCapability,
                                      RemoteProtocol.hostConfigCapability, RemoteProtocol.goalExperimentCapability,
                                      RemoteProtocol.projectsExperimentCapability, RemoteProtocol.designToolExperimentCapability,
-                                     RemoteProtocol.missionsExperimentCapability]
+                                     RemoteProtocol.missionsExperimentCapability, RemoteProtocol.suggestionsCapability]
     static let older: Set<String> = [RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostInventoryCapability,
                                      RemoteProtocol.goalExperimentCapability]
 
@@ -66,9 +76,11 @@ struct RemoteHostSettingsPreviewTests {
     func aRemoteHostsPage(_ section: SettingsSection) async throws {
         for (label, capabilities) in [("newer", Self.newer), ("older", Self.older)] {
             let host = SettingsHost(id: UUID(), name: "studio", client: Host(), capabilities: capabilities)
-            let settings = ClientHostSettings(), config = ClientHostConfig()
+            let settings = ClientHostSettings(), config = ClientHostConfig(), suggestions = ClientSuggestions()
             await settings.refresh(host)
             for page in [ClientHostConfig.Page.mcp, .subagents, .providers] { await config.refresh(page, on: host) }
+            await settings.loadModels(host)
+            await suggestions.refresh([host])
             if section == .piSignIn, label == "newer" { await config.perform(.providerSignIn(provider: "openai-codex"), on: host) }
             try await Preview.render("settings-remote-\(section.rawValue)-\(label)", size: CGSize(width: 900, height: 1100),
                                      ready: { settings.settings(of: host) != nil }) {
@@ -79,7 +91,7 @@ struct RemoteHostSettingsPreviewTests {
                             SHPopupMenu("studio", minWidth: AppLayout.settingsPopupWidth) { Button("This Mac") {} }
                             Spacer(minLength: 0)
                         }
-                        RemoteHostSettingsPage(section: section, host: host, settings: settings, config: config)
+                        RemoteHostSettingsPage(section: section, host: host, settings: settings, config: config, suggestions: suggestions)
                     }
                     .padding(.top, AppLayout.settingsTop)
                     .padding(.horizontal, AppLayout.settingsWideSides)

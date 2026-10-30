@@ -181,6 +181,19 @@ final class PiAuthStore {
         adding = provider
     }
 
+    /// A remote client's Add account: the current one is saved first and the next sign-in to
+    /// land adds beside it. False, with the reason in `problems`, when it can't.
+    func beginAddingRemotely(_ provider: String) async -> Bool {
+        guard await accountChange(provider, { try $0.beginAdding(provider) }) else { return false }
+        adding = provider
+        return true
+    }
+
+    /// A remote Add account ended without a sign-in.
+    func stopAdding(_ provider: String) {
+        if adding == provider { adding = nil }
+    }
+
     func switchAccount(_ provider: String, to id: String) async {
         if await accountChange(provider, { try $0.activate(provider, id) }) { expired.remove(provider) }
     }

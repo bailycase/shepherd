@@ -18,6 +18,8 @@ public protocol SettingsClient: SkillsClient {
     func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult
     /// Changes them (`hostConfig.v1`).
     func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult
+    /// The host's model catalog, for its model menus.
+    func listModels() async throws -> ModelListing
 }
 
 extension SettingsClient {
@@ -29,6 +31,8 @@ extension SettingsClient {
     public func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
         throw RemoteHostClientError.rejected(code: "update_required", message: "This host's configuration can't be changed from here.")
     }
+
+    public func listModels() async throws -> ModelListing { ModelListing(models: [], defaultModel: nil) }
 }
 
 extension RemoteHostClient: SettingsClient {}
@@ -79,11 +83,28 @@ public final class ClientHostSettings {
     }
 
     private var loaded: [UUID: State] = [:]
+    /// Each host's model catalog, once read (`loadModels`).
+    private var catalogs: [UUID: [String]] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
 
     public func forget(host: UUID) {
         forgotten.insert(host)
         loaded[host] = nil
+        catalogs[host] = nil
+    }
+
+    /// The models a host's model menus offer, with `current` kept even when the catalog lacks it.
+    public func models(of host: SettingsHost, current: String? = nil) -> [String] {
+        let models = catalogs[host.id] ?? []
+        guard let current, !current.isEmpty, !models.contains(current) else { return models }
+        return [current] + models
+    }
+
+    /// Reads a host's model catalog (asking its pi), once per call.
+    public func loadModels(_ host: SettingsHost) async {
+        guard !forgotten.contains(host.id), let client = host.client,
+              let listing = try? await client.listModels(), !forgotten.contains(host.id) else { return }
+        catalogs[host.id] = listing.models
     }
     /// The last change a host refused, in words.
     public private(set) var problem: String?

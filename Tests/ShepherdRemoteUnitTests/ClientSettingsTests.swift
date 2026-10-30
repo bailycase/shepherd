@@ -110,6 +110,9 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
     func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings { HostSettings() }
     func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot { InstructionsSnapshot(directory: "~") }
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot { SuggestionsSnapshot() }
+    func listModels() async throws -> ModelListing {
+        ModelListing(models: ["anthropic/claude-opus", "openai/gpt-5"], defaultModel: nil)
+    }
 
     func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
         lock.withLock {
@@ -263,6 +266,19 @@ struct ClientSettingsTests {
         await model.follow(signInOn: live, page: .providers)
         #expect(model.signIns[live.id]?.phase == .done)
         #expect(model.providers[live.id]?.first?.auth == .signedIn, "a finished sign-in reads the page again")
+    }
+
+    /// A host's model menus offer its own catalog, keeping a current model it no longer lists.
+    @Test func aHostsModelMenusOfferItsOwnCatalog() async {
+        let model = ClientHostSettings()
+        let host = SettingsHost(id: UUID(), name: "studio", client: FakeConfigClient(), capabilities: Self.all)
+        #expect(model.models(of: host).isEmpty)
+        await model.loadModels(host)
+        #expect(model.models(of: host) == ["anthropic/claude-opus", "openai/gpt-5"])
+        #expect(model.models(of: host, current: "local/llama").first == "local/llama")
+        #expect(model.models(of: host, current: "openai/gpt-5").count == 2)
+        model.forget(host: host.id)
+        #expect(model.models(of: host).isEmpty)
     }
 
     @Test func lateSettingsAndSuggestionReadsCannotRepopulateAForgottenHost() async {

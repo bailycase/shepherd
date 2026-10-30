@@ -84,8 +84,9 @@ enum HostInventoryMapping {
     static func signIn(_ cell: MCPServerRowModel.SignIn) -> String? {
         switch cell {
         case .account(let name): name
-        case .signIn: "Sign in on the Mac"
-        case .expired: "Expired · sign in on the Mac"
+        // Host-neutral: the client may be another Mac, and may sign in from there.
+        case .signIn: "Not signed in"
+        case .expired: "Expired"
         case .moreAccess(let scopes): "Needs more access" + (scopes.isEmpty ? "" : ": " + scopes.joined(separator: ", "))
         case .variable(let name): name
         case .secret(let name): name + " in Keychain"
@@ -118,8 +119,14 @@ enum HostInventoryMapping {
         case .noKey(let baseURL): auth = .noKey; detail = baseURL
         }
         let accounts = row.accounts
+        let several = (accounts?.accounts.count ?? 0) > 1
         return HostProviderStatus(id: row.id, name: row.name, badge: row.badge, auth: auth, detail: detail, problem: row.problem,
                                   accounts: accounts?.accounts.count ?? 0,
-                                  activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.name : nil })
+                                  activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.name : nil },
+                                  accountList: several ? accounts?.accounts.map { account in
+                                      HostProviderAccount(id: account.id, name: account.name, active: account.id == accounts?.active,
+                                                          limitedUntil: account.limitedUntil?.timeIntervalSince1970)
+                                  } : nil,
+                                  rotate: several ? accounts?.rotate : nil)
     }
 }

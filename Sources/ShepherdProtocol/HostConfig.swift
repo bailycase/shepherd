@@ -45,6 +45,9 @@ public enum RemoteHostConfigRequest: Codable, Hashable, Sendable {
     /// Starts an account sign-in on the host: its page opens on the client, which sends back the
     /// code the page shows (`signIn(.complete)`). Answers `.signIn`.
     case providerSignIn(provider: String)
+    /// One of a provider's saved accounts (Settings ▸ Sign-in's account rows). Answers `.providers`,
+    /// or `.signIn` for `add`.
+    case providerAccount(provider: String, action: HostProviderAccountAction)
 
     /// A sign-in under way (`mcpSignIn`, `providerSignIn`). Answers `.signIn`.
     case signIn(id: UUID, action: HostSignInAction)
@@ -55,6 +58,18 @@ public enum HostMCPExposure: String, Codable, Hashable, Sendable, CaseIterable {
     case proxy
     /// Every tool in every prompt.
     case direct
+}
+
+/// What a client does with a provider's saved accounts, by `HostProviderAccount.id`.
+public enum HostProviderAccountAction: Codable, Hashable, Sendable {
+    /// Makes it the account agents use.
+    case use(id: String)
+    case remove(id: String)
+    case rename(id: String, name: String)
+    /// Switch to the next account when the active one hits a limit.
+    case rotate(Bool)
+    /// Signs another account in beside the active one (a subscription's account sign-in).
+    case add
 }
 
 public enum HostSignInAction: Codable, Hashable, Sendable {
