@@ -1084,7 +1084,9 @@ struct Composer: View {
         // Opening reads the designs afresh: from this call the picker says it is loading, not what
         // the last opening ended with.
         if mentions.opens(for: store.draft) { references.startCatalogRead() }
-        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage) { references.rowPicture($0) }
+        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage, place: references.place) {
+            references.rowPicture($0)
+        }
         if mentions.isOpen, !wasOpen {
             referenceError = nil
             references.io.wantPictures(mentions.scope)

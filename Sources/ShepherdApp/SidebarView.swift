@@ -48,7 +48,7 @@ private struct SidebarDestinations: View {
             ForEach(rows) { row in
                 SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
                     // The Missions row opens the list; a mission's own row (its section) opens that mission.
-                    if row.target == .page(.missions) { vm.missions.selectedID = nil }
+                    if row.target == .page(.missions) { vm.missions.selectedID = nil; vm.missionsHost = nil }
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()
@@ -214,7 +214,7 @@ struct SidebarMissionRow: View {
         SHSidebarRow(mission.title, leading: .glyph(SHGlyph.mission.symbolName, attention: mission.needsYou), selected: mission.selected,
                      accessory: .text(mission.word, tone: mission.needsYou ? .attention : nil))
             .help(mission.title)
-            .sidebarTapRow { vm.openMission(mission.id) }
+            .sidebarTapRow { vm.openMission(mission.mission, host: mission.host) }
             .accessibilityLabel("\(mission.title), mission, \(mission.word)\(mission.needsYou && mission.word != "needs you" ? ", needs you" : "")")
             .accessibilityAddTraits(mission.selected ? .isSelected : [])
     }
@@ -290,6 +290,8 @@ struct SidebarRowMenu: View {
         case .design(let id):
             // DesignRecentsMenu: the card's menu with Remove from Recents.
             DesignMenuItems(menu: vm.designMenu(.local(id), context: .recents)) { vm.performDesignMenu($0, on: .local(id)) }
+        case .remoteDesign(let ref):
+            DesignMenuItems(menu: vm.designMenu(.remote(ref), context: .recents)) { vm.performDesignMenu($0, on: .remote(ref)) }
         case .remote(let ref):
             if row.offline {
                 // Every action goes through the host, which is not connected; a pin is this
@@ -299,6 +301,9 @@ struct SidebarRowMenu: View {
                     Divider()
                 }
                 Button("Host Offline") {}.disabled(true)
+            } else if let (_, design) = vm.remoteDesign(drawnBy: ref) {
+                let target = DesignTarget.remote(RemoteDesignRef(hostID: ref.hostID, designID: design.id))
+                DesignMenuItems(menu: vm.designMenu(target, context: .recents)) { vm.performDesignMenu($0, on: target) }
             } else {
                 RemoteRowMenu(vm: vm, row: row, ref: ref)
             }

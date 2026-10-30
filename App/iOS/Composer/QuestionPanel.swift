@@ -3,11 +3,12 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// pi's question in the composer's place (MobileQuestion, iPadQuestion boards), so a blocked agent
-/// is always answerable. It follows the question dock's rules (docs/design/composer.md ›
-/// Questions; `NativeQuestionPrompt`, as the Mac's dock does): numbered options to pick, then
-/// Answer; a yes or a no that answers on a tap; an open question's field. Answer is the only button: Stop in the thread's header (shown while pi asks) refuses pi's
-/// question, and hiding (the grabber, or iPad's Hide the question) folds it without answering.
+/// pi's question in the composer's place (QuestionDockRadio, with the MobileQuestion and
+/// iPadQuestion geometry), so a blocked agent is always answerable. It follows the question dock's
+/// rules (docs/design/composer.md › Questions; `NativeQuestionPrompt`, as the Mac's dock does):
+/// the question with its details folded, radio rows to pick, then Answer, or Skip to answer
+/// nothing; a yes or a no that answers on a tap; an open question's field. Hiding (the grabber,
+/// or iPad's Hide the question) folds it without answering.
 struct QuestionPanel: View {
     let prompt: NativeQuestionPrompt
     let count: Int
@@ -19,11 +20,7 @@ struct QuestionPanel: View {
     @Environment(\.composerMaxHeight) private var maxHeight
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var picks: NativeQuestionPicks
-    @FocusState private var field: Field?
-    /// The panel's width: a wide one (iPad) lays two answers side by side.
-    @State private var width: CGFloat = 0
-
-    private enum Field: Hashable { case text }
+    @FocusState private var field: SHQuestionDockField?
 
     init(prompt: NativeQuestionPrompt, count: Int = 1, enabled: Bool, docked: Bool = false, hide: (() -> Void)? = nil,
          answer: @escaping (NativeQuestionAnswer) -> Void) {
@@ -38,14 +35,11 @@ struct QuestionPanel: View {
 
     var body: some View {
         let sh = Color.sh
-        SHQuestionCard(docked: docked, count: count, hide: hide) {
-            // The question and its answers scroll inside a panel too tall for the screen (a
-            // long message, a large text size); Answer stays in reach under them.
+        SHQuestionCard(docked: docked, count: count, question: prompt.question, hide: hide) {
+            // The details and answers scroll inside a panel too tall for the screen (long
+            // details, a large text size); Answer stays in reach under them.
             VStack(alignment: .leading, spacing: SH.Space.l) {
-                Text(prompt.question).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .accessibilityAddTraits(.isHeader)
+                if let details = prompt.details { SHQuestionDetails(details, maxHeight: nil) }
                 if let message = prompt.message {
                     Text(message).font(.sh(.code)).foregroundStyle(sh.textPrimary).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -61,38 +55,38 @@ struct QuestionPanel: View {
             }
             .fittedScroll(maxHeight: maxHeight * MobileLayout.questionScrollShare)
             if prompt.showsAnswer {
-                answerButton
+                buttons
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .accessibilityLabel("Question: \(prompt.question)")
     }
 
     static let timeoutNotice = "The agent may stop waiting for this answer"
 
-    /// The asker's answers: numbered options, a yes and a no, or the field.
+    /// The asker's answers: radio rows, a yes and a no, or the field.
     @ViewBuilder private var choices: some View {
         switch prompt.kind {
         case .choice:
-            VStack(spacing: SH.Space.s) {
-                if !docked, prompt.options.count > 1, !typeSize.isAccessibilitySize, width >= 2 * MobileLayout.questionColumn + SH.Space.m {
-                    Grid(horizontalSpacing: SH.Space.m, verticalSpacing: SH.Space.m) {
-                        ForEach(Array(stride(from: 0, to: prompt.options.count, by: 2)), id: \.self) { start in
-                            GridRow(alignment: .top) {
-                                option(prompt.options[start]).frame(maxHeight: .infinity, alignment: .top)
-                                if start + 1 < prompt.options.count {
-                                    option(prompt.options[start + 1]).frame(maxHeight: .infinity, alignment: .top)
-                                } else {
-                                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                                }
-                            }
-                        }
+            VStack(spacing: SH.Space.xxs) {
+                ForEach(prompt.options) { option in
+                    SHQuestionRadioRow(SHQuestionDockOption(number: option.number, title: option.title, detail: option.detail,
+                                                            recommended: option.recommended),
+                                       picked: picks.picked == option.number, showsNumber: false) {
+                        // Picking another option moves the pick (and empties the field); nothing is answered until Answer.
+                        var next = picks
+                        next.picked = option.number
+                        picks = NativeQuestionPicks.exclusive(picks, next)
                     }
-                } else {
-                    ForEach(prompt.options) { option($0) }
                 }
-                if prompt.allowsText { textOption }
+                if prompt.allowsText {
+                    SHQuestionTextRow(text: Binding(get: { picks.text }, set: { text in
+                        var next = picks
+                        next.text = text
+                        picks = NativeQuestionPicks.exclusive(picks, next)
+                    }), focus: $field, number: nil)
+                }
             }
+            .padding(.horizontal, -SH.Space.m)
         case .yesNo:
             VStack(spacing: SH.Space.s) {
                 // Side by side, each answering on a tap; stacked at accessibility sizes.
@@ -116,11 +110,7 @@ struct QuestionPanel: View {
 
     /// An open question's field.
     private var answerField: some View {
-        TextField(prompt.placeholder, text: Binding(get: { picks.text }, set: { text in
-            var next = picks
-            next.text = text
-            picks = NativeQuestionPicks.exclusive(picks, next)
-        }), axis: .vertical)
+        TextField(prompt.placeholder, text: $picks.text, axis: .vertical)
             .textFieldStyle(SHTextFieldStyle(mono: prompt.multiline))
             .lineLimit(prompt.multiline ? 4...12 : 1...6)
             .textInputAutocapitalization(prompt.multiline ? .never : .sentences)
@@ -129,63 +119,22 @@ struct QuestionPanel: View {
             .accessibilityLabel(prompt.multiline ? "Editor answer" : "Answer")
     }
 
-    /// A choice that also takes words: its last numbered option, N+1, is an editable row in the
-    /// option card's style, lit while it holds words (typing them drops the pick).
-    private var textOption: some View {
-        let sh = Color.sh
-        let typed = !picks.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
-        return HStack(alignment: .top, spacing: SH.Space.l) {
-            SHQuestionNumber(prompt.options.count + 1, filled: typed)
-            TextField(text: Binding(get: { picks.text }, set: { text in
-                var next = picks
-                next.text = text
-                picks = NativeQuestionPicks.exclusive(picks, next)
-            }), prompt: Text(prompt.placeholder).foregroundStyle(sh.textTertiary), axis: .vertical) {
-                Text(prompt.placeholder)
-            }
-                .lineLimit(1...6)
-                .font(.sh(.ui, weight: .semibold))
-                .foregroundStyle(sh.textPrimary)
-                .tint(sh.lantern)
-                .textInputAutocapitalization(.sentences)
-                .focused($field, equals: .text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel(prompt.placeholder)
-        }
-        .padding(SH.Space.l)
-        .frame(maxWidth: .infinity, minHeight: SHTouchQuestionMetrics.optionHeight, alignment: .topLeading)
-        .background(typed ? sh.lanternTint : sh.bgWindow, in: shape)
-        .shBorder(typed ? sh.lantern : sh.lineSubtle, radius: SH.Radius.m)
-        .shAnimation(.hover, value: typed)
-        .contentShape(shape)
-        .onTapGesture { field = .text }
-    }
-
-    private func option(_ option: NativeQuestionOption) -> some View {
-        SHQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
-                             recommended: option.recommended, selected: picks.picked == option.number) {
-            // Picking another option moves the pick (and empties a choice's field); nothing is answered until Answer.
-            var next = picks
-            next.picked = option.number
-            picks = NativeQuestionPicks.exclusive(picks, next)
-        }
-    }
-
-    /// Answer, lit once there is an answer: full width docked (the phone's 48pt bar button),
-    /// trailing on iPad's card.
-    @ViewBuilder private var answerButton: some View {
+    /// Skip and Answer (lit once there is an answer): docked, Answer is the phone's 48pt bar
+    /// button with Skip before it; trailing on iPad's card.
+    @ViewBuilder private var buttons: some View {
         let ready = enabled && prompt.answer(picks) != nil
-        if docked {
-            Button("Answer") { send() }
-                .buttonStyle(.shReviewBar(.primary))
-                .disabled(!ready)
-        } else {
-            HStack {
-                Spacer(minLength: 0)
-                Button("Answer") { send() }
-                    .buttonStyle(.sh(.primary, size: .l))
-                    .disabled(!ready)
+        let canSkip = enabled && prompt.blocked == nil
+        HStack(spacing: SH.Space.m) {
+            if !docked { Spacer(minLength: 0) }
+            Button("Skip") { skip() }
+                .buttonStyle(.sh(.ghost, size: .l))
+                .frame(minHeight: SH.Height.touch)
+                .disabled(!canSkip)
+                .accessibilityHint("The agent is told you didn't answer")
+            if docked {
+                Button("Answer") { send() }.buttonStyle(.shReviewBar(.primary)).disabled(!ready)
+            } else {
+                Button("Answer") { send() }.buttonStyle(.sh(.primary, size: .l)).disabled(!ready)
             }
         }
     }
@@ -194,5 +143,11 @@ struct QuestionPanel: View {
         guard enabled, let answer = prompt.answer(picks) else { return }
         field = nil
         self.answer(answer)
+    }
+
+    private func skip() {
+        guard enabled, prompt.blocked == nil else { return }
+        field = nil
+        answer(.skip)
     }
 }

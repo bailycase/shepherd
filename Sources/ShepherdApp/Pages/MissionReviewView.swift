@@ -325,6 +325,7 @@ struct MissionReviewView: View {
 /// The contract (MXReview's right column): every requirement and check, numbered, with its
 /// result; open one for its evidence.
 private struct MissionContract: View {
+    @Environment(\.missionHostName) private var missionHost
     let mission: Mission
     let busy: Bool
     let canRerun: Bool
@@ -398,7 +399,7 @@ private struct MissionContract: View {
                 SHHairline()
                 VStack(alignment: .leading, spacing: SH.Space.m) {
                     if let ran {
-                        Text("Validator ran at \(Date(timeIntervalSince1970: ran).formatted(date: .omitted, time: .shortened)) on This Mac, reading every mission worktree without changing them.")
+                        Text("Validator ran at \(Date(timeIntervalSince1970: ran).formatted(date: .omitted, time: .shortened)) on \(missionHost), reading every mission worktree without changing them.")
                             .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                     }
                     // One action for the whole contract: the controller re-runs every check and the

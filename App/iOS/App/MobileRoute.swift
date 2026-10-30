@@ -22,6 +22,7 @@ enum MobileRoute: Hashable, Codable {
     /// A side-pane tab's own screen on a phone (Files, Browser; SidePaneState.swift).
     case sidePane(SidePaneRoute)
     case browser(BrowserRoute)
+    case missions(MissionsRoute)
 
     /// Coarse screen kind only: associated values may contain private thread or file data.
     var diagnosticScreen: String {
@@ -40,6 +41,7 @@ enum MobileRoute: Hashable, Codable {
         case .projects: "projects"
         case .sidePane: "sidePane"
         case .browser: "browser"
+        case .missions: "missions"
         }
     }
 
@@ -60,6 +62,7 @@ enum MobileRoute: Hashable, Codable {
         case .projects(let route): ProjectsDestination(route: route)
         case .sidePane(let route): SidePaneDestination(route: route)
         case .browser(let route): BrowserDestination(route: route)
+        case .missions(let route): MissionsDestination(route: route)
         }
     }
 
@@ -72,7 +75,7 @@ enum MobileRoute: Hashable, Codable {
         case .terminal(let route): route.thread
         case .sidePane(let route): route.thread
         case .browser(let route): route.thread
-        case .thread, .home, .newThread, .search, .settings, .automations, .designs, .padDesign, .projects: nil
+        case .thread, .home, .newThread, .search, .settings, .automations, .designs, .padDesign, .projects, .missions: nil
         }
     }
 
@@ -89,6 +92,7 @@ enum MobileRoute: Hashable, Codable {
         case .designs(let route): route.host
         case .padDesign(let route): route.host
         case .projects(let route): route.host
+        case .missions(let route): route.host
         case .home, .newThread, .search, .settings: nil
         }
     }

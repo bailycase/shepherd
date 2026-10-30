@@ -57,12 +57,15 @@ struct FixtureHostData {
     /// Takes a change a tap-through check makes on purpose and answers it (recorded in `FixtureHost.accepted`);
     /// nil for any other request, which is refused as a mutation as always. nil: the host changes nothing.
     var accepts: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
+    /// The missions the host serves (`missions.v1`, its experiment on); nil: the experiment is off.
+    var missions: FixtureMissions? = nil
 
-    /// Everything this build knows, `designs.v1` only while the host has designs to serve.
+    /// Everything this build knows, `designs.v1` only while the host has designs to serve and
+    /// `missions.v1` only while it has missions.
     var defaultCapabilities: [String] {
-        designs == nil
-            ? RemoteProtocol.capabilities.filter { !RemoteProtocol.designCapabilities.contains($0) }
-            : RemoteProtocol.capabilities
+        RemoteProtocol.capabilities.filter {
+            (designs != nil || !RemoteProtocol.designCapabilities.contains($0)) && (missions != nil || $0 != RemoteProtocol.missionsCapability)
+        }
     }
 }
 
@@ -194,7 +197,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + automationFlow + windows + terminal + clientState + duo
-            + designs + designPad + designPadMarkup + browser + files + ProjectFixtures.screens + hostConfig
+            + designs + designPad + designPadMarkup + browser + files + missions + ProjectFixtures.screens + hostConfig
     }
 
     static func screen(named name: String) -> FixtureScreen? {

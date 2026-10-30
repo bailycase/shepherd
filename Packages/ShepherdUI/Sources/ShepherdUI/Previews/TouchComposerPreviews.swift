@@ -69,18 +69,32 @@ import SwiftUI
 #Preview("Question") {
     SHPreviewBoth {
         VStack(spacing: SH.Space.xl) {
-            SHQuestionCard(docked: false, count: 2, hide: {}) {
-                Text("How should I handle Horizon's uncommitted edits?").font(.sh(.headline))
-                SHQuestionOptionCard(number: 1, title: "Compare, keep what's unique, then go through GitHub",
-                                     detail: "New branch and PR for anything not merged.", recommended: true, selected: true) {}
-                SHQuestionOptionCard(number: 2, title: "Leave Horizon alone and deploy from a clean checkout") {}
-                Button("Answer") {}.buttonStyle(.sh(.primary, size: .l))
+            SHQuestionCard(docked: false, count: 2, question: "How should I handle Horizon's uncommitted edits?", hide: {}) {
+                SHQuestionDetails("Horizon is 50 commits behind and has 11 uncommitted files.\n\nNothing on Horizon is overwritten.")
+                VStack(spacing: SH.Space.xxs) {
+                    SHQuestionRadioRow(SHQuestionDockOption(number: 1, title: "Compare, keep what's unique, then go through GitHub",
+                                                            detail: "New branch and PR for anything not merged.", recommended: true),
+                                       picked: true, showsNumber: false) {}
+                    SHQuestionRadioRow(SHQuestionDockOption(number: 2, title: "Leave Horizon alone and deploy from a clean checkout"),
+                                       picked: false, showsNumber: false) {}
+                }
+                .padding(.horizontal, -SH.Space.m)
+                HStack {
+                    Spacer()
+                    Button("Skip") {}.buttonStyle(.sh(.ghost, size: .l))
+                    Button("Answer") {}.buttonStyle(.sh(.primary, size: .l))
+                }
             }
-            SHQuestionCard(docked: true, hide: {}) {
-                Text("Rename the new tokens, or replace the old ones everywhere?").font(.sh(.headline))
-                SHQuestionOptionCard(number: 1, title: "Replace everywhere", selected: true) {}
-                SHQuestionOptionCard(number: 2, title: "Rename new ones") {}
-                Button("Answer") {}.buttonStyle(.shReviewBar(.primary))
+            SHQuestionCard(docked: true, question: "Rename the new tokens, or replace the old ones everywhere?", hide: {}) {
+                VStack(spacing: SH.Space.xxs) {
+                    SHQuestionRadioRow(SHQuestionDockOption(number: 1, title: "Replace everywhere"), picked: true, showsNumber: false) {}
+                    SHQuestionRadioRow(SHQuestionDockOption(number: 2, title: "Rename new ones"), picked: false, showsNumber: false) {}
+                }
+                .padding(.horizontal, -SH.Space.m)
+                HStack {
+                    Button("Skip") {}.buttonStyle(.sh(.ghost, size: .l))
+                    Button("Answer") {}.buttonStyle(.shReviewBar(.primary))
+                }
             }
             SHQuestionCardHiddenLine(question: "How should I handle Horizon's uncommitted edits?") {}
         }

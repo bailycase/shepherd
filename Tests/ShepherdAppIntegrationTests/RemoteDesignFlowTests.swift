@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import CoreGraphics
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -117,5 +119,208 @@ struct RemoteDesignFlowTests {
         try await eventuallyOnMain("the host to offer designs again") { connection.supportsDesigns }
         await vm.loadRemoteDesigns()
         #expect(vm.remoteDesignSections.first?.cards.map(\.name) == ["Checkout funnel dashboard"])
+    }
+
+    /// A host's design whose agent is gone opens here: the host's app starts a fresh one
+    /// (`design.agent.v1`). Duplicate, Export's files and the host's New design go through it too.
+    @Test func aHostsDesignWithoutAnAgentOpensAndChangesThroughTheHost() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let (vm, connection, _, _) = try await host(local, remote)
+        let hostServer = remote.host.server
+        let bare = Design(name: "Onboarding", createdAt: 2_000)
+        _ = try await hostServer.createDesign(bare)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: bare.id, on: hostServer)
+        try await eventuallyOnMain("the design to reach this Mac") { connection.state.designs.contains { $0.id == bare.id } }
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designAgentCapability))
+
+        let ref = RemoteDesignRef(hostID: connection.id, designID: bare.id)
+        vm.openRemoteDesign(ref)
+        try await eventuallyOnMain("the host's fresh agent on screen", timeout: .seconds(30)) {
+            vm.selectedRemoteAgent.flatMap { vm.remoteDesign(drawnBy: $0) }?.design.id == bare.id
+        }
+        #expect(hostServer.state.agents.filter { $0.designID == bare.id }.count == 1)
+        #expect(vm.remoteActionError == nil)
+
+        // Export draws from this Mac's synced copy.
+        let files = try await connection.designs.source(bare.id).exportFiles(boards: [try #require(DesignPath("A.dc.html"))])
+        #expect(files.members.map(\.rawValue) == ["A.dc.html"] && files.sources.count == 1)
+
+        // Duplicate is the host's own; its copy lists with the host's designs.
+        vm.performDesignMenu(.duplicate, on: .remote(ref))
+        try await eventuallyOnMain("the copy on the host") { hostServer.state.designs.contains { $0.name == "Onboarding copy" } }
+
+        // New design with the host chosen makes it there, and its canvas opens here.
+        vm.openNewDesign()
+        vm.newDesign.choose(host: connection.id)
+        vm.newDesign.brief = "A settings page"
+        #expect(vm.newDesign.blocker(vm) == nil)
+        vm.newDesign.send(vm)
+        try await eventuallyOnMain("the host's new design on screen", timeout: .seconds(30)) {
+            !vm.newDesign.starting && vm.selectedRemoteAgent.flatMap { vm.remoteDesign(drawnBy: $0) }?.design.name != bare.name
+                && vm.selectedRemoteAgent.flatMap { vm.remoteDesign(drawnBy: $0) } != nil
+        }
+        #expect(hostServer.state.designs.count == 4)
+    }
+
+    /// Implement in a thread… from a host's design sends the piece to one of that host's threads
+    /// (`design.references.v1`): the host pins it, resolves and fences it, and its pi reads it.
+    @Test func aHostsDesignPieceGoesToTheHostsOwnThread() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        local.settings.designToolEnabled = true
+        remote.host.settings.designToolEnabled = true
+        let space = Fixture.space(path: remote.host.dir.path)
+        let log = remote.host.dir.appendingPathComponent("pi.log")
+        let thread = try await remote.host.liveAgent("Build checkout", in: space, log: log)
+        var drawer = Fixture.agent("Checkout", in: space, order: 1)
+        let design = Design(name: "Checkout", agentID: drawer.agent.id, createdAt: 1_000)
+        drawer.agent.designID = design.id
+        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [thread, drawer]))
+        hostVM.designNetwork = .none
+        _ = try await remote.host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: remote.host.server)
+        let vm = try await local.start(with: ShepherdState())
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        let connection = try await remote.connect(local.remoteHosts, name: "build-01")
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability))
+
+        let ref = RemoteDesignRef(hostID: connection.id, designID: design.id)
+        let screen = try #require(vm.remoteDesignScreen(ref))
+        #expect(screen.referenceActions != nil)
+        await screen.refresh()
+        #expect(vm.designMenu(.remote(ref), context: .toolbar).items.contains { $0.action == .implement })
+        screen.implementSelection(designName: design.name)
+        let model = try #require(vm.implementSheet)
+        #expect(model.hostID == connection.id && model.hostName == "build-01")
+        #expect(model.threads.map(\.id) == [thread.agent.id], "the host's own thread, never its design's agent")
+        try await eventuallyOnMain("the host to pin the piece", timeout: .seconds(30)) { model.prepared != nil || model.error != nil }
+        #expect(model.error == nil)
+        #expect(model.prepared?.reference.host == .remote(connection.id))
+
+        model.message = "Build the checkout"
+        model.opensThread = true
+        let before = AppHarness.prompts(in: log).count
+        vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send", timeout: .seconds(60)) { vm.implementSheet == nil || model.error != nil }
+        #expect(model.error == nil)
+        try await eventuallyAsync("the host's pi to get the message", timeout: .seconds(60)) { AppHarness.prompts(in: log).count > before }
+        let prompt = try #require(AppHarness.prompts(in: log).last)
+        let record = try #require(DesignReferenceFence.parse(prompt)?.records.first)
+        #expect(record.design == "Checkout" && DesignReference(string: record.ref)?.host == .local)
+        #expect(vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: thread.agent.id))
+
+        // The host's thread has chips and the @ picker for the host's designs, named as the host sees them.
+        let target = RemoteAgentRef(hostID: connection.id, agentID: thread.agent.id)
+        let chips = try #require(vm.remoteDesignReferenceChips(for: target))
+        #expect(vm.remoteDesignReferenceChips(for: RemoteAgentRef(hostID: connection.id, agentID: drawer.agent.id)) == nil,
+                "a design's own chat has none")
+        await chips.loadCatalog()
+        let row = try #require(chips.catalog?.designs.first)
+        #expect(row.title == "Checkout" && row.reference.host == .local)
+        chips.io.wantPictures(.design(design.id, name: design.name))
+        try await eventuallyOnMain("the design's boards in the picker", timeout: .seconds(30)) { chips.catalog?.boards[design.id]?.isEmpty == false }
+        let board = try #require(chips.catalog?.boards[design.id]?.first)
+        try await chips.io.attach(board.reference)
+        let store = vm.remoteThreadStores.store(for: target)
+        let attached = try #require(store.attachedReferences.first)
+        #expect(attached.reference.host == .local && attached.reference.revision != nil && attached.reference.board == board.reference.board)
+        // Another Mac's design never joins it.
+        await #expect(throws: DesignReferenceFailure.self) {
+            try await chips.io.attach(DesignReference(host: .remote(UUID()), designID: design.id)!)
+        }
+        store.detachReference(attached.id)
+
+        // A sent chip reads what the host kept, its picture in pieces when it is too large for one reply.
+        let payloadID = try #require(record.payloadID)
+        let kept = try #require(await remote.host.server.designReferencePayload(agentID: thread.agent.id, payloadID: payloadID))
+        let name = try #require(kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name)
+        let large = try Self.noisePNG(side: 420)
+        #expect(large.count > RemoteProtocol.designChunkBytes)
+        try large.write(to: kept.folder.appendingPathComponent(name))
+        await chips.loadSent(payloadID)
+        #expect(chips.sent[payloadID]?.crumbs.first == "Checkout")
+        #expect(chips.sent[payloadID]?.freshness == .current)
+        #expect(chips.sent[payloadID]?.picture != nil, "the large picture came in pieces")
+    }
+
+    /// "Build one from a repo" in a host's space, from this Mac: the host starts the build, its
+    /// agent's thread opens here, and the host's section shows it building until it writes one.
+    @Test func aHostsSystemIsBuiltFromHere() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let (vm, connection, _, _) = try await host(local, remote)
+        let hostServer = remote.host.server
+        let space = try #require(connection.state.spaces.first)
+        await vm.loadRemoteDesigns()
+        let section = try #require(vm.remoteDesignSections.first)
+        #expect(section.projects?.map(\.id) == [space.id], "the host's spaces, for its Build tile")
+
+        vm.buildRemoteSystem(host: connection.id, in: space.id)
+        try await eventuallyOnMain("the host's build agent on screen", timeout: .seconds(30)) {
+            guard let selected = vm.selectedRemoteAgent, let agent = connection.state.agents.first(where: { $0.id == selected.agentID }) else { return false }
+            return connection.state.designs.contains { $0.buildsSystem && $0.id == agent.designID && $0.sourceSpaceID == space.id }
+        }
+        #expect(hostServer.state.designs.filter(\.buildsSystem).count == 1)
+        await vm.loadRemoteDesigns()
+        let building = try #require(vm.remoteDesignSections.first?.systems.first)
+        guard case .remoteBuild = building.id else { Issue.record("expected the build's card, got \(building.id)"); return }
+        #expect(building.source == "\(space.name) · building")
+
+        // A second build of the same space answers the one there.
+        let existing = try #require(hostServer.state.designs.first { $0.buildsSystem })
+        let again = try await connection.designs.request(.buildSystem(spaceID: space.id))
+        guard case .created(let answered, _) = again else { Issue.record("expected the build, got \(again)"); return }
+        #expect(answered == existing.id && hostServer.state.designs.filter(\.buildsSystem).count == 1)
+
+        // Its card's Delete stops and deletes it on the host, after the build's dialog.
+        #expect(vm.designSystemMenu(building.id).items.contains { $0.action == .deleteSystem })
+        vm.requestDesignSystemDelete(building.id)
+        let request = try #require(vm.designSystemDeleteRequest)
+        #expect(request.words.confirm == "Stop and delete")
+        vm.confirmDesignSystemDelete(request)
+        try await eventuallyOnMain("the build gone on the host") { !hostServer.state.designs.contains(where: \.buildsSystem) }
+        #expect(vm.designToast == nil)
+    }
+
+    /// A PNG of random pixels: it barely compresses, so it outgrows one reply.
+    static func noisePNG(side: Int) throws -> Data {
+        var generator = SystemRandomNumberGenerator()
+        let bytes = (0..<(side * side * 4)).map { _ in UInt8.random(in: 0...255, using: &generator) }
+        let provider = try #require(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try #require(CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let out = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return out as Data
+    }
+
+    /// A Claude Design ZIP from this Mac is imported on the host as its own Import does: the
+    /// design, its agent started there; the same project again comes in as a copy.
+    @Test func aProjectIsImportedOnTheHost() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let (_, connection, _, _) = try await host(local, remote)
+        let hostServer = remote.host.server
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designImportCapability))
+        let zip = try makeScratchDirectory("zip").appendingPathComponent("checkout-funnel.zip")
+        try TestZip.make(DesignLifecycleFlowTests.project()).write(to: zip)
+
+        let (design, agent) = try await connection.designs.importProject(file: zip)
+        let made = try #require(hostServer.state.designs.first { $0.id == design })
+        #expect(made.name == "Checkout funnel" && made.importedFrom != nil)
+        #expect(agent != nil)
+        try await eventuallyOnMain("its agent on the host") { hostServer.state.agents.contains { $0.designID == design } }
+
+        let (copy, _) = try await connection.designs.importProject(file: zip)
+        #expect(copy != design)
+        #expect(hostServer.state.designs.first { $0.id == copy }?.name != made.name, "the same project again comes in as a copy")
     }
 }

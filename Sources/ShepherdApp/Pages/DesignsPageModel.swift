@@ -65,10 +65,23 @@ struct DesignsPageModel: Equatable {
         let id: UUID
         let name: String
         let cards: [Card]
+        /// The host's design systems (and builds still reading), after its designs.
+        var systems: [System] = []
+        /// The host's spaces its "Build one from a repo" can read; nil when the host doesn't
+        /// build for other devices (no tile).
+        var projects: [Project]?
 
         var rows: [[Card]] {
             stride(from: 0, to: cards.count, by: DesignsPageModel.columns)
                 .map { Array(cards[$0..<min($0 + DesignsPageModel.columns, cards.count)]) }
+        }
+
+        var systemRows: [(systems: [System], tile: Bool)] {
+            let slots = systems.count + (projects == nil ? 0 : 1)
+            return stride(from: 0, to: slots, by: DesignsPageModel.systemColumns).map { start in
+                let end = min(start + DesignsPageModel.systemColumns, slots)
+                return (Array(systems[min(start, systems.count)..<min(end, systems.count)]), projects != nil && end == slots)
+            }
         }
     }
 

@@ -556,4 +556,21 @@ struct SidebarMissionTests {
         #expect(rows.map(\.title) == ["Review", "Running", "Old done"])
         #expect(rows.first?.needsYou == true)
     }
+
+    @Test func aHostsMissionsNameItAndItsMissionAgentsAreNoThreads() {
+        let host = UUID()
+        let mission = Mission(draft: MissionDraft(title: "Remote", goal: "g"), run: MissionRun(model: "m", phase: .running))
+        let local = SidebarMission.rows([mission], selected: nil)
+        let remote = SidebarMission.rows([mission], selected: mission.id, host: (host, "Studio"))
+        #expect(remote.first?.word == "running · Studio" && remote.first?.host == host && remote.first?.selected == true)
+        #expect(local.first?.id != remote.first?.id, "The same mission ID on two hosts is two rows")
+        let space = Space(name: "s", path: "/s")
+        let worker = Agent(name: "Station worker", spaceID: space.id, tabID: TabID())
+        let thread = Agent(name: "Ordinary", spaceID: space.id, tabID: TabID())
+        let state = ShepherdState(spaces: [space], agents: [worker, thread])
+        let shown = SidebarDerivation.lists(SidebarSource(local: ShepherdState(), hosts: [.init(id: host, name: "Studio", state: state)]))
+        #expect(Set(shown.all.map(\.title)) == ["Station worker", "Ordinary"])
+        let hidden = SidebarDerivation.lists(SidebarSource(local: ShepherdState(), hosts: [.init(id: host, name: "Studio", state: state, missionAgents: [worker.id])]))
+        #expect(hidden.all.map(\.title) == ["Ordinary"])
+    }
 }

@@ -242,9 +242,38 @@
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the
-    canvas's writes through the host's own mutations, Delete with its Undo (`design.delete.v1`), and a pushed `designChanged` for the
-    designs a client watches (`capabilitiesChanged` when the experiment turns on or off).
+    canvas's writes through the host's own mutations, Delete with its Undo (`design.delete.v1`),
+    a fresh design agent (`design.agent.v1`), Duplicate and Remove from Recents
+    (`design.lifecycle.v1`), its systems' files and their Rename, Duplicate, Delete and Re-sync
+    (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
+    "Build one from a repo" in a host's space), references to the host's own designs in its
+    threads (`design.references.v1`), a Claude Design ZIP uploaded to import
+    (`design.import.v1`), and a
+    pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
+    experiment turns on or off).
     Answered by the server itself; boards render on the client (docs/designs.md › Remote)
+  - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
+    drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists
+    summaries (each names the agents the mission owns, so clients keep those threads out of their
+    thread lists), reads one record (at most 256 KiB), New mission's options, create, every owner
+    action of the Mac's Missions page (`action(missionID:revision:action:)`, refused `stale_mission`
+    when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
+    a review's files and fingerprints and one file's `DiffFile`, and the Spec Kit reads. Answered
+    by the host's own `MissionController` (reads by the server), with the same guards as its page:
+    Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
+    `consentFingerprint` the client showed, and the host checks both again. Missions never ride
+    `stateChanged` (still `withoutMissions`); a capable client gets a pushed
+    `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
+    (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
+    each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
+    once nothing runs). Station threads are read through native-thread snapshots. A mission
+    thread's composer is offered (`send` in its actions) while the mission can take words there,
+    and its `send`, on this Mac or any client, goes to the owner (`onMissionThreadSend`): while its
+    turn works, as the composer chose (`followUp` queued for after the turn in the attempt's own
+    session, which settles only after it; `steer` or `interrupt` steered in, accepted once pi
+    queued it); while the mission waits on you, the planner's answer (a Spec Kit planning thread's
+    to its own repository only); else a failure result saying why; words only. Other requests to it stay
+    `mission_control`. A reply past the frame cap is `too_large`. An older client never sees missions
   - `tunnel` (`browser.tunnel.v1`, offered while the host can serve it, and only to a client that
     lists it in `hello`): a thread's Browser page on a viewing Mac reaches the host's dev server.
     `RemoteRequest.tunnel` and `RemoteReply.tunnel` carry `BrowserTunnelFrame`s (open, opened,

@@ -22,7 +22,7 @@ struct SidebarCompletions: Equatable {
             switch id {
             case .local(let agent): local.contains(agent)
             case .remote(let ref): hosts.contains(ref.hostID) && endpoints[ref.hostID] == nextEndpoints[ref.hostID]
-            case .design: false
+            case .design, .remoteDesign: false
             }
         }
         let runs = Dictionary(source.openRuns.values.compactMap { run in run.agentID.map { ($0, run) } },

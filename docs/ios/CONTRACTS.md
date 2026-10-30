@@ -40,6 +40,7 @@ Never commit a `project.pbxproj` change for a new file.
 | J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminals: the iPad panel under a thread (tabs only), the iPhone's full-screen terminals, the key row |
 | K. Designs | `Designs/`, `Fixtures/DesignsFixtures.swift`, and its rows in Home, Recents, search and More | a host's designs (`designs.v1`): Designs, a design's boards, one board with its comments, New design, design systems |
 | M. Projects | `Projects/`, `Fixtures/ProjectFixtures.swift` | the host-owned Projects list, owner conversation, tasks, files, settings and creation/assignment forms; shared model in ShepherdRemote |
+| N. Missions | `Missions/`, `Fixtures/MissionsFixtures.swift`, Home's Missions section and the iPad sidebar's Missions row | a host's missions (`missions.v1`): the list (iPad: beside the chosen one), a mission with its question, Spec Kit OK, map, steer and controls, its review with a file's diff and Publish, New mission; shared model `RemoteMissions` in ShepherdRemote |
 | L. Designs on iPad | `DesignPad/`, `Fixtures/DesignPadFixtures.swift`, `Fixtures/DesignPadBoards.swift` | a host's designs on iPad (`designs.v1`): the Designs list, the canvas beside its chat, Split View's reply card, the sidebar's Designs row and design rows |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
@@ -67,6 +68,7 @@ enum MobileRoute: Hashable, Codable {
     case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
     case designs(DesignsRoute)            // Designs/DesignsRoute.swift
     case projects(ProjectsRoute)          // Projects/ProjectsRoute.swift
+    case missions(MissionsRoute)          // Missions/MissionsRoute.swift
 }
 ```
 
@@ -105,6 +107,8 @@ Routes today:
 | `.designs(.list / .design(HostDesignRef) / .board(HostDesignRef, path:))` | Designs, a design's boards, one board full screen |
 | `.designs(.boards(HostDesignRef, current:) / .newDesign(brief:host:))` | a design's boards to jump to, New design (presented) |
 | `.designs(.systems / .system(host:namespace:))` | the hosts' design systems, one system |
+| `.missions(.list / .mission(host:mission:) / .review(host:mission:) / .file(host:mission:space:path:))` | every host's missions (iPad: beside the chosen one, `MissionsHooks.open`), one mission, its review with Publish, one reviewed file's diff |
+| `.missions(.new(host:))` | New mission on a host that serves missions (presented) |
 | `.padDesign(.list / .design(PadDesignRef))` | a host's designs; one design's canvas and chat (pushed; `PadDesignHooks.open` puts the list under the design, and the sidebar stays out while a design shows) |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
@@ -164,9 +168,11 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 
 `@Environment(\.mobileWindow)` is the window a view is in (its `MobileWindowSeed`).
 
-- `MobileHosts` owns every client's `onDesignChanged` and `onCapabilitiesChanged`: a host's
-  `capabilities` follow the pushes, and `MobileHost.onDesignChanged` hears its design pushes.
-  `HostDesignLibraries` (`Hosts/`) alone sets that hook, and keeps one `RemoteDesignLibrary` per
+- `MobileHosts` owns every client's `onDesignChanged`, `onDesignSystemsChanged` and
+  `onCapabilitiesChanged`: a host's `capabilities` follow the pushes, and
+  `MobileHost.onDesignChanged` and `onDesignSystemsChanged` hear its design pushes.
+  `HostDesignLibraries` (`Hosts/`) alone sets those hooks (a store hears systems changes through
+  `observeSystems`), and keeps one `RemoteDesignLibrary` per
   host over one file cache for both design tracks (K and L): each says which designs it has on
   screen (`watch(_:on:for:)`), the host is told them all, and every track hears the pushes
   (`observe`).

@@ -4,15 +4,17 @@
 
 ## Design references (DesignRefStates, RefImplementMenu, RefImplementSheet, RefImplementBoard, RefSentStay, RefCopied, RefNoteBack, RefPasted, RefAtDesigns, RefAtElements, RefAtSearch, RefSentThread, RefChipHover, RefChipUpdated, RefAgentRead)
 
-**Built on the Mac, this Mac's designs only** (docs/designs.md › Design references; ShepherdUI's
+**Built on the Mac, for this Mac's designs and, in a connected host's own threads, that host's**
+(docs/designs.md › Design references; on iOS, Implement in a Thread… as a native form and the
+chips, with no board for them; ShepherdUI's
 `References.swift`, `ImplementSheet.swift`, `MentionPicker.swift`, every state specimen in
 `SHDesignReferenceSpecimens` with its `#Preview`). A thread shows nothing of a design but the chip
 in the user's own message and one "Looked at…" line; none of it exists with the Design tool off,
 or in a design's own chat. Choices the boards leave open, and where the build departs:
 
-- **Other hosts** are ShepherdUI states only (the chip's "on another host" and "host offline",
-  the picker's host tags and dimmed offline rows): the app lists and sends this Mac's designs, and
-  never reaches them until remote references come.
+- **Other hosts** reach a host's own threads only (`design.references.v1`): a host thread's
+  picker lists that host's designs, untagged. The chip's "on another host" and "host offline", the
+  picker's host tags and dimmed offline rows stay ShepherdUI states the app doesn't reach.
 - **The picker lists no files** (the boards' "Files" section): the component draws the rows, the
   composer offers none, as the composer has no file mentions yet.
 - **Native menus** (the right-click menu, the design's •••) use the app's title case ("Implement

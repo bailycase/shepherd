@@ -144,6 +144,10 @@ public final class SessionServer: @unchecked Sendable {
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
         var upload: RemoteFileUpload?
+        /// A Claude Design ZIP this client is uploading to import (`design.import.v1`), and whether
+        /// the app is importing it now.
+        var designImport: RemoteDesignImportUpload?
+        var designImporting = false
         /// The Browser tunnels this remote client has open (`RemoteProtocol.browserTunnelCapability`),
         /// made when it opens its first.
         var tunnels: BrowserTunnelSession?
@@ -440,6 +444,16 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI answers a client's read of this host's MCP servers, subagent profiles or providers
     /// (`RemoteRequest.hostInventory`); nil on a headless host.
     public var onRemoteHostInventory: ((RemoteHostInventoryRequest, @escaping (Result<RemoteHostInventoryResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// The GUI's mission owner answers a client's Missions requests (`missions.v1`) other than the
+    /// reads the server answers itself (`list`, `get`), on the main actor, with the same methods and
+    /// guards as the host's own page. Nil on a headless host, which offers no missions.
+    public var onRemoteMission: ((RemoteMissionRequest, @escaping (Result<RemoteMissionResult, MissionError>) -> Void) -> Void)?
+    /// The GUI's mission owner takes words typed in a mission's own thread (on this Mac or a
+    /// client): a steer while its turn works, the planner's answer path while the mission waits,
+    /// else a refusal saying why. Answered `accepted` with the send's operation or a failure; the
+    /// owner applies every check its own controls do, and the composer's delivery: queued words wait for the
+    /// working turn to end, a steer or interrupt goes in now. Nil: such a send is `mission_control`.
+    public var onMissionThreadSend: ((AgentID, String, UUID, NativeThreadDelivery, @escaping (NativeThreadResult) -> Void) -> Void)?
     /// The GUI changes this host's MCP servers, subagent profiles or sign-ins for a client
     /// (`RemoteRequest.hostConfig`), as its own Settings would; nil on a headless host.
     public var onRemoteHostConfig: ((RemoteHostConfigRequest, @escaping (Result<RemoteHostConfigResult, RemoteCreateAgentError>) -> Void) -> Void)?
@@ -486,6 +500,18 @@ public final class SessionServer: @unchecked Sendable {
     /// A design system was written or re-synced. Delivered on the main actor; a hint to list the
     /// systems again, not state.
     public var onDesignSystemsChanged: (() -> Void)?
+    /// A remote client opens a design with no agent here (`RemoteDesignRequest.ensureAgent`): the
+    /// app starts one as its own Open does, selecting nothing, and answers it. Main actor; a
+    /// server without it (headless, tests) refuses.
+    public var onRemoteEnsureDesignAgent: ((DesignID, @escaping (Result<AgentID, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client's "Build one from a repo" (`RemoteDesignRequest.buildSystem`): the app starts
+    /// a system build reading the space (or answers the one it has), selecting nothing. Main
+    /// actor; a server without it refuses.
+    public var onRemoteBuildDesignSystem: ((SpaceID, @escaping (Result<RemoteDesignCreated, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client's uploaded Claude Design ZIP (`RemoteDesignRequest.importFinish`): the app
+    /// imports it as its own Import does (a project already in Designs as a copy, unreadable boards
+    /// refused), starts its agent, and answers the design. Main actor; the file goes after.
+    public var onRemoteImportDesign: ((URL, @escaping (Result<RemoteDesignCreated, RemoteDesignImportFailure>) -> Void) -> Void)?
     /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
     /// before they delete.
     public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
@@ -824,6 +850,10 @@ public final class SessionServer: @unchecked Sendable {
     var advertisedCapabilities = RemoteProtocol.capabilities
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
+    /// Missions are served to remote clients (`missions.v1`): the host's experiment is on. Server queue.
+    private var missionsServed = false
+    /// What each running mission's agents say now, as the owner last published it (`setMissionLive`). Server queue.
+    private var missionLive: [MissionID: RemoteMissionLive] = [:]
     /// Browser tunnels (docs/browser.md › Remote): the limits and the count across every client.
     private let tunnelHost = BrowserTunnelHost()
     /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
@@ -852,12 +882,27 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
+                && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
         }
     }
 
-    /// What the host offers `client`: `files.v1` only to a client that listed it in `hello`. Server queue.
+    /// What the host offers `client`: `files.v1` and `missions.v1` only to a client that listed it in `hello`. Server queue.
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
-        offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
+        offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
+    }
+
+    /// Serves Missions to remote clients (`missions.v1`) while `served` (Settings ▸ Experiments ▸
+    /// Missions) and `onRemoteMission` is installed. Clients that read missions are told what the host offers now.
+    public func setMissionsServed(_ served: Bool) {
+        queue.async {
+            guard self.missionsServed != served else { return }
+            self.missionsServed = served
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.missionsCapability) {
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
+                self.enqueuePayload(payload, to: client)
+            }
+        }
     }
 
     /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
@@ -1656,6 +1701,16 @@ public final class SessionServer: @unchecked Sendable {
         if store.state.isMissionAgent(agentID) {
             switch request {
             case .snapshot, .image, .subagentTranscript: break
+            case .send(_, _, let operationID, let text, let delivery, let images, _, let references, let elements) where onMissionThreadSend != nil:
+                guard (images ?? []).isEmpty, (references ?? []).isEmpty, (elements ?? []).isEmpty else {
+                    completion(.result(.failure(code: "mission_words_only", message: "A mission's thread takes words only. Remove the images or attachments and send again.")))
+                    return
+                }
+                let handler = onMissionThreadSend!
+                hopToMain { [weak self] in
+                    handler(agentID, text, operationID, delivery) { result in self?.queue.async { completion(.result(result)) } }
+                }
+                return
             default:
                 completion(.failure(code: "mission_control", message: "This thread belongs to a Mission. Use its Pause, Stop or Request changes controls."))
                 return
@@ -1798,7 +1853,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             if case .snapshot(var snapshot) = result, self?.store.state.isMissionAgent(agentID) == true {
-                snapshot.supportedActions = ["images"]
+                // Words go through the mission's owner, only while it can take them (`onMissionThreadSend`).
+                snapshot.supportedActions = self?.missionThreadTakesWords(agentID) == true ? ["images", "send"] : ["images"]
                 completion(.result(.snapshot(value: snapshot)))
             } else { completion(.result(result)) }
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
@@ -2137,11 +2193,17 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
             }
             guard !line.contains(13) else { disconnect(client); return }
-            // Design references are handed over on the Mac that runs the thread (docs/designs.md ›
-            // Design references): a remote client's are refused rather than dropped.
+            // Design references (docs/designs.md › Design references): a client's are refused rather
+            // than dropped, unless this host serves references to its own designs
+            // (`design.references.v1`); then the host resolves and fences each one itself, as for
+            // its own sends, and refuses one naming any other Mac's design.
             if let references = request.designReferences, !references.isEmpty {
-                send(.error(id: id, code: "design_references_local",
-                            message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
+                guard offeredCapabilities.contains(RemoteProtocol.designReferencesCapability), case .send = request else {
+                    send(.error(id: id, code: "design_references_local",
+                                message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
+                    return
+                }
+                remoteReferenceSend(id: id, agentID: agentID, request: request, client: client)
                 return
             }
             if case .retry = request, !client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) {
@@ -2341,6 +2403,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSkills(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
+        case .mission(let id, let request):
+            remoteMission(id: id, request: request, client: client)
         case .logicalProjectRuntime(let id, let request):
             guard !request.requiresResults || offeredCapabilities.contains(RemoteProtocol.projectResultCapability) && client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) else {
                 send(.error(id: id, code: "unsupported_result", message: "Durable result reads require compatible owner and viewer."), to: client); return
@@ -3035,6 +3099,21 @@ public final class SessionServer: @unchecked Sendable {
             remoteCreateDesign(id: id, draft: draft, client: client)
             return
         }
+        if case .ensureAgent(let designID) = request {
+            remoteEnsureDesignAgent(id: id, designID: designID, client: client)
+            return
+        }
+        if case .buildSystem(let spaceID) = request {
+            remoteBuildDesignSystem(id: id, spaceID: spaceID, client: client)
+            return
+        }
+        switch request {
+        case .importBegin, .importChunk, .importFinish, .importCancel:
+            remoteDesignImport(id: id, request: request, client: client)
+            return
+        default:
+            break
+        }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
@@ -3062,6 +3141,62 @@ public final class SessionServer: @unchecked Sendable {
                 self.enqueuePayload(payload, to: client)
             }
         }
+    }
+
+    /// Server queue: one Missions request (`missions.v1`). Reads come from the store; everything else
+    /// goes to the GUI's mission owner. Replies are encoded off the queue (a record is up to 256 KiB)
+    /// and refused `too_large` past the frame cap.
+    private func remoteMission(id: Int, request: RemoteMissionRequest, client: ExtensionConnection) {
+        guard offeredCapabilities(to: client).contains(RemoteProtocol.missionsCapability), let handler = onRemoteMission else {
+            send(.error(id: id, code: "unsupported", message: "Turn on Settings ▸ Experiments ▸ Missions on the host, or update Shepherd, to use its missions."), to: client)
+            return
+        }
+        let connection = ChangesUnchecked(value: client)
+        let reply: (Result<RemoteMissionResult, MissionError>) -> Void = { [weak self] result in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let answer: RemoteReply = switch result {
+                case .success(let value): .mission(id: id, result: value)
+                case .failure(let error): .error(id: id, code: error.code, message: error.description)
+                }
+                guard let payload = (try? NDJSON.encode(answer)).flatMap({ $0.count - 1 <= NDJSON.maxPayloadBytes ? $0 : nil })
+                    ?? (try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large", message: "The answer exceeds the remote payload limit."))) else { return }
+                self?.queue.async {
+                    guard let self, self.clients[connection.value.fd] === connection.value else { return }
+                    self.enqueuePayload(payload, to: connection.value)
+                }
+            }
+        }
+        switch request {
+        case .list: reply(.success(.list(store.state.missions.map(RemoteMissionSummary.init))))
+        case .get(let missionID):
+            if let mission = store.state.missions.first(where: { $0.id == missionID }) { reply(.success(.mission(mission, live: missionLive[missionID]))) }
+            else { reply(.failure(MissionError("mission_missing", "Mission no longer exists."))) }
+        default: hopToMain { handler(request, reply) }
+        }
+    }
+
+    /// What running missions' agents say now, from the owner (throttled there): kept for `get`, and pushed to
+    /// each client that reads missions. An empty value clears it.
+    public func setMissionLive(_ updates: [MissionID: RemoteMissionLive]) {
+        queue.async {
+            for (id, live) in updates { self.missionLive[id] = live.isEmpty ? nil : live }
+            self.missionLive = self.missionLive.filter { id, _ in self.store.state.missions.contains { $0.id == id } }
+            guard self.offeredCapabilities.contains(RemoteProtocol.missionsCapability) else { return }
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.missionsCapability) {
+                for (id, live) in updates { self.send(.missionLive(missionID: id, live: live), to: client) }
+            }
+        }
+    }
+
+    /// Server queue: hints each client that reads missions which ones were made, changed or went.
+    private func pushMissionChanges(before: [Mission], after: [Mission]) {
+        let readers = clients.values.filter { $0.isRemote && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.missionsCapability) }
+        guard !readers.isEmpty, offeredCapabilities.contains(RemoteProtocol.missionsCapability) else { return }
+        let old = Dictionary(before.map { ($0.id, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        let hints = after.filter { old[$0.id] != $0.revision }.map { ($0.id, Optional($0.revision)) }
+            + before.filter { gone in !after.contains { $0.id == gone.id } }.map { ($0.id, UInt64?.none) }
+        for client in readers { for (mission, revision) in hints { send(.missionChanged(missionID: mission, revision: revision), to: client) } }
     }
 
     /// Server queue: tells the remote clients watching a design that it changed: its files (at
@@ -3183,6 +3318,160 @@ public final class SessionServer: @unchecked Sendable {
                         self.send(.error(id: id, code: "create_failed", message: error.message), to: client)
                     }
                 }
+            }
+        }
+    }
+
+    /// Server queue: a design's agent for a remote client: the one it has, else one the app
+    /// starts. A system build is never opened remotely.
+    private func remoteEnsureDesignAgent(id: Int, designID: DesignID, client: ExtensionConnection) {
+        guard let design = store.state.designs.first(where: { $0.id == designID && !$0.buildsSystem }) else {
+            send(.error(id: id, code: DesignStoreError.noSuchDesign(designID).code, message: "unknown design \(designID)"), to: client)
+            return
+        }
+        let agents = store.state.agents
+        if let agent = agents.first(where: { $0.id == design.agentID }) ?? agents.first(where: { $0.designID == designID }) {
+            send(.design(id: id, result: .agent(agent.id)), to: client)
+            return
+        }
+        guard let handler = onRemoteEnsureDesignAgent else {
+            send(.error(id: id, code: "unsupported", message: "host cannot start design agents (no GUI)"), to: client)
+            return
+        }
+        hopToMain { [weak self] in
+            handler(designID) { result in
+                guard let self else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let agent): self.send(.design(id: id, result: .agent(agent)), to: client)
+                    case .failure(let error): self.send(.error(id: id, code: "start_failed", message: error.message), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Server queue: a remote send carrying references to this host's designs, through the same
+    /// path as the host's own (`nativeThread(agentID:request:)`: resolved, kept and fenced here).
+    private func remoteReferenceSend(id: Int, agentID: AgentID, request: NativeThreadRequest, client: ExtensionConnection) {
+        let connection = ChangesUnchecked(value: client)
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let reply: RemoteReply
+            do {
+                reply = .nativeThread(id: id, result: try await self.nativeThread(agentID: agentID, request: request))
+            } catch RemoteHostClientError.rejected(let code, let message) {
+                reply = .error(id: id, code: code, message: message)
+            } catch {
+                reply = .error(id: id, code: "design_references_failed", message: String(describing: error))
+            }
+            self.queue.async {
+                let client = connection.value
+                guard self.clients[client.fd] === client else { return }
+                self.send(reply, to: client)
+            }
+        }
+    }
+
+    /// Server queue: a remote "Build one from a repo" in one of this host's spaces (never the
+    /// reserved designs space), started by the app.
+    private func remoteBuildDesignSystem(id: Int, spaceID: SpaceID, client: ExtensionConnection) {
+        guard let space = store.state.spaces.first(where: { $0.id == spaceID }), !space.holdsDesigns, !space.holdsProjects else {
+            send(.error(id: id, code: "no_such_space", message: "unknown space \(spaceID)"), to: client)
+            return
+        }
+        guard let handler = onRemoteBuildDesignSystem else {
+            send(.error(id: id, code: "unsupported", message: "host cannot build design systems (no GUI)"), to: client)
+            return
+        }
+        hopToMain { [weak self] in
+            handler(spaceID) { result in
+                guard let self else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let made):
+                        self.send(.design(id: id, result: .created(designID: made.designID, agentID: made.agentID)), to: client)
+                    case .failure(let error):
+                        self.send(.error(id: id, code: "create_failed", message: error.message), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Server queue: another device's Claude Design ZIP, uploaded in order to a private file, then
+    /// imported by the app. One at a time per connection; it goes with the connection.
+    private func remoteDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
+        let refuse = { (code: String, message: String) in self.send(.error(id: id, code: code, message: message), to: client) }
+        guard let handler = onRemoteImportDesign else {
+            refuse("unsupported", "host cannot import designs (no GUI)")
+            return
+        }
+        switch request {
+        case .importBegin(let name, let size):
+            guard !client.designImporting else { refuse("import_busy", "An import is under way."); return }
+            do {
+                client.designImport = try RemoteDesignImportUpload(root: store.url.deletingLastPathComponent().appendingPathComponent("remote-design-imports"),
+                                                                   name: name, size: size)
+                send(.design(id: id, result: .importStarted(uploadID: client.designImport!.id)), to: client)
+            } catch let failure as RemoteDesignImportFailure {
+                refuse(failure.code, failure.message)
+            } catch {
+                refuse("import_failed", String(describing: error))
+            }
+        case .importChunk(let uploadID, let offset, let data):
+            guard let upload = client.designImport, upload.id == uploadID, !client.designImporting else { refuse("no_such_import", "No such import."); return }
+            do {
+                try upload.append(data, at: offset)
+                send(.design(id: id, result: .ok), to: client)
+            } catch let failure as RemoteDesignImportFailure {
+                refuse(failure.code, failure.message)
+            } catch {
+                client.designImport = nil
+                refuse("import_failed", String(describing: error))
+            }
+        case .importCancel(let uploadID):
+            if client.designImport?.id == uploadID, !client.designImporting { client.designImport = nil }
+            send(.design(id: id, result: .ok), to: client)
+        case .importFinish(let uploadID):
+            guard let upload = client.designImport, upload.id == uploadID, !client.designImporting else { refuse("no_such_import", "No such import."); return }
+            guard upload.isComplete else { refuse("import_incomplete", "The host has \(upload.received) of \(upload.size) bytes."); return }
+            client.designImporting = true
+            let url = upload.url
+            hopToMain { [weak self] in
+                handler(url) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        // The file goes either way: a failed import uploads again.
+                        client.designImporting = false
+                        if client.designImport?.id == uploadID { client.designImport = nil }
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let made):
+                            self.send(.design(id: id, result: .created(designID: made.designID, agentID: made.agentID)), to: client)
+                        case .failure(let failure):
+                            self.send(.error(id: id, code: failure.code, message: failure.message), to: client)
+                        }
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    /// The design systems changed: the app lists them again, and so does each remote client
+    /// that reads the push (`designSystemsCapability`). Any thread.
+    private func designSystemsDidChange() {
+        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        queue.async { [weak self] in
+            guard let self, self.offeredCapabilities.contains(RemoteProtocol.designSystemsCapability),
+                  let payload = try? NDJSON.encode(RemoteReply.designSystemsChanged) else { return }
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.designSystemsCapability) {
+                self.enqueuePayload(payload, to: client)
             }
         }
     }
@@ -5216,6 +5505,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         syncServiceTiers(state)
         broadcastRemoteState(state)
+        if before.missions != state.missions { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
         if !browserOwners.isEmpty { pruneBrowserOwners(state) }
@@ -6565,7 +6855,7 @@ public final class SessionServer: @unchecked Sendable {
             added = added || adopted.added
             if index == 0 { drawnIn = adopted.namespace }
         }
-        if added { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
+        if added { designSystemsDidChange() }
         // The system it is drawn in is the one it came with, wherever that was kept: under
         // another name when this host has a different system by its own, or the one this host
         // already had with the same files.
@@ -6605,7 +6895,7 @@ public final class SessionServer: @unchecked Sendable {
             try await deleteDesign(owner, undoable: false)
         }
         try await designSystems.delete(namespace)
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
     }
 
     /// Rename… a design system: its title, never its namespace. A built-in is refused.
@@ -6613,7 +6903,7 @@ public final class SessionServer: @unchecked Sendable {
     public func renameDesignSystem(_ namespace: String, to title: String) async throws -> DesignSystemSummary {
         guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
         let summary = try await designSystems.rename(namespace, to: title, at: Self.nowMilliseconds())
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
         return summary
     }
 
@@ -6622,7 +6912,7 @@ public final class SessionServer: @unchecked Sendable {
     public func duplicateDesignSystem(_ namespace: String) async throws -> DesignSystemSummary {
         guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
         let summary = try await designSystems.duplicate(namespace, at: Self.nowMilliseconds())
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
         return summary
     }
 
@@ -6651,6 +6941,13 @@ public final class SessionServer: @unchecked Sendable {
     public func designSystemContents(_ namespace: String) async throws -> [String: Data] {
         guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
         return try await designSystems.contents(namespace).files
+    }
+
+    /// One file of a design system by its path, or nil (`RemoteDesignRequest.systemFile`). Read on
+    /// the store's queue.
+    public func designSystemFile(_ namespace: String, path: String) async throws -> Data? {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        return try await designSystems.file(namespace, path: path)
     }
 
     /// What `system_read` lists for a design's agent: every system, and the ones the design has
@@ -6684,7 +6981,7 @@ public final class SessionServer: @unchecked Sendable {
             summary = written.summary
             changed = written.changed
             notes = written.notes
-            if changed { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
+            if changed { designSystemsDidChange() }
         } else {
             guard write.install == true else {
                 throw DesignSystemError.invalidTokens(["nothing to do: pass tokens, files, sources or install"])
@@ -6732,7 +7029,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let result = try await designSystems.resync(namespace, root: URL(fileURLWithPath: space.path, isDirectory: true),
                                                     at: Self.nowMilliseconds())
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
         return result
     }
 

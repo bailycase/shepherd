@@ -10,12 +10,14 @@ import ShepherdUI
 struct DesignsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @State private var prompt: DesignActionPrompt?
 
     var body: some View {
         let designs = MobileDesigns.of(hosts)
         let model = designs.model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileDesignLayout.sectionSpacing) {
+                DesignActionBanners()
                 if !model.available {
                     SHEmptyState(Text("No designs here"), message: RemoteHostClient.designsRefusal, showsMark: false)
                         .frame(maxWidth: .infinity)
@@ -36,6 +38,7 @@ struct DesignsScreen: View {
                                     DesignsHooks.open(tile.ref, navigator: navigator)
                                 }
                                 .equatable()
+                                .contextMenu { DesignActionItems(ref: tile.ref, prompt: $prompt) }
                             }
                         }
                     }
@@ -53,6 +56,7 @@ struct DesignsScreen: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color.sh.bgWindow)
+        .modifier(DesignActionPrompts(prompt: $prompt))
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Designs")

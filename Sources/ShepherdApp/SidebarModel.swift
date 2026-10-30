@@ -38,13 +38,15 @@ enum SidebarRowID: Hashable {
     case local(AgentID)
     case remote(RemoteAgentRef)
     case design(DesignID)
+    /// A connected host's design whose agent is gone there: opening it has the host start one.
+    case remoteDesign(RemoteDesignRef)
 
     /// The agent the row names; nil for a design.
     var agentID: AgentID? {
         switch self {
         case .local(let id): id
         case .remote(let ref): ref.agentID
-        case .design: nil
+        case .design, .remoteDesign: nil
         }
     }
 }
@@ -193,6 +195,8 @@ struct SidebarSource: Equatable {
         var state: ShepherdState
         /// Not connected: `state` is what it last sent this launch.
         var offline = false
+        /// The agents its missions started (`missions.v1`): a host sends no missions in its state.
+        var missionAgents: Set<AgentID> = []
     }
 
     var local: ShepherdState
@@ -375,7 +379,7 @@ enum SidebarDerivation {
                                       uniquingKeysWith: { first, _ in first })
             let automations = Dictionary(host.state.automations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let hostWorkers = host.state.projectWorkerIDs
-            let missionAgents = host.state.missionAgentIDs
+            let missionAgents = host.state.missionAgentIDs.union(host.missionAgents)
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
             for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent, workers: hostWorkers) && !missionAgents.contains(agent.id) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.
@@ -402,6 +406,23 @@ enum SidebarDerivation {
             for automation in host.state.automations where !host.offline && automation.activeTrigger {
                 let key = AutomationKey(host: host.id, automation: automation.id)
                 if tallies[key] == nil { tallies[key] = AutomationTally(automation: automation, host: hostIndex + 1, hostName: host.name) }
+            }
+            // A host's design (while it serves designs) is a design row that opens its agent's
+            // layout, the design's screen; one whose agent is gone there has the host start one.
+            if source.designs {
+                for (index, design) in host.state.designs.enumerated() where design.inRecents && !design.buildsSystem {
+                    let agent = host.state.agents.first(where: { $0.id == design.agentID })
+                        ?? host.state.agents.first(where: { $0.designID == design.id })
+                    let id: SidebarRowID = agent.map { .remote(RemoteAgentRef(hostID: host.id, agentID: $0.id)) }
+                        ?? .remoteDesign(RemoteDesignRef(hostID: host.id, designID: design.id))
+                    var row = designRow(design)
+                    row = SidebarListRow(id: id, title: row.title, leading: row.leading,
+                                         accessory: .tag(host.name), section: .designs, help: row.help,
+                                         accessibilityLabel: row.accessibilityLabel + ", on \(host.name)", worktree: false,
+                                         automation: nil, automationLive: false)
+                    row.offline = host.offline
+                    entries.append(entry(row, nil, needsYou: false, key: design.lastActiveAt, host: hostIndex + 1, index: index))
+                }
             }
         }
         // Most recently active first. Agents no host has timed (older hosts and state files)

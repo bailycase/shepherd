@@ -6,6 +6,20 @@ import ShepherdProtocol
 /// the Mac and the iOS client: what a send will carry, what the chip's preview says the agent
 /// gets, and which design_get calls one "Looked at…" line stands for.
 public enum DesignReferencePresentation {
+    /// A sent chip's crumbs, from the record its message carries: design › page or board › element.
+    public static func crumbs(_ record: DesignReferenceRecord) -> [String] {
+        var crumbs = [record.design ?? "Design"]
+        if let page = record.page { crumbs.append("Page · " + (record.pageTitle ?? page)) }
+        if let board = record.board { crumbs.append(record.boardTitle ?? DesignPath(board)?.stem ?? board) }
+        if record.element != nil { crumbs.append(record.elementLabel.map { "“\($0)”" } ?? "element") }
+        return crumbs
+    }
+
+    /// A composer chip's crumbs, from its label ("Checkout › A · Funnel first › button “Pay”").
+    public static func crumbs(label: String) -> [String] {
+        label.components(separatedBy: " › ").filter { !$0.isEmpty }
+    }
+
     /// The Implement sheet's footer: "Sends a picture, its HTML, 11 styles and 8 tokens from
     /// acme-web." (an element), "…the board’s HTML, 42 styles…" (a board), "Sends a picture and the
     /// HTML of each of its 4 boards…" (a whole design; "of its first 12 of 40 boards" past the cap).

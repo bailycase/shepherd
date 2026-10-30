@@ -67,6 +67,9 @@ final class ShepherdViewModel {
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
+    /// The host whose missions the Missions page shows; nil is This Mac.
+    var missionsHost: UUID?
+    @ObservationIgnored var remoteMissionDrivers: [UUID: RemoteMissionDriver] = [:]
     @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
@@ -158,6 +161,10 @@ final class ShepherdViewModel {
     var referenceToast: DesignReferenceToast?
     /// Each local thread's design references: its chips, "Looked at…" lines and @ picker.
     @ObservationIgnored var referenceChips: [AgentID: DesignReferenceChips] = [:]
+    /// Hosts' threads' references (`design.references.v1`), the @ picker's rows of each host
+    /// design opened in it, and the kept copies being read.
+    @ObservationIgnored var remoteReferenceChips: [RemoteAgentRef: DesignReferenceChips] = [:]
+    @ObservationIgnored var remoteKeptReads: [String: Task<(payload: DesignReferencePayload, folder: URL, freshness: DesignReferenceFreshness)?, Never>] = [:]
     /// The designs as references last saw them (their activity and boards): a change reads every
     /// chip's standing again.
     @ObservationIgnored var referenceDesignSignature: [DesignID: [Double]] = [:]
@@ -197,6 +204,10 @@ final class ShepherdViewModel {
     /// The system the Design systems page shows (a system without an agent of its own; a
     /// build's page is its agent's layout).
     var shownDesignSystem: String?
+    /// A connected host's system the Design systems page shows instead (`design.systems.v1`), and
+    /// its read once it lands.
+    var shownRemoteSystem: RemoteSystemRef?
+    var shownRemoteSystemRead: DesignSystemRead?
     /// The system page last opened: More ▸ Design systems goes back to it.
     @ObservationIgnored var lastDesignSystem: DesignSystemTarget?
     @ObservationIgnored var designSystemPageCache: [DesignSystemTarget: (inputs: DesignSystemPageInputs, model: DesignSystemPageModel)] = [:]
@@ -921,6 +932,7 @@ final class ShepherdViewModel {
         installRemoteInspection()
         installHostSettings()
         installHostInventory()
+        missions.installRemote()
         installHostConfig()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
@@ -1015,6 +1027,48 @@ final class ShepherdViewModel {
             Task { @MainActor in
                 do {
                     completion(.success(try await self.createRemoteDesign(request)))
+                } catch {
+                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
+                }
+            }
+        }
+        // Another device opens a design with no agent here: one starts as this Mac's Open starts it.
+        server.onRemoteEnsureDesignAgent = { [weak self] id, completion in
+            guard let self else {
+                completion(.failure(RemoteCreateAgentError("host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.ensureRemoteDesignAgent(id)))
+                } catch {
+                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
+                }
+            }
+        }
+        // Another device's uploaded Claude Design ZIP, imported here as this Mac's own.
+        server.onRemoteImportDesign = { [weak self] url, completion in
+            guard let self else {
+                completion(.failure(RemoteDesignImportFailure("import_failed", "host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.importRemoteDesign(from: url)))
+                } catch {
+                    completion(.failure(error as? RemoteDesignImportFailure ?? RemoteDesignImportFailure("import_failed", "\(error)")))
+                }
+            }
+        }
+        // Another device's "Build one from a repo" in one of this Mac's spaces.
+        server.onRemoteBuildDesignSystem = { [weak self] spaceID, completion in
+            guard let self else {
+                completion(.failure(RemoteCreateAgentError("host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.buildRemoteDesignSystem(spaceID)))
                 } catch {
                     completion(.failure(RemoteCreateAgentError(String(describing: error))))
                 }

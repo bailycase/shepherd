@@ -255,41 +255,36 @@ A question takes the composer's place: a card, not the phone's docked panel, as 
 thread's column (780pt), 10pt above the thread's end and 26pt from the bottom. The
 header's pill turns "Needs you" (attention, glowing).
 
-- **Card:** `bgRaised`, a 1px `lantern` line, radius 16, a 3pt `lanternTint` ring outside it;
-  14×18 inset (16 at the bottom), parts 12pt apart.
-- **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; and,
-  trailing, **Hide the question**: a 40pt circle (`.shIcon`, a 44pt touch target) with an 18pt
-  `chevron.down` in `textSecondary`, overhanging the head rather than growing it, which folds the
-  card to read the thread and never answers it ("Hide the question" to VoiceOver). The phone's
-  docked panel hides from its grabber instead.
-- **Folded** (`SHQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
-  line, QuestionStates › hidden): the same lantern card around one row, 16pt leading and 4pt
-  trailing: a 14pt glyph in `lanternText`, the question in `headline` (truncating), a secondary
-  **Answer** (m), and Show the question (the same 40pt circle, `chevron.up`); either button
-  unfolds it. It still holds the composer's place, because the agent is still waiting. Only that
-  question stays folded: the next one arrives open (`NativeQuestionHiding`, the Mac's rule).
-- **The question:** 19/600/1.35.
-- **Answers,** numbered, side by side in two columns when each gets at least 220pt, 8pt apart;
-  one column otherwise:
-  - An answer card: 12×14 inset, radius 8, 11pt gap: its number in a 24pt square at radius 5
-    (mono 11), then "Recommended" when the asker marks one (20pt, radius 4, `lanternTint`,
-    `lanternText` 11/600), the title at 15/600/1.35, and its description at 14/1.45
-    `textSecondary`.
-  - At rest: `bgWindow`, a 1px `lineSubtle` line, the number outlined in `lineStrong` with
-    `textSecondary`. Chosen: `lanternTint` with a `lantern` line, the number on `lantern` in
-    `textOnLantern` semibold.
-- **No note and no "Something else…".** The board draws a note field in the chosen answer and a
-  last full-width "Something else…" row, but no asker takes either: pi's dialogs take neither,
-  and a subagent asks its parent (the dock's What each asker takes). The components that drew
-  them (`SHQuestionNoteField`, `SHQuestionOtherCard`) were pruned, with the subagent variant.
-  Project workers' `project_question` keeps its offered option rows; the final numbered row is a
-  **Say anything** input, with the same option-card styling. Pick or type, then Answer sends one native input reply. Typing clears the pick;
-  picking clears the text. There is no selectable Say anything option or follow-up dialog.
-- **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
-  Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
-  side by side that answer on a tap; an open question is a field over Answer.
-- **The app's additions:** "1 / N" (mono `textTertiary`) in the head when several questions
-  wait; the asker's longer message in mono on `bgSunken` under the question; "The agent may stop
+It follows the Mac's question dock (QuestionDockRadio, docs/design/composer.md › Questions;
+`QuestionPanel` on `NativeQuestionPrompt`), with touch targets and no key hints:
+
+- **Card** (`SHQuestionCard`): `bgRaised`, a 1px `lineStrong` line, radius 10, a 3pt `lantern`
+  edge on the leading side, no ring; 14pt above and below, 16pt at the sides (inside the edge),
+  parts 12pt apart.
+- **Head:** the eyebrow "AGENT IS ASKING" (11/600, uppercase, tracked, `lanternText`; "· 1 of N"
+  when several wait) over the question (15/600, the title's first paragraph); trailing, **Hide
+  the question**: a 40pt circle (`.shIcon`, a 44pt touch target) with an 18pt `chevron.down`,
+  overhanging the head rather than growing it, which folds the card and never answers it. The
+  phone's docked panel hides from its grabber instead.
+- **Details** (`SHQuestionDetails`), when the title has more paragraphs: "Details" (12,
+  `textSecondary`, a rotating chevron, a 44pt row), folded; open, the rest at 13 `textSecondary`,
+  scrolling with the panel.
+- **Folded** (`SHQuestionCardHiddenLine`): the same card around one row: a 14pt glyph in
+  `lanternText`, the question in `headline` (truncating), a secondary **Answer** (m), and Show
+  the question (the same 40pt circle, `chevron.up`); either button unfolds it. It still holds the
+  composer's place. Only that question stays folded: the next one arrives open
+  (`NativeQuestionHiding`, the Mac's rule).
+- **Answers** (`SHQuestionRadioRow`): one column of radio rows, 2pt apart, at least 44pt tall,
+  no numbers: a 16pt radio (a `lineStrong` ring; chosen, a `lantern` ring and dot), the title at
+  13.5 with "Recommended" after it in `lanternText` 12/500, and its description in
+  `textSecondary`. Where the asker takes words (`ask_user`, `project_question`), the last row is
+  **Something else…** (`SHQuestionTextRow`): the same radio and a plain field. Typing clears the
+  pick; picking clears the text.
+- **Foot:** trailing, **Skip** (ghost) then **Answer** (primary), enabled once there is an answer.
+  Skip answers nothing: pi's dialog is cancelled and the agent is told you didn't answer. A yes
+  or a no is two cards side by side that answer on a tap; an open question is a field over
+  Skip and Answer.
+- **The app's additions:** the asker's longer message in mono on `bgSunken`; "The agent may stop
   waiting for this answer" under an answer with a timeout; and, for a question it cannot show,
   "An external editor is open on the host · finish it there" or "This question is too large
   to show here · answer it on the host".

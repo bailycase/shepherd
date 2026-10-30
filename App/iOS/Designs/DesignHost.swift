@@ -272,6 +272,12 @@ final class DesignLiveBoard {
     private(set) var failure: String?
     /// Moves each time the board redraws (booted, reloaded), so pins measure again.
     private(set) var drawn = 0
+    /// Play: the board takes touches itself (its links, its controls), as the iPad's presented board does.
+    var playing = false {
+        didSet { view?.isUserInteractionEnabled = playing }
+    }
+    /// A link on the board while playing: another board of the design.
+    @ObservationIgnored var linked: ((DesignPath) -> Void)?
 
     @ObservationIgnored private var view: DesignBoardView?
     @ObservationIgnored private let source: RemoteDesignSource
@@ -287,10 +293,12 @@ final class DesignLiveBoard {
     fileprivate func attach() -> DesignBoardView {
         if let view { return view }
         let made = DesignBoardView(surface: DesignRendering.shared.surface(ref, source: source), board: path, size: size)
-        made.isUserInteractionEnabled = false
+        made.isUserInteractionEnabled = playing
         made.onEvent = { [weak self] event in
             guard let self else { return }
             switch event {
+            case .link(let target):
+                if self.playing { self.linked?(target) }
             case .terminated:
                 self.booted = false
                 Task { await self.load() }
@@ -348,6 +356,22 @@ final class DesignLiveBoard {
         guard booted else { return nil }
         return await view?.element(tid: tid)?.rect
     }
+
+    // Tweak's previews on the live board (`DesignTweakPreviews`, through the board screen).
+    func previewStyle(_ changes: [Int: [String: String?]]) async -> Bool {
+        guard booted, let view else { return false }
+        return await view.previewStyle(changes) > 0
+    }
+
+    func previewProps(_ json: String) async -> Bool {
+        guard booted, let view else { return false }
+        return await view.previewProps(json)
+    }
+
+    func endPreview() async {
+        guard booted else { return }
+        await view?.endPreview()
+    }
 }
 
 /// A live board in SwiftUI, at `zoom` (points per board point).
@@ -366,6 +390,7 @@ struct DesignLiveBoardView: UIViewRepresentable {
 
     func updateUIView(_ container: UIView, context: Context) {
         board.zoom(zoom)
+        container.isUserInteractionEnabled = board.playing
     }
 
     static func dismantleUIView(_ container: UIView, coordinator: ()) {

@@ -124,8 +124,10 @@ struct DesignReferenceCanvasTests {
         #expect(toolbar.sections.count == 3 && toolbar.sections[1].map(\.title) == ["Implement card “Checkout funnel”…", "Copy Reference"])
         #expect(toolbar.sections[1].map(\.action) == [.implement, .copyReference])
         #expect(DesignMenu.design(.card, hasSystem: true, reference: "x").items.allSatisfy { $0.action != .implement })
-        #expect(DesignMenu.design(.toolbar, hasSystem: false, remote: "build-01", reference: "x").items.allSatisfy { $0.action != .implement },
-                "another host's design waits for remote references")
+        #expect(DesignMenu.design(.toolbar, hasSystem: false, remote: "build-01").items.allSatisfy { $0.action != .implement },
+                "a host that takes no references gets no reference items")
+        #expect(DesignMenu.design(.toolbar, hasSystem: false, remote: "build-01", reference: "x").items.contains { $0.action == .implement },
+                "a host that takes references to its designs (design.references.v1) gets them")
     }
 
     @Test func aThreadsNoteIsItsOwnPinAndOpensItsCard() async throws {
