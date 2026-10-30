@@ -161,14 +161,15 @@
     remove, import, check again, sign in and out. Subagent profiles: save, delete and restore
     defaults, each fenced by the fingerprint the client read. Providers: save an API key (checked
     with the provider first; `$NAME` names a login-shell variable), sign out, an account sign-in,
-    and the saved accounts (`providerAccount`: use, rename, remove, rotate, add another; their
+    and the saved accounts (`providerAccount`: use, rename, remove, rotate, add another account, or `addKey` another
+    key beside the saved one, as the host's own Add account does; their
     ids are opaque and `HostProviderStatus.accountList` lists them once there are two). A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
     `HostSignInProgress`: the page to open on the client, a device code, or that the host waits
     for `signIn(.complete)` with the code the page shows (a provider's pasted-code flow; nothing
     opens on the host) or, for an MCP server, the loopback address the browser ended on, which the
-    host relays only when it matches pi's `redirect_uri` and `state`. `pi mcp login` also opens
-    the page in the host's own browser: pi's CLI has no flag or variable to stop it, so clients
-    say it can be left alone. At most four run at once and
+    host relays only when it matches pi's `redirect_uri` and `state`. The host runs pi's own
+    login through its `openUrl` option (`Extensions/shepherd-mcp-login.mjs`), so nothing opens
+    in the host's browser; the host's own Sign in still opens it. At most four run at once and
     each is gone 330 seconds after it starts. A reply never carries a secret; a client that lacks
     the capability refuses before sending. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to

@@ -47,6 +47,7 @@ extension ShepherdViewModel {
 
     /// Settings ▸ Sign-in's rows, read afresh, as a client sees them.
     func hostProviders() async -> [HostProviderStatus] {
+        await piAuth.landing?.value
         await yourPi.refresh()
         await piAuth.refreshAccounts()
         let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }

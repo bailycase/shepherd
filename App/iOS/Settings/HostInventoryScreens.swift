@@ -13,11 +13,11 @@ import ShepherdRemote
 /// Settings ▸ MCP: the host's servers, each with its last known status and sign-in column.
 struct MCPServersScreen: View {
     @Environment(MobileHosts.self) private var hosts
-    @State private var editor: MCPEditor?
 
     var body: some View {
         let store = SettingsStore.of(hosts)
         let config = store.hostConfig
+        let editor = store.mcpEditor
         HostConfigPage(store: store, page: .mcp, configPage: .mcp,
                        explanation: "The MCP servers a host's agents can use, as its last check found them.") { host in
             if let inventory = config.mcp[host.id] {
@@ -26,15 +26,15 @@ struct MCPServersScreen: View {
                     SHBanner(.failed, title: problem)
                 }
                 HostSignInPanel(config: config, host: host, page: .mcp,
-                                codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1). The page may also open in \(host.name)'s own browser; leave it.")
+                                codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1).")
                 if let editor {
                     MCPServerEditor(editor: editor, busy: config.busy.contains(host.id)) { json, secrets in
                         Task {
                             if await config.perform(.mcpSave(json: json, secrets: secrets, replacing: editor.replacing), on: host) != nil {
-                                self.editor = nil
+                                store.mcpEditor = nil
                             }
                         }
-                    } cancel: { self.editor = nil }
+                    } cancel: { store.mcpEditor = nil }
                 }
                 if inventory.servers.isEmpty {
                     SettingsFootnote("No MCP servers on \(host.name) yet.")
@@ -47,7 +47,7 @@ struct MCPServersScreen: View {
                                     MCPServerControls(server: server, config: config, host: host) {
                                         Task {
                                             if case .mcpEntry(let json)? = await config.perform(.mcpEntry(name: server.name), on: host) {
-                                                editor = MCPEditor(replacing: server.name, json: json)
+                                                store.mcpEditor = MCPEditor(replacing: server.name, json: json)
                                             }
                                         }
                                     }
@@ -59,7 +59,7 @@ struct MCPServersScreen: View {
                 }
                 if editable {
                     HStack(spacing: SH.Space.l) {
-                        Button("Add server") { editor = MCPEditor(replacing: nil, json: MCPEditor.template) }
+                        Button("Add server") { store.mcpEditor = MCPEditor(replacing: nil, json: MCPEditor.template) }
                             .buttonStyle(.sh(.secondary))
                             .disabled(editor != nil)
                         Button("Check again") { Task { await config.perform(.mcpRefresh, on: host) } }
@@ -366,6 +366,8 @@ struct SubagentProfileScreen: View {
 struct ProvidersScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @State private var keyFor: String?
+    /// The key form adds a key beside the saved one (Add key) rather than replacing it.
+    @State private var addingKey = false
     @State private var key = ""
 
     var body: some View {
@@ -379,7 +381,7 @@ struct ProvidersScreen: View {
                                 codePrompt: "After signing in, paste the code (or the whole address) the page shows.")
                 if let provider = keyFor {
                     VStack(alignment: .leading, spacing: SH.Space.m) {
-                        Text("API key for \(providers.first { $0.id == provider }?.name ?? provider)")
+                        Text((addingKey ? "Another API key for " : "API key for ") + (providers.first { $0.id == provider }?.name ?? provider))
                             .font(.sh(.ui, weight: .semibold))
                             .foregroundStyle(Color.sh.textPrimary)
                         SecureField("Key, or $VARIABLE set on the host", text: $key)
@@ -389,7 +391,9 @@ struct ProvidersScreen: View {
                                 let value = key
                                 key = ""
                                 Task {
-                                    if await config.perform(.providerKey(provider: provider, key: value), on: host) != nil { keyFor = nil }
+                                    let request: RemoteHostConfigRequest = addingKey
+                                        ? .providerAccount(provider: provider, action: .addKey(value)) : .providerKey(provider: provider, key: value)
+                                    if await config.perform(request, on: host) != nil { keyFor = nil }
                                 }
                             }
                             .buttonStyle(.sh(.primary))
@@ -417,7 +421,7 @@ struct ProvidersScreen: View {
                                         if editable, badge != "Custom" {
                                             ProviderAction(provider: provider, subscription: badge == "Subscription") { request in
                                                 Task { await config.perform(request, on: host) }
-                                            } setKey: { keyFor = provider.id }
+                                            } setKey: { adding in addingKey = adding; keyFor = provider.id }
                                             .padding(.trailing, SH.Space.l)
                                         }
                                     }
@@ -475,9 +479,12 @@ private struct ProviderAccounts: View {
                     }
                 }
             }
+            // Under their provider: in line with its name, past its status dot.
+            .padding(.leading, SHListMetrics.leadingWidth + SH.Space.l)
         }
         SettingsSwitchRow("Switch accounts at a limit", note: "When the active account hits its limit, the next one takes over.",
                           isOn: provider.rotate == true) { act(.rotate($0)) }
+            .padding(.leading, SHListMetrics.leadingWidth + SH.Space.l)
             .disabled(!editable)
             .alert("Rename \(renaming?.name ?? "account")", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Name", text: $name)
@@ -492,7 +499,8 @@ private struct ProviderAction: View {
     let provider: HostProviderStatus
     let subscription: Bool
     let run: (RemoteHostConfigRequest) -> Void
-    let setKey: () -> Void
+    /// Opens the key form; true adds a key beside the saved one.
+    let setKey: (Bool) -> Void
 
     var body: some View {
         let signedIn = provider.auth == .signedIn || provider.auth == .apiKey
@@ -500,18 +508,21 @@ private struct ProviderAction: View {
             Menu {
                 if subscription {
                     Button("Add account") { run(.providerAccount(provider: provider.id, action: .add)) }
+                } else if provider.auth == .apiKey {
+                    Button("Add key") { setKey(true) }
                 }
                 Button(subscription ? "Sign out" : "Remove", role: .destructive) { run(.providerSignOut(provider: provider.id)) }
             } label: {
+                // Drawn as the row's other actions are (`shLink`): running blue, so it reads as one.
                 Text(subscription ? "Account" : "Key")
                     .font(.sh(.caption, weight: .medium))
-                    .foregroundStyle(Color.sh.textSecondary)
+                    .foregroundStyle(Color.sh.running)
             }
         } else if subscription {
             Button(provider.auth == .expired ? "Sign in again" : "Sign in") { run(.providerSignIn(provider: provider.id)) }
                 .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
         } else {
-            Button("Set key") { setKey() }
+            Button("Set key") { setKey(false) }
                 .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
         }
     }

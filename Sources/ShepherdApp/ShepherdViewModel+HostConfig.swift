@@ -140,6 +140,18 @@ extension ShepherdViewModel {
                     piAuth.stopAdding(provider)
                     throw error
                 }
+            case .addKey(let key):
+                // As Settings ▸ Sign-in's Add account for a key: the current key is saved first,
+                // and the new one lands beside it.
+                let input = try HostConfigMapping.keyInput(key)
+                if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
+                guard await piAuth.beginAddingRemotely(provider) else {
+                    throw RemoteCreateAgentError(piAuth.problems[provider] ?? "Couldn’t add an account.")
+                }
+                do { try await saveProviderKey(provider, key: input) } catch {
+                    piAuth.stopAdding(provider)
+                    throw error
+                }
             }
             if let problem = piAuth.problems[provider] { throw RemoteCreateAgentError(problem) }
             return .providers(await hostProviders())
@@ -411,13 +423,12 @@ final class RemoteSignIns {
 
     /// `pi mcp login` for one server. pi listens on this Mac's loopback for the browser's return;
     /// the client sends the address its browser ended on, and this Mac makes that one request.
-    /// pi's CLI also opens the page in this Mac's own browser: it has no flag or variable to stop
-    /// it (only its in-process `openUrl` option, which the CLI doesn't expose). That page is
-    /// harmless left alone; the client says so (docs/remote-protocol.md › hostConfig).
+    /// `--no-browser` runs it through pi's `openUrl` option (`PiMCPCLI.line`), so nothing opens
+    /// in this Mac's browser; the Mac's own Sign in still opens it.
     func startMCP(_ name: String, store: MCPStore) throws -> HostSignInProgress {
         let run = try begin(key: "mcp:" + name, name: name)
         let task = Task { @MainActor [weak run, weak store] in
-            let result = await store?.runCLI(["login", name, "--timeout", String(Int(MCPSignInFlow.timeout))],
+            let result = await store?.runCLI(["login", name, "--timeout", String(Int(MCPSignInFlow.timeout)), PiMCPCLI.noBrowser],
                                              timeout: MCPSignInFlow.timeout + 10) { line in
                 let text = line.trimmingCharacters(in: .whitespaces)
                 guard text.hasPrefix("http"), URL(string: text)?.host != nil else { return }

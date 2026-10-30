@@ -18,6 +18,8 @@ final class SettingsStore {
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
     let hostConfig = ClientHostConfig()
+    /// Settings ▸ MCP's server editor while it is open: the server it edits and its JSON.
+    var mcpEditor: MCPEditor?
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []

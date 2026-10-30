@@ -26,6 +26,8 @@ final class PiAuthStore {
     private(set) var accounts: [String: PiAccountList] = [:]
     /// The provider whose sign-in under way adds an account instead of replacing the active one.
     @ObservationIgnored private var adding: String?
+    /// The last sign-in's account bookkeeping, still being saved: a remote client's answer waits on it.
+    @ObservationIgnored private(set) var landing: Task<Void, Never>?
 
     /// A sign-in landed for a provider: the agents waiting on it start again. Returns how many.
     @ObservationIgnored var onSignedIn: ((String) -> Int)?
@@ -91,7 +93,7 @@ final class PiAuthStore {
         expired.remove(provider)
         let adding = self.adding == provider
         self.adding = nil
-        Task { await accountChange(provider) { try $0.landed(provider, adding: adding) } }
+        landing = Task { await accountChange(provider) { try $0.landed(provider, adding: adding) } }
         pi.catalog.invalidate()
         onChanged?()
         return onSignedIn?(provider) ?? 0

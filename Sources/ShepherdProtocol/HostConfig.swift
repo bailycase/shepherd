@@ -70,6 +70,9 @@ public enum HostProviderAccountAction: Codable, Hashable, Sendable {
     case rotate(Bool)
     /// Signs another account in beside the active one (a subscription's account sign-in).
     case add
+    /// Saves another API key beside the active one, as `providerKey` takes it (`$NAME` for a
+    /// variable). Answers `.providers`.
+    case addKey(String)
 }
 
 public enum HostSignInAction: Codable, Hashable, Sendable {

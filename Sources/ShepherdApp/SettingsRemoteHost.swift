@@ -502,7 +502,7 @@ private struct RemoteMCPPage: View {
         SettingsPage(title: "MCP servers", explanation: "The MCP servers agents on \(host.name) can use, as its last check found them.") {
             ConfigProblem(host: host, config: config)
             RemoteSignInPanel(host: host, config: config, page: .mcp,
-                              codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1). The page may also open in \(host.name)'s own browser; leave it.")
+                              codePrompt: "After approving, paste the address your browser ended on (it starts http://127.0.0.1).")
             if let problem = inventory?.problem { SHBanner(.failed, title: problem) }
             if let editing {
                 SettingsGroup(title: replacing.map { "Edit \($0)" } ?? "Add a server",
@@ -599,6 +599,8 @@ private struct RemoteSignInPage: View {
     let host: SettingsHost
     let config: ClientHostConfig
     @State private var keyFor: String?
+    /// The key form adds a key beside the saved one (Add key) rather than replacing it.
+    @State private var addingKey = false
     @State private var key = ""
     @State private var renaming: Renaming?
     @State private var newName = ""
@@ -630,7 +632,7 @@ private struct RemoteSignInPage: View {
                 }
             }
             if let provider = keyFor {
-                SettingsGroup(title: "API key for \(providers.first { $0.id == provider }?.name ?? provider)",
+                SettingsGroup(title: (addingKey ? "Another API key for " : "API key for ") + (providers.first { $0.id == provider }?.name ?? provider),
                               footnote: "\(host.name) checks the key with the provider before saving it.") {
                     SettingsRow(title: "Key") {
                         SettingsTextField(label: "API key", prompt: "Key, or $VARIABLE", text: $key, mono: true, secure: true)
@@ -640,7 +642,9 @@ private struct RemoteSignInPage: View {
                         Button("Save") {
                             let value = key
                             key = ""
-                            Task { if await config.perform(.providerKey(provider: provider, key: value), on: host) != nil { keyFor = nil } }
+                            let request: RemoteHostConfigRequest = addingKey
+                                ? .providerAccount(provider: provider, action: .addKey(value)) : .providerKey(provider: provider, key: value)
+                            Task { if await config.perform(request, on: host) != nil { keyFor = nil } }
                         }
                         .buttonStyle(.sh(.primary))
                         .disabled(config.busy.contains(host.id))
@@ -659,11 +663,14 @@ private struct RemoteSignInPage: View {
                                         if signedIn, badge == "Subscription" {
                                             Button("Add account") { run(.providerAccount(provider: provider.id, action: .add)) }
                                                 .buttonStyle(.sh(.secondary))
+                                        } else if provider.auth == .apiKey {
+                                            Button("Add key") { addingKey = true; keyFor = provider.id }
+                                                .buttonStyle(.sh(.secondary))
                                         }
                                         Button(signedIn ? (badge == "Subscription" ? "Sign out" : "Remove") : badge == "Subscription" ? "Sign in" : "Set key") {
                                             if signedIn { run(.providerSignOut(provider: provider.id)) }
                                             else if badge == "Subscription" { run(.providerSignIn(provider: provider.id)) }
-                                            else { keyFor = provider.id }
+                                            else { addingKey = false; keyFor = provider.id }
                                         }
                                         .buttonStyle(.sh(.secondary))
                                     }

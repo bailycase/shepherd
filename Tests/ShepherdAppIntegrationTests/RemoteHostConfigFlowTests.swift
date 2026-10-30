@@ -174,4 +174,29 @@ struct RemoteHostConfigFlowTests {
         vm.followSettingsHost(on: .projects, entering: false)
         #expect(vm.projects.host == "local")
     }
+
+    /// A client's MCP sign-in runs pi's login without this Mac's browser; the Mac's own Sign in
+    /// still opens it.
+    @Test func onlyARemoteMCPSignInSkipsTheHostsBrowser() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let cli = MCPSettingsControlTests.RecordingCLI()
+        cli.list = MCPSettingsControlTests.listJSON([("linear", "needs-auth", [])])
+        let store = try MCPSettingsControlTests.store(config: #"{ "mcpServers": { "linear": { "type": "http", "url": "https://mcp.linear.app/mcp" } } }"#,
+                                                      cli: cli, pasteboard: MCPSettingsControlTests.Pasteboard())
+        try await app.start(mcp: store)
+        let client = try await Self.connect(app)
+        defer { client.disconnect() }
+
+        guard case .signIn(let started) = try await client.hostConfig(.mcpSignIn(name: "linear")) else { Issue.record("expected a sign-in"); return }
+        try await eventuallyAsync("the remote sign-in to finish") {
+            if case .signIn(let progress) = try await client.hostConfig(.signIn(id: started.id, action: .poll)) { return progress.phase == .done }
+            return false
+        }
+        #expect(cli.calls.contains(["login", "linear", "--timeout", "300", PiMCPCLI.noBrowser]))
+        store.beginSignIn("linear")
+        try await eventuallyOnMain("the Mac's own sign-in to run") { cli.calls.filter { $0.first == "login" }.count == 2 }
+        #expect(cli.calls.filter { $0.first == "login" }.last == ["login", "linear", "--timeout", "300"])
+        store.closeSignIn()
+    }
 }

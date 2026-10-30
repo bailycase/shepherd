@@ -281,7 +281,7 @@ enum RemoteSamples {
         .providerKey(provider: "openai", key: "$OPENAI_API_KEY"), .providerSignOut(provider: "openai"), .providerSignIn(provider: "anthropic"),
         .providerAccount(provider: "anthropic", action: .use(id: "a1")), .providerAccount(provider: "anthropic", action: .remove(id: "a1")),
         .providerAccount(provider: "anthropic", action: .rename(id: "a1", name: "work")), .providerAccount(provider: "anthropic", action: .rotate(true)),
-        .providerAccount(provider: "anthropic", action: .add),
+        .providerAccount(provider: "anthropic", action: .add), .providerAccount(provider: "deepseek", action: .addKey("$DEEPSEEK_API_KEY")),
         .signIn(id: op, action: .poll), .signIn(id: op, action: .complete("code#state")), .signIn(id: op, action: .cancel),
     ]
     static let configResults: [RemoteHostConfigResult] = [
