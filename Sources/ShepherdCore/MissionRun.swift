@@ -82,7 +82,7 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
         for attempt in attempts {
             guard attempt.tokens >= 0, attempt.startedAt.map({ $0.isFinite && $0 >= 0 }) ?? true,
                   attempt.endedAt.map({ $0.isFinite && $0 >= 0 }) ?? true, attempt.tokens <= 100_000_000, attempt.cost.isFinite, (0...1_000_000).contains(attempt.cost),
-                  attempt.output.utf8.count <= 4_096,
+                  attempt.output.utf8.count <= 4_096, attempt.task.map({ $0.utf8.count <= 64 }) ?? true,
                   attempt.gitBefore.map({ ($0.branches?.count ?? 0) <= 2_000 && $0.head.utf8.count <= 128 }) ?? true else {
                 throw MissionError("invalid_mission_run", "Invalid station receipt.")
             }
@@ -174,6 +174,9 @@ public struct MissionAttempt: Codable, Hashable, Sendable, Identifiable {
     /// A Spec Kit turn's repository Git state as the host read it before the turn, so a branch or commit the turn
     /// made (stock git extension hooks) is told from one that existed or was made outside it, even after a restart.
     public var gitBefore: MissionGitSnapshot?
+    /// The tasks.md task ("T005") this implement turn was given alone, when Spec Kit's implement runs one agent per
+    /// task. Nil for every other turn, including a whole /speckit.implement turn and an implement round's receipt.
+    public var task: String?
     public init(id: UUID = UUID(), stationID: MissionStationID? = nil, agentID: AgentID? = nil,
                 status: Status = .running, output: String = "", tokens: Int = 0, cost: Double = 0, exitCode: Int32? = nil,
                 planRevision: UInt64? = nil, fingerprint: String? = nil, sessionID: String? = nil, generation: String? = nil) {
@@ -195,4 +198,16 @@ public struct MissionGitSnapshot: Codable, Hashable, Sendable {
 
 public extension ShepherdState {
     func isMissionAgent(_ id: AgentID) -> Bool { missions.contains { $0.run?.attempts.contains { $0.agentID == id } == true } }
+}
+
+public extension MissionRun {
+    /// One of this run's agents: a turn's, or a Spec Kit repository's planning thread.
+    static func owns(_ run: MissionRun, agent: AgentID) -> Bool {
+        run.attempts.contains { $0.agentID == agent } || run.specKit?.lanes.contains { $0.plannerAgentID == agent } == true
+    }
+
+    /// The planner's thread: a planning turn's (map runner) or a repository's Spec Kit planning thread.
+    func isPlanner(_ agent: AgentID) -> Bool {
+        specKit?.lanes.contains { $0.plannerAgentID == agent } == true || attempts.contains { $0.agentID == agent && $0.stationID == nil }
+    }
 }

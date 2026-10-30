@@ -107,7 +107,7 @@ struct MissionWorkspace: View {
                     Label("Accept \(pending.lane)'s completion report", systemImage: "checkmark")
                 }
                 .buttonStyle(.sh(.primary)).disabled(busy)
-                .shHelp("You read the /speckit.converge report and accept it. An acknowledgement, not test evidence; work continues with the next repository.")
+                .shHelp("You read the /speckit.converge report and accept it. An acknowledgement, not test evidence; work continues once no other report waits for you.")
             } else if mission.run?.publicationApproval == nil && !blocked && !specKitBlocked && !(phase == .map && needsPlan) {
                 Button { action(needsPlan ? .plan("") : .launch) } label: {
                     Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? SHGlyph.mission.symbolName : "play.fill")
@@ -651,6 +651,7 @@ private enum BriefField: Hashable { case destination, context, contract, size }
 
 /// The mission brief: every section edits in place while the mission is not running.
 struct MissionBrief: View {
+    @Environment(\.missionHostName) private var missionHost
     let mission: Mission
     var specKitReports: [SpaceID: SpecKitPreflight] = [:]
     let busy: Bool
@@ -799,7 +800,7 @@ struct MissionBrief: View {
             fact("Limits", "\(MissionFormat.tokens(limits.tokens)) · \(MissionFormat.duration(limits.seconds)) · \(limits.dollars.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
                  note: "\(limits.concurrentStations) at once · \(limits.retries) retries")
             fact("Model", mission.run?.model ?? "—", note: nil)
-            fact("Runs on", "This Mac", note: "fresh worktrees")
+            fact("Runs on", missionHost, note: "fresh worktrees")
         }
     }
 

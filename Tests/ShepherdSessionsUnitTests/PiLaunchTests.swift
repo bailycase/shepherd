@@ -81,6 +81,13 @@ struct PiLaunchTests {
         Row(name: "pi's own MCP sign-in, for a server whose name needs quoting",
             line: PiLaunch.mcp(home: home, arguments: ["login", "it's", "--timeout", "300"]),
             script: "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(launcher) mcp 'login' 'it'\"'\"'s' '--timeout' '300'"),
+        Row(name: "pi's MCP sign-in for a remote client, through its openUrl option, with the launcher's pins",
+            line: PiLaunch.mcpLogin(home: home, script: "/s/shepherd-mcp-login.mjs", server: "linear", timeout: 300)!,
+            script: clearing + "export PI_CODING_AGENT_DIR='/Users/me/Library/Application Support/Shepherd/pi'; "
+                + "export PI_PACKAGE_DIR='\(app)/Resources/pi-engine'; export PI_OFFLINE='1'; export PI_SKIP_VERSION_CHECK='1'; export PI_TELEMETRY='0'; "
+                + "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec '\(app)/Helpers/node' \"$0\" \"$1\" \"$2\" \"$3\" \"$4\"",
+            positional: ["/s/shepherd-mcp-login.mjs", "\(app)/Resources/pi-engine/dist/extensions/mcp/cli.js",
+                         "/Users/me/Library/Application Support/Shepherd/pi", "linear", "300"]),
     ]
 
     @Test(arguments: rows)

@@ -254,10 +254,14 @@ keep the version for real breaks.
   Settings sets them (`hostSettings.v1`): Defaults (model, thinking, the queue; with
   `hostSettings.agentDefaults.v1` the speed for new threads, the naming model and a Context card
   with Compact at and the trim, deferred-tools and Codemode switches), Worktrees and Extensions,
-  with a host picker when there are several. Read-only, over `hostInventory.v1`: MCP (each
-  server's dot, last error or endpoint, sign-in in words, tools), Subagents (each profile, its
-  Markdown) and Sign-in (each provider signed in, expired or not, never a value), each saying to
-  configure or sign in on the Mac. Spaces: the host's spaces by folder over `projects.v2`, a
+  with a host picker when there are several; with `hostSettings.v2` also Subagent defaults,
+  Deleting a worktree agent, Skills in the / menu, a repo's `.mcp.json` and the slash commands.
+  Over `hostInventory.v1`: MCP (each server's dot, last error or endpoint, sign-in in words,
+  tools), Subagents (each profile, its Markdown) and Sign-in (each provider signed in, expired or
+  not, never a value). A host with `hostConfig.v1` takes changes there: add, edit (with a
+  Keychain secret), switch, sign in or out of and remove servers; edit, add, delete and restore
+  profiles; save a provider's API key, sign out, sign in with the code the provider's page
+  shows, and add, use, rename, remove or rotate a provider's saved accounts. An older host stays read-only and says it needs a newer Shepherd. Spaces: the host's spaces by folder over `projects.v2`, a
   space's configuration files and whether the Mac approved its resources. Instructions: the root AGENTS.md and
   APPEND_SYSTEM.md every session Shepherd starts reads (`instructions.v1`), the same on every
   host or per host, in an editor with line numbers and a Markdown key row. Skills: the agent

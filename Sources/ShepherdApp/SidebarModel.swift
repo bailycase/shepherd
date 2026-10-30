@@ -137,6 +137,8 @@ struct SidebarSource: Equatable {
         var state: ShepherdState
         /// Not connected: `state` is what it last sent this launch.
         var offline = false
+        /// The agents its missions started (`missions.v1`): a host sends no missions in its state.
+        var missionAgents: Set<AgentID> = []
     }
 
     var local: ShepherdState
@@ -264,7 +266,7 @@ enum SidebarDerivation {
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
             let hostWorkers = host.state.projectWorkerIDs
-            let missionAgents = host.state.missionAgentIDs
+            let missionAgents = host.state.missionAgentIDs.union(host.missionAgents)
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
             for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent, workers: hostWorkers) && !missionAgents.contains(agent.id) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.

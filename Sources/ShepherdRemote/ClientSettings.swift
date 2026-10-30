@@ -14,6 +14,25 @@ public protocol SettingsClient: SkillsClient {
     func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings
     func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot
+    /// The host's MCP servers, subagent profiles and providers (`hostInventory.v1`).
+    func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult
+    /// Changes them (`hostConfig.v1`).
+    func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult
+    /// The host's model catalog, for its model menus.
+    func listModels() async throws -> ModelListing
+}
+
+extension SettingsClient {
+    /// A stand-in that has no inventory.
+    public func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
+        throw RemoteHostClientError.rejected(code: "update_required", message: "This host has no inventory to share.")
+    }
+
+    public func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
+        throw RemoteHostClientError.rejected(code: "update_required", message: "This host's configuration can't be changed from here.")
+    }
+
+    public func listModels() async throws -> ModelListing { ModelListing(models: [], defaultModel: nil) }
 }
 
 extension RemoteHostClient: SettingsClient {}
@@ -64,11 +83,28 @@ public final class ClientHostSettings {
     }
 
     private var loaded: [UUID: State] = [:]
+    /// Each host's model catalog, once read (`loadModels`).
+    private var catalogs: [UUID: [String]] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
 
     public func forget(host: UUID) {
         forgotten.insert(host)
         loaded[host] = nil
+        catalogs[host] = nil
+    }
+
+    /// The models a host's model menus offer, with `current` kept even when the catalog lacks it.
+    public func models(of host: SettingsHost, current: String? = nil) -> [String] {
+        let models = catalogs[host.id] ?? []
+        guard let current, !current.isEmpty, !models.contains(current) else { return models }
+        return [current] + models
+    }
+
+    /// Reads a host's model catalog (asking its pi), once per call.
+    public func loadModels(_ host: SettingsHost) async {
+        guard !forgotten.contains(host.id), let client = host.client,
+              let listing = try? await client.listModels(), !forgotten.contains(host.id) else { return }
+        catalogs[host.id] = listing.models
     }
     /// The last change a host refused, in words.
     public private(set) var problem: String?
@@ -124,8 +160,8 @@ public final class ClientHostSettings {
     }
 
     private func show(_ change: HostSettingChange, on host: SettingsHost) -> Bool {
-        if case .goalsEnabled = change, !host.serves(RemoteProtocol.goalExperimentCapability) { return false }
-        if case .projectsEnabled = change, !host.serves(RemoteProtocol.projectsExperimentCapability) { return false }
+        // An older host refuses a change it doesn't know: it is never sent there.
+        if let needed = change.capability, !host.serves(needed) { return false }
         guard !forgotten.contains(host.id), case .loaded(var settings)? = loaded[host.id] else { return false }
         settings.apply(change)
         loaded[host.id] = .loaded(settings)

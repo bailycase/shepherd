@@ -45,7 +45,7 @@ private struct SidebarDestinations: View {
             ForEach(rows) { row in
                 SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
                     // The Missions row opens the list; a mission's own row (its section) opens that mission.
-                    if row.target == .page(.missions) { vm.missions.selectedID = nil }
+                    if row.target == .page(.missions) { vm.missions.selectedID = nil; vm.missionsHost = nil }
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()
@@ -161,7 +161,7 @@ struct SidebarMissionRow: View {
         SHSidebarRow(mission.title, leading: .glyph(SHGlyph.mission.symbolName, attention: mission.needsYou), selected: mission.selected,
                      accessory: .text(mission.word, tone: mission.needsYou ? .attention : nil))
             .help(mission.title)
-            .sidebarTapRow { vm.openMission(mission.id) }
+            .sidebarTapRow { vm.openMission(mission.mission, host: mission.host) }
             .accessibilityLabel("\(mission.title), mission, \(mission.word)\(mission.needsYou && mission.word != "needs you" ? ", needs you" : "")")
             .accessibilityAddTraits(mission.selected ? .isSelected : [])
     }

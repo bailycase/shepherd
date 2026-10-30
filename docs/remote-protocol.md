@@ -136,10 +136,42 @@
     adds the speed for new threads, the session naming model and Compact at (missing from an
     older host: Standard, Automatic, pi's default); `HostSettingChange.capability` names what a
     change needs, and an older host refuses the change as unknown.
+    `hostSettings.v2` adds Subagent defaults, Deleting a worktree agent, Skills in the / menu, a
+    repo's `.mcp.json`, and the slash commands with their switches (missing from an older host:
+    the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while
+    the tool is off (it is not one of `designCapabilities`), and turning it on re-offers
+    `designs.v1` with `capabilitiesChanged`. `experiments.missions.v1` switches Missions;
+    `HostSettings.missionsActive` says a mission is planning, running or publishing, and the host
+    refuses Missions off then (`settings_failed`), as the Mac's own card does. The bundled
+    extension list gains `designReferences`.
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
-    `providers`), answered by the GUI. A sign-in column in words, a key's variable name but never
-    its mask, account counts but no identifiers; nothing here changes the host. The additive
+    `providers`), answered by the GUI. A sign-in column in words that name no machine ("Not
+    signed in", "Expired"; an older host's "Sign in on the Mac" reads as the state alone),
+    a key's variable name but never its mask, account counts (with `hostConfig.v1`, each saved
+    account's opaque id and name), never a credential; nothing here changes the host. With
+    `hostConfig.v1` it adds each server's exposure, tool names, allowed tools and OAuth state, and
+    each profile's fingerprint.
+  - `hostConfig` (`hostConfig.v1`, `RemoteHostConfigRequest`): changes what `hostInventory`
+    reads, answered by the GUI through the stores its own Settings uses. MCP: read one entry's
+    JSON (references such as `${keychain:…}` and `${VAR}` stay as written; any other env or header
+    value is masked as `••••••••`, and a save that carries the mask back keeps the host's value),
+    save (add, or edit with `replacing`;
+    `secrets` go to the host's Keychain and the file gets references), on/off, exposure, tools,
+    remove, import, check again, sign in and out. Subagent profiles: save, delete and restore
+    defaults, each fenced by the fingerprint the client read. Providers: save an API key (checked
+    with the provider first; `$NAME` names a login-shell variable), sign out, an account sign-in,
+    and the saved accounts (`providerAccount`: use, rename, remove, rotate, add another account, or `addKey` another
+    key beside the saved one, as the host's own Add account does; their
+    ids are opaque and `HostProviderStatus.accountList` lists them once there are two). A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
+    `HostSignInProgress`: the page to open on the client, a device code, or that the host waits
+    for `signIn(.complete)` with the code the page shows (a provider's pasted-code flow; nothing
+    opens on the host) or, for an MCP server, the loopback address the browser ended on, which the
+    host relays only when it matches pi's `redirect_uri` and `state`. The host runs pi's own
+    login through its `openUrl` option (`Extensions/shepherd-mcp-login.mjs`), so nothing opens
+    in the host's browser; the host's own Sign in still opens it. At most four run at once and
+    each is gone 330 seconds after it starts. A reply never carries a secret; a client that lacks
+    the capability refuses before sending. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and
@@ -215,6 +247,28 @@
     pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
     experiment turns on or off).
     Answered by the server itself; boards render on the client (docs/designs.md › Remote)
+  - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
+    drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists
+    summaries (each names the agents the mission owns, so clients keep those threads out of their
+    thread lists), reads one record (at most 256 KiB), New mission's options, create, every owner
+    action of the Mac's Missions page (`action(missionID:revision:action:)`, refused `stale_mission`
+    when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
+    a review's files and fingerprints and one file's `DiffFile`, and the Spec Kit reads. Answered
+    by the host's own `MissionController` (reads by the server), with the same guards as its page:
+    Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
+    `consentFingerprint` the client showed, and the host checks both again. Missions never ride
+    `stateChanged` (still `withoutMissions`); a capable client gets a pushed
+    `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
+    (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
+    each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
+    once nothing runs). Station threads are read through native-thread snapshots. A mission
+    thread's composer is offered (`send` in its actions) while the mission can take words there,
+    and its `send`, on this Mac or any client, goes to the owner (`onMissionThreadSend`): while its
+    turn works, as the composer chose (`followUp` queued for after the turn in the attempt's own
+    session, which settles only after it; `steer` or `interrupt` steered in, accepted once pi
+    queued it); while the mission waits on you, the planner's answer (a Spec Kit planning thread's
+    to its own repository only); else a failure result saying why; words only. Other requests to it stay
+    `mission_control`. A reply past the frame cap is `too_large`. An older client never sees missions
   - `tunnel` (`browser.tunnel.v1`, offered while the host can serve it, and only to a client that
     lists it in `hello`): a thread's Browser page on a viewing Mac reaches the host's dev server.
     `RemoteRequest.tunnel` and `RemoteReply.tunnel` carry `BrowserTunnelFrame`s (open, opened,

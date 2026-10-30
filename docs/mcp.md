@@ -108,7 +108,10 @@ arguments, `tool_execution_end` with `result.content`, `result.details` (`{serve
 **OAuth** is pi's: `pi mcp login <server>` registers pi as a client (`oauth.clientName` changes the name),
 prints the authorization URL on stdout (`Sign in to MCP server "x" in your browser:` then the URL), opens
 it with `open`, waits for the redirect on a loopback port (300 s, `--timeout`), and stores the tokens in
-`<home>/mcp-auth.json` (0600), keyed by server name and URL. It runs with no terminal. A server that needs
+`<home>/mcp-auth.json` (0600), keyed by server name and URL. It runs with no terminal. A sign-in a remote
+client starts runs the same command through `Extensions/shepherd-mcp-login.mjs`, which passes pi's
+`openUrl` option so the URL is only printed and nothing opens on the host; the client sends back
+the loopback address its browser ended on (`hostConfig` in [remote-protocol](remote-protocol.md)). A server that needs
 it reports `needs-auth`; `pi mcp logout` deletes the entry. `oauth` also takes `clientId`, `clientSecret`
 (`${VAR}` works; `!command` is rejected), `callbackPort`, `scope` and `authServerMetadataUrl`. Only HTTP servers
 with no `Authorization` header use it.

@@ -3,6 +3,7 @@ import Testing
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 @testable import ShepherdApp
 
 /// What a remote client sees of this Mac's settings, and a client's change applied as the Mac's
@@ -27,7 +28,7 @@ struct HostSettingsMappingTests {
         #expect(settings.goalCrossProviderEvaluation && settings.goalsEnabled)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context", "deferTools", "codemode"])
+        #expect(settings.bundledExtensions.map(\.id) == ["panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "designReferences", "context", "deferTools", "codemode"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // The extension keeps its stored id; it reads as terminals to the user.
@@ -123,6 +124,10 @@ struct HostSettingsMappingTests {
         .fetchBeforeCreating(false), .commitRemainingWork(false),
         .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false), .bundledExtension(id: "context", on: false),
+        .bundledExtension(id: "designReferences", on: false),
+        .designToolEnabled(true), .missionsEnabled(true),
+        .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 9, model: "openai/gpt-5-mini", thinking: .high, context: .fork)),
+        .worktreeDeleteAction(.removeWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
     ])
     func aChangeReadsBackAsTheProtocolAppliesIt(_ change: HostSettingChange) {
         let app = AppSettings(store: Fixture.defaults())
@@ -130,5 +135,117 @@ struct HostSettingsMappingTests {
         expected.apply(change)
         HostSettingsMapping.apply(change, to: app)
         #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil) == expected)
+    }
+
+    /// The Mac's own switches a client now reaches: Experiments, Subagent defaults, Worktrees,
+    /// Skills, MCP and Slash commands land where Settings keeps them.
+    @Test func aClientsHostLevelChangesLandInTheMacsSettings() {
+        let app = AppSettings(store: Fixture.defaults())
+        HostSettingsMapping.apply(.designToolEnabled(true), to: app)
+        #expect(app.designToolEnabled)
+        HostSettingsMapping.apply(.subagentDefaults(HostSettings.SubagentDefaults(concurrency: 40, model: " openai/gpt-5 ", thinking: .low, context: .fork)), to: app)
+        #expect(app.childConcurrency == 16 && app.childModel == "openai/gpt-5" && app.childThinking == "low" && app.childContext == "fork")
+        HostSettingsMapping.apply(.subagentDefaults(HostSettings.SubagentDefaults()), to: app)
+        #expect(app.childConcurrency == 4 && app.childModel.isEmpty && app.childThinking.isEmpty && app.childContext == "fresh")
+        HostSettingsMapping.apply(.worktreeDeleteAction(.keepWorktree), to: app)
+        #expect(app.worktreeDeleteAction == .keepWorktree)
+        HostSettingsMapping.apply(.slashCommand(name: "review", on: false), to: app)
+        #expect(app.hiddenSlashCommands == ["review"])
+        HostSettingsMapping.apply(.slashCommand(name: "review", on: true), to: app)
+        #expect(app.hiddenSlashCommands.isEmpty)
+        #expect(HostSettingsMapping.apply(.slashCommand(name: "", on: false), to: app) != nil)
+        let commands = [NativeCommand(name: "review")]
+        let settings = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil, missionsActive: true, slashCommands: commands)
+        #expect(settings.missionsActive && settings.slashCommands == commands)
+    }
+
+    /// The Mac's card locks Missions on under a live mission; a client is refused the same, and
+    /// may still turn it on.
+    @Test func missionsCantBeTurnedOffWhileOneIsActive() {
+        let app = AppSettings(store: Fixture.defaults())
+        #expect(HostSettingsMapping.apply(.missionsEnabled(true), to: app, missionsActive: true) == nil)
+        #expect(app.missionsEnabled)
+        #expect(HostSettingsMapping.apply(.missionsEnabled(false), to: app, missionsActive: true) == HostSettingsMapping.missionsLocked)
+        #expect(app.missionsEnabled)
+        #expect(HostSettingsMapping.apply(.missionsEnabled(false), to: app, missionsActive: false) == nil)
+        #expect(!app.missionsEnabled)
+    }
+
+    /// A client's MCP sign-in ends with the address its browser landed on: only pi's own loopback
+    /// redirect, with its state, is ever requested on the host.
+    @Test func onlyTheLoopbackRedirectPiAskedForIsRelayed() throws {
+        let authorization = try #require(URL(string: "https://mcp.linear.app/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A8123%2Fcallback&state=abc"))
+        #expect(RemoteSignIns.callback("http://127.0.0.1:8123/callback?code=1&state=abc", for: authorization)?.absoluteString
+                == "http://127.0.0.1:8123/callback?code=1&state=abc")
+        for wrong in ["http://127.0.0.1:8123/callback?code=1&state=xyz", "http://127.0.0.1:9999/callback?code=1&state=abc",
+                      "http://127.0.0.1:8123/other?code=1&state=abc", "http://evil.example:8123/callback?code=1&state=abc",
+                      "https://127.0.0.1:8123/callback?code=1&state=abc", "http://127.0.0.1:8123/callback?code=1", "code"] {
+            #expect(RemoteSignIns.callback(wrong, for: authorization) == nil, "\(wrong)")
+        }
+    }
+
+    @Test func aClientsKeyIsAVariableOnlyWhenItNamesOne() throws {
+        #expect(try HostConfigMapping.keyInput(" $OPENAI_API_KEY ") == .variable("OPENAI_API_KEY"))
+        #expect(try HostConfigMapping.keyInput("sk-$abc") == .literal("sk-$abc"))
+        #expect(try HostConfigMapping.keyInput("$not a name") == .literal("$not a name"))
+        #expect(throws: RemoteCreateAgentError.self) { try HostConfigMapping.keyInput("  ") }
+    }
+
+    /// One server from a client: its secrets become Keychain references, never values in the file.
+    @Test func aClientsServerKeepsItsSecretsAsReferences() throws {
+        let entry = try HostConfigMapping.entry(#"{"mcpServers":{"gh":{"url":"https://x.dev/mcp","headers":{"X-Key":"typed"}}}}"#,
+                                                secrets: ["X-Key": "s3cret"])
+        #expect(entry.name == "gh" && entry.headers["X-Key"] == "${keychain:gh/X-Key}")
+        #expect(throws: RemoteCreateAgentError.self) {
+            try HostConfigMapping.entry(#"{"mcpServers":{"gh":{"url":"https://x.dev/mcp"}}}"#, secrets: ["MISSING": "v"])
+        }
+        #expect(throws: RemoteCreateAgentError.self) {
+            try HostConfigMapping.entry(#"{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}}}"#, secrets: [:])
+        }
+    }
+
+    /// A remote read never carries a value written literally into the host's file: references and
+    /// an auth scheme before one stay, anything else is masked.
+    @Test func aRemoteReadMasksLiteralValues() throws {
+        #expect(HostConfigMapping.masked("${keychain:gh/TOKEN}") == "${keychain:gh/TOKEN}")
+        #expect(HostConfigMapping.masked("${GITHUB_TOKEN}") == "${GITHUB_TOKEN}")
+        #expect(HostConfigMapping.masked("Bearer ${keychain:gh/Authorization}") == "Bearer ${keychain:gh/Authorization}")
+        #expect(HostConfigMapping.masked("") == "")
+        for literal in ["ghp_live123", "Bearer ghp_live123", "x ${VAR}", "debug"] {
+            #expect(HostConfigMapping.masked(literal) == HostConfigMapping.mask, "\(literal)")
+        }
+        var entry = MCPServerEntry.local("pg", command: "uvx", env: ["DATABASE_URI": "postgres://u:hunter2@db", "REF": "${keychain:pg/REF}"])
+        entry.json["shepherd"] = .object(["enabled": .bool(false)])
+        let json = HostConfigMapping.maskedJSON(entry)
+        #expect(!json.contains("hunter2") && json.contains(HostConfigMapping.mask) && json.contains("${keychain:pg/REF}"))
+        #expect(!json.contains("shepherd"))
+
+        // A save that carries the mask keeps the host's value; one with nothing to keep is refused.
+        let kept = try HostConfigMapping.entry(json, secrets: [:], existing: entry)
+        #expect(kept.env["DATABASE_URI"] == "postgres://u:hunter2@db" && kept.env["REF"] == "${keychain:pg/REF}")
+        #expect(throws: RemoteCreateAgentError.self) { try HostConfigMapping.entry(json, secrets: [:], existing: nil) }
+        let typed = try HostConfigMapping.entry(json.replacingOccurrences(of: HostConfigMapping.mask, with: "postgres://new"), secrets: [:], existing: entry)
+        #expect(typed.env["DATABASE_URI"] == "postgres://new")
+    }
+
+    /// A provider's saved accounts reach a client by opaque id and name, with rotation; one
+    /// account alone sends none.
+    @Test func aProvidersAccountsReachAClientWithoutCredentials() {
+        let list = PiAccountList(accounts: [PiAccount(id: "a1", name: "work"), PiAccount(id: "a2", name: "home", limitedUntil: Date(timeIntervalSince1970: 2_000_000_000))],
+                                 active: "a1", rotate: true)
+        var row = ProviderRowModel(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .signedIn(plan: "Claude Pro or Max"))
+        row.accounts = list
+        let status = HostInventoryMapping.provider(row)
+        #expect(status.accountList == [HostProviderAccount(id: "a1", name: "work", active: true),
+                                      HostProviderAccount(id: "a2", name: "home", active: false, limitedUntil: 2_000_000_000)])
+        #expect(status.rotate == true && status.activeAccount == "work")
+        row.accounts = PiAccountList(accounts: [PiAccount(id: "a1", name: "work")], active: "a1", rotate: false)
+        #expect(HostInventoryMapping.provider(row).accountList == nil)
+    }
+
+    /// The host's own words for a server's sign-in name no machine: a client may be another Mac.
+    @Test func aServersSignInColumnIsHostNeutral() {
+        #expect(HostInventoryMapping.signIn(.signIn) == "Not signed in")
+        #expect(HostInventoryMapping.signIn(.expired) == "Expired")
     }
 }

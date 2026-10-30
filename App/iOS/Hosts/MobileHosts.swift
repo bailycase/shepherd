@@ -41,10 +41,22 @@ final class MobileHost: Identifiable {
     @ObservationIgnored var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
     /// The host's design systems changed (`design.systems.v1`). Set by `HostDesignLibraries`.
     @ObservationIgnored var onDesignSystemsChanged: (() -> Void)?
+    /// The host's missions (`missions.v1`, while its Missions experiment is on): read on connect,
+    /// pulled again on each pushed hint.
+    let missions: RemoteMissions
 
     init(record: RemoteHostRecord) {
         id = record.id
         self.record = record
+        missions = RemoteMissions(hostID: record.id)
+    }
+
+    /// Points the missions at the connection (nil: none) and reads them while the host offers them.
+    fileprivate func connectMissions() {
+        let client = connectedClient
+        let available = client != nil && supports(RemoteProtocol.missionsCapability)
+        missions.connect(client.map { client in { try await client.mission($0) } }, available: available)
+        if available { Task { await missions.refresh() } }
     }
 
     var name: String { record.name }
@@ -255,6 +267,7 @@ final class MobileHosts {
         host.client = nil
         client?.disconnect()
         if host.session != nil { host.session = nil }
+        host.missions.connect(nil, available: false)
         // A connection ending (it dropped, or the app went to the background) is when the host
         // was last seen.
         if host.phase == .connected {
@@ -298,6 +311,7 @@ final class MobileHosts {
             MainActor.assumeIsolated {
                 guard let host, host.attempt == attempt, host.phase == .connected, host.capabilities != capabilities else { return }
                 host.capabilities = capabilities
+                host.connectMissions()
             }
         }
         client.onDesignChanged = { [weak host] design, revision, comments in
@@ -310,6 +324,18 @@ final class MobileHosts {
             MainActor.assumeIsolated {
                 guard let host, host.attempt == attempt else { return }
                 host.onDesignSystemsChanged?()
+            }
+        }
+        client.onMissionChanged = { [weak host] mission, revision in
+            MainActor.assumeIsolated {
+                guard let host, host.attempt == attempt else { return }
+                host.missions.changed(mission, revision: revision)
+            }
+        }
+        client.onMissionLive = { [weak host] mission, live in
+            MainActor.assumeIsolated {
+                guard let host, host.attempt == attempt else { return }
+                host.missions.liveChanged(mission, live)
             }
         }
         client.onDisconnected = { [weak self, weak host] reason in
@@ -331,6 +357,7 @@ final class MobileHosts {
                 if host.capabilities != client.capabilities { host.capabilities = client.capabilities }
                 host.session = UUID()
                 host.set(.connected)
+                host.connectMissions()
                 host.backoff.reset()
                 self?.onHostConnected?(host)
             } catch {

@@ -57,6 +57,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The host's design systems changed (`designSystemsCapability`): list them again. Main queue.
     public var onDesignSystemsChanged: (() -> Void)?
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
+    /// A mission on the host was made or changed (its new revision) or went (nil). A hint to pull. Main queue.
+    public var onMissionChanged: ((MissionID, UInt64?) -> Void)?
+    /// What a host mission's agents say now (`RemoteReply.missionLive`). Main queue.
+    public var onMissionLive: ((MissionID, RemoteMissionLive) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
@@ -112,6 +116,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         case designChanged(DesignID, UInt64?, UInt64?)
         case designSystemsChanged
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
+        case missionChanged(MissionID, UInt64?)
+        case missionLive(MissionID, RemoteMissionLive)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
     }
@@ -837,6 +843,9 @@ public final class RemoteHostClient: @unchecked Sendable {
             let what = switch change {
             case .goalsEnabled: "toggle the Goals experiment"
             case .projectsEnabled: "toggle the Projects experiment"
+            case .designToolEnabled: "toggle the Design tool experiment"
+            case .missionsEnabled: "toggle the Missions experiment"
+            case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand: "change this setting"
             default: "change this default"
             }
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to \(what).")
@@ -1284,7 +1293,8 @@ public final class RemoteHostClient: @unchecked Sendable {
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
              .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
-             .browserClaimed(let id, _):
+             .browserClaimed(let id, _), .mission(let id, _),
+             .hostConfig(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
@@ -1300,6 +1310,10 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.designChanged(designID, revision, commentsRevision))
         case .designSystemsChanged:
             push(.designSystemsChanged)
+        case .missionChanged(let missionID, let revision):
+            push(.missionChanged(missionID, revision))
+        case .missionLive(let missionID, let live):
+            push(.missionLive(missionID, live))
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
@@ -1362,6 +1376,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
                 case .designSystemsChanged: self.onDesignSystemsChanged?()
+                case .missionChanged(let missionID, let revision): self.onMissionChanged?(missionID, revision)
+                case .missionLive(let missionID, let live): self.onMissionLive?(missionID, live)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 }

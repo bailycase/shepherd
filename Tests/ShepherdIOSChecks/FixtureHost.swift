@@ -189,6 +189,15 @@ final class FixtureHost: @unchecked Sendable {
             case .success(let result): return [.design(id: id, result: result)]
             case .failure(let refusal): return [.error(id: id, code: refusal.code, message: refusal.message)]
             }
+        case .mission(let id, let request):
+            note("mission." + String(describing: request).prefix { $0 != "(" })
+            guard let missions = data.missions else {
+                return [.error(id: id, code: "unsupported", message: "Missions are off on this host.")]
+            }
+            switch missions.answer(request) {
+            case .success(let result): return [.mission(id: id, result: result)]
+            case .failure(let error): return [.error(id: id, code: error.code, message: error.description)]
+            }
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
              .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
             note(Self.kind(request))
@@ -249,6 +258,10 @@ final class FixtureHost: @unchecked Sendable {
         case .hostInventory:
             // Reading the host's MCP servers, profiles or providers changes nothing.
             return nil
+        case .hostConfig(let id, let command):
+            // Every configuration request changes the host (or starts a sign-in on it).
+            mutation("hostConfig." + String(describing: command).prefix { $0 != "(" })
+            return [.error(id: id, code: "fixture", message: refused)]
         case .detach, .input, .resize:
             mutation(Self.kind(request))
             return []
@@ -271,6 +284,14 @@ final class FixtureHost: @unchecked Sendable {
             guard request.writes else { return nil }
             mutation("design." + Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
+        case .mission(let id, let request):
+            // Reading missions, their reviews and Spec Kit files changes nothing; every action and New mission writes.
+            switch request {
+            case .list, .get, .startOptions, .review, .reviewFile, .specKit: return nil
+            case .create, .action:
+                mutation("mission." + String(describing: request).prefix { $0 != "(" })
+                return [.error(id: id, code: "fixture", message: refused)]
+            }
         case .tunnel(let frame):
             // A Browser screen's host serves its canned dev server through the tunnel (a read).
             if let tunnel = data.tunnel {

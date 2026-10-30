@@ -40,6 +40,7 @@ Never commit a `project.pbxproj` change for a new file.
 | J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminals: the iPad panel under a thread (tabs only), the iPhone's full-screen terminals, the key row |
 | K. Designs | `Designs/`, `Fixtures/DesignsFixtures.swift`, and its rows in Home, Recents, search and More | a host's designs (`designs.v1`): Designs, a design's boards, one board with its comments, New design, design systems |
 | M. Projects | `Projects/`, `Fixtures/ProjectFixtures.swift` | the host-owned Projects list, owner conversation, tasks, files, settings and creation/assignment forms; shared model in ShepherdRemote |
+| N. Missions | `Missions/`, `Fixtures/MissionsFixtures.swift`, Home's Missions section and the iPad sidebar's Missions row | a host's missions (`missions.v1`): the list (iPad: beside the chosen one), a mission with its question, Spec Kit OK, map, steer and controls, its review with a file's diff and Publish, New mission; shared model `RemoteMissions` in ShepherdRemote |
 | L. Designs on iPad | `DesignPad/`, `Fixtures/DesignPadFixtures.swift`, `Fixtures/DesignPadBoards.swift` | a host's designs on iPad (`designs.v1`): the Designs list, the canvas beside its chat, Split View's reply card, the sidebar's Designs row and design rows |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
@@ -67,6 +68,7 @@ enum MobileRoute: Hashable, Codable {
     case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
     case designs(DesignsRoute)            // Designs/DesignsRoute.swift
     case projects(ProjectsRoute)          // Projects/ProjectsRoute.swift
+    case missions(MissionsRoute)          // Missions/MissionsRoute.swift
 }
 ```
 
@@ -95,7 +97,7 @@ Routes today:
 | `.search(.problem(title:message:))` | an agent action from a menu that failed (presented) |
 | `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings (the iPad's list beside its page), hosts, a host's form (nil adds one), appearance |
 | `.settings(.defaults / .worktrees / .piExtensions)` | a host's own settings: Defaults, Worktrees, Extensions (a picker chooses the host) |
-| `.settings(.mcp / .subagents / .subagent(String) / .signIn / .spaces / .space(String))` | a host's inventory, read-only (`hostInventory.v1`; Spaces over `projects.v2`): MCP servers, subagent profiles and one profile's Markdown, provider sign-ins, spaces and one space's files and approval |
+| `.settings(.mcp / .subagents / .subagent(String) / .signIn / .spaces / .space(String))` | a host's inventory (`hostInventory.v1`; Spaces over `projects.v2`): MCP servers, subagent profiles and one profile's Markdown (`subagent("+new")` a new one), provider sign-ins, spaces and one space's files and approval; editable on a host with `hostConfig.v1` (`ClientHostConfig`) |
 | `.settings(.instructions / .instructionsFile(InstructionFile))` | the root instructions on every host; one file in the editor (iPhone) |
 | `.settings(.skills / .skill(String) / .skillResult(DirectorySkill) / .skillsRepo(String?))` | every host's agent skills (and a search of skills.sh); one skill; a skills.sh result's preview with Install; Add from repo (looking up the repository given) |
 | `.settings(.experiments / .suggestion(UUID))` | Experiments; one suggested line to add or dismiss |
@@ -105,6 +107,8 @@ Routes today:
 | `.designs(.list / .design(HostDesignRef) / .board(HostDesignRef, path:))` | Designs, a design's boards, one board full screen |
 | `.designs(.boards(HostDesignRef, current:) / .newDesign(brief:host:))` | a design's boards to jump to, New design (presented) |
 | `.designs(.systems / .system(host:namespace:))` | the hosts' design systems, one system |
+| `.missions(.list / .mission(host:mission:) / .review(host:mission:) / .file(host:mission:space:path:))` | every host's missions (iPad: beside the chosen one, `MissionsHooks.open`), one mission, its review with Publish, one reviewed file's diff |
+| `.missions(.new(host:))` | New mission on a host that serves missions (presented) |
 | `.padDesign(.list / .design(PadDesignRef))` | a host's designs; one design's canvas and chat (pushed; `PadDesignHooks.open` puts the list under the design, and the sidebar stays out while a design shows) |
 
 Screens reach each other only through `MobileNavigator` (in the environment):

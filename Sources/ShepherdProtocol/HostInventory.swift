@@ -3,7 +3,8 @@ import ShepherdCore
 
 // A host's inventory as a client reads it (Settings on the iPhone and the iPad): its MCP servers
 // and their status, its subagent profiles, and its providers' sign-in state. Read-only: what the
-// Mac's Settings ▸ MCP, Subagents and Sign-in show, never what they change, and never a secret.
+// Mac's Settings ▸ MCP, Subagents and Sign-in show, never a secret. Changes go through
+// `RemoteRequest.hostConfig` (HostConfig.swift).
 // The host's GUI answers (`SessionServer.onRemoteHostInventory`); a headless host has none.
 
 /// What a client asks of a host's inventory (`RemoteRequest.hostInventory`,
@@ -51,11 +52,26 @@ public struct HostMCPServer: Codable, Hashable, Sendable, Identifiable {
     /// How many tools it offers; nil until known.
     public var tools: Int?
     public var enabled: Bool
+    /// The fields below are sent by hosts with `hostConfigCapability`; nil from an older one.
+    public var exposure: HostMCPExposure?
+    /// The tools it offers, by name, once known.
+    public var toolNames: [String]?
+    /// The tools agents may use; nil for every one.
+    public var allowedTools: [String]?
+    /// A remote server that signs in with OAuth (`RemoteHostConfigRequest.mcpSignIn`).
+    public var oauth: Bool?
+    public var signedIn: Bool?
 
     public var id: String { name }
 
     public init(name: String, kind: Kind, endpoint: String, status: Status, note: String? = nil, signIn: String? = nil,
-                tools: Int? = nil, enabled: Bool = true) {
+                tools: Int? = nil, enabled: Bool = true, exposure: HostMCPExposure? = nil, toolNames: [String]? = nil,
+                allowedTools: [String]? = nil, oauth: Bool? = nil, signedIn: Bool? = nil) {
+        self.exposure = exposure
+        self.toolNames = toolNames
+        self.allowedTools = allowedTools
+        self.oauth = oauth
+        self.signedIn = signedIn
         self.name = name
         self.kind = kind
         self.endpoint = endpoint
@@ -100,11 +116,15 @@ public struct HostSubagentProfile: Codable, Hashable, Sendable, Identifiable {
     public var disabled: Bool
     /// One Shepherd ships (scout, reviewer, planner, worker).
     public var isDefault: Bool
+    /// The host's fingerprint of the file, for Restore defaults to check against; nil from an
+    /// older host.
+    public var fingerprint: String?
 
     public var id: String { file }
 
     public init(file: String, name: String, description: String? = nil, tools: [String]? = nil, context: String? = nil,
-                error: String? = nil, disabled: Bool = false, isDefault: Bool = false) {
+                error: String? = nil, disabled: Bool = false, isDefault: Bool = false, fingerprint: String? = nil) {
+        self.fingerprint = fingerprint
         self.file = file
         self.name = name
         self.description = description
@@ -131,7 +151,7 @@ public struct HostSubagentProfileText: Codable, Hashable, Sendable {
 }
 
 /// One provider of a host's pi and how its sign-in stands, as Settings ▸ Sign-in's row says it.
-/// Never a key, token or account identifier: a client shows the state and says to sign in on the host.
+/// Never a key or token: the state, its words, and saved accounts by opaque id and name.
 public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     public enum Auth: String, Codable, Hashable, Sendable, CaseIterable {
         case signedIn
@@ -161,9 +181,15 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     /// How many accounts the host saved for it, and the active one's name when there are several.
     public var accounts: Int
     public var activeAccount: String?
+    /// The saved accounts, once there are two, with `hostConfigCapability`; nil from an older host.
+    public var accountList: [HostProviderAccount]?
+    /// Switches to the next account when the active one hits a limit.
+    public var rotate: Bool?
 
     public init(id: String, name: String, badge: String, auth: Auth, detail: String? = nil, problem: String? = nil,
-                accounts: Int = 0, activeAccount: String? = nil) {
+                accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil) {
+        self.accountList = accountList
+        self.rotate = rotate
         self.id = id
         self.name = name
         self.badge = badge
@@ -179,5 +205,21 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
         case .signedIn, .apiKey, .environment, .noKey: true
         case .expired, .notSignedIn, .signingIn: false
         }
+    }
+}
+
+/// One saved account of a provider: its opaque id and the name it was given; never a credential.
+public struct HostProviderAccount: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var active: Bool
+    /// Rotation skips it until then (seconds since 1970).
+    public var limitedUntil: Double?
+
+    public init(id: String, name: String, active: Bool, limitedUntil: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.active = active
+        self.limitedUntil = limitedUntil
     }
 }

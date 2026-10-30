@@ -444,6 +444,19 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI answers a client's read of this host's MCP servers, subagent profiles or providers
     /// (`RemoteRequest.hostInventory`); nil on a headless host.
     public var onRemoteHostInventory: ((RemoteHostInventoryRequest, @escaping (Result<RemoteHostInventoryResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// The GUI's mission owner answers a client's Missions requests (`missions.v1`) other than the
+    /// reads the server answers itself (`list`, `get`), on the main actor, with the same methods and
+    /// guards as the host's own page. Nil on a headless host, which offers no missions.
+    public var onRemoteMission: ((RemoteMissionRequest, @escaping (Result<RemoteMissionResult, MissionError>) -> Void) -> Void)?
+    /// The GUI's mission owner takes words typed in a mission's own thread (on this Mac or a
+    /// client): a steer while its turn works, the planner's answer path while the mission waits,
+    /// else a refusal saying why. Answered `accepted` with the send's operation or a failure; the
+    /// owner applies every check its own controls do, and the composer's delivery: queued words wait for the
+    /// working turn to end, a steer or interrupt goes in now. Nil: such a send is `mission_control`.
+    public var onMissionThreadSend: ((AgentID, String, UUID, NativeThreadDelivery, @escaping (NativeThreadResult) -> Void) -> Void)?
+    /// The GUI changes this host's MCP servers, subagent profiles or sign-ins for a client
+    /// (`RemoteRequest.hostConfig`), as its own Settings would; nil on a headless host.
+    public var onRemoteHostConfig: ((RemoteHostConfigRequest, @escaping (Result<RemoteHostConfigResult, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -834,6 +847,10 @@ public final class SessionServer: @unchecked Sendable {
     var advertisedCapabilities = RemoteProtocol.capabilities
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
+    /// Missions are served to remote clients (`missions.v1`): the host's experiment is on. Server queue.
+    private var missionsServed = false
+    /// What each running mission's agents say now, as the owner last published it (`setMissionLive`). Server queue.
+    private var missionLive: [MissionID: RemoteMissionLive] = [:]
     /// Browser tunnels (docs/browser.md › Remote): the limits and the count across every client.
     private let tunnelHost = BrowserTunnelHost()
     /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
@@ -862,12 +879,27 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
+                && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
         }
     }
 
-    /// What the host offers `client`: `files.v1` only to a client that listed it in `hello`. Server queue.
+    /// What the host offers `client`: `files.v1` and `missions.v1` only to a client that listed it in `hello`. Server queue.
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
-        offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
+        offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
+    }
+
+    /// Serves Missions to remote clients (`missions.v1`) while `served` (Settings ▸ Experiments ▸
+    /// Missions) and `onRemoteMission` is installed. Clients that read missions are told what the host offers now.
+    public func setMissionsServed(_ served: Bool) {
+        queue.async {
+            guard self.missionsServed != served else { return }
+            self.missionsServed = served
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.missionsCapability) {
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
+                self.enqueuePayload(payload, to: client)
+            }
+        }
     }
 
     /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
@@ -1656,6 +1688,16 @@ public final class SessionServer: @unchecked Sendable {
         if store.state.isMissionAgent(agentID) {
             switch request {
             case .snapshot, .image, .subagentTranscript: break
+            case .send(_, _, let operationID, let text, let delivery, let images, _, let references, let elements) where onMissionThreadSend != nil:
+                guard (images ?? []).isEmpty, (references ?? []).isEmpty, (elements ?? []).isEmpty else {
+                    completion(.result(.failure(code: "mission_words_only", message: "A mission's thread takes words only. Remove the images or attachments and send again.")))
+                    return
+                }
+                let handler = onMissionThreadSend!
+                hopToMain { [weak self] in
+                    handler(agentID, text, operationID, delivery) { result in self?.queue.async { completion(.result(result)) } }
+                }
+                return
             default:
                 completion(.failure(code: "mission_control", message: "This thread belongs to a Mission. Use its Pause, Stop or Request changes controls."))
                 return
@@ -1798,7 +1840,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             if case .snapshot(var snapshot) = result, self?.store.state.isMissionAgent(agentID) == true {
-                snapshot.supportedActions = ["images"]
+                // Words go through the mission's owner, only while it can take them (`onMissionThreadSend`).
+                snapshot.supportedActions = self?.missionThreadTakesWords(agentID) == true ? ["images", "send"] : ["images"]
                 completion(.result(.snapshot(value: snapshot)))
             } else { completion(.result(result)) }
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
@@ -2347,6 +2390,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSkills(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
+        case .mission(let id, let request):
+            remoteMission(id: id, request: request, client: client)
         case .logicalProjectRuntime(let id, let request):
             guard !request.requiresResults || offeredCapabilities.contains(RemoteProtocol.projectResultCapability) && client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) else {
                 send(.error(id: id, code: "unsupported_result", message: "Durable result reads require compatible owner and viewer."), to: client); return
@@ -2564,6 +2609,23 @@ public final class SessionServer: @unchecked Sendable {
                         switch result {
                         case .success(let value): self.send(.hostInventory(id: id, result: value), to: client)
                         case .failure(let error): self.send(.error(id: id, code: "inventory_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .hostConfig(let id, let request):
+            guard let handler = onRemoteHostConfig else {
+                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let value): self.send(.hostConfig(id: id, result: value), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "config_failed", message: error.message), to: client)
                         }
                     }
                 }
@@ -3028,6 +3090,62 @@ public final class SessionServer: @unchecked Sendable {
                 self.enqueuePayload(payload, to: client)
             }
         }
+    }
+
+    /// Server queue: one Missions request (`missions.v1`). Reads come from the store; everything else
+    /// goes to the GUI's mission owner. Replies are encoded off the queue (a record is up to 256 KiB)
+    /// and refused `too_large` past the frame cap.
+    private func remoteMission(id: Int, request: RemoteMissionRequest, client: ExtensionConnection) {
+        guard offeredCapabilities(to: client).contains(RemoteProtocol.missionsCapability), let handler = onRemoteMission else {
+            send(.error(id: id, code: "unsupported", message: "Turn on Settings ▸ Experiments ▸ Missions on the host, or update Shepherd, to use its missions."), to: client)
+            return
+        }
+        let connection = ChangesUnchecked(value: client)
+        let reply: (Result<RemoteMissionResult, MissionError>) -> Void = { [weak self] result in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let answer: RemoteReply = switch result {
+                case .success(let value): .mission(id: id, result: value)
+                case .failure(let error): .error(id: id, code: error.code, message: error.description)
+                }
+                guard let payload = (try? NDJSON.encode(answer)).flatMap({ $0.count - 1 <= NDJSON.maxPayloadBytes ? $0 : nil })
+                    ?? (try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large", message: "The answer exceeds the remote payload limit."))) else { return }
+                self?.queue.async {
+                    guard let self, self.clients[connection.value.fd] === connection.value else { return }
+                    self.enqueuePayload(payload, to: connection.value)
+                }
+            }
+        }
+        switch request {
+        case .list: reply(.success(.list(store.state.missions.map(RemoteMissionSummary.init))))
+        case .get(let missionID):
+            if let mission = store.state.missions.first(where: { $0.id == missionID }) { reply(.success(.mission(mission, live: missionLive[missionID]))) }
+            else { reply(.failure(MissionError("mission_missing", "Mission no longer exists."))) }
+        default: hopToMain { handler(request, reply) }
+        }
+    }
+
+    /// What running missions' agents say now, from the owner (throttled there): kept for `get`, and pushed to
+    /// each client that reads missions. An empty value clears it.
+    public func setMissionLive(_ updates: [MissionID: RemoteMissionLive]) {
+        queue.async {
+            for (id, live) in updates { self.missionLive[id] = live.isEmpty ? nil : live }
+            self.missionLive = self.missionLive.filter { id, _ in self.store.state.missions.contains { $0.id == id } }
+            guard self.offeredCapabilities.contains(RemoteProtocol.missionsCapability) else { return }
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.missionsCapability) {
+                for (id, live) in updates { self.send(.missionLive(missionID: id, live: live), to: client) }
+            }
+        }
+    }
+
+    /// Server queue: hints each client that reads missions which ones were made, changed or went.
+    private func pushMissionChanges(before: [Mission], after: [Mission]) {
+        let readers = clients.values.filter { $0.isRemote && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.missionsCapability) }
+        guard !readers.isEmpty, offeredCapabilities.contains(RemoteProtocol.missionsCapability) else { return }
+        let old = Dictionary(before.map { ($0.id, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        let hints = after.filter { old[$0.id] != $0.revision }.map { ($0.id, Optional($0.revision)) }
+            + before.filter { gone in !after.contains { $0.id == gone.id } }.map { ($0.id, UInt64?.none) }
+        for client in readers { for (mission, revision) in hints { send(.missionChanged(missionID: mission, revision: revision), to: client) } }
     }
 
     /// Server queue: tells the remote clients watching a design that it changed: its files (at
@@ -5330,6 +5448,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         syncServiceTiers(state)
         broadcastRemoteState(state)
+        if before.missions != state.missions { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
         if !browserOwners.isEmpty { pruneBrowserOwners(state) }

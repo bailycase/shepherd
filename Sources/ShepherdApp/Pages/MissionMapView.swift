@@ -641,7 +641,8 @@ struct MissionMapPage: View {
         let stations = mission.draft.plan?.stations ?? []
         let running = mission.stationAttempts.filter { $0.status == .running }.count
         let decisions = stations.filter { $0.kind == .decision }.count
-        let retries = mission.stationAttempts.count - Set(mission.stationAttempts.compactMap(\.stationID)).count
+        // One agent per task shares its phase's station: a task's own first turn is not a retry.
+        let retries = mission.stationAttempts.count - Set(mission.stationAttempts.map { "\($0.stationID?.rawValue ?? "")/\($0.task ?? "")" }).count
         let items: [(AgentState?, String)] = done
             ? [(nil, "\(stations.count) stations"), (nil, "\(retries) retr\(retries == 1 ? "y" : "ies")"), (nil, "\(decisions) decision\(decisions == 1 ? "" : "s")"),
                (nil, "\(mission.run?.checkouts.filter { $0.prURL != nil }.count ?? 0) PRs")]
@@ -802,6 +803,7 @@ struct MissionWireRow: View {
 }
 
 private struct MissionStationInspector: View {
+    @Environment(\.missionHostName) private var missionHost
     let mission: Mission
     let station: MissionStation
     let layout: MissionMapLayout
@@ -869,7 +871,7 @@ private struct MissionStationInspector: View {
                                     .accessibilityLabel("Model, \(current)").help("Model for this station")
                             }
                         }
-                        MissionFactRow(label: "Host") { Text("This Mac").shText(.mono) }
+                        MissionFactRow(label: "Host") { Text(missionHost).shText(.mono) }
                         MissionFactRow(label: "Worktree") {
                             let checkout = mission.run?.checkouts.first { $0.spaceID == station.laneID }
                             Text(lane.map { "\($0.name) @ \(checkout?.branch ?? "new from \($0.baseBranch.map(MissionBranchSelection.label) ?? "base")")" } ?? "all mission worktrees, read only")
