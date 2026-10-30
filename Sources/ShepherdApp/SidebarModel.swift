@@ -81,6 +81,8 @@ struct SidebarListRow: Identifiable, Equatable {
     let automation: AutomationID?
     /// That run is going (its menu offers Stop).
     let automationLive: Bool
+    /// A triggered automation's run thread: the space tree folds it under its automation.
+    var runGroup: AutomationID? = nil
 }
 
 /// Activity groups in display order, before selection and ⌘-digit hints are applied.
@@ -152,6 +154,10 @@ struct SidebarSource: Equatable {
     var statusSince: [AgentID: Date] = [:]
     /// Each automation's open run (`AutomationRun.isLive`).
     var openRuns: [AutomationID: AutomationRun] = [:]
+    /// This Mac's triggered run threads nobody opened since they settled or asked.
+    var unreadRuns: Set<AgentID> = []
+    /// This Mac's triggered automations whose trigger is paused (or all are).
+    var pausedAutomations: Set<AutomationID> = []
     /// Every configured host, in configured order; one that is offline lists what it last sent.
     var hosts: [Host] = []
     /// Settings ▸ Experiments ▸ Design tool: This Mac's designs have their own group. Their agents
@@ -450,7 +456,8 @@ enum SidebarDerivation {
     /// as every ProjectLead board draws them. Hosts, Design systems and Extensions have no sidebar row: the command palette
     /// opens them ("Open Hosts", "Open Design systems", "Open Extensions"), Settings ▸ Remote and Settings ▸ Extensions hold the
     /// same settings, and a notification still opens Hosts. Archive is not built, so it is not shown.
-    static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false, missions: Bool = false) -> [Destination] {
+    static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false, missions: Bool = false,
+                             automations: SHSidebarDestination.Trailing = .none) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
                         child: false, trailing: .keycaps(newThreadChord)),
@@ -465,8 +472,28 @@ enum SidebarDerivation {
                                     selected: shown == .designs || shown == .newDesign, child: false, trailing: .none))
         }
         rows.append(Destination(target: .page(.automations), title: "Automations", icon: .symbol("bolt"),
-                                selected: shown == .automations, child: false, trailing: .none))
+                                selected: shown == .automations, child: false, trailing: automations))
         return rows
+    }
+
+    /// The Automations row's trailing: a trigger stopped by an error ("1 paused"), else runs
+    /// nobody opened, else "paused" while Pause all triggers holds them all.
+    static func automationsTrailing(runs: [AutomationID: [AutomationRun]], statuses: [AutomationID: AutomationTriggerStatus],
+                                    allPaused: Bool) -> SHSidebarDestination.Trailing {
+        let failing = statuses.values.filter { $0.state == .paused && $0.reason != nil && !$0.allPaused }.count
+        if failing > 0, !allPaused { return .alert("\(failing) paused") }
+        let unread = runs.values.reduce(0) { $0 + $1.filter(\.unread).count }
+        if unread > 0 { return .count(unread) }
+        return allPaused ? .alert("paused") : .none
+    }
+
+    /// What VoiceOver reads for a destination: its title and what its trailing says.
+    static func accessibilityLabel(_ row: Destination) -> String {
+        switch row.trailing {
+        case .count(let count): "\(row.title), \(count) unread"
+        case .alert(let text): "\(row.title), \(text)"
+        case .none, .keycaps: row.title
+        }
     }
 
     // MARK: Footer

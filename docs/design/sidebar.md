@@ -284,6 +284,14 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
 - **Threads** are the Recents rows (`SHSidebarRow`, `nested`), led 20pt further in so their dot
   sits under the folder, with the same dots, words, reasons and tags. **Needs you rows stay in
   their space** with the amber dot and the reason; there is no Needs you section.
+- **Automation runs:** a triggered automation's run threads (`Agent.automationOrigin`) fold
+  under one `SHAutomationGroupRow` per automation in their space, nested a level as a child space
+  is: a chevron, the bolt (`lanternText` while a run asks), the name, "paused" while its trigger
+  is, a lantern or running dot, and the unread count in `running` (else the run count). Groups
+  start closed (open ones are remembered as `runs.open:` keys beside the closed spaces); selecting
+  a run opens its group. Its menu has Show in Automations. The Activity sidebar lists them as
+  ordinary threads. The Automations destination shows "1 paused" (`failed`) for a trigger an error
+  paused, else the unread runs as a count badge, else "paused" under Pause all triggers.
 - **Order:** spaces keep the spaces' order, which a drag changes (`SessionServer.moveSpace`),
   and a space added on this Mac or by a remote client goes on top. Inside a space the newest
   activity comes first (`Agent.lastActiveAt`, as Recents). Every space shows, an empty one too.

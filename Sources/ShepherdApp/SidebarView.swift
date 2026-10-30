@@ -40,7 +40,10 @@ private struct SidebarDestinations: View {
 
     var body: some View {
         let rows = SidebarDerivation.destinations(shown: vm.shownDestination, newThreadChord: vm.keybindings.display(.newAgent),
-                                                  designs: vm.designToolEnabled, missions: vm.settings.missionsEnabled)
+                                                  designs: vm.designToolEnabled, missions: vm.settings.missionsEnabled,
+                                                  automations: SidebarDerivation.automationsTrailing(
+                                                    runs: vm.localAutomationRuns, statuses: vm.automationTriggerStatuses,
+                                                    allPaused: vm.automationTriggersAllPaused))
         VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
                 SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
@@ -49,7 +52,7 @@ private struct SidebarDestinations: View {
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()
-                .accessibilityLabel(row.title)
+                .accessibilityLabel(SidebarDerivation.accessibilityLabel(row))
             }
         }
         .padding(.vertical, SHSidebarMetrics.destinationsPadding)

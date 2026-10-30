@@ -72,6 +72,8 @@ extension ShepherdViewModel {
             openingTurns: sidebarOpeningTurns, completions: sidebarCompletions.records, failedTurns: failedTurns, cannotStart: cannotStart,
             notSignedIn: Set(notSignedIn.keys), waiting: waitingForImport, statusSince: statusSince,
             openRuns: openAutomationRuns,
+            unreadRuns: Set(localAutomationRuns.values.joined().filter(\.unread).compactMap(\.agentID)),
+            pausedAutomations: Set(automationTriggerStatuses.filter { automationTriggersAllPaused || $0.value.state == .paused }.keys),
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected)

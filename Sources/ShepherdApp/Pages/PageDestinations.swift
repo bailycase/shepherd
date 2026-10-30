@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
@@ -14,6 +15,7 @@ struct AutomationsDestination: View {
         let _ = SHRenderProbe.tick("page.automations")
         AutomationsPage(model: vm.automationsPage, actions: actions, chrome: chrome)
             .task(id: vm.automationRunsSignature) { await vm.loadAutomationPageRuns() }
+            .onAppear { vm.refreshAutomationTriggers() }
             .sheet(item: $editor) { target in
                 AutomationEditorSheet(vm: vm, target: target) { editor = nil }
                     .dialogSheetFrame()
@@ -30,7 +32,14 @@ struct AutomationsDestination: View {
             openThread: { vm.openThread($0) },
             delete: { vm.deleteAutomation($0) },
             edit: { editor = .edit($0) },
-            create: { editor = .new })
+            create: { editor = .new },
+            // Trigger state is This Mac's; a host's automation shows no pause, resume or pending event.
+            pause: { vm.pauseAutomationTrigger($0.automation) },
+            resume: { vm.resumeAutomationTrigger($0.automation) },
+            runEvent: { vm.runPendingAutomationEvent($0.automation, eventID: $1) },
+            dismissEvent: { vm.dismissAutomationEvent($0.automation, eventID: $1) },
+            setAllPaused: { vm.setAllAutomationTriggersPaused($0) },
+            openURL: { NSWorkspace.shared.open($0) })
     }
 }
 
