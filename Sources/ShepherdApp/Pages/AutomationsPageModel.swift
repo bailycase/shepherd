@@ -232,7 +232,7 @@ struct AutomationsPageModel: Equatable {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.hour, .minute], from: date)
-        let clock = AutomationSchedulePreset.clock(parts.hour ?? 0, parts.minute ?? 0)
+        let clock = MacSchedulePreset.clock(parts.hour ?? 0, parts.minute ?? 0)
         if calendar.isDate(date, inSameDayAs: now) { return clock }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
             return "tomorrow " + clock
@@ -244,7 +244,7 @@ struct AutomationsPageModel: Equatable {
     static func whenPhrase(_ trigger: AutomationTrigger) -> String {
         switch trigger {
         case .manual: "By hand"
-        case .schedule(let schedule): AutomationSchedulePreset(rrule: schedule.rrule).summary
+        case .schedule(let schedule): MacSchedulePreset(rrule: schedule.rrule).summary
         case .github(let triggers):
             "On GitHub activity in " + repos(triggers)
         }
@@ -354,7 +354,7 @@ extension AutomationsPageDetail {
         switch automation.trigger {
         case .manual: break
         case .schedule(let schedule):
-            trigger.append(.init(label: "When", value: AutomationSchedulePreset(rrule: schedule.rrule).summary, mono: false))
+            trigger.append(.init(label: "When", value: MacSchedulePreset(rrule: schedule.rrule).summary, mono: false))
             if let next = status?.nextRunAt {
                 trigger.append(.init(label: "Next run", value: Page.when(Date(timeIntervalSince1970: next), now: now, timeZone: timeZone,
                                                                         locale: locale), mono: false))

@@ -21,7 +21,7 @@ enum AutomationEditorTarget: Identifiable, Equatable {
 /// the iOS form has them. Name, prompt, the folder its runs work in, and whether it is on; a new
 /// one also picks its host. On This Mac it also sets what starts a run (by hand, a schedule, or
 /// GitHub activity), where runs go, who can trigger one, its limits and model pins
-/// (`AutomationTriggerForm`). Saving never starts a run.
+/// (`MacTriggerForm`). Saving never starts a run.
 struct AutomationEditorSheet: View {
     var vm: ShepherdViewModel
     let target: AutomationEditorTarget
@@ -36,7 +36,7 @@ struct AutomationEditorSheet: View {
     @State private var picking = false
     @State private var saving = false
     @State private var errorText: String?
-    @State private var form = AutomationTriggerForm()
+    @State private var form = MacTriggerForm()
     /// What the form says, worked out when it changes, never in `body`.
     @State private var formError: String?
     @State private var nextRun: String?
@@ -222,7 +222,7 @@ struct AutomationEditorSheet: View {
             SheetRow("On") {
                 HStack(spacing: SH.Space.m) {
                     ForEach(1...7, id: \.self) { day in
-                        Toggle(AutomationSchedulePreset.dayName(day), isOn: Binding(
+                        Toggle(MacSchedulePreset.dayName(day), isOn: Binding(
                             get: { form.weekdays.contains(day) },
                             set: { on in if on { form.weekdays.insert(day) } else { form.weekdays.remove(day) } }))
                             .toggleStyle(.shCheckbox)
@@ -393,7 +393,7 @@ struct AutomationEditorSheet: View {
         }
     }
 
-    private func check(_ form: AutomationTriggerForm) {
+    private func check(_ form: MacTriggerForm) {
         let now = Date()
         formError = form.validationError(now: now)
         nextRun = form.nextRun(after: now).map {
@@ -421,7 +421,7 @@ struct AutomationEditorSheet: View {
         folder = saved.cwd
         enabled = saved.enabled
         if key.host == PageHost.localID, let automation = vm.state.automations.first(where: { $0.id == key.automation }) {
-            form = AutomationTriggerForm(automation)
+            form = MacTriggerForm(automation)
         }
     }
 

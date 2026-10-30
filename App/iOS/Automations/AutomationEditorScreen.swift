@@ -56,7 +56,7 @@ struct AutomationEditorScreen: View {
             } header: {
                 Text("Prompt")
             } footer: {
-                Text("Each run starts a new thread with this prompt.")
+                Text(form.kind != .manual && form.thread != nil ? "Each run sends this prompt to the chosen thread." : "Each run starts a new thread with this prompt.")
             }
             Section {
                 if automation == nil, store.editableHosts.count > 1 {

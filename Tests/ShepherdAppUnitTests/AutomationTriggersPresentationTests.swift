@@ -25,20 +25,20 @@ struct AutomationTriggersPresentationTests {
     // MARK: Form
 
     @Test func presetsRoundTripThroughTheirRRule() {
-        let presets: [AutomationSchedulePreset] = [
+        let presets: [MacSchedulePreset] = [
             .everyMinutes(15), .daily(hour: 9, minute: 30), .weekly(weekdays: [2, 4], hour: 9, minute: 0),
         ]
         for preset in presets {
-            #expect(AutomationSchedulePreset(rrule: preset.rrule) == preset)
-            #expect(AutomationSchedulePreset(rrule: "RRULE:" + preset.rrule.lowercased()) == preset)
+            #expect(MacSchedulePreset(rrule: preset.rrule) == preset)
+            #expect(MacSchedulePreset(rrule: "RRULE:" + preset.rrule.lowercased()) == preset)
         }
-        #expect(AutomationSchedulePreset(rrule: "FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=9;BYMINUTE=0").summary == "Mon, Thu at 09:00")
-        #expect(AutomationSchedulePreset(rrule: "FREQ=MONTHLY;BYMONTHDAY=1") == .custom("FREQ=MONTHLY;BYMONTHDAY=1"))
-        #expect(AutomationSchedulePreset.daily(hour: 9, minute: 5).summary == "Daily at 09:05")
+        #expect(MacSchedulePreset(rrule: "FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=9;BYMINUTE=0").summary == "Mon, Thu at 09:00")
+        #expect(MacSchedulePreset(rrule: "FREQ=MONTHLY;BYMONTHDAY=1") == .custom("FREQ=MONTHLY;BYMONTHDAY=1"))
+        #expect(MacSchedulePreset.daily(hour: 9, minute: 5).summary == "Daily at 09:05")
     }
 
     @Test func formBlocksWhatTheHostWouldRefuse() {
-        var form = AutomationTriggerForm()
+        var form = MacTriggerForm()
         #expect(form.validationError(now: now, calendar: calendar) == nil)
         form.kind = .schedule
         form.preset = .weekly
@@ -63,7 +63,7 @@ struct AutomationTriggersPresentationTests {
     }
 
     @Test func formSendsEverySettingAndShowsTheNextRun() throws {
-        var form = AutomationTriggerForm()
+        var form = MacTriggerForm()
         form.kind = .schedule
         form.preset = .daily
         form.hour = 9
@@ -80,7 +80,7 @@ struct AutomationTriggersPresentationTests {
         #expect(automation.thinking == nil)
         // Read back, the form is what was saved, and an unchanged schedule keeps its anchor.
         automation.trigger = .schedule(AutomationSchedule(rrule: form.schedulePreset.rrule, start: 42))
-        let reread = AutomationTriggerForm(automation)
+        let reread = MacTriggerForm(automation)
         #expect(reread.preset == .daily && reread.hour == 9 && reread.workspace == .local)
         #expect(reread.schedule.start == 42)
     }

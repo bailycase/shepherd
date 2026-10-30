@@ -7,7 +7,7 @@ import ShepherdCore
 // its body.
 
 /// A schedule as the editor offers it: three presets, or an RRULE typed by hand.
-enum AutomationSchedulePreset: Hashable {
+enum MacSchedulePreset: Hashable {
     case everyMinutes(Int)
     /// `hour`, `minute`, local time.
     case daily(hour: Int, minute: Int)
@@ -122,11 +122,11 @@ struct GitHubTriggerForm: Hashable, Identifiable {
 }
 
 /// The editor's trigger and run settings.
-struct AutomationTriggerForm: Equatable {
+struct MacTriggerForm: Equatable {
     enum Kind: Hashable { case manual, schedule, github }
 
     var kind: Kind = .manual
-    var preset: AutomationSchedulePreset.Kind = .daily
+    var preset: MacSchedulePreset.Kind = .daily
     var intervalMinutes = 60
     var hour = 9
     var minute = 0
@@ -155,7 +155,7 @@ struct AutomationTriggerForm: Equatable {
             kind = .schedule
             savedRRule = schedule.rrule
             scheduleStart = schedule.start
-            switch AutomationSchedulePreset(rrule: schedule.rrule) {
+            switch MacSchedulePreset(rrule: schedule.rrule) {
             case .everyMinutes(let n): (preset, intervalMinutes) = (.minutes, n)
             case .daily(let h, let m): (preset, hour, minute) = (.daily, h, m)
             case .weekly(let days, let h, let m): (preset, weekdays, hour, minute) = (.weekly, days, h, m)
@@ -174,7 +174,7 @@ struct AutomationTriggerForm: Equatable {
         thinking = automation.thinking?.rawValue ?? ""
     }
 
-    var schedulePreset: AutomationSchedulePreset {
+    var schedulePreset: MacSchedulePreset {
         switch preset {
         case .minutes: .everyMinutes(intervalMinutes)
         case .daily: .daily(hour: hour, minute: minute)
