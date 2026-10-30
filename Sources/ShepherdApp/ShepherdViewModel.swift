@@ -422,6 +422,8 @@ final class ShepherdViewModel {
     var remoteAutomationTriggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:]
     /// Run threads whose pull request was looked up recently.
     @ObservationIgnored var checkedRunPullRequests: Set<AgentID> = []
+    /// Reads remote hosts' trigger status for the sidebar (`startRemoteAutomationWatch`).
+    @ObservationIgnored var remoteTriggerWatch: Task<Void, Never>?
     /// The Automations page's selected row and its filter. Ephemeral.
     var automationsPageSelection: AutomationKey?
     var automationsPageFilter = ""

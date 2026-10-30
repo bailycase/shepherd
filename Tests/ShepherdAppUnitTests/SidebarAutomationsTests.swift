@@ -166,5 +166,13 @@ struct SidebarAutomationsTests {
         }
         #expect(manualLists(nil).automationRows.map(\.word) == ["running"])
         #expect(manualLists(AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: watcher.id)).automationRows.isEmpty)
+
+        // The same name on This Mac and a host: rows from more than one host name theirs.
+        var localTwin = remote
+        localTwin.id = AutomationID()
+        let both = SidebarDerivation.lists(SidebarSource(local: ShepherdState(automations: [localTwin]),
+                                                         hosts: [.init(id: hostID, name: "build-01", state: hostState)]))
+        #expect(Set(both.automationRows.map(\.name)) == ["nightly · build-01", "nightly"])
+        #expect(online.automationRows.map(\.name) == ["nightly"], "one host's rows need no tag")
     }
 }

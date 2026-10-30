@@ -441,9 +441,12 @@ enum SidebarDerivation {
             if order != .orderedSame { return order == .orderedAscending }
             return a.value.host != b.value.host ? a.value.host < b.value.host : a.key.automation.rawValue < b.key.automation.rawValue
         }
+        // Rows from more than one host name theirs, so same-named automations on two hosts tell apart.
+        let manyHosts = Set(tallies.values.map(\.host)).count > 1
         lists.automationRows = ordered.map { key, tally in
             automationRow(key, tally, status: source.triggerStatuses[key],
-                          allPaused: key.host == PageHost.localID && source.triggersAllPaused, unread: source.unreadRunCounts[key] ?? 0)
+                          allPaused: key.host == PageHost.localID && source.triggersAllPaused, unread: source.unreadRunCounts[key] ?? 0,
+                          showHost: manyHosts)
         }
         // Each automation's runs sit together under it, most recently active first.
         let position = Dictionary(uniqueKeysWithValues: lists.automationRows.enumerated().map { ($1.key, $0) })
@@ -535,7 +538,7 @@ enum SidebarDerivation {
 
     /// An active automation's row: its bolt, name and one word, from what its runs add up to and its trigger's status.
     static func automationRow(_ key: AutomationKey, _ tally: AutomationTally, status: AutomationTriggerStatus?,
-                              allPaused: Bool, unread: Int) -> SidebarAutomation {
+                              allPaused: Bool, unread: Int, showHost: Bool = false) -> SidebarAutomation {
         let automation = tally.automation
         let (word, tone) = automationWord(automation, running: tally.running, asking: tally.asking, status: status, allPaused: allPaused)
         let paused = automation.isTriggered && (allPaused || status?.allPaused == true || status?.state == .paused)
@@ -545,7 +548,7 @@ enum SidebarDerivation {
         if unread > 0 { label.append("\(unread) unread") }
         if tally.runs > 0 { label.append(tally.runs == 1 ? "1 run" : "\(tally.runs) runs") }
         return SidebarAutomation(
-            key: key, name: automation.name, word: word, tone: tone, attention: tally.asking, unread: unread,
+            key: key, name: showHost ? [automation.name, tally.hostName].compactMap { $0 }.joined(separator: " · ") : automation.name, word: word, tone: tone, attention: tally.asking, unread: unread,
             triggered: automation.isTriggered, paused: paused, live: tally.live && !automation.isTriggered,
             project: automation.projectID != nil, runs: tally.runs,
             help: ["\(automation.name)\(place)", reason].compactMap { $0 }.joined(separator: ": "),

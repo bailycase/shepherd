@@ -240,6 +240,7 @@ extension ShepherdViewModel {
     func autoStartAutomations() {
         // Triggered automations start nothing here: their trigger clock fires them.
         startAutomationTriggers()
+        startRemoteAutomationWatch()
         let pending = state.automations.filter { $0.projectID == nil && $0.enabled && !$0.deleteAfterRun && $0.agentID == nil && !$0.isTriggered }
         guard !pending.isEmpty else { return }
         Task { @MainActor in

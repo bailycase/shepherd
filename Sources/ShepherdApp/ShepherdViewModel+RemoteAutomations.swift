@@ -90,6 +90,29 @@ extension ShepherdViewModel {
         }
     }
 
+    /// How often the sidebar's Automations rows read each host's trigger status and runs.
+    static let remoteTriggerBackground: Duration = .seconds(60)
+
+    /// Keeps remote hosts' automation rows current wherever they show (the sidebar), not only
+    /// on the Automations page: each host's trigger status and its triggered automations' runs
+    /// (for unread), every `remoteTriggerBackground`. Started once after adoption; one status
+    /// and one runs read per triggered automation a minute, nothing when no host serves triggers.
+    func startRemoteAutomationWatch() {
+        guard remoteTriggerWatch == nil else { return }
+        remoteTriggerWatch = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.refreshRemoteAutomationTriggers()
+                for connection in self.triggerConnections {
+                    for automation in connection.state.automations where automation.isTriggered {
+                        await self.loadRemoteAutomationRuns(AutomationKey(host: connection.id, automation: automation.id))
+                    }
+                }
+                try? await Task.sleep(for: Self.remoteTriggerBackground)
+            }
+        }
+    }
+
     /// Pause all triggers on a host (the automation named is incidental: the first triggered one).
     func setRemoteAutomationTriggersPaused(_ host: UUID, _ paused: Bool) {
         guard let connection = triggerConnections.first(where: { $0.id == host }),
