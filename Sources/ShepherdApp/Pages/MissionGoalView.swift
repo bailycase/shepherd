@@ -107,7 +107,7 @@ struct MissionWorkspace: View {
                     Label("Accept \(pending.lane)'s completion report", systemImage: "checkmark")
                 }
                 .buttonStyle(.sh(.primary)).disabled(busy)
-                .shHelp("You read the /speckit.converge report and accept it. An acknowledgement, not test evidence; work continues with the next repository.")
+                .shHelp("You read the /speckit.converge report and accept it. An acknowledgement, not test evidence; work continues once no other report waits for you.")
             } else if mission.run?.publicationApproval == nil && !blocked && !specKitBlocked && !(phase == .map && needsPlan) {
                 Button { action(needsPlan ? .plan("") : .launch) } label: {
                     Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? SHGlyph.mission.symbolName : "play.fill")

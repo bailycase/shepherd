@@ -87,7 +87,7 @@ final class MissionSpecKitFixture {
 
     /// The protocol stub, with Spec Kit turns played in-thread so steers are taken while the turn works.
     static let engine = #"""
-    import json, os, pathlib, subprocess, sys, time
+    import json, os, pathlib, re, subprocess, sys, time
     config = json.loads(pathlib.Path(sys.argv.pop(1)).read_text())
     root = pathlib.Path(config['root'])
     if '--list-models' in sys.argv:
@@ -107,6 +107,10 @@ final class MissionSpecKitFixture {
         with (root / 'calls.jsonl').open('a') as f:
             f.write(json.dumps(dict(entry, agent=agent, cwd=os.getcwd(), templates=templates, argv=sys.argv,
                                     denied=os.environ.get('SHEPHERD_CLI_DENIED'))) + '\n')
+
+    # A marker for every repository (name) or for one worktree (name-<worktree folder>): repositories run side by side.
+    def marker(name):
+        return next((m for m in (root / name, root / (name + '-' + pathlib.Path.cwd().name)) if m.exists()), None)
 
     def work(prompt):
         spec = pathlib.Path('specs/001-result/spec.md')
@@ -152,7 +156,8 @@ final class MissionSpecKitFixture {
             (feature / 'contracts').mkdir(exist_ok=True)
             (feature / 'contracts/cli.md').write_text('# CLI contract\n')
         elif command == 'tasks':
-            (feature / 'tasks.md').write_text('# Tasks\n## Phase 1: Core\n- [ ] T001 Write after to result.txt\n')
+            (feature / 'tasks.md').write_text('# Tasks\n## Phase 1: Core\n- [ ] T001 Write after to result.txt\n'
+                + ('- [ ] T002 [P] Write a.txt\n- [ ] T003 [P] Write b.txt\n' if (root / 'parallel-tasks').exists() else ''))
         elif command == 'constitution':
             pathlib.Path('.specify/memory/constitution.md').write_text('# Result Constitution\n## Core Principles\n### I. Keep it simple\n')
             return 'Wrote the constitution from the repository.'
@@ -164,6 +169,19 @@ final class MissionSpecKitFixture {
                         # As live: the findings, then a closing message about the optional git hook.
                         '\n<<SPLIT>>\nOptional Hook: git, /speckit.git.commit. Not executed; analysis remained read-only.')
             return 'No issues found. Critical Issues Count: 0'
+        elif command == 'implement' and (scoped := re.match(r'/speckit\.implement Implement only task (T\d+)', prompt)):
+            # One agent per task: only its own file, never tasks.md. [P] tasks wait to see each other running,
+            # which proves they ran at the same time.
+            task, here = scoped.group(1), pathlib.Path.cwd().name
+            if task == 'T001': pathlib.Path('result.txt').write_text('after\n')
+            else:
+                (root / ('running-' + task + '-' + here)).write_text('')
+                deadline = time.time() + 20
+                while not all((root / ('running-' + t + '-' + here)).exists() for t in ('T002', 'T003')) and time.time() < deadline: time.sleep(0.05)
+                if all((root / ('running-' + t + '-' + here)).exists() for t in ('T002', 'T003')): (root / ('overlap-' + here)).write_text('')
+                pathlib.Path(('a' if task == 'T002' else 'b') + '.txt').write_text(task + '\n')
+            if marker('block-' + task): return 'I could not finish.\nBlocked: ' + task + ' the fixture said so'
+            return 'Wrote the file for ' + task + '.\nDone: ' + task
         elif command == 'implement':
             if (root / 'implement-edits-spec').exists():
                 with (feature / 'spec.md').open('a') as f: f.write('- **FR-001**: dropped, too hard\n')
@@ -177,7 +195,7 @@ final class MissionSpecKitFixture {
             if (root / 'hold-implement').exists():
                 deadline = time.time() + 30
                 while not (root / 'release-implement').exists() and time.time() < deadline: time.sleep(0.05)
-                (root / 'hold-implement').unlink()
+                (root / 'hold-implement').unlink(missing_ok=True)
             pathlib.Path('result.txt').write_text('after\n')
             # As live implement runs do: a design artifact filled in alongside the code.
             with (feature / 'contracts/cli.md').open('a') as f: f.write('- result.txt holds after\n')
@@ -188,8 +206,10 @@ final class MissionSpecKitFixture {
                 subprocess.run(['git', 'add', '-A'], check=True)
                 subprocess.run(['git', '-c', 'user.name=Spec Kit', '-c', 'user.email=speckit@example.com', 'commit', '-qm', '[Spec Kit] implement'], check=True)
         elif command == 'converge':
-            if (root / 'append-once').exists():
-                (root / 'append-once').unlink()
+            if marker('converge-edits-spec'):
+                with (feature / 'spec.md').open('a') as f: f.write('- **FR-001**: already satisfied, nothing to check\n')
+            if (once := marker('append-once')):
+                once.unlink(missing_ok=True)
                 with (feature / 'tasks.md').open('a') as f:
                     f.write('\n## Phase 2: Convergence\n- [ ] T002 Re-check result.txt per FR-001 (missing)\n')
                 return 'Appended 1 task under Phase 2: Convergence.'
@@ -205,7 +225,7 @@ final class MissionSpecKitFixture {
         log({'prompt': prompt})
         reply = work(prompt)
         # 'ignore-steer': the run ends without reading what is queued, as pi does when a steer misses its window.
-        while not (root / 'ignore-steer').exists():
+        while not marker('ignore-steer'):
             taken = ns['take'](ns['steering'])
             if not taken: break
             message = ns['user_message'](*taken[0])

@@ -159,8 +159,10 @@ extension MissionController {
             return passed
         } catch {
             if error is CancellationError { throw error }
-            _ = try record(id, runID: runID)
+            let current = try record(id, runID: runID)
             let message = Self.safeText(String(describing: error)), receiptID = attemptID
+            // With no attempt recorded (the run's attempt cap, a closed workspace) a retry never counts toward the limit.
+            guard current.run?.attempts.contains(where: { ($0.id == receiptID || $0.stationID == station.id) && $0.status == .running }) == true else { throw error }
             _ = try await server.updateMissionRun(id: id, runID: runID) { current in
                 if let index = current.attempts.lastIndex(where: { ($0.id == receiptID || $0.stationID == station.id) && $0.status == .running }) {
                     current.attempts[index].status = .failed; current.attempts[index].output = message

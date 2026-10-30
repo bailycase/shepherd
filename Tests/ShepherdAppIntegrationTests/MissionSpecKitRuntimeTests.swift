@@ -118,6 +118,20 @@ struct MissionSpecKitRuntimeTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func parallelTasksRunOneAgentEachAndOnlyReportedTasksAreCheckedOff() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.oneAgentPerTask() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func convergeCannotRewriteWhatYouApproved() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.convergeScope() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aPausedImplementResumesFromItsOwnPartialOutput() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.pausedImplement() }
@@ -176,6 +190,60 @@ struct MissionSpecKitRuntimeTests {
         let notice = try controller.record(id).run?.notice ?? ""
         #expect(notice.contains("changed what you approved") && notice.contains("spec.md"), "\(notice)")
         #expect(try prompts(fixture).contains("/speckit.converge") == false, "converge never assesses against a weakened spec")
+    }
+
+    /// tasks.md with [P] tasks: each task gets its own stock /speckit.implement turn in its own thread, the [P] pair at
+    /// the same time, and Shepherd checks off only what an agent reported done. A relaunch runs only the unchecked.
+    static func oneAgentPerTask() async throws {
+        let fixture = try MissionSpecKitFixture(); defer { fixture.stop() }
+        try Data().write(to: fixture.root.appendingPathComponent("parallel-tasks"))
+        let id = try await planned(fixture)
+        let controller = try #require(fixture.controller)
+        let first = try #require(try controller.record(id).run?.checkouts.first { $0.spaceID == fixture.spaces[0].id })
+        let worktree = URL(fileURLWithPath: first.path)
+        try Data().write(to: fixture.root.appendingPathComponent("block-T003-" + worktree.lastPathComponent))
+        try await controller.launch(id: id, revision: try fixture.revision(id))
+        try await fixture.wait(id, phase: .paused)
+        var mission = try controller.record(id)
+        #expect(mission.run?.notice?.contains("T003 didn't report it was done") == true, "\(mission.run?.notice ?? "")")
+        let tasks = { (checkout: MissionCheckout) in try String(contentsOf: URL(fileURLWithPath: checkout.path).appendingPathComponent("specs/001-result/tasks.md"), encoding: .utf8) }
+        #expect(try tasks(first) == "# Tasks\n## Phase 1: Core\n- [X] T001 Write after to result.txt\n- [X] T002 [P] Write a.txt\n- [ ] T003 [P] Write b.txt\n")
+        for checkout in mission.run?.checkouts ?? [] {
+            let folder = URL(fileURLWithPath: checkout.path).lastPathComponent
+            #expect(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("overlap-" + folder).path), "the [P] pair ran at once in \(folder)")
+            let own = mission.run?.attempts.filter { $0.task != nil && $0.gitBefore?.spaceID == checkout.spaceID } ?? []
+            #expect(own.compactMap(\.task).sorted() == ["T001", "T002", "T003"] && Set(own.compactMap(\.agentID)).count == 3, "one agent per task")
+        }
+        let prompts = try fixture.loggedCalls().compactMap { $0["prompt"] as? String }
+        #expect(!prompts.contains("/speckit.implement"), "no whole implement turn while tasks have their own")
+        #expect(prompts.filter { $0.hasPrefix("/speckit.implement Implement only task T002") }.count == 2)
+        // Relaunch: only the unchecked task runs again, in a new agent.
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("block-T003-" + worktree.lastPathComponent))
+        try await controller.launch(id: id, revision: try fixture.revision(id))
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        #expect(try tasks(first).contains("- [X] T003"))
+        #expect(try fixture.loggedCalls().compactMap { $0["prompt"] as? String }.filter { $0.hasPrefix("/speckit.implement Implement only task") }.count == 7)
+        #expect(try String(contentsOf: worktree.appendingPathComponent("b.txt"), encoding: .utf8) == "T003\n")
+        let round = mission.run?.attempts.last { $0.stationID == SpecKit.stationID(id, fixture.spaces[0].id, "phase-0") && $0.task == nil }
+        #expect(round?.status == .succeeded && round?.output.contains("one agent per task") == true, "\(round?.output ?? "")")
+        for lane in mission.run?.specKit?.lanes ?? [] where lane.convergence?.accepted == false {
+            try await controller.acceptConvergence(id: id, revision: try fixture.revision(id), attemptID: lane.convergence!.attemptID)
+        }
+        try await fixture.wait(id, phase: .review)
+    }
+
+    /// A report that weakened the spec would make the weakened files the accepted baseline; it goes back to you instead.
+    static func convergeScope() async throws {
+        let fixture = try MissionSpecKitFixture(); defer { fixture.stop() }
+        try Data().write(to: fixture.root.appendingPathComponent("converge-edits-spec"))
+        let id = try await planned(fixture)
+        let controller = try #require(fixture.controller)
+        try await controller.launch(id: id, revision: try fixture.revision(id))
+        try await fixture.wait(id, phase: .paused)
+        let notice = try controller.record(id).run?.notice ?? ""
+        #expect(notice.contains("/speckit.converge changed what you approved") && notice.contains("spec.md"), "\(notice)")
+        #expect(try controller.record(id).run?.specKit?.lanes.allSatisfy { $0.convergence == nil } == true, "no report waits to be accepted")
     }
 
     static func pausedImplement() async throws {
@@ -443,18 +511,28 @@ struct MissionSpecKitRuntimeTests {
         #expect(try controller.record(id).run?.notice?.contains("map is ready") == true)
         #expect(controller.specKitPhases[id]?.values.allSatisfy { $0.first?.tasks.first?.done == false } == true)
 
-        // Launch: implement in a fresh thread, steered while it works.
+        // Launch: every repository implements in a fresh thread of its own, side by side. The first is steered while
+        // it works; the second's turn ends without pi reading a steer.
+        let worktrees = Dictionary(uniqueKeysWithValues: try #require(try controller.record(id).run?.checkouts).map {
+            ($0.spaceID, URL(fileURLWithPath: $0.path).lastPathComponent)
+        })
         try Data().write(to: fixture.root.appendingPathComponent("hold-implement"))
-        try Data().write(to: fixture.root.appendingPathComponent("append-once"))
+        try Data().write(to: fixture.root.appendingPathComponent("append-once-" + worktrees[fixture.spaces[0].id]!))
+        try Data().write(to: fixture.root.appendingPathComponent("ignore-steer-" + worktrees[fixture.spaces[1].id]!))
         try await controller.launch(id: id, revision: try fixture.revision(id))
         let implementStation = SpecKit.stationID(id, fixture.spaces[0].id, "phase-0")
-        var implement: MissionAttempt?
-        try await eventuallyOnMain("implement is working", timeout: .seconds(30)) {
+        let secondStation = SpecKit.stationID(id, fixture.spaces[1].id, "phase-0")
+        var implement: MissionAttempt?, secondImplement: MissionAttempt?
+        try await eventuallyOnMain("both repositories implement at once", timeout: .seconds(30)) {
             implement = try? controller.record(id).run?.latest(implementStation)
-            return implement?.status == .running && (try? fixture.loggedCalls().contains { ($0["prompt"] as? String) == "/speckit.implement" }) == true
+            secondImplement = try? controller.record(id).run?.latest(secondStation)
+            // pi's runs have started (the stub logs the turn after agent_start): only then can they take a steer.
+            return implement?.status == .running && secondImplement?.status == .running
+                && (try? fixture.loggedCalls().filter { ($0["prompt"] as? String) == "/speckit.implement" }.count) == 2
         }
         let working = try #require(implement)
         #expect(!planners.contains(try #require(working.agentID)), "implement runs in a fresh thread")
+        #expect(working.agentID != secondImplement?.agentID, "each repository implements in its own thread")
         let source = try #require(controller.thread(for: working.id))
         #expect(source.send != nil && source.agentID == working.agentID)
         // Wrong owners are refused without touching the record: a settled attempt, an agent with no running
@@ -473,7 +551,21 @@ struct MissionSpecKitRuntimeTests {
             try await fixture.app.server.sendMissionSteer(id: id, runID: UUID(), agentID: working.agentID!, operationID: UUID(), text: "stale run")
         }
         #expect(try controller.record(id).run?.attempts.first { $0.id == working.id }?.operationIDs == nil)
-        // A steer returns once pi has read it, so it waits on the held turn; release the turn, then await it.
+        // Not read within the bound: the call says so (words kept) and a second steer is refused while it waits.
+        let lost = "Unread steer."
+        let bound = MissionController.steerOutcomeSeconds
+        MissionController.steerOutcomeSeconds = 1
+        do {
+            try await controller.steer(id: id, revision: try fixture.revision(id), attemptID: secondImplement!.id, text: lost)
+            Issue.record("an unread steer must not return as delivered")
+        } catch let error as MissionError { #expect(error.code == "mission_steer_pending", "\(error)") }
+        do {
+            try await controller.steer(id: id, revision: try fixture.revision(id), attemptID: secondImplement!.id, text: lost)
+            Issue.record("a second steer while one waits must be refused")
+        } catch let error as MissionError { #expect(error.code == "mission_steer_waiting", "\(error)") }
+        MissionController.steerOutcomeSeconds = bound
+        #expect(try controller.record(id).run?.attempts.first { $0.id == secondImplement!.id }?.operationIDs?.count == 1, "the refused steer sent nothing")
+        // A steer returns once pi has read it, so it waits on the held turn; release the turns, then await it.
         let steering = Task { try await controller.steer(id: id, revision: try fixture.revision(id), attemptID: working.id, text: "Prefer a minimal edit.") }
         try await eventuallyOnMain("steer queued with pi") { (try? controller.record(id).run?.attempts.first { $0.id == working.id }?.operationIDs?.count) == 1 }
         try Data().write(to: fixture.root.appendingPathComponent("release-implement"))
@@ -484,18 +576,34 @@ struct MissionSpecKitRuntimeTests {
         #expect(steered.deliveredOperationIDs == steered.operationIDs, "a durable receipt says pi read the steer")
         #expect(steered.status == .succeeded && steered.operationIDs?.count == 1 && steered.output.contains("steered: Prefer a minimal edit."))
         #expect(try fixture.loggedCalls().contains { $0["steer"] as? String == "Prefer a minimal edit." })
+        let unreadAttempt = try #require(mission.run?.attempts.first { $0.id == secondImplement!.id })
+        #expect(unreadAttempt.status == .succeeded && unreadAttempt.undeliveredOperationIDs?.count == 1)
+        #expect(unreadAttempt.output.contains("not delivered"))
+        #expect(!(try fixture.loggedCalls()).contains { ($0["prompt"] as? String) == lost || ($0["steer"] as? String) == lost },
+                "an unread steer never becomes a turn of its own")
 
-        // Converge appended a task: approval is gone, acceptance is refused, the owner approves again.
+        // Both wait for you. The first repository's converge appended a task: approval is gone and acceptance is
+        // refused. The second's report is yours to accept, which approves nothing else and starts no work.
         var lane = try #require(mission.run?.specKit?[fixture.spaces[0].id])
+        let other = try #require(mission.run?.specKit?[fixture.spaces[1].id]?.convergence)
         #expect(lane.convergence?.outcome == .tasksAppended && mission.approvedPlanRevision == nil)
+        #expect(other.outcome == .unchanged && !other.accepted)
+        #expect(mission.run?.notice?.contains("appended tasks in") == true && mission.run?.notice?.contains("report for") == true, "\(mission.run?.notice ?? "")")
         await #expect(throws: MissionError.self) {
             try await controller.acceptConvergence(id: id, revision: try fixture.revision(id), attemptID: lane.convergence!.attemptID)
         }
+        let quiet = try fixture.loggedCalls().count
+        try await controller.acceptConvergence(id: id, revision: try fixture.revision(id), attemptID: other.attemptID)
+        mission = try controller.record(id)
+        #expect(mission.run?.phase == .map && mission.run?.specKit?[fixture.spaces[1].id]?.convergence?.accepted == true)
+        #expect(mission.run?.specKit?[fixture.spaces[0].id]?.convergence?.outcome == .tasksAppended && mission.approvedPlanRevision == nil)
+        #expect(try fixture.loggedCalls().count == quiet, "accepting one report starts nothing while another waits")
         try await controller.launch(id: id, revision: try fixture.revision(id))
         try await fixture.wait(id, phase: .map)
         mission = try controller.record(id)
         lane = try #require(mission.run?.specKit?[fixture.spaces[0].id])
         #expect(mission.run?.attempts.filter { $0.stationID == implementStation && $0.command == .implement }.count == 2, "retries are cumulative")
+        #expect(mission.run?.attempts.filter { $0.stationID == secondStation && $0.command == .implement }.count == 1, "an accepted repository isn't implemented again")
         #expect(lane.convergence?.outcome == .unchanged && lane.convergence?.accepted == false, "unchanged tasks.md never passes on its own")
 
         // Implement's own edits to feature artifacts (checked tasks, a filled-in contract) are its outputs, not a
@@ -515,46 +623,9 @@ struct MissionSpecKitRuntimeTests {
         #expect(try controller.record(id).run?.phase.active == false)
         try planned.write(to: planFile)
 
-        // Only the owner's explicit acceptance resolves it; the second repository then runs, then review.
-        // Its implement turn ends without pi reading a steer: the steer is refused as undelivered (the person keeps
-        // it), recorded on the attempt, and never sent again as a turn of its own.
-        try Data().write(to: fixture.root.appendingPathComponent("hold-implement"))
-        try Data().write(to: fixture.root.appendingPathComponent("ignore-steer"))
-        try? FileManager.default.removeItem(at: fixture.root.appendingPathComponent("release-implement"))
+        // Only your explicit acceptance resolves it: with every report accepted, Launch goes straight to review.
+        #expect(try controller.record(id).run?.specKit?.lanes.allSatisfy { $0.convergence?.accepted == true } == true)
         try await controller.launch(id: id, revision: try fixture.revision(id))
-        let secondStation = SpecKit.stationID(id, fixture.spaces[1].id, "phase-0")
-        var secondImplement: MissionAttempt?
-        try await eventuallyOnMain("second repository implements", timeout: .seconds(30)) {
-            secondImplement = try? controller.record(id).run?.latest(secondStation)
-            // pi's run has started (the stub logs the turn after agent_start): only then can it take a steer.
-            return secondImplement?.status == .running
-                && (try? fixture.loggedCalls().filter { ($0["prompt"] as? String) == "/speckit.implement" }.count) == 3
-        }
-        let lost = "Unread steer."
-        // Not read within the bound: the call says so (words kept) and a second steer is refused while it waits.
-        let bound = MissionController.steerOutcomeSeconds
-        MissionController.steerOutcomeSeconds = 1
-        defer { MissionController.steerOutcomeSeconds = bound }
-        do {
-            try await controller.steer(id: id, revision: try fixture.revision(id), attemptID: secondImplement!.id, text: lost)
-            Issue.record("an unread steer must not return as delivered")
-        } catch let error as MissionError { #expect(error.code == "mission_steer_pending", "\(error)") }
-        do {
-            try await controller.steer(id: id, revision: try fixture.revision(id), attemptID: secondImplement!.id, text: lost)
-            Issue.record("a second steer while one waits must be refused")
-        } catch let error as MissionError { #expect(error.code == "mission_steer_waiting", "\(error)") }
-        #expect(try controller.record(id).run?.attempts.first { $0.id == secondImplement!.id }?.operationIDs?.count == 1, "the refused steer sent nothing")
-        try Data().write(to: fixture.root.appendingPathComponent("release-implement"))
-        try await fixture.wait(id, phase: .map)
-        let unreadAttempt = try #require(try controller.record(id).run?.attempts.first { $0.id == secondImplement!.id })
-        #expect(unreadAttempt.status == .succeeded && unreadAttempt.undeliveredOperationIDs?.count == 1)
-        #expect(unreadAttempt.output.contains("not delivered"))
-        #expect(!(try fixture.loggedCalls()).contains { ($0["prompt"] as? String) == lost || ($0["steer"] as? String) == lost },
-                "an unread steer never becomes a turn of its own")
-        #expect(try controller.record(id).run?.specKit?[fixture.spaces[0].id]?.convergence?.accepted == true)
-        let other = try #require(try controller.record(id).run?.specKit?[fixture.spaces[1].id]?.convergence)
-        #expect(other.outcome == .unchanged && !other.accepted)
-        try await controller.acceptConvergence(id: id, revision: try fixture.revision(id), attemptID: other.attemptID)
         try await fixture.wait(id, phase: .review)
         mission = try controller.record(id)
         let implementCounts = fixture.spaces.map { space in

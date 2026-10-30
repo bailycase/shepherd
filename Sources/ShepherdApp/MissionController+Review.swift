@@ -150,7 +150,7 @@ extension MissionController {
             if info.head == (checkout.observedHead ?? checkout.head), !info.files.isEmpty {
                 let committer = ReviewCommitter()
                 committer.runner = { script, cwd in
-                    guard let current = try? self.record(id, runID: runID), let run = current.run else {
+                    guard let current = try? self.record(id, runID: runID), current.run != nil else {
                         return .init(status: 130, stdout: "", stderr: "Mission stopped. No further publication step was started.")
                     }
                     var command = script
@@ -161,10 +161,12 @@ extension MissionController {
                                   let head = committed.first(where: { $0.spaceID == checkout.spaceID })?.head else {
                                 throw MissionError("mission_stale_commit", "A commit hook changed the reviewed files. Nothing was pushed.")
                             }
+                            // Saved before the push: an exit after it lands must still find this as the mission's own branch.
+                            try await self.savePublicationReceipt(id, runID: runID, space: checkout.spaceID, head: head, url: nil)
                             command = "git push origin \(shellQuoted(head + ":refs/heads/" + checkout.branch))"
                         } catch { return .init(status: 1, stdout: "", stderr: Self.safeText(String(describing: error))) }
                     }
-                    return await Self.command(command, cwd: cwd, timeout: min(60, current.draft.limits.seconds - run.elapsed(at: Self.now)))
+                    return await Self.command(command, cwd: cwd)
                 }
                 await committer.run(.init(head: info.head, files: info.files, title: title, body: body, push: .pullRequest), cwd: checkout.path, pullRequestBase: checkout.base)
                 try await savePublicationReceipt(id, runID: runID, space: checkout.spaceID, head: committer.commitID, url: committer.prURL)

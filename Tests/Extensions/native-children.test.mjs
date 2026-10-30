@@ -282,7 +282,9 @@ test("unchanged children are deduplicated but heartbeat until the list clears", 
   }
 });
 
-test("delayed project preparation preserves fresh child admission limits", async () => {
+// Direct starts past the limit fail; a workflow's items wait for a slot instead (runs.all must not fail one).
+for (const viaWorkflow of [false, true]) test(viaWorkflow ? "a workflow item waits out delayed project preparation instead of failing on the admission limit"
+  : "delayed project preparation preserves fresh child admission limits", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-admission-")), saved = { ...process.env };
   const provider = fixtureServer();
   await new Promise((resolve) => provider.server.listen(0, "127.0.0.1", resolve));
@@ -311,6 +313,16 @@ test("delayed project preparation preserves fresh child admission limits", async
     });
     await new Promise((resolve) => host.listen(process.env.SHEPHERD_SOCKET, resolve));
     h = await harness(dir);
+    if (viaWorkflow) {
+      const pending = h.tool("shepherd_workflow", { async: false, mission: false,
+        workflowScript: 'return runs.all([{ key: "one", agent: "scout", task: "one" }, { key: "two", agent: "scout", task: "two" }]);' });
+      await until(() => gates.length === 2);
+      gates.forEach((answer) => answer());
+      const workflow = await pending;
+      assert.equal(workflow.state, "complete", JSON.stringify(workflow));
+      assert.deepEqual(workflow.output.map((item) => [item.key, item.ok]), [["one", true], ["two", true]], JSON.stringify(workflow.output));
+      return;
+    }
     const pending = Promise.allSettled(["one", "two"].map((task) => h.call("start", { task, role: "scout", mission: false })));
     await until(() => gates.length === 2);
     gates.forEach((answer) => answer());
@@ -326,6 +338,29 @@ test("delayed project preparation preserves fresh child admission limits", async
     await h?.shutdown(); for (const socket of sockets) socket.destroy();
     if (host) await new Promise((resolve) => host.close(resolve));
     await new Promise((resolve) => provider.server.close(resolve));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an older workflow ending leaves a newer workflow's mission lifecycle alone", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-mission-overlap-")), saved = { ...process.env };
+  let h;
+  try {
+    Object.assign(process.env, { HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1", SHEPHERD_NATIVE_CHILDREN: "1",
+      SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "s.sock"), SHEPHERD_EXT_CHILDREN: source });
+    h = await harness(dir);
+    const mission = await h.tool("shepherd_mission", { action: "create", title: "shared" });
+    const older = await h.tool("shepherd_workflow", { missionId: mission.id, workflowScript: "await new Promise(() => {});" });
+    const newer = await h.tool("shepherd_workflow", { missionId: mission.id, workflowScript: "await new Promise(() => {});" });
+    await h.tool("shepherd_workflow", { action: "cancel", id: older.id });
+    const during = await h.tool("shepherd_mission", { action: "show", id: mission.id });
+    assert.deepEqual([during.workflow, during.status], [{ id: newer.id, state: "running" }, "planned"]);
+    await h.tool("shepherd_workflow", { action: "cancel", id: newer.id });
+    const after = await h.tool("shepherd_mission", { action: "show", id: mission.id });
+    assert.deepEqual([after.workflow.id, after.workflow.state, after.status], [newer.id, "stopped", "needs_decision"]);
+  } finally {
+    await h?.shutdown();
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
   }

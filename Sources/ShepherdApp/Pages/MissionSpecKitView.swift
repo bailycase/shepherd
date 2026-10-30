@@ -27,13 +27,17 @@ extension SpecKitCommand {
 extension Mission {
     var specKit: MissionSpecKitRun? { run?.specKit }
 
-    /// A station's latest receipt, as the pages draw it. One /speckit.implement turn works through every phase of
-    /// tasks.md, so a Spec Kit map's phase stations all read their repository's one implement receipt.
+    /// A station's latest receipt, as the pages draw it. A Spec Kit phase station reads whichever is newer: its own
+    /// tasks' agents (one agent per task), or its repository's implement round (one /speckit.implement turn works
+    /// through every phase, and a per-task round ends in one receipt for them all).
     func latest(_ station: MissionStationID) -> MissionAttempt? {
         guard let run else { return nil }
         if specKit != nil, let drawn = draft.plan?.stations.first(where: { $0.id == station }), drawn.kind == .worker,
            let lane = drawn.laneID {
-            return run.latest(SpecKit.stationID(id, lane, "phase-0"))
+            let round = SpecKit.stationID(id, lane, "phase-0")
+            let own = run.attempts.lastIndex { $0.stationID == station && $0.task != nil }
+            let whole = run.attempts.lastIndex { $0.stationID == round && $0.task == nil }
+            return [own, whole].compactMap { $0 }.max().map { run.attempts[$0] }
         }
         return run.latest(station)
     }

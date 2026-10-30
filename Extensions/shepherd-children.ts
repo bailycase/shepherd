@@ -1014,7 +1014,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     return summary(run);
   }
   function get(id) { const run = runs.get(id); if (!run) throw new Error("Unknown child id in this parent session"); return run; }
-  function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} children are already active; wait or cancel first`); }
+  function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw Object.assign(new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} children are already active; wait or cancel first`), { code: "capacity" }); }
   async function send(run, message, mode = "steer") {
     checkScope(run.projectScope);
     if (!run.proc || run.exited || run.cancelled || run.settled) throw new Error("Child is not accepting messages; use shepherd_child_resume after it exits");
@@ -1548,14 +1548,20 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         if (w.claims.has(key)) throw Error(`Duplicate workflow key: ${key}`);
         if (w.claims.size >= 64) throw Error("64 workflow children reached");
         w.claims.add(key);
-        while ([...runs.values()].filter((r) => ["running", "queued"].includes(r.state)).length >= defaults.concurrency) {
-          await new Promise((r) => setTimeout(r, 50)); guard();
-        }
-        guard();
-        const promise = start({ ...params, ...(missionsOn ? (w.missionId ? { missionId: w.missionId } : { mission: false }) : {}) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
-        w.starts.add(promise);
         let receipt;
-        try { receipt = await promise; } finally { w.starts.delete(promise); }
+        // start() awaits project preparation before it holds a slot, so a sibling admitted meanwhile can take
+        // the slot this item waited for: that refusal (and only that one) sends the item back to waiting.
+        while (!receipt) {
+          while ([...runs.values()].filter((r) => ["running", "queued"].includes(r.state)).length >= defaults.concurrency) {
+            await new Promise((r) => setTimeout(r, 50)); guard();
+          }
+          guard();
+          const promise = start({ ...params, ...(missionsOn ? (w.missionId ? { missionId: w.missionId } : { mission: false }) : {}) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
+          w.starts.add(promise);
+          try { receipt = await promise; }
+          catch (error) { if (error.code !== "capacity") throw error; }
+          finally { w.starts.delete(promise); }
+        }
         const run = get(receipt.id); w.keys.set(key, run);
         guard();
         await run.closed;
@@ -1610,6 +1616,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           await Promise.all([...runs.values()].filter((r) => r.workflowId === w.id).map((r) => stop(r, "Workflow ended")));
           w.cleaned = true;
           if (w.missionId) try { missions.update(w.missionId, (m) => {
+            // A later workflow on the same mission owns its lifecycle now; an older one ending must not overwrite it.
+            if (m.workflow?.id !== w.id) return;
             if (!["complete", "cancelled"].includes(m.status)) m.status = w.state === "complete" ? "waiting" : "needs_decision";
             m.workflow = { id: w.id, state: w.state, error: w.error };
           }); } catch (error) { w.missionWarning = clip(error.message); }
