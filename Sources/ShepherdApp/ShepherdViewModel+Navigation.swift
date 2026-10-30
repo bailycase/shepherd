@@ -74,6 +74,12 @@ extension ShepherdViewModel {
             openRuns: openAutomationRuns,
             unreadRuns: Set(localAutomationRuns.values.joined().filter(\.unread).compactMap(\.agentID)),
             pausedAutomations: Set(automationTriggerStatuses.filter { automationTriggersAllPaused || $0.value.state == .paused }.keys),
+            triggerStatuses: automationTriggersByKey, triggersAllPaused: automationTriggersAllPaused,
+            unreadRunCounts: automationRunsByKey.compactMapValues { runs in
+                let unread = runs.count(where: \.unread)
+                return unread > 0 ? unread : nil
+            },
+            hostRuns: remoteAutomationRuns.compactMapValues(\.last),
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected)

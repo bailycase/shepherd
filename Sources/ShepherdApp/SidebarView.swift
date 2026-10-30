@@ -140,18 +140,12 @@ private struct SidebarItemView: View, Equatable {
                 LogicalProjectSidebarRow(vm: vm, project: project)
             case .mission(let mission):
                 SidebarMissionRow(vm: vm, mission: mission)
-            case .runGroup(let group, let expanded):
-                let key = SidebarLists.runGroupKey(group.automation)
-                SHAutomationGroupRow(group.name, count: group.count, unread: group.unread, expanded: expanded,
-                                     rollup: group.rollup, paused: group.paused) { vm.toggleRunGroup(key) }
-                    .help("\(group.name): runs of this automation")
-                    .contextMenu {
-                        Button("Show in Automations", systemImage: SHGlyph.automation.symbolName) { vm.showAutomation(group.automation) }
-                    }
+            case .automation(let automation, let expanded):
+                SidebarAutomationRow(vm: vm, automation: automation, expanded: expanded)
             case .row(let row):
-                // A run under its group's row sits a level in (`nested`), as in the space tree.
+                // A run under its automation's row sits a level in (`nested`), as in the space tree.
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.runGroup != nil)
+                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -160,6 +154,53 @@ private struct SidebarItemView: View, Equatable {
                     .threadDraggable(row.id)
             }
         }
+    }
+}
+
+/// An active automation's row in Automations: a tap opens it on the Automations page, its chevron shows or hides its
+/// run threads, and its menu acts on it where it lives (This Mac or its host).
+struct SidebarAutomationRow: View {
+    var vm: ShepherdViewModel
+    let automation: SidebarAutomation
+    let expanded: Bool?
+
+    var body: some View {
+        let key = automation.key
+        let toggle = { vm.toggleRunGroup(SidebarLists.runGroupKey(key)) }
+        SHSidebarAutomationRow(automation.name, word: automation.word, tone: automation.tone, unread: automation.unread,
+                               attention: automation.attention, selected: automation.selected, expanded: expanded, toggle: toggle)
+            .equatable()
+            .help(automation.help)
+            .sidebarTapRow { vm.showAutomation(key) }
+            .accessibilityLabel(automation.accessibilityLabel)
+            .accessibilityValue(expanded.map { $0 ? "runs shown" : "runs hidden" } ?? "")
+            .accessibilityAddTraits(automation.selected ? .isSelected : [])
+            .accessibilityAction(named: expanded == true ? "Hide runs" : "Show runs") { if expanded != nil { toggle() } }
+            .contextMenu {
+                Button("Show in Automations", systemImage: SHGlyph.automation.symbolName) { vm.showAutomation(key) }
+                if automation.project {
+                    // A Project's automation changes only through its Project (a revisioned owner action).
+                    if vm.projectsEnabled, key.host == PageHost.localID, let ref = vm.projectOwning(key.automation) {
+                        Button("Open Project Settings") { vm.openLogicalProjectSettings(ref, tab: .automations) }
+                    }
+                } else {
+                    Divider()
+                    if automation.live {
+                        Button("Stop") { vm.stopAutomation(key) }
+                    } else {
+                        Button("Run Now") { vm.runAutomation(key) }
+                    }
+                    if automation.triggered {
+                        if automation.paused {
+                            Button("Resume Trigger") { vm.resumeAutomationTrigger(key) }
+                        } else {
+                            Button("Pause Trigger") { vm.pauseAutomationTrigger(key) }
+                        }
+                    }
+                    Divider()
+                    Button("Edit…") { vm.editAutomation(key) }
+                }
+            }
     }
 }
 

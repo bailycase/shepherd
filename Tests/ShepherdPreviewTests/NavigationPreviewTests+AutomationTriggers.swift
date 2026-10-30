@@ -170,8 +170,9 @@ extension PreviewTests {
         }
     }
 
-    /// Activity: pr-loop's finished run folded under its automation in Automations (closed, then
-    /// open); its asking run stays in Needs you.
+    /// Activity's Automations group (the user's request): one row per active automation after Designs and Projects —
+    /// pr-loop asking (its asking run also in Needs you) with its unread runs, Nightly triage's next run — with pr-loop's
+    /// finished run folded under it (closed, then open). The manual automation isn't running, so it has no row.
     @Test(arguments: [false, true])
     func sidebarActivityAutomationRunGroup(open: Bool) async throws {
         let fixture = try await triggerWorkspace()
@@ -179,10 +180,17 @@ extension PreviewTests {
         let vm = fixture.workspace.vm
         vm.settings.sidebarStyle = .activity
         seedTriggerState(fixture)
-        if open { vm.collapsedProjects.insert(SidebarLists.runGroupKey(fixture.prLoop.id)) }
+        // Shown as on in the sidebar only: the server keeps them off, so nothing polls or fires while it renders.
+        for index in vm.state.automations.indices { vm.state.automations[index].enabled = true }
+        // Designs and Projects above it, as the user's screenshot draws them.
+        vm.settings.designToolEnabled = true
+        vm.settings.projectsEnabled = true
+        vm.state.designs = [Design(name: "Onboarding flow", createdAt: 1, lastActiveAt: 2, boardCount: 12)]
+        let key = AutomationKey(host: PageHost.localID, automation: fixture.prLoop.id)
+        if open { vm.collapsedProjects.insert(SidebarLists.runGroupKey(key)) }
         try await Preview.render(open ? "sidebar-activity-automation-runs-open" : "sidebar-activity-automation-runs",
-                                 size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 420),
-                                 ready: { vm.sidebarLists.runGroups.isEmpty == false }) {
+                                 size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 560),
+                                 ready: { vm.sidebarLists.automationRows.count == 2 && !vm.sidebarLists.designs.isEmpty }) {
             SidebarView(vm: vm)
         }
     }

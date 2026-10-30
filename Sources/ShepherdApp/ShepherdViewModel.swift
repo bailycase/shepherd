@@ -425,6 +425,8 @@ final class ShepherdViewModel {
     /// The Automations page's selected row and its filter. Ephemeral.
     var automationsPageSelection: AutomationKey?
     var automationsPageFilter = ""
+    /// A sidebar row's Edit…: the Automations page opens its editor on this automation, then clears it.
+    var automationEditRequest: AutomationKey?
     /// Bumped by every selection that should scroll the sidebar to the
     /// selected row. A counter, not the target value: re-selecting the same
     /// row (⌘3 twice after scrolling away) must scroll back, and a value-diff

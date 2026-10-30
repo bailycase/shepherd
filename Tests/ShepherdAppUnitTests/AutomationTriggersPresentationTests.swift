@@ -182,21 +182,22 @@ struct AutomationTriggersPresentationTests {
         let asking = run("#14 Asks", at: 40, status: .blocked)
         let working = run("#12 Fix login", at: 30, status: .working), done = run("#13 Flaky", at: 10)
         let state = ShepherdState(spaces: [space], agents: [asking, working, mine, done], automations: [automation])
-        let lists = SidebarDerivation.lists(SidebarSource(local: state, unreadRuns: [done.id]))
+        let key = AutomationKey(host: PageHost.localID, automation: automation.id)
+        let lists = SidebarDerivation.lists(SidebarSource(local: state, unreadRunCounts: [key: 1]))
         // The asking run stays in Needs you; the others leave Working and Recents for Automations.
         #expect(lists.needsYou.map(\.title) == ["#14 Asks"])
         #expect(lists.automations.map(\.title) == ["#12 Fix login", "#13 Flaky"])
         #expect(lists.working.isEmpty && lists.recents.map(\.title) == ["mine"])
-        let group = try #require(lists.runGroups[automation.id])
-        #expect(group.count == 2 && group.unread == 1 && group.rollup == .running && group.name == "pr-loop")
+        let row = try #require(lists.automationRows.first)
+        #expect(row.runs == 2 && row.unread == 1 && row.attention && row.word == "asked you" && row.name == "pr-loop")
 
-        // Closed (the default): one group row in Automations and its runs out of ⌘↑/↓'s reach.
+        // Closed (the default): one automation row in Automations and its runs out of ⌘↑/↓'s reach.
         let closed = lists.items(collapsed: [])
-        #expect(closed.filter { if case .runGroup = $0 { true } else { false } }.count == 1)
-        #expect(!closed.contains { if case .row(let row) = $0 { row.runGroup != nil } else { false } })
-        #expect(!lists.visibleRows(collapsed: []).contains { $0.runGroup != nil })
+        #expect(closed.filter { if case .automation = $0 { true } else { false } }.count == 1)
+        #expect(!closed.contains { if case .row(let row) = $0 { row.foldedUnder != nil } else { false } })
+        #expect(!lists.visibleRows(collapsed: []).contains { $0.foldedUnder != nil })
 
-        let open: Set<String> = [SidebarLists.runGroupKey(automation.id)]
+        let open: Set<String> = [SidebarLists.runGroupKey(key)]
         let rows = lists.items(collapsed: [], openRunGroups: open).compactMap { if case .row(let row) = $0 { row.title } else { nil } }
         #expect(rows.contains("#12 Fix login") && rows.contains("#13 Flaky"))
         #expect(lists.visibleRows(collapsed: [], openRunGroups: open).count == 4)

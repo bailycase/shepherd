@@ -120,8 +120,19 @@ extension ShepherdViewModel {
 
     /// A run group's menu: the automation on its page.
     func showAutomation(_ id: AutomationID) {
-        automationsPageSelection = AutomationKey(host: PageHost.localID, automation: id)
+        showAutomation(AutomationKey(host: PageHost.localID, automation: id))
+    }
+
+    /// An automation's sidebar row: the Automations page with it selected, on This Mac or its host.
+    func showAutomation(_ key: AutomationKey) {
+        automationsPageSelection = key
         openDestination(.automations)
+    }
+
+    /// An automation's sidebar row's Edit…: its page, with the editor open on it.
+    func editAutomation(_ key: AutomationKey) {
+        showAutomation(key)
+        automationEditRequest = key
     }
 
     // MARK: Order and visibility

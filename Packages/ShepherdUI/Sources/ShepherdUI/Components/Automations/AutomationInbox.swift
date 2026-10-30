@@ -277,8 +277,107 @@ public struct SHAutomationGroupRow: View, Equatable {
     }
 }
 
+/// An active automation in the Activity sidebar's Automations group, drawn as a design's or a project's row: the bolt
+/// (`lanternText` while a run asks you), the name, one mono word ("2 running", "next 09:00") in its state's color, the
+/// unread runs in `running`, and, while it has run threads to fold, a trailing chevron that shows or hides them. The
+/// row's tap and menu are the caller's; the chevron is its own target.
+public struct SHSidebarAutomationRow: View, Equatable {
+    let name: String
+    let word: String
+    let tone: AgentState?
+    let unread: Int
+    let attention: Bool
+    let selected: Bool
+    /// Nil: nothing to fold.
+    let expanded: Bool?
+    let toggle: () -> Void
+    @Environment(\.shDensity) private var density
+    @State private var hovering = false
+
+    public init(_ name: String, word: String, tone: AgentState? = nil, unread: Int = 0, attention: Bool = false,
+                selected: Bool = false, expanded: Bool? = nil, toggle: @escaping () -> Void = {}) {
+        self.name = name
+        self.word = word
+        self.tone = tone
+        self.unread = unread
+        self.attention = attention
+        self.selected = selected
+        self.expanded = expanded
+        self.toggle = toggle
+    }
+
+    public nonisolated static func == (a: SHSidebarAutomationRow, b: SHSidebarAutomationRow) -> Bool {
+        a.name == b.name && a.word == b.word && a.tone == b.tone && a.unread == b.unread && a.attention == b.attention
+            && a.selected == b.selected && a.expanded == b.expanded
+    }
+
+    public var body: some View {
+        let _ = SHRenderProbe.tick("sidebar.automation")
+        let sh = Color.sh
+        HStack(spacing: density.sidebarRowGap) {
+            SHGlyph.automation.image
+                .font(.system(size: density.rowGlyph - 1, weight: .regular))
+                .foregroundStyle(attention ? sh.lanternText : sh.textTertiary)
+                .frame(width: SHSidebarMetrics.rowSlot)
+                .accessibilityHidden(true)
+            Text(name)
+                .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
+                .foregroundStyle(sh.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: SH.Space.xs)
+            HStack(spacing: SHProjectMetrics.rollupGap) {
+                Text(word)
+                    .font(.shMono(SHSidebarMetrics.accessoryFont))
+                    .foregroundStyle(color)
+                    .shContentTransition(.crossFade)
+                if unread > 0 {
+                    Text("\(unread)")
+                        .font(.sh(.micro, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(sh.running)
+                        .shContentTransition(.numeric())
+                }
+                if let expanded {
+                    Button(action: toggle) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: SHProjectMetrics.chevron, weight: .semibold))
+                            .foregroundStyle(sh.textTertiary)
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .shAnimation(.disclosure, value: expanded)
+                            .frame(width: SHProjectMetrics.chevronSlot, height: density.rowHeight)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(SHPlainPressStyle())
+                    .help(expanded ? "Hide runs" : "Show runs")
+                    .accessibilityLabel(expanded ? "Hide runs" : "Show runs")
+                }
+            }
+            // The name truncates, never the word or the count.
+            .fixedSize()
+        }
+        .padding(.leading, density.sidebarRowPadding)
+        .padding(.trailing, expanded == nil ? density.sidebarRowPadding : 0)
+        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
+    }
+
+    private var color: Color {
+        switch tone {
+        case .attention?: .sh.lanternText
+        case .failed?, .stuck?: .sh.failed
+        default: .sh.textTertiary
+        }
+    }
+}
+
 #Preview("Automation inbox") {
     VStack(alignment: .leading, spacing: SH.Space.m) {
+        SHSidebarAutomationRow("pr-loop", word: "asked you", tone: .attention, unread: 2, attention: true, expanded: false)
+        SHSidebarAutomationRow("Nightly triage", word: "next 09:00")
         SHAutomationGroupRow("pr-loop", count: 3, unread: 2, expanded: false, rollup: .running) {}
         SHAutomationGroupRow("triage", count: 1, expanded: true, rollup: .waiting, paused: true) {}
         SHAutomationPendingEvent("#14 Crash on launch · issue labeled shepherd", waited: "waiting 12m", run: {}, dismiss: {})

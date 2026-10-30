@@ -137,8 +137,9 @@ struct SidebarPinnedTests {
             pins: SidebarPins([local(run), remote(remoteRun), .local(drawer.id)]))
         #expect(lists.pinned.isEmpty)
         #expect(lists.all.count == 3)
-        #expect(Set(lists.automations.map(\.title)) == ["Nightly", "Remote run"], "runs of This Mac and of a host share the Automations group")
-        #expect(lists.done.isEmpty && lists.recents.isEmpty)
+        // Nightly's run settled (its automation is not active); the host's watcher, with no run read yet, is starting.
+        #expect(lists.done.map(\.title) == ["Nightly"])
+        #expect(lists.automations.map(\.title) == ["Remote run"])
         #expect(lists.designs.map(\.title) == ["Dashboard"])
         #expect(lists.all.allSatisfy { !$0.pinnable && !$0.pinned })
     }

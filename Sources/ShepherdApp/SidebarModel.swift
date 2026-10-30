@@ -83,6 +83,59 @@ struct SidebarListRow: Identifiable, Equatable {
     let automationLive: Bool
     /// A triggered automation's run thread: the space tree folds it under its automation.
     var runGroup: AutomationID? = nil
+    /// Activity folds it under this active automation's row in Automations.
+    var foldedUnder: AutomationKey? = nil
+}
+
+/// An active automation's row in Activity's Automations group (the user's request: one row per automation, as Designs
+/// and Projects list theirs): This Mac's or a connected host's enabled schedule or GitHub automation, or a manual
+/// one while its watcher's run is live. Its run threads fold under it.
+struct SidebarAutomation: Identifiable, Equatable {
+    let key: AutomationKey
+    let name: String
+    /// "2 running", "asked you", "paused", "next 09:00", "watching".
+    let word: String
+    let tone: AgentState?
+    /// A run asks you (it is in Needs you too).
+    let attention: Bool
+    let unread: Int
+    /// A schedule or GitHub trigger starts its runs (its menu offers Pause or Resume trigger).
+    let triggered: Bool
+    /// Its trigger is paused, by the user or an error (Resume trigger).
+    let paused: Bool
+    /// A manual automation's watcher run is live (Stop).
+    let live: Bool
+    /// A Project owns it: its Project's settings change it.
+    let project: Bool
+    /// Run threads folded under it.
+    let runs: Int
+    let help: String
+    let accessibilityLabel: String
+    var selected = false
+
+    var id: AutomationKey { key }
+}
+
+/// What an active automation's runs add up to while the lists are derived.
+struct AutomationTally {
+    let automation: Automation
+    /// 0 for This Mac, then each host in order.
+    let host: Int
+    let hostName: String?
+    var running = 0
+    var asking = false
+    /// A manual automation's watcher run is live.
+    var live = false
+    var latest: Double = -1
+    var runs = 0
+
+    /// Asking you, then running, then the rest.
+    var rank: Int { asking ? 0 : running > 0 || live ? 1 : 2 }
+}
+
+extension Automation {
+    /// On, with a schedule or GitHub trigger that starts its runs (a Project's own fire into the Project instead).
+    var activeTrigger: Bool { enabled && isTriggered && projectID == nil }
 }
 
 /// Activity groups in display order, before selection and ⌘-digit hints are applied.
@@ -97,11 +150,11 @@ struct SidebarLists: Equatable {
     /// Idle and seen threads, most recently active first (`Agent.lastActiveAt`).
     var recents: [SidebarListRow] = []
     var designs: [SidebarListRow] = []
-    /// Automation runs not waiting on the user, most recently active first; one waiting on you is in Needs you.
-    /// A triggered automation's runs sit together (`runGroup`) where its newest run falls.
+    /// The run threads folded under an active automation (`foldedUnder`), in `automationRows` order and most recently
+    /// active first under each; one waiting on you is in Needs you instead.
     var automations: [SidebarListRow] = []
-    /// Each triggered automation's runs in Automations, folded under one row.
-    var runGroups: [AutomationID: SidebarRunGroup] = [:]
+    /// Active automations: a run asking you first, then running, then the rest by their latest run, then by name.
+    var automationRows: [SidebarAutomation] = []
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
@@ -161,6 +214,14 @@ struct SidebarSource: Equatable {
     var unreadRuns: Set<AgentID> = []
     /// This Mac's triggered automations whose trigger is paused (or all are).
     var pausedAutomations: Set<AutomationID> = []
+    /// Every host's trigger status as last read (This Mac's under `PageHost.localID`).
+    var triggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:]
+    /// Pause all triggers on This Mac.
+    var triggersAllPaused = false
+    /// Runs not opened since they settled or asked, by automation, as each host's run log was last read.
+    var unreadRunCounts: [AutomationKey: Int] = [:]
+    /// Each host's automations' latest run as last read (absent until the Automations page reads them).
+    var hostRuns: [AutomationKey: AutomationRun] = [:]
     /// Every configured host, in configured order; one that is offline lists what it last sent.
     var hosts: [Host] = []
     /// Settings ▸ Experiments ▸ Design tool: This Mac's designs have their own group. Their agents
@@ -240,9 +301,26 @@ enum SidebarDerivation {
         let localRuns = Dictionary(source.local.automations.compactMap { automation in
             automation.agentID.map { ($0, automation) }
         }, uniquingKeysWith: { first, _ in first })
+        let localAutomations = Dictionary(source.local.automations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let designs = Set(source.local.designs.map(\.id))
-        var runGroupNames: [AutomationID: String] = [:]
-        var runningRuns: Set<AgentID> = []
+        // Active automations, each with what its runs add up to: the Automations group's rows.
+        var tallies: [AutomationKey: AutomationTally] = [:]
+        /// A run of an active automation: it folds under the automation's row unless it waits on you.
+        func tally(_ row: inout SidebarListRow, _ parent: Automation, host: UUID, hostIndex: Int, hostName: String?,
+                   agent: Agent, running: Bool, watcher: Bool, needsYou: Bool) {
+            let key = AutomationKey(host: host, automation: parent.id)
+            var tally = tallies[key] ?? AutomationTally(automation: parent, host: hostIndex, hostName: hostName)
+            if running { tally.running += 1 }
+            if agent.status == .blocked { tally.asking = true }
+            if watcher { tally.live = true }
+            tally.latest = max(tally.latest, agent.lastActiveAt ?? -1)
+            if !needsYou {
+                row.foldedUnder = key
+                row.section = .automations
+                tally.runs += 1
+            }
+            tallies[key] = tally
+        }
         let workers = source.local.projectWorkerIDs
         let missionAgents = source.local.missionAgentIDs
         for (index, agent) in source.local.agents.enumerated() {
@@ -260,19 +338,30 @@ enum SidebarDerivation {
                                failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
-            // A triggered run's thread is ordinary but folds under its automation in Automations
-            // (as in the space tree); one waiting on you stays in Needs you.
-            let origin = automation == nil ? agent.automationOrigin.flatMap { origin in
-                source.local.automations.first { $0.id == origin.automationID }
-            } : nil
-            if let origin, !needsYou {
-                row.runGroup = origin.id
-                row.section = .automations
-                runGroupNames[origin.id] = origin.name
-                if agent.status == .working || source.openingTurns.contains(agent.id) { runningRuns.insert(agent.id) }
+            // A manual automation's watcher run folds under it while live; a triggered run's thread is ordinary but
+            // folds under its automation while that is on (as in the space tree). One waiting on you stays in Needs you;
+            // a run of an automation that isn't active is a thread like any other.
+            let origin = automation == nil ? agent.automationOrigin.flatMap { localAutomations[$0.automationID] } : nil
+            // A watcher that can't start, or waits for the first launch's copy, isn't running: it stays in Recents.
+            let watching = automation != nil && row.automationLive && row.section != .recents
+            var parent: Automation?
+            if let automation {
+                if watching || automation.activeTrigger { parent = automation }
+                else if row.section == .automations { row.section = row.completion != nil ? .done : .recents }
+            } else if let origin, origin.activeTrigger {
+                parent = origin
             }
-            entries.append(entry(row, automation == nil && origin == nil ? .local(agent.id) : nil, needsYou: needsYou,
+            if let parent {
+                let starting = agent.status == .working || source.openingTurns.contains(agent.id)
+                tally(&row, parent, host: PageHost.localID, hostIndex: 0, hostName: nil, agent: agent,
+                      running: agent.status != .blocked && (starting || watching), watcher: watching, needsYou: needsYou)
+            }
+            entries.append(entry(row, automation == nil && parent == nil ? .local(agent.id) : nil, needsYou: needsYou,
                                  key: agent.lastActiveAt ?? -1, host: 0, index: index))
+        }
+        for automation in source.local.automations where automation.activeTrigger {
+            let key = AutomationKey(host: PageHost.localID, automation: automation.id)
+            if tallies[key] == nil { tallies[key] = AutomationTally(automation: automation, host: 0, hostName: nil) }
         }
         if source.designs {
             // A system build opens from its system. Remove from Recents hides a design's
@@ -282,16 +371,37 @@ enum SidebarDerivation {
             }
         }
         for (hostIndex, host) in source.hosts.enumerated() {
-            let runs = Set(host.state.automations.compactMap(\.agentID))
+            let watchers = Dictionary(host.state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
+                                      uniquingKeysWith: { first, _ in first })
+            let automations = Dictionary(host.state.automations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let hostWorkers = host.state.projectWorkerIDs
             let missionAgents = host.state.missionAgentIDs
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
             for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent, workers: hostWorkers) && !missionAgents.contains(agent.id) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.
                 let needsYou = !host.offline && agent.status == .blocked
-                let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), needsYou: needsYou)
-                let pin = runs.contains(agent.id) ? nil : PinnedThread.remote(RemoteAgentRef(hostID: host.id, agentID: agent.id))
+                let watcher = watchers[agent.id]
+                let origin = watcher == nil ? agent.automationOrigin.flatMap { automations[$0.automationID] } : nil
+                // A host sends no run log with its state: its watcher is live by the run last read, else as the host
+                // reads a run with none (`AutomationRun.isLive`). An offline host's automations are not shown; their runs
+                // read as its other threads do.
+                let live = watcher.map { watcher in
+                    let run = source.hostRuns[AutomationKey(host: host.id, automation: watcher.id)].flatMap { $0.agentID == agent.id ? $0 : nil }
+                    return AutomationRun.isLive(agentStatus: agent.status, run: run)
+                } ?? false
+                var parent: Automation?
+                if !host.offline, let candidate = watcher ?? origin, live || candidate.activeTrigger { parent = candidate }
+                var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil)
+                if let parent {
+                    tally(&row, parent, host: host.id, hostIndex: hostIndex + 1, hostName: host.name, agent: agent,
+                          running: agent.status == .working, watcher: live, needsYou: needsYou)
+                }
+                let pin = watcher == nil && parent == nil ? PinnedThread.remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)) : nil
                 entries.append(entry(row, pin, needsYou: needsYou, key: agent.lastActiveAt ?? -1, host: hostIndex + 1, index: index))
+            }
+            for automation in host.state.automations where !host.offline && automation.activeTrigger {
+                let key = AutomationKey(host: host.id, automation: automation.id)
+                if tallies[key] == nil { tallies[key] = AutomationTally(automation: automation, host: hostIndex + 1, hostName: host.name) }
             }
         }
         // Most recently active first. Agents no host has timed (older hosts and state files)
@@ -323,25 +433,24 @@ enum SidebarDerivation {
             }
         }
         lists.pinned = pins.threads.compactMap { pinnedRows[$0] }
-        // A group's runs sit together where its newest run falls, and roll up into its row.
-        var firstAt: [AutomationID: Int] = [:]
-        for (position, row) in lists.automations.enumerated() {
-            if let group = row.runGroup, firstAt[group] == nil { firstAt[group] = position }
+        // A run asking you first, then running, then the rest by their latest run, then by name.
+        let ordered = tallies.sorted { a, b in
+            if a.value.rank != b.value.rank { return a.value.rank < b.value.rank }
+            if a.value.latest != b.value.latest { return a.value.latest > b.value.latest }
+            let order = a.value.automation.name.localizedStandardCompare(b.value.automation.name)
+            if order != .orderedSame { return order == .orderedAscending }
+            return a.value.host != b.value.host ? a.value.host < b.value.host : a.key.automation.rawValue < b.key.automation.rawValue
         }
+        lists.automationRows = ordered.map { key, tally in
+            automationRow(key, tally, status: source.triggerStatuses[key],
+                          allPaused: key.host == PageHost.localID && source.triggersAllPaused, unread: source.unreadRunCounts[key] ?? 0)
+        }
+        // Each automation's runs sit together under it, most recently active first.
+        let position = Dictionary(uniqueKeysWithValues: lists.automationRows.enumerated().map { ($1.key, $0) })
         lists.automations = lists.automations.enumerated().sorted { a, b in
-            let ka = a.element.runGroup.flatMap { firstAt[$0] } ?? a.offset
-            let kb = b.element.runGroup.flatMap { firstAt[$0] } ?? b.offset
+            let ka = a.element.foldedUnder.flatMap { position[$0] } ?? .max, kb = b.element.foldedUnder.flatMap { position[$0] } ?? .max
             return ka != kb ? ka < kb : a.offset < b.offset
         }.map(\.element)
-        for row in lists.automations {
-            guard let automation = row.runGroup, let name = runGroupNames[automation], case .local(let agent) = row.id else { continue }
-            var group = lists.runGroups[automation]
-                ?? SidebarRunGroup(automation: automation, name: name, paused: source.pausedAutomations.contains(automation))
-            group.count += 1
-            if source.unreadRuns.contains(agent) { group.unread += 1 }
-            if runningRuns.contains(agent) { group.rollup = .running }
-            lists.runGroups[automation] = group
-        }
         lists.done.sort { a, b in
             let left = source.completions[a.id], right = source.completions[b.id]
             let leftTime = left?.completedAt ?? -1, rightTime = right?.completedAt ?? -1
@@ -424,6 +533,43 @@ enum SidebarDerivation {
             worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
     }
 
+    /// An active automation's row: its bolt, name and one word, from what its runs add up to and its trigger's status.
+    static func automationRow(_ key: AutomationKey, _ tally: AutomationTally, status: AutomationTriggerStatus?,
+                              allPaused: Bool, unread: Int) -> SidebarAutomation {
+        let automation = tally.automation
+        let (word, tone) = automationWord(automation, running: tally.running, asking: tally.asking, status: status, allPaused: allPaused)
+        let paused = automation.isTriggered && (allPaused || status?.allPaused == true || status?.state == .paused)
+        let reason = paused || status?.state == .retrying ? status?.reason : nil
+        let place = tally.hostName.map { " on \($0)" } ?? ""
+        var label = ["\(automation.name)\(place)", "automation", word]
+        if unread > 0 { label.append("\(unread) unread") }
+        if tally.runs > 0 { label.append(tally.runs == 1 ? "1 run" : "\(tally.runs) runs") }
+        return SidebarAutomation(
+            key: key, name: automation.name, word: word, tone: tone, attention: tally.asking, unread: unread,
+            triggered: automation.isTriggered, paused: paused, live: tally.live && !automation.isTriggered,
+            project: automation.projectID != nil, runs: tally.runs,
+            help: ["\(automation.name)\(place)", reason].compactMap { $0 }.joined(separator: ": "),
+            accessibilityLabel: label.joined(separator: ", "))
+    }
+
+    /// The word an active automation's row ends with, in the mono of a design's board count: a run asking you, then how
+    /// many run, then a paused or retrying trigger (`failed` when an error paused it), then when a schedule runs next
+    /// ("next 09:00", on the host's clock) or "watching" for GitHub.
+    static func automationWord(_ automation: Automation, running: Int, asking: Bool, status: AutomationTriggerStatus?,
+                               allPaused: Bool) -> (word: String, tone: AgentState?) {
+        if asking { return ("asked you", .attention) }
+        guard automation.isTriggered else { return ("running", .running) }
+        if running > 0 { return ("\(running) running", .running) }
+        if allPaused || status?.allPaused == true || status?.state == .paused { return ("paused", status?.reason == nil ? nil : .failed) }
+        if status?.state == .retrying { return ("retrying", nil) }
+        guard case .schedule = automation.trigger else { return ("watching", nil) }
+        guard let next = status?.nextRunAt else { return ("scheduled", nil) }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = status?.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
+        let parts = calendar.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: next))
+        return (String(format: "next %02d:%02d", parts.hour ?? 0, parts.minute ?? 0), nil)
+    }
+
     /// A design in its own sidebar group: the nib and its board count.
     private static func designRow(_ design: Design) -> SidebarListRow {
         let boards = DesignsPageModel.boardsText(design.boardCount ?? 0)
@@ -433,8 +579,9 @@ enum SidebarDerivation {
             worktree: false, automation: nil, automationLive: false)
     }
 
+    /// `folded`: it sits under its automation in Automations (else `automation` says).
     static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
-                          needsYou: Bool) -> SidebarListRow {
+                          needsYou: Bool, folded: Bool? = nil) -> SidebarListRow {
         let leading: SHSidebarRow.Leading
         let accessory: SHSidebarRow.Accessory
         let word: String
@@ -451,7 +598,7 @@ enum SidebarDerivation {
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
             accessory: accessory, hasGoal: agent.goalState != nil,
-            section: needsYou ? .needsYou : automation ? .automations : host.offline ? .recents : agent.status == .working ? .working
+            section: needsYou ? .needsYou : folded ?? automation ? .automations : host.offline ? .recents : agent.status == .working ? .working
                 : agent.status == .done ? .done : .recents,
             completion: agent.status == .done ? 1 : nil,
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,

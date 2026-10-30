@@ -157,17 +157,17 @@ struct SidebarRecentsTests {
         #expect(lists.recents.first?.accessibilityLabel == "asks, needs you, on horizon, host offline")
     }
 
-    /// A finished automation run stays in Automations with its bolt and completion age.
-    @Test func finishedAutomationRunsStayInTheirGroupWithTheirBolt() throws {
+    /// A finished watcher run leaves Automations (its automation is no longer active) for Done, with its bolt and age.
+    @Test func finishedAutomationRunsGoToDoneWithTheirBolt() throws {
         let run = agent("Nightly", status: .done, at: 1)
         let automation = Automation(name: "Nightly", prompt: "p", cwd: "/tmp", agentID: run.id)
         var state = ShepherdState(spaces: [space], agents: [run])
         state.automations = [automation]
         let settled = AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: run.id)
         let lists = SidebarDerivation.lists(SidebarSource(local: state, openRuns: [automation.id: settled]))
-        #expect(lists.automations.map(\.id) == [.local(run.id)])
-        #expect(lists.working.isEmpty && lists.done.isEmpty && lists.recents.isEmpty)
-        let row = try #require(lists.automations.first)
+        #expect(lists.automations.isEmpty && lists.automationRows.isEmpty)
+        #expect(lists.done.map(\.id) == [.local(run.id)])
+        let row = try #require(lists.done.first)
         #expect(row.leading == .glyph("bolt", attention: false))
         #expect(row.accessory == .age(since: Date(timeIntervalSince1970: 0.001)))
         #expect(row.automation == automation.id)

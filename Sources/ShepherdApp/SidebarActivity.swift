@@ -1,11 +1,12 @@
 import Foundation
 import ShepherdCore
+import ShepherdRemote
 import ShepherdUI
 
 /// Activity groups are view state, not part of the host's workspace or wire protocol.
 enum SidebarActivitySection: String, CaseIterable, Hashable {
     case done, pinned, needsYou, working, recents, designs
-    /// Runs of automations (This Mac's and each host's) that are not waiting on the user: they never mix with threads.
+    /// Active automations (This Mac's and each host's), one row each, with their run threads folded under them.
     case automations
     /// The new Projects (ProjectLead boards). Its rows are `SidebarLogicalProject`s, not thread rows.
     case projects
@@ -32,8 +33,8 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
 enum SidebarActivityItem: Identifiable, Equatable {
     case header(SidebarActivitySection, count: Int, collapsed: Bool)
     case row(SidebarListRow)
-    /// A triggered automation's runs in Automations, folded into one row.
-    case runGroup(SidebarRunGroup, expanded: Bool)
+    /// An active automation in Automations; `expanded` is nil while it has no runs to fold.
+    case automation(SidebarAutomation, expanded: Bool?)
     case project(SidebarLogicalProject)
     case mission(SidebarMission)
 
@@ -41,7 +42,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
         switch self {
         case .header(let section, _, _): AnyHashable("header.\(section.rawValue)")
         case .row(let row): AnyHashable(row.id)
-        case .runGroup(let group, _): AnyHashable(SidebarLists.runGroupKey(group.automation))
+        case .automation(let automation, _): AnyHashable(automation.key)
         case .project(let project): AnyHashable(project.ref)
         case .mission(let mission): AnyHashable(mission.id)
         }
@@ -73,52 +74,62 @@ struct SidebarMission: Equatable, Identifiable {
 }
 
 extension SidebarLists {
-    /// The user's order: Automations, Designs, Projects, Needs you, Working, Done, Pinned, Recents.
-    /// Pinned is opt-in and follows Done. Projects are not thread rows; `items(collapsed:projects:)`
-    /// places their group right after Designs, so thread status, attention and pins never move it.
+    /// The user's order: Designs, Projects (and Missions), Automations, Needs you, Working, Done, Pinned, Recents.
+    /// Pinned is opt-in and follows Done. Projects and Missions are not thread rows; `items` places them right after
+    /// Designs, so thread status, attention and pins never move them. Automations' rows are its run threads, which
+    /// `items` folds under `automationRows`.
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
-        [(.automations, automations), (.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
+        [(.designs, designs), (.automations, automations), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
     }
 
-    /// `openRunGroups` holds the open groups' keys (`runGroupKey`); a closed group's runs aren't visible.
+    /// `openRunGroups` holds the open automations' keys (`runGroupKey`); a closed one's runs aren't visible.
     func visibleRows(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = []) -> [SidebarListRow] {
         sections.flatMap { collapsed.contains($0.section) ? [] : $0.rows }
-            .filter { row in row.runGroup.map { openRunGroups.contains(Self.runGroupKey($0)) } ?? true }
+            .filter { row in row.foldedUnder.map { openRunGroups.contains(Self.runGroupKey($0)) } ?? true }
     }
 
-    /// An Activity run group's open key, remembered beside the space tree's (`SidebarRunGroupRow.key`).
-    static func runGroupKey(_ automation: AutomationID) -> String { "runs.open:activity:\(automation.rawValue)" }
+    /// An Activity automation's open key, remembered beside the space tree's (`SidebarRunGroupRow.key`).
+    static func runGroupKey(_ automation: AutomationKey) -> String {
+        "runs.open:activity:\(automation.host.uuidString):\(automation.automation.rawValue)"
+    }
 
+    /// `selectedAutomation`: the automation the Automations page shows, marked on its row.
     func items(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = [], projects: [SidebarLogicalProject] = [],
-               showsProjects: Bool = true, missions: [SidebarMission] = [], showsMissions: Bool = false) -> [SidebarActivityItem] {
+               showsProjects: Bool = true, missions: [SidebarMission] = [], showsMissions: Bool = false,
+               selectedAutomation: AutomationKey? = nil) -> [SidebarActivityItem] {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
-            var items: [SidebarActivityItem] = [.header(section, count: rows.count, collapsed: folded)]
-            guard !folded else { return items }
-            var current: AutomationID?
-            for row in rows {
-                guard let automation = row.runGroup, let group = runGroups[automation] else {
-                    current = nil
-                    items.append(.row(row))
-                    continue
-                }
-                let open = openRunGroups.contains(Self.runGroupKey(automation))
-                if current != automation {
-                    current = automation
-                    items.append(.runGroup(group, expanded: open))
-                }
-                if open { items.append(.row(row)) }
-            }
-            return items
+            return [.header(section, count: rows.count, collapsed: folded)] + (folded ? [] : rows.map(SidebarActivityItem.row))
         }
         var items: [SidebarActivityItem] = []
         for (section, rows) in sections {
+            if section == .automations {
+                items += automationBlock(collapsed: collapsed, openRunGroups: openRunGroups, selected: selectedAutomation)
+                continue
+            }
             items += block(section, rows)
             // Projects follow Designs and sit above every thread group, whether or not there are any: the header and its
             // New project chip are the way to make the first one.
             if section == .designs, showsProjects { items += projectBlock(projects, collapsed: collapsed) }
             if section == .designs, showsMissions { items += missionBlock(missions, collapsed: collapsed) }
+        }
+        return items
+    }
+
+    /// One row per active automation, its runs under it while open; omitted while none is active.
+    private func automationBlock(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String>,
+                                 selected: AutomationKey?) -> [SidebarActivityItem] {
+        guard !automationRows.isEmpty else { return [] }
+        let folded = collapsed.contains(.automations)
+        var items: [SidebarActivityItem] = [.header(.automations, count: automationRows.count, collapsed: folded)]
+        guard !folded else { return items }
+        let runs = Dictionary(grouping: automations, by: \.foldedUnder)
+        for var automation in automationRows {
+            automation.selected = automation.key == selected
+            let open = openRunGroups.contains(Self.runGroupKey(automation.key))
+            items.append(.automation(automation, expanded: automation.runs > 0 ? open : nil))
+            if open { items += (runs[automation.key] ?? []).map(SidebarActivityItem.row) }
         }
         return items
     }
@@ -141,7 +152,8 @@ extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
         presentedSidebarLists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
                                     projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
-                                    missions: sidebarMissions, showsMissions: settings.missionsEnabled)
+                                    missions: sidebarMissions, showsMissions: settings.missionsEnabled,
+                                    selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil)
     }
 
     /// The Missions section's rows, shared by every sidebar style.
@@ -179,7 +191,7 @@ extension ShepherdViewModel {
               let section = sidebarLists.sections.first(where: { $0.rows.contains { $0.id == selected } })?.section else { return }
         collapsedActivitySections.remove(section)
         // Selecting a run opens its group.
-        if let automation = sidebarLists.automations.first(where: { $0.id == selected })?.runGroup {
+        if let automation = sidebarLists.automations.first(where: { $0.id == selected })?.foldedUnder {
             let key = SidebarLists.runGroupKey(automation)
             if !collapsedProjects.contains(key) { collapsedProjects.insert(key) }
         }
