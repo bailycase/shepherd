@@ -20,6 +20,30 @@ struct DesignAgentRendererTests {
         } catch { #expect(String(describing: error).contains("Timed out")) }
     }
 
+    @Test func aLoadThatStartsWhileAnotherWaitsFailsTheEarlierCallerInsteadOfHoldingIt() async throws {
+        let h = try BoardHarness(files: [
+            "Never.dc.html": "<html><head><script src='./never.js'></script></head><body>Waiting</body></html>",
+            "never.js": "window.__shepherdDC={};"
+        ])
+        defer { try? FileManager.default.removeItem(at: h.folder) }
+        let view = try h.view("Never.dc.html")
+        let first = Task { @MainActor in try await view.load(timeout: .seconds(30)) }
+        defer { first.cancel() }
+        try await eventuallyOnMain("the first board navigation to start") { view.webView.url != nil }
+        let second = Task { @MainActor in try await view.load(timeout: .milliseconds(100)) }
+        defer { second.cancel() }
+        do {
+            _ = try await first.value
+            Issue.record("the superseded load completed")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        do {
+            _ = try await second.value
+            Issue.record("a board without a boot event completed loading")
+        } catch { #expect(String(describing: error).contains("Timed out")) }
+    }
+
     @Test func aRuntimeInspectionPromiseThatNeverResolvesHitsItsNativeDeadline() async throws {
         let h = try BoardHarness(files: [
             "A.dc.html": "<html><head><script src='./never.js'></script></head><body>A</body></html>",
