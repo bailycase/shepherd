@@ -54,6 +54,9 @@ struct FixtureHostData {
     var designs: FixtureDesigns? = nil
     /// Answers the Browser's tunnel frames (a canned dev server); nil refuses every tunnel as a mutation.
     var tunnel: (@Sendable (BrowserTunnelFrame) -> [BrowserTunnelFrame])? = nil
+    /// Takes a change a tap-through check makes on purpose and answers it (recorded in `FixtureHost.accepted`);
+    /// nil for any other request, which is refused as a mutation as always. nil: the host changes nothing.
+    var accepts: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
     /// The missions the host serves (`missions.v1`, its experiment on); nil: the experiment is off.
     var missions: FixtureMissions? = nil
 
@@ -193,7 +196,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal + clientState + duo
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + automationFlow + windows + terminal + clientState + duo
             + designs + designPad + designPadMarkup + browser + files + missions + ProjectFixtures.screens + hostConfig
     }
 

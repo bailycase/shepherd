@@ -45,6 +45,9 @@ struct SidebarProject: Identifiable, Equatable {
     var pinned = false
     var rollup: SHProjectRollup = .quiet
     var parentID: SidebarProjectID?
+    /// Its triggered automations' run threads, each folded under one row (`rows` keeps a
+    /// group's runs together, where its newest run falls).
+    var runGroups: [AutomationID: SidebarRunGroup] = [:]
     var childThreadCount = 0
     var parentIsExplicit = false
     var requestedParentID: SidebarProjectID?
@@ -69,6 +72,31 @@ struct SidebarProject: Identifiable, Equatable {
             return (host, space)
         }
         return remote.min { $0.0.uuidString < $1.0.uuidString }.map { (host: $0.0, space: $0.1) }
+    }
+}
+
+/// A triggered automation's runs in one space: "pr-loop · 3", with what is inside rolled up.
+struct SidebarRunGroup: Equatable {
+    let automation: AutomationID
+    let name: String
+    var count = 0
+    var unread = 0
+    var rollup: SHAutomationGroupRow.Rollup = .quiet
+    var paused = false
+}
+
+/// A run group's row as the tree draws it.
+struct SidebarRunGroupRow: Equatable {
+    let project: SidebarProjectID
+    let group: SidebarRunGroup
+    let expanded: Bool
+    let depth: Int
+
+    /// Remembered open in the tree's collapsed set (groups start closed), under this key.
+    var key: String { Self.key(project: project, automation: group.automation) }
+
+    static func key(project: SidebarProjectID, automation: AutomationID) -> String {
+        "runs.open:\(project.key):\(automation.rawValue)"
     }
 }
 
@@ -171,7 +199,10 @@ struct SidebarTree: Equatable {
     func visibleRows(collapsed: Set<String>) -> [SidebarListRow] {
         sections.flatMap { section in
             section.projects.flatMap { project in
-                collapsed.contains(project.id.key) || project.ancestorIDs.contains { collapsed.contains($0.key) } ? [] : project.rows
+                collapsed.contains(project.id.key) || project.ancestorIDs.contains { collapsed.contains($0.key) } ? []
+                    : project.rows.filter { row in
+                        row.runGroup.map { collapsed.contains(SidebarRunGroupRow.key(project: project.id, automation: $0)) } ?? true
+                    }
             }
         }
     }
@@ -205,8 +236,21 @@ struct SidebarTree: Equatable {
                     movable: !project.pinned && project.space != nil, parentID: project.parentID, depth: project.ancestorIDs.count,
                     missing: project.missing, pinned: project.pinned)))
                 guard expanded else { continue }
+                var group: AutomationID?
                 for var row in project.rows {
                     row.projectDepth = project.ancestorIDs.count
+                    if let automation = row.runGroup, let summary = project.runGroups[automation] {
+                        let open = collapsed.contains(SidebarRunGroupRow.key(project: project.id, automation: automation))
+                        if group != automation {
+                            group = automation
+                            items.append(.runGroup(SidebarRunGroupRow(project: project.id, group: summary, expanded: open,
+                                                                      depth: project.ancestorIDs.count + 1)))
+                        }
+                        guard open else { continue }
+                        row.projectDepth += 1
+                    } else {
+                        group = nil
+                    }
                     if row.id == selected { row.selected = true }
                     if shortcuts, digit < 9 {
                         digit += 1
@@ -250,6 +294,8 @@ enum SidebarTreeItem: Identifiable, Equatable {
     case header(SidebarTreeSection.Header)
     case project(SidebarProjectRow)
     case row(SidebarListRow)
+    /// A triggered automation's runs in a space, folded into one row.
+    case runGroup(SidebarRunGroupRow)
     /// The new Projects section above the Spaces (ProjectLead-AddsSpace): its header (a `+` opens
     /// New project) and one row per Project.
     case leadHeader(count: Int)
@@ -262,6 +308,7 @@ enum SidebarTreeItem: Identifiable, Equatable {
         case .header(let header): AnyHashable(header.id)
         case .project(let project): AnyHashable(project.id)
         case .row(let row): AnyHashable(row.id)
+        case .runGroup(let group): AnyHashable(group.key)
         case .leadHeader: AnyHashable("header.leadProjects")
         case .leadProject(let project): AnyHashable(project.ref)
         case .leadTask(_, let task): AnyHashable(task.id)
@@ -339,6 +386,10 @@ private struct TreeBuilder {
     /// joins it (and hides with it) while not grouped.
     var localByName: [String: SpaceID] = [:]
     var hiddenLocal: Set<SpaceID> = []
+    /// Triggered automations with run threads, and what their groups roll up.
+    var runGroupNames: [AutomationID: String] = [:]
+    var unreadRuns: Set<AgentID> = []
+    var pausedGroups: Set<AutomationID> = []
 
     init(options: SidebarTreeOptions) { self.options = options }
 
@@ -387,11 +438,13 @@ private struct TreeBuilder {
         for (index, agent) in state.agents.enumerated() where agent.designID == nil && !state.isProjectCoordinator(agent) && !workers.contains(agent.id)
             && !missionAgents.contains(agent.id) {
             let automation = runs[agent.id]
+            // A triggered run's thread is ordinary but sits under its automation's group.
+            let origin = agent.automationOrigin.flatMap { origin in state.automations.first { $0.id == origin.automationID } }
             let project: SpaceID?
             if visible.contains(agent.spaceID) {
                 project = agent.spaceID
-            } else if let automation {
-                project = SidebarDerivation.space(holding: automation.cwd, in: projectSpaces, expandTilde: true)?.id
+            } else if let home = automation ?? origin {
+                project = SidebarDerivation.space(holding: home.cwd, in: projectSpaces, expandTilde: true)?.id
             } else {
                 project = nil
             }
@@ -400,10 +453,16 @@ private struct TreeBuilder {
             let waiting = agent.status == .blocked || notSignedIn
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
             let live = automation != nil && AutomationRow.isLive(agent, run: run)
-            let row = SidebarDerivation.localRow(agent, automation: automation, run: run, needsYou: waiting,
+            var row = SidebarDerivation.localRow(agent, automation: automation, run: run, needsYou: waiting,
                                                  failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                                  notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
+            if let origin, automation == nil {
+                row.runGroup = origin.id
+                runGroupNames[origin.id] = origin.name
+                if source.unreadRuns.contains(agent.id) { unreadRuns.insert(agent.id) }
+                if source.pausedAutomations.contains(origin.id) { pausedGroups.insert(origin.id) }
+            }
             add(Entry(row: row, waiting: waiting, running: agent.status == .working || live, key: agent.lastActiveAt ?? -1,
                       host: 0, index: index), to: .local(project))
         }
@@ -470,6 +529,25 @@ private struct TreeBuilder {
                 if a.key != b.key { return a.key > b.key }
                 if a.host != b.host { return a.host < b.host }
                 return a.index > b.index
+            }
+            // A group's runs sit together where its newest run falls.
+            var firstAt: [AutomationID: Int] = [:]
+            for (position, entry) in rows.enumerated() {
+                if let group = entry.row.runGroup, firstAt[group] == nil { firstAt[group] = position }
+            }
+            rows = rows.enumerated().sorted { a, b in
+                let ka = a.element.row.runGroup.flatMap { firstAt[$0] } ?? a.offset
+                let kb = b.element.row.runGroup.flatMap { firstAt[$0] } ?? b.offset
+                return ka != kb ? ka < kb : a.offset < b.offset
+            }.map(\.element)
+            for entry in rows {
+                guard let automation = entry.row.runGroup, let name = runGroupNames[automation] else { continue }
+                var group = project.runGroups[automation] ?? SidebarRunGroup(automation: automation, name: name,
+                                                                              paused: pausedGroups.contains(automation))
+                group.count += 1
+                if case .local(let agent) = entry.row.id, unreadRuns.contains(agent) { group.unread += 1 }
+                if entry.waiting { group.rollup = .waiting } else if entry.running, group.rollup == .quiet { group.rollup = .running }
+                project.runGroups[automation] = group
             }
             project.rows = rows.map(\.row)
             project.rollup = rows.contains(where: \.waiting) ? .waiting : rows.contains(where: \.running) ? .running : .quiet

@@ -36,7 +36,7 @@ struct RemoteAutomationTests {
                 Task {
                     do {
                         switch request {
-                        case .update(let id, _, _, _, let enabled):
+                        case .update(let id, _, _, _, let enabled, _):
                             if var saved = server.state.automations.first(where: { $0.id == id }), let enabled {
                                 saved.enabled = enabled
                                 try await server.updateAutomation(saved)

@@ -72,6 +72,14 @@ extension ShepherdViewModel {
             openingTurns: sidebarOpeningTurns, completions: sidebarCompletions.records, failedTurns: failedTurns, cannotStart: cannotStart,
             notSignedIn: Set(notSignedIn.keys), waiting: waitingForImport, statusSince: statusSince,
             openRuns: openAutomationRuns,
+            unreadRuns: Set(localAutomationRuns.values.joined().filter(\.unread).compactMap(\.agentID)),
+            pausedAutomations: Set(automationTriggerStatuses.filter { automationTriggersAllPaused || $0.value.state == .paused }.keys),
+            triggerStatuses: automationTriggersByKey, triggersAllPaused: automationTriggersAllPaused,
+            unreadRunCounts: automationRunsByKey.compactMapValues { runs in
+                let unread = runs.count(where: \.unread)
+                return unread > 0 ? unread : nil
+            },
+            hostRuns: remoteAutomationRuns.compactMapValues(\.last),
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected,
@@ -205,6 +213,7 @@ extension ShepherdViewModel {
         sessions.startAhead(id)
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
+        markAutomationRunsRead(id)
         // A layout still waiting to mount mounts now, as the visible one, and stays mounted when
         // a page covers it next.
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }
@@ -251,6 +260,7 @@ extension ShepherdViewModel {
         remoteInspectingAgent = nil
         if destination != nil { destination = nil }
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
+        markRemoteAutomationRunsRead(hostID: hostID, agentID: agentID)
         if let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
            let agent = connection.state.agents.first(where: { $0.id == agentID }),
            let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) {

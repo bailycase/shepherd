@@ -208,6 +208,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// so a relaunch can still show the row as failed. Cleared when pi next serves the thread or a
     /// turn starts or ends well. Nil from older state files and hosts.
     public var lastFailure: String?
+    /// The triggered automation that started this thread, nil for every other thread. Such a run
+    /// is an ordinary thread that survives relaunch; this only groups it under its automation.
+    public var automationOrigin: AutomationOrigin? = nil
 
     public init(
         id: AgentID = AgentID(),
@@ -268,7 +271,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin
     }
 
     public init(from decoder: Decoder) throws {
@@ -311,6 +314,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         goalState = try c.decodeIfPresent(String.self, forKey: .goalState)
         // Absent before failures outlived a relaunch.
         lastFailure = try c.decodeIfPresent(String.self, forKey: .lastFailure)
+        automationOrigin = try? c.decodeIfPresent(AutomationOrigin.self, forKey: .automationOrigin)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -342,6 +346,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         if serviceTier != .standard { try c.encode(serviceTier, forKey: .serviceTier) }
         try c.encodeIfPresent(goalState, forKey: .goalState)
         try c.encodeIfPresent(lastFailure, forKey: .lastFailure)
+        try c.encodeIfPresent(automationOrigin, forKey: .automationOrigin)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
@@ -381,6 +386,20 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
     /// The agent currently running this automation, nil when stopped.
     /// Cleared at server startup (sessions die with the app).
     public var agentID: AgentID?
+    /// When a run starts. `.manual` is the legacy watcher: Run now, and auto-start at launch.
+    public var trigger: AutomationTrigger
+    /// Where a triggered run happens: a new thread per run, or one existing thread.
+    public var destination: AutomationDestination
+    /// Where a new-thread run works on disk.
+    public var workspace: AutomationWorkspace
+    /// Whose GitHub activity fires a run.
+    public var authorGate: AutomationAuthorGate
+    /// Runs at once and per day for a triggered automation.
+    public var limits: AutomationLimits
+    /// Pinned model, thinking and speed for runs; nil uses the default when the run starts.
+    public var model: String?
+    public var thinking: ThinkingLevel?
+    public var serviceTier: ServiceTier?
 
     public init(
         id: AutomationID = AutomationID(),
@@ -390,7 +409,15 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
         enabled: Bool = true,
         agentID: AgentID? = nil,
         projectID: ProjectID? = nil,
-        deleteAfterRun: Bool = false
+        deleteAfterRun: Bool = false,
+        trigger: AutomationTrigger = .manual,
+        destination: AutomationDestination = .newThread,
+        workspace: AutomationWorkspace = .worktree,
+        authorGate: AutomationAuthorGate = .collaborators,
+        limits: AutomationLimits = .default,
+        model: String? = nil,
+        thinking: ThinkingLevel? = nil,
+        serviceTier: ServiceTier? = nil
     ) {
         self.id = id
         self.projectID = projectID
@@ -400,10 +427,22 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
         self.enabled = enabled
         self.agentID = agentID
         self.deleteAfterRun = deleteAfterRun
+        self.trigger = trigger
+        self.destination = destination
+        self.workspace = workspace
+        self.authorGate = authorGate
+        self.limits = limits
+        self.model = model
+        self.thinking = thinking
+        self.serviceTier = serviceTier
     }
+
+    /// A trigger other than manual: runs start on their own, under `limits`.
+    public var isTriggered: Bool { !trigger.isManual }
 
     private enum CodingKeys: String, CodingKey {
         case id, projectID, name, prompt, cwd, enabled, agentID, deleteAfterRun
+        case trigger, destination, workspace, authorGate, limits, model, thinking, serviceTier
     }
 
     public init(from decoder: Decoder) throws {
@@ -416,6 +455,41 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
         enabled = try c.decode(Bool.self, forKey: .enabled)
         agentID = try c.decodeIfPresent(AgentID.self, forKey: .agentID)
         deleteAfterRun = try c.decodeIfPresent(Bool.self, forKey: .deleteAfterRun) ?? false
+        trigger = try c.decodeIfPresent(AutomationTrigger.self, forKey: .trigger) ?? .manual
+        destination = try c.decodeIfPresent(AutomationDestination.self, forKey: .destination) ?? .newThread
+        workspace = try c.decodeIfPresent(AutomationWorkspace.self, forKey: .workspace) ?? .worktree
+        authorGate = try c.decodeIfPresent(AutomationAuthorGate.self, forKey: .authorGate) ?? .collaborators
+        limits = try c.decodeIfPresent(AutomationLimits.self, forKey: .limits) ?? .default
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        thinking = try? c.decodeIfPresent(ThinkingLevel.self, forKey: .thinking)
+        serviceTier = try? c.decodeIfPresent(ServiceTier.self, forKey: .serviceTier)
+    }
+
+    /// Encodes the legacy fields as before and the trigger fields only when they differ from a
+    /// manual automation's, so a manual record's JSON is unchanged for older readers.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(projectID, forKey: .projectID)
+        try c.encode(name, forKey: .name)
+        try c.encode(prompt, forKey: .prompt)
+        try c.encode(cwd, forKey: .cwd)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encodeIfPresent(agentID, forKey: .agentID)
+        try c.encode(deleteAfterRun, forKey: .deleteAfterRun)
+        if trigger != .manual { try c.encode(trigger, forKey: .trigger) }
+        if destination != .newThread { try c.encode(destination, forKey: .destination) }
+        if workspace != .worktree { try c.encode(workspace, forKey: .workspace) }
+        if authorGate != .collaborators { try c.encode(authorGate, forKey: .authorGate) }
+        if limits != .default { try c.encode(limits, forKey: .limits) }
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(thinking, forKey: .thinking)
+        try c.encodeIfPresent(serviceTier, forKey: .serviceTier)
+    }
+
+    /// The reason these trigger settings can't be saved, nil when they can.
+    public var triggerValidationError: String? {
+        trigger.validationError() ?? limits.validationError
     }
 }
 

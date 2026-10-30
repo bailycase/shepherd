@@ -30,7 +30,7 @@ extension ShepherdViewModel {
             switch request {
             case .create(let automation, _): target = automation.id
             case .list: target = nil
-            case .update(let id, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
+            case .update(let id, _, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
             }
             if let target, server.state.automations.contains(where: { $0.id == target && $0.projectID != nil }) {
                 return .failed(code: "project_scope", message: "Use the Project's revision-checked automation controls.")
@@ -38,22 +38,29 @@ extension ShepherdViewModel {
             switch request {
             case .create(let automation, let start):
                 try await server.addAutomation(automation)
-                if start {
+                adoptCanonical()
+                refreshAutomationTriggers()
+                // A triggered automation waits for its trigger; `start` is the watcher's.
+                if start, !automation.isTriggered {
                     try await startAutomation(automation.id)
                 }
                 return .ok
             case .list:
-                return .automations(state.automations.map { automation in
-                    AutomationInfo(
+                var infos: [AutomationInfo] = []
+                for automation in state.automations {
+                    infos.append(AutomationInfo(
                         id: automation.id,
                         name: automation.name,
                         prompt: automation.prompt,
                         cwd: automation.cwd,
                         enabled: automation.enabled,
-                        agentStatus: automationAgent(automation)?.status.rawValue
-                    )
-                })
-            case .update(let automationID, let name, let prompt, let cwd, let enabled):
+                        agentStatus: automationAgent(automation)?.status.rawValue,
+                        settings: AutomationSettings(of: automation),
+                        triggerStatus: automation.isTriggered ? await server.automationTriggers.status(of: automation) : nil
+                    ))
+                }
+                return .automations(infos)
+            case .update(let automationID, let name, let prompt, let cwd, let enabled, let settings):
                 guard var automation = state.automations.first(where: { $0.id == automationID }) else {
                     return .failed(code: "not_found", message: "unknown automation \(automationID)")
                 }
@@ -63,7 +70,13 @@ extension ShepherdViewModel {
                 if let prompt, !prompt.isEmpty { automation.prompt = prompt }
                 if let cwd, !cwd.isEmpty { automation.cwd = cwd }
                 if let enabled { automation.enabled = enabled }
+                if let settings {
+                    do { try settings.apply(to: &automation) } catch {
+                        return .failed(code: "invalid_automation", message: error.message)
+                    }
+                }
                 try await server.updateAutomation(automation)
+                refreshAutomationTriggers()
                 adoptCanonical()
                 return .ok
             case .delete(let automationID):
@@ -74,6 +87,7 @@ extension ShepherdViewModel {
                 // "make it gone", not "orphan its agent".
                 stopAutomation(automationID)
                 try await server.removeAutomation(automationID)
+                await server.automationTriggers.forget(automationID)
                 adoptCanonical()
                 return .ok
             case .start(let automationID):
@@ -101,6 +115,11 @@ extension ShepherdViewModel {
         }
         guard previous.projectID == nil else {
             throw LogicalProjectsError("project_scope", "Use the Project's revision-checked run action.")
+        }
+        if previous.isTriggered {
+            // Run now on a triggered automation: one run with no event, outside its limits.
+            try await startTriggeredRun(previous, events: [])
+            return
         }
         guard startingAutomations.insert(id).inserted else {
             throw AgentStartFailure(message: "\(previous.name) is already running")
@@ -192,6 +211,11 @@ extension ShepherdViewModel {
             remoteActionError = "Use the Project's revision-checked automation controls."
             return
         }
+        if automation?.isTriggered == true {
+            // Its runs are ordinary threads, stopped one by one; Stop pauses the trigger.
+            pauseAutomationTrigger(id)
+            return
+        }
         if startingAutomations.contains(id) { cancelledAutomationStarts.insert(id) }
         guard let agentID = automation?.agentID else { return }
         deleteAgent(agentID)
@@ -205,6 +229,7 @@ extension ShepherdViewModel {
         stopAutomation(id)
         Task { @MainActor in
             do { try await server.removeAutomation(id) } catch { remoteActionError = "Couldn’t delete the automation: \(error)" }
+            await server.automationTriggers.forget(id)
             adoptCanonical()
         }
     }
@@ -213,7 +238,10 @@ extension ShepherdViewModel {
     /// adopted. Runs died with the previous app instance; enabled means the
     /// user wants the watch standing.
     func autoStartAutomations() {
-        let pending = state.automations.filter { $0.projectID == nil && $0.enabled && !$0.deleteAfterRun && $0.agentID == nil }
+        // Triggered automations start nothing here: their trigger clock fires them.
+        startAutomationTriggers()
+        startRemoteAutomationWatch()
+        let pending = state.automations.filter { $0.projectID == nil && $0.enabled && !$0.deleteAfterRun && $0.agentID == nil && !$0.isTriggered }
         guard !pending.isEmpty else { return }
         Task { @MainActor in
             for automation in pending {
@@ -288,13 +316,17 @@ extension ShepherdViewModel {
             automation.prompt = draft.prompt
             automation.cwd = draft.cwd
             automation.enabled = draft.enabled
+            try draft.settings?.apply(to: &automation)
             try await server.updateAutomation(automation)
             adoptCanonical()
+            refreshAutomationTriggers()
             return id
         }
-        let automation = Automation(name: draft.name, prompt: draft.prompt, cwd: draft.cwd, enabled: draft.enabled)
+        var automation = Automation(name: draft.name, prompt: draft.prompt, cwd: draft.cwd, enabled: draft.enabled)
+        try draft.settings?.apply(to: &automation)
         try await server.addAutomation(automation)
         adoptCanonical()
+        refreshAutomationTriggers()
         return automation.id
     }
 

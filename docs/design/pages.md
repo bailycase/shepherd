@@ -167,21 +167,26 @@ under Design tool › Designs.
 NavAutomations, as `AutomationsPage` (`Sources/ShepherdApp/Pages/`), from the sidebar's
 Automations destination. One table holds every host's automations, This Mac's first
 (`AutomationsPageModel`, derived per change from `AutomationsModel`, the presentation the iOS
-client shares, with This Mac as one more host). Shepherd's automations have no schedule or
-trigger: one is on (it starts a run when Shepherd starts on its host) or run by hand. So the
-board's When and Next columns and its Scheduled and On an event tabs are left out (the user's
-decision, 2026-09-25: "Automations = table + detail with name, host, last run, prompt, runs, Run
-now (no schedules, triggers or next-run column)").
+client shares, with This Mac as one more host). A manual automation is on (it starts a run when
+Shepherd starts on its host) or run by hand. A triggered one (a schedule or GitHub activity) is
+an inbox, like Codex's Scheduled view: each firing is a run with what fired it. The board's When
+and Next live in the Trigger column, the line under the name and the detail; there are no tabs.
 
-- **Header** (`SHPageHeader`): "Automations", "Filter automations" (`SHPageFilterField`: name,
+- **Header** (`SHPageHeader`): "Automations", **Pause all triggers** (a switch, shown while This
+  Mac has a triggered automation or the switch is on; once a connected host that serves triggers
+  has a triggered automation, a popup instead, "Pause triggers" or "Paused on build-01", whose
+  checked items are the paused hosts, This Mac first), "Filter automations" (`SHPageFilterField`: name,
   host or prompt), and **New automation**.
-- **Table**, columns Automation · Starts · Host · Last run (`2fr · 76pt · 76pt · 1.15fr`,
+- **Table**, columns Automation · Trigger · Host · Last run (`2fr · 76pt · 76pt · 1.15fr`,
   `SHTableColumns`, 16pt gaps), under its labels (`SHTableHead`, 16pt below the header). Each row
   is an `SHAutomationTableRow`, padded 12pt above and below with a hairline above, `bgSelected`
   when selected; a click selects it.
   - **Automation:** its switch (`SHAutomationSwitch`, 30×18), 10pt before the name in 13
     semibold. The switch turns it on or off on its host, disabled while the host can't take it.
-  - **Starts:** a speech bubble and "thread" in 12 `textSecondary`: every run starts a thread.
+  - **Under the name:** an unread count badge (`SHCountBadge`), and for a triggered automation one
+    caption line: "Paused · <reason>" in `failed`, "Retrying at 14:05 · <reason>" in
+    `lanternText`, "Paused · all triggers", else "2 waiting · Next run 09:00 · 4/20 today".
+  - **Trigger:** "manual" (speech bubble), "schedule" (clock) or "GitHub" (`SHGlyph.repository`).
   - **Host:** "This Mac" or the host's name, mono 11 `textSecondary`.
   - **Last run:** a 6pt dot and the run's word with its time in 12, colored by how it went
     (`SHRunOutcomeLabel`): "running · 4m" `running`, "asked you · 1h ago" `lanternText` with a
@@ -207,12 +212,33 @@ now (no schedules, triggers or next-run column)").
     word in 12 `textTertiary`, and how long it took in mono 10.5 `textTertiary`. A run whose thread
     still exists opens it. Before the runs arrive: "Reading runs…"; with none: "No runs yet."; from
     a host that can't list them: "Runs aren't available from this host."
+  - **Triggered automation** (`AutomationsPageDetail.addTrigger`): the header reads "Daily at
+    09:00 · a new thread each run" or "On GitHub activity in acme/app · a new worktree thread each
+    run". Under it, an `SHBanner` while the trigger isn't watching ("Paused" with its reason and
+    **Resume**, "Retrying at 14:05", "All triggers are paused"); **WAITING · n** with each pending
+    event (`SHAutomationPendingEvent`: **Run now**, past the limits, and **Dismiss**); then
+    **RUNS** before the prompt, each an `SHAutomationInboxRun` (an unread `running` dot, what fired
+    it or "Run now", the outcome, start and length, why it didn't start, and a **PR** button that
+    opens the pull request). Opening a run selects its thread, which marks it read. Facts: When and
+    Next run, or one per GitHub trigger with Who and Checked; Runs in, Limits, Model pins. The
+    footer has Run now and Pause (Resume lives in the banner). A host with
+    `automationTriggersCapability` gets the same inbox (its status read when the page appears and
+    every 30 s while it shows; opening a run sends `markRead`), and its Pause all banner offers
+    **Resume all**; an older host's automation shows the facts alone.
   - **Footer** pinned under a hairline, padded 12pt above and below and 14pt at the sides: **Run
     now** (secondary, small, a play glyph; **Stop** while a run is live), why nothing can change
     here when the host is offline or too old, a spacer, and **Edit** (ghost, small).
 - **New automation and Edit** open `AutomationEditorSheet`: Host (for a new one, when a connected
   host serves automations), Name, Folder (with Choose…, the directory browser on that host),
-  Prompt, and On. Saving never starts a run. This Mac saves through its server; a host through
+  Prompt, and On. On This Mac, and on a host that serves triggers, it also has Trigger (Manual · Schedule ·
+  GitHub): a schedule's Repeats (Minutes ≥ 5 · Daily · Weekly · Custom RRULE) with its time or
+  days and a Next run line that names an invalid rule (a new or changed interval adds "Every 30
+  min, counted from when you save"; a host's schedule previews in its time zone once its status
+  said which, else in this Mac's with a note); one to five GitHub triggers (Repository, defaulting to the folder's
+  origin; Events; Labels; Authors; Title has; Number) and Who can trigger, with a warning banner
+  when widened past collaborators; then Runs go to (New thread or an existing thread), Workspace,
+  Limits, Model, Thinking and Speed (Default or a pin). The form is `AutomationTriggerForm`, sent as
+  `RemoteAutomationDraft.settings`. Saving never starts a run. This Mac saves through its server; a host through
   `RemoteAutomationRequest.create`/`.update`, the fields the iOS form has.
 - The page reads every automation's runs when it opens and whenever a run starts, settles or ends
   (this Mac's run log, each connected host's `runs`).

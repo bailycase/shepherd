@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
@@ -14,10 +15,24 @@ struct AutomationsDestination: View {
         let _ = SHRenderProbe.tick("page.automations")
         AutomationsPage(model: vm.automationsPage, actions: actions, chrome: chrome)
             .task(id: vm.automationRunsSignature) { await vm.loadAutomationPageRuns() }
+            .onAppear {
+                vm.refreshAutomationTriggers()
+                takeEditRequest()
+            }
+            // A sidebar row's Edit…, whether the page was open already or not.
+            .onChange(of: vm.automationEditRequest) { takeEditRequest() }
+            // A host's trigger status, now and every 30 s while the page is on screen.
+            .task { await vm.watchRemoteAutomationTriggers() }
             .sheet(item: $editor) { target in
                 AutomationEditorSheet(vm: vm, target: target) { editor = nil }
                     .dialogSheetFrame()
             }
+    }
+
+    private func takeEditRequest() {
+        guard let key = vm.automationEditRequest else { return }
+        vm.automationEditRequest = nil
+        editor = .edit(key)
     }
 
     private var actions: AutomationsPageActions {
@@ -30,7 +45,13 @@ struct AutomationsDestination: View {
             openThread: { vm.openThread($0) },
             delete: { vm.deleteAutomation($0) },
             edit: { editor = .edit($0) },
-            create: { editor = .new })
+            create: { editor = .new },
+            pause: { vm.pauseAutomationTrigger($0) },
+            resume: { vm.resumeAutomationTrigger($0) },
+            runEvent: { vm.runPendingAutomationEvent($0, eventID: $1) },
+            dismissEvent: { vm.dismissAutomationEvent($0, eventID: $1) },
+            setAllPaused: { vm.setAllAutomationTriggersPaused(host: $0, $1) },
+            openURL: { NSWorkspace.shared.open($0) })
     }
 }
 

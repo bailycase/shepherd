@@ -26,13 +26,14 @@ final class AppHarness {
 
     /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
     /// `directory` is a scratch directory the test already filled (a saved `state.json` for a cold launch).
-    init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+    init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
+         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
         // Focus tracking reads NSApp even in model-only tests; no window is created.
         _ = NSApplication.shared
         let directory = try existing ?? makeScratchDirectory("srv")
         let setup = pi ?? PiSetup(engine: PiSetup.app.engine, home: directory.appendingPathComponent("pi"),
                                   yourPi: PiSetup.app.yourPi, userHome: PiSetup.app.userHome)
-        scratch = try ScratchServer(dir: directory, modelCatalog: modelCatalog, pi: setup)
+        scratch = try ScratchServer(dir: directory, modelCatalog: modelCatalog, pi: setup, triggerSource: triggerSource)
         settings = AppSettings(store: defaults)
         keybindings = KeybindingsStore(store: defaults)
         themeManager = ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark)
@@ -194,8 +195,9 @@ final class RemoteHostHarness {
     let port: UInt16
     let token: String
 
-    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
-        host = try AppHarness(modelCatalog: modelCatalog)
+    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
+         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
+        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)

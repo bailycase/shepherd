@@ -33,8 +33,32 @@ public struct FleetSidebarGroups: Equatable, Sendable {
     public var pinned: [FleetPinnedRow] = []
     /// The rest, designs' rows included.
     public var recents: [FleetThreadRow] = []
+    /// Triggered automations' unpinned run threads, one group per automation, the group with the newest run first.
+    public var runs: [FleetRunGroup] = []
 
     public init() {}
+}
+
+/// One triggered automation's run threads, folded under one row as the Mac's Spaces mode does ("pr-loop · 3"): how
+/// many, how many unread, whether one is going or waiting on you, and whether its trigger is paused. A run waiting on
+/// you stays in Needs you, where it is answered; the group only rolls it up.
+public struct FleetRunGroup: Identifiable, Equatable, Sendable {
+    public enum Rollup: Equatable, Sendable { case quiet, running, waiting }
+
+    public var key: AutomationKey
+    public var name: String
+    /// The host's name when rows from several hosts mix.
+    public var hostTag: String?
+    /// Newest activity first, running ones leading.
+    public var rows: [FleetThreadRow]
+    public var unread: Int
+    public var rollup: Rollup
+    public var paused: Bool
+    /// Opened on this device (groups start closed).
+    public var expanded: Bool
+
+    public var id: AutomationKey { key }
+    public var count: Int { rows.count }
 }
 
 /// Pins, observed completions and what was seen. Activity changes, including on reconnect, are not proof of completion.
@@ -55,6 +79,8 @@ public struct FleetSidebarState: Equatable, Sendable {
     private var reading: FleetRef?
     private var readingGeneration: Int?
     private var selected: FleetRef?
+    /// The run groups opened on this device; they start closed. Not persisted.
+    public private(set) var openRunGroups: Set<AutomationKey> = []
 
     public init(pins: [FleetRef] = []) {
         var unique: [FleetRef] = []
@@ -73,11 +99,22 @@ public struct FleetSidebarState: Equatable, Sendable {
         pins.removeAll { $0 == ref }
     }
 
+    /// A run group's row: open or close it.
+    public mutating func toggleRunGroup(_ key: AutomationKey) {
+        if openRunGroups.contains(key) { openRunGroups.remove(key) } else { openRunGroups.insert(key) }
+    }
+
+    /// Opens a run group, so the run selected in it is there to see.
+    public mutating func openRunGroup(_ key: AutomationKey) {
+        openRunGroups.insert(key)
+    }
+
     /// Follows the hosts' pushed state. A pin goes when its host is no longer configured, or when a connected host no longer
     /// has its thread; never for a host that is offline or not reached yet. `sessions` is each connected host's connection id.
     public mutating func reconcile(_ hosts: [FleetHost], sessions _: [UUID: UUID]) {
         let configured = Set(hosts.map(\.id))
         pins.removeAll { !configured.contains($0.host) }
+        openRunGroups = openRunGroups.filter { configured.contains($0.host) }
         records = records.filter { configured.contains($0.key.host) }
         seen = seen.filter { configured.contains($0.key.host) }
         endpoints = endpoints.filter { configured.contains($0.key) }
@@ -138,8 +175,10 @@ public struct FleetSidebarState: Equatable, Sendable {
     }
 
     /// Every thread in one group. Automation runs stay with the automations (`FleetModel` never makes them thread rows), a
-    /// design is never pinned, and a thread on a host that is offline is never Working or Done.
-    public func groups(_ model: FleetModel) -> FleetSidebarGroups {
+    /// design is never pinned, and a thread on a host that is offline is never Working or Done. A triggered automation's
+    /// run threads (`FleetModel.runOrigins`) fold into its run group unless pinned; `unread` are the runs whose thread
+    /// has not been opened, `paused` the automations whose trigger is paused (as their hosts last said).
+    public func groups(_ model: FleetModel, unread: Set<FleetRef> = [], paused: Set<AutomationKey> = []) -> FleetSidebarGroups {
         let pinned = Set(pins)
         var groups = FleetSidebarGroups()
         var pinnedRows: [FleetRef: FleetPinnedRow] = [:]
@@ -151,9 +190,15 @@ public struct FleetSidebarState: Equatable, Sendable {
             }
         }
         let running = Set(model.running.map(\.ref))
+        var runRows: [AutomationKey: [FleetThreadRow]] = [:]
+        var runOrder: [AutomationKey] = []
         for row in model.recents {
             if row.design == nil, pinned.contains(row.ref) {
                 if pinnedRows[row.ref] == nil { pinnedRows[row.ref] = .thread(row) }
+            } else if let automation = model.runOrigins[row.ref] {
+                let key = AutomationKey(host: row.ref.host, automation: automation)
+                if runRows[key] == nil { runOrder.append(key) }
+                runRows[key, default: []].append(row)
             } else if running.contains(row.ref) {
                 groups.working.append(row)
             } else if row.design == nil, !row.offline, row.status == .done, unseenCompletion(row.ref) {
@@ -163,6 +208,17 @@ public struct FleetSidebarState: Equatable, Sendable {
             }
         }
         groups.pinned = pins.compactMap { pinnedRows[$0] }
+        let waiting = Set(groups.needsYou.compactMap { item in
+            model.runOrigins[item.ref].map { AutomationKey(host: item.ref.host, automation: $0) }
+        })
+        groups.runs = runOrder.map { key in
+            let rows = runRows[key] ?? []
+            let name = model.automations.first { $0.host == key.host && $0.automationID == key.automation }?.name ?? "Automation"
+            return FleetRunGroup(key: key, name: name, hostTag: rows.first?.hostTag, rows: rows,
+                                 unread: rows.count { unread.contains($0.ref) },
+                                 rollup: waiting.contains(key) ? .waiting : rows.contains { running.contains($0.ref) } ? .running : .quiet,
+                                 paused: paused.contains(key), expanded: openRunGroups.contains(key))
+        }
         groups.done.sort { a, b in
             let left = records[a.ref], right = records[b.ref]
             let leftTime = left?.completedAt ?? -1, rightTime = right?.completedAt ?? -1

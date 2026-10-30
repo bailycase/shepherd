@@ -12,10 +12,11 @@ extension ShepherdViewModel {
 
     /// This Mac, then every configured host, as the shared automations presentation reads them.
     var automationHosts: [AutomationHost] {
-        [AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state)]
+        [AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state, triggers: true)]
             + remoteHosts.connections.map { connection in
                 AutomationHost(id: connection.id, name: connection.config.name, connected: connection.phase == .connected,
-                               manageable: connection.supportsAutomations, state: connection.state)
+                               manageable: connection.supportsAutomations, state: connection.state,
+                               triggers: connection.supportsAutomationTriggers)
             }
     }
 
@@ -31,7 +32,8 @@ extension ShepherdViewModel {
     /// The Automations page as it stands. Only a host's changes wait; this Mac's land at once.
     func automationsPageModel(now: Date = Date()) -> AutomationsPageModel {
         AutomationsPageModel.make(hosts: automationHosts, runs: automationRunsByKey, selection: automationsPageSelection,
-                                  filter: automationsPageFilter, pending: remoteAutomationsPending, now: now)
+                                  filter: automationsPageFilter, pending: remoteAutomationsPending,
+                                  triggers: automationTriggersByKey, allPaused: automationTriggersAllPaused, now: now)
     }
 
     /// The page as its view draws it: derived again only when what it reads changed (a run's
@@ -41,12 +43,21 @@ extension ShepherdViewModel {
         let inputs = AutomationsPageInputs(
             hosts: automationHosts, runs: automationRunsByKey, selection: automationsPageSelection,
             filter: automationsPageFilter, pending: remoteAutomationsPending,
+            triggers: automationTriggersByKey, allPaused: automationTriggersAllPaused,
             minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = automationsPageCache, cached.inputs == inputs { return cached.model }
         let model = AutomationsPageModel.make(hosts: inputs.hosts, runs: inputs.runs, selection: inputs.selection,
-                                              filter: inputs.filter, pending: inputs.pending, now: now)
+                                              filter: inputs.filter, pending: inputs.pending, triggers: inputs.triggers,
+                                              allPaused: inputs.allPaused, now: now)
         automationsPageCache = (inputs, model)
         return model
+    }
+
+    /// Every host's trigger states (This Mac's and each trigger host's), keyed as the page keys automations.
+    var automationTriggersByKey: [AutomationKey: AutomationTriggerStatus] {
+        remoteAutomationTriggerStatuses.merging(
+            automationTriggerStatuses.map { (AutomationKey(host: PageHost.localID, automation: $0.key), $0.value) },
+            uniquingKeysWith: { _, local in local })
     }
 
     /// Changes whenever a run may have started, settled or ended, or an automation came or went:
@@ -88,6 +99,36 @@ extension ShepherdViewModel {
         }
     }
 
+    func pauseAutomationTrigger(_ key: AutomationKey) {
+        if key.host == PageHost.localID { pauseAutomationTrigger(key.automation) } else { performRemoteAutomation(key, .pause) }
+    }
+
+    func resumeAutomationTrigger(_ key: AutomationKey) {
+        if key.host == PageHost.localID { resumeAutomationTrigger(key.automation) } else { performRemoteAutomation(key, .resume) }
+    }
+
+    /// Run now on a pending event: past the limits.
+    func runPendingAutomationEvent(_ key: AutomationKey, eventID: String) {
+        if key.host == PageHost.localID {
+            runPendingAutomationEvent(key.automation, eventID: eventID)
+        } else {
+            performRemoteAutomation(key, .runEvent(eventID: eventID))
+        }
+    }
+
+    func dismissAutomationEvent(_ key: AutomationKey, eventID: String) {
+        if key.host == PageHost.localID {
+            dismissAutomationEvent(key.automation, eventID: eventID)
+        } else {
+            performRemoteAutomation(key, .dismissEvent(eventID: eventID))
+        }
+    }
+
+    /// Pause all triggers on one host.
+    func setAllAutomationTriggersPaused(host: UUID, _ paused: Bool) {
+        if host == PageHost.localID { setAllAutomationTriggersPaused(paused) } else { setRemoteAutomationTriggersPaused(host, paused) }
+    }
+
     func stopAutomation(_ key: AutomationKey) {
         if key.host == PageHost.localID {
             stopAutomation(key.automation)
@@ -121,7 +162,7 @@ extension ShepherdViewModel {
         guard let automation = automationHosts.first(where: { $0.id == key.host })?.state.automations
             .first(where: { $0.id == key.automation }) else { return nil }
         return RemoteAutomationDraft(name: automation.name, prompt: automation.prompt, cwd: automation.cwd,
-                                     enabled: automation.enabled)
+                                     enabled: automation.enabled, settings: AutomationSettings(of: automation))
     }
 
     /// Hosts a new automation can be saved on: this Mac, and each connected host that serves
@@ -189,6 +230,8 @@ struct AutomationsPageInputs: Equatable {
     var selection: AutomationKey?
     var filter: String
     var pending: Set<AutomationKey>
+    var triggers: [AutomationKey: AutomationTriggerStatus]
+    var allPaused: Bool
     /// The minute its relative times were worded in.
     var minute: Int
 }

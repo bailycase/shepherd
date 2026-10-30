@@ -45,9 +45,9 @@ struct SpacesTerminologyTests {
         #expect(RemoteProtocol.projectDetailsCapability == "projects.details.v1")
     }
 
-    /// The user's sidebar amendment: automation runs precede Designs.
-    @Test func activityGroupsPutAutomationsAboveDesigns() {
+    /// The user's sidebar amendment: Automations follow Designs and Projects, above the thread groups.
+    @Test func activityGroupsPutAutomationsAfterDesigns() {
         let order = SidebarLists().sections.map(\.section)
-        #expect(order == [.automations, .designs, .needsYou, .working, .done, .pinned, .recents])
+        #expect(order == [.designs, .automations, .needsYou, .working, .done, .pinned, .recents])
     }
 }

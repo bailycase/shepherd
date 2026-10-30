@@ -180,13 +180,25 @@ enum RemoteSamples {
     static let automationRequests: [RemoteAutomationRequest] = [
         .setEnabled(enabled: true), .setEnabled(enabled: false), .run, .stop, .runs,
         .create(draft: draft), .update(draft: draft), .delete,
+        .create(draft: RemoteAutomationDraft(name: "loop", prompt: "p", cwd: "/r", enabled: true, settings: AutomationSettings(
+            trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled, .pullRequestMerged], labels: ["shepherd"])]),
+            workspace: .worktree, limits: AutomationLimits(maxConcurrent: 2, maxPerDay: 20)))),
+        .status, .pause, .resume, .runEvent(eventID: "acme/app#1:opened"), .dismissEvent(eventID: "schedule:5"),
+        .markRead(runID: op), .setAllPaused(paused: true),
     ]
     static let runs: [AutomationRun] = [
         AutomationRun(id: op, startedAt: 1_700_000_000, settledAt: 1_700_000_043, endedAt: 1_700_000_100, result: .finished),
         AutomationRun(id: op, startedAt: 1_700_000_200, result: .needsYou, agentID: agent),
         AutomationRun(id: op, startedAt: 1_700_000_300, endedAt: 1_700_000_400, result: .interrupted),
     ]
-    static let automationResults: [RemoteAutomationResult] = [.ok, .runs([]), .runs(runs)]
+    static let automationResults: [RemoteAutomationResult] = [
+        .ok, .runs([]), .runs(runs),
+        .runs([AutomationRun(id: op, startedAt: 1, endedAt: 1, result: .failed, trigger: "#1 T · issue opened", triggerURL: "u",
+                             pullRequestURL: "p", unread: true, failure: "worktree failed")]),
+        .status(AutomationTriggerStatus(state: .retrying, reason: "offline", pending: [
+            AutomationEvent(id: "acme/app#1:opened", kind: .issueOpened, repo: "acme/app", number: 1, title: "T", occurredAt: 3)],
+            nextRunAt: 9, lastCheckedAt: 8, retryAt: 10, runsToday: 2, allPaused: false)),
+    ]
 
     static let instructionsRequests: [RemoteInstructionsRequest] = [
         .fetch,
@@ -981,6 +993,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability,
+            RemoteProtocol.automationTriggersCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
