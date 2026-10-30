@@ -251,6 +251,13 @@ merges into one Home.
 - **Not built yet:** a mission's stuck lane as a Needs you row (a folded-map glyph in
   `lanternText`, the mission's name, "orders is stuck after 3 tries" in `lanternText`), opening the
   mission.
+- **Automation runs** (the user's request, no board; head in `textSecondary` with the number of groups), above
+  Recents while a triggered automation has run threads: one card with a row per automation (`SHAutomationGroupRow`,
+  the Mac's Spaces-mode group: chevron, bolt, "pr-loop", "paused", a `running` or `attention` dot, the unread count
+  in `running` else the run count; 44pt target), closed until tapped; open, its runs follow as Recents rows, indented
+  under the bolt, each opening its thread and clearing its unread dot. A run waiting on you stays in Needs you (the
+  group only rolls it up); a pinned run stays in Pinned. Groups open on this device only (`FleetSidebarState`).
+  Fixture: `home-run-groups`.
 - **Recents** (head in `textSecondary`): 52pt thread rows, newest first: the state dot (`running`
   while working, the hollow ring while idle), the title, and a mono line: a working thread's verb
   and its ticking elapsed time ("Running python · 21s", "Editing Fleet.swift", "Thinking";

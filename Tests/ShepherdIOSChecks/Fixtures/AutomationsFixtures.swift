@@ -91,12 +91,12 @@ enum AutomationsFixtureData {
     /// Home's fleet with two triggered automations on build-01: pr-loop (GitHub, paused at its
     /// daily limit with two events waiting, one run going, one unread with its PR, one that
     /// didn't start) and a weekday schedule that hasn't run yet.
-    static func triggeredFleet() -> [FixtureHostData] {
-        let now = Date().timeIntervalSince1970
-        let origin = { (id: String, summary: String) in
-            AutomationOrigin(automationID: prLoop, eventID: id, trigger: summary, triggerURL: "https://github.com/acme/checkout-svc/issues/12")
-        }
-        let loopRuns = [
+    /// build-01's zone: its schedules read in New York time wherever the device is.
+    static let hostZone = "America/New_York"
+
+    /// pr-loop's runs: one that didn't start, one unread with its PR, one going.
+    static func loopRuns(now: Double) -> [AutomationRun] {
+        [
             AutomationRun(id: UUID(uuidString: "E0000000-0000-4000-8000-000000000001")!, startedAt: now - 9_000, endedAt: now - 8_990,
                           result: .failed, trigger: "#7 Retry webhooks on 502 · issue labeled shepherd",
                           triggerURL: "https://github.com/acme/checkout-svc/issues/7", unread: false,
@@ -109,7 +109,11 @@ enum AutomationsFixtureData {
                           agentID: loopRun, trigger: "#12 Fix login crash · issue labeled shepherd",
                           triggerURL: "https://github.com/acme/checkout-svc/issues/12"),
         ]
-        let pending = [
+    }
+
+    /// Two events waiting for a free slot.
+    static func loopPending(now: Double) -> [AutomationEvent] {
+        [
             AutomationEvent(id: "acme/checkout-svc#14:issueLabeled:1", kind: .issueLabeled, repo: "acme/checkout-svc", number: 14,
                             title: "Coupon field accepts expired codes", url: "https://github.com/acme/checkout-svc/issues/14",
                             detail: "shepherd", occurredAt: now - 1_500),
@@ -117,11 +121,27 @@ enum AutomationsFixtureData {
                             title: "Apple Pay sheet shows the wrong merchant name on iPad", url: "https://github.com/acme/checkout-svc/issues/15",
                             detail: "shepherd", occurredAt: now - 600),
         ]
-        let loopStatus = AutomationTriggerStatus(state: .paused, reason: "It started 20 runs today, its daily limit.", pending: pending,
-                                                 lastCheckedAt: now - 90, runsToday: 20)
-        var next = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date().addingTimeInterval(86_400)) ?? Date()
-        while Calendar.current.isDateInWeekend(next) { next = next.addingTimeInterval(86_400) }
-        let standupStatus = AutomationTriggerStatus(state: .active, nextRunAt: next.timeIntervalSince1970)
+    }
+
+    /// The standup's next weekday 09:00 in the host's zone.
+    static func standupNext() -> Double {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: hostZone)!
+        // By calendar days, so a daylight-saving change keeps it at 09:00.
+        var day = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        while calendar.isDateInWeekend(day) { day = calendar.date(byAdding: .day, value: 1, to: day) ?? day }
+        return (calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day) ?? day).timeIntervalSince1970
+    }
+
+    static func triggeredFleet() -> [FixtureHostData] {
+        let now = Date().timeIntervalSince1970
+        let origin = { (id: String, summary: String) in
+            AutomationOrigin(automationID: prLoop, eventID: id, trigger: summary, triggerURL: "https://github.com/acme/checkout-svc/issues/12")
+        }
+        let loopRuns = loopRuns(now: now)
+        let loopStatus = AutomationTriggerStatus(state: .paused, reason: "It started 20 runs today, its daily limit.", pending: loopPending(now: now),
+                                                 lastCheckedAt: now - 90, runsToday: 20, timeZone: hostZone)
+        let standupStatus = AutomationTriggerStatus(state: .active, nextRunAt: standupNext(), timeZone: hostZone)
         return fleet().map { host in
             var host = host
             guard host.id == FixtureData.buildBox else { return host }

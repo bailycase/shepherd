@@ -131,6 +131,8 @@ struct AutomationTriggerPresentationTests {
         automation.serviceTier = .fast
         let settings = AutomationSettings(of: automation)
         #expect(AutomationTriggerForm(settings).settings == settings)
+        automation.serviceTier = nil
+        #expect(AutomationTriggerForm(AutomationSettings(of: automation)).settings.serviceTier == "", "unset is the default speed")
     }
 
     @Test func theFormChecksWhatTheHostWouldRefuse() {

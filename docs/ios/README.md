@@ -327,10 +327,12 @@ keep the version for real breaks.
   run), Stop (confirmed, while a run is live), Edit and Delete act on the host. `+` saves a new
   one: a name, a prompt, and one of the host's spaces. On a host with `automationTriggers.v1` the
   form also sets the trigger (Manual, Schedule with presets or a custom RRULE and its next run,
-  or up to five GitHub triggers), where runs go, who can trigger, the limits and model pins; a
+  or up to five GitHub triggers), where runs go, who can trigger, the limits and model, thinking and
+  speed pins, its times in the host's time zone; a
   triggered automation's detail is its inbox (state with reason, Pause or Resume, waiting events
   with Run now and Dismiss, runs with what fired them, their PR, an unread dot and why one didn't
-  start), and the list has Pause all triggers. An older host keeps the old form. On iPad the list sits beside
+  start), and the list has Pause all triggers. A triggered automation's run threads fold under one
+  row per automation in the iPad sidebar and on iPhone Home. An older host keeps the old form. On iPad the list sits beside
   the chosen automation. A host without `automations.v1` shows its automations read-only and
   says so.
 - **Windows (`Windows/`, iPad):** several Shepherd windows side by side in Split View or Stage

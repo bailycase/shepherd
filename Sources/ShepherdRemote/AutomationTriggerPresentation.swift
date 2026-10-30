@@ -160,9 +160,10 @@ public enum AutomationTriggerText {
         }
     }
 
-    /// "Default", "claude-sonnet-4 · high".
+    /// "Default", "claude-sonnet-4 · high", "claude-sonnet-4 · high · Fast".
     public static func model(_ settings: AutomationSettings) -> String {
-        let parts = [settings.model, settings.thinking].compactMap { $0 }.filter { !$0.isEmpty }
+        let speed = settings.serviceTier.flatMap(ServiceTier.init(rawValue:))?.title
+        let parts = [settings.model, settings.thinking, speed].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? "Default" : parts.joined(separator: " · ")
     }
 }
