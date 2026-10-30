@@ -213,14 +213,11 @@ struct ThreadBlankScreenTests {
     // MARK: Sequences
 
     /// A thread of a long history in a window of `size`, open and drawing its tail, for `body`.
-    /// Short windows still open blank where the thread anchors natively (macOS 26).
     static func withRig(size: CGSize, _ body: (Rig) async throws -> Void) async throws {
         let rig = Rig(turns: 40, size: size)
         defer { rig.close() }
-        try await withKnownIssue("macOS 26 anchors the thread natively, and a short window still draws it blank there", isIntermittent: true) {
-            try await rig.open()
-            try await body(rig)
-        } when: { ThreadTailAnchor.isNative && size.height < 900 }
+        try await rig.open()
+        try await body(rig)
     }
 
     /// Sending into a long thread: the echo and "Thinking…" arrive with pi running (two rows
