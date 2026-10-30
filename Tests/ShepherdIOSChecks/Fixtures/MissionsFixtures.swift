@@ -49,13 +49,15 @@ struct FixtureMissions: Sendable {
     var reviews: [MissionID: [RemoteMissionReview]] = [:]
     var files: [String: DiffFile] = [:]
     var specKit: [MissionID: RemoteMissionSpecKit] = [:]
+    /// What running missions' agents say now, read with the record.
+    var live: [MissionID: RemoteMissionLive] = [:]
 
     func answer(_ request: RemoteMissionRequest) -> Result<RemoteMissionResult, MissionError> {
         switch request {
         case .list: return .success(.list(records.map(RemoteMissionSummary.init)))
         case .get(let id):
             guard let mission = records.first(where: { $0.id == id }) else { return .failure(MissionError("mission_missing", "Mission no longer exists.")) }
-            return .success(.mission(mission))
+            return .success(.mission(mission, live: live[id]))
         case .startOptions: return .success(.startOptions(options))
         case .review(let id): return .success(.review(reviews[id] ?? []))
         case .reviewFile(_, _, let path):
@@ -149,7 +151,9 @@ enum MissionsFixtureData {
                                                                                           horizon.id: ["refs/heads/main"]],
                                                                           defaultBranches: [shepherd.id: "refs/heads/main", horizon.id: "refs/heads/main"]),
                                        reviews: [review: reviews], files: [events.displayPath: events, join.displayPath: join],
-                                       specKit: [consent: RemoteMissionSpecKit(reports: [shepherd.id: ready])])
+                                       specKit: [consent: RemoteMissionSpecKit(reports: [shepherd.id: ready])],
+                                       live: [running: RemoteMissionLive(output: "Joining checkout_events to orders on order_id; 2 of 3 partitions backfilled.",
+                                                                         attempts: [working.run!.attempts.last!.id: "Joining checkout_events to orders on order_id; 2 of 3 partitions backfilled."])])
         var hosts = FixtureData.hosts()
         hosts[0].missions = missions
         return hosts

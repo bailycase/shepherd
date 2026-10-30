@@ -428,6 +428,10 @@ final class RemoteHostStore {
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.missions.changed(mission, revision: revision)
         }
+        client.onMissionLive = { [weak connection] mission, live in
+            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            connection.missions.liveChanged(mission, live)
+        }
         client.onBrowserDrive = { [weak self, weak connection, weak client] push in
             guard let self, let connection, let client, connection.client === client else { return }
             self.onBrowserDrive?(connection.id, client, push)

@@ -93,8 +93,8 @@ final class RemoteMissionDriver: MissionDriving {
 
     private var connection: RemoteHostStore.Connection? { vm?.remoteHosts.connections.first { $0.id == hostID } }
     var records: [Mission] { missions.records }
-    var liveOutput: [MissionID: String] { [:] }
-    var attemptOutput: [UUID: String] { [:] }
+    var liveOutput: [MissionID: String] { missions.live.mapValues(\.output) }
+    var attemptOutput: [UUID: String] { missions.live.values.reduce(into: [:]) { $0.merge($1.attempts) { first, _ in first } } }
     var availableModels: [String] { missions.startOptions?.models ?? [] }
     var defaultModel: String? { missions.startOptions?.defaultModel }
     var availableSpaces: [Space] { missions.startOptions?.spaces ?? [] }
@@ -132,7 +132,7 @@ final class RemoteMissionDriver: MissionDriving {
                 let run = missions.record(missionID)?.run
                 guard case .snapshot(var snapshot) = result, run?.phase.active == true,
                       run?.attempts.first(where: { $0.id == attemptID })?.status == .running else { return result }
-                snapshot.supportedActions.append("send")
+                if !snapshot.supportedActions.contains("send") { snapshot.supportedActions.append("send") }
                 return .snapshot(value: snapshot)
             default: throw MissionError("mission_thread", "Mission threads take messages through the mission.")
             }
@@ -170,16 +170,32 @@ final class RemoteMissionDriver: MissionDriving {
         if missions.record(id)?.run?.specKit != nil { try? await missions.loadSpecKit(id) }
     }
 
-    /// The review as the page draws it: every repository's files, each read with its hunks.
+    /// How many review files are read from the host at once.
+    static let reviewReadsAtOnce = 4
+
+    /// The review as the page draws it: every repository's files, each read with its hunks, a few at a time.
     private func refreshReview(_ id: MissionID) async throws {
         try await missions.loadReview(id)
-        var built: [MissionRepositoryReview] = []
-        for repository in missions.reviews[id] ?? [] {
-            var files: [DiffFile] = []
-            // ponytail: one file at a time; a review of hundreds of files waits for each read.
-            for file in repository.files { files.append(try await missions.file(id, space: repository.spaceID, path: file.path)) }
-            built.append(MissionRepositoryReview(spaceID: repository.spaceID, name: repository.name, path: repository.path,
-                                                 branch: repository.branch, head: repository.head, fingerprint: repository.fingerprint, files: files))
+        let repositories = missions.reviews[id] ?? [], missions = missions
+        let wanted = repositories.enumerated().flatMap { repo in repo.element.files.indices.map { (repo.offset, $0) } }
+        var read: [Int: [Int: DiffFile]] = [:]
+        try await withThrowingTaskGroup(of: (Int, Int, DiffFile).self) { group in
+            var next = wanted.makeIterator()
+            func add() {
+                guard let (repo, file) = next.next() else { return }
+                let space = repositories[repo].spaceID, path = repositories[repo].files[file].path
+                group.addTask { @MainActor in (repo, file, try await missions.file(id, space: space, path: path)) }
+            }
+            for _ in 0..<Self.reviewReadsAtOnce { add() }
+            while let (repo, file, diff) = try await group.next() {
+                read[repo, default: [:]][file] = diff
+                add()
+            }
+        }
+        let built = repositories.enumerated().map { index, repository in
+            MissionRepositoryReview(spaceID: repository.spaceID, name: repository.name, path: repository.path, branch: repository.branch,
+                                    head: repository.head, fingerprint: repository.fingerprint,
+                                    files: repository.files.indices.compactMap { read[index]?[$0] })
         }
         if reviews[id] != built { reviews[id] = built }
     }

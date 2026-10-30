@@ -444,6 +444,11 @@ public final class SessionServer: @unchecked Sendable {
     /// reads the server answers itself (`list`, `get`), on the main actor, with the same methods and
     /// guards as the host's own page. Nil on a headless host, which offers no missions.
     public var onRemoteMission: ((RemoteMissionRequest, @escaping (Result<RemoteMissionResult, MissionError>) -> Void) -> Void)?
+    /// The GUI's mission owner takes words typed in a mission's own thread (on this Mac or a
+    /// client): a steer while its turn works, the planner's answer path while the mission waits,
+    /// else a refusal saying why. Answered `accepted` with the send's operation or a failure; the
+    /// owner applies every check its own controls do. Nil: such a send is `mission_control`.
+    public var onMissionThreadSend: ((AgentID, String, UUID, @escaping (NativeThreadResult) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -824,6 +829,8 @@ public final class SessionServer: @unchecked Sendable {
     private var designsServed = false
     /// Missions are served to remote clients (`missions.v1`): the host's experiment is on. Server queue.
     private var missionsServed = false
+    /// What each running mission's agents say now, as the owner last published it (`setMissionLive`). Server queue.
+    private var missionLive: [MissionID: RemoteMissionLive] = [:]
     /// Browser tunnels (docs/browser.md › Remote): the limits and the count across every client.
     private let tunnelHost = BrowserTunnelHost()
     /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
@@ -1661,6 +1668,16 @@ public final class SessionServer: @unchecked Sendable {
         if store.state.isMissionAgent(agentID) {
             switch request {
             case .snapshot, .image, .subagentTranscript: break
+            case .send(_, _, let operationID, let text, _, let images, _, let references, let elements) where onMissionThreadSend != nil:
+                guard (images ?? []).isEmpty, (references ?? []).isEmpty, (elements ?? []).isEmpty else {
+                    completion(.result(.failure(code: "mission_words_only", message: "A mission's thread takes words only. Remove the images or attachments and send again.")))
+                    return
+                }
+                let handler = onMissionThreadSend!
+                hopToMain { [weak self] in
+                    handler(agentID, text, operationID) { result in self?.queue.async { completion(.result(result)) } }
+                }
+                return
             default:
                 completion(.failure(code: "mission_control", message: "This thread belongs to a Mission. Use its Pause, Stop or Request changes controls."))
                 return
@@ -1803,7 +1820,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             if case .snapshot(var snapshot) = result, self?.store.state.isMissionAgent(agentID) == true {
-                snapshot.supportedActions = ["images"]
+                // Words go through the mission's owner, only while it can take them (`onMissionThreadSend`).
+                snapshot.supportedActions = self?.missionThreadTakesWords(agentID) == true ? ["images", "send"] : ["images"]
                 completion(.result(.snapshot(value: snapshot)))
             } else { completion(.result(result)) }
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
@@ -3042,9 +3060,23 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .list: reply(.success(.list(store.state.missions.map(RemoteMissionSummary.init))))
         case .get(let missionID):
-            if let mission = store.state.missions.first(where: { $0.id == missionID }) { reply(.success(.mission(mission))) }
+            if let mission = store.state.missions.first(where: { $0.id == missionID }) { reply(.success(.mission(mission, live: missionLive[missionID]))) }
             else { reply(.failure(MissionError("mission_missing", "Mission no longer exists."))) }
         default: hopToMain { handler(request, reply) }
+        }
+    }
+
+    /// What running missions' agents say now, from the owner (throttled there): kept for `get`, and pushed to
+    /// each client that reads missions. An empty value clears it.
+    public func setMissionLive(_ updates: [MissionID: RemoteMissionLive]) {
+        queue.async {
+            for (id, live) in updates { self.missionLive[id] = live.isEmpty ? nil : live }
+            self.missionLive = self.missionLive.filter { id, _ in self.store.state.missions.contains { $0.id == id } }
+            guard self.offeredCapabilities.contains(RemoteProtocol.missionsCapability) else { return }
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.missionsCapability) {
+                for (id, live) in updates { self.send(.missionLive(missionID: id, live: live), to: client) }
+            }
         }
     }
 

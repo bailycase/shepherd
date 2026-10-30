@@ -21,7 +21,85 @@ extension MissionController {
                 }
             }
         }
+        server.onMissionThreadSend = { [weak self] agent, text, operation, reply in
+            MainActor.assumeIsolated {
+                guard let self else { reply(.failure(code: "mission_unavailable", message: "Host is shutting down.")); return }
+                Task { @MainActor in
+                    do {
+                        try await self.threadMessage(agent: agent, text: text, operation: operation)
+                        reply(.accepted(operationID: operation))
+                    } catch let error as MissionError { reply(.failure(code: error.code, message: error.description)) }
+                    catch { reply(.failure(code: "mission_failed", message: Self.safeText(String(describing: error)))) }
+                }
+            }
+        }
         serveRemoteWhileEnabled()
+        publishLiveOutput()
+    }
+
+    /// Words typed in a mission's own thread, on this Mac or a client: a steer while its turn works (answered once
+    /// pi queued it; whether it was read is recorded on the attempt), the planner's answer while the mission waits
+    /// on you, else a refusal that says what to do instead. The same checks as the Missions page's controls.
+    func threadMessage(agent: AgentID, text: String, operation: UUID) async throws {
+        guard vm?.settings.missionsEnabled == true else { throw MissionError("missions_off", RemoteMissionRefusal.off) }
+        guard let mission = records.first(where: { $0.run.map { MissionRun.owns($0, agent: agent) } == true }), let run = mission.run else {
+            throw MissionError("mission_missing", "This thread's mission no longer exists.")
+        }
+        guard run.publicationApproval == nil else {
+            throw MissionError("mission_published", "This mission's publication is authorized, so its threads take no more messages.")
+        }
+        if run.phase.active {
+            guard let attempt = run.attempts.last(where: { $0.agentID == agent && $0.status == .running }) else {
+                throw MissionError("mission_step_idle", "This step isn't working right now (the mission is \(run.phase.rawValue)). Steer a working step, or pause the mission and message the planner.")
+            }
+            let sent = try await sendSteer(id: mission.id, revision: mission.revision, attemptID: attempt.id, text: text, operation: operation)
+            Task { try? await self.awaitSteer(id: mission.id, runID: sent.runID, attemptID: attempt.id, agent: sent.agent, operation: operation) }
+            return
+        }
+        guard run.isPlanner(agent) else {
+            throw MissionError("mission_step_finished", "This step has finished; its thread is a record. Message the planner from the mission, or request changes in its review.")
+        }
+        // A Spec Kit planning thread speaks for its own repository; the map runner's planner for the whole mission.
+        let lane = run.specKit?.lanes.first { $0.plannerAgentID == agent }?.spaceID
+        if run.pendingQuestion != nil, let asked = run.messages.last(where: { $0.role == .assistant && $0.question != nil }) {
+            guard lane == nil || asked.spaceID == lane else {
+                let name = mission.lane(asked.spaceID)?.name ?? "another repository"
+                throw MissionError("mission_question_elsewhere", "The planner is waiting on your answer about \(name). Answer that first, in the mission or in \(name)'s planning thread.")
+            }
+            return try await answer(id: mission.id, revision: mission.revision, text: text, replyTo: asked.id)
+        }
+        let latest = run.messages.last { $0.role == .assistant && (lane == nil || $0.spaceID == lane) }
+        try await answer(id: mission.id, revision: mission.revision, text: text, replyTo: latest?.id)
+    }
+
+    /// How often paired devices hear what running missions' agents say, at most.
+    static let livePublishInterval: Duration = .milliseconds(500)
+
+    /// Publishes `liveOutput` and `attemptOutput` to the server for paired devices: on change, at most every
+    /// `livePublishInterval`, only the missions whose words changed (an empty value once a job ends).
+    func publishLiveOutput() {
+        withObservationTracking { _ = liveOutput; _ = attemptOutput } onChange: {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.livePublishInterval)
+                guard let self else { return }
+                let changes = self.liveChanges()
+                if !changes.isEmpty { self.server.setMissionLive(changes) }
+                self.publishLiveOutput()
+            }
+        }
+    }
+
+    /// Each mission's words now, against what was last published.
+    func liveChanges() -> [MissionID: RemoteMissionLive] {
+        var changes: [MissionID: RemoteMissionLive] = [:]
+        for mission in records {
+            let attempts = Set(mission.run?.attempts.map(\.id) ?? [])
+            let now = RemoteMissionLive(output: liveOutput[mission.id] ?? "", attempts: attemptOutput.filter { attempts.contains($0.key) })
+            if now != (publishedLive[mission.id] ?? RemoteMissionLive()) { changes[mission.id] = now }
+        }
+        for (id, live) in changes { publishedLive[id] = live.isEmpty ? nil : live }
+        publishedLive = publishedLive.filter { id, _ in records.contains { $0.id == id } }
+        return changes
     }
 
     private func serveRemoteWhileEnabled() {

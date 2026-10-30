@@ -38,7 +38,8 @@ struct MissionScreen: View {
             try? await mobileHost.missions.loadSpecKit(id)
         }
         .sheet(item: $station) { row in
-            MissionStationSheet(row: row, host: host, mission: id, perform: perform)
+            MissionStationSheet(row: row, host: host, mission: id, live: row.attempt.flatMap { mobileHost?.missions.live[id]?.attempts[$0] } ?? "",
+                                perform: perform)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -75,6 +76,7 @@ struct MissionScreen: View {
                             .buttonStyle(.sh(.raised, tint: Color.sh.lanternText)).disabled(busy)
                     }
                 }
+                if let output = mobileHost.missions.live[id]?.output, !output.isEmpty, phase.active { liveCard(output) }
                 map(mission)
                 conversation(mission)
                 if controls.message && controls.question == nil { composer(mission, placeholder: "Message the planner") }
@@ -135,6 +137,23 @@ struct MissionScreen: View {
     }
 
     // MARK: Map and conversation
+
+    /// What the planner or the working station is saying now, as the host's page shows it.
+    private func liveCard(_ output: String) -> some View {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.s) {
+                SHStatusDot(.running, size: MobileLayout.statusDot)
+                Text("Working now").shText(.micro).foregroundStyle(Color.sh.textTertiary)
+            }
+            Text(output).shText(.body).foregroundStyle(Color.sh.textSecondary)
+                .lineLimit(MobileLayout.missionLiveLines, reservesSpace: false)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(SH.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
+        .accessibilityElement(children: .combine)
+    }
 
     @ViewBuilder private func map(_ mission: Mission) -> some View {
         let rows = MissionStationRow.rows(mission)
@@ -289,6 +308,8 @@ private struct MissionStationSheet: View {
     let row: MissionStationRow
     let host: UUID
     let mission: MissionID
+    /// What its working turn is saying now.
+    let live: String
     let perform: (RemoteMissionAction, UInt64) -> Task<Bool, Never>
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -301,6 +322,10 @@ private struct MissionStationSheet: View {
                 SHFactRow("Kind", value: row.kind)
                 if let lane = row.lane { SHFactRow("Repository", value: lane, mono: true) }
                 SHFactRow("Latest", value: row.status)
+                if !live.isEmpty {
+                    Text(live).shText(.body).foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(MobileLayout.missionLiveLines, reservesSpace: false)
+                }
                 if let agent = row.agent {
                     Button("Open its thread", systemImage: "text.bubble") {
                         dismiss()

@@ -326,6 +326,16 @@ extension SessionServer {
         do { try storeMission(mission) } catch { ShepherdLog.warning("Mission steer receipt not saved: \(error)") }
     }
 
+    /// Server queue: whether a mission's thread offers its composer: its turn works in an active run (a steer),
+    /// or it is a planner's thread while the mission waits on you and nothing is published (an answer).
+    /// The owner checks again when the words arrive (`onMissionThreadSend`).
+    func missionThreadTakesWords(_ agent: AgentID) -> Bool {
+        guard onMissionThreadSend != nil,
+              let run = store.state.missions.first(where: { $0.run.map { MissionRun.owns($0, agent: agent) } == true })?.run else { return false }
+        if run.phase.active { return run.attempts.contains { $0.agentID == agent && $0.status == .running } }
+        return run.publicationApproval == nil && [.map, .paused, .stopped].contains(run.phase) && run.isPlanner(agent)
+    }
+
     /// Whether a mission's earlier planning thread is still a live, servable session it could continue.
     public func missionAgentIsLive(id: MissionID, agentID: AgentID) async -> Bool {
         (try? await enqueue {

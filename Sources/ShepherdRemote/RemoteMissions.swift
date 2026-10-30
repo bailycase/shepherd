@@ -25,6 +25,8 @@ public final class RemoteMissions {
     public private(set) var startOptions: RemoteMissionStartOptions?
     public private(set) var reviews: [MissionID: [RemoteMissionReview]] = [:]
     public private(set) var specKit: [MissionID: RemoteMissionSpecKit] = [:]
+    /// What each running mission's agents say now, as the host last pushed it.
+    public private(set) var live: [MissionID: RemoteMissionLive] = [:]
 
     @ObservationIgnored private var transport: Transport?
     @ObservationIgnored private var generation = UUID()
@@ -48,6 +50,7 @@ public final class RemoteMissions {
             summaries = []
             reviews = [:]; specKit = [:]; files = [:]; startOptions = nil
         }
+        if !now, !live.isEmpty { live = [:] }
     }
 
     /// Lists the host's missions again and reads each one whose revision moved.
@@ -75,7 +78,7 @@ public final class RemoteMissions {
         guard let revision else {
             records.removeAll { $0.id == id }
             summaries.removeAll { $0.id == id }
-            reviews[id] = nil; specKit[id] = nil
+            reviews[id] = nil; specKit[id] = nil; live[id] = nil
             updateAgents()
             return
         }
@@ -86,6 +89,12 @@ public final class RemoteMissions {
 
     public func record(_ id: MissionID) -> Mission? { records.first { $0.id == id } }
 
+    /// The host's push: what a mission's agents say now (empty once nothing runs).
+    public func liveChanged(_ id: MissionID, _ value: RemoteMissionLive) {
+        guard records.contains(where: { $0.id == id }) || fetching.contains(id) else { return }
+        if value.isEmpty { if live[id] != nil { live[id] = nil } } else if live[id] != value { live[id] = value }
+    }
+
     /// Reads one mission, then again while a newer revision was hinted during the read.
     private func fetch(_ id: MissionID) async {
         guard let transport, fetching.insert(id).inserted else { return }
@@ -94,8 +103,9 @@ public final class RemoteMissions {
         while true {
             hinted[id] = nil
             do {
-                guard case .mission(let mission) = try await transport(.get(missionID: id)), generation == self.generation else { return }
+                guard case .mission(let mission, let current) = try await transport(.get(missionID: id)), generation == self.generation else { return }
                 adopt(mission)
+                liveChanged(id, current ?? RemoteMissionLive())
             } catch {
                 guard generation == self.generation else { return }
                 if case RemoteHostClientError.rejected("mission_missing", _) = error { changed(id, revision: nil) }

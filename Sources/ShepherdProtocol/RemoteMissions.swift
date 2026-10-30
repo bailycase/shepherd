@@ -145,9 +145,33 @@ public struct RemoteMissionSpecKit: Codable, Hashable, Sendable {
     }
 }
 
+/// What a running mission's agents are saying now, as the host's Missions page shows it: the planner's (or
+/// the one working station's) latest words, and each working attempt's. Bounded: 4 KiB a text, 16 attempts.
+public struct RemoteMissionLive: Codable, Hashable, Sendable {
+    public static let textBytes = 4_096, maximumAttempts = 16
+    public var output: String
+    public var attempts: [UUID: String]
+    public var isEmpty: Bool { output.isEmpty && attempts.isEmpty }
+
+    public init(output: String = "", attempts: [UUID: String] = [:]) {
+        self.output = Self.clip(output)
+        self.attempts = Dictionary(uniqueKeysWithValues: attempts.filter { !$0.value.isEmpty }
+            .sorted { $0.key.uuidString < $1.key.uuidString }.prefix(Self.maximumAttempts).map { ($0.key, Self.clip($0.value)) })
+    }
+
+    /// At most `textBytes` of UTF-8, cut at a character.
+    static func clip(_ text: String) -> String {
+        guard text.utf8.count > textBytes else { return text }
+        var data = Data(text.utf8.prefix(textBytes))
+        while !data.isEmpty && String(data: data, encoding: .utf8) == nil { data.removeLast() }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
 public enum RemoteMissionResult: Codable, Hashable, Sendable {
     case list([RemoteMissionSummary])
-    case mission(Mission)
+    /// The record, and what its agents are saying now (nil: nothing runs).
+    case mission(Mission, live: RemoteMissionLive? = nil)
     case startOptions(RemoteMissionStartOptions)
     /// A mission `create` or `runAgain` made.
     case created(missionID: MissionID)

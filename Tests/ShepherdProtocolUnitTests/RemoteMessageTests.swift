@@ -532,12 +532,12 @@ struct RemoteReplyTests {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
-             .mission, .missionChanged,
+             .mission, .missionChanged, .missionLive,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 37
+    static let caseCount = 38
 
     static let samples: [RemoteReply] = [
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
@@ -579,6 +579,7 @@ struct RemoteReplyTests {
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
         .mission(id: 35, result: .mission(RemoteMissionSamples.mission)),
         .missionChanged(missionID: RemoteMissionSamples.mission.id, revision: 5),
+        .missionLive(missionID: RemoteMissionSamples.mission.id, live: RemoteMissionLive(output: "Reading orders-svc", attempts: [RemoteMissionSamples.attempt: "Editing"])),
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
         .tunnel(.data(tunnel: 7, bytes: Data("HTTP/1.1 200 OK\r\n\r\n".utf8))),
         .browserClaimed(id: 33, url: "http://localhost:5173/checkout"),

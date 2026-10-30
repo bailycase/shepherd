@@ -1045,6 +1045,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// Pushed to a client that lists `missionsCapability` while the host offers it, after a mission
     /// is made or changes (`revision`) or goes (nil). A hint to pull; it carries no record.
     case missionChanged(missionID: MissionID, revision: UInt64?)
+    /// Pushed like `missionChanged`, at most every half second while a mission's agents talk: what they say
+    /// now (`RemoteMissionLive`, bounded); empty once nothing runs.
+    case missionLive(missionID: MissionID, live: RemoteMissionLive)
     /// Pushed to a client that lists `designsCapability` when what the host offers changes (its
     /// Design tool experiment turned on or off): the whole list, as `helloOk` gave it.
     case capabilitiesChanged(capabilities: [String])
@@ -1065,7 +1068,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, attachment, options
         case snapshot, settings, status
         case designID, revision, commentsRevision
-        case url, push, missionID
+        case url, push, missionID, live
     }
 
     private enum Kind: String, Codable {
@@ -1075,7 +1078,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case automationResult
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case design, designChanged, capabilitiesChanged
-        case mission, missionChanged
+        case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
     }
@@ -1104,6 +1107,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .missionChanged:
             self = .missionChanged(missionID: try c.decode(MissionID.self, forKey: .missionID),
                                    revision: try c.decodeIfPresent(UInt64.self, forKey: .revision))
+        case .missionLive:
+            self = .missionLive(missionID: try c.decode(MissionID.self, forKey: .missionID), live: try c.decode(RemoteMissionLive.self, forKey: .live))
         case .helloOk:
             self = .helloOk(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1312,6 +1317,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.missionChanged, forKey: .type)
             try c.encode(missionID, forKey: .missionID)
             try c.encodeIfPresent(revision, forKey: .revision)
+        case .missionLive(let missionID, let live):
+            try c.encode(Kind.missionLive, forKey: .type)
+            try c.encode(missionID, forKey: .missionID)
+            try c.encode(live, forKey: .live)
         case .tunnel(let frame):
             try c.encode(Kind.tunnel, forKey: .type)
             try c.encode(frame, forKey: .frame)

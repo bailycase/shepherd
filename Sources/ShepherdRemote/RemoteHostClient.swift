@@ -57,6 +57,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
     /// A mission on the host was made or changed (its new revision) or went (nil). A hint to pull. Main queue.
     public var onMissionChanged: ((MissionID, UInt64?) -> Void)?
+    /// What a host mission's agents say now (`RemoteReply.missionLive`). Main queue.
+    public var onMissionLive: ((MissionID, RemoteMissionLive) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
@@ -112,6 +114,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case designChanged(DesignID, UInt64?, UInt64?)
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
         case missionChanged(MissionID, UInt64?)
+        case missionLive(MissionID, RemoteMissionLive)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
     }
@@ -1289,6 +1292,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.designChanged(designID, revision, commentsRevision))
         case .missionChanged(let missionID, let revision):
             push(.missionChanged(missionID, revision))
+        case .missionLive(let missionID, let live):
+            push(.missionLive(missionID, live))
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
@@ -1351,6 +1356,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
                 case .missionChanged(let missionID, let revision): self.onMissionChanged?(missionID, revision)
+                case .missionLive(let missionID, let live): self.onMissionLive?(missionID, live)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 }

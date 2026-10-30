@@ -324,6 +324,12 @@ final class MobileHosts {
                 host.missions.changed(mission, revision: revision)
             }
         }
+        client.onMissionLive = { [weak host] mission, live in
+            MainActor.assumeIsolated {
+                guard let host, host.attempt == attempt else { return }
+                host.missions.liveChanged(mission, live)
+            }
+        }
         client.onDisconnected = { [weak self, weak host] reason in
             MainActor.assumeIsolated {
                 guard let self, let host, host.attempt == attempt else { return }

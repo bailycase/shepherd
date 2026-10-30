@@ -111,7 +111,13 @@ extension PreviewTests {
         connection.missions.connect({ request in
             switch request {
             case .list: return .list(records.map(RemoteMissionSummary.init))
-            case .get(let id): return .mission(records.first { $0.id == id }!)
+            case .get(let id):
+                // What the host's working turns say now, as its own Run page shows it.
+                let record = records.first { $0.id == id }!
+                let working = record.run?.attempts.filter { $0.status == .running }.map(\.id) ?? []
+                let words = "Partitioning analytics.checkout_funnel by month; replaying the topic twice shows no double counts."
+                return .mission(record, live: RemoteMissionLive(output: working.isEmpty ? "" : words,
+                                                                attempts: Dictionary(uniqueKeysWithValues: working.map { ($0, words) })))
             case .startOptions: return .startOptions(options)
             default: throw MissionError("preview", "Previews change nothing.")
             }

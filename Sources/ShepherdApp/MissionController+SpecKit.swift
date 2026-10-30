@@ -134,6 +134,13 @@ extension MissionController {
 
     /// Steers a working mission turn in its own session. The server owns the session identity and limits.
     func steer(id: MissionID, revision: UInt64, attemptID: UUID, text: String) async throws {
+        let sent = try await sendSteer(id: id, revision: revision, attemptID: attemptID, text: text)
+        try await awaitSteer(id: id, runID: sent.runID, attemptID: attemptID, agent: sent.agent, operation: sent.operation)
+    }
+
+    /// The steer's checks and its send to pi, as `operation`; returns once pi queued it.
+    func sendSteer(id: MissionID, revision: UInt64, attemptID: UUID, text: String,
+                   operation: UUID = UUID()) async throws -> (agent: AgentID, operation: UUID, runID: UUID) {
         let mission = try record(id)
         let text = Self.safeText(text.trimmingCharacters(in: .whitespacesAndNewlines), bytes: 16_000)
         guard mission.revision == revision || mission.run?.phase.active == true, let run = mission.run, run.phase.active,
@@ -141,8 +148,12 @@ extension MissionController {
               let agent = attempt.agentID, !text.isEmpty else {
             throw MissionError("mission_steer", "Only a working mission turn can be steered.")
         }
-        let operation = UUID()
         try await server.sendMissionSteer(id: id, runID: run.id, agentID: agent, operationID: operation, text: text)
+        return (agent, operation, run.id)
+    }
+
+    /// Waits (bounded) for pi to read a queued steer, or for the run to end without it.
+    func awaitSteer(id: MissionID, runID: UUID, attemptID: UUID, agent: AgentID, operation: UUID) async throws {
         // pi's acknowledgement only means queued. Wait (bounded) for it to be read, or for the run to end without it.
         let undelivered = MissionError("mission_steer_undelivered", "The turn ended before the agent read your message, so it was not delivered. Your words were kept.")
         let deadline = Self.now + Self.steerOutcomeSeconds
@@ -150,7 +161,7 @@ extension MissionController {
             switch await server.missionSteerOutcome(agentID: agent, operationID: operation) {
             case .consumed: return
             case .undelivered:
-                try? await recordUndelivered(id, runID: run.id, attemptID: attemptID, operations: [operation])
+                try? await recordUndelivered(id, runID: runID, attemptID: attemptID, operations: [operation])
                 throw undelivered
             case .queued: try await Task.sleep(for: .milliseconds(250))
             case .threadClosed:
@@ -205,7 +216,7 @@ extension MissionController {
                 let run = server.state.missions.first { $0.id == missionID }?.run
                 guard case .snapshot(var snapshot) = result, run?.phase.active == true,
                       run?.attempts.first(where: { $0.id == attemptID })?.status == .running else { return result }
-                snapshot.supportedActions.append("send")
+                if !snapshot.supportedActions.contains("send") { snapshot.supportedActions.append("send") }
                 return .snapshot(value: snapshot)
             default: throw MissionError("mission_thread", "Mission threads take messages through the mission.")
             }

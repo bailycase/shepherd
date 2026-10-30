@@ -106,4 +106,8 @@ struct MissionStationRow: Identifiable, Equatable {
 extension MobileHost {
     /// The host offers missions now (`missions.v1`, its experiment on).
     var servesMissions: Bool { missions.available }
+
+    /// The host's state as thread lists read it: without the agents its missions own (their threads
+    /// are the mission's). Home, the sidebar, Search, New thread and the widgets all list from this.
+    var threadState: ShepherdState { state.withoutAgents(missions.agentIDs) }
 }

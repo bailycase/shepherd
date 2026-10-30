@@ -33,6 +33,7 @@ enum RemoteMissionSamples {
     ] + actions.map { .action(missionID: mission.id, revision: 4, action: $0) }
     static let results: [RemoteMissionResult] = [
         .list([RemoteMissionSummary(mission)]), .mission(mission),
+        .mission(mission, live: RemoteMissionLive(output: "Planning", attempts: [attempt: "Editing result.txt"])),
         .startOptions(RemoteMissionStartOptions(models: ["test/model"], defaultModel: "test/model",
                                                 spaces: [Space(id: space, name: "checkout", path: "/repo")],
                                                 branchChoices: [space: ["refs/heads/main"]], defaultBranches: [space: "refs/heads/main"])),
@@ -65,6 +66,16 @@ struct RemoteMissionMessageTests {
         let summary = RemoteMissionSummary(RemoteMissionSamples.mission)
         #expect(summary.agentIDs == [AgentID(rawValue: "agent-1"), AgentID(rawValue: "planner-1")])
         #expect(summary.revision == 4 && summary.phase == .review)
+    }
+
+    @Test func liveWordsAreBoundedPerTextAndAttempt() {
+        let long = String(repeating: "é", count: RemoteMissionLive.textBytes)
+        let attempts = Dictionary(uniqueKeysWithValues: (0..<40).map { _ in (UUID(), long) })
+        let live = RemoteMissionLive(output: long, attempts: attempts.merging([UUID(): ""]) { first, _ in first })
+        #expect(live.output.utf8.count <= RemoteMissionLive.textBytes && live.output.hasPrefix("é"))
+        #expect(live.attempts.count == RemoteMissionLive.maximumAttempts)
+        #expect(live.attempts.values.allSatisfy { !$0.isEmpty && $0.utf8.count <= RemoteMissionLive.textBytes })
+        #expect(RemoteMissionLive().isEmpty && !live.isEmpty)
     }
 
     @Test func aReviewFileCarriesNoHunks() throws {

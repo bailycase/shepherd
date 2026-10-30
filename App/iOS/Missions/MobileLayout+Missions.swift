@@ -10,4 +10,6 @@ extension MobileLayout {
     static let missionGoalMinHeight: CGFloat = 140
     /// The missions Home lists before its All missions row.
     static let homeMissions = 3
+    /// The lines of a working agent's latest words a mission shows.
+    static let missionLiveLines = 8
 }

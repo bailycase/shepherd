@@ -24,6 +24,12 @@ struct RemoteMissionTests {
         }
     }
 
+    final class Sent: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: [(AgentID, String, UUID)] = []
+        func withLock<T>(_ body: (inout [(AgentID, String, UUID)]) -> T) -> T { lock.withLock { body(&value) } }
+    }
+
     private static let draft = MissionDraft(title: "Private brief", goal: "Unpublished planning context")
 
     private func next(_ client: RawRemote, matching: (RemoteReply) -> Bool) async throws -> RemoteReply {
@@ -79,7 +85,7 @@ struct RemoteMissionTests {
         }
         #expect(summaries == [RemoteMissionSummary(mission)])
         try client.send(.mission(id: 4, request: .get(missionID: mission.id)))
-        guard case .mission(4, .mission(let read)) = try await next(client, matching: { if case .mission(4, _) = $0 { true } else { false } }) else { return }
+        guard case .mission(4, .mission(let read, nil)) = try await next(client, matching: { if case .mission(4, _) = $0 { true } else { false } }) else { return }
         #expect(read == mission)
         try await remote.server.deleteMission(id: mission.id, expectedRevision: mission.revision)
         guard case .missionChanged(mission.id, nil) = try await next(client, matching: { if case .missionChanged = $0 { true } else { false } }) else {
@@ -141,6 +147,72 @@ struct RemoteMissionTests {
         }
         // The connection stays: the next request is answered.
         await #expect(throws: RemoteHostClientError.self) { _ = try await client.mission(.reviewFile(missionID: MissionID(), spaceID: SpaceID(), path: "big")) }
+    }
+
+    @Test func wordsInAMissionsThreadGoToItsOwnerAndOnlyWords() async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space)
+        try await remote.host.seed(Fixture.workspace([worker], space: space))
+        // The planner's thread of a drafted map.
+        var run = MissionRun(model: "test/model", phase: .map)
+        run.attempts = [MissionAttempt(agentID: worker.agent.id, status: .succeeded)]
+        let mission = try await remote.server.createMission(draft: Self.draft)
+        _ = try await remote.server.setMissionRun(id: mission.id, expectedRevision: mission.revision, run: run)
+        let client = try await remote.raw()
+        let operation = UUID()
+        func send(_ id: Int, images: [NativeImage]? = nil) throws {
+            try client.send(.nativeThread(id: id, agentID: worker.agent.id, request: .send(expectedSessionID: "s", generation: "g", operationID: operation,
+                                                                                           text: "Prefer a minimal edit.", delivery: .followUp, images: images)))
+        }
+        // No owner installed (a headless host): refused as before.
+        try send(2)
+        let first = try await client.next()
+        guard case .error(2, "mission_control", _) = first else { Issue.record("Expected mission_control, got \(first)"); return }
+        let sent = Sent()
+        remote.server.onMissionThreadSend = { agent, text, operation, reply in
+            sent.withLock { $0.append((agent, text, operation)) }
+            reply(.accepted(operationID: operation))
+        }
+        try send(3)
+        guard case .nativeThread(3, .accepted(operation)) = try await client.next() else { Issue.record("Expected the owner's acceptance"); return }
+        #expect(sent.withLock { $0.map(\.1) } == ["Prefer a minimal edit."] && sent.withLock { $0.first?.0 } == worker.agent.id)
+        try send(4, images: [NativeImage(mimeType: "image/png", data: Data([0x89]), name: "a.png")])
+        // A refusal the thread shows in its own words (a failure result, not a protocol error).
+        guard case .nativeThread(4, .failure("mission_words_only", _)) = try await client.next() else { Issue.record("Expected words only"); return }
+        #expect(sent.withLock { $0.count } == 1, "an attachment never reaches the owner")
+        // Anything else to the thread is still the mission's to decide.
+        try client.send(.nativeThread(id: 5, agentID: worker.agent.id, request: .abort(expectedSessionID: "s", generation: "g", operationID: UUID())))
+        guard case .error(5, "mission_control", _) = try await client.next() else { Issue.record("Expected mission_control"); return }
+    }
+
+    @Test func liveWordsArePushedToCapableClientsAndReadWithTheRecord() async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let mission = try await remote.server.createMission(draft: Self.draft)
+        Owner().install(on: remote.server) { _ in .success(.done(mission: nil)) }
+        remote.server.setMissionsServed(true)
+        let older = try RawRemote(port: remote.port)
+        _ = try await older.hello(token: remote.token, capabilities: RemoteProtocol.clientCapabilities.filter { $0 != RemoteProtocol.missionsCapability })
+        let client = try RawRemote(port: remote.port)
+        _ = try await client.hello(token: remote.token, capabilities: RemoteProtocol.clientCapabilities)
+        let live = RemoteMissionLive(output: "Reading orders-svc", attempts: [UUID(): "Editing result.txt"])
+        remote.server.setMissionLive([mission.id: live])
+        guard case .missionLive(mission.id, live) = try await next(client, matching: { if case .missionLive = $0 { true } else { false } }) else {
+            Issue.record("Expected the live push"); return
+        }
+        try client.send(.mission(id: 2, request: .get(missionID: mission.id)))
+        guard case .mission(2, .mission(mission, let read)) = try await next(client, matching: { if case .mission(2, _) = $0 { true } else { false } }) else { return }
+        #expect(read == live)
+        remote.server.setMissionLive([mission.id: RemoteMissionLive()])
+        try client.send(.mission(id: 3, request: .get(missionID: mission.id)))
+        guard case .mission(3, .mission(_, nil)) = try await next(client, matching: { if case .mission(3, _) = $0 { true } else { false } }) else {
+            Issue.record("Cleared words are not read again"); return
+        }
+        // The older client heard none of it: a state fetch is its next answer.
+        try older.send(.stateFetch(id: 9))
+        guard case .state(9, _) = try await older.next() else { Issue.record("An older client got a live push"); return }
     }
 
     @Test func theExtensionSocketCannotDriveMissions() async throws {

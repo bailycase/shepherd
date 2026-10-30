@@ -91,6 +91,24 @@ struct RemoteMissionsTests {
         #expect(host.requests.filter { if case .get = $0 { true } else { false } }.count == 2)
     }
 
+    @Test func liveWordsArriveWithTheRecordAndFromPushesAndClearWhenNothingRuns() async throws {
+        let host = Host([Self.mission(3, phase: .running)])
+        let model = RemoteMissions(hostID: UUID())
+        model.connect(host.transport, available: true)
+        await model.refresh()
+        let id = host.records[0].id
+        #expect(model.live[id] == nil)
+        model.liveChanged(id, RemoteMissionLive(output: "Reading the repositories"))
+        #expect(model.live[id]?.output == "Reading the repositories")
+        model.liveChanged(MissionID(), RemoteMissionLive(output: "not ours"))
+        #expect(model.live.count == 1, "words for a mission this client never read are dropped")
+        model.liveChanged(id, RemoteMissionLive())
+        #expect(model.live[id] == nil)
+        model.liveChanged(id, RemoteMissionLive(output: "again"))
+        model.connect(nil, available: false)
+        #expect(model.live.isEmpty, "a disconnected host says nothing live")
+    }
+
     @Test func anActionCarriesTheShownRevisionAndAdoptsTheHostsAnswer() async throws {
         let host = Host([Self.mission(5)])
         let model = RemoteMissions(hostID: UUID())

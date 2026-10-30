@@ -82,6 +82,127 @@ struct MissionRemoteTests {
         try await eventuallyOnMain("the device sees the PRs") { missions.record(id)?.run?.phase == .done }
     }
 
+    @Test func aPairedDeviceSteersWorkingTurnsTalksInThreadsAndAcceptsCompletionReports() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.specKitScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    /// A device's client and missions model on `app`'s listener, hearing its hints and live words.
+    static func pair(_ app: AppHarness, root: URL) async throws -> (RemoteHostClient, RemoteMissions) {
+        let tokenURL = root.appendingPathComponent("remote-token")
+        let port = try app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = RemoteHostClient()
+        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "phone")
+        try await eventuallyOnMain("the host offers missions") { client.capabilities.contains(RemoteProtocol.missionsCapability) }
+        let missions = RemoteMissions(hostID: UUID())
+        missions.connect({ try await client.mission($0) }, available: true)
+        client.onMissionChanged = { id, revision in MainActor.assumeIsolated { missions.changed(id, revision: revision) } }
+        client.onMissionLive = { id, live in MainActor.assumeIsolated { missions.liveChanged(id, live) } }
+        return (client, missions)
+    }
+
+    static func specKitScenario() async throws {
+        let fixture = try MissionSpecKitFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        let controller = try #require(fixture.controller)
+        let (client, missions) = try await pair(fixture.app, root: fixture.root)
+        defer { client.disconnect() }
+        /// The revision the device shows, once it caught up with the host.
+        func shown(_ id: MissionID) async throws -> UInt64 {
+            try await eventuallyOnMain("the device shows the host's mission") { missions.record(id)?.revision == (try? fixture.revision(id)) }
+            return try fixture.revision(id)
+        }
+        func send(_ agent: AgentID, _ text: String, operation: UUID = UUID()) async throws -> NativeThreadResult {
+            try await client.nativeThread(agentID: agent, request: .send(expectedSessionID: "", generation: "", operationID: operation,
+                                                                          text: text, delivery: .followUp))
+        }
+        let branches = Dictionary(uniqueKeysWithValues: fixture.spaces.map { ($0.id, "refs/heads/main") })
+        let id = try await missions.create(goal: "Change result.txt to after.", spaces: fixture.spaces.map(\.id),
+                                           model: MissionSpecKitFixture.model, branches: branches)
+        try await fixture.wait(id, phase: .map)
+        try await missions.loadSpecKit(id)
+        let reports = try #require(missions.specKit[id]?.reports)
+        for (index, space) in fixture.spaces.enumerated() {
+            try await missions.perform(id, revision: try await shown(id), .specKitConsent(spaceID: space.id, fingerprint: try #require(reports[space.id]).consentFingerprint,
+                                                                                         continuePlanning: index == fixture.spaces.count - 1))
+        }
+        try await fixture.wait(id, phase: .map)
+        #expect(try controller.record(id).run?.notice?.contains("map is ready") == true)
+
+        // Words typed in a repository's planning thread are the planner's answer, to that repository's conversation.
+        let planners = try #require(try controller.record(id).run?.specKit?.lanes.compactMap(\.plannerAgentID))
+        let before = try fixture.loggedCalls().count
+        let feedback = UUID()
+        #expect(try await send(planners[0], "Keep it short.", operation: feedback) == .accepted(operationID: feedback))
+        try await fixture.wait(id, phase: .map)
+        let replied = try fixture.loggedCalls().dropFirst(before)
+        #expect(replied.first?["prompt"] as? String == "Keep it short." && replied.first?["agent"] as? String == planners[0].rawValue)
+        #expect(try controller.record(id).run?.messages.last { $0.role == .user }?.text == "Keep it short.")
+
+        // Launch holds both implement turns, so they can be steered: one from its thread, one from the mission.
+        try Data().write(to: fixture.root.appendingPathComponent("hold-implement"))
+        try await missions.perform(id, revision: try await shown(id), .launch)
+        let stations = fixture.spaces.map { SpecKit.stationID(id, $0.id, "phase-0") }
+        var working: [MissionAttempt] = []
+        try await eventuallyOnMain("both repositories implement", timeout: .seconds(30)) {
+            working = stations.compactMap { try? controller.record(id).run?.latest($0) }.filter { $0.status == .running }
+            return working.count == 2 && (try? fixture.loggedCalls().filter { ($0["prompt"] as? String) == "/speckit.implement" }.count) == 2
+        }
+        let (first, second) = (working[0], working[1])
+        let firstAgent = try #require(first.agentID)
+        guard case .snapshot(let snapshot) = try await client.nativeThread(agentID: firstAgent, request: .snapshot()) else {
+            Issue.record("Expected the working thread's snapshot"); return
+        }
+        #expect(snapshot.supportedActions.contains("send"), "a working mission turn offers its composer")
+        // What a working turn says reaches the device, throttled, as the host's page shows it.
+        controller.attemptOutput[first.id] = "Editing result.txt"
+        try await eventuallyOnMain("the device hears the turn's words") { missions.live[id]?.attempts[first.id] == "Editing result.txt" }
+        let threadSteer = UUID()
+        #expect(try await send(firstAgent, "Thread steer.", operation: threadSteer) == .accepted(operationID: threadSteer))
+        guard case .failure("mission_steer_waiting", let why) = try await send(firstAgent, "Again.") else {
+            Issue.record("A second message while one waits must say why"); return
+        }
+        #expect(why.contains("still waiting to be read"))
+        let steering = Task { try await missions.perform(id, revision: try await shown(id), .steer(attemptID: second.id, text: "Action steer.")) }
+        try await eventuallyOnMain("the mission's steer is queued with pi") {
+            (try? controller.record(id).run?.attempts.first { $0.id == second.id }?.operationIDs?.count) == 1
+        }
+        try Data().write(to: fixture.root.appendingPathComponent("release-implement"))
+        _ = try await steering.value
+        try await fixture.wait(id, phase: .map)
+        var mission = try controller.record(id)
+        #expect(mission.run?.attempts.first { $0.id == first.id }?.deliveredOperationIDs == [threadSteer], "pi read the thread's steer")
+        #expect(mission.run?.attempts.first { $0.id == second.id }?.deliveredOperationIDs?.count == 1)
+        let steers = try fixture.loggedCalls().compactMap { $0["steer"] as? String }
+        #expect(steers.contains("Thread steer.") && steers.contains("Action steer.") && !steers.contains("Again."))
+        try await eventuallyOnMain("the device's live words clear") { missions.live[id] == nil }
+
+        // Both completion reports wait for the owner. A stale revision is refused; one acceptance starts nothing
+        // while the other waits; the last continues to review.
+        let reportsWaiting = (mission.run?.specKit?.lanes ?? []).compactMap { $0.convergence }
+        #expect(reportsWaiting.count == 2 && reportsWaiting.allSatisfy { !$0.accepted && $0.outcome == .unchanged })
+        let quiet = try fixture.loggedCalls().count
+        await expectRefusal("stale_mission") {
+            try await missions.perform(id, revision: try await shown(id) - 1, .acceptConvergence(attemptID: reportsWaiting[0].attemptID))
+        }
+        try await missions.perform(id, revision: try await shown(id), .acceptConvergence(attemptID: reportsWaiting[0].attemptID))
+        mission = try controller.record(id)
+        #expect(mission.run?.phase == .map && mission.run?.specKit?.lanes.filter { $0.convergence?.accepted == true }.count == 1)
+        #expect(try fixture.loggedCalls().count == quiet, "accepting one report starts nothing while another waits")
+        try await missions.perform(id, revision: try await shown(id), .acceptConvergence(attemptID: reportsWaiting[1].attemptID))
+        try await fixture.wait(id, phase: .review)
+        try await eventuallyOnMain("the device sees review") { missions.record(id)?.run?.phase == .review }
+
+        // A finished step's thread says why it takes nothing, in words the thread shows.
+        guard case .failure("mission_step_finished", let finished) = try await send(firstAgent, "One more thing.") else {
+            Issue.record("A finished step must refuse with its reason"); return
+        }
+        #expect(finished.contains("Message the planner"))
+    }
+
     private static func expectRefusal(_ code: String, _ body: () async throws -> Void) async {
         do {
             try await body()
