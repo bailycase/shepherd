@@ -70,6 +70,22 @@ public enum PiLaunch {
              + arguments.map { " " + quoted($0) }.joined())
     }
 
+    /// pi's modular `mcp` command module, which takes an `openUrl` option the CLI doesn't expose.
+    public static let mcpCommandModule = "dist/extensions/mcp/cli.js"
+
+    /// `pi mcp login <server>` for a sign-in a remote client started: pi's own command run by
+    /// `script` (Extensions/shepherd-mcp-login.mjs) on the engine's node with the launcher's pins,
+    /// so the page is printed and never opens in this Mac's browser. Nil when the engine ships no
+    /// package (a stand-in engine): the caller runs `mcp` instead.
+    public static func mcpLogin(home: PiHome, script: String, server: String, timeout: Int) -> Line? {
+        guard let package = home.engine.packageDirectory else { return nil }
+        let module = URL(fileURLWithPath: package).appendingPathComponent(mcpCommandModule).path
+        return Line(script: clearedEnvironment(home: home)
+                        + home.pins.map { "export \($0.0)=\(quoted($0.1)); " }.joined()
+                        + "cd -- \(quoted(home.directory.path)) && exec \(word(home.engine.node)) \"$0\" \"$1\" \"$2\" \"$3\" \"$4\"",
+                    positional: [script, module, home.directory.path, server, String(timeout)])
+    }
+
     /// Whether `cwd` is the user's home folder, which no agent's pi trusts as a project.
     public static func isHomeFolder(_ cwd: String, userHome: String) -> Bool {
         PiHome.canonical(cwd) == PiHome.canonical(userHome)

@@ -41,13 +41,19 @@ extension ShepherdViewModel {
             let opened = try await Task.detached(priority: .userInitiated) { try store.open(file) }.value
             return .subagent(HostSubagentProfileText(file: opened.file, text: opened.text, fingerprint: opened.fingerprint))
         case .providers:
-            await yourPi.refresh()
-            await piAuth.refreshAccounts()
-            let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
-            let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
-                                         needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts)
-            return .providers((page.subscriptions + page.apiKeys + page.customProviders).map(HostInventoryMapping.provider))
+            return .providers(await hostProviders())
         }
+    }
+
+    /// Settings ▸ Sign-in's rows, read afresh, as a client sees them.
+    func hostProviders() async -> [HostProviderStatus] {
+        await piAuth.landing?.value
+        await yourPi.refresh()
+        await piAuth.refreshAccounts()
+        let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
+        let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
+                                     needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts)
+        return (page.subscriptions + page.apiKeys + page.customProviders).map(HostInventoryMapping.provider)
     }
 }
 
@@ -56,11 +62,11 @@ extension ShepherdViewModel {
 enum HostInventoryMapping {
     static func mcp(_ store: MCPStore) -> HostMCPInventory {
         let checkedAt: Double? = if case .done(let date) = store.listing { date.timeIntervalSince1970 } else { nil }
-        return HostMCPInventory(servers: store.rows.map(server), configPath: store.configPath,
+        return HostMCPInventory(servers: store.rows.map { server($0, entry: store.entry($0.name), store: store) }, configPath: store.configPath,
                                 problem: store.invalidMessage ?? store.problem, checkedAt: checkedAt)
     }
 
-    static func server(_ row: MCPServerRowModel) -> HostMCPServer {
+    static func server(_ row: MCPServerRowModel, entry: MCPServerEntry? = nil, store: MCPStore? = nil) -> HostMCPServer {
         let note: String? = switch row.note {
         case .starting(let text)?: text
         case .error(let text)?: text
@@ -68,15 +74,20 @@ enum HostInventoryMapping {
         }
         return HostMCPServer(name: row.name, kind: row.kind == .remote ? .remote : .local, endpoint: row.endpoint,
                              status: HostMCPServer.Status(rawValue: row.status.rawValue) ?? .idle, note: note,
-                             signIn: signIn(row.signIn), tools: row.tools, enabled: row.enabled)
+                             signIn: signIn(row.signIn), tools: row.tools, enabled: row.enabled,
+                             exposure: entry.map { $0.settings.exposure == .direct ? .direct : .proxy },
+                             toolNames: entry.flatMap { store?.toolNames(of: $0) }, allowedTools: entry?.settings.tools,
+                             oauth: entry.flatMap { store?.usesOAuth($0) },
+                             signedIn: { if case .account = row.signIn { true } else { false } }())
     }
 
     /// The Sign-in column in words, never a value.
     static func signIn(_ cell: MCPServerRowModel.SignIn) -> String? {
         switch cell {
         case .account(let name): name
-        case .signIn: "Sign in on the Mac"
-        case .expired: "Expired · sign in on the Mac"
+        // Host-neutral: the client may be another Mac, and may sign in from there.
+        case .signIn: "Not signed in"
+        case .expired: "Expired"
         case .moreAccess(let scopes): "Needs more access" + (scopes.isEmpty ? "" : ": " + scopes.joined(separator: ", "))
         case .variable(let name): name
         case .secret(let name): name + " in Keychain"
@@ -90,7 +101,7 @@ enum HostInventoryMapping {
     static func profile(_ definition: SubagentDefinitionsStore.Definition) -> HostSubagentProfile {
         HostSubagentProfile(file: definition.file, name: definition.name, description: definition.description, tools: definition.tools,
                             context: definition.context, error: definition.error, disabled: definition.disabled ?? false,
-                            isDefault: definition.isDefault)
+                            isDefault: definition.isDefault, fingerprint: definition.fingerprint)
     }
 
     static func provider(_ row: ProviderRowModel) -> HostProviderStatus {
@@ -109,8 +120,14 @@ enum HostInventoryMapping {
         case .noKey(let baseURL): auth = .noKey; detail = baseURL
         }
         let accounts = row.accounts
+        let several = (accounts?.accounts.count ?? 0) > 1
         return HostProviderStatus(id: row.id, name: row.name, badge: row.badge, auth: auth, detail: detail, problem: row.problem,
                                   accounts: accounts?.accounts.count ?? 0,
-                                  activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.name : nil })
+                                  activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.name : nil },
+                                  accountList: several ? accounts?.accounts.map { account in
+                                      HostProviderAccount(id: account.id, name: account.name, active: account.id == accounts?.active,
+                                                          limitedUntil: account.limitedUntil?.timeIntervalSince1970)
+                                  } : nil,
+                                  rotate: several ? accounts?.rotate : nil)
     }
 }

@@ -34,13 +34,17 @@ extension ShepherdViewModel {
     static let thisMacSkills = UUID(uuidString: "5E0A5C11-0000-4000-8000-00000000AC00")!
 
     /// Settings ▸ Skills' hosts: This Mac first, then every remote host in the sidebar's order.
+    /// Per host (Same skills on every host off) the host Settings' picker chose comes first: the
+    /// one the list shows and a change goes to.
     var skillsHosts: [SkillsHost] {
-        [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: localSkills, serves: true)]
+        let hosts = [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: localSkills, serves: true)]
             + remoteHosts.connections.map { connection in
                 let connected = connection.skillsClient
                 return SkillsHost(id: connection.id, name: connection.config.name, client: connected,
                                   serves: connected == nil || connection.supportsSkills)
             }
+        guard !skills.sameEverywhere, let chosen = settingsHostID, let index = hosts.firstIndex(where: { $0.id == chosen }) else { return hosts }
+        return [hosts[index]] + hosts.enumerated().filter { $0.offset != index }.map(\.element)
     }
 
     /// A remote host connected: it takes the skill changes it is owed.

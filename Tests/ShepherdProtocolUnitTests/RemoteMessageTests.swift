@@ -231,6 +231,10 @@ enum RemoteSamples {
         defaultServiceTier: .fast, namingModel: "anthropic/claude-haiku", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase,
+        designToolEnabled: true, missionsEnabled: true, missionsActive: true,
+        subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
+        worktreeDeleteAction: .removeWorktree, skillsInSlashMenu: false, mcpProjectConfig: true,
+        slashCommands: [NativeCommand(name: "review", description: "Review a diff", source: "extension")], hiddenSlashCommands: ["review"],
         bundledExtensions: [HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                             HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: false)],
         installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true)
@@ -259,6 +263,39 @@ enum RemoteSamples {
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
+        .designToolEnabled(true), .missionsEnabled(false),
+        .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2, model: nil, thinking: nil, context: .fresh)),
+        .worktreeDeleteAction(.keepWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
+    ]
+    static let configRequests: [RemoteHostConfigRequest] = [
+        .mcpEntry(name: "github"),
+        .mcpSave(json: #"{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}"#, secrets: ["LINEAR_TOKEN": "lin_123"], replacing: nil),
+        .mcpSave(json: #"{"mcpServers":{"pg":{"command":"uvx"}}}"#, secrets: [:], replacing: "postgres"),
+        .mcpSetEnabled(name: "github", on: false), .mcpSetExposure(name: "github", exposure: .direct),
+        .mcpSetTools(name: "github", tools: ["search"]), .mcpSetTools(name: "github", tools: nil),
+        .mcpRemove(name: "old"), .mcpImport(json: "{}", replace: true), .mcpRefresh,
+        .mcpSignIn(name: "linear"), .mcpSignOut(name: "linear"),
+        .subagentSave(file: "team/scout.md", text: "---\nname: scout\n---\n", fingerprint: nil),
+        .subagentSave(file: "reviewer.md", text: "---\nname: reviewer\n---\n", fingerprint: "ab12"),
+        .subagentDelete(file: "team/scout.md", fingerprint: "cd34"), .subagentRestoreDefaults(expected: ["reviewer.md": "ab12"]),
+        .providerKey(provider: "openai", key: "$OPENAI_API_KEY"), .providerSignOut(provider: "openai"), .providerSignIn(provider: "anthropic"),
+        .providerAccount(provider: "anthropic", action: .use(id: "a1")), .providerAccount(provider: "anthropic", action: .remove(id: "a1")),
+        .providerAccount(provider: "anthropic", action: .rename(id: "a1", name: "work")), .providerAccount(provider: "anthropic", action: .rotate(true)),
+        .providerAccount(provider: "anthropic", action: .add), .providerAccount(provider: "deepseek", action: .addKey("$DEEPSEEK_API_KEY")),
+        .signIn(id: op, action: .poll), .signIn(id: op, action: .complete("code#state")), .signIn(id: op, action: .cancel),
+    ]
+    static let configResults: [RemoteHostConfigResult] = [
+        .mcp(mcpInventory), .mcpEntry(json: #"{"mcpServers":{"github":{"url":"https://x"}}}"#),
+        .subagents([HostSubagentProfile(file: "reviewer.md", name: "reviewer", isDefault: true, fingerprint: "ab12")]),
+        .subagent(HostSubagentProfileText(file: "reviewer.md", text: "Review.\n", fingerprint: "ab12")),
+        .providers([HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey)]),
+        .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .signedIn, accounts: 2, activeAccount: "work",
+                                       accountList: [HostProviderAccount(id: "a1", name: "work", active: true),
+                                                     HostProviderAccount(id: "a2", name: "home", active: false, limitedUntil: 1_700_000_000)],
+                                       rotate: true)]),
+        .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai/oauth", wantsCode: true)),
+        .signIn(HostSignInProgress(id: op, phase: .waiting, name: "GitHub Copilot", authorizationURL: "https://github.com/login/device", deviceCode: "AB-12")),
+        .signIn(HostSignInProgress(id: op, phase: .failed, name: "linear", message: "Cancelled.")),
     ]
 
     static let skillSource = SkillSource(repo: "anthropics/skills", path: "skills/pdf", commit: "3f2a91c0", committedAt: 1_700_000_000)
@@ -321,11 +358,11 @@ struct RemoteRequestTests {
         case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design, .mission,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 39
+    static let caseCount = 40
 
     static let samples: [RemoteRequest] = [
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
@@ -363,6 +400,7 @@ struct RemoteRequestTests {
         .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
         .hostInventory(id: 28, request: .mcp),
+        .hostConfig(id: 28, request: .mcpRefresh),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
         .projects(id: 30, request: .list()),
         .logicalProjects(id: 31, request: .list),
@@ -454,6 +492,12 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(message) == message)
     }
 
+    @Test(arguments: RemoteSamples.configRequests)
+    func everyConfigRequestRoundTrips(_ request: RemoteHostConfigRequest) throws {
+        let message = RemoteRequest.hostConfig(id: 1, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
     @Test(arguments: RemoteSamples.inventoryRequests)
     func everyInventoryRequestRoundTrips(_ request: RemoteHostInventoryRequest) throws {
         let message = RemoteRequest.hostInventory(id: 1, request: request)
@@ -533,11 +577,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 38
+    static let caseCount = 39
 
     static let samples: [RemoteReply] = [
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
@@ -570,6 +614,7 @@ struct RemoteReplyTests {
         .suggestions(id: 26, snapshot: S.suggestions),
         .hostSettings(id: 28, settings: S.hostSettings),
         .hostInventory(id: 29, result: .mcp(S.mcpInventory)),
+        .hostConfig(id: 29, result: .mcp(S.mcpInventory)),
         .skills(id: 30, result: .skills(S.skills)),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
@@ -620,6 +665,30 @@ struct RemoteReplyTests {
     @Test(arguments: RemoteSamples.inventoryResults)
     func everyInventoryResultRoundTrips(_ result: RemoteHostInventoryResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.hostInventory(id: 1, result: result)) == .hostInventory(id: 1, result: result))
+    }
+
+    @Test(arguments: RemoteSamples.configResults)
+    func everyConfigResultRoundTrips(_ result: RemoteHostConfigResult) throws {
+        #expect(try Wire.roundTrip(RemoteReply.hostConfig(id: 1, result: result)) == .hostConfig(id: 1, result: result))
+    }
+
+    /// An older host's settings carry none of the newer fields: they read as the Mac's defaults.
+    @Test func hostSettingsFromAnOlderHostDecodeWithDefaults() throws {
+        var object = try Wire.object(RemoteReply.hostSettings(id: 1, settings: S.hostSettings))
+        var settings = try #require(object["settings"] as? [String: Any])
+        for key in ["designToolEnabled", "missionsEnabled", "missionsActive", "subagentDefaults", "worktreeDeleteAction",
+                    "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands"] {
+            settings[key] = nil
+        }
+        object["settings"] = settings
+        let data = try JSONSerialization.data(withJSONObject: object)
+        guard case .hostSettings(_, let decoded) = try JSONDecoder().decode(RemoteReply.self, from: data) else {
+            Issue.record("expected settings"); return
+        }
+        #expect(!decoded.designToolEnabled && !decoded.missionsEnabled && !decoded.missionsActive)
+        #expect(decoded.subagentDefaults == HostSettings.SubagentDefaults())
+        #expect(decoded.worktreeDeleteAction == .ask && decoded.skillsInSlashMenu && !decoded.mcpProjectConfig)
+        #expect(decoded.slashCommands.isEmpty && decoded.hiddenSlashCommands.isEmpty)
     }
 
     /// A provider's row never carries a credential: the wire has the state and its words only.
@@ -909,6 +978,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability,
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
+            RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
+            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             // Offered only to a client that lists it in hello.
@@ -936,6 +1007,11 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.changesRevertCapability == "changes.revert.v1")
         #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
+        #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")
+        #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
+        #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
+        #expect(RemoteProtocol.missionsExperimentCapability == "experiments.missions.v1")
+        #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))
         #expect(RemoteProtocol.filesCapability == "files.v1")
         #expect(RemoteProtocol.missionsCapability == "missions.v1")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))

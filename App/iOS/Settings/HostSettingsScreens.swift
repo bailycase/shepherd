@@ -86,6 +86,11 @@ struct DefaultsScreen: View {
                 }
             }
             .task(id: host.id) { models = await Self.models(of: store.mobileHost(host.id)) }
+            if host.serves(RemoteProtocol.hostSettingsV2Capability) {
+                SubagentDefaultsSection(defaults: settings.subagentDefaults, models: models) {
+                    store.hostSettings.post(.subagentDefaults($0), on: host)
+                }
+            }
             if store.mobileHost(host.id)?.supports(RemoteProtocol.nativeGoalCapability) == true {
                 SettingsSection("Goal checks") {
                     SHListCard {
@@ -160,6 +165,18 @@ struct WorktreesScreen: View {
                 SettingsFootnote("Shepherd never deletes the remote branch: merging the PR cleans it up on GitHub.")
             }
             .shAnimation(.disclosure, value: settings.mergePRAutomatically)
+            if host.serves(RemoteProtocol.hostSettingsV2Capability) {
+                SettingsSection("Deleting") {
+                    SHListCard {
+                        SettingsControlRow("Deleting a worktree agent",
+                                           note: "**Ask** shows the confirmation. A remembered removal still asks when the checkout has unreconciled work.") {
+                            SettingsPicker("Deleting a worktree agent", selection: settings.worktreeDeleteAction,
+                                           options: HostSettings.WorktreeDeleteAction.allCases,
+                                           title: HostSettingsPresentation.title) { post(.worktreeDeleteAction($0)) }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -185,6 +202,19 @@ struct PiExtensionsScreen: View {
                 }
                 SettingsFootnote("New threads follow a change; running ones keep theirs until they restart. Status and session tracking are always on.")
             }
+            if host.serves(RemoteProtocol.hostSettingsV2Capability) {
+                SettingsSection("Agents") {
+                    SHListCard {
+                        SettingsSwitchRow("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
+                                          isOn: settings.skillsInSlashMenu) { post(.skillsInSlashMenu($0)) }
+                        SettingsSwitchRow("Also use a repo’s .mcp.json", note: "Off: only the host's own MCP servers, in every repo.",
+                                          isOn: settings.mcpProjectConfig) { post(.mcpProjectConfig($0)) }
+                    }
+                }
+                SlashCommandsSection(commands: settings.slashCommands, hidden: Set(settings.hiddenSlashCommands)) { name, on in
+                    post(.slashCommand(name: name, on: on))
+                }
+            }
             SettingsSection("Installed on \(host.name)") {
                 if settings.installedExtensions.isEmpty {
                     SettingsFootnote("None yet. Extensions installed on \(host.name) show here.")
@@ -205,6 +235,73 @@ struct PiExtensionsScreen: View {
             SettingsSection("Updates") {
                 SettingsFootnote(["The agent engine and bundled extensions update with Shepherd on the host.", HostSettingsPresentation.agentVersion(settings).map { "\(host.name) runs \($0)." }]
                     .compactMap { $0 }.joined(separator: " "))
+            }
+        }
+    }
+}
+
+/// Settings ▸ Subagents ▸ Defaults on a host: what a subagent starts with unless its profile says.
+private struct SubagentDefaultsSection: View {
+    let defaults: HostSettings.SubagentDefaults
+    let models: [String]
+    let change: (HostSettings.SubagentDefaults) -> Void
+
+    var body: some View {
+        SettingsSection("Subagents") {
+            SHListCard {
+                SettingsControlRow("Concurrency", note: "How many subagents run at once.") {
+                    SettingsPicker("Concurrency", selection: defaults.concurrency, options: Array(HostSettings.SubagentDefaults.concurrencyRange),
+                                   title: { String($0) }) { set(\.concurrency, $0) }
+                }
+                SettingsControlRow("Model") {
+                    Menu {
+                        Button("Inherit parent") { set(\.model, nil) }
+                        Divider()
+                        ForEach(models, id: \.self) { model in Button(model) { set(\.model, model) } }
+                    } label: {
+                        SettingsMenuLabel(defaults.model ?? "Inherit parent", mono: defaults.model != nil)
+                    }
+                    .accessibilityLabel("Subagent model")
+                }
+                SettingsControlRow("Thinking") {
+                    SettingsPicker("Subagent thinking", selection: defaults.thinking, options: [ThinkingLevel?.none] + ThinkingLevel.allCases.map { $0 },
+                                   title: { $0?.title ?? "Inherit parent" }) { set(\.thinking, $0) }
+                }
+                SettingsControlRow("Context", note: "**Fresh** starts empty; **Fork** starts from the parent's conversation.") {
+                    SettingsPicker("Subagent context", selection: defaults.context, options: HostSettings.SubagentDefaults.Context.allCases,
+                                   title: { $0 == .fork ? "Fork" : "Fresh" }) { set(\.context, $0) }
+                }
+            }
+            SettingsFootnote("A profile's own settings win. New subagents follow a change.")
+        }
+    }
+
+    private func set<Value>(_ keyPath: WritableKeyPath<HostSettings.SubagentDefaults, Value>, _ value: Value) {
+        var next = defaults
+        next[keyPath: keyPath] = value
+        change(next)
+    }
+}
+
+/// Settings ▸ Slash commands on a host: every command its pi listed, each with a switch.
+private struct SlashCommandsSection: View {
+    let commands: [NativeCommand]
+    let hidden: Set<String>
+    let toggle: (String, Bool) -> Void
+
+    var body: some View {
+        SettingsSection("Slash commands") {
+            if commands.isEmpty {
+                SettingsFootnote("Commands show here once an agent on the host has listed them.")
+            } else {
+                SHListCard {
+                    ForEach(commands, id: \.name) { command in
+                        SettingsSwitchRow("/" + command.name, note: command.description, isOn: !hidden.contains(command.name)) {
+                            toggle(command.name, $0)
+                        }
+                    }
+                }
+                SettingsFootnote("Off leaves a command out of the / menu; typing it still runs it.")
             }
         }
     }

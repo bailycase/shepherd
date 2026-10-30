@@ -832,6 +832,9 @@ public final class RemoteHostClient: @unchecked Sendable {
             let what = switch change {
             case .goalsEnabled: "toggle the Goals experiment"
             case .projectsEnabled: "toggle the Projects experiment"
+            case .designToolEnabled: "toggle the Design tool experiment"
+            case .missionsEnabled: "toggle the Missions experiment"
+            case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand: "change this setting"
             default: "change this default"
             }
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to \(what).")
@@ -1276,7 +1279,8 @@ public final class RemoteHostClient: @unchecked Sendable {
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
              .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
-             .browserClaimed(let id, _), .mission(let id, _):
+             .browserClaimed(let id, _), .mission(let id, _),
+             .hostConfig(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)

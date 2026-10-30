@@ -536,6 +536,14 @@ final class ShepherdViewModel {
     @ObservationIgnored let emptyProjectInput = ThreadInput()
     @ObservationIgnored var madeProjectCookies: ProjectCookiesModel?
     @ObservationIgnored var madeSubagentDefinitions: SubagentDefinitionsModel?
+    /// Sign-ins remote clients drive on this Mac (`RemoteRequest.hostConfig`).
+    @ObservationIgnored let remoteSignIns = RemoteSignIns()
+    /// Settings' host picker: the remote host a host-level page shows; nil for this Mac.
+    var settingsHostID: UUID?
+    /// A remote host's settings and configuration as Settings shows them (`settingsHostID`).
+    @ObservationIgnored let remoteHostSettings = ClientHostSettings()
+    @ObservationIgnored let remoteHostConfig = ClientHostConfig()
+    @ObservationIgnored let remoteSuggestions = ClientSuggestions()
     var subagentDefinitions: SubagentDefinitionsModel {
         if let madeSubagentDefinitions { return madeSubagentDefinitions }
         let model = SubagentDefinitionsModel(pi: server.pi)
@@ -901,6 +909,7 @@ final class ShepherdViewModel {
         installHostSettings()
         installHostInventory()
         missions.installRemote()
+        installHostConfig()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
             Task { @MainActor in
