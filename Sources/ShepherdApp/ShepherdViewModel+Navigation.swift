@@ -74,7 +74,8 @@ extension ShepherdViewModel {
             openRuns: openAutomationRuns,
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
-                    state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected)
+                    state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected,
+                    missionAgents: $0.missions.agentIDs)
             }, designs: designToolEnabled, missingSpaces: missingSpaces)
     }
 

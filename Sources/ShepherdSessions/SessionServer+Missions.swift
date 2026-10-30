@@ -21,7 +21,8 @@ public struct MissionAgentSnapshot: Sendable {
 }
 
 extension SessionServer {
-    /// Owner-local API. No extension or remote mutation can approve a map or publish a PR.
+    /// The owner's API, driven only by the app's `MissionController` (on this Mac or for a paired
+    /// device's `missions.v1` request). No extension message can approve a map or publish a PR.
     public func missions() async throws -> [Mission] {
         try await enqueue {
             try self.requireStarted()

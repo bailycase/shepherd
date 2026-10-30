@@ -43,6 +43,14 @@ struct PadSidebar: View {
                             trailing: projectsTrailing) {
                     navigator.open(.projects(.list))
                 }
+                // Missions, only while a host offers them (iPadMissions).
+                if hosts.hosts.contains(where: { $0.servesMissions }) {
+                    let missions = hosts.hosts.reduce(0) { $0 + $1.missions.records.count }
+                    SidebarItem("Missions", leading: .symbol(SHGlyph.mission.symbolName), selected: pushed?.isMissions == true,
+                                trailing: missions == 0 ? .none : .value(String(missions))) {
+                        navigator.open(.missions(.list))
+                    }
+                }
                 SidebarItem("Automations", leading: .symbol("bolt"), selected: pushed == .home(.automations),
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
                     navigator.open(.home(.automations))

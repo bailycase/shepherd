@@ -3,8 +3,9 @@ import ShepherdCore
 import ShepherdUI
 
 /// The only controller-reading layer. The individual surfaces render immutable mission receipts.
-struct MissionsDestination: View {
-    @Bindable var controller: MissionController
+/// `controller` is This Mac's `MissionController` or a host's `RemoteMissionDriver`.
+struct MissionsDestination<Driver: MissionDriving>: View {
+    @Bindable var controller: Driver
     var chrome = PageHeaderChrome()
     @State private var creating = false
     @State private var busy = false
@@ -35,7 +36,7 @@ struct MissionsDestination: View {
                                  busy: busy, chrome: chrome,
                                  back: { controller.selectedID = nil }, openThread: controller.openThread,
                                  threads: MissionThreads(source: { controller.thread(for: $0) }, report: { controller.error = $0 },
-                                                         isLive: { agent in controller.vm?.state.agents.contains { $0.id == agent } == true }),
+                                                         isLive: { controller.isLive($0) }),
                                  send: { action in await submit(action, mission: selected).value },
                                  action: { action in submit(action, mission: selected) })
                     .id(selected.id)
@@ -53,9 +54,10 @@ struct MissionsDestination: View {
         .background(Color.sh.bgWindow)
         .foregroundStyle(Color.sh.textPrimary)
         .task { await controller.refreshModels() }
+        .task(id: controller.selectedID) { if let id = controller.selectedID { await controller.opened(id) } }
         .onAppear { if seed.creating { creating = true }; takeStartRequest() }
         // The sidebar's New mission.
-        .onChange(of: controller.vm?.missionStartRequested ?? false) { _, _ in takeStartRequest() }
+        .onChange(of: controller.startRequested) { _, _ in takeStartRequest() }
     }
 
     /// Claims the one-operation slot NOW, on the press, so the page disables its controls in the same
@@ -76,8 +78,8 @@ struct MissionsDestination: View {
     }
 
     private func takeStartRequest() {
-        guard controller.vm?.missionStartRequested == true else { return }
-        controller.vm?.missionStartRequested = false
+        guard controller.startRequested else { return }
+        controller.startRequested = false
         creating = true
     }
 
@@ -94,7 +96,7 @@ struct MissionsDestination: View {
         // Publication can await repository/network work. Stop must not wait for that UI task.
         if case .stop = action {
             return Task { @MainActor in
-                do { try await controller.stop(id: id, revision: revision); return true }
+                do { try await controller.perform(action, id: id, revision: revision); return true }
                 catch { controller.error = String(describing: error); return false }
             }
         }
@@ -108,30 +110,10 @@ struct MissionsDestination: View {
         }
         let automatic: Bool = if case .refresh = action { true } else { false }
         return start(clearsError: !automatic) {
-            switch action {
-            case .plan(let feedback): try await controller.plan(id: id, feedback: feedback)
-            case .answer(let text, let choice, let replyTo):
-                try await controller.answer(id: id, revision: revision, text: text, choice: choice, replyTo: replyTo)
-            case .specKitConsent(let space, let fingerprint, let continuePlanning):
-                try await controller.grantSpecKitConsent(id: id, revision: revision, space: space, fingerprint: fingerprint,
-                                                         continuePlanning: continuePlanning)
-            case .specKitSetUp(let space): try await controller.setUpSpecKit(id: id, revision: revision, space: space)
-            case .acceptConvergence(let attempt): try await controller.acceptConvergence(id: id, revision: revision, attemptID: attempt)
-            case .save(let draft, let editedRevision):
-                guard controller.records.first(where: { $0.id == id })?.revision == editedRevision else {
-                    throw MissionError("stale_mission", "This mission changed while you were editing. Reopen the editor to use the current draft.")
-                }
-                try await controller.saveDraft(id: id, revision: editedRevision, draft: draft)
-            case .launch: try await controller.launch(id: id, revision: revision)
-            case .pause: try await controller.pause(id: id, revision: revision)
-            case .stop: try await controller.stop(id: id, revision: revision)
-            case .changes(let text): try await controller.requestChanges(id: id, revision: revision, text: text)
-            case .publish(let approval):
-                try await controller.publish(id: approval.id, revision: approval.revision, fingerprint: approval.fingerprint)
-            case .refresh: try await controller.refreshReview(id: id)
-            case .revalidate: try await controller.revalidate(id: id, revision: revision)
-            case .runAgain: controller.selectedID = try await controller.runAgain(id: id)
+            if case .save(_, let editedRevision) = action, controller.records.first(where: { $0.id == id })?.revision != editedRevision {
+                throw MissionError("stale_mission", "This mission changed while you were editing. Reopen the editor to use the current draft.")
             }
+            try await controller.perform(action, id: id, revision: revision)
         }
     }
 }
@@ -161,6 +143,8 @@ struct MissionInitialPanes: Equatable {
 
 extension EnvironmentValues {
     @Entry var missionInitialPanes = MissionInitialPanes()
+    /// The host whose missions the page shows: This Mac, or a connected host's name.
+    @Entry var missionHostName = "This Mac"
 }
 
 enum MissionUIAction {
@@ -294,19 +278,20 @@ enum MissionFormat {
     }
 }
 
-/// The host chip every mission header ends with. Missions run only on This Mac.
+/// The host chip every mission header ends with: the Mac the mission runs on.
 struct MissionHostChip: View {
+    @Environment(\.missionHostName) private var host
     var body: some View {
         HStack(spacing: SH.Space.s) {
             Image(systemName: "desktopcomputer").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-            Text("This Mac").shText(.mono)
+            Text(host).shText(.mono)
             SHStatusDot(.done)
         }
         .padding(.horizontal, SH.Space.m)
         .frame(height: SH.Height.controlM)
         .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Runs on This Mac")
+        .accessibilityLabel("Runs on \(host)")
     }
 }
 
@@ -351,6 +336,7 @@ struct MissionsPage: View {
     @State private var category = MissionListFilter.all
     /// A narrow window drops the secondary Lanes and Host columns so names keep their room.
     @State private var narrow = false
+    @Environment(\.missionHostName) private var host
     private var columns: [SHTableColumns.Column] { narrow ? AppLayout.missionNarrowColumns : AppLayout.missionColumns }
 
     private var rows: [Mission] {
@@ -359,7 +345,7 @@ struct MissionsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "Missions", chrome: chrome) {
+            DestinationPageHeader(title: host == EnvironmentValues().missionHostName ? "Missions" : "Missions on \(host)", chrome: chrome) {
                 // With no missions the empty state carries the one New mission.
                 if !records.isEmpty {
                     SHPageFilterField("Filter missions", text: $filter)
@@ -428,6 +414,7 @@ private struct MissionListRow: View {
     let mission: Mission
     let narrow: Bool
     let select: () -> Void
+    @Environment(\.missionHostName) private var host
     private var plan: MissionPlan? { mission.draft.plan }
     private var route: [AgentState?] {
         (plan?.stations ?? []).map { station -> AgentState? in
@@ -496,7 +483,7 @@ private struct MissionListRow: View {
                     Text("\(MissionFormat.duration(mission.run?.elapsedSeconds ?? 0, dash: true)) / \(MissionFormat.duration(limits.seconds))")
                         .shText(.mono).foregroundStyle(Color.sh.textTertiary)
                 }
-                if !narrow { Text("This Mac").shText(.mono).foregroundStyle(Color.sh.textSecondary) }
+                if !narrow { Text(host).shText(.mono).foregroundStyle(Color.sh.textSecondary) }
             }
             .padding(.horizontal, SHPageMetrics.sideInset).padding(.vertical, SH.Space.l + SH.Space.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -165,7 +165,9 @@ force-pushes), Mission PR publication (`MissionController+Review.swift`: explici
 validation contract and worktree contents; commits through `ReviewCommit.swift`, pushes the exact
 approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), Mission
 Spec Kit setup (the owner's click runs stock `specify init` or `specify integration` in the mission's own
-worktree) and its per-turn worktree snapshots (a private copy of the index; only objects are written),
+worktree; that approval and publication's may come from a paired device over the authenticated
+`missions.v1` connection, carrying the exact review or consent fingerprint the device showed, never
+defaulted on the host) and its per-turn worktree snapshots (a private copy of the index; only objects are written),
 a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
 Undo and Redo of a turn (the turn's files only; refused when any changed since), Add child project

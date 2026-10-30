@@ -440,6 +440,10 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI answers a client's read of this host's MCP servers, subagent profiles or providers
     /// (`RemoteRequest.hostInventory`); nil on a headless host.
     public var onRemoteHostInventory: ((RemoteHostInventoryRequest, @escaping (Result<RemoteHostInventoryResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// The GUI's mission owner answers a client's Missions requests (`missions.v1`) other than the
+    /// reads the server answers itself (`list`, `get`), on the main actor, with the same methods and
+    /// guards as the host's own page. Nil on a headless host, which offers no missions.
+    public var onRemoteMission: ((RemoteMissionRequest, @escaping (Result<RemoteMissionResult, MissionError>) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -818,6 +822,8 @@ public final class SessionServer: @unchecked Sendable {
     var advertisedCapabilities = RemoteProtocol.capabilities
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
+    /// Missions are served to remote clients (`missions.v1`): the host's experiment is on. Server queue.
+    private var missionsServed = false
     /// Browser tunnels (docs/browser.md › Remote): the limits and the count across every client.
     private let tunnelHost = BrowserTunnelHost()
     /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
@@ -846,12 +852,27 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
+                && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
         }
     }
 
-    /// What the host offers `client`: `files.v1` only to a client that listed it in `hello`. Server queue.
+    /// What the host offers `client`: `files.v1` and `missions.v1` only to a client that listed it in `hello`. Server queue.
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
-        offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
+        offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
+    }
+
+    /// Serves Missions to remote clients (`missions.v1`) while `served` (Settings ▸ Experiments ▸
+    /// Missions) and `onRemoteMission` is installed. Clients that read missions are told what the host offers now.
+    public func setMissionsServed(_ served: Bool) {
+        queue.async {
+            guard self.missionsServed != served else { return }
+            self.missionsServed = served
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.missionsCapability) {
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
+                self.enqueuePayload(payload, to: client)
+            }
+        }
     }
 
     /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
@@ -2325,6 +2346,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSkills(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
+        case .mission(let id, let request):
+            remoteMission(id: id, request: request, client: client)
         case .logicalProjectRuntime(let id, let request):
             guard !request.requiresResults || offeredCapabilities.contains(RemoteProtocol.projectResultCapability) && client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) else {
                 send(.error(id: id, code: "unsupported_result", message: "Durable result reads require compatible owner and viewer."), to: client); return
@@ -2991,6 +3014,48 @@ public final class SessionServer: @unchecked Sendable {
                 self.enqueuePayload(payload, to: client)
             }
         }
+    }
+
+    /// Server queue: one Missions request (`missions.v1`). Reads come from the store; everything else
+    /// goes to the GUI's mission owner. Replies are encoded off the queue (a record is up to 256 KiB)
+    /// and refused `too_large` past the frame cap.
+    private func remoteMission(id: Int, request: RemoteMissionRequest, client: ExtensionConnection) {
+        guard offeredCapabilities(to: client).contains(RemoteProtocol.missionsCapability), let handler = onRemoteMission else {
+            send(.error(id: id, code: "unsupported", message: "Turn on Settings ▸ Experiments ▸ Missions on the host, or update Shepherd, to use its missions."), to: client)
+            return
+        }
+        let connection = ChangesUnchecked(value: client)
+        let reply: (Result<RemoteMissionResult, MissionError>) -> Void = { [weak self] result in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let answer: RemoteReply = switch result {
+                case .success(let value): .mission(id: id, result: value)
+                case .failure(let error): .error(id: id, code: error.code, message: error.description)
+                }
+                guard let payload = (try? NDJSON.encode(answer)).flatMap({ $0.count - 1 <= NDJSON.maxPayloadBytes ? $0 : nil })
+                    ?? (try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large", message: "The answer exceeds the remote payload limit."))) else { return }
+                self?.queue.async {
+                    guard let self, self.clients[connection.value.fd] === connection.value else { return }
+                    self.enqueuePayload(payload, to: connection.value)
+                }
+            }
+        }
+        switch request {
+        case .list: reply(.success(.list(store.state.missions.map(RemoteMissionSummary.init))))
+        case .get(let missionID):
+            if let mission = store.state.missions.first(where: { $0.id == missionID }) { reply(.success(.mission(mission))) }
+            else { reply(.failure(MissionError("mission_missing", "Mission no longer exists."))) }
+        default: hopToMain { handler(request, reply) }
+        }
+    }
+
+    /// Server queue: hints each client that reads missions which ones were made, changed or went.
+    private func pushMissionChanges(before: [Mission], after: [Mission]) {
+        let readers = clients.values.filter { $0.isRemote && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.missionsCapability) }
+        guard !readers.isEmpty, offeredCapabilities.contains(RemoteProtocol.missionsCapability) else { return }
+        let old = Dictionary(before.map { ($0.id, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        let hints = after.filter { old[$0.id] != $0.revision }.map { ($0.id, Optional($0.revision)) }
+            + before.filter { gone in !after.contains { $0.id == gone.id } }.map { ($0.id, UInt64?.none) }
+        for client in readers { for (mission, revision) in hints { send(.missionChanged(missionID: mission, revision: revision), to: client) } }
     }
 
     /// Server queue: tells the remote clients watching a design that it changed: its files (at
@@ -5139,6 +5204,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         syncServiceTiers(state)
         broadcastRemoteState(state)
+        if before.missions != state.missions { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
         if !browserOwners.isEmpty { pruneBrowserOwners(state) }

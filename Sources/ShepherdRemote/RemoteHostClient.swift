@@ -55,6 +55,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// new revision, its comments', or both. A hint to pull. Main queue.
     public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
+    /// A mission on the host was made or changed (its new revision) or went (nil). A hint to pull. Main queue.
+    public var onMissionChanged: ((MissionID, UInt64?) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
@@ -109,6 +111,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case exited(SessionID, Int32?)
         case designChanged(DesignID, UInt64?, UInt64?)
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
+        case missionChanged(MissionID, UInt64?)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
     }
@@ -1270,7 +1273,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
              .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
-             .browserClaimed(let id, _):
+             .browserClaimed(let id, _), .mission(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
@@ -1284,6 +1287,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.projectExecutionChanged(key, revision))
         case .designChanged(let designID, let revision, let commentsRevision):
             push(.designChanged(designID, revision, commentsRevision))
+        case .missionChanged(let missionID, let revision):
+            push(.missionChanged(missionID, revision))
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
@@ -1345,6 +1350,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
+                case .missionChanged(let missionID, let revision): self.onMissionChanged?(missionID, revision)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 }
