@@ -165,7 +165,7 @@ final class RemoteUpdateDriver: SPUStandardUserDriver {
         choice = reply
         Task {
             guard status.phase == .downloading, await beforeRestart?() == true else {
-                fail("Host became busy. Installation canceled; stop active work and check again.")
+                fail("The host could not safely save work and prepare for restart. Installation canceled; check host update status and try again.")
                 return
             }
             guard status.phase == .downloading else { return }

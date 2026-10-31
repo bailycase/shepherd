@@ -611,6 +611,20 @@ final class RPCThreadState {
             && sendingDesignPayloads.isEmpty
     }
 
+    /// Only an ordinary running turn and the native queue have durable restart records.
+    /// In-flight delivery, helper runs and engine-owned queues cannot be replayed safely.
+    var canCheckpointForHostUpdate: Bool {
+        isServable && !historyUnread && !restoringRecovery && !inputActive && compactingRun == nil && openingPrompt == nil
+            && !recoveryWaiting && dispatches.isEmpty && retryDispatch == nil && recoveryPending == nil
+            && !recoveryResumePending && preparingPrompts.isEmpty && settleCapture == nil
+            && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
+            && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
+            && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
+            && startingQueueChild == nil && unknownQueueChildren.isEmpty && goalCommand == nil
+            && pendingGoalPolicy == nil && !pendingGoalDisable
+            && subagents.allSatisfy { $0.isTerminal && $0.state != "paused" && !$0.needsAttention }
+    }
+
     /// Moving changes the working directory and reloads instructions, so no pending work may survive it.
     var canMoveSpace: Bool {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil

@@ -263,8 +263,11 @@ final class AppUpdater {
         guard available, started, await authorized(), let server else { return remoteDriver.status }
         if request == .status {
             var status = remoteDriver.status
-            let idle = await server.hostUpdateIsIdle()
-            status.canInstall = status.canInstall && idle
+            let reason = await server.hostUpdateBlockReason()
+            if status.phase == .available, let reason {
+                status.canInstall = false
+                status.error = reason
+            }
             return status
         }
         guard !handlingRemoteRequest else {
@@ -291,7 +294,8 @@ final class AppUpdater {
             guard await server.reserveHostUpdate() else {
                 var status = remoteDriver.status
                 status.canInstall = false
-                status.error = "Host is busy. Stop active agents and tasks, pause Projects, and close terminals before updating."
+                status.error = await server.hostUpdateBlockReason()
+                    ?? "Could not reserve the host or save agent recovery checkpoints. Reconnect and try again; no update was started."
                 return status
             }
             guard await authorized() else {

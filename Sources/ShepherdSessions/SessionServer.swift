@@ -378,14 +378,18 @@ public final class SessionServer: @unchecked Sendable {
 
     public func reserveHostUpdate() async -> Bool {
         (try? await enqueue {
-            guard !self.hostUpdateReserved, !self.hostUpdateBusy else { return false }
+            guard !self.hostUpdateReserved, self.hostUpdateBlocker == nil,
+                  self.checkpointHostUpdate() else { return false }
             self.hostUpdateReserved = true
             return true
         }) ?? false
     }
 
     public func releaseHostUpdate() {
-        queue.async { self.hostUpdateReserved = false }
+        queue.async {
+            self.hostUpdateReserved = false
+            for session in self.sessions.values { session.thread?.drainIfReady() }
+        }
     }
 
     /// The accepted install reply must leave our write queues before Sparkle may restart.
@@ -394,9 +398,10 @@ public final class SessionServer: @unchecked Sendable {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while ContinuousClock.now < deadline {
             let result = try? await enqueue { () -> Int in
-                guard self.hostUpdateReserved, !self.hostUpdateBusy else { return -1 }
-                return !self.hostUpdateRequests.isEmpty
-                    || self.clients.values.contains { $0.isRemote && !$0.pendingReplies.isEmpty } ? 0 : 1
+                guard self.hostUpdateReserved, self.hostUpdateBlocker == nil else { return -1 }
+                if !self.hostUpdateRequests.isEmpty
+                    || self.clients.values.contains(where: { $0.isRemote && !$0.pendingReplies.isEmpty }) { return 0 }
+                return self.checkpointHostUpdate() ? 1 : -1
             }
             if result == 1 { return true }
             if result == -1 || result == nil { return false }
@@ -409,35 +414,91 @@ public final class SessionServer: @unchecked Sendable {
     /// drain the main dispatch queue. The app returns this result through a common-mode source.
     public func checkHostUpdateTermination(_ completion: @escaping (Bool) -> Void) {
         queue.async {
-            completion(self.hostUpdateReserved && !self.hostUpdateBusy
+            completion(self.hostUpdateReserved && self.hostUpdateBlocker == nil
                 && self.hostUpdateRequests.isEmpty
-                && !self.clients.values.contains { $0.isRemote && !$0.pendingReplies.isEmpty })
+                && !self.clients.values.contains { $0.isRemote && !$0.pendingReplies.isEmpty }
+                && self.checkpointHostUpdate())
         }
     }
 
     public func hostUpdateIsIdle() async -> Bool {
-        (try? await enqueue { !self.hostUpdateBusy }) ?? false
+        (try? await enqueue { self.hostUpdateBlocker == nil }) ?? false
     }
 
-    private var hostUpdateBusy: Bool {
-        store.state.agents.contains { $0.status == .working || $0.status == .blocked || $0.waitingOn != nil }
-            || store.state.projects.contains { project in
-                !project.paused || project.tasks.contains { [.reserved, .running, .waiting, .unknown].contains($0.phase) }
-            }
-            || store.state.projectExecutions.contains { $0.phase.active || $0.phase == .unknown }
-            || store.state.missions.contains { $0.run?.phase.active == true }
-            || !movingThreads.isEmpty || !peerDeliveries.isEmpty
+    public func hostUpdateBlockReason() async -> String? {
+        do { return try await enqueue { self.hostUpdateBlocker } }
+        catch { return "Host update readiness could not be checked. Reconnect and try again." }
+    }
+
+    /// Ordinary turns and queues already have durable, bounded recovery. Other owners must
+    /// settle first: restarting them is not permission to replay tools or resume automation.
+    private var hostUpdateBlocker: String? {
+        // The paused flag survives restart; run admission does not. A dormant Project is not busy.
+        if let project = store.state.projects.first(where: { project in
+            (!project.paused && projectRunStarts[project.id] != nil) || project.interruptPending
+                || project.tasks.contains { task in
+                    task.phase.occupiesSlot || task.pendingAnswer.map { [.queued, .delivering, .unknown].contains($0.phase) } == true
+                }
+                || project.messages.contains { [.queued, .delivering, .unknown].contains($0.phase) }
+        }) {
+            return "Pause Project \"\(project.name)\" and resolve pending tasks or deliveries before updating. Projects cannot resume automatically after an update."
+        }
+        if store.state.projectExecutions.contains(where: { $0.phase.active || $0.phase == .unknown }) {
+            return "Stop active Project executions before updating. They cannot resume automatically after an update."
+        }
+        if store.state.missions.contains(where: { $0.run?.phase.active == true }) {
+            return "Pause active missions before updating. They cannot resume automatically after an update."
+        }
+        if !movingThreads.isEmpty || !peerDeliveries.isEmpty
             || !automationStarts.isEmpty || !projectLaunches.isEmpty || !projectPromptInFlight.isEmpty
             || !publicationPending.isEmpty || !publicationTransfers.isEmpty || !publicationTransferQueue.isEmpty
             || !executionPending.isEmpty || !executionSending.isEmpty || !executionInterrupts.isEmpty
-            || projectRuntimeWriterBusy || projectFolderOperation || projectInputWriteCount > 0
-            || sessions.values.contains { session in
-                if let thread = session.thread {
-                    return thread.piBusy || thread.continuesAfterSettle || !thread.items.isEmpty || !thread.dispatches.isEmpty
-                        || thread.retryDispatch != nil || thread.recoveryPending != nil || !thread.isServable
+            || projectRuntimeWriterBusy || projectFolderOperation || projectInputWriteCount > 0 {
+            return "Wait for pending transfers, launches and Project changes to finish before updating."
+        }
+        for (id, session) in sessions {
+            guard let thread = session.thread else {
+                if session.isAlive {
+                    return "Close open terminals before updating. Terminal processes cannot survive the host restart, even when the terminal looks idle."
                 }
-                return session.isAlive
+                continue
             }
+            if thread.recoveryWaiting {
+                return "Answer or stop agents waiting for input before updating. Pending tool questions cannot be restored safely."
+            }
+            if !thread.canCheckpointForHostUpdate {
+                return "Wait for agent startup, message delivery and helper work to finish before updating."
+            }
+            if thread.recoveryAttempts >= AgentRecoveryStore.attemptLimit,
+               thread.running || thread.retry != nil || (!thread.paused && !thread.items.isEmpty) {
+                return "Finish or explicitly resume interrupted agent work before updating. Its automatic recovery limit has been reached."
+            }
+            let busy = thread.piBusy || thread.retry != nil || thread.continuesAfterSettle
+                || !thread.items.isEmpty || thread.goal?.isActive == true
+            if busy {
+                guard let agent = recoveryAgentID(sessionID: id), allowsAgentRecovery(agent, thread: thread) else {
+                    return "Stop active automation, design, goal and Project agents before updating. Only ordinary agent work has safe restart recovery."
+                }
+            }
+        }
+        if store.state.agents.contains(where: { $0.waitingOn != nil }) {
+            return "Answer or stop agents waiting for input before updating. Pending questions cannot be restored safely."
+        }
+        // A recorded active agent without a live thread cannot be checkpointed here.
+        let boundAgents = Set(sessions.keys.compactMap { recoveryAgentID(sessionID: $0) })
+        if store.state.agents.contains(where: { agent in
+            (agent.status == .working || agent.status == .blocked) && !boundAgents.contains(agent.id)
+        }) {
+            return "Wait for active agents to reconnect or stop them before updating."
+        }
+        return nil
+    }
+
+    private func checkpointHostUpdate() -> Bool {
+        for (id, session) in sessions {
+            if let thread = session.thread, !checkpointAgentRecovery(sessionID: id, thread: thread, force: true) { return false }
+        }
+        return true
     }
 
     public var onRemoteHostSettings: ((RemoteHostSettingsRequest, @escaping (Result<HostSettings, RemoteCreateAgentError>) -> Void) -> Void)?
@@ -1676,7 +1737,14 @@ public final class SessionServer: @unchecked Sendable {
         completion: @escaping (NativeOutcome) -> Void
     ) {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
-        guard !hostUpdateReserved else { unavailable("Host update in progress. Try again after reconnecting."); return }
+        if hostUpdateReserved {
+            switch request {
+            case .snapshot, .image, .subagentTranscript, .abort: break
+            default:
+                completion(.result(.failure(code: "host_updating", message: "Host update in progress. Try again after reconnecting.")))
+                return
+            }
+        }
         guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
             unavailable("The agent no longer exists.")
             return
@@ -8139,7 +8207,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     @discardableResult
-    private func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState) -> Bool {
+    private func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState, force: Bool = false) -> Bool {
         guard let id = recoveryAgentID(sessionID: sessionID) else { return true }
         do {
             // Bootstrap must not overwrite saved work with initial idle state. Stop is an
@@ -8152,7 +8220,7 @@ public final class SessionServer: @unchecked Sendable {
                 deferred.operationID = nil
                 deferred.token = nil
                 deferred.fence = nil
-                try agentRecovery.save(deferred, for: id)
+                try agentRecovery.save(deferred, for: id, force: force)
                 thread.recoveryAtLaunch = deferred
                 return true
             }
@@ -8163,7 +8231,7 @@ public final class SessionServer: @unchecked Sendable {
                 applyAgentSession(agentID: id, piSessionID: checkpoint.sessionID)
                 guard store.state.agents.first(where: { $0.id == id })?.effectivePiSessionID == checkpoint.sessionID else { return false }
             }
-            try agentRecovery.save(checkpoint, for: id)
+            try agentRecovery.save(checkpoint, for: id, force: force)
             return true
         } catch {
             ShepherdLog.warning("Could not persist agent recovery checkpoint")
