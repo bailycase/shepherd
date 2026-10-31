@@ -314,10 +314,16 @@
     installs and restarts as one operation. There is no remote channel switch or force install.
     Status exposes version/build/channel/phase/offer/error/canInstall and is explicitly polled,
     including after reconnect; installation is never automatically retried after disconnect.
-    The host refuses active/queued native work, unpaused Projects, execution/publication activity
-    and conservatively every live terminal session. Reservation fences new native sends and
-    session creation; restart rechecks activity and drains queued remote replies (five-second
-    bound), and bypasses local QuitConfirmation only through a noninteractive idle recheck.
+    The host saves ordinary active turns and native queues using the existing bounded recovery
+    checkpoints, before reservation and again before restart. Reservation fences new native sends,
+    queue draining and session creation; cancellation releases queued work without pausing it.
+    Live Project runs and pending Project deliveries, execution/publication activity, pending
+    tool questions, helper work, in-flight delivery and conservatively every live terminal
+    session still block installation. Dormant Projects do not block solely because their
+    persisted paused flag is false; they remain dormant after restart.
+    Status reports the blocking reason. Restart rechecks readiness and checkpoint persistence,
+    drains queued remote replies (five-second bound), and bypasses local QuitConfirmation only
+    through the same noninteractive readiness and checkpoint recheck.
     Checks time out after 60 seconds; authorized installation after ten minutes. A timeout
     after installer handoff reports an unknown outcome and keeps host admission reserved until
     process exit: Sparkle's consumed choice callback cannot cancel an in-progress installer.
@@ -327,7 +333,10 @@
     ordinarily privilege-requiring installs are refused by ownership/writability preflight,
     repeated before installation and extraction. External permission changes can still race
     Sparkle's installer and require attention on the host; a timeout reports this, never success.
-    Dev/headless/unsupported bundles do not advertise the capability. Nothing resumes on restart.
+    Dev/headless/unsupported bundles do not advertise the capability. Ordinary work resumes only
+    through its existing bounded, message-free engine recovery; uncertain tool or input delivery
+    stays paused for review. Projects, executions, goals, automation runs and design agents do
+    not gain automatic restart recovery.
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
