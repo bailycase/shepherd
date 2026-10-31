@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -11,6 +12,9 @@ import ShepherdRemote
 @MainActor
 final class HostDesignLibraries {
     let cache: RemoteDesignCache
+    /// The page each design shows, shared by every screen of it (the phone's boards, the iPad's
+    /// canvas) so closing or opening an iPhone Duo, or a window narrowing, keeps the page.
+    let pages = DesignPageChoices()
     private var libraries: [UUID: RemoteDesignLibrary] = [:]
     /// Each library's connection as last handed to it: the session, and whether it offers designs.
     private var connections: [UUID: (session: UUID?, offers: Bool)] = [:]
@@ -73,6 +77,7 @@ final class HostDesignLibraries {
         cache.forget(host: host)
         connections[host] = nil
         watching[host] = nil
+        pages.chosen = pages.chosen.filter { $0.key.host != host }
     }
 
     /// The designs `owner` has on screen on `host`: the host pushes changes for every store's.
@@ -92,4 +97,12 @@ final class HostDesignLibraries {
     func observe(_ owner: String, _ observer: @escaping (UUID, DesignID, UInt64?, UInt64?) -> Void) {
         observers[owner] = observer
     }
+}
+
+/// The page chosen in each design, for the app's run; a design no one chose a page in opens on
+/// its opening page (`RemoteDesignPresentation.page`).
+@MainActor
+@Observable
+final class DesignPageChoices {
+    var chosen: [HostDesignRef: String] = [:]
 }

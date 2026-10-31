@@ -60,6 +60,8 @@ final class PadDesignCanvas {
     private(set) var presented: DesignPath?
 
     @ObservationIgnored let library: RemoteDesignLibrary
+    /// The page each design shows, shared with the phone's screens of it (`HostDesignLibraries.pages`).
+    @ObservationIgnored let pages: DesignPageChoices
     @ObservationIgnored let source: RemoteDesignSource
     @ObservationIgnored let host: PadDesignHost
     @ObservationIgnored private(set) var commentsRevision: UInt64 = 0
@@ -84,9 +86,10 @@ final class PadDesignCanvas {
 
     static let restDelay: Duration = .milliseconds(120)
 
-    init(ref: PadDesignRef, library: RemoteDesignLibrary) {
+    init(ref: PadDesignRef, library: RemoteDesignLibrary, pages: DesignPageChoices) {
         self.ref = ref
         self.library = library
+        self.pages = pages
         let source = library.source(ref.design)
         self.source = source
         host = PadDesignRendering.shared.host(for: ref, source: source)
@@ -262,15 +265,18 @@ final class PadDesignCanvas {
     private func apply(_ next: DesignSnapshot) {
         guard !source.cache.isForgotten(host: ref.host), snapshot != next else { return }
         let previous = snapshot?.index
-        if page == nil || next.index.pages?.contains(where: { $0.id == page }) != true {
-            let opening = next.index.openingPage
-            if page != opening { page = opening }
+        let shown = RemoteDesignPresentation.page(pages.chosen[designRef] ?? page, in: next.index)
+        let pageChanged = page != shown
+        if pageChanged {
+            picking?.cancel()
+            picking = nil
+            present(nil)
+            closeComment()
+            fitted = false
+            page = shown
         }
-        if previous?.boards != next.index.boards || previous?.pages != next.index.pages {
-            let shown = next.index.boards.filter { next.index.isOnPage($0.key, page) }
-            labelRooms = SHLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y,
-                                                                                          width: $0.value.w, height: $0.value.h)) },
-                                                      uniquingKeysWith: { a, _ in a }))
+        if pageChanged || previous?.boards != next.index.boards || previous?.pages != next.index.pages {
+            labelRooms = Self.labelRooms(next.index, page: page)
         }
         snapshot = next
         let kept = picks.filter { next.index.boards[$0.board] != nil && next.index.isOnPage($0.board, page) }
@@ -337,8 +343,9 @@ final class PadDesignCanvas {
         let previous = picking
         picking = Task { [weak self] in
             await previous?.value
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             let element = await self.host.hitTest(board, at: point)
+            guard !Task.isCancelled, self.snapshot?.index.isOnPage(board, self.page) == true else { return }
             self.resolve(pick, on: board, element: element, commenting: commenting)
         }
     }
@@ -640,13 +647,52 @@ final class PadDesignCanvas {
 
     // MARK: Pages
 
-    var pages: [(id: String, name: String)] {
-        (snapshot?.index.pages ?? []).map { ($0.id, $0.name?.isEmpty == false ? $0.name! : $0.id) }
+    /// The canvas's pages in its order, as the header's page menu lists them.
+    var pageList: [(id: String, name: String)] {
+        snapshot.map { RemoteDesignPresentation.pages($0.index) } ?? []
     }
 
     var pageName: String? {
         guard let page else { return nil }
-        return pages.first { $0.id == page }?.name
+        return pageList.first { $0.id == page }?.name
+    }
+
+    private var designRef: HostDesignRef { HostDesignRef(host: ref.host, design: ref.design) }
+
+    /// Shows another page, as the Mac's canvas does: its boards and notes, fitted as a design
+    /// opens; what was selected on the page left goes, and so does a presented board. The phone's
+    /// screens of the design show it too.
+    func showPage(_ id: String) {
+        guard let index = snapshot?.index, index.pages?.contains(where: { $0.id == id }) == true else { return }
+        if pages.chosen[designRef] != id { pages.chosen[designRef] = id }
+        guard id != page else { return }
+        picking?.cancel()
+        picking = nil
+        present(nil)
+        page = id
+        labelRooms = Self.labelRooms(index, page: id)
+        let kept = picks.filter { index.isOnPage($0.board, id) }
+        if kept != picks { picks = kept }
+        closeComment()
+        fitted = false
+        fitIfNeeded()
+        planLive()
+    }
+
+    /// The page chosen on any screen of the design (this canvas, the phone's boards).
+    var chosenPage: String? { pages.chosen[designRef] }
+
+    /// The page another screen of the design chose shows here too (the canvas follows it on
+    /// screen, and as it comes back: an iPhone Duo closed or opened, a window narrowed).
+    func followChosenPage() {
+        if let chosen = chosenPage, chosen != page { showPage(chosen) }
+    }
+
+    private static func labelRooms(_ index: DesignIndex, page: String?) -> [String: SHLabelRoom] {
+        let shown = index.boards.filter { index.isOnPage($0.key, page) }
+        return SHLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y,
+                                                                                width: $0.value.w, height: $0.value.h)) },
+                                            uniquingKeysWith: { a, _ in a }))
     }
 
     // MARK: Board actions
