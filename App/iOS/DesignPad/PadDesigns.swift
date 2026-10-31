@@ -147,7 +147,7 @@ final class PadDesigns {
     /// A design's canvas, made on first use and kept for the app's run.
     func canvas(_ ref: PadDesignRef) -> PadDesignCanvas {
         if let canvas = canvases[ref] { return canvas }
-        let canvas = PadDesignCanvas(ref: ref, library: library(ref.host))
+        let canvas = PadDesignCanvas(ref: ref, library: library(ref.host), pages: libraries.pages)
         if libraries.cache.isForgotten(host: ref.host) { canvas.forget() }
         else { canvases[ref] = canvas }
         return canvas

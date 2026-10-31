@@ -131,6 +131,26 @@ struct RemoteDesignPresentationTests {
         #expect(RemoteDesignPresentation.size(index.boards[Self.phone]!) == "390 × 844")
     }
 
+    @Test func pagesFilterTheBoardsAndAChoiceTheCanvasLostFallsBackToItsOpeningPage() {
+        let other = DesignPath("B.dc.html")!
+        let index = DesignIndex(title: "Checkout", boards: [
+            Self.wide: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, page: "desktop"),
+            Self.phone: DesignIndex.Board(x: 0, y: 0, w: 390, h: 844, page: "phone"),
+            // A page the index doesn't have: the first page shows it, so nothing goes missing.
+            other: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, page: "gone"),
+        ], order: [Self.wide, Self.phone, other], launch: .init(view: "canvas", page: "phone"),
+           pages: [.init(id: "desktop", name: "Desktop"), .init(id: "phone", name: "")])
+        #expect(RemoteDesignPresentation.pages(index).map(\.name) == ["Desktop", "phone"])
+        #expect(RemoteDesignPresentation.page(nil, in: index) == "phone")
+        #expect(RemoteDesignPresentation.page("desktop", in: index) == "desktop")
+        #expect(RemoteDesignPresentation.page("deleted", in: index) == "phone")
+        #expect(RemoteDesignPresentation.boards(index, page: "desktop") == [Self.wide, other])
+        #expect(RemoteDesignPresentation.boards(index, page: "phone") == [Self.phone])
+        let flat = DesignIndex(title: "Flat", boards: index.boards, order: index.order)
+        #expect(RemoteDesignPresentation.page("desktop", in: flat) == nil)
+        #expect(RemoteDesignPresentation.boards(flat, page: nil) == [Self.wide, Self.phone, other])
+    }
+
     @Test(arguments: [
         (CGSize(width: 390, height: 844), CGSize(width: 390, height: 600), 600.0 / 844),
         (CGSize(width: 1280, height: 800), CGSize(width: 390, height: 600), 390.0 / 1280),

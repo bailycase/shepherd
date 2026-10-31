@@ -43,10 +43,17 @@ struct PadDesignScreen: View {
                                     swatches: canvas.systemSwatches,
                                     back: back,
                                     chat: wide ? nil : { showingChat = true },
-                                    export: canvas.canPresent && !exportBusy ? { choosingExport = true } : nil)
+                                    pages: canvas.pageList, page: canvas.page,
+                                    pageMenuWidth: Self.pageMenuWidth(canvas: fold?.lowerBound ?? proxy.size.width
+                                                                        - (wide ? MobileLayout.padDesignChatWidth : 0)),
+                                    showPage: canvas.showPage,
+                                    // Nothing to export on a page with no boards.
+                                    export: canvas.canPresent && !canvas.boards.isEmpty && !exportBusy ? { choosingExport = true } : nil)
                     PadDesignCanvasView(canvas: canvas, reply: wide ? nil : agent,
                                         markupAvailable: hosts.host(ref.host)?.supports(RemoteProtocol.designMarkupCapability) == true)
                         .onChange(of: wide, initial: true) { _, wide in canvas.column = !wide }
+                        // The page the phone's screens of the design chose, as it comes on screen and after.
+                        .onChange(of: canvas.chosenPage, initial: true) { canvas.followChosenPage() }
                 }
                 .background { PadDesignCanvasBackground(wide: wide) }
                 .paneWidth(fold?.lowerBound)
@@ -119,6 +126,13 @@ struct PadDesignScreen: View {
         }
     }
 
+    /// The header's page popup's widest, by the canvas's width: nil for its glyph alone.
+    private static func pageMenuWidth(canvas width: CGFloat) -> CGFloat? {
+        if width < MobileLayout.padDesignPageLabelMinWidth { return nil }
+        return width < MobileLayout.padDesignSideBySideMinWidth ? MobileLayout.padDesignPageMenuNarrowMaxWidth
+            : MobileLayout.padDesignPageMenuMaxWidth
+    }
+
     /// The canvas's view record as the chat's sends read it, holding the canvas weakly.
     private static func viewRecord(of canvas: PadDesignCanvas) -> () -> DesignViewRecord? {
         { [weak canvas] in canvas?.viewRecord }
@@ -127,7 +141,8 @@ struct PadDesignScreen: View {
 
 /// The header over the canvas. Wide (iPadDesign): "‹ Designs" in the link blue, the name, then
 /// the system's chip and Export, on the canvas's dots. Narrow (iPadSplitView): the chevron, the
-/// name in 17, the chat button and Export, on the window's color over a hairline.
+/// name in 17, the chat button and Export, on the window's color over a hairline. A canvas with
+/// pages puts the Mac's page popup before Export.
 private struct PadDesignHeader: View {
     let title: String
     let wide: Bool
@@ -135,6 +150,11 @@ private struct PadDesignHeader: View {
     let swatches: [DesignSystemPresentation.Swatch]
     let back: () -> Void
     let chat: (() -> Void)?
+    let pages: [(id: String, name: String)]
+    let page: String?
+    /// The page popup's widest; nil, too narrow for the page's name beside the title: its glyph.
+    let pageMenuWidth: CGFloat?
+    let showPage: (String) -> Void
     let export: (() -> Void)?
 
     var body: some View {
@@ -151,6 +171,8 @@ private struct PadDesignHeader: View {
                 .contentShape(Rectangle().inset(by: -SH.Space.m))
             }
             .buttonStyle(.plain)
+            // Back and Export keep their size; the title, the chip and the page's name give way.
+            .fixedSize()
             .accessibilityLabel("Designs")
             Text(title)
                 .font(wide ? .sh(.title) : .sh(.headline))
@@ -174,8 +196,46 @@ private struct PadDesignHeader: View {
                 .shTouchTarget(height: MobileLayout.padDesignHeaderButton, width: MobileLayout.padDesignHeaderButton)
                 .accessibilityLabel("Chat")
             }
+            if pages.count > 1 {
+                let name = pages.first { $0.id == page }?.name ?? "Pages"
+                // The Mac's page popup, at most a set width so a long name truncates; in a window
+                // too narrow for it beside the title, the page glyph alone (its name in the menu).
+                Menu {
+                    ForEach(pages, id: \.id) { item in
+                        Button {
+                            showPage(item.id)
+                        } label: {
+                            if item.id == page { Label(item.name, systemImage: "checkmark") } else { Text(item.name) }
+                        }
+                    }
+                } label: {
+                    if pageMenuWidth == nil {
+                        Image(systemName: "rectangle.stack")
+                            .font(.sh(.headline, weight: .regular))
+                            .foregroundStyle(sh.textSecondary)
+                            .frame(width: MobileLayout.padDesignHeaderButton, height: MobileLayout.padDesignHeaderButton)
+                            .contentShape(Rectangle())
+                    } else {
+                        // As wide as the name, up to the cap; past it the name truncates.
+                        ViewThatFits(in: .horizontal) {
+                            SHPopupLabel(name).fixedSize()
+                            SHPopupLabel(name)
+                        }
+                    }
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: pageMenuWidth)
+                .shTouchTarget(height: pageMenuWidth == nil ? MobileLayout.padDesignHeaderButton : SH.Height.controlM)
+                .accessibilityLabel("Page")
+                .accessibilityValue(name)
+                // The page's name before the design's: the title truncates first.
+                .layoutPriority(1)
+            }
             Button("Export") { export?() }
                 .buttonStyle(.sh(.secondary, size: .l))
+                .fixedSize()
                 .disabled(export == nil)
         }
         .padding(.horizontal, MobileLayout.padDesignHeaderInset)
