@@ -50,6 +50,7 @@ struct DesignBoardScreen: View {
             model?.close()
             if DesignBoardModel.onScreen === model { DesignBoardModel.onScreen = nil }
         }
+        .onChange(of: MobileDesigns.of(hosts).page(ref)) { model?.pageChanged() }
         .onChange(of: DesignBoardJump.shared.target) { _, target in
             guard let target, target.ref == ref else { return }
             model?.show(target.path)
@@ -115,6 +116,7 @@ final class DesignBoardModel {
     var shared: SharedFile?
 
     @ObservationIgnored private let initial: DesignPath?
+    @ObservationIgnored private var opened = false
     /// The board screen showing now (the screenshot fixtures reach it here).
     static weak var onScreen: DesignBoardModel?
 
@@ -125,7 +127,11 @@ final class DesignBoardModel {
     }
 
     var index: DesignIndex? { designs.indexes[ref]?.snapshot.index }
-    var boards: [DesignPath] { index.map(RemoteDesignPresentation.boards) ?? [] }
+    /// The boards of the shown board's page (every board on a canvas without pages): the dots and
+    /// the steps between boards stay on it.
+    var boards: [DesignPath] {
+        index.map { index in RemoteDesignPresentation.boards(index, page: current.flatMap(index.page(of:)) ?? designs.page(ref)) } ?? []
+    }
     var board: DesignIndex.Board? { current.flatMap { index?.boards[$0] } }
     var label: String { current.flatMap { path in index.map { RemoteDesignPresentation.label(path, in: $0) } } ?? "" }
     var pins: [DesignComment] { current.map { RemoteDesignPresentation.pins(designs.comments[ref], board: $0) } ?? [] }
@@ -136,8 +142,10 @@ final class DesignBoardModel {
         _ = await comments
         if let index { await tweak?.snapshotChanged(index.snapshot) }
         if current == nil, let index {
+            // The route's board opens once; back on an empty page, the page's first board (none).
             let boards = RemoteDesignPresentation.boards(index.snapshot.index)
-            show(initial.flatMap { boards.contains($0) ? $0 : nil } ?? boards.first)
+            show((opened ? nil : initial).flatMap { boards.contains($0) ? $0 : nil } ?? self.boards.first)
+            opened = true
         } else if live == nil {
             reopen()
         }
@@ -173,6 +181,38 @@ final class DesignBoardModel {
         live = DesignLiveBoard(ref: ref, path: path, size: CGSize(width: board.w, height: board.h), source: source)
         wire(live)
         if playing, index?.boards[path]?.isInteractive != true { play(false) }
+        // The board's page is the design's page shown, here and on the iPad's canvas.
+        if let page = index?.page(of: path) { designs.showPage(ref, page) }
+    }
+
+    /// Another page was chosen (the Boards sheet's title menu, or the design's other screens):
+    /// its first board shows.
+    /// A page with no boards shows none: no board, no dots, until a page with boards is chosen.
+    func pageChanged() {
+        // Before the screen opened its board, the page arriving with the design's index isn't a
+        // choice: the route's board opens (`load`).
+        guard opened, let index, let page = designs.page(ref) else { return }
+        if let current, index.isOnPage(current, page) { return }
+        if let first = RemoteDesignPresentation.boards(index, page: page).first {
+            show(first)
+        } else if current != nil {
+            if playing { play(false) }
+            live?.close()
+            live = nil
+            current = nil
+            draft = nil
+            draftText = ""
+            selected = nil
+            tweakPick = nil
+            tweaking = false
+            commenting = false
+            pinRects = [:]
+        }
+    }
+
+    var pageName: String? {
+        guard let index, let page = designs.page(ref) else { return nil }
+        return RemoteDesignPresentation.pages(index).first { $0.id == page }?.name
     }
 
     // MARK: Play
@@ -454,7 +494,8 @@ private struct DesignBoardContent: View {
             } else {
             SHBoardToolbar(tools: DesignBoardTools.all,
                            active: model.commenting ? DesignBoardTools.comment : model.tweaking ? DesignBoardTools.tweak : nil,
-                           disabled: model.designs.agent(model.ref) == nil ? [DesignBoardTools.ask] : []) { id in
+                           disabled: Set(model.designs.agent(model.ref) == nil ? [DesignBoardTools.ask] : [])
+                               .union(model.current == nil ? [DesignBoardTools.comment, DesignBoardTools.tweak, DesignBoardTools.export] : [])) { id in
                 switch id {
                 case DesignBoardTools.comment:
                     model.commenting.toggle()
@@ -488,14 +529,22 @@ private struct DesignBoardContent: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: SH.Space.xxs) {
-                    Text(model.label)
-                        .font(.shSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
-                        .foregroundStyle(Color.sh.textPrimary)
-                        .lineLimit(1)
-                    if model.boards.count > 1, let current = model.current {
-                        SHBoardDots(count: model.boards.count, current: model.boards.firstIndex(of: current) ?? 0)
+                // With pages, the title is the page menu (the grid's title menu, kept with the dots).
+                if model.designs.hasPages(model.ref) {
+                    Menu { DesignPagePicker(ref: model.ref) } label: {
+                        HStack(spacing: SH.Space.xs) {
+                            boardTitle
+                            Image(systemName: "chevron.down").font(.sh(.caption, weight: .semibold))
+                                .foregroundStyle(Color.sh.textTertiary)
+                        }
+                        .frame(minHeight: SH.Height.touch)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Page")
+                    .accessibilityValue(model.pageName ?? "")
+                } else {
+                    boardTitle
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -532,6 +581,19 @@ private struct DesignBoardContent: View {
         }
         .sheet(item: $model.shared) { file in
             DesignShareSheet(url: file.url).ignoresSafeArea()
+        }
+    }
+
+    /// The board's label over a dot per board of its page; the page's name on an empty one.
+    private var boardTitle: some View {
+        VStack(spacing: SH.Space.xxs) {
+            Text(model.current == nil ? model.pageName ?? "" : model.label)
+                .font(.shSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .lineLimit(1)
+            if model.boards.count > 1, let current = model.current {
+                SHBoardDots(count: model.boards.count, current: model.boards.firstIndex(of: current) ?? 0)
+            }
         }
     }
 
@@ -625,6 +687,9 @@ private struct DesignBoardCanvas: View {
                         .padding(.top, MobileDesignLayout.boardTop)
                         .frame(maxWidth: .infinity)
                         .task(id: live.drawn) { await model.measurePins() }
+                } else if model.current == nil, model.pageName != nil {
+                    SHEmptyState(Text("No boards on this page"), message: "Choose another page from the title.", showsMark: false)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .clipped()

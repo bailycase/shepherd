@@ -499,6 +499,24 @@ final class MobileDesigns {
         try await NativeReferenceSend.send(references, text: text) { try await client.nativeThread(agentID: agent.agent, request: $0) }
     }
 
+    // MARK: Pages
+
+    /// The page the design shows, shared with the iPad's canvas; nil on a canvas without pages
+    /// or before it synced.
+    func page(_ ref: HostDesignRef) -> String? {
+        indexes[ref].flatMap { RemoteDesignPresentation.page(libraries.pages.chosen[ref], in: $0.snapshot.index) }
+    }
+
+    /// The design has pages to choose between: its screens offer the page menu.
+    func hasPages(_ ref: HostDesignRef) -> Bool {
+        (indexes[ref]?.snapshot.index.pages?.count ?? 0) > 1
+    }
+
+    func showPage(_ ref: HostDesignRef, _ id: String) {
+        guard libraries.pages.chosen[ref] != id else { return }
+        libraries.pages.chosen[ref] = id
+    }
+
     // MARK: Lookups
 
     func design(_ ref: HostDesignRef) -> Design? {

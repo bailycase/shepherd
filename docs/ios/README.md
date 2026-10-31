@@ -372,7 +372,8 @@ keep the version for real breaks.
 - **Designs (`Designs/`):** a host's designs while it serves them (`designs.v1`, its Design tool
   on): Home's Designs row, design rows in Recents, the Designs screen with tiles drawn on the
   phone, a design's boards, one board full screen with its pins, comments pinned on a tapped
-  element, replies and Resolve, Duplicate board, Ask the agent, Boards and Export (PNG or PDF through the share sheet), search's Designs
+  element, replies and Resolve, Duplicate board, Ask the agent, Boards and Export (PNG or PDF through the share sheet), a design's
+  pages (the title's menu; the iPad's canvas and the phone share the page shown), search's Designs
   section and New design, and More ▸ Design systems. Boards render on the phone, at most two web
   views at once ([docs/designs.md › On iPhone](../designs.md#on-iphone)).
 
@@ -380,7 +381,7 @@ keep the version for real breaks.
   Settings ▸ Experiments ▸ Design tool on; the surfaces come and go with it). The sidebar's
   Designs row opens the Designs list, and each design is a Recents row with its boards (its
   agent's thread has none of its own). A design (iPadDesign) fills the window: the canvas under
-  "‹ Designs", the name, the system's chip and Export, beside the 360pt pane with Chat (the
+  "‹ Designs", the name, the system's chip, the page popup and Export, beside the 360pt pane with Chat (the
   design agent's thread, the iPad's composer card at its compact size with no "/"; Scribble
   writes into its field), Tweak and Comments. The
   boards render on the iPad from the files the host serves, one live and the rest as snapshots;
