@@ -29,7 +29,8 @@ struct AgentRecoveryTests {
         return PiAgent(host: host, agent: original.agent, sessionID: session.id, log: log)
     }
 
-    @Test func workingAgentsAndTheirQueueSurviveAnAppRestart() async throws {
+    @Test(arguments: [false, true])
+    func workingAgentsAndTheirQueueSurviveAnAppRestart(remoteUpdate: Bool) async throws {
         let h = try ScratchServer.fresh()
         let pi = try await PiAgent.launch(on: h)
         let idle = try await pi.ready()
@@ -42,6 +43,15 @@ struct AgentRecoveryTests {
         #expect(await h.server.agentsNeedingStartupRecovery() == [pi.agent.id])
         #expect(try store(h).checkpoint(for: pi.agent.id) == saved, "Admission does not consume a recovery attempt")
         #expect(saved.items.first?.images == [image])
+        if remoteUpdate {
+            #expect(await h.server.hostUpdateBlockReason() == nil)
+            #expect(await h.server.reserveHostUpdate())
+            #expect(await h.server.hostUpdateCanRestart())
+            let canTerminate = await withCheckedContinuation { continuation in
+                h.server.checkHostUpdateTermination { continuation.resume(returning: $0) }
+            }
+            #expect(canTerminate)
+        }
         h.stop(keepFiles: true)
         #expect(try store(h).checkpoint(for: pi.agent.id) == saved, "Shutdown must not replace active intent with idle")
 

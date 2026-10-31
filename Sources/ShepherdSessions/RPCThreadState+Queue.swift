@@ -463,6 +463,7 @@ extension RPCThreadState {
 
     /// The queue goes when pi is idle, not paused, holds no question, and no editor holds it.
     func drainIfReady() {
+        guard workAdmission() else { return }
         guard startingQueueChild == nil, !items.contains(where: { unknownQueueChildren.contains($0.entry.id) }) else { return }
         releaseLapsedHolds()
         guard !piBusy, !paused, session.isAlive, isServable, dialogs.isEmpty else { return }

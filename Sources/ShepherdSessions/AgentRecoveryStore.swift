@@ -48,9 +48,9 @@ final class AgentRecoveryStore {
 
     // ponytail: synchronous write-ahead keeps admission crash-safe; stage large image blobs off
     // queue if image-heavy recovery checkpoints measurably stall other sessions.
-    func save(_ checkpoint: Checkpoint?, for agent: AgentID) throws {
+    func save(_ checkpoint: Checkpoint?, for agent: AgentID, force: Bool = false) throws {
         let previous = try self.checkpoint(for: agent)
-        guard checkpoint != previous else { return }
+        guard force || checkpoint != previous else { return }
         if let checkpoint {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
