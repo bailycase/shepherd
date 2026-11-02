@@ -495,8 +495,8 @@ struct ThreadEventTests {
     }
 
     #if DEBUG
-    /// A streamed delta rehashes the message it grew, never the turn's tool output beside it.
-    @Test func aDeltaRehashesOnlyTheMessageItGrew() async throws {
+    /// A streamed delta changes the row's revision without rehashing growing text or tool output.
+    @Test func aDeltaDoesNotRehashTheGrowingMessage() async throws {
         let t = try Thread()
         defer { t.stop() }
         _ = try await t.ready()
@@ -511,7 +511,7 @@ struct ThreadEventTests {
         let bytes = await withCheckedContinuation { continuation in
             t.queue.async { continuation.resume(returning: t.state.bytesHashedByLastCommit) }
         }
-        #expect(bytes > 0 && bytes <= "Hello world".utf8.count)
+        #expect(bytes == 0)
     }
 
     /// Snapshots size their rows once: after a delta, the next snapshot encodes only its fixed
@@ -552,8 +552,8 @@ struct ThreadEventTests {
         }
     }
 
-    /// The queue beside a streaming reply is hashed when it changes, never with each delta.
-    @Test func aDeltaBesideAQueueRehashesOnlyTheMessageItGrew() async throws {
+    /// Neither the unchanged queue nor the growing reply is rehashed for a streamed delta.
+    @Test func aDeltaBesideAQueueDoesNotRehashText() async throws {
         let t = try Thread()
         defer { t.stop() }
         let s = try await t.ready()
@@ -565,7 +565,7 @@ struct ThreadEventTests {
         let bytes = await withCheckedContinuation { continuation in
             t.queue.async { continuation.resume(returning: t.state.bytesHashedByLastCommit) }
         }
-        #expect(bytes > 0 && bytes <= "Hello world".utf8.count)
+        #expect(bytes == 0)
     }
 
     /// A snapshot beside an unchanged queue reuses the queue's size: the delta's snapshot
@@ -807,6 +807,27 @@ struct ThreadEventTests {
         )
         #expect(try await t.snapshot().provisional.map(\.entryID)
             == ["provisional:assistant:1", "provisional:tool:c1", "user:1733234569000", "provisional:assistant:2"])
+    }
+
+    @Test func streamingThinkingMatchesSettledTextAndResetsBetweenReplies() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"agent_start"}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[{"type":"thinking","thinking":"  Original"}]}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"\n\n\n  plan  "}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Answer"}}"#
+        )
+        #expect(try await t.snapshot().provisional.last?.blocks.first(where: { $0.kind == .thinking })?.text == "Original\n\n  plan")
+        try await t.feed(#"{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"  Revised\n\n\n result  "}}"#)
+        #expect(try await t.snapshot().provisional.last?.blocks.first(where: { $0.kind == .thinking })?.text == "Revised\n\n result")
+        try await t.feed(
+            #"{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"  Revised\n\n\n result  "},{"type":"text","text":"Answer"}],"stopReason":"stop"}}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"  Fresh reply  "}}"#
+        )
+        #expect(try await t.snapshot().provisional.last?.blocks.first(where: { $0.kind == .thinking })?.text == "Fresh reply")
     }
 
     /// "Thought for Ns": measured live, frozen once the answer starts, and carried onto the

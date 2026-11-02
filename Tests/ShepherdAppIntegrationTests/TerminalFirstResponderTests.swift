@@ -40,6 +40,8 @@ struct TerminalFirstResponderTests {
         try await eventuallyOnMain("both surfaces to mount") { panes.surface(of: panes.left) != nil && panes.surface(of: panes.right) != nil }
         let left = try #require(panes.surface(of: panes.left)), right = try #require(panes.surface(of: panes.right))
         #expect(left !== right)
+        #expect(panes.left.viewState.attachedView === left)
+        #expect(panes.right.viewState.attachedView === right)
         #expect(TerminalFirstResponder.surfaceViews(in: panes.window.window.contentView).count == 2)
         #expect(TerminalFirstResponder.isSurfaceView(left), "libghostty's surface class is still \(TerminalFirstResponder.surfaceClassName)")
         #expect(TerminalSurfaceModel.model(for: left) === panes.left && TerminalSurfaceModel.model(for: right) === panes.right)

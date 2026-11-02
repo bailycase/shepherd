@@ -100,20 +100,11 @@ struct ComposerTextField: NSViewRepresentable {
         context.coordinator.parent = self
         field.updating = true
         defer { field.updating = false }
-        let _ = appearance
-        SHFonts.register()
-        field.font = NSFont(name: "\(SHFonts.sansFamily)-Regular", size: SHTextStyle.body.size * ThemeStore.shared.textScale)
-            ?? .systemFont(ofSize: SHTextStyle.body.size * ThemeStore.shared.textScale)
-        field.textColor = NSColor(Color.sh.textPrimary)
-        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
-            .font: field.font!, .foregroundColor: NSColor(Color.sh.textTertiary)
-        ])
-        field.isEnabled = enabled
-        field.setAccessibilityLabel(label)
-        field.editor.insertionPointColor = NSColor(Color.sh.lantern)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = lineSpacing
-        field.editor.defaultParagraphStyle = paragraph
+        field.updateStyle(Style(appearance: appearance, scale: ThemeStore.shared.textScale,
+                                text: Color.sh.textPrimary, placeholderColor: Color.sh.textTertiary,
+                                caret: Color.sh.lantern, placeholder: placeholder, lineSpacing: lineSpacing))
+        if field.isEnabled != enabled { field.isEnabled = enabled }
+        if field.accessibilityLabel() != label { field.setAccessibilityLabel(label) }
         field.editor.attach = attach
         field.editor.keys = keys
         let replaced = field.stringValue != text
@@ -161,12 +152,49 @@ struct ComposerTextField: NSViewRepresentable {
         }
     }
 
+    struct Style: Equatable {
+        var appearance: ColorScheme
+        var scale: CGFloat
+        var text: Color
+        var placeholderColor: Color
+        var caret: Color
+        var placeholder: String
+        var lineSpacing: CGFloat
+    }
+
     final class Field: NSTextField {
         let editor = Editor()
+        private var appliedStyle: Style?
+        private var pendingStyle: Style?
+
+        func updateStyle(_ style: Style) {
+            pendingStyle = style
+            applyStyle()
+        }
+
+        private func applyStyle() {
+            guard let style = pendingStyle, style != appliedStyle,
+                  appliedStyle == nil || (window != nil && !isHiddenOrHasHiddenAncestor) else { return }
+            SHFonts.register()
+            font = NSFont(name: "\(SHFonts.sansFamily)-Regular", size: SHTextStyle.body.size * style.scale)
+                ?? .systemFont(ofSize: SHTextStyle.body.size * style.scale)
+            textColor = NSColor(style.text)
+            placeholderAttributedString = NSAttributedString(string: style.placeholder, attributes: [
+                .font: font!, .foregroundColor: NSColor(style.placeholderColor)
+            ])
+            editor.insertionPointColor = NSColor(style.caret)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineSpacing = style.lineSpacing
+            editor.defaultParagraphStyle = paragraph
+            appliedStyle = style
+            invalidateIntrinsicContentSize()
+        }
+
+        override func viewDidUnhide() { super.viewDidUnhide(); applyStyle() }
         var updating = false
         var publishingEdit = false
         var wantsFocus = false
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); applyFocus() }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); applyStyle(); applyFocus() }
         /// An assistive client (dictation, AX scripting) writing AXValue bypasses the field editor,
         /// so nothing fires `didChangeText`; publish the new text ourselves.
         override func setAccessibilityValue(_ value: Any?) {

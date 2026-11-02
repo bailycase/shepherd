@@ -13,6 +13,39 @@ import Testing
 @Suite("Composer caret", .mainActorExclusive)
 @MainActor
 struct ComposerCaretTests {
+    @Test func hiddenComposerStylesWaitForRevealWithoutReplacingTheDraft() async throws {
+        let window = OffscreenWindow()
+        defer { window.close() }
+        let container = NSView(frame: window.host.bounds)
+        window.window.contentView = container
+        let field = ComposerTextField.Field(frame: container.bounds)
+        container.addSubview(field)
+        let light = ComposerTextField.Style(appearance: .light, scale: 1, text: .sh.textPrimary,
+            placeholderColor: .sh.textTertiary, caret: .sh.textPrimary, placeholder: "Light", lineSpacing: 0)
+        var dark = light
+        dark.appearance = .dark
+        dark.scale = 1.3
+        dark.placeholder = "Dark"
+        field.updateStyle(light)
+        field.stringValue = "Keep this draft"
+        let original = try #require(field.placeholderAttributedString)
+        field.updateStyle(light)
+        #expect(field.placeholderAttributedString === original, "An unchanged update must not allocate another attributed placeholder")
+        container.isHidden = true
+        window.window.appearance = NSAppearance(named: .darkAqua)
+        field.updateStyle(dark)
+        #expect(field.placeholderAttributedString === original)
+        container.isHidden = false
+        try await eventuallyOnMain("pending style applied on native reveal") { field.placeholderAttributedString?.string == "Dark" }
+        #expect(field.placeholderAttributedString?.string == "Dark")
+        #expect(field.stringValue == "Keep this draft")
+        let reference = ComposerTextField.Field(frame: container.bounds)
+        reference.stringValue = field.stringValue
+        reference.updateStyle(dark)
+        #expect(field.intrinsicContentSize.height == reference.intrinsicContentSize.height)
+        #expect(field.font?.pointSize == SHTextStyle.body.size * dark.scale)
+    }
+
     @Test func aReentrantBindingRenderCannotOverwriteTheNativeEditBeingPublished() async throws {
         final class Draft {
             var text = ""

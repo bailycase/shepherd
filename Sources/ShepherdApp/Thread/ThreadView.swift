@@ -344,7 +344,6 @@ struct ThreadView: View {
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
         .onHover { hovering = $0 }
-        .onAppear { installWheelMonitor() }
         .onDisappear {
             historyAnchor.cancel()
             tailGuard.stop()
@@ -355,7 +354,18 @@ struct ThreadView: View {
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { historyAnchor.cancel(); historyAnchor.animating = false; tailGuard.stop(); store.suspend(owner: storeOwner); return }
+            guard !Task.isCancelled else { return }
+            guard active else {
+                if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+                wheelMonitor = nil
+                hovering = false
+                historyAnchor.cancel()
+                historyAnchor.animating = false
+                tailGuard.stop()
+                store.suspend(owner: storeOwner)
+                return
+            }
+            installWheelMonitor()
             await store.run(request: request, preview: preview, owner: storeOwner)
         }
     }
