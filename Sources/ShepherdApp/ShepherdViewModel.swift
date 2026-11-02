@@ -870,7 +870,9 @@ final class ShepherdViewModel {
             self.notifications.agentNotify(agent, title: title, body: body)
         }
         if let checkoutReader {
-            let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, checkout in await server.setAgentCheckout(id, checkout) }
+            let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, cwd, checkout in
+                await server.setAgentCheckout(id, checkout, directory: cwd)
+            }
             monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
             checkouts = monitor
         }

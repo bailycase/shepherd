@@ -66,6 +66,7 @@ final class RPCThreadState {
         /// Assigning it forgets its hash and size, so a commit rehashes only the rows that changed.
         var value: NativeThreadMessage {
             didSet {
+                guard value != oldValue else { return }
                 hash = nil
                 bytes = nil
             }
@@ -242,7 +243,10 @@ final class RPCThreadState {
     /// Tests only: runs off the queue before a history's images are read (`refreshMessages`).
     var beforeHistoryImages: (() -> Void)?
     private var sequence = 0
-    private var currentAssistant: Int?
+    private var currentAssistant: Int? {
+        didSet { if currentAssistant != oldValue { streamingThinking.removeAll(keepingCapacity: true) } }
+    }
+    private var streamingThinking: [Int: StreamingThinking] = [:]
     /// When each tool call was first seen (ms): named by the model, else running. Its clock, for
     /// live calls and for the duration history keeps.
     private var toolStarts: [String: Double] = [:]
@@ -809,8 +813,9 @@ final class RPCThreadState {
                 currentAssistant = sequence
                 requestStarted(key: sequence)
                 var raw = RPCMessage(role: "assistant", content: [])
+                updateThinking(delta, in: raw)
                 Self.apply(delta, to: &raw)
-                upsertAssistant(raw, ended: false)
+                upsertAssistant(raw, ended: false, thinking: streamingThinking.mapValues(\.normalized))
                 observeStream(delta)
                 streamToolCall(delta, in: raw)
                 break
@@ -825,8 +830,9 @@ final class RPCThreadState {
             // owned and the append grows it in place.
             var raw = live[index].raw!
             live[index].raw = nil
+            updateThinking(delta, in: raw)
             Self.apply(delta, to: &raw)
-            upsertAssistant(raw, ended: false)
+            upsertAssistant(raw, ended: false, thinking: streamingThinking.mapValues(\.normalized))
             streamToolCall(delta, in: raw)
         case .messageEnd(let message) where message.role == "custom" && message.display == true && message.customType != "shepherd-child":
             // A message an extension displays (a command's report) is in pi's history already, and
@@ -1970,9 +1976,9 @@ final class RPCThreadState {
         trim { if case .tool = $0 { true } else { false } }
     }
 
-    private func upsertAssistant(_ raw: RPCMessage, ended: Bool) {
+    private func upsertAssistant(_ raw: RPCMessage, ended: Bool, thinking: [Int: String] = [:]) {
         guard let key = currentAssistant else { return }
-        var value = Self.project(entryID: "provisional:assistant:\(key)", message: raw)
+        var value = Self.project(entryID: "provisional:assistant:\(key)", message: raw, thinking: thinking)
         value.status = ended ? (raw.stopReason ?? "complete") : "streaming"
         let now = Date().timeIntervalSince1970 * 1000
         var hasThinking = false, answered = false
@@ -2003,8 +2009,19 @@ final class RPCThreadState {
         }
         let existing = live.firstIndex(where: { $0.kind == .assistant(key) })
         value.timing = existing.flatMap { live[$0].value.timing } ?? raw.timestamp.flatMap { timingByTimestamp[$0] } ?? (key == requestKey ? request : nil)
-        let item = LiveItem(kind: .assistant(key), value: value, raw: raw, ended: ended)
+        var item = LiveItem(kind: .assistant(key), value: value, raw: raw, ended: ended)
         if let index = existing {
+            // A revision needs to know that the row changed, not rehash its entire growing
+            // reply. Equality also preserves no-op deltas and repeated message records.
+            if value == live[index].value {
+                item.hash = live[index].hash
+                item.bytes = live[index].bytes
+            } else if let previous = live[index].hash {
+                var changed = Hasher()
+                changed.combine(previous)
+                changed.combine(revision)
+                item.hash = changed.finalize()
+            }
             live[index] = item
         } else {
             live.append(item)
@@ -2239,6 +2256,39 @@ final class RPCThreadState {
         }
         for id in dropped { toolStarts[id] = nil }
         if !streamingCalls.isEmpty { streamingCalls = streamingCalls.filter { keeping.contains($0.key) } }
+    }
+
+    private func updateThinking(_ delta: RPCAssistantDelta, in raw: RPCMessage) {
+        guard let index = delta.contentIndex, index >= 0 else { return }
+        for (position, block) in raw.content.enumerated() where streamingThinking[position] == nil {
+            if case .thinking(let text) = block {
+                var accumulator = StreamingThinking()
+                accumulator.append(text)
+                streamingThinking[position] = accumulator
+            }
+        }
+        switch delta.type {
+        case "thinking_start":
+            streamingThinking[index] = StreamingThinking()
+        case "thinking_delta":
+            if streamingThinking[index] == nil {
+                var accumulator = StreamingThinking()
+                if raw.content.indices.contains(index), case .thinking(let text) = raw.content[index] {
+                    accumulator.append(text)
+                }
+                streamingThinking[index] = accumulator
+            }
+            streamingThinking[index]?.append(delta.delta ?? "")
+        case "thinking_end":
+            if let content = delta.content {
+                var accumulator = StreamingThinking()
+                accumulator.append(content == RPCContentBlock.redactedThinkingPlaceholder ? "" : content)
+                streamingThinking[index] = accumulator
+            }
+        case "text_start", "text_delta", "text_end", "toolcall_start", "toolcall_end":
+            streamingThinking[index] = nil
+        default: break
+        }
     }
 
     static func apply(_ delta: RPCAssistantDelta, to message: inout RPCMessage) {
@@ -2842,7 +2892,7 @@ final class RPCThreadState {
     /// looks an image up: it never decodes or hashes one (it runs on the thread's queue), and an image with no entry, as in a live row, whose
     /// id history does not yet number, is named by nothing and stays the "Image" chip until the history is read again.
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil, sentReferences: [String]? = nil,
-                        images: [String: ThreadImages.Meta] = [:]) -> NativeThreadMessage {
+                        images: [String: ThreadImages.Meta] = [:], thinking: [Int: String] = [:]) -> NativeThreadMessage {
         // Bound tool excerpts, not conversation text. Pi expands prompt templates and skills
         // before returning user messages, so even a short send can produce a very long row.
         let bounded = message.role == "toolResult"
@@ -2868,7 +2918,7 @@ final class RPCThreadState {
         var fenced = message.role == "user"
         var goalDetailsAdded = false
         var imageIndex = 0
-        for block in message.content {
+        for (blockIndex, block) in message.content.enumerated() {
             if bounded && (result.blocks.count >= 128 || remaining == 0) {
                 truncated = true
                 break
@@ -2921,7 +2971,7 @@ final class RPCThreadState {
             case .thinking(let text):
                 // Streamed thinking arrives raw (pi-ai ends each summary part with a blank line);
                 // what a reader sees is normalized, the growing text as much as the settled one.
-                result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(RPCContentBlock.normalizedThinking(text))))
+                result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(thinking[blockIndex] ?? RPCContentBlock.normalizedThinking(text))))
             case .image:
                 // Metadata only, never the bytes: the client fetches them (`NativeThreadRequest.image`).
                 var block = NativeThreadBlock(kind: .unsupportedImage, text: clip("[Image unavailable in native thread]"))

@@ -225,7 +225,8 @@ final class DesignHost {
     @ObservationIgnored var source: ((DesignPath) async throws -> String)?
     @ObservationIgnored private var boards: [DesignPath: Board] = [:]
     @ObservationIgnored private var slots: [DesignPath: Slot] = [:]
-    @ObservationIgnored private var images = DesignImageCache()
+    @ObservationIgnored private let imageNamespace = UUID()
+    private var images: DesignImageCache { rasterizer.images }
     @ObservationIgnored private var stamp: UInt64 = 0
     @ObservationIgnored private(set) var isActive = false
     @ObservationIgnored private var zoom: CGFloat = 1
@@ -269,6 +270,7 @@ final class DesignHost {
         self.surface = surface
         self.rasterizer = rasterizer
         self.liveCap = liveCap
+        images.onEvict[imageNamespace] = { [weak self] path in self?.bump(path) }
     }
 
     var liveCount: Int { slots.count }
@@ -305,14 +307,14 @@ final class DesignHost {
     }
 
     /// The board's last snapshot, which may be of an older version while a new one renders.
-    func image(_ path: DesignPath) -> CGImage? { images.image(path) }
+    func image(_ path: DesignPath) -> CGImage? { images.image(path, in: imageNamespace) }
 
     /// Whether each board draws something current: a ready live view, or a snapshot of its hash.
     func isDrawn(_ paths: [DesignPath]) -> Bool {
         paths.allSatisfy { path in
             guard let board = boards[path] else { return true }
             if let slot = slots[path], slot.ready, slot.sha == board.drawing { return true }
-            return images.sha(path) == board.drawing
+            return images.sha(path, in: imageNamespace) == board.drawing
         }
     }
 
@@ -325,7 +327,7 @@ final class DesignHost {
         boards = next
         for path in Set(previous.keys).subtracting(next.keys) {
             releaseSlot(path)
-            images.remove(path)
+            images.remove(path, in: imageNamespace)
             tokens.removeValue(forKey: path)
             failed.removeValue(forKey: path)
         }
@@ -366,7 +368,10 @@ final class DesignHost {
     func setActive(_ active: Bool) {
         guard isActive != active else { return }
         isActive = active
-        if !active { for path in Array(slots.keys) { releaseSlot(path) } }
+        if !active {
+            for path in Array(slots.keys) { releaseSlot(path) }
+            images.protect([], in: imageNamespace)
+        }
         plan()
     }
 
@@ -374,7 +379,7 @@ final class DesignHost {
     func release() {
         isActive = false
         for path in Array(slots.keys) { releaseSlot(path) }
-        images.removeAll()
+        images.removeAll(in: imageNamespace)
     }
 
     // MARK: Selection
@@ -461,6 +466,7 @@ final class DesignHost {
         let assignment = DesignLivePlan.assign(slots: slots.mapValues(\.wanted), wanted: wanted, cap: liveCap)
         for path in assignment.evict { releaseSlot(path) }
         for path in assignment.create { makeSlot(path) }
+        images.protect(onScreen, in: imageNamespace)
         // Boards on screen without a view draw from snapshots; render the stale ones.
         for path in visible where slots[path] == nil { rasterizeIfStale(path) }
     }
@@ -550,25 +556,25 @@ final class DesignHost {
         guard let image = try? await slot.view.snapshot() else { return }
         guard slots[path] === slot else { return }
         snapshotsTaken += 1
-        images.store(image, sha: slot.sha, for: path, keeping: onScreen)
+        images.store(image, sha: slot.sha, for: path, in: imageNamespace)
         bump(path)
     }
 
     private func rasterizeIfStale(_ path: DesignPath) {
         let drawing = boards[path]?.drawing
-        guard let board = boards[path], let drawing, images.sha(path) != drawing, failed[path] != drawing else { return }
+        guard let board = boards[path], let drawing, images.sha(path, in: imageNamespace) != drawing, failed[path] != drawing else { return }
         rasterizer.enqueue(DesignRasterizer.Job(key: "\(designID.rawValue)/\(path.rawValue)", surface: surface, path: path,
                                                 size: board.size, sha: drawing, priority: .canvas,
                                                 wanted: { [weak self] in
                                                     guard let self, self.isActive, self.slots[path] == nil,
                                                           self.visible.contains(path) else { return false }
-                                                    return self.boards[path]?.drawing == drawing && self.images.sha(path) != drawing
+                                                    return self.boards[path]?.drawing == drawing && self.images.sha(path, in: self.imageNamespace) != drawing
                                                 }) { [weak self] image in
             guard let self else { return }
             guard let image else { self.failed[path] = drawing; return }
             guard self.boards[path]?.drawing == drawing else { return }
             self.snapshotsTaken += 1
-            self.images.store(image, sha: drawing, for: path, keeping: self.onScreen)
+            self.images.store(image, sha: drawing, for: path, in: self.imageNamespace)
             self.bump(path)
         })
     }
@@ -583,40 +589,56 @@ final class DesignHost {
 
 /// The last snapshot of each board. Past its budget the least recently stored go first, never
 /// one of the boards on screen.
-struct DesignImageCache {
-    /// Bytes of pixels kept per design.
+@MainActor
+final class DesignImageCache {
+    /// One pixel budget across designs. Visible boards remain protected until hidden.
     static let budget = 160 * 1024 * 1024
-    private var entries: [DesignPath: (sha: String, image: CGImage)] = [:]
-    private var order: [DesignPath] = []
-    private var bytes = 0
+    private struct Key: Hashable { let owner: UUID; let path: DesignPath }
+    private let limit: Int
+    private var entries: [Key: (sha: String, image: CGImage)] = [:]
+    private var order: [Key] = []
+    private var protected: [UUID: Set<DesignPath>] = [:]
+    var onEvict: [UUID: (DesignPath) -> Void] = [:]
+    private(set) var bytes = 0
 
-    func image(_ path: DesignPath) -> CGImage? { entries[path]?.image }
-    func sha(_ path: DesignPath) -> String? { entries[path]?.sha }
+    init(limit: Int = DesignImageCache.budget) { self.limit = limit }
+    func image(_ path: DesignPath, in owner: UUID) -> CGImage? { entries[Key(owner: owner, path: path)]?.image }
+    func sha(_ path: DesignPath, in owner: UUID) -> String? { entries[Key(owner: owner, path: path)]?.sha }
     var count: Int { entries.count }
 
-    mutating func store(_ image: CGImage, sha: String, for path: DesignPath, keeping protected: Set<DesignPath> = []) {
-        remove(path)
-        entries[path] = (sha, image)
-        order.append(path)
+    func protect(_ paths: Set<DesignPath>, in owner: UUID) {
+        protected[owner] = paths.isEmpty ? nil : paths
+        trim()
+    }
+
+    func store(_ image: CGImage, sha: String, for path: DesignPath, in owner: UUID) {
+        remove(path, in: owner)
+        let key = Key(owner: owner, path: path)
+        entries[key] = (sha, image)
+        order.append(key)
         bytes += Self.cost(image)
-        var index = 0
-        while bytes > Self.budget, index < order.count {
-            let candidate = order[index]
-            if candidate == path || protected.contains(candidate) { index += 1; continue }
-            remove(candidate)
+        trim(keeping: key)
+    }
+
+    private func trim(keeping newest: Key? = nil) {
+        for candidate in order where bytes > limit {
+            guard candidate != newest, protected[candidate.owner]?.contains(candidate.path) != true else { continue }
+            remove(candidate.path, in: candidate.owner)
+            onEvict[candidate.owner]?(candidate.path)
         }
     }
 
-    mutating func remove(_ path: DesignPath) {
-        guard let entry = entries.removeValue(forKey: path) else { return }
+    func remove(_ path: DesignPath, in owner: UUID) {
+        let key = Key(owner: owner, path: path)
+        guard let entry = entries.removeValue(forKey: key) else { return }
         bytes -= Self.cost(entry.image)
-        order.removeAll { $0 == path }
+        order.removeAll { $0 == key }
     }
 
-    mutating func removeAll() {
-        entries.removeAll()
-        order.removeAll()
-        bytes = 0
+    func removeAll(in owner: UUID) {
+        for key in order where key.owner == owner { remove(key.path, in: owner) }
+        protected[owner] = nil
+        onEvict[owner] = nil
     }
 
     static func cost(_ image: CGImage) -> Int { image.bytesPerRow * image.height }
@@ -628,6 +650,8 @@ struct DesignImageCache {
 /// boards without a live view, then the Designs page's thumbnails.
 @MainActor
 final class DesignRasterizer {
+    /// Shared by local and remote design hosts, so visiting designs does not multiply the pixel budget.
+    let images = DesignImageCache()
     enum Priority: Int, Comparable {
         case canvas, thumbnail
         static func < (a: Priority, b: Priority) -> Bool { a.rawValue < b.rawValue }

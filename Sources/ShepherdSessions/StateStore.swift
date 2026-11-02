@@ -72,20 +72,37 @@ final class StateStore: @unchecked Sendable {
     }
 
     static func stageLogicalProjects(_ proposed: ShepherdState, before: ShepherdState, at url: URL) throws -> LogicalProjectsStage {
+        try stage(at: url) {
+            let candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: proposed)
+            try candidate.validate()
+            guard try NDJSON.encode(RemoteReply.stateChanged(state: candidate)).count <= NDJSON.maxPayloadBytes else {
+                throw LogicalProjectsError("project_limit", "Workspace exceeds the remote state frame budget.")
+            }
+            return candidate
+        }
+    }
+
+    /// Ordinary mutations retain their existing validation policy without opening project history
+    /// for an unrelated layout/name change. The server has already prepared history at startup.
+    static func stageUpdate(_ proposed: ShepherdState, before: ShepherdState, at url: URL) throws -> LogicalProjectsStage {
+        try stage(at: url) {
+            var candidate = proposed
+            let projectsChanged = candidate.projects != before.projects || candidate.projectExecutions != before.projectExecutions
+            if projectsChanged { candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: candidate) }
+            try candidate.validate(sizingProjects: projectsChanged)
+            return candidate
+        }
+    }
+
+    private static func stage(at url: URL, prepare: () throws -> ShepherdState) throws -> LogicalProjectsStage {
         // Reserve the state write first. A non-writable workspace must fail before advancing history.
         let staged = url.deletingLastPathComponent().appendingPathComponent(".logical-project-state-\(UUID().uuidString.lowercased())")
         let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         do {
-            let candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: proposed)
-            try candidate.validate()
-            guard try NDJSON.encode(RemoteReply.stateChanged(state: candidate)).count <= NDJSON.maxPayloadBytes else {
-                throw LogicalProjectsError("project_limit", "Workspace exceeds the remote state frame budget.")
-            }
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(candidate.persisted)
+            let candidate = try prepare()
+            let data = try JSONEncoder().encode(candidate.persisted)
             try file.write(contentsOf: data)
             try file.close()
             return LogicalProjectsStage(url: staged, state: candidate)
@@ -172,9 +189,7 @@ final class StateStore: @unchecked Sendable {
             throw recoveryError
         }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(candidate.persisted)
+        let data = try JSONEncoder().encode(candidate.persisted)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
