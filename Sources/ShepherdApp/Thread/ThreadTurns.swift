@@ -48,6 +48,8 @@ struct UserTurn: View, Equatable {
         var elements: [BrowserElement] = []
         /// The images it carries, when the host names every one: thumbnails above the bubble. Otherwise `images` chips.
         var imageRefs: [NativeImageRef] = []
+        /// The skill or prompt template it was sent as, leading the bubble (SentCommandsA).
+        var command: NativeSentCommand?
     }
 
     let bubbles: [Bubble]
@@ -66,7 +68,7 @@ struct UserTurn: View, Equatable {
             Bubble(text: bubble.references.isEmpty ? bubble.text
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
                    images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
-                   references: bubble.references, elements: bubble.elements, imageRefs: bubble.imageRefs)
+                   references: bubble.references, elements: bubble.elements, imageRefs: bubble.imageRefs, command: bubble.command)
         }, fromQueue: turn.fromQueue, hover: hover)
     }
 
@@ -111,6 +113,7 @@ struct UserTurn: View, Equatable {
                         }
                         SHUserBubble(bubble.text, attachments: bubble.imageRefs.isEmpty ? Array(repeating: "Image", count: bubble.images) : [],
                                      timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
+                            if let command = bubble.command { SentCommandLine(command: command) }
                             if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
                         }
                     }
@@ -127,6 +130,18 @@ struct UserTurn: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .messageHover(hover)
+    }
+}
+
+/// A sent skill or prompt template's line in its bubble. A skill's SKILL.md opens when it is on
+/// this Mac (a remote host's path is not).
+struct SentCommandLine: View {
+    let command: NativeSentCommand
+
+    var body: some View {
+        let file = command.location.flatMap { FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil }
+        SHSentCommand(kind: command.kind == .skill ? .skill : .prompt, name: command.name, meta: command.meta,
+                      text: command.text, open: file.map { url in { NSWorkspace.shared.open(url) } })
     }
 }
 

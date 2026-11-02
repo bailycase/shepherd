@@ -33,6 +33,10 @@ public enum SHThreadMetrics {
     public static let tailLineSpacing: CGFloat = 4
     /// Mono 11 lines in an expanded call's output.
     public static let outputMaxLines = 12
+    /// The most an opened sent command's text stands before it scrolls (SentCommandsA-open).
+    public static let sentCommandTextHeight: CGFloat = 220
+    /// The fade over the foot of an opened sent command's text.
+    public static let sentCommandFade: CGFloat = 48
     /// The changes card (ChangesCard): rows 30pt, a 30pt tile, radius 10.
     public static let changesRowHeight: CGFloat = touchable(30)
     public static let changesTile: CGFloat = 30

@@ -68,6 +68,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Running | [thread](thread.md), [composer](composer.md) | Thread (A turn while pi works); Composer, questions, and menus | Built |
 | ThreadImagesComposer, ThreadImageOpen | [thread-images](thread-images.md), [composer](composer.md) | Composer chips, floating viewer (user's departure from ThreadImageOpen) | Built |
 | ThreadImagesSent, ThreadImagesReceived | [thread-images](thread-images.md) | Sent and received thumbnails | Built (Mac, a host with `native.images.v1`; phone and iPad draw the count) |
+| SentCommands, SentCommandsOpen | [thread](thread.md) | User turn (a sent skill or prompt template) | Built (Mac; phone and iPad draw it without Open) |
 | Goal card | [thread](thread.md) | Goal card | Partial (long-condition truncation and edit surfaces await user decisions in PR #189) |
 | MobileGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
 | iPadGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |

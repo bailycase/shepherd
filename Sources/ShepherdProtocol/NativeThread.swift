@@ -776,6 +776,10 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// arguments have arrived so far, counted as they streamed and rounded down to the step the
     /// thread shows. Absent from older hosts and once the call runs.
     public var argumentBytes: Int?
+    /// User messages pi expanded from a prompt template: the `/name args` the user typed, which pi's
+    /// expanded text no longer names. The thread shows the name and the words instead of the template
+    /// (`NativeSentCommand`). Skills need none: pi's `<skill>` block names itself. Absent from older hosts.
+    public var typedCommand: String?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
@@ -814,7 +818,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case entryID, role, customType, blocks, toolName, toolCallID, argumentsText, status, isError, truncated
         case timestamp, startedAt, thinkingSeconds, origin, operationID, compaction, question, provider, model
-        case designReferences, browserElements, projectAction, timing, argumentBytes
+        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand
     }
 
     public init(from decoder: Decoder) throws {
@@ -844,6 +848,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         projectAction = try? c.decodeIfPresent(NativeProjectAction.self, forKey: .projectAction)
         timing = try? c.decodeIfPresent(NativeResponseTiming.self, forKey: .timing)
         argumentBytes = try? c.decodeIfPresent(Int.self, forKey: .argumentBytes)
+        typedCommand = try? c.decodeIfPresent(String.self, forKey: .typedCommand)
     }
 }
 

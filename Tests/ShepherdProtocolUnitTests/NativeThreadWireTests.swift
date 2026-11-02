@@ -297,6 +297,15 @@ struct NativeThreadWireTests {
         #expect(odd.timing == nil && odd.argumentBytes == nil)
     }
 
+    /// A prompt template's typed command rides on its user message; an older host sends none.
+    @Test func aTypedCommandRoundTripsAndAnOlderHostSendsNone() throws {
+        var sent = NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Review the last commit.")])
+        sent.typedCommand = "/review the last commit"
+        #expect(try Wire.roundTrip(sent) == sent)
+        let older = try Wire.decode(NativeThreadMessage.self, #"{"entryID":"u","role":"user","blocks":[],"truncated":false}"#)
+        #expect(older.typedCommand == nil)
+    }
+
     /// What a snapshot shortened round trips, an older host's snapshot says nothing of it (the client
     /// then reads `clipped` alone), and a fact that is not set stays off the wire.
     @Test func whatASnapshotClippedRoundTripsAndStaysOffTheWireWhenNothingWas() throws {
