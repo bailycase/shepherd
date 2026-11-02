@@ -137,7 +137,7 @@ public enum ReviewOutcome: Hashable, Sendable {
 public enum AutomationRequest: Hashable, Sendable {
     case create(automation: Automation, start: Bool)
     case list
-    case update(automationID: AutomationID, name: String?, prompt: String?, cwd: String?, enabled: Bool?)
+    case update(automationID: AutomationID, name: String?, prompt: String?, cwd: String?, enabled: Bool?, settings: AutomationSettings? = nil)
     case delete(automationID: AutomationID)
     case start(automationID: AutomationID)
     case stop(automationID: AutomationID)

@@ -18,8 +18,11 @@ enum AutomationEditorTarget: Identifiable, Equatable {
 }
 
 /// New automation and Edit (the Automations page): the fields every host's automation has, as
-/// the iOS form has them. Name, prompt, the folder its runs work in, and whether it starts a run
-/// when Shepherd starts there; a new one also picks its host. Saving never starts a run.
+/// the iOS form has them. Name, prompt, the folder its runs work in, and whether it is on; a new
+/// one also picks its host. On This Mac, and on a host that serves triggers
+/// (`automationTriggersCapability`), it also sets what starts a run (by hand, a schedule, or
+/// GitHub activity), where runs go, who can trigger one, its limits and model, thinking and speed
+/// pins (`AutomationTriggerForm`, shared with iOS). Saving never starts a run.
 struct AutomationEditorSheet: View {
     var vm: ShepherdViewModel
     let target: AutomationEditorTarget
@@ -34,6 +37,14 @@ struct AutomationEditorSheet: View {
     @State private var picking = false
     @State private var saving = false
     @State private var errorText: String?
+    @State private var form = AutomationTriggerForm()
+    /// What the form says, worked out when it changes, never in `body`.
+    @State private var formError: String?
+    @State private var nextRun: String?
+    /// The host's time zone, when its trigger status said; nil previews in this Mac's.
+    @State private var hostZone: TimeZone?
+    @State private var threads: [(id: AgentID, name: String)] = []
+    @State private var models: [String] = []
     @FocusState private var promptFocused: Bool
 
     private var editing: AutomationKey? {
@@ -47,22 +58,39 @@ struct AutomationEditorSheet: View {
         hosts.first { $0.id == host }?.name ?? vm.automationHosts.first { $0.id == host }?.name ?? PageHost.localName
     }
 
+    private var local: Bool { host == PageHost.localID }
+
+    /// This Mac, or a host that serves triggers: the form's sections show and its settings are
+    /// sent. An older host's automation keeps what it has and is never sent settings.
+    private var triggers: Bool { vm.automationTriggersServed(host) }
+
     private var draft: RemoteAutomationDraft {
         RemoteAutomationDraft(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                               prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
-                              cwd: folder.trimmingCharacters(in: .whitespacesAndNewlines), enabled: enabled)
+                              cwd: folder.trimmingCharacters(in: .whitespacesAndNewlines), enabled: enabled,
+                              settings: triggers ? form.settings : nil)
     }
 
-    private var valid: Bool { !draft.name.isEmpty && !draft.prompt.isEmpty && !draft.cwd.isEmpty }
+    private var valid: Bool {
+        !draft.name.isEmpty && !draft.prompt.isEmpty && !draft.cwd.isEmpty && (!triggers || formError == nil)
+    }
+
+    private var onCaption: String {
+        guard triggers, form.kind != .manual else {
+            return enabled ? "Runs whenever Shepherd starts on \(hostName)" : "Runs only when you run it"
+        }
+        return enabled ? "Its trigger starts runs" : "Off: its trigger starts nothing; Run now still works"
+    }
 
     var body: some View {
         DialogSheet(title: editing == nil ? "New automation" : "Edit automation",
-                    subtitle: "Starts a thread on its host with this prompt, when you run it or whenever Shepherd starts there.",
-                    width: AppLayout.automationSheetWidth, status: saving ? "Saving…" : errorText,
+                    subtitle: "Starts a thread on its host with this prompt: by hand, on a schedule, or when something happens on GitHub.",
+                    width: AppLayout.automationSheetWidth, status: saving ? "Saving…" : errorText ?? (triggers ? formError : nil),
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: dismiss),
                         DialogAction(editing == nil ? "Save" : "Save changes", kind: .prominent, isEnabled: valid && !saving) { save() },
                     ]) {
+            ScrollView {
             VStack(spacing: 0) {
                 if editing == nil, hosts.count > 1 {
                     SheetRow("Host") {
@@ -110,28 +138,40 @@ struct AutomationEditorSheet: View {
                         }
                         .accessibilityLabel("Prompt")
                 }
-                if host == PageHost.localID {
-                    // A run starts on the same default every thread does (Settings ▸ Agents, else Shepherd's pi's own).
-                    SheetRow("Model") {
-                        Text(AutomationEditorSheet.modelLine(vm.settings.defaultModel(piHome: vm.server.pi.home)))
-                            .font(.sh(.caption))
-                            .foregroundStyle(Color.sh.textSecondary)
-                            .accessibilityLabel("Model")
+                if triggers {
+                    triggerSection
+                    if form.kind == .manual, local {
+                        // A run starts on the same default every thread does (Settings ▸ Agents, else Shepherd's pi's own).
+                        SheetRow("Model") {
+                            Text(AutomationEditorSheet.modelLine(vm.settings.defaultModel(piHome: vm.server.pi.home)))
+                                .font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textSecondary)
+                                .accessibilityLabel("Model")
+                        }
+                    } else if form.kind != .manual {
+                        runSection
                     }
                 }
                 SheetRow("On") {
                     HStack(spacing: SH.Space.m) {
-                        Toggle("Starts with Shepherd", isOn: $enabled)
+                        Toggle("On", isOn: $enabled)
                             .toggleStyle(.shSwitch)
                             .labelsHidden()
-                        Text(enabled ? "Runs whenever Shepherd starts on \(hostName)" : "Runs only when you run it")
+                        Text(onCaption)
                             .font(.sh(.caption))
                             .foregroundStyle(Color.sh.textSecondary)
                     }
                 }
             }
+            }
+            .frame(maxHeight: AppLayout.automationSheetBodyMaxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .shAnimation(.disclosure, value: form)
         }
-        .onAppear(perform: load)
+        .onAppear { load() }
+        .onChange(of: form, initial: true) { _, form in check(form) }
+        .onChange(of: host) { _, _ in load(threadsOnly: true) }
+        .task(id: host) { models = await vm.automationEditorModels(host) }
         .sheet(isPresented: $picking) { picker.dialogSheetFrame() }
     }
 
@@ -153,14 +193,264 @@ struct AutomationEditorSheet: View {
         )
     }
 
+    // MARK: Trigger
+
+    @ViewBuilder private var triggerSection: some View {
+        SheetRow("Trigger") {
+            SHSegmentedPicker("Trigger", selection: $form.kind,
+                              options: AutomationTriggerForm.Kind.allCases.map { ($0, $0.title) })
+                .fixedSize()
+        }
+        switch form.kind {
+        case .manual: EmptyView()
+        case .schedule: scheduleRows
+        case .github: githubRows
+        }
+    }
+
+    @ViewBuilder private var scheduleRows: some View {
+        SheetRow("Repeats") {
+            SHSegmentedPicker("Repeats", selection: $form.scheduleKind,
+                              options: [(.every, "Minutes"), (.daily, "Daily"), (.weekly, "Weekly"), (.custom, "Custom")])
+                .fixedSize()
+        }
+        switch form.scheduleKind {
+        case .every:
+            SheetRow("Every") {
+                SHStepper("Every", value: $form.everyMinutes, in: AutomationTriggerForm.minimumMinutes...AutomationEditorSheet.maximumMinutes) { "\($0) min" }
+                    .fixedSize()
+            }
+        case .daily:
+            SheetRow("At") { timePicker }
+        case .weekly:
+            SheetRow("On") {
+                HStack(spacing: SH.Space.m) {
+                    ForEach(AutomationWeekday.allCases, id: \.self) { day in
+                        Toggle(day.short, isOn: Binding(
+                            get: { form.days.contains(day) },
+                            set: { on in if on { form.days.insert(day) } else { form.days.remove(day) } }))
+                            .toggleStyle(.shCheckbox)
+                            .font(.sh(.ui))
+                    }
+                }
+            }
+            SheetRow("At") { timePicker }
+        case .custom:
+            SheetRow("RRULE") {
+                TextField("RRULE", text: $form.custom,
+                          prompt: Text("FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=9").foregroundStyle(Color.sh.textTertiary))
+                    .textFieldStyle(.sh(mono: true, error: formError != nil && !form.custom.isEmpty))
+                    .accessibilityLabel("RRULE")
+            }
+        }
+        SheetRow("Next run", alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text(nextRun ?? formError ?? "—")
+                    .font(.sh(.caption))
+                    .foregroundStyle(nextRun == nil && formError != nil ? Color.sh.failed : Color.sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Next run")
+                    .accessibilityValue(nextRun ?? formError ?? "none")
+                ForEach(scheduleNotes, id: \.self) { note in
+                    Text(note)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var timePicker: some View {
+        DatePicker("Time", selection: Binding(
+            get: { Calendar.current.date(from: DateComponents(hour: form.hour, minute: form.minute)) ?? Date() },
+            set: { date in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                form.hour = parts.hour ?? 0
+                form.minute = parts.minute ?? 0
+            }), displayedComponents: .hourAndMinute)
+            .labelsHidden()
+            .datePickerStyle(.field)
+            .fixedSize()
+    }
+
+    @ViewBuilder private var githubRows: some View {
+        ForEach($form.github) { $trigger in
+            let index = form.github.firstIndex { $0.id == trigger.id } ?? 0
+            VStack(spacing: 0) {
+                HStack {
+                    SHPageSectionLabel(form.github.count == 1 ? "GitHub trigger" : "GitHub trigger \(index + 1)")
+                    Spacer()
+                    if form.github.count > 1 {
+                        let id = trigger.id
+                        Button("Remove") { form.github.removeAll { $0.id == id } }
+                            .buttonStyle(.sh(.ghost, size: .s))
+                            .accessibilityLabel("Remove GitHub trigger \(index + 1)")
+                    }
+                }
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.top, SH.Space.l)
+                SheetRow("Repository") {
+                    TextField("Repository", text: $trigger.repo,
+                              prompt: Text("The folder's origin").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh(mono: true))
+                        .accessibilityLabel("Repository")
+                }
+                SheetRow("Events", alignment: .firstTextBaseline) {
+                    SHFlowLayout(spacing: SH.Space.l, lineSpacing: SH.Space.s) {
+                        ForEach(GitHubEventKind.allCases, id: \.self) { kind in
+                            Toggle(kind.label.prefix(1).uppercased() + kind.label.dropFirst(), isOn: Binding(
+                                get: { trigger.events.contains(kind) },
+                                set: { on in if on { trigger.events.insert(kind) } else { trigger.events.remove(kind) } }))
+                                .toggleStyle(.shCheckbox)
+                                .font(.sh(.ui))
+                        }
+                    }
+                }
+                SheetRow("Labels") {
+                    TextField("Labels", text: $trigger.labels, prompt: Text("Any label · comma-separated").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh)
+                        .accessibilityLabel("Labels")
+                }
+                SheetRow("Authors") {
+                    TextField("Authors", text: $trigger.authors, prompt: Text("Anyone allowed below · logins").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh(mono: true))
+                        .accessibilityLabel("Authors")
+                }
+                SheetRow("Title has") {
+                    TextField("Title contains", text: $trigger.title, prompt: Text("Any title").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh)
+                        .accessibilityLabel("Title contains")
+                }
+                SheetRow("Number") {
+                    TextField("Issue or PR number", text: $trigger.number, prompt: Text("Any issue or PR").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh(mono: true))
+                        .accessibilityLabel("Issue or PR number")
+                }
+            }
+        }
+        if form.canAddGitHub {
+            Button("Add GitHub trigger", systemImage: "plus") { form.github.append(AutomationTriggerForm.GitHub()) }
+                .buttonStyle(.sh(.ghost, size: .s))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.vertical, SH.Space.m)
+        }
+        SheetRow("Who can trigger") {
+            SHSegmentedPicker("Who can trigger", selection: $form.gate,
+                              options: [(.collaborators, "Collaborators"), (.contributors, "Contributors"), (.anyone, "Anyone")])
+                .fixedSize()
+        }
+        if let warning = AutomationTriggerText.gateWarning(form.gate) {
+            DialogBanner(state: .attention, title: "Wider than your collaborators", message: warning)
+                .padding(.bottom, SH.Space.m)
+        }
+    }
+
+    // MARK: Runs
+
+    @ViewBuilder private var runSection: some View {
+        SheetRow("Runs go to") {
+            HStack(spacing: SH.Space.m) {
+                SHSegmentedPicker("Runs go to", selection: Binding(
+                    get: { form.thread != nil },
+                    set: { existing in form.thread = existing ? (form.thread ?? threads.first?.id) : nil }),
+                                  options: [(false, "New thread"), (true, "A thread")])
+                    .fixedSize()
+                    .disabled(threads.isEmpty && form.thread == nil)
+                if let thread = form.thread {
+                    SHPopupMenu(threads.first { $0.id == thread }?.name ?? "A thread that's gone", minWidth: AppLayout.settingsPopupWidth) {
+                        ForEach(threads, id: \.id) { option in
+                            Button(option.name) { form.thread = option.id }
+                        }
+                    }
+                    .accessibilityLabel("Thread")
+                }
+            }
+        }
+        if form.thread == nil {
+            SheetRow("Workspace") {
+                SHSegmentedPicker("Workspace", selection: $form.workspace,
+                                  options: [(.worktree, "New worktree"), (.local, "The folder")])
+                    .fixedSize()
+            }
+        }
+        SheetRow("Limits") {
+            HStack(spacing: SH.Space.l) {
+                SHStepper("Runs at once", value: $form.maxConcurrent, in: AutomationLimits.concurrentRange) { "\($0) at once" }
+                    .fixedSize()
+                SHStepper("Runs a day", value: $form.maxPerDay, in: AutomationLimits.perDayRange) { "\($0) a day" }
+                    .fixedSize()
+            }
+        }
+        SheetRow("Model") {
+            SHPopupMenu(form.model.isEmpty ? "Default" : form.model, mono: !form.model.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
+                Button("Default") { form.model = "" }
+                if !models.isEmpty { Divider() }
+                ForEach(models, id: \.self) { model in
+                    Button(model) { form.model = model }
+                }
+            }
+            .accessibilityLabel("Model")
+        }
+        SheetRow("Thinking") {
+            SHPopupMenu(ThinkingLevel(rawValue: form.thinking)?.title ?? "Default", minWidth: AppLayout.settingsPopupWidth) {
+                Button("Default") { form.thinking = "" }
+                Divider()
+                ForEach(ThinkingLevel.allCases, id: \.self) { level in
+                    Button(level.title) { form.thinking = level.rawValue }
+                }
+            }
+            .accessibilityLabel("Thinking")
+        }
+        SheetRow("Speed") {
+            SHPopupMenu(ServiceTier(rawValue: form.speed)?.title ?? "Default", minWidth: AppLayout.settingsPopupWidth) {
+                Button("Default") { form.speed = "" }
+                Divider()
+                ForEach(ServiceTier.allCases, id: \.self) { tier in
+                    Button(tier.title) { form.speed = tier.rawValue }
+                }
+            }
+            .accessibilityLabel("Speed")
+        }
+    }
+
+    /// Under Next run: an interval counts from the save, and a host's schedule runs in its zone.
+    private var scheduleNotes: [String] {
+        var notes = [form.anchorNote].compactMap { $0 }
+        if !local {
+            notes.append(hostZone.map { "In \(hostName)'s time zone (\($0.identifier))." }
+                ?? "Shown in this Mac's time zone; \(hostName) runs it in its own.")
+        }
+        return notes
+    }
+
+    private func check(_ form: AutomationTriggerForm) {
+        var calendar = Calendar.current
+        calendar.timeZone = hostZone ?? .current
+        let check = form.check(calendar: calendar)
+        formError = check.error
+        nextRun = check.next
+    }
+
+    /// The longest Every the stepper offers: a day.
+    static let maximumMinutes = 1440
+
     /// "Runs on gpt-5 (the default in Settings ▸ Agents)"; with no default anywhere, pi's own pick, named as such.
     static func modelLine(_ model: String?) -> String {
         guard let model else { return "Runs on whatever model Shepherd’s pi picks. Set a default in Settings ▸ Agents." }
         return "Runs on \(model) (the default in Settings ▸ Agents)"
     }
 
-    private func load() {
-        guard !loaded else { return }
+    private func load(threadsOnly: Bool = false) {
+        defer {
+            threads = vm.automationDestinationThreads(host)
+            // Another host's threads aren't this one's to message.
+            if threadsOnly, let thread = form.thread, !threads.contains(where: { $0.id == thread }) { form.thread = nil }
+            hostZone = vm.automationHostTimeZone(host)
+            check(form)
+        }
+        guard !threadsOnly, !loaded else { return }
         loaded = true
         guard let key = editing, let saved = vm.automationDraft(key) else { return }
         host = key.host
@@ -168,6 +458,7 @@ struct AutomationEditorSheet: View {
         prompt = saved.prompt
         folder = saved.cwd
         enabled = saved.enabled
+        if let settings = saved.settings { form = AutomationTriggerForm(settings) }
     }
 
     private func save() {

@@ -150,3 +150,47 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   never auto-start after relaunch even when enabled. Never keep a run agent across launches.
 - **Changing them** touches `ShepherdCore`, the extension-message enums, `SessionServer`, the
   panes extension (canonical and embedded), and their tests.
+
+### Automation triggers
+
+An automation's `trigger` decides when a run starts; its prompt decides what the run does.
+`.manual` is everything above. `.schedule` (an RFC 5545 RRULE in local time, parsed in
+`ShepherdCore/AutomationTrigger.swift` and computed by Foundation's `Calendar.RecurrenceRule`)
+and `.github` (1 to 5 triggers: repository, event kinds, labels, authors, title, number) are
+fired by `AutomationTriggers` (`ShepherdSessions/AutomationTriggers.swift`), an actor the server
+owns and the app starts after adoption (`ShepherdViewModel+AutomationTriggers.swift` is its host).
+No model is involved until a run starts.
+
+- **GitHub** is read through the user's own `gh` (login-shell PATH, prompts off), one GraphQL
+  call per repository at most once a minute: the 20 issues and 20 pull requests updated most
+  recently with their latest labels, comments, reviews and merge (`GitHubActivity`). A pull
+  request's new head commit is a commits event. Shepherd stores no GitHub token.
+- **Who can fire:** the automation's `authorGate` is checked on GitHub's `author_association`
+  before anything reaches a model: owners, members and collaborators by default. A label someone
+  other than the author added passes (only triagers label); a label the author's issue template
+  applied does not. Comments and reviews are gated on their own author.
+- **What fires once:** every event has a key (repository, number, kind, the action's id) and fires
+  at most once per automation; keys are kept 30 days. Enabling, editing the trigger, resuming
+  and first sight take a new baseline: nothing before it fires. After downtime, catch-up reaches
+  back 24 hours; a missed schedule runs once. Activity on an item while this automation's own
+  run for it works (its comments, pushes) never fires another run for it.
+- **Bounds:** `limits.maxConcurrent` (default 2, 1 to 10) and `limits.maxPerDay` (default 20,
+  1 to 200) per automation; more events wait as pending (at most 100, expiring after 7 days)
+  and the first refusal each day posts one notification. Run now on a pending event passes
+  both caps. A lasting error (gh missing or signed out, repository not found, no origin, the
+  destination thread deleted) pauses the automation with its reason and one notification;
+  a passing one backs off from a minute to 30. Pause all triggers stops every check.
+  State lives in `automation-triggers.json`; triggers resume after relaunch (the user's call:
+  they only start new runs, under these bounds).
+- **Runs:** `.newThread` (default) starts an ordinary thread per event in the space holding the
+  automation's folder (else the hidden Automations space), on a new worktree off a fresh fetch
+  of the default branch unless `workspace` is `.local`, named after the event, launched with
+  `SHEPHERD_AUTOMATION=1` and marked with `Agent.automationOrigin`. Such threads outlive a
+  relaunch, are unattended for message policy and recovery, and their runs keep their link.
+  `.thread(agentID)` sends every waiting firing to that thread as one message when it is idle.
+  The prompt is the automation's, then the event fenced as untrusted data. Model, thinking and
+  speed pins fall back to the defaults at run time; a pinned model that went away uses the
+  default. The run log adds each run's trigger, PR link (read with `gh pr view` once its turn
+  settles), unread dot (cleared when the thread is opened) and why a run failed to start.
+- **Project-owned** automations fire into their Project's own `assign`
+  ([project-automations](project-automations.md)) and wait while their Project is paused.

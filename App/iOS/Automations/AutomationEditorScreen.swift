@@ -5,9 +5,10 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// A new automation, or an existing one's fields (presented): its name, the prompt each run
-/// starts with, the host and folder it runs in (one of the host's spaces), and whether it
-/// starts with Shepherd. These are the fields the Mac keeps; it has no schedule or trigger, so
-/// neither does the form. Save closes once the host took it.
+/// starts with, the host and folder it runs in (one of the host's spaces), and whether it is on.
+/// On a host with `automationTriggersCapability` it also sets the trigger, where runs go, who can
+/// fire them, the limits and the pins (`draft.settings`); an older host gets the old form and
+/// never a setting. Save closes once the host took it.
 struct AutomationEditorScreen: View {
     let host: UUID?
     let automation: AutomationID?
@@ -21,6 +22,10 @@ struct AutomationEditorScreen: View {
     @State private var loaded = false
     @State private var saving = false
     @State private var error: String?
+    @State private var form = AutomationTriggerForm()
+    @State private var check = AutomationTriggerForm.Check()
+    @State private var scheduleNote: String?
+    @State private var models: [String] = []
     @FocusState private var focused: Field?
 
     private enum Field { case name, prompt }
@@ -29,8 +34,11 @@ struct AutomationEditorScreen: View {
         let store = AutomationsStore.of(hosts)
         let target = hosts.host(chosenHost ?? host ?? store.editableHosts.first?.id ?? UUID())
         let folders = AutomationFolders.of(target?.state.spaces ?? [], current: draft.cwd)
+        let triggers = target?.supports(RemoteProtocol.automationTriggersCapability) == true
+        // Schedules run in the host's zone: the preview is worked out there (else here, said so).
+        let zone = store.zone(target?.id ?? UUID())
         let canSave = target?.connectedClient != nil && target?.supports(RemoteProtocol.automationsCapability) == true
-            && AutomationFolders.ready(draft) && !saving
+            && AutomationFolders.ready(draft) && !saving && (!triggers || check.error == nil)
         Form {
             Section {
                 TextField("Name", text: $draft.name)
@@ -51,7 +59,7 @@ struct AutomationEditorScreen: View {
             } header: {
                 Text("Prompt")
             } footer: {
-                Text("Each run starts a new thread with this prompt.")
+                Text(form.kind != .manual && form.thread != nil ? "Each run sends this prompt to the chosen thread." : "Each run starts a new thread with this prompt.")
             }
             Section {
                 if automation == nil, store.editableHosts.count > 1 {
@@ -75,15 +83,22 @@ struct AutomationEditorScreen: View {
             } footer: {
                 if !draft.cwd.isEmpty { Text(draft.cwd).font(.sh(.mono)) }
             }
+            if triggers {
+                AutomationTriggerSections(form: $form, check: check, scheduleNote: scheduleNote, hostName: target?.name ?? "The host",
+                                          threads: AutomationThreads.of(target?.state ?? ShepherdState(), current: form.thread),
+                                          models: models)
+            }
+            let manual = !triggers || form.kind == .manual
             Section {
                 HStack {
-                    Text("Starts with Shepherd").font(.sh(.ui))
+                    Text(manual ? "Starts with Shepherd" : "On").font(.sh(.ui))
                         .accessibilityHidden(true)
                     Spacer(minLength: SH.Space.m)
-                    SHAutomationSwitch("Starts with Shepherd", isOn: draft.enabled) { draft.enabled = $0 }
+                    SHAutomationSwitch(manual ? "Starts with Shepherd" : "On", isOn: draft.enabled) { draft.enabled = $0 }
                 }
             } footer: {
-                Text("On: \(target?.name ?? "the host") starts a run each time Shepherd launches there. Run now starts one any time.")
+                Text(manual ? "On: \(target?.name ?? "the host") starts a run each time Shepherd launches there. Run now starts one any time."
+                     : "On: its trigger starts runs. Off: nothing fires until you turn it on. Run now starts one any time.")
             }
             if let error {
                 Section {
@@ -108,16 +123,32 @@ struct AutomationEditorScreen: View {
             }
         }
         .onAppear { load(store) }
+        .onChange(of: store.model) { load(store) }
+        .onChange(of: form, initial: true) { recheck(zone, hostName: target?.name ?? "The host") }
+        .onChange(of: zone) { recheck(zone, hostName: target?.name ?? "The host") }
+        .task(id: target?.id) {
+            guard triggers, let target else { return }
+            models = await ComposerStates.shared.listing(for: target)?.models ?? []
+        }
     }
 
+    private func recheck(_ zone: AutomationHostZone, hostName: String) {
+        check = form.check(calendar: zone.calendar)
+        scheduleNote = check.next.map { zone.footnote(next: $0, hostName: hostName) }
+    }
+
+    /// An edit waits for its automation to reach the store (the form may open before the host's
+    /// state does); a new one starts at its name.
     private func load(_ store: AutomationsStore) {
         guard !loaded else { return }
-        loaded = true
-        if let host, let automation, let row = store.model.row(AutomationKey(host: host, automation: automation)) {
+        if let host, let automation {
+            guard let row = store.model.row(AutomationKey(host: host, automation: automation)) else { return }
             draft = RemoteAutomationDraft(name: row.name, prompt: row.prompt, cwd: row.cwd, enabled: row.enabled)
+            form = AutomationTriggerForm(row.settings)
         } else {
             focused = .name
         }
+        loaded = true
     }
 
     private func save(host: UUID?, store: AutomationsStore) {
@@ -126,6 +157,9 @@ struct AutomationEditorScreen: View {
         error = nil
         let key = AutomationKey(host: host, automation: automation ?? newID)
         let route = MobileRoute.automations(.edit(host: self.host, automation: automation))
+        var draft = draft
+        // Only a host that takes triggers gets settings: an older one would drop them silently.
+        draft.settings = store.supportsTriggers(host) ? form.settings : nil
         Task {
             do {
                 try await store.save(key, draft: draft, creating: automation == nil)

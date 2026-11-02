@@ -277,8 +277,9 @@ enum HomeFixtureData {
         let opened = header?.accessibilityActivate() ?? false
         await FixtureCheck.wait("the Automations screen to open", seconds: 5) { app.navigator.padPath.last == .home(.automations) }
         check(opened && app.navigator.padPath.last == .home(.automations), "activating the header opens Automations")
-        // Press a run: it opens its thread.
+        // Press a run: it opens its thread. Opening Automations closed a portrait sidebar: show it again.
         app.navigator.open(.thread(FixtureData.ref(FixtureData.preview)))
+        app.navigator.padColumns = .all
         try? await Task.sleep(for: .seconds(1))
         if let run = listed.first?.run, let row = all.first(where: { $0.accessibilityLabel?.contains(listed[0].name) == true }) {
             let pressed = row.accessibilityActivate()

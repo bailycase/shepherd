@@ -55,6 +55,21 @@ extension FixtureCatalog {
                           presented: .automations(.edit(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump)), prepare: settle),
             FixtureScreen(name: "automation-new", hosts: fleet, routes: [.home(.automations)],
                           presented: .automations(.edit(host: nil, automation: nil)), prepare: settle),
+            // Triggers (automationTriggers.v1): the list with a GitHub and a schedule trigger and
+            // Pause all; the GitHub one's inbox (paused with a reason, events waiting, runs with what
+            // fired them, a PR and a failure); the editor's GitHub and schedule sections.
+            FixtureScreen(name: "automations-triggers", hosts: AutomationsFixtureData.triggeredFleet(), routes: [.home(.automations)],
+                          prepare: choose(AutomationKey(host: FixtureData.buildBox, automation: AutomationsFixtureData.prLoop))),
+            FixtureScreen(name: "automation-detail-triggered", hosts: AutomationsFixtureData.triggeredFleet(),
+                          routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.prLoop))],
+                          prepare: settle),
+            FixtureScreen(name: "automation-detail-scheduled", hosts: AutomationsFixtureData.triggeredFleet(),
+                          routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.standup))],
+                          prepare: settle),
+            FixtureScreen(name: "automation-edit-github", hosts: AutomationsFixtureData.triggeredFleet(), routes: [.home(.automations)],
+                          presented: .automations(.edit(host: FixtureData.buildBox, automation: AutomationsFixtureData.prLoop)), prepare: settle),
+            FixtureScreen(name: "automation-edit-schedule", hosts: AutomationsFixtureData.triggeredFleet(), routes: [.home(.automations)],
+                          presented: .automations(.edit(host: FixtureData.buildBox, automation: AutomationsFixtureData.standup)), prepare: settle),
             FixtureScreen(name: "automations-readonly", hosts: AutomationsFixtureData.fleet(olderStudio: true), routes: [.home(.automations)],
                           prepare: settle),
         ]
@@ -68,6 +83,97 @@ enum AutomationsFixtureData {
     static let triage = AutomationID(rawValue: "auto-triage")
     static let bump = AutomationID(rawValue: "auto-bump")
     static let bumpRun = AgentID(rawValue: "agent-bump")
+    static let prLoop = AutomationID(rawValue: "auto-pr-loop")
+    static let standup = AutomationID(rawValue: "auto-standup")
+    static let loopRun = AgentID(rawValue: "agent-loop-12")
+    static let loopDone = AgentID(rawValue: "agent-loop-9")
+
+    /// Home's fleet with two triggered automations on build-01: pr-loop (GitHub, paused at its
+    /// daily limit with two events waiting, one run going, one unread with its PR, one that
+    /// didn't start) and a weekday schedule that hasn't run yet.
+    /// build-01's zone: its schedules read in New York time wherever the device is.
+    static let hostZone = "America/New_York"
+
+    /// pr-loop's runs: one that didn't start, one unread with its PR, one going.
+    static func loopRuns(now: Double) -> [AutomationRun] {
+        [
+            AutomationRun(id: UUID(uuidString: "E0000000-0000-4000-8000-000000000001")!, startedAt: now - 9_000, endedAt: now - 8_990,
+                          result: .failed, trigger: "#7 Retry webhooks on 502 · issue labeled shepherd",
+                          triggerURL: "https://github.com/acme/checkout-svc/issues/7", unread: false,
+                          failure: "The worktree couldn't be made: branch automation/issue-7 already exists."),
+            AutomationRun(id: UUID(uuidString: "E0000000-0000-4000-8000-000000000002")!, startedAt: now - 5_400, settledAt: now - 4_300,
+                          result: .finished, agentID: loopDone, trigger: "#9 Checkout total rounds wrong in JPY · issue labeled shepherd",
+                          triggerURL: "https://github.com/acme/checkout-svc/issues/9",
+                          pullRequestURL: "https://github.com/acme/checkout-svc/pull/41", unread: true),
+            AutomationRun(id: UUID(uuidString: "E0000000-0000-4000-8000-000000000003")!, startedAt: now - 420, result: .running,
+                          agentID: loopRun, trigger: "#12 Fix login crash · issue labeled shepherd",
+                          triggerURL: "https://github.com/acme/checkout-svc/issues/12"),
+        ]
+    }
+
+    /// Two events waiting for a free slot.
+    static func loopPending(now: Double) -> [AutomationEvent] {
+        [
+            AutomationEvent(id: "acme/checkout-svc#14:issueLabeled:1", kind: .issueLabeled, repo: "acme/checkout-svc", number: 14,
+                            title: "Coupon field accepts expired codes", url: "https://github.com/acme/checkout-svc/issues/14",
+                            detail: "shepherd", occurredAt: now - 1_500),
+            AutomationEvent(id: "acme/checkout-svc#15:issueLabeled:1", kind: .issueLabeled, repo: "acme/checkout-svc", number: 15,
+                            title: "Apple Pay sheet shows the wrong merchant name on iPad", url: "https://github.com/acme/checkout-svc/issues/15",
+                            detail: "shepherd", occurredAt: now - 600),
+        ]
+    }
+
+    /// The standup's next weekday 09:00 in the host's zone.
+    static func standupNext() -> Double {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: hostZone)!
+        // By calendar days, so a daylight-saving change keeps it at 09:00.
+        var day = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        while calendar.isDateInWeekend(day) { day = calendar.date(byAdding: .day, value: 1, to: day) ?? day }
+        return (calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day) ?? day).timeIntervalSince1970
+    }
+
+    static func triggeredFleet() -> [FixtureHostData] {
+        let now = Date().timeIntervalSince1970
+        let origin = { (id: String, summary: String) in
+            AutomationOrigin(automationID: prLoop, eventID: id, trigger: summary, triggerURL: "https://github.com/acme/checkout-svc/issues/12")
+        }
+        let loopRuns = loopRuns(now: now)
+        let loopStatus = AutomationTriggerStatus(state: .paused, reason: "It started 20 runs today, its daily limit.", pending: loopPending(now: now),
+                                                 lastCheckedAt: now - 90, runsToday: 20, timeZone: hostZone)
+        let standupStatus = AutomationTriggerStatus(state: .active, nextRunAt: standupNext(), timeZone: hostZone)
+        return fleet().map { host in
+            var host = host
+            guard host.id == FixtureData.buildBox else { return host }
+            var running = FixtureData.agent(loopRun, "#12 Fix login crash", .working, space: FixtureData.shepherdSpace)
+            running.automationOrigin = origin("acme/checkout-svc#12:issueLabeled:1", "#12 Fix login crash · issue labeled shepherd")
+            var done = FixtureData.agent(loopDone, "#9 Checkout total rounds wrong in JPY", .done, space: FixtureData.shepherdSpace)
+            done.automationOrigin = origin("acme/checkout-svc#9:issueLabeled:1", "#9 Checkout total rounds wrong in JPY · issue labeled shepherd")
+            host.state.agents += [running, done]
+            host.state.automations += [
+                Automation(id: prLoop, name: "pr-loop", prompt: "Fix the issue, open a PR that closes it, and keep CI green.",
+                           cwd: "/srv/checkout-svc",
+                           trigger: .github([GitHubTrigger(repo: "acme/checkout-svc", events: [.issueLabeled], labels: ["shepherd"])]),
+                           authorGate: .contributors, limits: AutomationLimits(maxConcurrent: 2, maxPerDay: 20),
+                           model: "anthropic/claude-sonnet", thinking: .high),
+                Automation(id: standup, name: "Morning standup notes", prompt: "Summarize yesterday's merged PRs and open incidents.",
+                           cwd: "/srv/checkout-svc",
+                           trigger: .schedule(AutomationSchedule(rrule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0")),
+                           workspace: .local),
+            ]
+            let earlier = host.reply
+            host.reply = { request in
+                switch request {
+                case .automation(let id, prLoop, .runs): return .automationResult(id: id, result: .runs(loopRuns))
+                case .automation(let id, standup, .runs): return .automationResult(id: id, result: .runs([]))
+                case .automation(let id, prLoop, .status): return .automationResult(id: id, result: .status(loopStatus))
+                case .automation(let id, standup, .status): return .automationResult(id: id, result: .status(standupStatus))
+                default: return earlier?(request)
+                }
+            }
+            return host
+        }
+    }
 
     /// `olderStudio`: Studio answers `hello` as a host from before automations.v1.
     /// `bumpLatest`: the weekly bump ran again a few minutes ago. A finished run's thread is still

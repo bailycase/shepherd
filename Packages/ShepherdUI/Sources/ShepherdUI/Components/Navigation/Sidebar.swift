@@ -149,6 +149,8 @@ public struct SHSidebarDestination: View, Equatable {
         case keycaps(String)
         /// A problem in mono 10 `failed` ("1 offline").
         case alert(String)
+        /// Things not opened yet (Automations' unread runs), as a neutral count badge.
+        case count(Int)
     }
 
     let title: String
@@ -233,6 +235,8 @@ public struct SHSidebarDestination: View, Equatable {
         case .alert(let text):
             Text(text).font(.shMono(10)).foregroundStyle(.sh.failed).lineLimit(1).fixedSize()
                 .shContentTransition(.numeric())
+        case .count(let count):
+            SHCountBadge(count)
         }
     }
 }

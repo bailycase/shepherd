@@ -5,8 +5,8 @@ import ShepherdUI
 /// frame (header, table, cards) is `SHPageMetrics`.
 extension AppLayout {
     // Automations
-    /// The table's columns: Automation · Starts · Host · Last run (the board's `2fr 76px 76px
-    /// 1.15fr`, without When and Next: automations have no schedule).
+    /// The table's columns: Automation · Trigger · Host · Last run (the board's `2fr 76px 76px
+    /// 1.15fr`; the board's When and Next live under the name and in the detail).
     static let automationColumns: [SHTableColumns.Column] = [.flex(2), .fixed(76), .fixed(76), .flex(1.15)]
     /// Above the table's column labels (the board's tabs sit there; there are none).
     static let automationTableTop: CGFloat = SH.Space.xl
@@ -24,6 +24,8 @@ extension AppLayout {
     static let automationFooterSide: CGFloat = 14
     /// An empty table's message.
     static let automationEmptyMaxWidth: CGFloat = 420
+    /// The editor's fields scroll past this, so the sheet fits a laptop screen with its footer.
+    static let automationSheetBodyMaxHeight: CGFloat = 560
 
     // Hosts
     /// Cards per row.

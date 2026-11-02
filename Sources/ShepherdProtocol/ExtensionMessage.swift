@@ -112,11 +112,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Create a persisted automation. Unlike pane control this may come from
     /// any pi session (the automation skill), so `agentID` is optional —
     /// there may be no Shepherd agent behind the caller.
-    case createAutomation(id: Int, name: String, prompt: String, cwd: String, enabled: Bool, start: Bool, deleteAfterRun: Bool = false)
+    case createAutomation(id: Int, name: String, prompt: String, cwd: String, enabled: Bool, start: Bool, deleteAfterRun: Bool = false, settings: AutomationSettings? = nil)
     /// All saved automations with their run state.
     case listAutomations(id: Int)
     /// Update fields by automation id; nil fields keep their value.
-    case updateAutomation(id: Int, automationID: AutomationID, name: String?, prompt: String?, cwd: String?, enabled: Bool?)
+    case updateAutomation(id: Int, automationID: AutomationID, name: String?, prompt: String?, cwd: String?, enabled: Bool?, settings: AutomationSettings? = nil)
     /// Remove the saved automation (a running agent keeps running).
     case deleteAutomation(id: Int, automationID: AutomationID)
     /// Start a stopped automation's watch agent.
@@ -221,7 +221,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
-        case prompt, enabled, start, deleteAfterRun, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
+        case prompt, enabled, start, deleteAfterRun, settings, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
@@ -432,7 +432,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 cwd: try c.decode(String.self, forKey: .cwd),
                 enabled: try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true,
                 start: try c.decodeIfPresent(Bool.self, forKey: .start) ?? true,
-                deleteAfterRun: try c.decodeIfPresent(Bool.self, forKey: .deleteAfterRun) ?? false
+                deleteAfterRun: try c.decodeIfPresent(Bool.self, forKey: .deleteAfterRun) ?? false,
+                settings: try c.decodeIfPresent(AutomationSettings.self, forKey: .settings)
             )
         case .listAutomations:
             self = .listAutomations(id: try c.decode(Int.self, forKey: .id))
@@ -443,7 +444,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 name: try c.decodeIfPresent(String.self, forKey: .name),
                 prompt: try c.decodeIfPresent(String.self, forKey: .prompt),
                 cwd: try c.decodeIfPresent(String.self, forKey: .cwd),
-                enabled: try c.decodeIfPresent(Bool.self, forKey: .enabled)
+                enabled: try c.decodeIfPresent(Bool.self, forKey: .enabled),
+                settings: try c.decodeIfPresent(AutomationSettings.self, forKey: .settings)
             )
         case .deleteAutomation:
             self = .deleteAutomation(
@@ -776,8 +778,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.cancelAgentRequest, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
-        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun):
+        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             try c.encode(Kind.createAutomation, forKey: .type)
+            try c.encodeIfPresent(settings, forKey: .settings)
             try c.encode(id, forKey: .id)
             try c.encode(name, forKey: .name)
             try c.encode(prompt, forKey: .prompt)
@@ -788,8 +791,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .listAutomations(let id):
             try c.encode(Kind.listAutomations, forKey: .type)
             try c.encode(id, forKey: .id)
-        case .updateAutomation(let id, let automationID, let name, let prompt, let cwd, let enabled):
+        case .updateAutomation(let id, let automationID, let name, let prompt, let cwd, let enabled, let settings):
             try c.encode(Kind.updateAutomation, forKey: .type)
+            try c.encodeIfPresent(settings, forKey: .settings)
             try c.encode(id, forKey: .id)
             try c.encode(automationID, forKey: .automationID)
             try c.encodeIfPresent(name, forKey: .name)
@@ -1210,14 +1214,21 @@ public struct AutomationInfo: Codable, Hashable, Sendable {
     /// Status of the running watch agent ("working", "done", …), nil when
     /// stopped.
     public var agentStatus: String?
+    /// Trigger, destination, workspace, gate, limits and pins.
+    public var settings: AutomationSettings?
+    /// The trigger's state on the host, for a triggered automation.
+    public var triggerStatus: AutomationTriggerStatus?
 
-    public init(id: AutomationID, name: String, prompt: String, cwd: String, enabled: Bool, agentStatus: String?) {
+    public init(id: AutomationID, name: String, prompt: String, cwd: String, enabled: Bool, agentStatus: String?,
+                settings: AutomationSettings? = nil, triggerStatus: AutomationTriggerStatus? = nil) {
         self.id = id
         self.name = name
         self.prompt = prompt
         self.cwd = cwd
         self.enabled = enabled
         self.agentStatus = agentStatus
+        self.settings = settings
+        self.triggerStatus = triggerStatus
     }
 }
 

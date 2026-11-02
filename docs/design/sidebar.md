@@ -6,9 +6,9 @@
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (SHNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Automations, Designs, Projects, Needs you, Working, Done, Pinned, Recents, and the footer. Pinned, which the board
-does not draw, follows Done and never displaces a drawn group. The user moved the Designs group to the top, then Automations above it
-(an override of ProjectLead-Activity, which draws it last). Projects are the new feature
+destinations, Designs, Projects, Automations, Needs you, Working, Done, Pinned, Recents, and the footer. Pinned, which the board
+does not draw, follows Done and never displaces a drawn group. The user moved the Designs group to the top, then asked for
+Automations after Projects, one row per active automation (an override of ProjectLead-Activity, which draws it last). Projects are the new feature
 ([project-lead.md](../project-lead.md)); the Projects group always shows, with a "New project" chip, and
 each row is a logical Project, never a thread. In the folder mode (Spaces) Projects sit above the Spaces, with a
 `+` that opens New project and no `+` on Spaces.
@@ -126,15 +126,23 @@ yet, so they are hidden until built. There is no More row: the command palette o
   Local rows draw a 28 × 12 blue sparkline from their last ten measured tool-completion rates.
   Before the first tool event it is flat, never a decorative waveform. Remote rows retain their
   host tag because the remote protocol carries no tool-activity samples.
-- **Automations** (the user's request, words only: no board draws it): a group of its own, between Pinned and Recents,
-  holding every automation run of This Mac and of each connected host, live, settled or stopped, most recently active
-  first. A run waiting on you stays in Needs you. Runs never mix with threads in Working, Done or Recents. Rows are
-  the run's own (`bolt`, state word or elapsed time, a host's tag), and open its thread; Stop, Run Now and Delete
-  stay on the This Mac row's menu. The header is the usual disclosure (folded in `collapsedActivitySections`), has
-  no digit or Mark all seen, and the group is omitted while there are no runs. The Automations destination above
-  still opens the page that manages definitions. The project tree is unchanged: a run sits in its folder's project.
-  **Decision, not user approved:** settled and stopped runs stay in the group (only a run waiting on you leaves it, for Needs you).
-  Showing live runs only is a one-line filter if the user prefers it.
+- **Automations** (the user's request, words and a screenshot of Designs and Projects: no board draws it): after
+  Projects (and Missions) and above Needs you, one row per **active** automation of This Mac and of each connected host:
+  an enabled schedule or GitHub automation (a Project's own fire into the Project and are left out), or a manual one
+  while its watcher's run is live (`AutomationRun.isLive`; a host's by the run last read, else as starting). Disabled
+  automations, idle manual ones and an offline host's are not listed, and the group is omitted while none is active.
+  The row (`SHSidebarAutomationRow`) is drawn as a design's: the outline `bolt` (`lanternText` while a run asks you), the
+  name, and one mono 10 word: "asked you" (`lanternText`), "2 running" ("running" for a manual one), "paused" (`failed`
+  when an error paused it, its reason in the tooltip), "retrying", "next 09:00" on the host's clock (else
+  "scheduled") or "watching"; then the unread runs as a `running` count. Order: a run asking you first, then running,
+  then the rest by their latest run, then by name. A tap opens the automation selected on the Automations page (its
+  row selected while the page shows it). Its run threads fold under it, nested a level: a trailing chevron (only
+  while it has runs to fold; VoiceOver's Show runs or Hide runs action) shows them, groups start closed (open ones
+  remembered as `runs.open:activity:<host>:<automation>` keys), and selecting a run opens its group. A run waiting on
+  you is in Needs you instead; a run of an automation that isn't active is a thread like any other (Done or Recents).
+  The menu: Show in Automations, Run Now (Stop while a manual watcher is live), Pause Trigger or Resume Trigger for a
+  triggered one, and Edit… (the page's editor); a Project's automation offers Open Project Settings instead. The
+  header is the usual disclosure (folded in `collapsedActivitySections`), with no digit or Mark all seen.
 - **Done**: the first activity group when nonempty, above Pinned, Needs you and Working.
   It contains unpinned finished, unseen threads. Opening one keeps it
   here while read. Opening the same thread or a destination page changes nothing; opening a
@@ -223,9 +231,10 @@ yet, so they are hidden until built. There is no More row: the command palette o
     the folder the agent works in. A fork or copy that finds no session says so
     (`ActionErrorDialog`). Remote threads have no Fork, Copy Transcript or Open in Finder: they
     read a file on another Mac.
-  - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
+  - This Mac's manual automation runs: Stop while the run is live (a run whose pi is still starting
     included; `AutomationRun.isLive`), else Run Now, then Delete Automation… (confirmed). Run Now replaces a done
-    run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
+    run once the new run exists; a refused Run Now shows `ActionErrorDialog`. An automation's own row has its menu
+    (see Automations).
   - Remote threads: Rename…, Pin or Unpin, Finalize Worktree… (worktree agents), Review
     Uncommitted Changes, Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the
     host is connected. A pin is this Mac's own, so while the host is offline the menu keeps Pin or
@@ -233,7 +242,7 @@ yet, so they are hidden until built. There is no More row: the command palette o
   - Pin and Unpin are offered on thread rows in every activity group (Activity only),
     never on an automation's run, a design, or a row of the project tree.
 - **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
-  the rows), and a disclosure icon is drawn only by section headers. Selecting a row changes no row's place, so
+  the rows), and a disclosure icon is drawn only by section headers and an automation's row with runs. Selecting a row changes no row's place, so
   it lands at once. A status report or a settled name changes only its row, in place (`.content`),
   and counts roll (`.numeric()`).
 - **Gone with the old tree:** the Automations footer and a host's Automations disclosure, space
@@ -284,6 +293,15 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
 - **Threads** are the Recents rows (`SHSidebarRow`, `nested`), led 20pt further in so their dot
   sits under the folder, with the same dots, words, reasons and tags. **Needs you rows stay in
   their space** with the amber dot and the reason; there is no Needs you section.
+- **Automation runs:** a triggered automation's run threads (`Agent.automationOrigin`) fold
+  under one `SHAutomationGroupRow` per automation in their space, nested a level as a child space
+  is: a chevron, the bolt (`lanternText` while a run asks), the name, "paused" while its trigger
+  is, a lantern or running dot, and the unread count in `running` (else the run count). Groups
+  start closed (open ones are remembered as `runs.open:` keys beside the closed spaces); selecting
+  a run opens its group. Its menu has Show in Automations. In the Activity sidebar the runs fold
+  under the automation's own row in Automations instead (see Automations); a run waiting on
+  you stays in Needs you. The Automations destination shows "1 paused" (`failed`) for a trigger an error
+  paused, else the unread runs as a count badge, else "paused" under Pause all triggers.
 - **Order:** spaces keep the spaces' order, which a drag changes (`SessionServer.moveSpace`),
   and a space added on this Mac or by a remote client goes on top. Inside a space the newest
   activity comes first (`Agent.lastActiveAt`, as Recents). Every space shows, an empty one too.
