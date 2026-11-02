@@ -143,6 +143,8 @@ public enum HostSettingsPresentation {
     /// The confirmation message before installing: what happens and what to expect.
     public static func installConfirmation(host: String) -> String {
         "Shepherd on \(host) will download, verify and install the update, then restart. "
-        + "All clients disconnect while it restarts. Agents must be idle before updating."
+        + "All clients disconnect while it restarts. Ordinary agent work and queued messages are saved. "
+        + "Safe interrupted turns resume after restart; uncertain tool or message delivery stays paused for review. "
+        + "Open terminals and work without safe recovery must be stopped first."
     }
 }

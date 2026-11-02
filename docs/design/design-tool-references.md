@@ -470,7 +470,8 @@ Build them on what exists: the activity line, `SHValueSlider`, `SHSegmentedPicke
 system's one shadow); Comment is off until tapped; a tapped pin raises its card and a tap on the
 canvas lowers it; the comment being written uses the review's comment editor (`SHCommentEditor`)
 where the card rises, and the element picked wears `SHSelectionRing`; an answered comment's card
-shows the agent's answer under a hairline; Boards is a sheet of every board; Share hands the board
+shows the agent's answer under a hairline; Boards is a sheet of the page's boards (its title's menu switches page; the dots and steps
+stay on the page shown); Share hands the board
 to the share sheet as a PNG, and Export offers PNG or PDF. Not drawn, and left out: replies and
 Resolve on the phone, a detached pin, Play. A design opens one board at a time, full screen.
 

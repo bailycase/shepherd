@@ -11,6 +11,7 @@ import ShepherdRemote
 /// the server queue). The queue of messages sent while pi works lives here too
 /// (`RPCThreadState+Queue.swift`).
 final class RPCThreadState {
+    /// Tool excerpts and auxiliary records only, never conversation text.
     static let textLimit = 16 * 1024
     static let snapshotLimit = 240 * 1024
     static let activeLimit = 120 * 1024
@@ -611,6 +612,20 @@ final class RPCThreadState {
             && sendingDesignPayloads.isEmpty
     }
 
+    /// Only an ordinary running turn and the native queue have durable restart records.
+    /// In-flight delivery, helper runs and engine-owned queues cannot be replayed safely.
+    var canCheckpointForHostUpdate: Bool {
+        isServable && !historyUnread && !restoringRecovery && !inputActive && compactingRun == nil && openingPrompt == nil
+            && !recoveryWaiting && dispatches.isEmpty && retryDispatch == nil && recoveryPending == nil
+            && !recoveryResumePending && preparingPrompts.isEmpty && settleCapture == nil
+            && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
+            && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
+            && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
+            && startingQueueChild == nil && unknownQueueChildren.isEmpty && goalCommand == nil
+            && pendingGoalPolicy == nil && !pendingGoalDisable
+            && subagents.allSatisfy { $0.isTerminal && $0.state != "paused" && !$0.needsAttention }
+    }
+
     /// Moving changes the working directory and reloads instructions, so no pending work may survive it.
     var canMoveSpace: Bool {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
@@ -1124,9 +1139,8 @@ final class RPCThreadState {
         case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences, let browserElements):
             let images = images ?? []
             let elements = Array((browserElements ?? []).prefix(BrowserElement.maxPerMessage)).map(\.clamped)
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty,
-                  text.utf8.count <= Self.textLimit else {
-                completion(.failure(code: "invalid", message: "Send requires text or images, with text up to 16 KiB."))
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty else {
+                completion(.failure(code: "invalid", message: "Send requires text or images."))
                 return
             }
             guard NativeImage.fitOneSend(images) else {
@@ -1260,8 +1274,8 @@ final class RPCThreadState {
                 completion(.failure(code: "unknown_run", message: "That subagent is no longer listed."))
                 return
             }
-            if action == .message, (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (text ?? "").utf8.count > Self.textLimit {
-                completion(.failure(code: "invalid", message: "A subagent message needs text up to 16 KiB."))
+            if action == .message, (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                completion(.failure(code: "invalid", message: "A subagent message needs text."))
                 return
             }
             guard let dispatchSubagentCommand else {
@@ -1511,10 +1525,6 @@ final class RPCThreadState {
 
     private func deliverOpeningPrompt(_ text: String, images: [NativeImage], id: UUID) {
         let sessionID = session.id
-        guard text.utf8.count <= Self.textLimit else {
-            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: over \(Self.textLimit) bytes")
-            return
-        }
         guard NativeImage.fitOneSend(images) else {
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: its images are over the limits")
             return
@@ -2555,7 +2565,7 @@ final class RPCThreadState {
             let messageBytes = bytes(message)
             size += messageBytes + 1
             // What does not fit is an older page (`olderCursor`), not clipped.
-            if size > snapshotLimit, !value.messages.isEmpty || messageBytes + bytes(message.entryID) > textLimit * 8 { break }
+            if size > snapshotLimit, !value.messages.isEmpty || messageBytes > RPCSession.maxRecordBytes || bytes(message.entryID) > textLimit * 8 { break }
             value.messages.insert(message, at: 0)
             index -= 1
             if value.messages.count == pageSize { break }
@@ -2572,8 +2582,8 @@ final class RPCThreadState {
     /// Applies the snapshot budgets to `base`, whose dialogs, messages and provisional lists are
     /// empty and which encodes to `baseBytes`, by arithmetic over each element's encoded size: a
     /// list adds its elements and the commas between them, and `clipped` turning true saves a
-    /// byte. Active output is trimmed to `activeLimit` first (the oldest provisional rows that are
-    /// not user rows, which open the turns the rest belong to; then the newest dialogs), then
+    /// byte. Active output targets `activeLimit` (dropping oldest provisional rows except user
+    /// rows and the newest live row; then the newest dialogs), then
     /// history fills the rest of `snapshotLimit` from `historyEnd` back, a
     /// page at most. A base that weighs more than the snapshot may never leaves the live rows
     /// less than `activeReserve` nor history less than `historyReserve`. The decisions are the
@@ -2610,7 +2620,7 @@ final class RPCThreadState {
         var next = 0
         while size() > activeCap {
             while next < active.count, active[next].value.role == "user" { next += 1 }
-            guard next < active.count else { break }
+            guard next < active.count - 1 else { break }
             activeSum -= active[next].bytes
             dropped.insert(next)
             next += 1
@@ -2624,9 +2634,9 @@ final class RPCThreadState {
             clipped()
         }
         // Each message is counted with a comma, as when the growing snapshot was encoded. History
-        // always has `historyReserve` to fill. Keep at least one bounded message even if JSON
-        // escaping makes it exceed that reserve, otherwise there is no row or paging cursor.
-        // Unbounded producer IDs are not admitted this way: leave room for the cursor and frame.
+        // always has `historyReserve` to fill. Keep one complete message even when it exceeds
+        // the page budget, otherwise a long prompt has neither a row nor a paging cursor.
+        // Runaway records and producer IDs remain bounded.
         var budgeted = size()
         let limit = max(snapshotLimit, budgeted + historyReserve)
         var page: [Sized<NativeThreadMessage>] = []
@@ -2635,7 +2645,7 @@ final class RPCThreadState {
             let entry = history(index)
             budgeted += entry.bytes + 1
             // Older history that does not fit is a page away (`olderCursor`), not clipped.
-            if budgeted > limit, !page.isEmpty || entry.bytes + bytes(entry.value.entryID) > textLimit * 8 { break }
+            if budgeted > limit, !page.isEmpty || entry.bytes > RPCSession.maxRecordBytes || bytes(entry.value.entryID) > textLimit * 8 { break }
             page.append(entry)
             index -= 1
             if page.count == pageSize { break }
@@ -2745,7 +2755,6 @@ final class RPCThreadState {
             var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID], images: images)
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
-            if let origin = value.origin { value.origin = clipped(origin) }
             return [value] + nestedRows(message, parentEntryID: entryID, adjust: adjust)
         }
     }
@@ -2825,22 +2834,6 @@ final class RPCThreadState {
         return repeats == 0 ? key : "\(key)#\(repeats)"
     }
 
-    /// A queue origin's parts restate the message's text: they share one text budget.
-    static func clipped(_ origin: NativeMessageOrigin) -> NativeMessageOrigin {
-        guard case .queue(var parts) = origin else { return origin }
-        var remaining = textLimit
-        for index in parts.indices {
-            let bytes = parts[index].text.utf8.count
-            if bytes <= remaining {
-                remaining -= bytes
-                continue
-            }
-            parts[index].text = clippedText(parts[index].text, limit: remaining)
-            remaining = 0
-        }
-        return .queue(parts: parts)
-    }
-
     ///
     /// A user message's design references fence comes off (its records become the message's
     /// `designReferences`) only when `sentReferences` names every copy it carries: a message the
@@ -2850,9 +2843,10 @@ final class RPCThreadState {
     /// id history does not yet number, is named by nothing and stays the "Image" chip until the history is read again.
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil, sentReferences: [String]? = nil,
                         images: [String: ThreadImages.Meta] = [:]) -> NativeThreadMessage {
-        // A bounded 20 × 500 worker plan plus its arguments can exceed the ordinary 16 KiB
-        // row (JSON escapes use six bytes). Keep the full report within the existing frame budget.
-        var remaining = message.role == "toolResult" && message.toolName == "project_plan" ? 128 * 1024 : textLimit
+        // Bound tool excerpts, not conversation text. Pi expands prompt templates and skills
+        // before returning user messages, so even a short send can produce a very long row.
+        let bounded = message.role == "toolResult"
+        var remaining = bounded ? (message.toolName == "project_plan" ? 128 * 1024 : textLimit) : Int.max
         var truncated = false
         func clip(_ value: String) -> String {
             let bytes = value.utf8.count
@@ -2875,7 +2869,7 @@ final class RPCThreadState {
         var goalDetailsAdded = false
         var imageIndex = 0
         for block in message.content {
-            if result.blocks.count >= 128 || remaining == 0 {
+            if bounded && (result.blocks.count >= 128 || remaining == 0) {
                 truncated = true
                 break
             }

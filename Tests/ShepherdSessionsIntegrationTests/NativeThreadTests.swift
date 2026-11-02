@@ -117,8 +117,8 @@ struct NativeThreadTests {
         #expect(plain["message"] as? String == "plain" && plain["images"] == nil)
     }
 
-    @Test(arguments: ["", "  \n ", String(repeating: "x", count: RPCThreadState.textLimit + 1)])
-    func sendRejectsBlankOrOversizedText(text: String) async throws {
+    @Test(arguments: ["", "  \n "])
+    func sendRejectsBlankText(text: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
@@ -127,16 +127,49 @@ struct NativeThreadTests {
         #expect(pi.stdin("prompt").isEmpty)
     }
 
-    /// The request budget is checked before anything reaches the thread.
-    @Test func anOversizedRequestIsRefusedAtTheDoor() async throws {
+    @Test func longPromptsReachPiAndRemainCompleteInTheTranscript() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let s = try await pi.ready()
-        let error = await #expect(throws: RemoteHostClientError.self) {
-            _ = try await pi.send(String(repeating: "x", count: 64 * 1024), from: s)
+        let text = String(repeating: "é中🐑", count: 30_000) + " THE END"
+        #expect(try await pi.send(text, from: s).failureCode == nil)
+        #expect(try await pi.waitForStdin("prompt")["message"] as? String == text)
+        var page = try await pi.snapshot("the settled long prompt") {
+            !$0.running && $0.messages.last?.entryID != s.messages.last?.entryID
         }
-        guard case .rejected("native_limit", _)? = error else { Issue.record("expected native_limit, got \(String(describing: error))"); return }
+        if !page.messages.contains(where: { $0.blocks.first?.text == text }), let cursor = page.olderCursor {
+            page = try #require(try await pi.request(.snapshot(beforeEntryID: cursor)).snapshotValue)
+        }
+        let shown = try #require(page.messages.first { $0.role == "user" && $0.blocks.first?.text == text })
+        #expect(shown.blocks.first?.text == text)
+        #expect(!shown.truncated)
+    }
+
+    @Test func remoteTransportCapacityErrorsDoNotCutTextOrDisconnect() async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let pi = try await PiAgent.launch(on: remote.host)
+        let s = try await pi.ready()
+        let client = try await remote.typed()
+        let text = String(repeating: "x", count: NDJSON.maxPayloadBytes + 1)
+        let request = NativeThreadRequest.send(expectedSessionID: s.piSessionID, generation: s.generation,
+            operationID: UUID(), text: text, delivery: .followUp)
+        let error = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.nativeThread(agentID: pi.agent.id, request: request)
+        }
+        guard case .rejected("too_large", _)? = error else { Issue.record("expected transport refusal"); return }
+        #expect(pi.stdin("prompt").isEmpty)
+        #expect(try await pi.request(request).failureCode == nil, "local sends do not have the remote frame cap")
+        _ = try await pi.waitForStdin("prompt")
+        let settled = try await pi.snapshot("the oversized local prompt to settle") {
+            !$0.running && $0.messages.last?.entryID != s.messages.last?.entryID
+        }
+        let result = try await client.nativeThread(agentID: pi.agent.id,
+            request: .snapshot(beforeEntryID: settled.olderCursor))
+        #expect(result.failureCode == "too_large")
+        #expect(try await client.nativeThread(agentID: pi.agent.id, request: .abort(
+            expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID())).failureCode == nil)
     }
 
     // MARK: - Operation identity
@@ -747,7 +780,6 @@ struct NativeThreadTests {
         }
         #expect(try await command("nope", .cancel) == "unknown_run")
         #expect(try await command("native-1", .message, "  ") == "invalid")
-        #expect(try await command("native-1", .message, String(repeating: "x", count: RPCThreadState.textLimit + 1)) == "invalid")
         #expect(try await command("native-1", .cancel, session: "stale") == "stale_session")
     }
 

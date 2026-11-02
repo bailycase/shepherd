@@ -29,14 +29,19 @@ struct DesignBoardsScreen: View {
                         .frame(maxWidth: .infinity)
                         .padding(.top, SH.Space.xxxl)
                 } else if let index {
-                    let boards = RemoteDesignPresentation.boards(index.snapshot.index)
-                    if boards.isEmpty {
+                    let page = designs.page(ref)
+                    let boards = RemoteDesignPresentation.boards(index.snapshot.index, page: page)
+                    if boards.isEmpty, !index.snapshot.index.boards.isEmpty {
+                        SHEmptyState(Text("No boards on this page"), message: "Choose another page from the title.", showsMark: false)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, SH.Space.xxxl)
+                    } else if boards.isEmpty {
                         SHEmptyState(Text("No boards yet"), message: "The design agent's boards show here as it draws them.", showsMark: false)
                             .frame(maxWidth: .infinity)
                             .padding(.top, SH.Space.xxxl)
                     } else {
                         SHListHeader(RemoteDesignPresentation.boardsText(boards.count), count: nil)
-                        DesignBoardGrid(ref: ref, index: index, source: designs.source(ref), current: nil) { path in
+                        DesignBoardGrid(ref: ref, index: index, page: page, source: designs.source(ref), current: nil) { path in
                             navigator.open(.designs(.board(ref, path: path.rawValue)))
                         }
                     }
@@ -50,6 +55,7 @@ struct DesignBoardsScreen: View {
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
+            .modifier(DesignPageMenu(ref: ref))
         }
         .background(Color.sh.bgWindow)
         .refreshable { await designs.sync(ref) }
@@ -65,7 +71,9 @@ struct DesignBoardsScreen: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            // With pages, the title's menu leaves no room for both: Ask is pinned so it stays in
+            // the bar (`visibilityPriority(.high)` still overflowed it).
+            ToolbarItem(placement: designs.hasPages(ref) ? .topBarPinnedTrailing : .topBarTrailing) {
                 // A design with no agent on its host gets one there (`design.agent.v1`).
                 Button("Ask the agent", systemImage: "sparkle") {
                     starting = true
@@ -102,12 +110,18 @@ struct DesignBoardsSheet: View {
         NavigationStack {
             ScrollView {
                 if let index = designs.indexes[ref] {
-                    DesignBoardGrid(ref: ref, index: index, source: designs.source(ref), current: current) { path in
+                    if RemoteDesignPresentation.boards(index.snapshot.index, page: designs.page(ref)).isEmpty {
+                        SHEmptyState(Text("No boards on this page"), message: "Choose another page from the title.", showsMark: false)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, SH.Space.xxxl)
+                    }
+                    DesignBoardGrid(ref: ref, index: index, page: designs.page(ref), source: designs.source(ref), current: current) { path in
                         DesignBoardJump.shared.request(ref, path)
                         dismiss()
                     }
                     .padding(.horizontal, MobileDesignLayout.gutter)
                     .padding(.vertical, SH.Space.l)
+                    .modifier(DesignPageMenu(ref: ref))
                 }
             }
             .background(Color.sh.bgWindow)
@@ -118,6 +132,44 @@ struct DesignBoardsSheet: View {
             }
         }
         .task { await designs.sync(ref) }
+    }
+}
+
+/// The design's pages, the Mac's page popup as the title's menu: the page shown under the title,
+/// and a tap on the title lists every page, checked on the one shown. A canvas with one page or
+/// none has no menu.
+struct DesignPageMenu: ViewModifier {
+    let ref: HostDesignRef
+    @Environment(MobileHosts.self) private var hosts
+
+    func body(content: Content) -> some View {
+        let designs = MobileDesigns.of(hosts)
+        let pages = designs.indexes[ref].map { RemoteDesignPresentation.pages($0.snapshot.index) } ?? []
+        let page = designs.page(ref)
+        // An empty title menu still draws its chevron, so one page or none gets no menu. Put on
+        // the screen's content, not the screen, so the screen's own tasks don't restart as the
+        // pages arrive.
+        if pages.count > 1 {
+            content
+                .navigationSubtitle(pages.first { $0.id == page }?.name ?? "")
+                .toolbarTitleMenu { DesignPagePicker(ref: ref) }
+        } else {
+            content
+        }
+    }
+}
+
+/// The design's pages as a menu's checked choices: the title menus' content.
+struct DesignPagePicker: View {
+    let ref: HostDesignRef
+    @Environment(MobileHosts.self) private var hosts
+
+    var body: some View {
+        let designs = MobileDesigns.of(hosts)
+        let pages = designs.indexes[ref].map { RemoteDesignPresentation.pages($0.snapshot.index) } ?? []
+        Picker("Page", selection: Binding(get: { designs.page(ref) ?? "" }, set: { designs.showPage(ref, $0) })) {
+            ForEach(pages, id: \.id) { page in Text(page.name).tag(page.id) }
+        }
     }
 }
 
@@ -143,6 +195,8 @@ final class DesignBoardJump {
 struct DesignBoardGrid: View {
     let ref: HostDesignRef
     let index: RemoteDesignIndex
+    /// The page whose boards show (nil: a canvas without pages).
+    let page: String?
     let source: RemoteDesignSource?
     let current: DesignPath?
     let open: (DesignPath) -> Void
@@ -152,7 +206,7 @@ struct DesignBoardGrid: View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top),
                                  count: 2),
                   spacing: SHPhoneDesignMetrics.gridRowSpacing) {
-            ForEach(RemoteDesignPresentation.boards(canvas), id: \.self) { path in
+            ForEach(RemoteDesignPresentation.boards(canvas, page: page), id: \.self) { path in
                 if let board = canvas.boards[path] {
                     let size = CGSize(width: board.w, height: board.h)
                     SHDesignTile(name: RemoteDesignPresentation.label(path, in: canvas), detail: RemoteDesignPresentation.size(board),

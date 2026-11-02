@@ -124,6 +124,23 @@ struct SnapshotBudgetTests {
         #expect(preview.olderCursor == reply.entryID)
     }
 
+    @Test func aMessageLargerThanThePageBudgetStaysWholeInHistoryAndWhileStreaming() {
+        let base = Self.heavyBase(runs: [], turns: [])
+        let long = Self.message(1, bytes: 500_000)
+        let history = [Self.message(0, bytes: 100, role: "user"), long]
+        let (page, pageBytes) = Self.budget(base, history: history)
+        #expect(page.messages == [long])
+        #expect(page.olderCursor == long.entryID)
+        #expect(pageBytes == RPCThreadState.bytes(page))
+        var preview = base
+        RPCThreadState.fillPage(&preview, from: history, end: history.count)
+        #expect(preview.messages == [long])
+        let (live, liveBytes) = Self.budget(base, active: [long], history: [])
+        #expect(live.provisional == [long])
+        #expect(!live.clipped)
+        #expect(liveBytes == RPCThreadState.bytes(live))
+    }
+
     @Test(arguments: [500_000, NDJSON.maxPayloadBytes])
     func oversizedProducerIdentifiersDoNotBypassTheWireLimit(idLength: Int) {
         let base = Self.heavyBase(runs: Self.heavyRuns, turns: Self.heavyTurns)

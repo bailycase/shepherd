@@ -191,6 +191,24 @@ public enum RemoteDesignPresentation {
         return list
     }
 
+    /// The boards on `page`, in the canvas's order (nil: a canvas without pages shows every board).
+    public static func boards(_ index: DesignIndex, page: String?) -> [DesignPath] {
+        boards(index).filter { index.isOnPage($0, page) }
+    }
+
+    /// The canvas's pages in its order: id and name (the id where it has none), as the Mac's
+    /// page menu lists them.
+    public static func pages(_ index: DesignIndex) -> [(id: String, name: String)] {
+        (index.pages ?? []).map { ($0.id, $0.name?.isEmpty == false ? $0.name! : $0.id) }
+    }
+
+    /// The page shown: `chosen` while the canvas has it, else the page it opens on; nil on a
+    /// canvas without pages.
+    public static func page(_ chosen: String?, in index: DesignIndex) -> String? {
+        guard let chosen, index.pages?.contains(where: { $0.id == chosen }) == true else { return index.openingPage }
+        return chosen
+    }
+
     /// The scale that fits a board of `board` points in `space`, never larger than 1.
     public static func fit(_ board: CGSize, in space: CGSize) -> CGFloat {
         guard board.width > 0, board.height > 0, space.width > 0, space.height > 0 else { return 1 }

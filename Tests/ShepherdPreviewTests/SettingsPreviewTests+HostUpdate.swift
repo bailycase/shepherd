@@ -16,6 +16,10 @@ import Testing
 struct HostUpdatePreviewTests {
     /// Every update phase as `HostUpdateContent` — the real production component.
     @Test func remoteHostUpdatePhases() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        _ = try await host.server.createSession(params: CreateSessionParams(cwd: host.dir.path, command: ["/bin/cat"]))
+        let blockReason = await host.server.hostUpdateBlockReason()
         let phases: [(String, HostUpdateStatus?, Bool, String?)] = [
             ("up-to-date",
              HostUpdateStatus(version: "1.4.2", build: "142", channel: "main", phase: .upToDate),
@@ -30,7 +34,7 @@ struct HostUpdatePreviewTests {
             ("available-busy",
              HostUpdateStatus(version: "1.4.2", build: "142", channel: "main", phase: .available,
                                offerID: UUID(), offeredVersion: "1.5.0",
-                               error: "2 agents are still working.", canInstall: false),
+                               error: blockReason, canInstall: false),
              false, nil),
             ("downloading",
              HostUpdateStatus(version: "1.4.2", build: "142", channel: "main", phase: .downloading),

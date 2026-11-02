@@ -20,6 +20,12 @@ extension MobileLayout {
     static let padDesignHeaderInset: CGFloat = SH.Space.l
     /// The chat button in a narrow window's header (iPadSplitView's 40pt).
     static let padDesignHeaderButton: CGFloat = 40
+    /// The header's page popup: at most this wide (a longer name truncates), narrower over a canvas
+    /// narrower than `padDesignSideBySideMinWidth`, and over one narrower than
+    /// `padDesignPageLabelMinWidth` only its glyph, so the header never overflows.
+    static let padDesignPageMenuMaxWidth: CGFloat = 180
+    static let padDesignPageMenuNarrowMaxWidth: CGFloat = 120
+    static let padDesignPageLabelMinWidth: CGFloat = 440
     /// The design agent's latest word over a narrow window's canvas (iPadSplitView): 360pt wide.
     static let padDesignReplyCardWidth: CGFloat = 360
     static let padDesignReplyCardPaddingVertical: CGFloat = SH.Space.l

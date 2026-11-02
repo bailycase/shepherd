@@ -217,6 +217,15 @@ ring and the Tweak tab) and `design-pad-comments` (the Comments tab and a pin's 
 row by row and prints `FIXTURE CHECK FAILED` if more than the plan's two web views were ever
 alive, in the renderer or in the window.
 
+**Design pages.** `Fixtures/DesignPagesFixtures.swift` puts the checkout design's wide boards on
+Desktop (a long name), the phone board on Phone and nothing on Archive, and checks that the page
+chosen on one screen is the page every screen shows: `design-pad-pages` (iPad, `-r landscape`: the
+popup by Export, Phone fitted), `design-pages`, `design-board-pages`, `design-board-empty-page` and
+`design-boards-pages` (iPhone: the title's page menu, the board screen's dots on its page, Archive
+showing no board and Phone afterwards its board), `duo-design-pages` (iPhone Duo, `-f closed`:
+Phone chosen closed and kept open, Desktop chosen on the canvas and kept closed again, the popup
+its glyph) and `duo-design-pages-open` (`-f open`: Desktop's long name truncated in the popup).
+
 **Pencil markup on iPad.** The simulator has no Pencil, so `design-pad-markup` puts iPadDesign's
 ink on the canvas as PencilKit strokes (the handwriting is a script face's letters traced as
 strokes) and reads it as Done does, without sending it: Vision reads the notes on the simulator
