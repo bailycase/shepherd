@@ -199,6 +199,18 @@ SHThread, ToolRows and LiveText, one line per burst, are the rule.
   - **Partially built.** Local files dropped on a thread attach as removable file chips in the
     composer and ride with the message as paths. Sent file chips and remote file uploads are
     not built; the paperclip still picks images only.
+- **A sent skill or prompt template** (`SHSentCommand`, SentCommands): pi expands `/skill:name` and
+  `/name` before the thread sees the message, so the bubble opens with a line naming it instead:
+  "Used skill `swiftui-specialist` ›" (`book`) or "Sent prompt `review` ›" (`doc.text`), the verb in
+  `ui` regular `textSecondary`, the name in `code` medium `textPrimary`, then the user's own words.
+  A command sent alone is a bubble holding only the line. Clicking it opens what pi sent in its
+  place (SentCommandsOpen): the meta ("SKILL.md · 6.1k chars", "38 lines") joins the line, and the
+  text sits in a `bgSunken` box with a `lineSubtle` line, radius 8, `code` at most 220pt tall that
+  scrolls, with a 48pt fade at its foot while more text is below; "Open SKILL.md" (a skill whose
+  file is on this Mac) and "Copy" follow in caption tertiary. A skill names itself in pi's history
+  (`NativeSentCommand.parse` reads pi's `<skill>` block); a template's typed `/name args` is kept in
+  the session's thread origins (`NativeThreadMessage.typedCommand`), so a template sent on another
+  host or before this was built shows its text.
 - A message sent while pi is idle shows at once, at 70% opacity until pi reads it. One sent
   while pi works never enters the thread early: it waits in the composer's **Up next** (see
   Composer) and joins the thread only when pi reads it, where pi read it.

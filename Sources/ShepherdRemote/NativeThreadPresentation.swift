@@ -275,13 +275,85 @@ public struct NativeUserBubble: Equatable, Identifiable, Sendable {
     /// The images it carries, when the host names every one of them (`images` is how many it carried either way): a client
     /// that can draw them fetches each (`NativeThreadImages`), and any other keeps the "Image" chips.
     public var imageRefs: [NativeImageRef] = []
+    /// The skill or prompt template it was sent as: `text` is then only the words the user typed
+    /// after the command, and the command's own text is behind its line (SentCommandsA).
+    public var command: NativeSentCommand?
+}
+
+/// A skill or prompt template the user sent with `/skill:name` or `/name`, which pi expanded
+/// before the thread saw it. A skill's block names itself in pi's history; a template's name only
+/// the host remembers (`NativeThreadMessage.typedCommand`).
+public struct NativeSentCommand: Equatable, Sendable {
+    public enum Kind: Sendable { case skill, prompt }
+    public var kind: Kind
+    public var name: String
+    /// The skill's SKILL.md, where pi read it (on the agent's host).
+    public var location: String?
+    /// What pi sent in the command's place: the skill's body, or the filled-in template.
+    public var text: String
+    /// What the user wrote after the command; empty when they sent it alone.
+    public var words: String
+
+    /// "SKILL.md · 6.1k chars", or "38 lines" for a template.
+    public var meta: String {
+        let count = text.count
+        let chars = count < 1000 ? "\(count) chars" : String(format: "%.1fk chars", Double(count) / 1000)
+        if kind == .skill { return "SKILL.md · " + chars }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        return lines == 1 ? "1 line" : "\(lines) lines"
+    }
+
+    /// pi's skill block (`parseSkillBlock` in pi's agent-session), else the template `typed`
+    /// expanded to `text`, else nil: a message the user wrote out in full.
+    public static func parse(_ text: String, typed: String?) -> NativeSentCommand? {
+        if let skill = skill(text) { return skill }
+        guard let typed, typed.hasPrefix("/"), !typed.hasPrefix("/skill:"), typed != text else { return nil }
+        let body = typed.dropFirst()
+        let name = body.prefix { !$0.isWhitespace }
+        guard !name.isEmpty else { return nil }
+        let words = body.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines)
+        return NativeSentCommand(kind: .prompt, name: String(name), location: nil, text: text, words: words)
+    }
+
+    /// pi's skill block, read as pi's `parseSkillBlock` does: `<skill name="…" location="…">`, a
+    /// line break, the body, the first `\n</skill>` that ends the text or is followed by a blank
+    /// line and the user's words.
+    private static func skill(_ text: String) -> NativeSentCommand? {
+        let open = "<skill name=\"", between = "\" location=\"", head = "\">\n", close = "\n</skill>"
+        guard text.hasPrefix(open) else { return nil }
+        let afterOpen = text.dropFirst(open.count)
+        guard let nameEnd = afterOpen.range(of: between) else { return nil }
+        let name = afterOpen[..<nameEnd.lowerBound]
+        let afterName = afterOpen[nameEnd.upperBound...]
+        guard let locationEnd = afterName.range(of: head) else { return nil }
+        let location = afterName[..<locationEnd.lowerBound]
+        guard !name.isEmpty, !name.contains("\""), !location.isEmpty, !location.contains("\"") else { return nil }
+        let rest = afterName[locationEnd.upperBound...]
+        var from = rest.startIndex
+        while let found = rest.range(of: close, range: from..<rest.endIndex) {
+            let after = rest[found.upperBound...]
+            if after.isEmpty || (after.hasPrefix("\n\n") && after.count > 2) {
+                // pi's own first line, not the skill's.
+                var body = rest[..<found.lowerBound]
+                if body.hasPrefix("References are relative to "), let line = body.range(of: "\n\n") { body = body[line.upperBound...] }
+                return NativeSentCommand(kind: .skill, name: String(name), location: String(location), text: String(body),
+                                         words: after.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            from = found.upperBound
+        }
+        return nil
+    }
 }
 
 public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubble] {
     let pending = message.status == "pending" || message.status == "queued"
     let references = message.designReferences ?? []
     let elements = message.browserElements ?? []
-    if let parts = message.origin?.parts, !parts.isEmpty {
+    let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+    // pi expands a command over the whole message, so one sent from the queue is one bubble too:
+    // its part holds what was typed, not what pi read.
+    let command = message.role == "user" ? NativeSentCommand.parse(text, typed: message.typedCommand) : nil
+    if command == nil, let parts = message.origin?.parts, !parts.isEmpty {
         // The references go with the part that says so, else the last; elements go with the last
         // (a message carrying them is delivered alone).
         let line = DesignReferenceFence.humanLine(count: references.count)
@@ -298,12 +370,11 @@ public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubb
                                     elements: last ? elements : [], imageRefs: mine)
         }
     }
-    let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
     let images = message.blocks.count { $0.kind == .unsupportedImage }
     let refs = message.blocks.compactMap(\.image)
-    return [NativeUserBubble(id: message.entryID, text: text, sentAt: message.timestamp,
+    return [NativeUserBubble(id: message.entryID, text: command?.words ?? text, sentAt: message.origin?.parts?.first?.sentAt ?? message.timestamp,
                              images: images, pending: pending, references: references,
-                             elements: elements, imageRefs: refs.count == images ? refs : [])]
+                             elements: elements, imageRefs: refs.count == images ? refs : [], command: command)]
 }
 
 /// Turns keep their identity while pi persists them: a user turn is its first message (or the

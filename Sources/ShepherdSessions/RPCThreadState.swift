@@ -1620,6 +1620,7 @@ final class RPCThreadState {
                 if value.origin == nil {
                     value.origin = origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
                 }
+                value.typedCommand = origins[value.entryID]?.command
                 value.operationID = operationsByEntry[value.entryID]
             }
         }
@@ -1903,6 +1904,15 @@ final class RPCThreadState {
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
         guard var record = ThreadOriginStore.Record(origin) else { return }
         record.references = origins[entryID]?.references
+        record.command = origins[entryID]?.command
+        keepOrigin(record, entryID: entryID)
+    }
+
+    /// Records the prompt template command the user typed for the message `entryID`, so the
+    /// thread names the template instead of showing its text (and after a relaunch).
+    func recordCommand(_ command: String, entryID: String) {
+        var record = origins[entryID] ?? ThreadOriginStore.Record()
+        record.command = command
         keepOrigin(record, entryID: entryID)
     }
 

@@ -41,9 +41,13 @@ final class ThreadOriginStore: @unchecked Sendable {
         /// The design references' copies (`DesignReferencePayload.id`) a message the user sent in
         /// this thread carried: the thread draws that message's fence as chips, and no other's.
         var references: [String]?
+        /// The `/name args` the user typed for a prompt template pi expanded, which pi's text
+        /// no longer names (`NativeThreadMessage.typedCommand`).
+        var command: String?
 
-        init(references: [String]) {
+        init(references: [String]? = nil, command: String? = nil) {
             self.references = references
+            self.command = command
         }
 
         init?(_ origin: NativeMessageOrigin) {

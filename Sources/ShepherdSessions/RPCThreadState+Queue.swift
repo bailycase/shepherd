@@ -939,6 +939,7 @@ extension RPCThreadState {
         var origin: NativeMessageOrigin?
         var operationID: UUID?
         var kept: [UUID] = []
+        var typed: String?
         if let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
             let item = items.remove(at: index)
             unboundSteers.removeAll { $0 == item.entry.id }
@@ -951,6 +952,7 @@ extension RPCThreadState {
             origin = dispatch.parts.map { .queue(parts: $0) }
             operationID = dispatch.id
             kept = dispatch.designPayloads
+            typed = Self.typedCommand(dispatch.text, expandedTo: text)
         } else if let steer = oneShotSteers.first(where: { $0.value == text })?.key {
             // Its item retired before pi's queue_update bound it (pi answered first): it is still this read.
             origin = .steered
@@ -964,12 +966,21 @@ extension RPCThreadState {
         if value.origin?.designComment != nil || value.origin?.designMarkup != nil { origin = nil }
         value.origin = value.origin ?? origin
         value.operationID = operationID
+        value.typedCommand = typed
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
         if let sentReferences { recordReferences(sentReferences, entryID: id) }
+        if let typed { recordCommand(typed, entryID: id) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
         onUserMessageConsumed?(operationID, id)
         unyieldGoalIfQueueEmpty()
+    }
+
+    /// The prompt template command the user typed, when pi expanded it into `text`; nil for an
+    /// ordinary message, a skill (pi's block names itself) or a command too long to keep.
+    static func typedCommand(_ typed: String, expandedTo text: String) -> String? {
+        guard typed.hasPrefix("/"), !typed.hasPrefix("/skill:"), typed != text, typed.utf8.count <= 4096 else { return nil }
+        return typed
     }
 
     /// The copies a user message's references fence names, when the host kept every one of them
