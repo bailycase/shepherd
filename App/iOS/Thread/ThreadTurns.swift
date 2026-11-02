@@ -18,6 +18,8 @@ struct UserTurnView: View, Equatable {
         var images: Int
         var caption: String?
         var pending: Bool
+        /// The skill or prompt template it was sent as, leading the bubble (SentCommandsA).
+        var command: NativeSentCommand?
     }
 
     let bubbles: [Bubble]
@@ -33,7 +35,8 @@ struct UserTurnView: View, Equatable {
                    pieces: bubble.references.map(\.reference),
                    references: bubble.references.map(DesignReferencePresentation.crumbs),
                    versions: bubble.references.map { DesignReferencePresentation.version($0.revision) },
-                   images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending)
+                   images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
+                   command: bubble.command)
         }
         fromQueue = turn.fromQueue
     }
@@ -53,8 +56,14 @@ struct UserTurnView: View, Equatable {
                                 SHDesignReferenceChip(crumbs: crumbs, version: bubble.versions[index]).fixedSize(horizontal: true, vertical: false)
                             }
                         }
-                        if !bubble.text.isEmpty || bubble.images > 0 || bubble.references.isEmpty {
-                            SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption)
+                        if !bubble.text.isEmpty || bubble.images > 0 || bubble.references.isEmpty || bubble.command != nil {
+                            // The skill file is on the agent's host, so touch has Copy and no Open.
+                            SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption) {
+                                if let command = bubble.command {
+                                    SHSentCommand(kind: command.kind == .skill ? .skill : .prompt, name: command.name,
+                                                  meta: command.meta, text: command.text)
+                                }
+                            }
                         }
                     }
                     .opacity(bubble.pending ? 0.7 : 1)

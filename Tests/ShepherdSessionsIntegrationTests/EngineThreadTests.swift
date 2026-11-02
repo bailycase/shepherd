@@ -326,11 +326,19 @@ struct EngineThreadTests {
         _ = try await pi.send("/greet Ada", from: note)
         let greeted = try await pi.settled("the template's turn") { $0.messages.contains { $0.role == "assistant" } }
         #expect(greeted.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text.contains("Ada") } }, "\(greeted.messages.map(\.role))")
+        // The thread names the template and shows the words typed after it, not its text.
+        let template = try #require(greeted.messages.last { $0.role == "user" })
+        #expect(template.typedCommand == "/greet Ada", "\(template)")
+        let templateCommand = try #require(nativeUserBubbles(template).first?.command, "\(template.blocks)")
+        #expect(templateCommand.kind == .prompt && templateCommand.name == "greet" && templateCommand.words == "Ada", "\(templateCommand)")
 
         let count = greeted.messages.filter { $0.role == "assistant" }.count
         _ = try await pi.send("/skill:hello now", from: greeted)
         let skilled = try await pi.settled("the skill's turn") { $0.messages.filter { $0.role == "assistant" }.count == count + 1 }
         #expect(skilled.messages.last?.blocks.first?.text == "ok")
+        let skill = try #require(skilled.messages.last { $0.role == "user" })
+        let bubble = try #require(nativeUserBubbles(skill).first)
+        #expect(bubble.command?.kind == .skill && bubble.command?.name == "hello" && bubble.text == "now", "\(bubble)")
     }
 
     /// Compact now: pi summarizes through the provider and the thread shows what was kept.

@@ -78,7 +78,9 @@ public enum PiSessionPreview {
             }
             let sent = origins.map { ThreadOriginStore(directory: $0).load(sessionID: sessionID) } ?? []
             let references = Dictionary(sent.compactMap { entry in entry.record.references.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
-            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references)
+            let commands = Dictionary(sent.compactMap { entry in entry.record.command.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
+            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references,
+                            commands: commands)
         }
     }
 
@@ -353,9 +355,11 @@ public enum PiSessionPreview {
     }
 
     private static func snapshot(_ walk: Walk, settings: (model: String?, thinking: String?), sessionID: String, moreBefore: Bool,
-                                 sentReferences: [String: [String]]) -> NativeThreadSnapshot {
+                                 sentReferences: [String: [String]], commands: [String: String] = [:]) -> NativeThreadSnapshot {
         var value = base(sessionID: sessionID, model: settings.model, thinking: settings.thinking)
-        let history = RPCThreadState.projectHistory(messages(walk.path), sentReferences: sentReferences)
+        let history = RPCThreadState.projectHistory(messages(walk.path), sentReferences: sentReferences) { row, message in
+            if message.role == "user" { row.typedCommand = commands[row.entryID] }
+        }
         RPCThreadState.fillPage(&value, from: history, end: history.count, moreBefore: moreBefore)
         return value
     }
