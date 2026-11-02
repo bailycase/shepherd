@@ -21,15 +21,12 @@ import ShepherdRemote
 extension RPCThreadState {
     /// Images in one prompt, before base64 (RPCSession's stdin queue holds 8 MiB).
     static let imageBytesLimit = NativeImage.maxBytesPerSend
-    /// The queue's text in one snapshot; a send past it is refused.
-    static let queueTextLimit = 64 * 1024
     static let queueItemLimit = 32
-    // Leave room in the snapshot for the active turn and history, even when JSON escapes text.
-    static let queueEncodedLimit = 96 * 1024
+    /// Bound buffered input, not individual messages, using the same capacity as pi's stdin queue.
+    static let queueEncodedLimit = RPCSession.outputQueueLimit
 
     private func admitsQueue(_ candidate: [QueueItem]) -> Bool {
         candidate.count <= Self.queueItemLimit
-            && candidate.reduce(0, { $0 + $1.entry.text.utf8.count }) <= Self.queueTextLimit
             && Self.bytes(NativeQueue(items: candidate.map(\.entry), mode: effectiveMode)) <= Self.queueEncodedLimit
     }
 
@@ -304,8 +301,8 @@ extension RPCThreadState {
                 self.commit()
             }
         case .edit(let id, let text):
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= Self.textLimit else {
-                completion(.failure(code: "invalid", message: "A queued message needs text up to 16 KiB."))
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                completion(.failure(code: "invalid", message: "A queued message needs text."))
                 return
             }
             guard let item = items.first(where: { $0.entry.id == id && $0.entry.state == .queued }) else { completion(missing); return }
@@ -546,7 +543,7 @@ extension RPCThreadState {
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
-            row.origin = parts.map { Self.clipped(.queue(parts: $0)) }
+            row.origin = parts.map { .queue(parts: $0) }
             live.append(LiveItem(kind: .pending(id), value: row, raw: nil, ended: false))
         }
         guard onRecoveryChanged?() != false else {
@@ -965,7 +962,7 @@ extension RPCThreadState {
         var value = Self.project(entryID: id, message: message, sentReferences: sentReferences)
         // A design comment or markup keeps the origin its fence gives it (`project`).
         if value.origin?.designComment != nil || value.origin?.designMarkup != nil { origin = nil }
-        value.origin = value.origin ?? origin.map(Self.clipped)
+        value.origin = value.origin ?? origin
         value.operationID = operationID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
         if let sentReferences { recordReferences(sentReferences, entryID: id) }

@@ -105,10 +105,6 @@ extension RPCThreadState {
     /// while pi is idle; the answer is the dispatch (pi reports the compaction as events).
     func compact(instructions: String?, operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
         let text = instructions?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (text?.utf8.count ?? 0) <= Self.textLimit else {
-            completion(.failure(code: "invalid", message: "What to keep is limited to 16 KiB."))
-            return
-        }
         guard compactingRun == nil else {
             completion(.failure(code: "busy", message: "The agent is already compacting."))
             return

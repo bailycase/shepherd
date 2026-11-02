@@ -130,11 +130,15 @@ struct ThreadOriginTests {
         #expect(ThreadOriginStore(directory: dir).load(sessionID: "s").isEmpty)
     }
 
-    /// A delivery's parts restate its text, so they share one text budget.
-    @Test func aDeliverysPartsAreClippedToTheMessageBudget() {
-        let long = String(repeating: "x", count: RPCThreadState.textLimit - 1)
-        let clipped = RPCThreadState.clipped(.queue(parts: [NativeQueuePart(text: long, sentAt: 1), NativeQueuePart(text: "é tail", sentAt: 2)]))
-        #expect(clipped.parts?.map(\.text.utf8.count) == [RPCThreadState.textLimit - 1, 0], "never a split character")
-        #expect(RPCThreadState.clipped(.steered) == .steered)
+    @Test func aLongDeliveryKeepsEveryPartsText() throws {
+        let parts = [NativeQueuePart(text: String(repeating: "中🐑", count: 20_000), sentAt: 1),
+                     NativeQueuePart(text: "é tail", sentAt: 2)]
+        let text = parts.map(\.text).joined(separator: "\n\n")
+        let record = try #require(Record(.queue(parts: parts)))
+        let rows = RPCThreadState.projectHistory([RPCMessage(role: "user", content: [.text(text)])]) { row, _ in
+            row.origin = record.origin(text: text)
+        }
+        #expect(rows.first?.origin == .queue(parts: parts))
+        #expect(rows.first?.blocks.first?.text == text)
     }
 }

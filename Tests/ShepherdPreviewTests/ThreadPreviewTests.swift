@@ -43,6 +43,15 @@ struct ThreadPreviewTests {
         }
     }
 
+    @Test func threadLongPromptKeepsItsEnding() async throws {
+        let text = String(repeating: "Prompt instructions stay complete, including Unicode é中🐑.\n", count: 400)
+            + "\nTHE END: this line must remain visible."
+        var snapshot = ActivityThreads.idle
+        snapshot.messages = RPCThreadState.projectHistory([RPCMessage(role: "user", content: [.text(text)])])
+        #expect(snapshot.messages.first?.blocks.first?.text == text)
+        try await render("thread-long-prompt", snapshot)
+    }
+
     /// Main board: explored / edited / tests-and-build lines and the changes card, at rest (the
     /// footer and the prompt's time wait for the pointer).
     @Test func threadActivityIdle() async throws {

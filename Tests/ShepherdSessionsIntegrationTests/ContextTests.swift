@@ -144,10 +144,11 @@ struct ContextTests {
             return
         }
         #expect(s.context?.window == 200_000)
+        let instructions = String(repeating: "keep it\n", count: 10_000) + "END"
         let result = try await client.nativeThread(agentID: pi.agent.id, request: .compact(
-            expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), instructions: "keep it"))
+            expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), instructions: instructions))
         #expect(result.failureCode == nil)
         let sent = try await pi.waitForStdin("compact")
-        #expect(sent["customInstructions"] as? String == "keep it")
+        #expect(sent["customInstructions"] as? String == instructions)
     }
 }
