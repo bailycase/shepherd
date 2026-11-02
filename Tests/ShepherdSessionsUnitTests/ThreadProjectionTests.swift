@@ -271,10 +271,19 @@ struct ThreadProjectionTests {
         #expect(RPCThreadState.project(entryID: "m:0", message: message).role == "custom")
     }
 
+    @Test(arguments: ["user", "assistant", "custom", "compactionSummary"])
+    func conversationTextIsNotClipped(role: String) {
+        let text = String(repeating: "é中🐑\n", count: 50_000) + "THE END"
+        let texts = [text] + Array(repeating: "tail", count: 129)
+        let row = RPCThreadState.project(entryID: "m:0", message: RPCMessage(role: role, content: texts.map(RPCContentBlock.text)))
+        #expect(row.blocks.map(\.text) == texts)
+        #expect(!row.truncated)
+    }
+
     @Test(arguments: [("é", 1), ("中", 1), ("中", 2), ("🐑", 1), ("🐑", 2), ("🐑", 3)])
     func textIsClippedToTheBudgetOnACharacterBoundary(scalar: String, remaining: Int) {
         let head = String(repeating: "a", count: RPCThreadState.textLimit - remaining)
-        let message = RPCMessage(role: "assistant", content: [.text(head + scalar + " tail"), .text("second block")])
+        let message = RPCMessage(role: "toolResult", content: [.text(head + scalar + " tail"), .text("second block")])
         let row = RPCThreadState.project(entryID: "m:0", message: message)
         #expect(row.truncated)
         #expect(row.blocks.count == 1)
@@ -283,14 +292,14 @@ struct ThreadProjectionTests {
 
     @Test func theTextBudgetIsSharedAcrossBlocks() {
         let half = String(repeating: "b", count: RPCThreadState.textLimit / 2)
-        let message = RPCMessage(role: "assistant", content: [.text(half), .text(half), .text("over")])
+        let message = RPCMessage(role: "toolResult", content: [.text(half), .text(half), .text("over")])
         let row = RPCThreadState.project(entryID: "m:0", message: message)
         #expect(row.blocks.map(\.text.utf8.count) == [half.utf8.count, half.utf8.count])
         #expect(row.truncated)
     }
 
     @Test func atMost128BlocksAreProjected() {
-        let message = RPCMessage(role: "assistant", content: Array(repeating: .text("x"), count: 200))
+        let message = RPCMessage(role: "toolResult", content: Array(repeating: .text("x"), count: 200))
         let row = RPCThreadState.project(entryID: "m:0", message: message)
         #expect(row.blocks.count == 128)
         #expect(row.truncated)

@@ -1837,9 +1837,9 @@ public final class SessionServer: @unchecked Sendable {
             unavailable(Self.exitMessage(session.exitCode))
             return
         }
-        // Image sends (v2) carry base64 payloads; text requests keep the tight bound.
-        let requestLimit = request.images.isEmpty ? 64 * 1024 : 12 * 1024 * 1024
-        guard requestBytes < requestLimit else {
+        // Keep the image payload safeguard; ordinary text is bounded by the transport's
+        // frame/input queue capacity, not a separate native-thread message limit.
+        guard request.images.isEmpty || requestBytes < 12 * 1024 * 1024 else {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
@@ -3655,6 +3655,11 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         guard payload.count - 1 <= NDJSON.maxPayloadBytes else {
+            if case .nativeThread(let id, _) = reply {
+                send(.nativeThread(id: id, result: .failure(code: "too_large",
+                    message: "The thread exceeds the remote transport capacity. View it on the host Mac.")), to: client)
+                return
+            }
             ShepherdLog.error("remote reply exceeds the payload limit on fd \(client.fd)")
             disconnect(client)
             return

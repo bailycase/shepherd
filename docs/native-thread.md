@@ -301,9 +301,8 @@ events come out on stdout, one record per LF.
     run goes on: `agent_end` does, and Shepherd's own `shepherd-child` reports stay with the
     subagent cards).
 - **Snapshots** are bounded:
-  - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
-    each of live assistant messages and tool calls stays; user rows always stay, because they
-    open the turns the rest belong to.
+  - A 240 KiB page target, with 120 KiB for live content (live rows, then dialogs). User rows
+    and the newest live row stay whole even when their text exceeds that target.
   - **History is never squeezed out by the rest of the snapshot.** Beside its messages a snapshot
     carries the subagents' cards, the recorded turns, the extensions' widgets, the slash
     commands and the queue, and a long, edit-heavy thread's can weigh the whole 240 KiB by
@@ -318,14 +317,13 @@ events come out on stdout, one record per LF.
       the first always. Older clients read shorter lists as they always did.
     - Whatever the rest weighs, history keeps room for 96 KiB (`historyReserve`: the newest 20
       messages at the sizes a thread's messages have) and live content for 48 KiB
-      (`activeReserve`), so the snapshot can then pass 240 KiB, never by more than the
-      reserves. History that does not fit is a page away (`olderCursor`), never a clip.
-      JSON escaping can make a bounded message exceed the 96 KiB reserve. Keep the newest
-      message anyway, up to 128 KiB encoded, so the page retains a row and an older cursor.
-      This exception does not admit oversized producer metadata, such as an unbounded ID.
-  - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
-    128 blocks per message. A message cut to it is `truncated`, which its row says ("Output
-    truncated"); the thread has nothing missing.
+      (`activeReserve`). History that does not fit is a page away (`olderCursor`), never a clip.
+      Keep one complete message even when it exceeds the page target, up to the RPC record
+      safety bound, so the page retains a row and an older cursor. Oversized producer IDs
+      do not bypass their bound.
+  - Conversation text has no separate byte or block cap. Tool excerpts retain a shared
+    16 KiB text budget and 128-block cap (128 KiB for `project_plan`); a cut excerpt is
+    marked `truncated`.
   - **Clipped** (`clips`, and `clipped`): what the snapshot left out, in three facts that each
     say what and when it returns. `clipped` is true exactly when `clips` is present (an older
     client reads that alone), and it never means older pages: scrolling up for them is a
@@ -442,15 +440,15 @@ one prompt at a time.
   sends it for Steer now to a host that can't stop pi. A client never steers a message that
   begins with "/" (`NativeQueueRules.delivery(_:forText:)`): pi runs a command only at the start of
   a message it starts, so it waits for the turn to end. The queued item's id is the send's
-  operation id. A send also resumes a paused queue. At most 32 items and 64 KiB of text wait
-  (`queue_full`).
+  operation id. A send also resumes a paused queue. At most 32 items wait, with encoded queue
+  data bounded by pi's stdin buffer capacity, 8 MiB (`queue_full`).
 - **Delivery:** when pi settles (`agent_settled`) and the queue is not paused, not held, and no
   question is pending, the queue goes as one prompt:
   - **One per turn** (`oneAtATime`): the head.
   - **All at once** (`all`, the default): every item from the head that can go together,
     joined with a blank line (`NativeQueueRules.batchCount`): an item that begins with "/"
     goes alone (pi runs a command or expands a template only at the start of a message), and
-    a delivery carries at most 4 images and 64 KiB. So does a message from an older remote
+    a delivery carries at most 4 images. Joined text targets 64 KiB; a larger single message goes whole. So does a message from an older remote
     client (its `hello` lists no `native.queue.v1`): such a client knows nothing of the queue
     and removes its own copy of a send only when a user message with the same text appears,
     so its messages always reach pi alone and as they were sent. pi runs one turn for it: it is one user
@@ -762,7 +760,7 @@ draw no context meter.
   only up to its first compaction: `NativeThreadStore.endingCommentAnswers` splits the reply
   there, so the compaction's line and the work after it are an ordinary reply (`.../after-compaction`)
   with no card (docs/designs.md › Comments). No other reply splits.
-- **Compact now** (`compact`, with optional `instructions`, up to 16 KiB): pi's `compact` with
+- **Compact now** (`compact`, with optional `instructions`): pi's `compact` with
   `customInstructions`. pi aborts a running turn to compact, so the host takes it only while pi is
   idle and no prompt of its own is on its way (`busy` otherwise, or while a compaction runs). The
   answer is the dispatch: pi answers `compact` only once the summary is written, and reports the
@@ -803,9 +801,10 @@ queue, with no socket, TCP, or authentication involved. An authenticated remote 
 same `NativeThreadRequest` inside `RemoteRequest.nativeThread` and gets the same result; only the
 transport differs.
 
-- **Size limits:** a request must be under 64 KiB, or 12 MiB when it carries images. Larger
-  requests get `native_limit`. Remote requests are also bound by the 1 MiB TCP frame, so
-  `RemoteHostClient` rejects larger image sends before sending.
+- **Size limits:** image requests must be under 12 MiB (`native_limit`). Text has no separate
+  native-thread limit; pi's 8 MiB stdin queue rejects writes that cannot fit, without clipping.
+  Remote requests and replies remain bound by the 1 MiB TCP frame. Oversized native-thread
+  requests are refused before sending; oversized replies return `too_large` without disconnecting.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
   `native.thread.v2` capability, `queue` requests its `native.queue.v1`, and `compact` its
   `native.context.v1`, which also says the host sends `context`; a send with `interrupt` and the

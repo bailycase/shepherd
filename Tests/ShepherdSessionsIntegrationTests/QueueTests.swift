@@ -629,14 +629,12 @@ struct QueueTests {
         let running = try await startRun(pi)
         let ids = (0..<5).map { _ in UUID() }
         for id in ids { _ = try await pi.send("small", operationID: id, from: running) }
-        let plain = String(repeating: "x", count: 16 * 1024)
+        let plain = String(repeating: "x", count: 64 * 1024)
         for id in ids.prefix(3) {
             #expect(try await pi.queue(.edit(id: id, text: plain), from: running).failureCode == nil)
         }
-        #expect(try await pi.queue(.edit(id: ids[3], text: plain), from: running).failureCode == "queue_full")
-        let unchanged = try await pi.snapshot { $0.queue?.items.count == 5 }
-        #expect(unchanged.queue?.items[3].text == "small")
-        #expect(try JSONEncoder().encode(unchanged).count <= 240 * 1024)
+        let edited = try await pi.snapshot { $0.queue?.items.count == 5 }
+        #expect(edited.queue?.items.map(\.text) == [plain, plain, plain, "small", "small"])
 
         _ = try await pi.queue(.clear, from: running)
         let refill = (0..<32).map { _ in UUID() }
@@ -652,21 +650,19 @@ struct QueueTests {
         #expect(restored.queue?.items.map(\.text) == [plain, plain, plain, "small", "small"])
     }
 
-    @Test func escapeHeavyQueueTextIsBoundedByItsEncodedSize() async throws {
+    @Test func escapeHeavyQueueTextIsNotLimitedByTheOldSnapshotBudget() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let running = try await startRun(pi)
         let id = UUID()
         _ = try await pi.send("keep me", operationID: id, from: running)
-        // Each request is below the 64 KiB wire cap, but two together exceed the queue's
-        // encoded budget: six JSON bytes per control character, only 16 KiB raw in total.
-        let escaped = String(repeating: "\u{0001}", count: 8 * 1024)
+        let escaped = String(repeating: "\u{0001}", count: 20 * 1024)
         #expect(try await pi.send(escaped, from: running).failureCode == nil)
-        #expect(try await pi.queue(.edit(id: id, text: escaped), from: running).failureCode == "queue_full")
-        #expect(try await pi.send(escaped, from: running).failureCode == "queue_full")
-        let snapshot = try await pi.snapshot { $0.queue?.items.count == 2 }
-        #expect(snapshot.queue?.items.map(\.text) == ["keep me", escaped])
+        #expect(try await pi.queue(.edit(id: id, text: escaped), from: running).failureCode == nil)
+        #expect(try await pi.send(escaped, from: running).failureCode == nil)
+        let snapshot = try await pi.snapshot { $0.queue?.items.count == 3 }
+        #expect(snapshot.queue?.items.map(\.text) == [escaped, escaped, escaped])
         #expect(try JSONEncoder().encode(RemoteReply.nativeThread(id: 1, result: .snapshot(value: snapshot))).count < NDJSON.maxPayloadBytes)
     }
 
