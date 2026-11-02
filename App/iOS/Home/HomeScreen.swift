@@ -59,7 +59,8 @@ private struct HomeSections: View {
     @Environment(MobileProjects.self) private var projects
 
     var body: some View {
-        let groups = SidebarThreads.of(hosts).groups(model)
+        let automations = AutomationsStore.of(hosts)
+        let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         if !model.offlineHosts.isEmpty {
             SHListCard {
                 ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
@@ -114,6 +115,16 @@ private struct HomeSections: View {
                     }
                 }
             }
+        }
+        // A triggered automation's run threads, folded under one row each (`FleetRunGroup`).
+        if !groups.runs.isEmpty {
+            section("Automation runs", count: groups.runs.count) {
+                SHListCard {
+                    ForEach(groups.runs) { group in RunGroupSection(group: group, selected: selected) }
+                }
+            }
+            // Their unread dots and paused triggers, read while they show.
+            .task { await automations.watch() }
         }
         section("Recents", count: nil) {
             if groups.recents.isEmpty {

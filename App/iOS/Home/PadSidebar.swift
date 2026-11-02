@@ -24,7 +24,8 @@ struct PadSidebar: View {
         let feed = HomeFeed.of(hosts)
         let model = feed.model
         let designs = PadDesigns.of(hosts)
-        let groups = SidebarThreads.of(hosts).groups(model)
+        let automations = AutomationsStore.of(hosts)
+        let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         let recents = designs.recents(groups.recents)
         let selected = navigator.selectedThread
         let pushed = navigator.padPath.last
@@ -65,10 +66,11 @@ struct PadSidebar: View {
                 }
                 // Automation runs have their own group, never among Recents; its header opens the Automations screen.
                 // A run waiting on you is in Needs you above, once: it is not counted or drawn here as well.
+                // A triggered automation's run threads fold under one row each (`FleetRunGroup`).
                 let waiting = Set(model.needsYou.map(\.ref))
                 let runs = model.automations.filter { row in row.run.map { !waiting.contains($0) } ?? false }
-                if !runs.isEmpty {
-                    SidebarHeader(title: "Automations", count: runs.count, hint: "Opens Automations") {
+                if !runs.isEmpty || !groups.runs.isEmpty {
+                    SidebarHeader(title: "Automations", count: runs.count + groups.runs.count, hint: "Opens Automations") {
                         navigator.open(.home(.automations))
                     }
                     ForEach(runs) { row in
@@ -82,6 +84,7 @@ struct PadSidebar: View {
                             .contextMenu { AutomationRunMenu(row: row) }
                         }
                     }
+                    ForEach(groups.runs) { group in RunGroupSection(group: group, selected: selected, compact: true) }
                 }
                 // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
                 if !groups.working.isEmpty {
@@ -135,6 +138,8 @@ struct PadSidebar: View {
             SidebarFooter(count: model.hosts.count, offline: model.offlineCount, names: model.hostNames)
         }
         .task { await feed.watch() }
+        // Run groups roll up their runs' unread dots and their triggers' pauses, read while they show.
+        .task(id: groups.runs.isEmpty) { if !groups.runs.isEmpty { await automations.watch() } }
         // The board's bar has no title: Search and the split view's Hide sidebar.
         .navigationTitle("Shepherd")
         .toolbarTitleDisplayMode(.inline)

@@ -6,8 +6,9 @@ extension SessionServer {
     /// User-only owner entry point. The adapter MUST reserve a ProjectTask slot/activation before
     /// async work, launch idle, and revalidate before native send. It owns failed/unknown/settled
     /// accounting in that same ledger; callback success means admission, not task success.
+    /// `title` and `prompt` are the run's assignment: the automation's prompt with what fired it.
     public func runProjectAutomation(projectID: ProjectID, expectedRevision: UInt64,
-                                     automationID: AutomationID) async throws -> ProjectTaskID {
+                                     automationID: AutomationID, title: String = "", prompt: String = "") async throws -> ProjectTaskID {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 do {
@@ -33,7 +34,8 @@ extension SessionServer {
                         throw LogicalProjectsError("unsupported", "Project automation admission is unavailable on this owner; no run was started.")
                     }
                     let epoch = self.logicalProjectEpoch, generation = self.projectsGeneration
-                    admit(projectID, expectedRevision, automationID) { result in
+                    let automationTitle = title.isEmpty ? automation.name : title
+                    admit(projectID, expectedRevision, automationID, automationTitle, prompt.isEmpty ? automation.prompt : prompt) { result in
                         self.queue.async {
                             do {
                                 let taskID = try result.get()
@@ -63,8 +65,10 @@ extension SessionServer {
         case .create(let draft):
             guard index == nil else { throw LogicalProjectsError("conflict", "Automation ID already exists.") }
             let fields = try Self.validatedAutomation(draft).get()
-            state.automations.append(Automation(id: id, name: fields.name, prompt: fields.prompt,
-                                               cwd: fields.cwd, enabled: draft.enabled, projectID: projectID))
+            var automation = Automation(id: id, name: fields.name, prompt: fields.prompt,
+                                        cwd: fields.cwd, enabled: draft.enabled, projectID: projectID)
+            try Self.applyDraftSettings(draft, to: &automation)
+            state.automations.append(automation)
         case .link:
             guard let index else { throw LogicalProjectsError("no_such_automation", "Automation no longer exists.") }
             guard state.automations[index].projectID == nil else {
@@ -85,6 +89,7 @@ extension SessionServer {
                 state.automations[index].prompt = fields.prompt
                 state.automations[index].cwd = fields.cwd
                 state.automations[index].enabled = draft.enabled
+                try Self.applyDraftSettings(draft, to: &state.automations[index])
             case .setEnabled(let enabled): state.automations[index].enabled = enabled
             case .delete: state.automations.remove(at: index)
             default: break
@@ -140,6 +145,18 @@ extension SessionServer {
 
     public func endAutomationStart(_ id: AutomationID) async {
         _ = try? await enqueue { self.automationStarts.remove(id) }
+    }
+
+    /// Trigger settings on a Project draft: a run there is a Project task, so it never goes to an
+    /// existing thread, and its workspace is the Project's linked Space.
+    static func applyDraftSettings(_ draft: RemoteAutomationDraft, to automation: inout Automation) throws {
+        guard let settings = draft.settings else { return }
+        do { try settings.apply(to: &automation) } catch {
+            throw LogicalProjectsError("invalid_automation", error.message)
+        }
+        if case .thread = automation.destination {
+            throw LogicalProjectsError("invalid_automation", "Project automation runs are Project tasks; they can't go to an existing thread.")
+        }
     }
 
     static var projectAutomationScopeError: LogicalProjectsError {

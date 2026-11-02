@@ -80,6 +80,11 @@ struct ExtensionMessageTests {
         .createAutomation(id: 10, name: "one-shot", prompt: "watch it", cwd: "/tmp/repo", enabled: true, start: true, deleteAfterRun: true),
         .listAutomations(id: 10),
         .updateAutomation(id: 11, automationID: automation, name: "renamed", prompt: "p", cwd: "/c", enabled: false),
+        .createAutomation(id: 12, name: "loop", prompt: "speckit it", cwd: "/tmp/repo", enabled: true, start: false,
+                          settings: AutomationSettings(trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9", start: 5)),
+                                                       destination: .thread(agent), limits: AutomationLimits(maxConcurrent: 1, maxPerDay: 3))),
+        .updateAutomation(id: 16, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: nil,
+                          settings: AutomationSettings(workspace: .local, authorGate: .anyone, model: "", thinking: "high")),
         .deleteAutomation(id: 13, automationID: automation),
         .startAutomation(id: 14, automationID: automation),
         .stopAutomation(id: 15, automationID: automation),
@@ -258,6 +263,11 @@ struct ExtensionMessageTests {
         (#"{"type":"cancelAgentRequest","id":7,"agentID":"a1"}"#, .cancelAgentRequest(id: 7, agentID: agent)),
         (#"{"type":"createAutomation","id":1,"name":"pr-watch #4821","prompt":"Watch the PR.","cwd":"/tmp/repo"}"#,
          .createAutomation(id: 1, name: "pr-watch #4821", prompt: "Watch the PR.", cwd: "/tmp/repo", enabled: true, start: true)),
+        // What the panes extension's triggerSettings() writes.
+        (#"{"type":"createAutomation","id":4,"name":"loop","prompt":"p","cwd":"/r","enabled":true,"start":true,"deleteAfterRun":false,"settings":{"trigger":{"type":"github","triggers":[{"events":["issueLabeled"],"labels":["shepherd"]}]},"destination":{"type":"thread","agentID":"a1"},"workspace":"local","authorGate":"anyone","limits":{"maxConcurrent":3,"maxPerDay":20},"model":"","thinking":"high"}}"#,
+         .createAutomation(id: 4, name: "loop", prompt: "p", cwd: "/r", enabled: true, start: true, settings: AutomationSettings(
+            trigger: .github([GitHubTrigger(events: [.issueLabeled], labels: ["shepherd"])]), destination: .thread(agent),
+            workspace: .local, authorGate: .anyone, limits: AutomationLimits(maxConcurrent: 3, maxPerDay: 20), model: "", thinking: "high"))),
         (#"{"type":"updateAutomation","id":3,"automationID":"au1","enabled":false}"#,
          .updateAutomation(id: 3, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: false)),
         // No file means AGENTS.md; a missing reason is an empty one.

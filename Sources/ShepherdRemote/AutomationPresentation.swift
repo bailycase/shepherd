@@ -26,13 +26,16 @@ public struct AutomationHost: Equatable, Sendable {
     /// It serves `RemoteRequest.automation` (`automationsCapability`).
     public var manageable: Bool
     public var state: ShepherdState
+    /// It serves triggers, their status and inbox (`automationTriggersCapability`).
+    public var triggers: Bool
 
-    public init(id: UUID, name: String, connected: Bool, manageable: Bool, state: ShepherdState) {
+    public init(id: UUID, name: String, connected: Bool, manageable: Bool, state: ShepherdState, triggers: Bool = false) {
         self.id = id
         self.name = name
         self.connected = connected
         self.manageable = manageable
         self.state = state
+        self.triggers = triggers
     }
 }
 
@@ -42,23 +45,27 @@ public struct AutomationAbilities: Equatable, Sendable {
     public var run: Bool
     public var stop: Bool
     public var edit: Bool
+    /// Its trigger can be edited, paused and resumed, and its pending events run or dismissed
+    /// (`automationTriggersCapability`).
+    public var triggers: Bool
     /// Why the automation is read-only here ("Host offline"), nil when it is not.
     public var readOnlyReason: String?
 
     public static let none = AutomationAbilities(toggle: false, run: false, stop: false, edit: false, readOnlyReason: nil)
 
-    public init(toggle: Bool, run: Bool, stop: Bool, edit: Bool, readOnlyReason: String?) {
+    public init(toggle: Bool, run: Bool, stop: Bool, edit: Bool, triggers: Bool = false, readOnlyReason: String?) {
         self.toggle = toggle
         self.run = run
         self.stop = stop
         self.edit = edit
+        self.triggers = triggers
         self.readOnlyReason = readOnlyReason
     }
 
     /// `running`: its run is live (`AutomationRun.isLive`). A settled run can be run again, not stopped.
     public init(host: AutomationHost, running: Bool) {
         let can = host.connected && host.manageable
-        self.init(toggle: can, run: can && !running, stop: can && running, edit: can,
+        self.init(toggle: can, run: can && !running, stop: can && running, edit: can, triggers: can && host.triggers,
                   readOnlyReason: !host.connected ? "Host offline"
                       : host.manageable ? nil : "Update Shepherd on \(host.name) to manage its automations from here.")
     }
@@ -83,6 +90,14 @@ public struct AutomationRunRow: Identifiable, Equatable, Sendable {
     public var seconds: Double?
     /// Its agent, while it still exists on the host: the run opens as that thread.
     public var agent: FleetRef?
+    /// What fired it ("#12 Fix login crash · issue labeled shepherd"), nil for Run now.
+    public var trigger: String?
+    public var triggerURL: URL?
+    public var pullRequestURL: URL?
+    /// Settled or asking, and not opened since.
+    public var unread: Bool = false
+    /// Why a run that didn't start failed.
+    public var failure: String?
 }
 
 /// A bar of the runs chart: its height as a share of the longest run shown (0...1).
@@ -119,6 +134,14 @@ public struct AutomationListRow: Identifiable, Equatable, Sendable {
     public var hostTag: String?
     public var offline: Bool
     public var abilities: AutomationAbilities
+    /// Every trigger setting the host keeps for it (pins as "" when unset): the editor's start.
+    public var settings: AutomationSettings = AutomationSettings()
+    /// A schedule or GitHub trigger starts its runs (else it is run by hand or at launch).
+    public var triggered: Bool = false
+    /// Runs not opened since they settled or asked.
+    public var unread: Int = 0
+    /// "build-01 · a new thread each run".
+    public var runsOn: String = ""
 
     public enum Clock: Equatable, Sendable {
         case elapsed(since: Date)
@@ -145,6 +168,8 @@ public struct AutomationDetail: Equatable, Sendable {
     public var lastRun: AutomationRunRow?
     /// The runs have been read from the host (else they are still loading, or unavailable).
     public var runsKnown: Bool
+    /// A triggered automation's trigger, status and pending events; nil for a manual one.
+    public var trigger: AutomationTriggerDetail? = nil
 
     public static let chartLimit = 14
 }
@@ -160,18 +185,25 @@ public struct AutomationsModel: Equatable, Sendable {
 
     /// `runs` are each automation's runs as the host sent them, oldest first (absent while
     /// they have not been read).
-    public init(hosts: [AutomationHost], runs: [AutomationKey: [AutomationRun]]) {
+    /// `statuses`: each triggered automation's trigger as the host last said
+    /// (`RemoteAutomationRequest.status`).
+    public init(hosts: [AutomationHost], runs: [AutomationKey: [AutomationRun]],
+                statuses: [AutomationKey: AutomationTriggerStatus] = [:]) {
         let tags = hosts.count > 1
         for host in hosts {
             let agents = Dictionary(host.state.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             for automation in host.state.automations {
                 let key = AutomationKey(host: host.id, automation: automation.id)
-                rows.append(Self.row(automation, key: key, host: host, agent: automation.agentID.flatMap { agents[$0] },
-                                     runs: runs[key], tag: tags ? host.name : nil))
+                var row = Self.row(automation, key: key, host: host, agent: automation.agentID.flatMap { agents[$0] },
+                                   runs: runs[key], tag: tags ? host.name : nil)
+                Self.addTrigger(&row, automation, host: host, agents: agents, runs: runs[key], status: statuses[key])
+                rows.append(row)
             }
         }
-        live = rows.filter(\.live)
-        quiet = rows.filter { !$0.live }
+        // A triggered automation's runs are each their own thread: its row (with what fires it and
+        // its unread runs) says how many go, rather than a Running now card of its own.
+        live = rows.filter { $0.live && !$0.triggered }
+        quiet = rows.filter { !$0.live || $0.triggered }
     }
 
     public func row(_ key: AutomationKey) -> AutomationListRow? {
@@ -224,8 +256,8 @@ public struct AutomationsModel: Equatable, Sendable {
 
     /// The detail of one automation; nil once it is gone from its host. `now`, `timeZone` and
     /// `locale` word the dates (tests fix them).
-    public func detail(_ key: AutomationKey, runs: [AutomationRun]?, now: Date = Date(), timeZone: TimeZone = .current,
-                       locale: Locale = .current) -> AutomationDetail? {
+    public func detail(_ key: AutomationKey, runs: [AutomationRun]?, status: AutomationTriggerStatus? = nil, now: Date = Date(),
+                       timeZone: TimeZone = .current, locale: Locale = .current) -> AutomationDetail? {
         guard let row = row(key) else { return nil }
         let rows = (runs ?? []).reversed().map { Self.runRow($0, host: key.host, timeZone: timeZone, locale: locale) }
         let charted = Array((runs ?? []).suffix(AutomationDetail.chartLimit))
@@ -248,7 +280,43 @@ public struct AutomationsModel: Equatable, Sendable {
                                 chartSummary: counts.isEmpty ? nil : counts.map { "\($0.0): \($0.1)" }.joined(separator: " · "),
                                 chartStart: charted.first.map { Self.stamp(Date(timeIntervalSince1970: $0.startedAt), timeZone: timeZone, locale: locale) },
                                 chartEnd: charted.last.map { Self.stamp(Date(timeIntervalSince1970: $0.startedAt), timeZone: timeZone, locale: locale) },
-                                lastRun: last, runsKnown: runs != nil)
+                                lastRun: last, runsKnown: runs != nil,
+                                trigger: row.triggered ? AutomationTriggerDetail.of(row, status: status, now: now, timeZone: timeZone, locale: locale) : nil)
+    }
+
+    /// A triggered automation's row: what fires it in place of "when", and how its runs or its
+    /// trigger stand. Several runs may go at once, each its own thread, so none is the row's run.
+    static func addTrigger(_ row: inout AutomationListRow, _ automation: Automation, host: AutomationHost,
+                           agents: [AgentID: Agent], runs: [AutomationRun]?, status: AutomationTriggerStatus?) {
+        row.settings = AutomationSettings(of: automation)
+        row.unread = runs?.filter(\.unread).count ?? 0
+        if case .thread(let id) = automation.destination {
+            row.runsOn = "\(host.name) · " + AutomationTriggerText.destination(automation.destination, threadName: agents[id]?.name)
+        } else {
+            row.runsOn = "\(host.name) · " + AutomationTriggerText.destination(.newThread, threadName: nil)
+        }
+        guard automation.isTriggered, automation.projectID == nil, let summary = AutomationTriggerText.summary(automation.trigger) else { return }
+        row.triggered = true
+        row.when = summary
+        row.run = nil
+        row.abilities.run = row.abilities.edit
+        row.abilities.stop = false
+        guard host.connected else { return }
+        let live = runs?.filter(\.result.isLive) ?? []
+        if live.contains(where: { $0.result == .needsYou }) {
+            (row.status, row.tone, row.clock) = ("Asked you", .attention, nil)
+        } else if let first = live.min(by: { $0.startedAt < $1.startedAt }) {
+            row.status = live.count == 1 ? "Running" : "\(live.count) running"
+            row.tone = .running
+            row.clock = .elapsed(since: Date(timeIntervalSince1970: first.startedAt))
+        } else if let status {
+            let state = AutomationTriggerState(status, trigger: automation.trigger)
+            if status.state != .active || status.allPaused {
+                (row.status, row.tone, row.clock) = (state.word, state.tone, nil)
+            } else if runs?.isEmpty != false {
+                (row.status, row.tone, row.clock) = (state.word, .stopped, nil)
+            }
+        }
     }
 
     /// What a change that did not come back ok says. A refusal gives the host's reason; a
@@ -264,6 +332,14 @@ public struct AutomationsModel: Equatable, Sendable {
         case .create: ("save the automation", "the automation may have been saved")
         case .update: ("save the changes", "the changes may have been saved")
         case .runs: ("read the runs", nil)
+        case .status: ("read the trigger", nil)
+        case .pause: ("pause the trigger", "the trigger may have paused")
+        case .resume: ("resume the trigger", "the trigger may have resumed")
+        case .runEvent: ("run the event", "the run may have started")
+        case .dismissEvent: ("dismiss the event", "the event may have been dismissed")
+        case .markRead: ("mark the run read", nil)
+        case .setAllPaused(let paused): (paused ? "pause all triggers" : "resume all triggers",
+                                         "triggers may have been \(paused ? "paused" : "resumed")")
         }
         switch error {
         case RemoteHostClientError.rejected(_, let message):
@@ -283,7 +359,9 @@ public struct AutomationsModel: Equatable, Sendable {
         return AutomationRunRow(id: run.id, started: Self.stamp(started, timeZone: timeZone, locale: locale), startedAt: started,
                                 word: word(run.result), tone: tone(run.result),
                                 duration: run.duration.map(Self.duration), seconds: run.duration,
-                                agent: run.agentID.map { FleetRef(host: host, agent: $0) })
+                                agent: run.agentID.map { FleetRef(host: host, agent: $0) },
+                                trigger: run.trigger, triggerURL: run.triggerURL.flatMap(URL.init(string:)),
+                                pullRequestURL: run.pullRequestURL.flatMap(URL.init(string:)), unread: run.unread, failure: run.failure)
     }
 
     public static func word(_ result: AutomationRunResult) -> String {
@@ -293,6 +371,7 @@ public struct AutomationsModel: Equatable, Sendable {
         case .finished: "finished"
         case .stopped: "stopped"
         case .interrupted: "interrupted"
+        case .failed: "didn't start"
         }
     }
 
@@ -302,7 +381,7 @@ public struct AutomationsModel: Equatable, Sendable {
         case .needsYou: .attention
         case .finished: .done
         case .stopped: .stopped
-        case .interrupted: .failed
+        case .interrupted, .failed: .failed
         }
     }
 

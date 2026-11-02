@@ -50,6 +50,17 @@ struct AutomationDetailContent: View {
                         Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
                     }
                 }
+                if let trigger = detail.trigger {
+                    // The inbox first: how the trigger stands, what waits, what ran; then its settings.
+                    triggerBanner(trigger, row: row)
+                    triggerHead(trigger, row: row, busy: busy, store: store)
+                    if let note = store.zoneNotes[key.host], trigger.next != nil || trigger.checked != nil {
+                        Text(note).shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    }
+                    if !trigger.pending.isEmpty { pending(trigger, row: row, busy: busy, store: store) }
+                    runs(detail)
+                    triggerSettings(trigger, row: row)
+                } else {
                 VStack(spacing: 0) {
                     SHFactRow("On") {
                         let on = store.isOn(row)
@@ -64,8 +75,9 @@ struct AutomationDetailContent: View {
                     SHFactRow("Runs on", value: "\(row.hostName) · a new thread each run", mono: true)
                     SHFactRow("Folder", value: row.cwd, mono: true)
                 }
+                }
                 SHAutomationPrompt(row.prompt)
-                runs(detail)
+                if detail.trigger == nil { runs(detail) }
                 if let reason = row.abilities.readOnlyReason {
                     Text(reason).shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
@@ -74,8 +86,8 @@ struct AutomationDetailContent: View {
             .frame(maxWidth: pad ? MobileLayout.automationDetailMaxWidth : .infinity, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: pad ? .leading : .center)
         }
-        .refreshable { await store.refreshRuns() }
-        .safeAreaInset(edge: .bottom) { actions(row, busy: busy, store: store) }
+        .refreshable { await store.refresh() }
+        .safeAreaInset(edge: .bottom) { actions(row, trigger: detail.trigger, busy: busy, store: store) }
         .toolbar {
             if !pad {
                 ToolbarItem(placement: .primaryAction) { menu(row, store: store) }
@@ -96,7 +108,11 @@ struct AutomationDetailContent: View {
         HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
             Text(row.name).shText(.title).foregroundStyle(Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            SHStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
+            if let state = store.details[key]?.trigger?.state, on {
+                SHStatusPill(AgentState(state.tone), label: state.word)
+            } else {
+                SHStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
+            }
             Spacer(minLength: SH.Space.s)
             menu(row, store: store)
         }
@@ -160,7 +176,15 @@ struct AutomationDetailContent: View {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 SHListHeader("Runs", count: detail.runs.count)
                 SHListCard {
-                    ForEach(detail.runs) { run in runRow(run).padding(.horizontal, SH.Space.xs) }
+                    if detail.trigger != nil {
+                        ForEach(detail.runs) { run in
+                            AutomationInboxRunRow(run: run, open: run.agent.map { agent in { open(run: run, agent: agent) } })
+                                .equatable()
+                                .padding(.horizontal, SH.Space.xs)
+                        }
+                    } else {
+                        ForEach(detail.runs) { run in runRow(run).padding(.horizontal, SH.Space.xs) }
+                    }
                 }
             }
         }
@@ -195,15 +219,102 @@ struct AutomationDetailContent: View {
                  open: run.agent.map { agent in { navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent))) } })
     }
 
+    /// Opens a run's thread and clears its unread dot.
+    private func open(run: AutomationRunRow, agent: FleetRef) {
+        if run.unread { AutomationsStore.of(hosts).markRead(key, runID: run.id) }
+        navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent)))
+    }
+
+    // MARK: Triggered
+
+    /// Why the trigger is paused or retrying (Resume is in the footer).
+    @ViewBuilder
+    private func triggerBanner(_ trigger: AutomationTriggerDetail, row: AutomationListRow) -> some View {
+        if let state = trigger.state, row.enabled, let reason = state.reason {
+            SHBanner(state.tone == .failed ? .failed : .attention, title: "\(state.word): \(reason)",
+                     message: trigger.retry.map { "Checks again \($0)." } ?? (state.paused ? "Resume checks again now." : nil)) { EmptyView() }
+        }
+    }
+
+    /// The switch, what fires it and how it stands.
+    private func triggerHead(_ trigger: AutomationTriggerDetail, row: AutomationListRow, busy: Bool, store: AutomationsStore) -> some View {
+        VStack(spacing: 0) {
+            SHFactRow("On") {
+                let on = store.isOn(row)
+                SHAutomationSwitch("On", isOn: on, caption: on ? "Its trigger starts runs" : "Nothing fires until it's on",
+                                   toggle: row.abilities.toggle && !busy ? { store.setEnabled(key, $0) } : nil)
+            }
+            SHFactRow("Trigger", value: trigger.summary)
+            SHFactRow("Status") {
+                if let state = trigger.state {
+                    SHFactText(state.word)
+                        .foregroundStyle(state.tone == .stopped || state.tone == .off ? Color.sh.textPrimary : AgentState(state.tone).textColor)
+                } else if row.abilities.triggers {
+                    SHFactText("Reading…").foregroundStyle(Color.sh.textTertiary)
+                } else {
+                    SHFactText(row.status)
+                }
+            }
+            if let next = trigger.next { SHFactRow("Next run", value: next, mono: true) }
+            if let checked = trigger.checked { SHFactRow("Checked", value: checked, mono: true) }
+            if let today = trigger.today { SHFactRow("Today", value: today) }
+        }
+    }
+
+    /// Where and how its runs go.
+    private func triggerSettings(_ trigger: AutomationTriggerDetail, row: AutomationListRow) -> some View {
+        VStack(spacing: 0) {
+            SHFactRow("Runs on", value: trigger.runsOn, mono: true)
+            SHFactRow("Folder", value: row.cwd, mono: true)
+            if let workspace = trigger.workspace { SHFactRow("Works in", value: workspace) }
+            if let gate = trigger.gate {
+                SHFactRow("Who can trigger") {
+                    SHFactText(gate)
+                        .foregroundStyle(trigger.gateWarning == nil ? Color.sh.textPrimary : Color.sh.lanternText)
+                }
+            }
+            SHFactRow("Limits", value: trigger.limits)
+            SHFactRow("Model", value: trigger.model, mono: trigger.model != "Default")
+        }
+    }
+
+    /// Events waiting for a free slot: Run now (past the limits) or Dismiss each.
+    private func pending(_ trigger: AutomationTriggerDetail, row: AutomationListRow, busy: Bool, store: AutomationsStore) -> some View {
+        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+            SHListHeader("Waiting", count: trigger.pending.count)
+            SHListCard {
+                ForEach(trigger.pending) { event in
+                    AutomationPendingRowView(event: event, enabled: row.abilities.triggers && !busy,
+                                             run: { store.runEvent(key, eventID: event.id) },
+                                             dismiss: { store.dismissEvent(key, eventID: event.id) })
+                        .equatable()
+                        .padding(.horizontal, SH.Space.xs)
+                }
+            }
+            Text("Run now starts one past today's limit.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                .padding(.horizontal, SH.Space.xs)
+        }
+    }
+
     /// Edit and Run now (with Open run while the last run's thread is there; running again
-    /// replaces it), or Stop and Open run while a run is live (the boards' footer).
-    private func actions(_ row: AutomationListRow, busy: Bool, store: AutomationsStore) -> some View {
+    /// replaces it), or Stop and Open run while a run is live (the boards' footer). A triggered
+    /// automation's runs are each their own thread: Edit, Pause or Resume, and Run now.
+    private func actions(_ row: AutomationListRow, trigger: AutomationTriggerDetail?, busy: Bool, store: AutomationsStore) -> some View {
         HStack(spacing: SH.Space.m) {
             Button("Edit") { edit() }
                 .buttonStyle(.sh(.secondary, size: .l))
                 .disabled(!row.abilities.edit)
             Spacer(minLength: SH.Space.s)
-            if row.live, let run = row.run {
+            if let trigger {
+                if row.enabled, let state = trigger.state, state.tone != .off {
+                    Button(state.paused ? "Resume" : "Pause") { state.paused ? store.resume(key) : store.pause(key) }
+                        .buttonStyle(.sh(.secondary, size: .l))
+                        .disabled(!row.abilities.triggers || busy)
+                }
+                Button("Run now", systemImage: "play.fill") { store.run(key) }
+                    .buttonStyle(.sh(.primary, size: .l))
+                    .disabled(!row.abilities.run || busy)
+            } else if row.live, let run = row.run {
                 Button("Stop") { store.confirming = .init(key: key, kind: .stop) }
                     .buttonStyle(.sh(.secondary, size: .l))
                     .disabled(!row.abilities.stop || busy)
@@ -235,5 +346,119 @@ struct AutomationDetailContent: View {
 
     private func edit() {
         navigator.present(.automations(.edit(host: key.host, automation: key.automation)))
+    }
+}
+
+/// One run of a triggered automation: an unread dot until its thread is opened, what fired it,
+/// how it went, why it didn't start, and its pull request.
+struct AutomationInboxRunRow: View, Equatable {
+    let run: AutomationRunRow
+    let open: (() -> Void)?
+
+    static func == (a: Self, b: Self) -> Bool { a.run == b.run && (a.open == nil) == (b.open == nil) }
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            if let open {
+                Button(action: open) { content }
+                    .buttonStyle(.shRow(radius: SH.Radius.s))
+                    .accessibilityHint("Opens its thread")
+            } else {
+                content
+            }
+            if let pr = run.pullRequestURL {
+                Link("PR", destination: pr)
+                    .buttonStyle(.shLink(color: Color.sh.running, font: .sh(.ui, weight: .semibold)))
+                    .shTouchTarget(height: SH.Height.touch)
+                    .accessibilityLabel("Open pull request")
+            }
+        }
+        .contextMenu {
+            if let url = run.triggerURL { Link("Open on GitHub", destination: url) }
+            if let pr = run.pullRequestURL { Link("Open Pull Request", destination: pr) }
+        }
+    }
+
+    private var content: some View {
+        let sh = Color.sh
+        let state = AgentState(run.tone)
+        return HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            SHStatusDot(.running)
+                .opacity(run.unread ? 1 : 0)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(run.trigger ?? "Run now")
+                    .font(.sh(.ui, weight: run.unread ? .semibold : .regular))
+                    .foregroundStyle(sh.textPrimary)
+                    .lineLimit(2)
+                HStack(spacing: SH.Space.s) {
+                    Text(run.word).foregroundStyle(state.textColor)
+                    Text([run.started, run.duration].compactMap { $0 }.joined(separator: " · "))
+                        .font(.sh(.mono)).foregroundStyle(sh.textTertiary)
+                }
+                .font(.sh(.caption))
+                .lineLimit(1)
+                if let failure = run.failure {
+                    Text(failure).font(.sh(.caption)).foregroundStyle(sh.failed).lineLimit(3)
+                }
+            }
+            Spacer(minLength: SH.Space.s)
+            if open != nil {
+                Image(systemName: "chevron.right")
+                    .font(.sh(.caption, weight: .semibold))
+                    .foregroundStyle(sh.textTertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, SH.Space.s)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([run.unread ? "Unread" : nil, run.trigger ?? "Run now", run.word, run.started, run.duration, run.failure]
+            .compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+/// An event waiting in a triggered automation's inbox.
+struct AutomationPendingRowView: View, Equatable {
+    let event: AutomationPendingRow
+    let enabled: Bool
+    let run: () -> Void
+    let dismiss: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.event == b.event && a.enabled == b.enabled }
+
+    var body: some View {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                if let url = event.url {
+                    Link(destination: url) {
+                        Text(event.summary).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
+                        .accessibilityHint("Opens it on GitHub")
+                } else {
+                    Text(event.summary).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
+                }
+                Text(event.when).font(.sh(.mono)).foregroundStyle(sh.textTertiary)
+            }
+            HStack(spacing: SH.Space.m) {
+                // Secondary: the footer's Run now stays the screen's one primary action.
+                Button("Run now", systemImage: "play.fill", action: run)
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Run now: \(event.summary)")
+                Button("Dismiss", action: dismiss)
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Dismiss: \(event.summary)")
+            }
+            .disabled(!enabled)
+            .shTouchTarget(height: SH.Height.touch)
+        }
+        .padding(.horizontal, SH.Space.s)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

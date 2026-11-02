@@ -244,10 +244,18 @@ and three more, so the docked review becomes its Changes tab.
 `App/iOS/Automations` (MobileAutomations, iPadAutomations boards), from Home's Automations row
 or the iPad sidebar's.
 
-- **What an automation is here:** the Mac's fields and nothing else. It has a name, a prompt,
-  a folder on its host (one of the host's spaces), and a switch: **On** starts a run each time
-  Shepherd launches on the host; Run now starts one any time. The boards' schedules, triggers,
-  models and repo lists are not built, because the host has none of them.
+- **What an automation is here:** the Mac's fields. It has a name, a prompt, a folder on its host
+  (one of the host's spaces), and a switch: **On** starts a run each time Shepherd launches on the
+  host; Run now starts one any time. On a host with `automationTriggers.v1` the form also sets the
+  boards' trigger (Manual, Schedule, GitHub), destination, who can trigger, limits and the Model,
+  Thinking and Speed pins, and a triggered automation's detail is its inbox. Schedule times (the
+  form's next-run line, Next run, Checked, the runs' stamps) read in the host's time zone, from its
+  trigger status and remembered per host for a new automation; "Times are Eastern Time, build-01's
+  time zone." says so when that is not this device's zone, and only an unknown zone falls back to
+  the device's with "Times are build-01's time zone." The boards' repo lists are not built.
+  Fixtures: `automation-trigger-flow` presses Pause, Resume, a waiting event's Run now and Dismiss,
+  Edit (Repeats, Speed, Save) and an unread run, and checks the exact requests the host received;
+  `automation-edit-schedule-lower` and `automation-detail-triggered-lower` show the lower halves.
 - **List** (MobileAutomations): the large title "Automations" with New automation trailing (a 36pt
   `lantern` circle with a plus; the app's toolbar `plus`), shown when a host can take one; on
   `bgWindow` with 14pt sides.

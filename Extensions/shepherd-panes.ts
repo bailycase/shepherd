@@ -731,11 +731,67 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     },
   });
 
+  // Trigger settings shared by automation_create and automation_update (docs/data-flow.md
+  // "Automation triggers"). Shepherd validates them; a nil field keeps the saved value.
+  const GITHUB_EVENTS = ["issueOpened", "issueLabeled", "issueComment", "pullRequestOpened", "pullRequestLabeled",
+    "pullRequestReview", "pullRequestComment", "pullRequestCommits", "pullRequestMerged"];
+  const TRIGGER_PARAMS = {
+    trigger: Type.Optional(Type.Object({
+      type: Type.String({ description: "manual (Run now / a watcher started at launch), schedule, or github" }),
+      rrule: Type.Optional(Type.String({ description: "schedule: RFC 5545 RRULE in local time, e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=9;BYMINUTE=0 or FREQ=MINUTELY;INTERVAL=30. Runs at least 5 minutes apart." })),
+      triggers: Type.Optional(Type.Array(Type.Object({
+        repo: Type.Optional(Type.String({ description: "owner/name; omit for the cwd's GitHub origin" })),
+        events: Type.Array(Type.String(), { description: `Any of: ${GITHUB_EVENTS.join(", ")}` }),
+        labels: Type.Optional(Type.Array(Type.String(), { description: "For *Labeled events the label just added must be one of these; otherwise the item must carry one" })),
+        authors: Type.Optional(Type.Array(Type.String(), { description: "Only items opened by these logins" })),
+        titleContains: Type.Optional(Type.String()),
+        number: Type.Optional(Type.Number({ description: "One item number only" })),
+      }), { description: "github: 1 to 5 triggers; any one firing starts a run" })),
+    }, { description: "When runs start. The prompt says what each run does." })),
+    destination: Type.Optional(Type.String({ description: "newThread (default: one new thread per run, receiving the event) or thisThread (every firing is sent to this thread as a message)" })),
+    workspace: Type.Optional(Type.String({ description: "worktree (default: a fresh worktree per run off the default branch) or local (the cwd itself)" })),
+    authorGate: Type.Optional(Type.String({ description: "Whose GitHub activity fires: collaborators (default: owners, members, collaborators), contributors, or anyone. Widen only when the user asks." })),
+    maxConcurrent: Type.Optional(Type.Number({ description: "Runs at once, 1-10 (default 2)" })),
+    maxPerDay: Type.Optional(Type.Number({ description: "Runs started per day, 1-200 (default 20)" })),
+    model: Type.Optional(Type.String({ description: "Pin a model for runs; empty string clears (runs use the default)" })),
+    thinking: Type.Optional(Type.String({ description: "Pin a thinking level; empty string clears" })),
+  };
+  function triggerSettings(params) {
+    const settings = {};
+    if (params.trigger) {
+      const t = params.trigger;
+      settings.trigger = t.type === "schedule" ? { type: "schedule", rrule: t.rrule ?? "" }
+        : t.type === "github" ? { type: "github", triggers: t.triggers ?? [] } : { type: "manual" };
+    }
+    if (params.destination === "thisThread") settings.destination = { type: "thread", agentID };
+    else if (params.destination === "newThread") settings.destination = { type: "newThread" };
+    if (params.workspace) settings.workspace = params.workspace;
+    if (params.authorGate) settings.authorGate = params.authorGate;
+    if (params.maxConcurrent !== undefined || params.maxPerDay !== undefined) {
+      settings.limits = { maxConcurrent: params.maxConcurrent ?? 2, maxPerDay: params.maxPerDay ?? 20 };
+    }
+    if (params.model !== undefined) settings.model = params.model;
+    if (params.thinking !== undefined) settings.thinking = params.thinking;
+    return Object.keys(settings).length ? settings : undefined;
+  }
+  function triggerLine(a) {
+    const t = a.settings?.trigger;
+    if (!t || t.type === "manual") return "";
+    const what = t.type === "schedule" ? `schedule ${t.rrule}`
+      : `github ${(t.triggers ?? []).map((g) => `${g.repo ?? "origin"}:${(g.events ?? []).join("/")}${g.labels?.length ? `[${g.labels.join(",")}]` : ""}`).join("; ")}`;
+    const s = a.triggerStatus;
+    const state = s ? `${s.state}${s.reason ? ` (${s.reason})` : ""}, ${s.pending?.length ?? 0} pending, ${s.runsToday} today` : "";
+    return `\n    trigger: ${what}${state ? ` [${state}]` : ""}`;
+  }
+
   if (!isAutomationAgent) pi.registerTool({
     name: "automation_create",
     label: "Create Automation",
     description:
-      "Create a Shepherd automation: a saved watch task run by a dedicated agent. The prompt " +
+      "Create a Shepherd automation. With a trigger (schedule or github), Shepherd starts each run itself " +
+      "when the trigger fires; the prompt says only what one run does (e.g. 'run speckit on it, " +
+      "implement it, open a PR'), and the GitHub event (number, title, body, link) is attached to the run as untrusted data. " +
+      "Without a trigger it is a watch task run by a dedicated agent. For a watch task the prompt " +
       "should tell that agent what to poll (exact commands), how often (a single bash loop " +
       "with sleep between checks), the exact success/failure conditions, and to call its " +
       "notify tool then stop when a condition is met. The watch agent does the watching " +
@@ -756,12 +812,14 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         Type.Boolean({ description: "Restart the watch when Shepherd relaunches (default true)" }),
       ),
       start: Type.Optional(
-        Type.Boolean({ description: "Start the watch agent immediately (default true)" }),
+        Type.Boolean({ description: "Start the watch agent immediately (default true; ignored with a trigger)" }),
       ),
+      ...TRIGGER_PARAMS,
     }),
     async execute(_toolCallId, params) {
       await request({
         type: "createAutomation",
+        settings: triggerSettings(params),
         name: params.name,
         prompt: params.replyToCreator
           ? `${params.prompt}\n\nCompletion report: Before stopping, on success, failure, or a blocked watch, call agent_send with agentID ${JSON.stringify(agentID)}, delivery "report", and a concise result including relevant links. This is the creator thread, not an agent to find by name. Also call notify. If the creator no longer exists or delivery fails, include that in the notification and stop; do not retry indefinitely or send to another thread. This requests dispatch, not confirmation that the creator read it.`
@@ -789,7 +847,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       const rows = reply.automations ?? [];
       if (rows.length === 0) return text("no automations");
       return text(rows.map((a) =>
-        `${a.id}  ${a.name}  [${a.agentStatus ?? "stopped"}${a.enabled ? "" : ", disabled"}]  ${a.cwd}`
+        `${a.id}  ${a.name}  [${a.agentStatus ?? "stopped"}${a.enabled ? "" : ", disabled"}]  ${a.cwd}${triggerLine(a)}`
       ).join("\n"));
     },
   });
@@ -798,8 +856,9 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     name: "automation_update",
     label: "Update Automation",
     description:
-      "Update a Shepherd automation's name, prompt, cwd, or enabled flag. Omitted fields " +
-      "keep their value. A running watch keeps its old prompt until restarted.",
+      "Update a Shepherd automation's name, prompt, cwd, enabled flag, or trigger settings. Omitted fields " +
+      "keep their value. A running watch keeps its old prompt until restarted. Changing a trigger only " +
+      "fires on activity after the change.",
     promptSnippet: line(DEFER, "Update a Shepherd automation"),
     ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({
@@ -808,10 +867,12 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       prompt: Type.Optional(Type.String()),
       cwd: Type.Optional(Type.String()),
       enabled: Type.Optional(Type.Boolean()),
+      ...TRIGGER_PARAMS,
     }),
     async execute(_toolCallId, params) {
       await request({
         type: "updateAutomation",
+        settings: triggerSettings(params),
         automationID: params.automationID,
         name: params.name,
         prompt: params.prompt,

@@ -477,6 +477,9 @@ public struct FleetModel: Equatable, Sendable {
     public var automationsQuiet: [FleetAutomationRow] = []
     /// Rows carry their host's name: more than one host is known.
     public var tagsHosts = false
+    /// A triggered automation's run threads (`Agent.automationOrigin`, its automation still on the host), by the
+    /// automation that started them: the sidebar folds each automation's under one row (`FleetSidebarState.groups`).
+    public var runOrigins: [FleetRef: AutomationID] = [:]
 
     public init() {}
 
@@ -535,6 +538,10 @@ public struct FleetModel: Equatable, Sendable {
                     continue
                 }
                 let automation = automationByAgent[agent.id]
+                if automation == nil, let origin = agent.automationOrigin?.automationID,
+                   host.state.automations.contains(where: { $0.id == origin }) {
+                    runOrigins[ref] = origin
+                }
                 let space = spaces[agent.spaceID]
                 let ordinary = host.state.isSidebarThread(agent)
                 let attention = connected ? Self.attention(agent, ref: ref, digest: digest, automation: automation,

@@ -63,7 +63,7 @@ extension ShepherdViewModel {
     /// threads in order.
     var sidebarWalkRows: [SidebarListRow] {
         sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
-            : sidebarLists.visibleRows(collapsed: collapsedActivitySections)
+            : sidebarLists.visibleRows(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects)
     }
 
     /// The rows ⌘1–9 reach, in the style on screen.
@@ -100,13 +100,39 @@ extension ShepherdViewModel {
         if next != collapsedProjects { collapsedProjects = next }
     }
 
-    /// A row selected by the keyboard, the palette or a switch of style: its project opens so
-    /// the row is there to scroll to.
+    /// A row selected by the keyboard, the palette or a switch of style: its project (and its
+    /// automation's run group) opens so the row is there to scroll to.
     func openProjectHoldingSelection() {
         guard sidebarStyle == .projects, let selected = selectedSidebarRow,
               let project = sidebarTree.project(holding: selected) else { return }
         for parent in project.ancestorIDs { setProject(parent, expanded: true) }
         setProject(project.id, expanded: true)
+        if let automation = project.rows.first(where: { $0.id == selected })?.runGroup {
+            let key = SidebarRunGroupRow.key(project: project.id, automation: automation)
+            if !collapsedProjects.contains(key) { collapsedProjects.insert(key) }
+        }
+    }
+
+    /// A run group's chevron. Groups start closed; the set remembers the open ones.
+    func toggleRunGroup(_ key: String) {
+        if collapsedProjects.contains(key) { collapsedProjects.remove(key) } else { collapsedProjects.insert(key) }
+    }
+
+    /// A run group's menu: the automation on its page.
+    func showAutomation(_ id: AutomationID) {
+        showAutomation(AutomationKey(host: PageHost.localID, automation: id))
+    }
+
+    /// An automation's sidebar row: the Automations page with it selected, on This Mac or its host.
+    func showAutomation(_ key: AutomationKey) {
+        automationsPageSelection = key
+        openDestination(.automations)
+    }
+
+    /// An automation's sidebar row's Edit…: its page, with the editor open on it.
+    func editAutomation(_ key: AutomationKey) {
+        showAutomation(key)
+        automationEditRequest = key
     }
 
     // MARK: Order and visibility

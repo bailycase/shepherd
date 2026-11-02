@@ -81,7 +81,10 @@ selected thread, or the Overview when none is. Other screens push over the detai
   count, listing every connected host's automation runs (never among Recents); its head opens the Automations
   screen and each run opens its thread. It is omitted while no automation has a run. A run waiting on you is in Needs you only,
   and the header counts what the group lists. Settled and stopped runs stay (a decision, not user approved).
-  Fixtures: `sidebar-automations`, `-long` and `-none` (`run-simulator.sh --sidebar`), which activate the header and a run through accessibility.
+  A triggered automation's run threads fold under one row each after them, as on iPhone Home (Automation runs), and
+  leave Working, Done and Recents; the header counts those rows too.
+  Fixtures: `sidebar-automations`, `-long` and `-none` (`run-simulator.sh --sidebar`), which activate the header and a run through accessibility;
+  `sidebar-run-groups`, which reads and presses a run group.
 - **Rows** (44pt, radius 8, 10pt inset, 12pt gap): a 14pt status column, the title at 15 in
   one line, and a trailing detail in mono 10. The selected thread takes `bgSelected` and a
   semibold title. Status: in Needs you, a glowing 6pt `lantern` dot for a thread, or the

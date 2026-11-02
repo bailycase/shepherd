@@ -26,7 +26,7 @@ struct SidebarActivityTests {
             let lists = SidebarDerivation.lists(SidebarSource(
                 local: ShepherdState(spaces: [space], agents: [pin, idle, asking, working, done], designs: [design]), designs: true),
                 pins: SidebarPins([.local(pin.id)]))
-            #expect(lists.sections.map(\.section) == [.automations, .designs, .needsYou, .working, .done, .pinned, .recents])
+            #expect(lists.sections.map(\.section) == [.designs, .automations, .needsYou, .working, .done, .pinned, .recents])
             #expect(lists.all.map(\.title) == ["Dashboard", "asking", "working", "done", "pinned", "idle"], "Designs, Needs you, Working, Done, Pinned, Recents")
             #expect(lists.items(collapsed: []).first == .header(.designs, count: 1, collapsed: false))
             #expect(Set(lists.all.map(\.id)).count == 6)
@@ -196,7 +196,8 @@ struct SidebarActivityTests {
         var completions = SidebarCompletions()
         completions.reconcile(source, endpoints: [:])
         source.completions = completions.records
-        #expect(SidebarDerivation.lists(source).automations.first?.accessory == .age(since: Date(timeIntervalSince1970: 12)))
+        #expect(SidebarDerivation.lists(source).done.first?.accessory == .age(since: Date(timeIntervalSince1970: 12)),
+                "a settled watcher run leaves Automations for Done")
         source.local.agents[0].status = .working
         completions.reconcile(source, endpoints: [:])
         source.local.agents[0].status = .done

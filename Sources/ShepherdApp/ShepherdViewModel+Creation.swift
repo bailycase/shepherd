@@ -260,7 +260,7 @@ extension ShepherdViewModel {
             order: order,
             layout: .leaf(primary)
         )
-        let agent = Agent(
+        var agent = Agent(
             id: agentID,
             name: name,
             spaceID: space.id,
@@ -283,6 +283,7 @@ extension ShepherdViewModel {
             coordinatorFor: config.coordinatorFor,
             serviceTier: config.serviceTier ?? settings.defaultServiceTier
         )
+        agent.automationOrigin = config.automationOrigin
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new
         // pane, whose view would otherwise lazily spawn its own pi process in

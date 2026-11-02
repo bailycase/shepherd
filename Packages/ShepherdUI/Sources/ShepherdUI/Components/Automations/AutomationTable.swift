@@ -67,6 +67,13 @@ public struct SHAutomationTableRow: View, Equatable {
     let isOn: Bool
     let switchEnabled: Bool
     let starts: String
+    let startsGlyph: String
+    /// A line under the name: how a trigger stands ("Paused · gh isn't signed in", "2 waiting ·
+    /// 4/20 today"), colored by `noteState` (nil is `textTertiary`).
+    let note: String?
+    let noteState: AgentState?
+    /// Runs finished or asking that nobody opened yet.
+    let unread: Int
     let host: String
     let outcome: SHRunOutcome?
     let selected: Bool
@@ -76,13 +83,18 @@ public struct SHAutomationTableRow: View, Equatable {
     private let togglable: Bool
     let select: () -> Void
 
-    public init(_ name: String, isOn: Bool, switchEnabled: Bool = true, starts: String = "thread", host: String,
-                outcome: SHRunOutcome?, selected: Bool, columns: [SHTableColumns.Column],
+    public init(_ name: String, isOn: Bool, switchEnabled: Bool = true, starts: String = "thread",
+                startsGlyph: String = "text.bubble", note: String? = nil, noteState: AgentState? = nil, unread: Int = 0,
+                host: String, outcome: SHRunOutcome?, selected: Bool, columns: [SHTableColumns.Column],
                 toggle: ((Bool) -> Void)?, select: @escaping () -> Void) {
         self.name = name
         self.isOn = isOn
         self.switchEnabled = switchEnabled
         self.starts = starts
+        self.startsGlyph = startsGlyph
+        self.note = note
+        self.noteState = noteState
+        self.unread = unread
         self.host = host
         self.outcome = outcome
         self.selected = selected
@@ -94,6 +106,7 @@ public struct SHAutomationTableRow: View, Equatable {
 
     public nonisolated static func == (a: SHAutomationTableRow, b: SHAutomationTableRow) -> Bool {
         a.name == b.name && a.isOn == b.isOn && a.switchEnabled == b.switchEnabled && a.starts == b.starts
+            && a.startsGlyph == b.startsGlyph && a.note == b.note && a.noteState == b.noteState && a.unread == b.unread
             && a.host == b.host && a.outcome == b.outcome && a.selected == b.selected && a.columns == b.columns
             && a.togglable == b.togglable
     }
@@ -110,18 +123,30 @@ public struct SHAutomationTableRow: View, Equatable {
             SHTableColumns(columns) {
                 HStack(spacing: SHPageMetrics.switchGap) {
                     SHAutomationSwitch(name, isOn: isOn, toggle: switchEnabled ? toggle : nil)
-                    Text(name)
-                        .font(.shSans(13, .semibold))
-                        .foregroundStyle(sh.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .allowsHitTesting(false)
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        HStack(spacing: SH.Space.s) {
+                            Text(name)
+                                .font(.shSans(13, .semibold))
+                                .foregroundStyle(sh.textPrimary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            if unread > 0 { SHCountBadge(unread) }
+                        }
+                        if let note {
+                            Text(note)
+                                .font(.sh(.caption))
+                                .foregroundStyle(noteState?.textColor ?? sh.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
+                    .allowsHitTesting(false)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Label {
                     Text(starts).font(.shSans(12)).foregroundStyle(sh.textSecondary).lineLimit(1)
                 } icon: {
-                    Image(systemName: "text.bubble")
+                    Image(systemName: startsGlyph)
                         .font(.shSans(11))
                         .foregroundStyle(sh.textTertiary)
                 }
@@ -148,7 +173,8 @@ public struct SHAutomationTableRow: View, Equatable {
     }
 
     private var accessibilityText: String {
-        [name, isOn ? "on" : "off", "on \(host)", outcome?.text].compactMap { $0 }.joined(separator: ", ")
+        [name, isOn ? "on" : "off", unread > 0 ? "\(unread) unread" : nil, note, starts, "on \(host)", outcome?.text]
+            .compactMap { $0 }.joined(separator: ", ")
     }
 }
 

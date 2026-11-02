@@ -127,3 +127,56 @@ struct AutomationRunLogTests {
         #expect(log.runs.isEmpty)
     }
 }
+
+/// A Project automation's run follows its Project task, whose worker may not exist yet.
+@Suite("Automation run log: Project runs")
+struct AutomationProjectRunLogTests {
+    @Test func followsTheTask() {
+        let project = ProjectID()
+        let automation = Automation(id: AutomationID(rawValue: "p"), name: "loop", prompt: "p", cwd: "/tmp", projectID: project,
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY")))
+        var task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "t", prompt: "p", phase: .queued)
+        func state() -> ShepherdState {
+            var p = Project(id: project, name: "P")
+            p.tasks = [task]
+            return ShepherdState(automations: [automation], projects: [p])
+        }
+        let log = AutomationRunLog(url: FileManager.default.temporaryDirectory.appendingPathComponent("runs-\(UUID()).json"))
+        log.openThreadRun(automation.id, agentID: task.workerAgentID, trigger: "Scheduled run", triggerURL: nil)
+        log.record(from: state(), to: state())
+        #expect(log.runs[automation.id]?.last?.endedAt == nil, "a queued task's missing worker doesn't end the run")
+        let before = state()
+        task.phase = .waiting
+        log.record(from: before, to: state())
+        #expect(log.runs[automation.id]?.last?.result == .needsYou)
+        let asking = state()
+        task.phase = .settled
+        log.record(from: asking, to: state())
+        let run = log.runs[automation.id]?.last
+        #expect(run?.result == .finished && run?.endedAt != nil && run?.unread == true)
+    }
+}
+
+/// A triggered run whose turn ended in an error reads as failed, with the error, not finished.
+@Suite("Automation run log: failed turns")
+struct AutomationFailedTurnRunLogTests {
+    @Test func aFailedTurnIsAFailedRun() {
+        let automation = Automation(id: AutomationID(rawValue: "t"), name: "loop", prompt: "p", cwd: "/tmp",
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY")))
+        let space = Space(name: "s", path: "/tmp")
+        let pane = LeafPane(cwd: "/tmp")
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        var agent = Agent(name: "#1 t", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .working)
+        agent.automationOrigin = AutomationOrigin(automationID: automation.id, trigger: "#1 t · issue opened")
+        func state() -> ShepherdState { ShepherdState(spaces: [space], tabs: [tab], agents: [agent], automations: [automation]) }
+        let log = AutomationRunLog(url: FileManager.default.temporaryDirectory.appendingPathComponent("runs-\(UUID()).json"))
+        let empty = ShepherdState(spaces: [space], automations: [automation])
+        log.record(from: empty, to: state())
+        let working = state()
+        agent.status = .done
+        agent.lastFailure = "OAuth refresh failed"
+        log.record(from: working, to: state())
+        let run = log.runs[automation.id]?.last
+        #expect(run?.result == .failed && run?.failure == "OAuth refresh failed" && run?.unread == true)
+    }
+}
