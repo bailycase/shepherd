@@ -611,6 +611,10 @@ public final class SessionServer: @unchecked Sendable {
     lazy var pushNotifications = PushNotifications(
         file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
+    var stateWriteQueue: [() -> Void] = []
+    var stateWritesInFlight: Int { stateWriteQueue.count }
+    /// Test gate after capturing a candidate/version, before staging it on the file queue.
+    var stateWritePrepared: (() -> Void)?
     let projectHistoryReads = DispatchQueue(label: "shepherd.project-history-reads", qos: .utility)
     var logicalProjectCreates: Set<ProjectID> = []
     var logicalProjectEpoch: UInt64 = 0
@@ -5666,13 +5670,11 @@ public final class SessionServer: @unchecked Sendable {
     /// to erase live pane-to-session bindings. A pane keeps its binding when
     /// the same PaneID remains in the new tree; new panes start unbound.
     public func updateLayoutStructure(tabID: TabID, layout: PaneNode) async throws {
-        try await enqueue {
-            guard let index = self.store.state.tabs.firstIndex(where: { $0.id == tabID }) else {
+        try await mutateStateOffQueue { state in
+            guard let index = state.tabs.firstIndex(where: { $0.id == tabID }) else {
                 throw SessionServerError.noSuchTab(tabID)
             }
-            let current = self.store.state.tabs[index].layout
-            let merged = Self.preservingSessionBindings(from: current, in: layout)
-            try self.mutateState { $0.tabs[index].layout = merged }
+            state.tabs[index].layout = Self.preservingSessionBindings(from: state.tabs[index].layout, in: layout)
         }
     }
 
@@ -6091,10 +6093,17 @@ public final class SessionServer: @unchecked Sendable {
     /// Record the branch and changed-file count the app read from an agent's checkout. Live
     /// state, like a status: broadcast at once (remote clients draw it in their headers), never
     /// validated or written on its own, and a no-op when nothing changed.
-    public func setAgentCheckout(_ agentID: AgentID, _ checkout: AgentCheckout?) async {
+    public func setAgentCheckout(_ agentID: AgentID, _ checkout: AgentCheckout?, directory: String? = nil) async {
         await enqueueValue {
             guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
                   self.store.state.agents[index].checkout != checkout else { return }
+            if let directory {
+                let agent = self.store.state.agents[index]
+                let layout = self.store.state.tabs.first { $0.id == agent.tabID }?.layout
+                let cwd = layout?.leaves.first { $0.agentID == agentID }?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd
+                guard let cwd,
+                      URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path == directory else { return }
+            }
             self.store.updateLive { $0.agents[index].checkout = checkout }
             let committedState = self.store.state
             self.broadcastRemoteState(committedState)
@@ -6105,29 +6114,27 @@ public final class SessionServer: @unchecked Sendable {
     /// Persist a hand-entered agent title without replacing the rest of the
     /// agent snapshot that may have changed since the UI rendered it.
     public func renameAgent(_ agentID: AgentID, to name: String) async throws {
-        try await enqueue {
-            guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }) else {
+        try await mutateStateOffQueue { state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
                 throw SessionServerError.noSuchAgent(agentID)
             }
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, self.store.state.agents[index].name != trimmed else { return }
-            try self.mutateState {
-                $0.agents[index].name = trimmed
-                $0.agents[index].nameIsFinal = true
-            }
+            guard !trimmed.isEmpty, state.agents[index].name != trimmed else { return }
+            state.agents[index].name = trimmed
+            state.agents[index].nameIsFinal = true
         }
     }
 
     public func reorderAgent(_ agentID: AgentID, onto target: AgentID) async throws {
-        try await enqueue {
-            let agents = self.store.state.agents
+        try await mutateStateOffQueue { state in
+            let agents = state.agents
             guard let from = agents.firstIndex(where: { $0.id == agentID }),
                   let to = agents.firstIndex(where: { $0.id == target }),
                   agents[from].spaceID == agents[to].spaceID else {
                 throw SessionServerError.conflict("Agents must belong to the same space")
             }
             guard from != to, let moved = agents.moving(agentID, before: target) else { return }
-            try self.mutateState { $0.agents = moved }
+            state.agents = moved
         }
     }
 

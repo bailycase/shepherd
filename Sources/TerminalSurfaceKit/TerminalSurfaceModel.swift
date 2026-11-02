@@ -366,7 +366,7 @@ public final class TerminalSurfaceModel {
     public func releaseKeyboardFocus() {
         focusGeneration &+= 1
         for window in NSApp.windows {
-            guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window),
+            guard let view = surfaceView(in: window),
                   window.firstResponder === view else { continue }
             window.makeFirstResponder(nil)
             return
@@ -446,8 +446,14 @@ public final class TerminalSurfaceModel {
     /// while it is still in a window and still ours; cleared when the view goes.
     private weak var cachedSurfaceView: AppTerminalView?
 
-    /// The surface view of this model in `window`, from the cache when it is still there.
+    /// libghostty registers its view before attaching it to a window. A pending attachment
+    /// needs another retry, not a search through every other thread's retained view graph.
     private func surfaceView(in window: NSWindow) -> NSView? {
+        if let attached = viewState.attachedView {
+            guard attached.window === window, TerminalFirstResponder.delegate(of: attached) === viewState else { return nil }
+            cachedSurfaceView = attached
+            return attached
+        }
         if let cached = cachedSurfaceView, cached.window === window, TerminalFirstResponder.delegate(of: cached) === viewState { return cached }
         guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) else { return nil }
         cachedSurfaceView = view as? AppTerminalView

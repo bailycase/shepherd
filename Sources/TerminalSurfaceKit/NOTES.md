@@ -89,6 +89,10 @@ from the surface's cell size). `TerminalSurfaceModel` hooks the current surface 
 becomes ready and forwards `Selection` values; `copySelection()` uses the view's own Copy. Keep the
 patch when the vendored copy is refreshed.
 
+`TerminalViewState.attachedView` is also publicly readable in the vendored copy. Focus and
+rendering use that weak reference instead of searching every mounted layout. Keep this access
+when refreshing the vendor; the model still checks window attachment and delegate ownership.
+
 ## Adapter design decisions
 
 - **Byte ordering.** Session callbacks arrive on background threads. `SessionCallbackBridge` always

@@ -356,7 +356,9 @@ public final class NativeThreadStore {
     /// never parses from its start on the main actor per poll.
     nonisolated public static let offMainProseBytes = 8 * 1024
     /// The text each off-main parse was started for, by item; a newer text supersedes it.
-    @ObservationIgnored private var proseParsing: [ProseKey: String] = [:]
+    @ObservationIgnored private var proseParsing: [ProseKey: UUID] = [:]
+    /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
+    @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
     /// Parses handed off main (tests).
     @ObservationIgnored private(set) var offMainParses = 0
 
@@ -752,6 +754,7 @@ public final class NativeThreadStore {
             }
             return cached.blocks
         }
+        proseParsing[key] = nil
         thinkingParses += 1
         let value = nativeThinkingBlocks(text)
         if thinkingCache[key] == nil, thinkingCache.count >= 1024 { thinkingCache.removeAll(keepingCapacity: true) }
@@ -771,6 +774,7 @@ public final class NativeThreadStore {
             }
             return (cached.blocks, cached.endsInOpenFence)
         }
+        proseParsing[key] = nil
         proseParses += 1
         let value = nativeMarkdownParse(text, streaming: streaming)
         if proseCache[key] == nil, proseCache.count >= 1024 { proseCache.removeAll(keepingCapacity: true) }
@@ -778,18 +782,20 @@ public final class NativeThreadStore {
         return value
     }
 
-    /// Parses `text` for `key` off main, unless a parse of that very text is on its way; `land`
-    /// keeps the result, and the turn is derived again with it. A text that moved on meanwhile
-    /// drops the result (its own parse is on its way).
+    /// One parse per item at a time. Snapshots keep the last parsed prefix while it runs;
+    /// deriving after it lands starts one more parse of the newest text, skipping intermediate chunks.
     private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, parse: @escaping @Sendable (String) -> Value,
                                                land: @escaping @MainActor (Value) -> Void) {
-        guard proseParsing[key] != text else { return }
-        proseParsing[key] = text
+        guard proseParsing[key] == nil else { return }
+        let token = UUID()
+        proseParsing[key] = token
         offMainParses += 1
+        let beforeParse = beforeProseParse
         Task.detached(priority: .userInitiated) { [weak self] in
+            await beforeParse?()
             let value = parse(text)
             await MainActor.run {
-                guard let self, self.proseParsing[key] == text else { return }
+                guard let self, self.proseParsing[key] == token else { return }
                 self.proseParsing[key] = nil
                 land(value)
                 self.presentationCache[key.turn] = nil

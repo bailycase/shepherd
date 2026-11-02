@@ -219,7 +219,7 @@ extension ShepherdViewModel {
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }
         openActivitySectionHoldingSelection()
         sidebarRevealRequest += 1
-        checkouts?.refresh(id)
+        checkouts?.refresh(id, priority: true)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 

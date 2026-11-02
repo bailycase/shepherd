@@ -63,6 +63,19 @@ struct DataPathBenchmarks {
 
     // MARK: Streaming
 
+    @Test(arguments: [1_000, 2_000, 4_000])
+    func streamingThinkingCost(chunks: Int) {
+        let chunk = String(repeating: "word ", count: 15) + "\n\n"
+        let expected = RPCContentBlock.normalizedThinking(String(repeating: chunk, count: chunks))
+        var samples: [Double] = []
+        for _ in 0..<3 {
+            var thinking = StreamingThinking()
+            samples.append(Bench.time { for _ in 0..<chunks { thinking.append(chunk) } })
+            #expect(thinking.normalized == expected)
+        }
+        Bench.report("thinking.\(chunks)", Bench.median(samples), "ms", "\(chunk.utf8.count * chunks) streamed bytes")
+    }
+
     @Test func streamingDeltaCost() throws {
         let delta = Data(#"{"type":"message_update",\#(Bench.usageJSON),"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"token streaming text, "}}"#.utf8)
         var decode: [Double] = []

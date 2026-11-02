@@ -34,7 +34,8 @@ public final class TerminalViewState: ObservableObject {
 
     /// The platform view currently presenting this state, set by the SwiftUI
     /// representable. Weak: the state outlives detached views.
-    weak var attachedView: TerminalView?
+    /// The native host can address its surface without searching every window's view tree.
+    public internal(set) weak var attachedView: TerminalView?
     private var pendingFocusRequest = false
 
     /// Whether the attached surface should keep drawing. Hosts that keep

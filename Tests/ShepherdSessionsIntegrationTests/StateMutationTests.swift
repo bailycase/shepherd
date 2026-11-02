@@ -195,13 +195,17 @@ struct StateMutationTests {
 
         try await expectNoChange(on: h) { await h.server.setAgentCheckout(worker.agent.id, checkout) }
         try await expectNoChange(on: h) { await h.server.setAgentCheckout(AgentID(), checkout) }
+        try await expectNoChange(on: h) {
+            await h.server.setAgentCheckout(worker.agent.id, nil, directory: "/old-checkout")
+        }
 
         try await h.server.addSpace(Fixture.space("added"))
         #expect(try h.persisted().agents.first?.checkout == checkout)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
 
-        await h.server.setAgentCheckout(worker.agent.id, nil)
+        let cwd = URL(fileURLWithPath: worker.tab.layout.firstLeaf.cwd).standardized.path
+        await h.server.setAgentCheckout(worker.agent.id, nil, directory: cwd)
         await drainMainQueue()
         #expect(h.server.state.agents.first?.checkout == nil, "a directory that stopped being a repository clears it")
         #expect(h.broadcasts.current.count == 1)
