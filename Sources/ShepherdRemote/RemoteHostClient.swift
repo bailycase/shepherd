@@ -544,6 +544,9 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
         }
         let command = try await Self.preparingImages(outgoing) { .nativeThread(id: Int.max, agentID: agentID, request: $0) }
+        guard try NDJSON.encode(RemoteRequest.nativeThread(id: Int.max, agentID: agentID, request: command)).count - 1 <= NDJSON.maxPayloadBytes else {
+            throw RemoteHostClientError.rejected(code: "too_large", message: "The request exceeds the remote transport capacity. Send it on the host Mac.")
+        }
         let reply: RemoteReply
         do {
             let timeout: TimeInterval = if case .queue(_, _, _, .subagent) = command { 65 } else { 15 }

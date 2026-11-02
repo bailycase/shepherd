@@ -52,11 +52,12 @@ struct ThreadStartupTests {
     /// A new agent's opening prompt waits on the host while pi starts and goes the moment pi
     /// serves: the first snapshot any client gets already shows it, as the row `OpeningPrompt`
     /// previews, and it lands as one user message, never two.
-    @Test func theOpeningPromptIsInTheFirstSnapshotAndLandsOnce() async throws {
+    @Test(arguments: ["tools:0 Fix the build", "tools:0 " + String(repeating: "long prompt é中🐑\n", count: 2000)])
+    func theOpeningPromptIsInTheFirstSnapshotAndLandsOnce(text: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_STARTUP_GATE": Self.gate])
-        let opening = try #require(OpeningPrompt("tools:0 Fix the build", agentID: pi.agent.id))
+        let opening = try #require(OpeningPrompt(text, agentID: pi.agent.id))
         await h.server.sendOpeningPrompt(opening, sessionID: pi.sessionID)
         #expect(try await pi.request(.snapshot()).failureCode == NativeThreadCode.starting)
 
