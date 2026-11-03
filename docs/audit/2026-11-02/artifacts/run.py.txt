@@ -1,0 +1,25 @@
+#!/usr/bin/python3
+"""Bounded, allowlisted environment; logs commands, elapsed time and exit codes."""
+import os, sys, time, json, pathlib, subprocess, signal
+root=pathlib.Path('/tmp/shepherd-perf-2026-11-02')
+name, timeout, *cmd=sys.argv[1:]
+dir=root/name
+dir.mkdir(exist_ok=False)
+(dir/'home').mkdir()
+env={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin','HOME':str(dir/'home'),'TMPDIR':'/tmp','LANG':'en_US.UTF-8','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_SYSTEM':'/dev/null','GIT_CONFIG_NOSYSTEM':'1','GIT_TERMINAL_PROMPT':'0'}
+for k,v in [('SHEPHERD_BENCHMARK','1'),('SHEPHERD_PERF_REPORT','1')]: env[k]=v
+start=time.monotonic()
+meta={'command':cmd,'cwd':os.getcwd(),'environment':env,'timeout_seconds':float(timeout)}
+(dir/'command.json').write_text(json.dumps(meta,indent=2))
+with (dir/'full.log').open('w') as log:
+ p=subprocess.Popen(cmd,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+ try: code=p.wait(timeout=float(timeout))
+ except subprocess.TimeoutExpired:
+  os.killpg(p.pid,signal.SIGTERM)
+  try: p.wait(timeout=10)
+  except subprocess.TimeoutExpired: os.killpg(p.pid,signal.SIGKILL);p.wait()
+  code=124
+meta.update(exit_code=code,elapsed_seconds=time.monotonic()-start)
+(dir/'result.json').write_text(json.dumps(meta,indent=2))
+print(json.dumps({'run':name,'exit_code':code,'elapsed_seconds':meta['elapsed_seconds'],'log':str(dir/'full.log')}))
+sys.exit(code)

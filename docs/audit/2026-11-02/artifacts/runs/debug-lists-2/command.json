@@ -1,0 +1,29 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--build-system",
+    "native",
+    "-j",
+    "4",
+    "-c",
+    "debug",
+    "--skip-build",
+    "--filter",
+    "ListPerformanceReport/(thread|palette)"
+  ],
+  "cwd": "/Users/bailycase/Developer/Shepherd-perf-bench-2026-11-02",
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
+    "HOME": "/tmp/shepherd-perf-2026-11-02/debug-lists-2/home",
+    "TMPDIR": "/tmp",
+    "LANG": "en_US.UTF-8",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_TERMINAL_PROMPT": "0",
+    "SHEPHERD_BENCHMARK": "1",
+    "SHEPHERD_PERF_REPORT": "1"
+  },
+  "timeout_seconds": 120.0
+}

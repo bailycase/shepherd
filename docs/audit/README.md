@@ -1,5 +1,9 @@
 # Shepherd audit, 2026-10-27
 
+**Newer performance audit:** [2026-11-02, pinned nightly including #398](2026-11-02/README.md)
+includes optimized local measurements, current-code findings and explicit remaining device/soak
+coverage gaps. This page preserves the original October audit.
+
 > Read when you want the ranked list of what is broken, slow or inconsistent across the Mac, iPhone and iPad apps, and where the evidence for each item is.
 
 For the fix branch's results, decisions, validation and remaining work, see
