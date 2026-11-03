@@ -6,8 +6,9 @@ The source audit is pinned to `f80d01132`. This fix branch starts from newer nig
 `f52bf0cc7`, retaining #402, #404 and #405. It includes the audit's committed evidence
 (`e7de8b201`). Newer changes must not be reverted to make a benchmark or test pass.
 Nightly through `876c570fc` (#406–408) is integrated via reviewed server merge `93ad5359`.
-Queue-boundary delivery is reconciled with bounded asynchronous input preparation; storage's
-separate recovery staging still needs that prerequisite and a combined validation run.
+Queue-boundary delivery and durable recovery staging are reconciled in storage `64fa756b`,
+merged into integration as `2cef8b03`. All seven first batches are integrated; final-review
+follow-ups and combined validation still block release.
 
 ## Ownership and closure ledger
 
@@ -20,7 +21,7 @@ same path, not additional independent performance gains.
 | --- | --- | --- | --- |
 | Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | Reviewed follow-ups merged and tested; UI consumers pending | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
 | Server | SV-01 through SV-06; server half UX-03 | Merged; parent 248-test integration run passed | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
-| Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Staging tested; final review and upstream queue prerequisite pending | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
+| Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Merged; final semantic review and parent tests running | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
 | Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; joined parent tests passed, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
 | Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | First batches merged; six final-review gaps being fixed | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
 | Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | Merged; parent full portable runner passed | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
@@ -51,7 +52,9 @@ require equipment that is not available; those limits must remain explicit.
 5. Exercise actual app/simulator behavior only through isolated fixtures/dev installations that
    do not touch the running app or user's runtime data. State device-level gaps plainly.
 6. One PR into `nightly`, with per-finding closure, real validation, design departures and any
-   remaining gaps. Opening the PR does not authorize auto-merge or a new release.
+   remaining gaps. The user subsequently authorized merging after everything is fixed and validated.
+   Unresolved regressions still block merge; do not auto-merge prematurely. Mac release follows the
+   authorized merge; TestFlight remains separate.
 
 ## Coordinated contracts
 
@@ -81,8 +84,30 @@ require equipment that is not available; those limits must remain explicit.
   its analogous persisted-draft loss; a separate render follow-up owns cold/oversize parsing and
   structural revision separation. Captured recovery must retain text-only uncertain records across
   relaunch without automatic retry or claiming unpersisted image bytes survived.
+  Mobile recovery checkpoint `5a21659e` adds bounded text-only persisted records and real-store
+  second-instance checks. It is not yet accepted: observation schedules saving asynchronously,
+  and restore removes recovery before draft persistence; these ordering windows are under review.
+  UserDefaults in-process reload is not evidence of fsync-grade crash durability. Parent supplied
+  the already-corrected shared portable contract test (`78da05c1d` in mobile), unblocking its full
+  runner. Independent frozen review additionally found stale pre-readiness admission of combined
+  saved/live text, late submission updates recreating pruned host records, and unvalidated loaded
+  arrays/duplicate IDs that can lose distinct text on discard/restore. All are assigned regressions
+  and fixes before acceptance; oversized valid saved content must not be silently truncated.
+  Parent added `captureAdmission` in `0e1b5a2a`: optional synchronous exact-payload owner admission
+  after readiness and shared limits, before input clearing/dispatch. Focused tests prove refused
+  post-readiness edits stay intact and owner recovery is written before capture. Eight bounds
+  tests and the full **1,239-test remote unit suite** passed, exit 0. Hook is cherry-picked into
+  mobile (`fcde30f37`); actual-store combined-budget and ordering consumer regressions are next.
+  Host-pruning and iPad multi-window checks remain requested.
 
 ## Validation recorded so far
+
+- Storage final queue merge `64fa756b`: worker reports 218 runtime, 195 storage and 68 project
+  control tests passed, exit 0. The held-write boundary test explicitly resumes its server-side
+  continuation before shutdown; request cancellation alone cannot cancel fixture-held work.
+  Parent merged storage as `2cef8b03`, preserving directory-based checkout tracking and the Mac
+  lane's relocated cleanup rather than reinstating duplicate cleanup. Independent final review
+  and a 900-second-bounded combined unit/runtime/storage/control run are underway on integration.
 
 - Full Release/Python run: **361 tests, one skipped, exit 0** after correcting the design-index
   guard to exempt explicitly Removed surfaces with a required departures.md record. The first
@@ -114,6 +139,9 @@ require equipment that is not available; those limits must remain explicit.
   Changes reads may become cancellable, but Undo/Redo/Revert mutations must still await outcomes.
   Follow-up `4f4ec3f9` passed 98 tests/9 suites in the worker. Parent initiated `93ad5359` merge;
   storage is resolving the Queue.swift semantic joins and rerunning held-stage/deadline tests.
+  Its first boundary merge run stalled over 2.5 hours. Parent sampled the verified storage test
+  helper, then terminated only the two exact owned test processes. This is a failed/hung run,
+  not a pass; diagnosis and bounded focused reruns are required. Sample: `storage/hang/`.
 
 - Parent: ordinary `swift test --build-system native -c release -j 2` now builds all test targets
   successfully. `ResponseTimingTests/lateMarksUpdateAlreadyProjectedHistory` and
