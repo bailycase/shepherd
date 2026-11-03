@@ -337,6 +337,10 @@ final class FixtureHost: @unchecked Sendable {
             // Projects are not drawn by any fixture screen: a request is refused rather than served.
             mutation("projects")
             return [.error(id: id, code: "fixture", message: refused)]
+        case .forge(let id, let request):
+            // No fixture screen draws Issues & PRs yet: a read is refused, a change counted.
+            if request.isChange { mutation("forge") } else { note("forge") }
+            return [.error(id: id, code: ForgeError.Code.unsupported.rawValue, message: refused)]
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
             return []

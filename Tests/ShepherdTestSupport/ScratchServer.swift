@@ -19,6 +19,10 @@ public final class ScratchServer: @unchecked Sendable {
     /// Automation triggers never reach GitHub from a test unless it passes its own source.
     public static let noGitHub = AutomationTriggers.Source(activity: { _ in [] }, originRepo: { _ in nil })
 
+    /// Issues & PRs never run the user's gh or git from a test unless it passes its own runner:
+    /// every command answers as if gh weren't installed.
+    public static let noForge: ForgeService.Runner = { _ in ForgeOutput(errors: "gh: command not found", status: 127) }
+
     /// Starts on a fresh directory, or on `dir` to restart over an existing state file. The
     /// skills pi loads from elsewhere come from `piSkills`: none unless a test passes a reader,
     /// never this machine's pi.
@@ -26,7 +30,8 @@ public final class ScratchServer: @unchecked Sendable {
     /// set) unless a test brings its own home and "your pi".
     public init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
                 piSkills: SkillsStore.PiSkillsReader? = nil, pi: PiSetup = .app,
-                triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
+                triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub,
+                forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
         self.dir = try dir ?? makeScratchDirectory("srv")
         // An Undo's trashed files land in the scratch directory, never the user's Trash.
         let trash = self.dir.appendingPathComponent("Trash", isDirectory: true)
@@ -37,7 +42,7 @@ public final class ScratchServer: @unchecked Sendable {
                                skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true),
                                piSkills: piSkills.map { .reader($0) } ?? .off,
                                trash: { url in try ScratchServer.moveToTrash(url, trash: trash) },
-                               triggerSource: triggerSource)
+                               triggerSource: triggerSource, forgeRunner: forgeRunner)
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }
         // A test's raw `ExtensionClient` is not an agent's pi, so it may speak as any agent here.
