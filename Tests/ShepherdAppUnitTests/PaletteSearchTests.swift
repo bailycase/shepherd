@@ -1,3 +1,6 @@
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
 import ShepherdTestKit
 import Testing
 @testable import ShepherdApp
@@ -92,6 +95,54 @@ struct PaletteSearchTests {
             item("dashboard", .thisThread),       // substring "ar"
         ]
         #expect(PaletteSearch.filter(items, query: "ar").map(\.section) == [.commands, .thisThread, .agents])
+    }
+}
+
+@Suite("Palette child presentation")
+struct PaletteChildPresentationTests {
+    @Test(arguments: [false, true])
+    func progressIsNotPresentationAndActivationResolvesTheCurrentPayload(remote: Bool) throws {
+        let parent = AgentID(), host = UUID()
+        let original = ChildRun(runID: "run", childIndex: 1, label: "Fix search", state: "running")
+        func item(_ child: ChildRun, parentID: AgentID? = nil, hostID: UUID? = nil) -> PaletteItem {
+            PaletteItem(id: "child.\(child.id)",
+                        kind: remote ? .remoteChild(hostID: hostID ?? host, agentID: parentID ?? parent, child: child)
+                            : .child(agentID: parentID ?? parent, child: child),
+                        section: .subagents, title: child.label, subtitle: "parent · running 5m")
+        }
+        let before = item(original)
+        var progress = original
+        progress.tokens = 1234
+        progress.toolCalls = 8
+        progress.currentTool = "read"
+        progress.sessionFile = "/tmp/new-attempt.jsonl"
+        progress.attempt = "latest"
+        #expect(before == item(progress))
+        #expect(before.currentChild(in: [progress]) == progress, "activation must receive every latest field, not the ranked snapshot")
+        #expect(before.currentChild(in: []) == nil)
+
+        var changed = progress
+        changed.label = "Fix palette"
+        #expect(before != item(changed))
+        changed = progress; changed.needsAttention = true
+        #expect(before != item(changed), "status color changes even if supplied subtitle has not changed")
+        changed = progress; changed.state = "complete"
+        #expect(before != item(changed))
+        changed = progress; changed.childIndex = 2
+        #expect(before != item(changed))
+        #expect(before.currentChild(in: [changed]) == nil, "another lane is not this run")
+        changed = progress; changed.runID = "another-run"
+        #expect(before != item(changed))
+        #expect(before != item(progress, parentID: AgentID()))
+        if remote { #expect(before != item(progress, hostID: UUID())) }
+
+        var presentation = before
+        presentation.subtitle = "parent · running 6m"
+        #expect(before != presentation, "displayed duration remains searchable and live")
+        presentation = before; presentation.shortcut = "⌘R"
+        #expect(before != presentation)
+        presentation = before; presentation.icon = "checkmark"
+        #expect(before != presentation)
     }
 }
 

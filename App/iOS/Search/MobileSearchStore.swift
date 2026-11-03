@@ -87,9 +87,30 @@ final class MobileSearchStore {
     @ObservationIgnored private var asked: Set<SearchTarget.ID> = []
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var tracking = UUID()
-    @ObservationIgnored private var tasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var tasks: [UUID: (host: UUID, task: Task<Void, Never>)] = [:]
     @ObservationIgnored private var pauseTask: Task<Void, Never>?
     @ObservationIgnored private let pause: Duration
+    @ObservationIgnored private var prepared = CrossHostSearch.Prepared("", targets: [], hosts: [])
+    @ObservationIgnored private var results = SearchResults.empty
+
+    #if DEBUG
+    @ObservationIgnored private(set) var preparationCount = 0
+    @ObservationIgnored private(set) var sectionDerivationCount = 0
+    @ObservationIgnored var searchForTesting: (@Sendable (RemoteHostClient, AgentID, String) async throws -> String?)?
+    var progressForTesting: SearchProgress { results.progress }
+    var activeSearchesForTesting: Int { tasks.count }
+
+    /// Captures the same fences as an in-flight delivery, including deliberately late/duplicate replies.
+    func replyForTesting(to id: SearchTarget.ID) -> @MainActor @Sendable (SearchOutcome) -> Void {
+        let generation = generation
+        let session = inputs.sessions[id.host]
+        let client = hosts?.host(id.host)?.connectedClient
+        return { [weak self] outcome in
+            guard let session, let client else { return }
+            self?.receive(id, outcome: outcome, generation: generation, session: session, client: client)
+        }
+    }
+    #endif
 
     init(includesActions: Bool = false, pause: Duration = .milliseconds(250)) {
         self.includesActions = includesActions
@@ -127,8 +148,8 @@ final class MobileSearchStore {
         generation = UUID()
         pauseTask?.cancel()
         pauseTask = nil
-        for task in tasks { task.cancel() }
-        tasks = []
+        for job in tasks.values { job.task.cancel() }
+        tasks = [:]
         asked = Set(outcomes.keys)
         hosts = nil
     }
@@ -158,18 +179,25 @@ final class MobileSearchStore {
         for host in next.sessions.keys where inputs.sessions[host] == nil {
             forgetOutcomes(host: host)
         }
+        let needsPreparation = next.targets != inputs.targets || next.hosts != inputs.hosts
         inputs = next
+        if needsPreparation { prepare() }
         derive()
         if pauseTask == nil { searchConversations() }
     }
 
     private func forgetOutcomes(host: UUID) {
+        for (id, job) in tasks where job.host == host {
+            job.task.cancel()
+            tasks.removeValue(forKey: id)
+        }
         outcomes = outcomes.filter { $0.key.host != host }
         asked = asked.filter { $0.host != host }
     }
 
     private func queryChanged() {
         cancelSearch()
+        prepare()
         derive()
         guard CrossHostSearch.searchesConversations(query) else { return }
         let pause = pause
@@ -185,35 +213,57 @@ final class MobileSearchStore {
         generation = UUID()
         pauseTask?.cancel()
         pauseTask = nil
-        for task in tasks { task.cancel() }
-        tasks = []
+        for job in tasks.values { job.task.cancel() }
+        tasks = [:]
         outcomes = [:]
         asked = []
     }
 
     /// Asks every agent not yet asked for the current query, a few at a time per host.
     private func searchConversations() {
-        let pending = CrossHostSearch.contentTargets(query, in: inputs.targets).filter { !asked.contains($0.id) }
+        let pending = prepared.contentTargets.filter { !asked.contains($0.id) }
         guard !pending.isEmpty, let hosts else { return }
-        asked.formUnion(pending.map(\.id))
-        var clients: [UUID: RemoteHostClient] = [:]
-        for host in Set(pending.map(\.host)) {
-            clients[host] = hosts.host(host)?.connectedClient
-        }
-        let query = CrossHostSearch.normalized(query)
+        let query = prepared.query
         let generation = generation
-        let task = Task { [weak self, clients] in
-            await CrossHostSearch.fanOut(pending, search: { target in
-                guard let client = clients[target.host] else { throw SearchFailure("the host disconnected") }
-                return try await Self.search(client, agent: target.agent, query: query)
-            }, deliver: { [weak self] id, outcome in
-                guard let self, self.generation == generation else { return }
-                self.outcomes[id] = outcome
-                self.derive()
-            })
+        #if DEBUG
+        let search = searchForTesting ?? Self.search
+        #else
+        let search = Self.search
+        #endif
+        for (hostID, targets) in Dictionary(grouping: pending, by: \.host) {
+            // Freeze the client, session, targets and query together before reserving requests.
+            // Observation may not yet have adopted a reconnect; it will retry with its new inputs.
+            guard let host = hosts.host(hostID), let session = inputs.sessions[hostID],
+                  host.session == session, let client = host.connectedClient else { continue }
+            asked.formUnion(targets.map(\.id))
+            let jobID = UUID()
+            let task = Task { [weak self] in
+                await CrossHostSearch.fanOut(targets, search: { target in
+                    try await search(client, target.agent, query)
+                }, deliver: { [weak self] id, outcome in
+                    self?.receive(id, outcome: outcome, generation: generation, session: session, client: client)
+                })
+                self?.tasks.removeValue(forKey: jobID)
+            }
+            tasks[jobID] = (hostID, task)
         }
-        tasks.append(task)
-        derive()
+        deriveStatus()
+    }
+
+    private func receive(_ id: SearchTarget.ID, outcome: SearchOutcome, generation: UUID, session: UUID,
+                         client: RemoteHostClient) {
+        guard self.generation == generation, inputs.sessions[id.host] == session,
+              let host = hosts?.host(id.host), host.session == session, host.connectedClient === client else { return }
+        let previous = outcomes[id]
+        guard previous != outcome else { return }
+        outcomes[id] = outcome
+        if previous == nil, outcome == .none {
+            guard prepared.contentIDs.contains(id) else { return }
+            results.progress.searched += 1
+            deriveStatus()
+        } else {
+            derive()
+        }
     }
 
     /// One agent's answer. An agent the host no longer has, or any refusal about that agent
@@ -232,8 +282,18 @@ final class MobileSearchStore {
 
     // MARK: Deriving
 
+    private func prepare() {
+        prepared = CrossHostSearch.Prepared(query, targets: inputs.targets, hosts: inputs.hosts)
+        #if DEBUG
+        preparationCount += 1
+        #endif
+    }
+
     private func derive() {
-        let results = CrossHostSearch.results(query, targets: inputs.targets, hosts: inputs.hosts, outcomes: outcomes)
+        #if DEBUG
+        sectionDerivationCount += 1
+        #endif
+        results = prepared.results(outcomes: outcomes)
         var next: [SearchEntrySection] = results.sections.map { section in
             SearchEntrySection(kind: section.kind == .threads ? .threads : .conversations, title: section.title,
                                entries: section.rows.map(Self.entry))
@@ -251,15 +311,19 @@ final class MobileSearchStore {
             // The phone's results end in New design with the query as its brief; the iPad palette draws none.
             next.append(SearchEntrySection(kind: .actions, title: "Actions", entries: [Self.newDesign(query)]))
         }
-        let searching: String? = results.progress.isSearching || pauseTask != nil && results.searchesConversations
-            ? "Searching conversations" + (results.progress.total > 0 ? " · \(results.progress.searched) of \(results.progress.total)" : "…")
-            : nil
-        let line = SearchStatusLine(searching: searching, notices: results.notices)
         if next != sections {
             sections = next
             entries = next.flatMap(\.entries)
             reconcileSelection()
         }
+        deriveStatus()
+    }
+
+    private func deriveStatus() {
+        let searching: String? = results.progress.isSearching || pauseTask != nil && results.searchesConversations
+            ? "Searching conversations" + (results.progress.total > 0 ? " · \(results.progress.searched) of \(results.progress.total)" : "…")
+            : nil
+        let line = SearchStatusLine(searching: searching, notices: results.notices)
         if line != status { status = line }
     }
 

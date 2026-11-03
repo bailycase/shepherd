@@ -333,12 +333,15 @@ extension ShepherdViewModel {
             selectAgent(id)
         case .space(let id):
             selectSpace(id)
-        case .child(let agentID, let child):
-            openChildInspector(agentID: agentID, child: child)
+        case .child(let agentID, _):
+            guard let current = item.currentChild(in: children(of: agentID)) else { return }
+            openChildInspector(agentID: agentID, child: current)
         case .remoteAgent(let hostID, let agentID):
             selectRemoteAgent(hostID: hostID, agentID: agentID)
-        case .remoteChild(let hostID, let agentID, let child):
-            openRemoteChild(RemoteAgentRef(hostID: hostID, agentID: agentID), child: child)
+        case .remoteChild(let hostID, let agentID, _):
+            let children = remoteHosts.connections.first(where: { $0.id == hostID })?.children[agentID] ?? []
+            guard let current = item.currentChild(in: children) else { return }
+            openRemoteChild(RemoteAgentRef(hostID: hostID, agentID: agentID), child: current)
         case .remoteOperation(let hostID, let agentID):
             remoteWorktreeSheet = RemoteAgentRef(hostID: hostID, agentID: agentID)
         case .remoteSpace(let hostID):

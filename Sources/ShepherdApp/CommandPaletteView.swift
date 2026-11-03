@@ -40,6 +40,7 @@ struct PaletteCard: View {
     /// Transcript search: rows for agents whose conversation matched (excluding ids already shown).
     var contentSearch: ((String, Set<String>) async -> [PaletteItem])?
     var initialQuery = ""
+    private let probe: PaletteDerivationProbe?
     @State private var query = ""
     @State private var scope: PaletteItem.Scope = .all
     /// The highlighted row: ↑↓ and hover move it.
@@ -58,14 +59,26 @@ struct PaletteCard: View {
     init(items: [PaletteItem], run: @escaping (PaletteItem) -> Void, close: @escaping () -> Void,
          contentSearch: ((String, Set<String>) async -> [PaletteItem])? = nil, initialQuery: String = "",
          highlight: PaletteHighlight? = nil) {
+        self.init(items: items, run: run, close: close, contentSearch: contentSearch,
+                  initialQuery: initialQuery, highlight: highlight, probe: nil)
+    }
+
+    init(items: [PaletteItem], run: @escaping (PaletteItem) -> Void, close: @escaping () -> Void,
+         contentSearch: ((String, Set<String>) async -> [PaletteItem])? = nil, initialQuery: String = "",
+         highlight: PaletteHighlight? = nil, probe: PaletteDerivationProbe?) {
         self.items = items
         self.run = run
         self.close = close
         self.contentSearch = contentSearch
         self.initialQuery = initialQuery
+        self.probe = probe
+        #if DEBUG
+        probe?.cardInitializations += 1
+        #endif
         _highlight = State(initialValue: highlight ?? PaletteHighlight())
-        // The first results are there as the card appears, so opening never animates the list.
-        _results = State(initialValue: PaletteResults(items: items, query: initialQuery, scope: .all, contentRows: []))
+        // A cheap seed: only the instance SwiftUI retains derives results, synchronously on
+        // first read. ImageRenderer/first paint stays populated, without waiting for onAppear.
+        _results = State(initialValue: PaletteResults(items: items, query: initialQuery, scope: .all, contentRows: [], probe: probe))
     }
 
     var body: some View {
@@ -83,10 +96,20 @@ struct PaletteCard: View {
         .onAppear {
             query = initialQuery
             fieldFocused = true
+            #if DEBUG
+            probe?.setQuery = { query = $0 }
+            probe?.setScope = { scope = $0 }
+            probe?.submit = runSelected
+            #endif
         }
         .onDisappear {
             contentSearchTask?.cancel()
             contentSearchTask = nil
+            #if DEBUG
+            probe?.setQuery = nil
+            probe?.setScope = nil
+            probe?.submit = nil
+            #endif
         }
         .onChange(of: query) {
             highlight.move(to: 0)
@@ -98,7 +121,7 @@ struct PaletteCard: View {
             refreshResults()
         }
         .onChange(of: contentRows) { refreshResults() }
-        // The initializer built the first results from these items.
+        // The retained seed supplies the first results from these items.
         .onChange(of: items) { refreshResults() }
         .onKeyPress(.upArrow) {
             highlight.move(to: max(0, highlight.index - 1))
@@ -124,7 +147,10 @@ struct PaletteCard: View {
     // MARK: Results
 
     private var resultsList: some View {
-        ScrollViewReader { proxy in
+        #if DEBUG
+        let _ = recordProbe()
+        #endif
+        return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 // Lazy: a query can match every agent and subagent, and only the rows on screen
                 // are built. The card still hugs a short list: the stack's height is exact once
@@ -156,8 +182,23 @@ struct PaletteCard: View {
     }
 
     private func refreshResults() {
-        results = PaletteResults(items: items, query: query, scope: scope, contentRows: contentRows).following(results)
+        results = PaletteResults(items: items, query: query, scope: scope, contentRows: contentRows, probe: probe).following(results)
     }
+
+    #if DEBUG
+    private func recordProbe() {
+        guard let probe else { return }
+        probe.renders += 1
+        if results.rows.isEmpty { probe.emptyRenders += 1 }
+        if probe.firstRows == nil { probe.firstRows = results.rows; probe.firstLayout = results.layout }
+        probe.rows = results.rows
+        probe.layout = results.layout
+        probe.query = query
+        probe.scope = scope
+        probe.highlight = highlight.index
+        probe.searching = searching
+    }
+    #endif
 
     private func runSelected() {
         guard results.rows.indices.contains(highlight.index) else { return }
@@ -172,7 +213,7 @@ struct PaletteCard: View {
         searching = false
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard let contentSearch, trimmed.count >= PaletteContentSearch.minQueryLength else { return }
-        let existing = Set(PaletteSearch.filter(items, query: trimmed).filter { $0.section == .agents }.map(\.id))
+        let existing = Set(PaletteSearch.filter(items, query: trimmed, probe: probe).filter { $0.section == .agents }.map(\.id))
         searching = true
         contentSearchTask = Task {
             defer { if !Task.isCancelled { searching = false } }
@@ -192,21 +233,69 @@ struct PaletteCard: View {
     }
 }
 
+/// Opt-in, card-local diagnostics. No global recorder and no observable writes during rendering.
+/// The callbacks drive the same bindings/submit path as the controls, without posting input.
+final class PaletteDerivationProbe {
+    #if DEBUG
+    var cardInitializations = 0
+    var derivations = 0
+    var searches = 0
+    var rankedItems = 0
+    var renders = 0
+    var emptyRenders = 0
+    var firstRows: [PaletteItem]?
+    var firstLayout: Int?
+    var rows: [PaletteItem] = []
+    var layout = 0
+    var query = ""
+    var scope: PaletteItem.Scope = .all
+    var highlight = 0
+    var searching = false
+    var setQuery: (@MainActor (String) -> Void)?
+    var setScope: (@MainActor (PaletteItem.Scope) -> Void)?
+    var submit: (@MainActor () -> Void)?
+    #endif
+}
+
 /// The results list for one query, scope, item list and set of transcript matches: the rows in
 /// order and the list's entries, snippets already split around their match. Built when one of
 /// those inputs changes, never on hover or selection.
 struct PaletteResults {
-    var rows: [PaletteItem] = []
-    var entries: [PaletteEntry] = []
+    // Deliberately nonobservable: memoizing a pure result during a view read publishes nothing.
+    // This is palette-local, not a cache across queries. Replacing results replaces the payload.
+    private final class Content {
+        typealias Value = (rows: [PaletteItem], entries: [PaletteEntry])
+        private var build: (() -> Value)?
+        lazy var value: Value = {
+            let result = build?() ?? ([], [])
+            build = nil // Release the source items/closure once the result exists.
+            return result
+        }()
+        init(_ build: @escaping () -> Value) { self.build = build }
+    }
+
+    private let content: Content
+    var rows: [PaletteItem] { content.value.rows }
+    var entries: [PaletteEntry] { content.value.entries }
     /// Counts the changes to which rows the list shows and in what order: the key the list's
     /// motion watches, so a render never compares every row's id.
     private(set) var layout = 0
 
-    init() {}
+    init() { content = Content { ([], []) } }
 
     init(items: [PaletteItem], query: String, scope: PaletteItem.Scope, contentRows: [PaletteItem]) {
-        rows = PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
-        entries = PaletteEntry.entries(rows, highlighting: query)
+        self.init(items: items, query: query, scope: scope, contentRows: contentRows, probe: nil)
+    }
+
+    init(items: [PaletteItem], query: String, scope: PaletteItem.Scope, contentRows: [PaletteItem],
+         probe: PaletteDerivationProbe?) {
+        content = Content {
+            #if DEBUG
+            probe?.derivations += 1
+            #endif
+            let rows = PaletteSearch.filter(items, query: query, scope: scope, probe: probe) + (scope == .commands ? [] : contentRows)
+            return (rows, PaletteEntry.entries(rows, highlighting: query))
+        }
     }
 
     /// These results replacing `previous`: the same layout count while the same rows show.
