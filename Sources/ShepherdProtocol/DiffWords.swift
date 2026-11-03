@@ -18,16 +18,27 @@ public enum DiffWords {
     public static let minSimilarity = 0.3
 
     /// The changed ranges of every paired line in `file`, by `DiffLine.id`. Lines without a pair
-    /// or too different from theirs are absent (draw them as wholly changed).
+    /// or too different from theirs are absent (draw them as wholly changed). Cancellation is
+    /// checked between hunks and pairs; cancelled work returns no partial ranges.
     public static func changes(in file: DiffFile) -> [Int: [Range<Int>]] {
+        changes(in: file, isCancelled: { false })
+    }
+
+    public static func changes(in file: DiffFile, isCancelled: () -> Bool) -> [Int: [Range<Int>]] {
         var result: [Int: [Range<Int>]] = [:]
-        for hunk in file.hunks { changes(in: hunk, into: &result) }
+        for hunk in file.hunks {
+            guard changes(in: hunk, into: &result, isCancelled: isCancelled) else { return [:] }
+        }
         return result
     }
 
     public static func changes(in hunk: DiffHunk) -> [Int: [Range<Int>]] {
+        changes(in: hunk, isCancelled: { false })
+    }
+
+    public static func changes(in hunk: DiffHunk, isCancelled: () -> Bool) -> [Int: [Range<Int>]] {
         var result: [Int: [Range<Int>]] = [:]
-        changes(in: hunk, into: &result)
+        guard changes(in: hunk, into: &result, isCancelled: isCancelled) else { return [:] }
         return result
     }
 
@@ -49,12 +60,15 @@ public enum DiffWords {
         return pairs
     }
 
-    private static func changes(in hunk: DiffHunk, into result: inout [Int: [Range<Int>]]) {
+    private static func changes(in hunk: DiffHunk, into result: inout [Int: [Range<Int>]], isCancelled: () -> Bool) -> Bool {
+        guard !isCancelled() else { return false }
         for (removed, added) in pairs(in: hunk) {
+            guard !isCancelled() else { return false }
             guard let ranges = ranges(old: removed.text, new: added.text) else { continue }
             result[removed.id] = ranges.old
             result[added.id] = ranges.new
         }
+        return !isCancelled()
     }
 
     /// The UTF-16 ranges that differ between two versions of a line; nil when they are too long,

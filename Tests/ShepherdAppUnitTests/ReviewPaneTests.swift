@@ -273,6 +273,37 @@ struct ReviewPaneModelTests {
         #expect(plain.text == keyword, "without word diffs, just the colors")
     }
 
+    @Test func cancelledHighlightingStopsInsideAHunkAndBeforeLaterHunks() throws {
+        let file = ReviewSample.files[0]
+        let first = try #require(file.hunks.first)
+        let firstOnly = DiffFile(oldPath: file.oldPath, newPath: file.newPath, displayPath: file.displayPath,
+                                 isNew: false, isDeleted: false, isRenamed: false, isBinary: false, hunks: [first])
+        var firstChecks = 0
+        let complete = reviewHighlight(firstOnly, style: .theme) {
+            firstChecks += 1
+            return false
+        }
+        #expect(complete.count == first.lines.count)
+        #expect(firstChecks > 2, "cancellation reaches the syntax highlighter, not just the hunk boundaries")
+
+        // The second checkpoint is inside CodeHighlight, after its parser. The third is the
+        // hunk's result guard; no more capture work or later hunks should be visited.
+        var checks = 0
+        let inside = reviewHighlight(file, style: .theme) {
+            checks += 1
+            return checks >= 2
+        }
+        #expect(inside.isEmpty && checks == 3)
+
+        checks = 0
+        let between = reviewHighlight(file, style: .theme) {
+            checks += 1
+            return checks > firstChecks
+        }
+        #expect(between.isEmpty, "completed earlier hunks are not returned as a complete file")
+        #expect(checks == firstChecks + 1, "stop before parsing the second hunk")
+    }
+
     /// Reloading (after a revert, or a repeated review request) keeps what did not change.
     @Test func aReloadKeepsTheColorsOfUnchangedFilesAndDropsChangedOnes() async throws {
         let model = ReviewSample.model()

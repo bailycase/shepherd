@@ -267,11 +267,15 @@ func reviewCommentAge(_ date: Date, now: Date = Date()) -> String {
 
 /// A file's syntax colors by line id. Hunks are highlighted one at a time (each is a fragment of
 /// the file, or the whole file when it came whole); files without a grammar get none.
-func reviewHighlight(_ file: DiffFile, style: CodeHighlight.Style) -> [Int: AttributedString] {
+func reviewHighlight(_ file: DiffFile, style: CodeHighlight.Style,
+                     isCancelled: () -> Bool = { false }) -> [Int: AttributedString] {
     guard !file.isBinary, CodeHighlight.supports(path: file.displayPath) else { return [:] }
     var lines: [Int: AttributedString] = [:]
     for hunk in file.hunks {
-        let colored = CodeHighlight.highlightLines(hunk.lines.map(\.text), path: file.displayPath, style: style)
+        guard !isCancelled() else { return [:] }
+        let colored = CodeHighlight.highlightLines(hunk.lines.map(\.text), path: file.displayPath, style: style,
+                                                   isCancelled: isCancelled)
+        guard !isCancelled() else { return [:] }
         for (line, text) in zip(hunk.lines, colored) { lines[line.id] = text }
     }
     return lines
@@ -504,9 +508,16 @@ final class ReviewPaneModel {
             }
         }
         for file in missing {
-            let (lines, words) = await Task.detached(priority: .utility) {
-                (reviewHighlight(file, style: style), DiffWords.changes(in: file))
-            }.value
+            if Task.isCancelled { return }
+            let work = Task.detached(priority: .utility) {
+                (reviewHighlight(file, style: style, isCancelled: { Task.isCancelled }),
+                 DiffWords.changes(in: file, isCancelled: { Task.isCancelled }))
+            }
+            let (lines, words) = await withTaskCancellationHandler {
+                await work.value
+            } onCancel: {
+                work.cancel()
+            }
             if Task.isCancelled { return }
             highlights[file.id] = ReviewHighlight(file: file, version: version, lines: lines, words: words)
         }
