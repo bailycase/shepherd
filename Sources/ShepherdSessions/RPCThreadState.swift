@@ -2118,13 +2118,12 @@ final class RPCThreadState {
     /// The session's record of where delivered messages came from.
     private func loadOrigins(sessionID: String) {
         guard let originStore else { return }
-        let loaded = originStore.load(sessionID: sessionID)
-        origins = Dictionary(loaded.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
-        originOrder = loaded.map(\.id)
+        let loaded = originStore.loadSession(sessionID: sessionID)
+        origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
+        originOrder = loaded.entries.map(\.id)
         let startupQuestions = questions
-        let loadedQuestions = originStore.loadQuestions(sessionID: sessionID)
         let startupIDs = Set(startupQuestions.map(\.id))
-        questions = Array((loadedQuestions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
+        questions = Array((loaded.questions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
         if !startupQuestions.isEmpty { saveOrigins() }
     }
 

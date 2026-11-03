@@ -116,6 +116,12 @@ final class ThreadOriginStore: @unchecked Sendable {
         file(sessionID)?.questions ?? []
     }
 
+    /// Both collections from one read of the session's file, in their stored order.
+    func loadSession(sessionID: String) -> (entries: [(id: String, record: Record)], questions: [Question]) {
+        let loaded = file(sessionID)
+        return (loaded?.entries.map { ($0.id, $0.record) } ?? [], loaded?.questions ?? [])
+    }
+
     /// Saves the session's records and questions (the caller's whole lists, oldest first), the
     /// newest `limit` and `questionLimit` kept.
     func save(sessionID: String, records: [(id: String, record: Record)], questions: [Question] = []) {
