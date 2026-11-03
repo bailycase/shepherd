@@ -61,9 +61,10 @@ enum ThreadRecovery {
 
     /// The records an earlier launch saved, checked before anything shows them: each readable
     /// record (a repeated id gets a new one, so restoring one never takes another), at most
-    /// `maximumRecords` and `maximumBytes` of text. A value past those bounds, or not a list at
-    /// all, is first set aside whole and untouched (`asidePrefix`); then the records that fit,
-    /// oldest first, show. `setAside` says one was.
+    /// `maximumRecords` and `maximumBytes` of text. A value past those bounds, holding an entry
+    /// that can't be read, or not a list at all, is first set aside whole and untouched
+    /// (`asidePrefix`); then the readable records that fit, oldest first, show. `setAside` says
+    /// one was.
     static func load(_ ref: AgentRef, defaults: UserDefaults) -> (records: [ThreadRecoveryRecord], setAside: Bool) {
         guard let data = defaults.data(forKey: key(ref)) else { return ([], false) }
         func setAside() {
@@ -79,8 +80,12 @@ enum ThreadRecovery {
             seen.insert(record.id).inserted ? record
                 : ThreadRecoveryRecord(id: UUID(), typed: record.typed, state: record.state, images: record.images)
         }
-        guard all.count > maximumRecords || bytes(all) > maximumBytes else { return (all, false) }
+        // An entry this version can't read is not lost when the list is saved back: the value
+        // is set aside whole first.
+        let unreadable = all.count < items.count
+        guard unreadable || all.count > maximumRecords || bytes(all) > maximumBytes else { return (all, false) }
         setAside()
+        if unreadable, all.count <= maximumRecords, bytes(all) <= maximumBytes { return (all, true) }
         var fitting: [ThreadRecoveryRecord] = []
         for record in all where fitting.count < maximumRecords && bytes(fitting) + record.typed.utf8.count <= maximumBytes {
             fitting.append(record)

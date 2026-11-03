@@ -32,6 +32,10 @@ extension FixtureCatalog {
             FixtureScreen(name: "pad-switch", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.switchThreads),
             // Run with -w: a thread kept hidden in one window and shown in a second, which then closes.
+            // Run with -w on iPad: one thread in two real windows sharing its store and composer
+            // state: a held send, typing in the other window, restore protection, reconnect, forget.
+            FixtureScreen(name: "windows-composer", hosts: TwoWindowFixture.hosts(), routes: [.thread(preview)],
+                          prepare: TwoWindowFixture.run),
             FixtureScreen(name: "windows-deck-close", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.closeWindow),
         ]
@@ -490,5 +494,103 @@ extension FixtureCatalog {
         store.draft = "Not this one"
         await ThreadComposer.send(.followUp, store: store, state: state).value
         check(store.submissions.map(\.state) == [.uncertain, .failed], "both shown: unknown and refused")
+    }
+}
+
+/// Two real windows on one thread: the host holds the first send until `gate` is signalled, then refuses it.
+@MainActor enum TwoWindowFixture {
+    final class Gate: @unchecked Sendable {
+        let semaphore = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var count = 0
+        var sends: Int { lock.withLock { count } }
+        func sent() { lock.withLock { count += 1 } }
+    }
+
+    static let gate = Gate()
+
+    static func hosts() -> [FixtureHostData] {
+        var hosts = ThreadFixtures.hosts()
+        let gate = gate
+        hosts[0].accepts = { request in
+            guard case .nativeThread(let id, _, .send) = request else { return nil }
+            gate.sent()
+            gate.semaphore.wait()
+            return .nativeThread(id: id, result: .failure(code: "busy", message: "The agent is busy. Try again."))
+        }
+        return hosts
+    }
+
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
+
+    static func run(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        let state = ComposerStates.shared.state(for: ref)
+        // A real second scene (UIKit), not the split fixture's two views in one window.
+        FixtureWindows.shared.open(.thread(ref))
+        await FixtureWindows.wait("second window on the thread", seconds: 15) {
+            app.windows.open.filter { $0.navigator.selectedThread == ref }.count == 2
+        }
+        let windows = app.windows.open.filter { $0.navigator.selectedThread == ref }.count
+        check(windows == 2, "two real windows show the thread (\(windows))")
+        // The window in front runs the shared store (the system keeps one scene active here).
+        await FixtureWindows.wait("a window runs it", seconds: 10) { app.threads.viewers(for: ref).count >= 1 && store.acceptsSend }
+        check(true, "\(app.threads.viewers(for: ref).count) window(s) running the shared store")
+
+        // Window A sends; the host holds it. The text is saved before the composer clears.
+        store.draft = "Sent from window A"
+        // The system moves activity between the two scenes as the second opens: send once the
+        // shared store is running again (a send while it isn't is refused, its draft kept).
+        var send = Task {}
+        for _ in 0..<40 where gate.sends == 0 {
+            await FixtureWindows.wait("store running", seconds: 10) { store.isLive && store.acceptsSend }
+            send = ThreadComposer.send(.followUp, store: store, state: state)
+            for _ in 0..<10 where gate.sends == 0 { try? await Task.sleep(for: .milliseconds(50)) }
+            if gate.sends == 0 { await send.value; check(store.draft == "Sent from window A", "a send refused while not running keeps the draft") }
+        }
+        check(gate.sends == 1, "the send reaches the host (notice: \(store.notice ?? "-"), ready: \(store.ready), busy: \(store.busy), draft: \(store.draft))")
+        let saved = ThreadRecovery.load(ref, defaults: .standard).records
+        check(saved.map(\.typed) == ["Sent from window A"] && saved.first?.state == .uncertain && store.draft.isEmpty,
+              "while held, its text is saved and out of the shared composer")
+        // Window B types meanwhile (the composer is shared across windows).
+        store.draft = "Typed in window B"
+        gate.semaphore.signal()
+        await send.value
+        check(store.submissions.first?.state == .failed && store.draft == "Typed in window B",
+              "the refusal lands without touching window B's draft")
+        let refused = store.submissions[0].id
+        check(store.restoreSubmission(refused) == nil && store.draft == "Typed in window B",
+              "Restore from window A waits while window B's draft is there")
+        store.draft = ""
+        check(store.restoreSubmission(refused)?.typed == "Sent from window A" && store.draft == "Sent from window A",
+              "with the composer empty, it restores")
+
+        // Reconnect: the shared store and its saved state are the same after.
+        store.draft = ""
+        store.draft = "Second try"
+        let second = ThreadComposer.send(.followUp, store: store, state: state)
+        await FixtureWindows.wait("second held", seconds: 5) { gate.sends == 2 }
+        gate.semaphore.signal()
+        await second.value
+        let before = app.hosts.host(ref.host)?.session
+        app.hosts.retry(ref.host)
+        await FixtureWindows.wait("reconnected", seconds: 10) {
+            app.hosts.host(ref.host)?.phase == .connected && app.hosts.host(ref.host)?.session != before
+        }
+        check(store.submissions.count == 1 && ThreadRecovery.load(ref, defaults: .standard).records.map(\.typed) == ["Second try"],
+              "a reconnect keeps the refused send and its saved copy")
+
+        // Forget the host: every window lets the thread go and its saved sends are removed.
+        try? await app.forget(host: ref.host)
+        try? await Task.sleep(for: .milliseconds(500))
+        check(!UserDefaults.standard.dictionaryRepresentation().keys.contains {
+            $0.hasPrefix(ThreadRecovery.prefix + ref.host.uuidString) || $0.hasPrefix(ThreadRecovery.asidePrefix + ref.host.uuidString)
+        } && app.threads.recovered[ref] == nil && app.hosts.host(ref.host) == nil,
+              "forgetting the host removes its saved sends")
+        FixtureWindows.shared.closeOthers()
     }
 }

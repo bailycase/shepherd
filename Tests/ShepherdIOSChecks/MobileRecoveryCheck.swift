@@ -167,9 +167,11 @@ struct MobileRecoveryCheck {
                 + #",{"typed":"no id"},42,{"id":"\#(same)","typed":"same id, other text","state":"failed"}]"#
             defaults.set(Data(small.utf8), forKey: ThreadRecovery.key(ref("mixed")))
             let loaded = ThreadRecovery.load(ref("mixed"), defaults: defaults)
-            check(loaded.records.map(\.typed) == ["keep me", "no id", "same id, other text"] && !loaded.setAside
+            check(loaded.records.map(\.typed) == ["keep me", "no id", "same id, other text"] && loaded.setAside
                   && Set(loaded.records.map(\.id)).count == 3 && loaded.records[0].images == 0,
-                  "bad entries skipped; a record without an id or with a repeated one gets its own; a negative image count is none")
+                  "readable entries show; a record without an id or with a repeated one gets its own; a negative image count is none")
+            check(ThreadRecovery.asideKeys(ref("mixed"), defaults: defaults).compactMap { defaults.data(forKey: $0) } == [Data(small.utf8)],
+                  "a list with an unreadable entry is set aside whole before anything saves over it")
             let threads = ThreadStores(defaults: defaults)
             let mixed = threads.store(for: ref("mixed"))
             let records = threads.recovered[ref("mixed")]!
