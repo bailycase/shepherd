@@ -34,8 +34,12 @@ extension FixtureCatalog {
             // Run with -w: a thread kept hidden in one window and shown in a second, which then closes.
             // Run with -w on iPad: one thread in two real windows sharing its store and composer
             // state: a held send, typing in the other window, restore protection, reconnect, forget.
+            // Its shot is taken with both windows still open (the front one drawn).
             FixtureScreen(name: "windows-composer", hosts: TwoWindowFixture.hosts(), routes: [.thread(preview)],
-                          prepare: TwoWindowFixture.run),
+                          prepare: { await TwoWindowFixture.run($0, forget: false) }),
+            // The same, then Forget: checks only (its shot is of no window).
+            FixtureScreen(name: "windows-composer-forget", hosts: TwoWindowFixture.hosts(), routes: [.thread(preview)],
+                          prepare: { await TwoWindowFixture.run($0, forget: true) }),
             FixtureScreen(name: "windows-deck-close", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.closeWindow),
         ]
@@ -515,7 +519,8 @@ extension FixtureCatalog {
         hosts[0].accepts = { request in
             guard case .nativeThread(let id, _, .send) = request else { return nil }
             gate.sent()
-            gate.semaphore.wait()
+            // Bounded: a setup that never signals refuses after a while instead of hanging the host.
+            _ = gate.semaphore.wait(timeout: .now() + 30)
             return .nativeThread(id: id, result: .failure(code: "busy", message: "The agent is busy. Try again."))
         }
         return hosts
@@ -526,7 +531,27 @@ extension FixtureCatalog {
         fflush(stdout)
     }
 
-    static func run(_ app: MobileApp) async {
+    /// Sends the draft once the shared store is running, again if a scene change refused it
+    /// (its draft kept), until the host holds it as send number `sends`; never once it has.
+    static func sendReachingHost(store: NativeThreadStore, state: ComposerState, sends: Int) async -> Task<Void, Never> {
+        let draft = store.draft
+        for _ in 0..<40 {
+            await FixtureWindows.wait("store running", seconds: 10) { store.isLive && store.acceptsSend }
+            let attempt = ThreadComposer.send(.followUp, store: store, state: state)
+            for _ in 0..<10 {
+                if gate.sends >= sends { return attempt }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            if gate.sends >= sends { return attempt }
+            await attempt.value
+            if gate.sends >= sends { return attempt }
+            check(store.draft == draft, "a send refused while not running keeps the draft")
+        }
+        check(false, "send \(sends) never reached the host (notice: \(store.notice ?? "-"))")
+        return Task {}
+    }
+
+    static func run(_ app: MobileApp, forget: Bool) async {
         let ref = FixtureData.ref(FixtureData.preview)
         let store = app.threads.store(for: ref)
         let state = ComposerStates.shared.state(for: ref)
@@ -539,19 +564,14 @@ extension FixtureCatalog {
         check(windows == 2, "two real windows show the thread (\(windows))")
         // The window in front runs the shared store (the system keeps one scene active here).
         await FixtureWindows.wait("a window runs it", seconds: 10) { app.threads.viewers(for: ref).count >= 1 && store.acceptsSend }
-        check(true, "\(app.threads.viewers(for: ref).count) window(s) running the shared store")
+        let running = app.threads.viewers(for: ref).count
+        check(running >= 1, "\(running) window(s) running the shared store (the simulator keeps one scene active)")
 
         // Window A sends; the host holds it. The text is saved before the composer clears.
         store.draft = "Sent from window A"
         // The system moves activity between the two scenes as the second opens: send once the
         // shared store is running again (a send while it isn't is refused, its draft kept).
-        var send = Task {}
-        for _ in 0..<40 where gate.sends == 0 {
-            await FixtureWindows.wait("store running", seconds: 10) { store.isLive && store.acceptsSend }
-            send = ThreadComposer.send(.followUp, store: store, state: state)
-            for _ in 0..<10 where gate.sends == 0 { try? await Task.sleep(for: .milliseconds(50)) }
-            if gate.sends == 0 { await send.value; check(store.draft == "Sent from window A", "a send refused while not running keeps the draft") }
-        }
+        let send = await sendReachingHost(store: store, state: state, sends: 1)
         check(gate.sends == 1, "the send reaches the host (notice: \(store.notice ?? "-"), ready: \(store.ready), busy: \(store.busy), draft: \(store.draft))")
         let saved = ThreadRecovery.load(ref, defaults: .standard).records
         check(saved.map(\.typed) == ["Sent from window A"] && saved.first?.state == .uncertain && store.draft.isEmpty,
@@ -572,8 +592,7 @@ extension FixtureCatalog {
         // Reconnect: the shared store and its saved state are the same after.
         store.draft = ""
         store.draft = "Second try"
-        let second = ThreadComposer.send(.followUp, store: store, state: state)
-        await FixtureWindows.wait("second held", seconds: 5) { gate.sends == 2 }
+        let second = await sendReachingHost(store: store, state: state, sends: 2)
         gate.semaphore.signal()
         await second.value
         let before = app.hosts.host(ref.host)?.session
@@ -584,6 +603,10 @@ extension FixtureCatalog {
         check(store.submissions.count == 1 && ThreadRecovery.load(ref, defaults: .standard).records.map(\.typed) == ["Second try"],
               "a reconnect keeps the refused send and its saved copy")
 
+        guard forget else {
+            check(app.windows.open.filter { $0.navigator.selectedThread == ref }.count == 2, "both windows still open for the shot")
+            return
+        }
         // Forget the host: every window lets the thread go and its saved sends are removed.
         try? await app.forget(host: ref.host)
         try? await Task.sleep(for: .milliseconds(500))
