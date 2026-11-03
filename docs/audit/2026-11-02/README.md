@@ -1,6 +1,9 @@
 # Shepherd performance audit — 2026-11-02
 
 **Pinned baseline:** `f80d011324d924395664c2203a46db6a18f49aef`, nightly including #398.
+For the follow-up fix branch, see [implementation and validation status](implementation.md).
+The measurements and findings below preserve the pre-fix baseline.
+
 **Status:** source review, field evidence, bounded local benchmarks and correctness cross-check
 complete. Physical-device, shipping-app and soak profiling remain unperformed. This is an audit,
 not an implementation or a claim of complete platform testing.
