@@ -31,7 +31,8 @@ struct DesignsDestination: View {
             buildRemote: { vm.buildRemoteSystem(host: $0, in: $1) },
             remoteThumbnail: { host, id in vm.remoteDesignRenderings[host]?.thumbnails.image(id) },
             designMenu: { vm.performDesignMenu($0, on: $1) },
-            systemMenu: { vm.performDesignSystemMenu($0, on: $1) }),
+            systemMenu: { vm.performDesignSystemMenu($0, on: $1) },
+            visibility: { vm.designThumbnailVisibility($0, visible: $1) }),
             thumbnail: { thumbnails.image($0) }, chrome: chrome)
             // Over the page under its header (ImportDrop).
             .overlay { if dropTargeted { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
@@ -61,6 +62,7 @@ struct DesignsPageActions {
     /// A design card's menu item (DesignCardMenu), and a system card's (SystemCardMenu).
     var designMenu: (DesignMenuAction, DesignTarget) -> Void = { _, _ in }
     var systemMenu: (DesignMenuAction, DesignSystemTarget) -> Void = { _, _ in }
+    var visibility: (DesignTarget, Bool) -> Void = { _, _ in }
 }
 
 /// The Designs page (NavDesigns): the header ("Designs", "Filter designs", New design), then the
@@ -99,7 +101,8 @@ struct DesignsPage: View {
                                     .padding(.bottom, SH.Space.l - SHPageMetrics.columnGap)
                             case .cards(let row):
                                 DesignCardRow(slots: row, open: actions.open, thumbnail: thumbnail,
-                                              menu: { actions.designMenu($0, .local($1)) })
+                                              menu: { actions.designMenu($0, .local($1)) },
+                                              visibility: { actions.visibility(.local($0), $1) })
                                     .equatable()
                             case .hostSystems(let host, let row, let tile, let projects):
                                 DesignSystemCardRow(systems: row, tile: tile, projects: projects, open: actions.openSystem,
@@ -109,7 +112,8 @@ struct DesignsPage: View {
                                 DesignCardRow(slots: row.map(DesignsPageModel.Slot.design),
                                               open: { actions.openRemote(RemoteDesignRef(hostID: host, designID: $0)) },
                                               thumbnail: { actions.remoteThumbnail(host, $0) },
-                                              menu: { actions.designMenu($0, .remote(RemoteDesignRef(hostID: host, designID: $1))) })
+                                              menu: { actions.designMenu($0, .remote(RemoteDesignRef(hostID: host, designID: $1))) },
+                                              visibility: { actions.visibility(.remote(RemoteDesignRef(hostID: host, designID: $0)), $1) })
                                     .equatable()
                             case .systems(let row, let tile, let first):
                                 DesignSystemCardRow(systems: row, tile: tile, projects: model.projects,
@@ -247,6 +251,7 @@ struct DesignCardRow: View, Equatable {
     let open: (DesignID) -> Void
     let thumbnail: (DesignID) -> CGImage?
     var menu: (DesignMenuAction, DesignID) -> Void = { _, _ in }
+    var visibility: (DesignID, Bool) -> Void = { _, _ in }
 
     nonisolated static func == (a: Self, b: Self) -> Bool { a.slots == b.slots }
 
@@ -258,6 +263,8 @@ struct DesignCardRow: View, Equatable {
                     case .design(let card):
                         DesignCardView(card: card, open: open, image: thumbnail(card.id), menu: menu)
                             .equatable()
+                            .onAppear { visibility(card.id, true) }
+                            .onDisappear { visibility(card.id, false) }
                     case .importing(let importing):
                         SHImportingCard(title: importing.shownTitle, done: importing.done, total: importing.total, system: importing.system)
                     }

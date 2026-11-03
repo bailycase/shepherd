@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import ShepherdProtocol
 import WebKit
 
@@ -28,6 +29,7 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated static let maxFileBytes = 16 * 1024 * 1024
 
     private var live: Set<ObjectIdentifier> = []
+    private var assets = AssetIndex()
 
     init(host: String, files: Files, network: DesignSandbox.Network) {
         self.host = host
@@ -42,9 +44,13 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         let route = request.httpMethod.map { $0 == "GET" || $0 == "HEAD" } ?? true
             ? DesignRoute(url: request.url, host: host) : .refused
         let files = files
+        // A navigation starts a new lookup generation. Concurrent subresources share it;
+        // directory identity/timestamps also invalidate it during a live board's edits.
+        if request.mainDocumentURL == request.url { assets = AssetIndex() }
+        let assets = assets
         nonisolated(unsafe) let task = task
         Task {
-            let body = await Task.detached(priority: .userInitiated) { await Self.body(route, files: files) }.value
+            let body = await Task.detached(priority: .userInitiated) { await Self.body(route, files: files, assets: assets) }.value
             guard self.live.remove(id) != nil, let url = request.url else { return }
             // A page that isn't there fails its navigation (WebKit hands a custom scheme's
             // navigation response over without its status); a missing subresource is a 404.
@@ -82,8 +88,8 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     /// What a request is answered with, from wherever the surface's files come from.
-    nonisolated static func body(_ route: DesignRoute, files: Files) async -> Body? {
-        guard case .source(let source) = files else { return read(route, files: files) }
+    nonisolated static func body(_ route: DesignRoute, files: Files, assets: AssetIndex? = nil) async -> Body? {
+        guard case .source(let source) = files else { return read(route, files: files, assets: assets) }
         switch route {
         case .runtime:
             return runtime
@@ -100,10 +106,10 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
-    nonisolated static func read(_ route: DesignRoute, files: Files) -> Body? {
+    nonisolated static func read(_ route: DesignRoute, files: Files, assets: AssetIndex? = nil) -> Body? {
         switch files {
         case .folder(let folder):
-            return read(route, folder: folder)
+            return read(route, folder: folder, assets: assets)
         case .source:
             return nil
         case .memory(let files):
@@ -125,7 +131,7 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         DesignRuntime.supportScript.map { Body(data: $0, type: DesignSandbox.contentType(forExtension: "js")) }
     }
 
-    nonisolated static func read(_ route: DesignRoute, folder: URL) -> Body? {
+    nonisolated static func read(_ route: DesignRoute, folder: URL, assets index: AssetIndex? = nil) -> Body? {
         switch route {
         case .runtime:
             return runtime
@@ -136,13 +142,45 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
             return serve(file, inside: base)
         case .blob(let id):
             let assets = folder.appendingPathComponent("assets", isDirectory: true)
-            // The bare id first; the folder is listed only for an `<id>.<ext>` name (and never sorted whole).
+            guard assets.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(folder.resolvingSymlinksInPath().standardizedFileURL.path + "/") else { return nil }
+            // Bare IDs still win. Only filenames are indexed, never mutable file contents.
+            guard DesignRoute.isBlobID(id) else { return nil }
             if let body = serve(assets.appendingPathComponent(id), inside: assets) { return body }
-            let names = (try? FileManager.default.contentsOfDirectory(atPath: assets.path)) ?? []
-            guard let name = names.filter({ $0.hasPrefix(id + ".") }).min() else { return nil }
+            guard let name = (index ?? AssetIndex()).name(for: id, in: assets) else { return nil }
             return serve(assets.appendingPathComponent(name), inside: assets)
         case .refused:
             return nil
+        }
+    }
+
+    /// One directory enumeration per unchanged load. A lock coalesces parallel subresources.
+    nonisolated final class AssetIndex: @unchecked Sendable {
+        private let lock = NSLock()
+        private var signature: String?
+        private var names: [String: String] = [:]
+        private(set) var enumerations = 0
+
+        func name(for id: String, in directory: URL) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            let root = directory.resolvingSymlinksInPath().standardizedFileURL.path
+            var info = stat()
+            guard stat(root, &info) == 0 else { signature = nil; names = [:]; return nil }
+            let current = "\(root)/\(info.st_dev)/\(info.st_ino)/\(info.st_mtimespec.tv_sec)/\(info.st_mtimespec.tv_nsec)/\(info.st_ctimespec.tv_sec)/\(info.st_ctimespec.tv_nsec)"
+            if signature != current {
+                names = [:]
+                guard let files = try? FileManager.default.contentsOfDirectory(atPath: root) else { signature = nil; return nil }
+                enumerations += 1
+                for name in files {
+                    // Blob IDs have no dots; only the first suffix boundary is relevant.
+                    guard let dot = name.firstIndex(of: ".") else { continue }
+                    let prefix = String(name[..<dot])
+                    guard DesignRoute.isBlobID(prefix) else { continue }
+                    if names[prefix].map({ name < $0 }) ?? true { names[prefix] = name }
+                }
+                signature = current
+            }
+            return names[id]
         }
     }
 
@@ -153,7 +191,7 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         guard resolved.path.hasPrefix(root + "/"),
               let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true, (values.fileSize ?? 0) <= maxFileBytes,
-              let data = try? Data(contentsOf: resolved) else { return nil }
+              let data = try? Data(contentsOf: resolved), data.count <= maxFileBytes else { return nil }
         return Body(data: data, type: DesignSandbox.contentType(forExtension: resolved.pathExtension))
     }
 }

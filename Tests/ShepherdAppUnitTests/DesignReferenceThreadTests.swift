@@ -35,6 +35,52 @@ struct DesignReferenceThreadTests {
         return DesignMentionCatalog(designs: [checkout, events], boards: [Self.checkout: [a, b]], elements: [a.id: [card]])
     }
 
+    @Test func hidingAMountedPickerReleasesPictureDemandAndRestoresOnlyItsVisibleRows() throws {
+        var requests: [(String, Bool, String)] = []
+        let chips = DesignReferenceChips(agentID: AgentID(), io: .init(rowVisibility: { requests.append(($0.id, $1, $2)) }))
+        let row = try #require(Self.catalog.designs.first)
+        chips.rowAppeared(row, rowID: row.id)
+        chips.setPictureDemandActive(false)
+        chips.setPictureDemandActive(true)
+        chips.rowDisappeared(row.id)
+        chips.setPictureDemandActive(false)
+        chips.setPictureDemandActive(true)
+        #expect(requests.map(\.1) == [true, false, true, false])
+        #expect(Set(requests.map(\.2)).count == 1, "One picker owns its own demand")
+        #expect(requests.allSatisfy { $0.0 == row.id })
+    }
+
+    @Test(arguments: [false, true])
+    func wholeRowsReleaseTheirActualDisplayedIdentity(board: Bool) throws {
+        let catalog = Self.catalog
+        let scope: MentionScope = board
+            ? .board(try #require(catalog.boards[Self.checkout]?.first?.reference), design: "Checkout", board: "A")
+            : .design(Self.checkout, name: "Checkout")
+        let content = MentionPickerContent.make(catalog: catalog, scope: scope, filter: "")
+        let row = try #require(content.rows.first)
+        let item = try #require(content.items[row.id])
+        #expect(row.id == MentionPickerContent.wholeID(item))
+        var active: Set<String> = []
+        let io = DesignReferenceChips.IO(rowVisibility: { _, shown, consumer in
+            if shown { active.insert(consumer) } else { active.remove(consumer) }
+        })
+        let chips = DesignReferenceChips(agentID: AgentID(), io: io)
+        let other = DesignReferenceChips(agentID: AgentID(), io: io)
+        chips.rowAppeared(item, rowID: row.id)
+        chips.rowAppeared(item, rowID: item.id)
+        other.rowAppeared(item, rowID: row.id)
+        #expect(active.count == 3, "Aliases and separate pickers own distinct demands")
+        chips.rowDisappeared(row.id)
+        #expect(active.count == 2)
+        chips.releasePictureDemand()
+        #expect(active.count == 1, "Picker teardown cannot release another picker's demand")
+        chips.setPictureDemandActive(false)
+        chips.setPictureDemandActive(true)
+        #expect(active.count == 1, "A released whole row cannot be restored by switching agents")
+        other.rowDisappeared(row.id)
+        #expect(active.isEmpty)
+    }
+
     // MARK: The mention
 
     @Test(arguments: [
@@ -213,10 +259,11 @@ struct DesignReferenceThreadTests {
         chips.seed(catalog: Self.catalog)
         let board = try #require(Self.catalog.boards[Self.checkout]?.first)
         let card = try #require(Self.catalog.elements[board.id]?.first)
-        chips.rowAppeared(try #require(Self.catalog.designs.first))
-        chips.rowAppeared(board)
+        let design = try #require(Self.catalog.designs.first)
+        chips.rowAppeared(design, rowID: design.id)
+        chips.rowAppeared(board, rowID: board.id)
         #expect(asked.isEmpty)
-        chips.rowAppeared(card)
+        chips.rowAppeared(card, rowID: card.id)
         #expect(asked.map(\.0) == [card.id] && asked.map(\.1) == [board.id] && asked.map(\.2) == [[7]])
     }
 
