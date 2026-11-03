@@ -782,7 +782,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     const s = a.triggerStatus;
     const state = s ? `${s.state}${s.reason ? ` (${s.reason})` : ""}, ${s.pending?.length ?? 0} pending, ${s.runsToday} today` : "";
     const limits = a.settings?.limits;
-    const cap = limits ? `\n    limits: ${limits.maxConcurrent === 0 ? "no concurrency limit" : `${limits.maxConcurrent} at once`}, ${limits.maxPerDay} a day` : "";
+    const cap = limits ? `\n    limits: ${limits.maxConcurrent === 0 ? "no concurrency limit" : `${limits.maxConcurrent} at once`}, ${limits.maxPerDay === 0 ? "no daily limit" : `${limits.maxPerDay} a day`}` : "";
     return `\n    trigger: ${what}${state ? ` [${state}]` : ""}${cap}`;
   }
 

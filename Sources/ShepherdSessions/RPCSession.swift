@@ -94,6 +94,7 @@ final class RPCSession: @unchecked Sendable {
     private struct Preparation {
         let type: String
         let timeout: TimeInterval
+        let expiresAt: Double?
         let isCurrent: () -> Bool
         let onAdmitted: () -> Void
         let onLateResponse: ((RPCResponse) -> Void)?
@@ -336,7 +337,7 @@ final class RPCSession: @unchecked Sendable {
 
     /// The thread's serialized input lane owns ordering. Control commands bypass preparation;
     /// its cancellation/generation predicate is checked again immediately before admission.
-    func requestPrepared(type: String, timeout: TimeInterval, preparationBytes: Int, prepare: @escaping () -> RPCCommand,
+    func requestPrepared(type: String, timeout: TimeInterval, expiresAt: Double? = nil, preparationBytes: Int, prepare: @escaping () -> RPCCommand,
                          isCurrent: @escaping () -> Bool, onAdmitted: @escaping () -> Void,
                          onLateResponse: ((RPCResponse) -> Void)?,
                          completion: @escaping (Result<RPCResponse, RPCError>) -> Void) {
@@ -346,7 +347,7 @@ final class RPCSession: @unchecked Sendable {
         }
         nextRequestID += 1
         let requestID = "\(id.rawValue)-\(nextRequestID)", hook = beforeInputPreparation, finished = afterInputPreparation
-        preparations[requestID] = Preparation(type: type, timeout: timeout, isCurrent: isCurrent, onAdmitted: onAdmitted,
+        preparations[requestID] = Preparation(type: type, timeout: timeout, expiresAt: expiresAt, isCurrent: isCurrent, onAdmitted: onAdmitted,
                                                onLateResponse: onLateResponse, completion: completion)
         let ownerQueue = queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -359,8 +360,9 @@ final class RPCSession: @unchecked Sendable {
             ownerQueue.async { [weak self, reservation] in
                 defer { withExtendedLifetime(reservation) {} }
                 if let self, let pending = self.preparations.removeValue(forKey: requestID) {
-                    if pending.isCurrent(), let line, self.admit(line) {
-                        self.awaitResponse(requestID, type: pending.type, timeout: pending.timeout,
+                    let remaining = pending.expiresAt.map { ($0 - Date().timeIntervalSince1970 * 1000) / 1000 }
+                    if pending.isCurrent(), remaining.map({ $0.isFinite && $0 > 0 }) ?? true, let line, self.admit(line) {
+                        self.awaitResponse(requestID, type: pending.type, timeout: remaining.map { min(pending.timeout, $0) } ?? pending.timeout,
                                            onLateResponse: pending.onLateResponse, completion: pending.completion)
                         pending.onAdmitted()
                     } else { pending.completion(.failure(.inputRejected)) }

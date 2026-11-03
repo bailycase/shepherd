@@ -46,11 +46,13 @@ extension RPCThreadState {
     /// Serialize input preflights while control commands and abort bypass this lane.
     /// A timeout fences the lane until its matching response or restart, without retrying the send.
     func requestInput(prompt: String, images: [NativeImage], delivery: RPCStreamingBehavior,
-                      timeout: TimeInterval = RPCThreadState.promptTimeout,
+                      timeout: TimeInterval = RPCThreadState.promptTimeout, expiresAt: Double? = nil,
                       canSend: @escaping () -> Bool = { true }, admitted: @escaping () -> Void = {},
                       completion: @escaping (NativeThreadResult?) -> Void) {
         guard canSend() else {
             completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
+            // A deadline can invalidate a queued continuation without cancelling later inputs.
+            if !inputActive, !waitingInputs.isEmpty { waitingInputs.removeFirst()(true) }
             return
         }
         var textBytes = 0
@@ -75,7 +77,7 @@ extension RPCThreadState {
                     completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
                     return
                 }
-                self.requestInput(prompt: prompt, images: images, delivery: delivery, timeout: timeout,
+                self.requestInput(prompt: prompt, images: images, delivery: delivery, timeout: timeout, expiresAt: expiresAt,
                                   canSend: canSend, admitted: admitted, completion: completion)
             }
             return
@@ -108,12 +110,12 @@ extension RPCThreadState {
             else if !self.waitingInputs.isEmpty { self.waitingInputs.removeFirst()(true) }
             self.refreshSkillsIfIdle()
         }
-        if !images.isEmpty || prompt.utf8.count >= RPCSession.offQueueDecodeBytes {
+        if expiresAt != nil || !images.isEmpty || prompt.utf8.count >= RPCSession.offQueueDecodeBytes {
             // Account for raw images, base64 strings and the encoded frame, plus worst-case
             // JSON text escaping. Input queues themselves retain their existing separate bounds.
             let preparationBytes = textBytes * 12
                 + images.reduce(0) { $0 + $1.data.count } * 6 + 64 * 1024
-            session.requestPrepared(type: "prompt", timeout: timeout, preparationBytes: preparationBytes, prepare: {
+            session.requestPrepared(type: "prompt", timeout: timeout, expiresAt: expiresAt, preparationBytes: preparationBytes, prepare: {
                 .prompt(message: prompt, images: images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }, streamingBehavior: delivery)
             }, isCurrent: { [weak self] in
                 guard let self else { return false }
