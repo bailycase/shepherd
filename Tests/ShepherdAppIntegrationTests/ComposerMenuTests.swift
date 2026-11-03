@@ -42,7 +42,7 @@ struct ComposerMenuTests {
                         + CGFloat(rows) * SH.Height.controlS + CGFloat(rows - 1) * SH.Space.xxs + SH.Space.xxs * 2 + SH.Space.s
                 }
                 let models = SHComposerMetrics.menuHeaderHeight + CGFloat(modelRows) * SHComposerMetrics.menuRowHeight + padding
-                return models + section(rows: thinkingRows) + (self == .speed ? section(rows: 1) : 0)
+                return SHComposerMetrics.modelSearchHeight + models + section(rows: thinkingRows) + (self == .speed ? section(rows: 1) : 0)
             }
         }
 

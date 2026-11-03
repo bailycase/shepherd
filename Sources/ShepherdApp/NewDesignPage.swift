@@ -178,6 +178,7 @@ struct NewDesignPage: View {
             case .settings:
                 let levels = draft.thinkingLevels()
                 SHModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id)),
+                                searchModels: draft.catalog?.settingsSearchModels ?? [],
                                 thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
                                     SHThinkingOption(id: $0.id, title: $0.title, note: $0.note)
                                 }, currentThinking: draft.thinking.clamped(to: levels).rawValue, speeds: [], currentSpeed: "standard",
