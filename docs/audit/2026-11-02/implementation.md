@@ -17,13 +17,13 @@ same path, not additional independent performance gains.
 
 | Lane | Audit IDs | Status | Required evidence |
 | --- | --- | --- | --- |
-| Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | First batch merged; four review blockers and UI consumers pending | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
+| Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | Reviewed follow-ups merged and tested; UI consumers pending | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
 | Server | SV-01 through SV-06; server half UX-03 | Merged; parent 248-test integration run passed | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
-| Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | In progress | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
-| Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; parent tests running, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
+| Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Staging tested; final review and upstream queue prerequisite pending | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
+| Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; joined parent tests passed, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
 | Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | In progress | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
 | Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | In progress | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
-| Surfaces/extensions | SF-02 through SF-04, SV-07 | Review fixes merged; parent joined tests running | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
+| Surfaces/extensions | SF-02 through SF-04, SV-07 | Review fixes merged; parent joined tests passed | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
 | Instrumentation/builds | OBS-01 through OBS-04, shared among parent and UI/thread/server lanes | In progress | Local fixed-label interaction signposts without new data uploads; meaningful existing iOS full-display completion; ordinary Release test compilation |
 
 ST-06: the user explicitly approved the additive `history_outcome_task` SQLite index during
@@ -67,6 +67,16 @@ require equipment that is not available; those limits must remain explicit.
   checkpoint is committed. Cancellation/session/revision fencing tests are required.
 
 ## Validation recorded so far
+
+- Storage final staging checkpoint `b6316066`: lane reports 205 runtime tests/15 suites, 163
+  storage tests/15 suites, and 67 isolated ProjectExecution/ThreadEvent tests/2 suites, all exit 0.
+  Index workload counts are 37 VM steps at 100/1k/10k rows versus scans of 871/8,971/89,971
+  steps, not elapsed-time measurements. Parent checkpointed the clean stopped boundary; storage
+  awaits the server/#408 merge and integrated validation. Final independent review found three
+  additional blockers: duplicate operation waiters lost during staged-admission reset, session/name
+  authority not rechecked at actual persistence commit, and canceled remote reviews continuing to
+  request files. The worker resumed to fix all three with held-operation/reply regressions; remote
+  Changes reads may become cancellable, but Undo/Redo/Revert mutations must still await outcomes.
 
 - Parent: ordinary `swift test --build-system native -c release -j 2` now builds all test targets
   successfully. `ResponseTimingTests/lateMarksUpdateAlreadyProjectedHistory` and
@@ -124,8 +134,13 @@ require equipment that is not available; those limits must remain explicit.
   in the lane, with independent re-review and integration pending. Admission now caps captured
   records at eight/16 MiB of accounted payload before clearing or sending; explicit disposal is
   allowed only for settled failed/uncertain records and performs no remote action. Re-review cleared
-  the original four issues but requires overflow-safe payload accounting, now being added. Composer
-  image/persistence recovery and validated connection-epoch wiring remain pending.
+  the original four issues; the overflow-safe accounting follow-up `578b24e4` passed 17 focused
+  tests in a parent-run check, exit 0. Both follow-ups are merged; the parent remote/protocol run
+  passed **1,904 tests/186 suites**, exit 0. Composer image/persistence recovery and validated
+  connection-epoch wiring remain pending.
+- Parent pinned-Node child extension run: 36/37 passed; the broad real-Pi lifecycle case timed out
+  waiting for an inspector reply with zero active test timers. A focused rerun is underway; cause
+  and baseline status are not yet established.
 - Parent's first transport/surfaces run: 172 tests, one failing capability-enumeration test/two
   issues. New capability constants were missing from its exhaustive expected list; corrected in
   `c641bde80` with stable-string assertions. The joined four-lane run now includes all remote and
@@ -137,8 +152,12 @@ require equipment that is not available; those limits must remain explicit.
   and the still-unmerged Mac/mobile/storage consumers; it is not final-branch validation.
   The subsequent full unit run passed **3,992 tests/451 suites**, exit 0, on that same code.
 - Mac first batch checkpointed `0ef3ade8` (31 files); integration and `c3f131aa` prerequisites
-  merged cleanly into its lane. Consumer wiring, independent frozen-source review, post-merge
-  integration tests and previews are pending. Nine focused unit suites passed before prerequisites.
+  merged cleanly into its lane. Nine focused unit suites passed before prerequisites. Independent
+  review found three blockers: visible-reader retention tied to replaceable polling ownership;
+  async file preparations without draft-generation/pending-send fences; and Dock reopening only
+  installed after model readiness. Fixes and deterministic regressions are assigned, including
+  remaining-reader polling after another window closes. Consumer wiring, post-merge integration
+  tests and previews are pending.
 - Mobile first batch committed `ea0bf14a`; entire portable runner passed after moving the
   Foundation-only host presentation extension into the shared portable source list. Transport
   prerequisite merged cleanly into that lane. Simulator build and new portable checks reported
