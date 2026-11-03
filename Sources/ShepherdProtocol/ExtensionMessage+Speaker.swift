@@ -15,7 +15,8 @@ extension ExtensionMessage {
         switch self {
         case .peerMessageReceived(let agentID, _), .setAgentStatus(let agentID, _), .setAgentName(let agentID, _, _), .setAgentSession(let agentID, _),
              .setAgentChildren(let agentID, _), .notify(let agentID, _, _), .helloAgent(let agentID), .responseTiming(let agentID, _, _, _),
-             .helloChildren(let agentID, _), .childScope(_, let agentID, _, _), .prepareProjectConfiguration(_, let agentID, _),
+             .helloChildren(let agentID, _), .childScope(_, let agentID, _, _), .nativeQueueBoundary(_, let agentID, _, _),
+             .prepareProjectConfiguration(_, let agentID, _),
              .listPanes(_, let agentID), .openPane(_, let agentID, _, _, _, _), .closePane(_, let agentID, _),
              .focusPane(_, let agentID, _), .sendPaneInput(_, let agentID, _, _, _), .readPane(_, let agentID, _),
              .requestReview(_, let agentID, _, _),
@@ -45,7 +46,7 @@ extension ExtensionMessage {
     /// children, notify, the hellos, an agent's answer to a relayed request, and a cancellation).
     public var replyID: Int? {
         switch self {
-        case .childScope(let id, _, _, _), .listPanes(let id, _), .openPane(let id, _, _, _, _, _), .closePane(let id, _, _),
+        case .nativeQueueBoundary(let id, _, _, _), .childScope(let id, _, _, _), .listPanes(let id, _), .openPane(let id, _, _, _, _, _), .closePane(let id, _, _),
              .focusPane(let id, _, _), .sendPaneInput(let id, _, _, _, _), .readPane(let id, _, _),
              .requestReview(let id, _, _, _),
              .suggestInstruction(let id, _, _, _, _), .prepareProjectConfiguration(let id, _, _),
