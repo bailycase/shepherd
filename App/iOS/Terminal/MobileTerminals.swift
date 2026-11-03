@@ -139,10 +139,13 @@ final class MobileTerminals {
         let identity = ObjectIdentifier(client)
         guard wired[host] != identity else { return }
         wired[host] = identity
-        client.onOutput = { [weak self] id, data in
+        client.onOutputConsumed = { [weak self] id, data, completion in
             MainActor.assumeIsolated {
-                guard let self, self.wired[host] == identity else { return }
-                self.sessions[SessionKey(host: host, session: id)]?.receive(data)
+                guard let self, self.wired[host] == identity,
+                      let session = self.sessions[SessionKey(host: host, session: id)] else { completion(); return }
+                session.receive(data)
+                // SwiftTerm's feed parses synchronously; no asynchronous parser queue on iOS.
+                completion()
             }
         }
         client.onSessionExited = { [weak self] id, code in

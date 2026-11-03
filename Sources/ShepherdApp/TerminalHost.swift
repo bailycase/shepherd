@@ -37,8 +37,8 @@ final class AppTerminalModel {
         )
     }
 
-    func feed(_ data: Data) {
-        surface.feed(data)
+    func feed(_ data: Data, completion: (@Sendable () -> Void)? = nil) {
+        surface.feed(data, completion: completion)
     }
 
     func updateAppearance(_ terminal: ShepherdTheme.Terminal) {

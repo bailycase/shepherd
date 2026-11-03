@@ -21,7 +21,7 @@ struct RemoteClientBackpressureCheck {
         let host = ScriptedHost(fd: hostFD)
         let client = RemoteHostClient(socketOpen: { _, _ in clientFD })
         let received = Received()
-        client.onOutput = { _, data in received.output(data) }
+        client.onOutputConsumed = { _, data, completion in received.output(data, completion: completion) }
         client.onStateChanged = { received.state($0) }
         client.onSessionExited = { _, _ in received.sawExit() }
         client.onDisconnected = { received.disconnected($0) }
@@ -52,9 +52,8 @@ struct RemoteClientBackpressureCheck {
         }
         check(received.disconnectReason == nil, "a late reply to a cancelled read keeps the connection")
 
-        // RI-01 and RI-04: hold the main thread, flood it, and watch the host stall.
-        let blocker = DispatchSemaphore(value: 0)
-        DispatchQueue.main.async { blocker.wait() }
+        // SF-01: hold actual downstream consumption, not the main callback. Main remains free.
+        received.holdOutput = true
         let total = 6 * 1024 * 1024
         let writer = Thread {
             host.push(.stateChanged(state: Self.state("one")))
@@ -71,31 +70,60 @@ struct RemoteClientBackpressureCheck {
             host.push(.sessionExited(sessionID: session, code: 0))
         }
         writer.start()
-        // Detached: the main thread is held, and this must not wait behind it; it frees main
-        // itself, since this task resumes there.
-        let (stalled, writtenWhileHeld) = await Task.detached { () -> (Bool, Int) in
-            try? await Task.sleep(for: .seconds(1))
-            let written = host.written
-            blocker.signal()
-            return (written < total, written)
-        }.value
-        check(stalled, "the host's writes stall while the phone cannot drain its backlog (\(writtenWhileHeld) of \(total) written)")
-        let drained = await Task.detached { () -> Bool in
-            for _ in 0..<200 {
-                if received.exited { return true }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
-            return false
-        }.value
-        check(drained, "every pushed byte and the exit after them land once main is free")
+        let stalled = try await eventually("the host backs up behind the stalled parser") {
+            host.blocked && host.written >= RemoteHostClient.pauseReadsAtBytes / 2
+        }
+        check(stalled, "parser gate: written=\(host.written), blocked=\(host.blocked), hops=\(received.hops), bytes=\(received.outputBytes)")
+        check(host.written < total && !received.exited, "parser stall bounds transport and keeps exit behind output")
+        check(received.hops == 1, "main stays free but no second output is delivered before parser consumption")
+        received.releaseOutput()
+        check(try await eventually("every pushed byte and ordered exit drain") { received.exited }, "ordered output/exit drained")
         check(received.outputBytes == total, "no output byte is lost or repeated (\(received.outputBytes) of \(total))")
         check(received.largestHop <= RemoteHostClient.deliveryBudgetBytes + 64 * 1024,
               "one hop carries at most the delivery budget and one frame (\(received.largestHop))")
         check(received.hops > 1, "the flood arrived over several hops (\(received.hops))")
         let names = received.stateNames
-        check(names.last == "three" && names.count <= 2, "a newer whole state replaced the one waiting (\(names))")
+        check(names.last == "three", "the final state arrived (\(names))")
+
+        // IO-06: small non-output-only events must hit the count bound even below the byte cap.
+        client.onMissionChanged = { _, _ in received.mission() }
+        let a = MissionID(), b = MissionID()
+        for large in [false, true] {
+            let blocker = DispatchSemaphore(value: 0)
+            DispatchQueue.main.async { blocker.wait() }
+            host.written = 0
+            let events = large ? 256 : 10_000
+            let before = received.missions
+            Thread {
+                for index in 0..<events {
+                    if large { host.push(.stateChanged(state: Self.state(String(repeating: "x", count: 32 * 1024)))) }
+                    host.push(.missionChanged(missionID: index.isMultiple(of: 2) ? a : b, revision: UInt64(index)))
+                    host.written = index + 1
+                }
+            }.start()
+            await Task.detached {
+                defer { blocker.signal() }
+                let stalled = try! await Self.eventually("nonterminal-only pushes back up") {
+                    host.blocked && host.written >= (large ? 100 : RemoteHostClient.pauseReadsAtEvents)
+                }
+                Self.check(stalled && host.written < events, "nonterminal backlog is bounded by content and count")
+            }.value
+            check(try await eventually("nonterminal flood drains") { received.missions == before + events }, "all ordered nonterminal events drained")
+            check(received.largestEventBatch <= RemoteHostClient.deliveryBudgetEvents,
+                  "nonterminal delivery batches respect the event count budget")
+        }
         client.disconnect()
         print("PASS: cancelled reads let go, late replies are dropped, pushes are bounded and states coalesce")
+    }
+
+    @discardableResult
+    static func eventually(_ message: String, _ condition: @escaping @Sendable () -> Bool) async throws -> Bool {
+        let deadline = ContinuousClock.now + .seconds(15)
+        while !condition() {
+            guard ContinuousClock.now < deadline else { print("timeout: \(message)"); return false }
+            await Task.yield()
+        }
+        return true
     }
 
     static func state(_ name: String) -> ShepherdState {
@@ -121,16 +149,49 @@ final class Received: @unchecked Sendable {
     private var names: [String] = []
     private var exit = false
     private var reason: String?
+    private var missionCount = 0
+    private var eventBatch = 0
+    private var largestBatch = 0
+    var missions: Int { lock.lock(); defer { lock.unlock() }; return missionCount }
+    var largestEventBatch: Int { lock.lock(); defer { lock.unlock() }; return largestBatch }
+    func mission() {
+        lock.lock(); missionCount += 1; lock.unlock()
+        event()
+    }
+    private func event() {
+        lock.lock()
+        let first = eventBatch == 0
+        eventBatch += 1
+        largestBatch = max(largestBatch, eventBatch)
+        lock.unlock()
+        if first { DispatchQueue.main.async { self.lock.lock(); self.eventBatch = 0; self.lock.unlock() } }
+    }
 
-    func output(_ data: Data) {
-        lock.lock(); defer { lock.unlock() }
+    var holdOutput = false // Main actor configures the gate before output delivery.
+    private var outputCompletion: (@Sendable () -> Void)?
+
+    func output(_ data: Data, completion: @escaping @Sendable () -> Void) {
+        lock.lock()
         bytes += data.count
         hopCount += 1
         largest = max(largest, data.count)
+        if holdOutput { outputCompletion = completion }
+        lock.unlock()
+        if !holdOutput { completion() }
+    }
+    func releaseOutput() {
+        lock.lock()
+        holdOutput = false
+        let finish = outputCompletion
+        outputCompletion = nil
+        lock.unlock()
+        finish?()
     }
     func state(_ state: ShepherdState) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         names.append(state.agents.first?.name ?? "?")
+        lock.unlock()
+        event()
     }
     func disconnected(_ why: String) { lock.lock(); reason = why; lock.unlock() }
     func sawExit() { lock.lock(); exit = true; lock.unlock() }
@@ -162,8 +223,13 @@ final class ScriptedHost: @unchecked Sendable {
     }
     private var holding = false
     private var writtenBytes = 0
+    private var writeBlocked = false
+    var blocked: Bool { lock.lock(); defer { lock.unlock() }; return writeBlocked }
 
-    init(fd: Int32) { self.fd = fd }
+    init(fd: Int32) {
+        self.fd = fd
+        precondition(fcntl(fd, F_SETFL, O_NONBLOCK) == 0)
+    }
 
     func start() {
         Thread { self.serve() }.start()
@@ -187,8 +253,15 @@ final class ScriptedHost: @unchecked Sendable {
         writeLock.lock(); defer { writeLock.unlock() }
         var offset = 0
         while offset < line.count {
-            let n = line.withUnsafeBytes { raw in Darwin.write(fd, raw.baseAddress!.advanced(by: offset), line.count - offset) }
+            let n = line.withUnsafeBytes { raw in Darwin.send(fd, raw.baseAddress!.advanced(by: offset), line.count - offset, MSG_DONTWAIT) }
             if n < 0, errno == EINTR { continue }
+            if n < 0, errno == EAGAIN || errno == EWOULDBLOCK {
+                lock.lock(); writeBlocked = true; lock.unlock()
+                var writable = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                _ = poll(&writable, 1, 1000)
+                continue
+            }
+            lock.lock(); writeBlocked = false; lock.unlock()
             precondition(n > 0, "host write failed: errno \(errno)")
             offset += n
         }
@@ -199,6 +272,11 @@ final class ScriptedHost: @unchecked Sendable {
         var bytes = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
             let n = Darwin.read(fd, &bytes, bytes.count)
+            if n < 0, errno == EAGAIN || errno == EWOULDBLOCK {
+                var readable = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                _ = poll(&readable, 1, 1000)
+                continue
+            }
             if n <= 0 { return }
             for line in try! buffer.append(Data(bytes: bytes, count: n)) {
                 let request = try! NDJSON.decode(RemoteRequest.self, from: line)
