@@ -48,6 +48,9 @@ struct ThreadComposer: View {
                 banner(notice)
             }
             if state.pendingImports > 0 { banner("Adding images…") }
+            if threads.setAside.contains(ref) {
+                banner("Not every unsent message saved on this device is shown here: the ones below fit; the full set is kept aside on this device, unchanged.", failed: true)
+            }
             // Sends an earlier launch kept: their text only.
             ForEach(threads.recovered[ref] ?? []) { record in
                 SubmissionBanner(typed: record.typed, refused: record.state == .failed, images: record.images, imagesKept: false,
@@ -338,9 +341,9 @@ struct ThreadComposer: View {
                 .accessibilityLabel("Stop agent")
         } else {
             let enabled = live && store.acceptsSend && (store.hasDraft || !state.attachments.isEmpty) && !store.busy && state.pendingImports == 0
-            SHComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state, admits: threads.admits(store.draft, for: ref)) }
+            SHComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
                 .background {
-                    Button("Steer now · ⌘↩") { Self.send(NativeSendChoice.now.delivery, store: store, state: state, admits: threads.admits(store.draft, for: ref)) }
+                    Button("Steer now · ⌘↩") { Self.send(NativeSendChoice.now.delivery, store: store, state: state) }
                         .keyboardShortcut(.return, modifiers: .command)
                         .disabled(!enabled)
                         .hidden()
@@ -349,7 +352,7 @@ struct ThreadComposer: View {
                 .contextMenu {
                     if running, enabled {
                         ForEach(NativeSendChoice.allCases) { choice in
-                            Button(choice.title, systemImage: Self.symbol(choice)) { Self.send(choice.delivery, store: store, state: state, admits: threads.admits(store.draft, for: ref)) }
+                            Button(choice.title, systemImage: Self.symbol(choice)) { Self.send(choice.delivery, store: store, state: state) }
                         }
                     }
                 }
@@ -358,7 +361,7 @@ struct ThreadComposer: View {
                 .accessibilityActions {
                     if running, enabled {
                         ForEach(NativeSendChoice.allCases.filter { $0 != .wait }) { choice in
-                            Button(choice.title) { Self.send(choice.delivery, store: store, state: state, admits: threads.admits(store.draft, for: ref)) }
+                            Button(choice.title) { Self.send(choice.delivery, store: store, state: state) }
                         }
                     }
                 }
@@ -373,14 +376,8 @@ struct ThreadComposer: View {
     }
 
     @MainActor @discardableResult
-    static func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState,
-                     admits: Bool = true) -> Task<Void, Never> {
+    static func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) -> Task<Void, Never> {
         guard state.pendingImports == 0 else { return Task {} }
-        // Kept sends at their bounds (`ThreadRecovery`): refused before anything leaves the composer.
-        guard admits else {
-            state.attachmentError = Self.recoveryFull
-            return Task {}
-        }
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
         let earlier = Set(store.submissions.map(\.id))
@@ -503,8 +500,6 @@ struct ThreadComposer: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
     }
-
-    static let recoveryFull = "Too many unsent messages are kept. Restore or discard one before sending more. Nothing was sent; your draft is unchanged."
 
     private static func command(_ command: NativeCommand) -> SHTouchCommand {
         SHTouchCommand(name: command.name, description: command.description, arguments: command.arguments,

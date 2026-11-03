@@ -426,7 +426,7 @@ extension FixtureCatalog {
         let refused = store.submissions.first { $0.state == .failed }
         check(refused?.typed == "Ship the ledger fix" && refused?.images.count == 1 && state.attachments.isEmpty && store.draft.isEmpty,
               "a refused send keeps its text and image, out of the composer")
-        let saved = { ThreadRecovery.load(ref, defaults: .standard) }
+        let saved = { ThreadRecovery.load(ref, defaults: .standard).records }
         await FixtureWindows.wait("refused send saved", seconds: 5) { saved().map(\.state) == [.failed] }
         check(saved().first?.typed == "Ship the ledger fix" && saved().first?.images == 1 && UserDefaults.standard.string(forKey: key) == nil,
               "its text is saved apart from the draft, without its image's bytes")
@@ -473,12 +473,11 @@ extension FixtureCatalog {
         sends = mode.sends
         store.draft = "Ninth"
         await state.attach([(png(), "ninth.png")])
-        await ThreadComposer.send(.followUp, store: store, state: state, admits: app.threads.admits(store.draft, for: ref)).value
+        await ThreadComposer.send(.followUp, store: store, state: state).value
         check(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions && mode.sends == sends,
               "past the limit nothing is sent (\(store.submissions.count) kept)")
-        check(store.draft == "Ninth" && state.attachments.count == 1 && state.attachmentError == ThreadComposer.recoveryFull,
+        check(store.draft == "Ninth" && state.attachments.count == 1 && (store.notice ?? "").contains("limit"),
               "and its draft and image stay, with why")
-        state.attachmentError = nil
         for submission in store.submissions where store.canDiscardSubmission(submission.id) { store.discardSubmission(submission.id) }
         check(store.submissions.isEmpty, "settled sends can all be discarded")
         state.clearAttachments()
