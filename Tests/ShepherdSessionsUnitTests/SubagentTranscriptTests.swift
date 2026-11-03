@@ -137,6 +137,20 @@ struct SubagentTranscriptTests {
         #expect(try page(file).messages.allSatisfy { $0.origin == nil })
     }
 
+    @Test func immutableProjectedPagesKeepCursorAndAttribution() {
+        let rows = (0..<60).map { index in
+            NativeThreadMessage(entryID: "c:\(index)", role: "user", blocks: [.init(kind: .text, text: "message")], origin: .user)
+        }
+        guard case .transcript(let page) = RPCThreadState.transcriptPage(runID: "child", projected: rows, beforeEntryID: nil),
+              case .transcript(let older) = RPCThreadState.transcriptPage(runID: "child", projected: rows, beforeEntryID: page.olderCursor) else {
+            Issue.record("expected projected pages"); return
+        }
+        #expect(older.messages + page.messages == rows)
+        #expect(page.messages.allSatisfy { $0.origin == .user })
+        #expect(RPCThreadState.transcriptPage(runID: "child", projected: rows, beforeEntryID: "missing")
+            == .failure(code: "stale_cursor", message: "History changed. Refresh the recent page."))
+    }
+
     @Test func anUnreadableFileIsReportedNotThrown() {
         #expect(RPCThreadState.transcript(runID: "r", file: "/nonexistent/child.jsonl", beforeEntryID: nil)
             == .failure(code: "transcript_unavailable", message: "The subagent's session file is not readable."))

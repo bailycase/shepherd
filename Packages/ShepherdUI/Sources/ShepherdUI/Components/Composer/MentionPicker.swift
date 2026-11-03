@@ -127,13 +127,15 @@ public struct SHMentionPicker: View {
     let retry: (() -> Void)?
     /// A row came on screen (the list builds only those): its picture can be made now.
     let appear: (String) -> Void
+    let disappear: (String) -> Void
     /// The row the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: String?
 
     public init(sections: [SHMentionSection], crumbs: [String]? = nil, empty: SHMentionEmpty? = nil, highlighted: String?,
                 maxHeight: CGFloat? = nil, choose: @escaping (SHMentionRow) -> Void, drill: @escaping (SHMentionRow) -> Void,
                 back: @escaping () -> Void = {}, hover: @escaping (String) -> Void = { _ in }, startDesign: (() -> Void)? = nil,
-                retry: (() -> Void)? = nil, appear: @escaping (String) -> Void = { _ in }) {
+                retry: (() -> Void)? = nil, appear: @escaping (String) -> Void = { _ in },
+                disappear: @escaping (String) -> Void = { _ in }) {
         self.sections = sections
         self.crumbs = crumbs
         self.empty = empty
@@ -146,6 +148,7 @@ public struct SHMentionPicker: View {
         self.startDesign = startDesign
         self.retry = retry
         self.appear = appear
+        self.disappear = disappear
     }
 
     /// The list's height for `sections`: every header and row, at most `maxRows` rows' worth, and
@@ -288,6 +291,7 @@ public struct SHMentionPicker: View {
                                 }
                                 .equatable()
                                 .onAppear { appear(row.id) }
+                                .onDisappear { disappear(row.id) }
                             }
                         }
                         .id(entry.id)

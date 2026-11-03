@@ -1,6 +1,27 @@
 // @ts-nocheck -- Pi loads this module through jiti.
 import { Worker } from "node:worker_threads";
 
+// Lifecycle waiters register synchronously with their predicate check (no await in between).
+// Notifications wake all contenders; callers must recheck capacity after every await.
+export function lifecycleWaiters() {
+  const waiting = new Set();
+  return {
+    notify() { for (const wake of [...waiting]) wake(); },
+    get count() { return waiting.size; },
+    wait(signal) {
+      signal?.throwIfAborted();
+      return new Promise((resolve, reject) => {
+        const finish = () => { waiting.delete(wake); signal?.removeEventListener("abort", abort); };
+        const wake = () => { finish(); resolve(); };
+        const abort = () => { finish(); reject(signal.reason ?? Error("Cancelled")); };
+        waiting.add(wake);
+        signal?.addEventListener("abort", abort, { once: true });
+        if (signal?.aborted) abort();
+      });
+    },
+  };
+}
+
 // The VM receives only strings, never worker objects, callbacks, promises or errors.
 // This restricts the scripting API; neither node:vm nor a Worker is an OS sandbox.
 function workflowWorker() {

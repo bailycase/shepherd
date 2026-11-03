@@ -64,23 +64,24 @@ struct ProseStoreTests {
         let store = manualStore()
         let task = await start(store, host)
         defer { task.cancel() }
-        #expect(store.proseParses == 1 && store.offMainParses == 0, "the first text of an item parses in place")
+        #expect(store.proseParses == 0 && store.offMainParses == 1, "cold oversized prose also parses off main")
+        await until { prose() == [.paragraph(long.trimmingCharacters(in: .whitespaces))] }
 
         host.snapshot = snapshot(2, long + "\n\nmore")
         await store.refresh()
-        #expect(store.proseParses == 1 && store.offMainParses == 1)
+        #expect(store.proseParses == 0 && store.offMainParses == 2)
         #expect(prose() == [.paragraph(long.trimmingCharacters(in: .whitespaces))], "the last parse stands meanwhile")
 
         await until { prose()?.count == 2 }
         #expect(prose()?.last == .paragraph("more"))
-        #expect(store.proseParses == 1)
+        #expect(store.proseParses == 0 && store.mainActorLargeParses == 0)
 
         // The same text asked for again is not parsed again; a newer one is.
         await store.refresh()
-        #expect(store.offMainParses == 1)
+        #expect(store.offMainParses == 2)
         host.snapshot = snapshot(3, long + "\n\nmore\n\nand more")
         await store.refresh()
-        #expect(store.offMainParses == 2)
+        #expect(store.offMainParses == 3)
         await until { prose()?.count == 3 }
         #expect(prose()?.last == .paragraph("and more"))
     }

@@ -56,6 +56,16 @@ extension ShepherdViewModel {
                                                                               size: CGSize(width: width, height: height), revision: revision, tids: tids))
             },
             wantPictures: { [weak self] scope in self?.wantRemoteMentionPictures(scope, host: host) },
+            rowVisibility: { [weak self] item, visible, consumer in
+                guard item.kind != .element, let self, let rendering = self.remoteDesignRendering(host) else { return }
+                let id = item.reference.designID
+                if let path = item.reference.board {
+                    rendering.boardPictures.demand(id, path, visible: visible, consumer: consumer)
+                    if visible { self.wantRemoteMentionPictures(.design(id, name: ""), host: host) }
+                } else {
+                    rendering.thumbnails.demand(id, visible: visible, consumer: consumer)
+                }
+            },
             open: { [weak self] reference in
                 guard let self else { return }
                 let design = RemoteDesignRef(hostID: host, designID: reference.designID)
@@ -171,9 +181,9 @@ extension ShepherdViewModel {
         guard let rendering = remoteDesignRenderings[host], reference.page == nil else { return nil }
         if let board = reference.board {
             if let image = rendering.host(for: reference.designID)?.image(board) { return image }
-            if let image = rendering.boardPictures.image(reference.designID, board) { return image }
+            if let image = rendering.boardPictures.image(reference.designID, board, requestIfMissing: true) { return image }
         }
-        return rendering.thumbnails.image(reference.designID)
+        return rendering.thumbnails.image(reference.designID, requestIfMissing: true)
     }
 
     private func remoteMentionPicture(_ item: DesignMentionItem, host: UUID) -> CGImage? {

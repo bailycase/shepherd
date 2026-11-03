@@ -52,6 +52,22 @@ struct RemoteClientBackpressureCheck {
         }
         check(received.disconnectReason == nil, "a late reply to a cancelled read keeps the connection")
 
+        host.hold = true
+        let abandonedDigest = Task.detached { () -> Bool in
+            do { _ = try await client.fleetDigest(agentID: AgentID(rawValue: "a")); return false }
+            catch is CancellationError { return true }
+            catch { return false }
+        }
+        check(try await eventually("the digest is held by the host") { host.heldCount == 1 }, "digest reached the host")
+        abandonedDigest.cancel()
+        check(await abandonedDigest.value, "digest cancellation releases its waiter without waiting for the timeout")
+        host.hold = false
+        host.releaseHeld()
+        guard case .digest = try await client.fleetDigest(agentID: AgentID(rawValue: "a")) else {
+            fatalError("digest connection failed after cancellation and late reply")
+        }
+        check(received.disconnectReason == nil, "cancelled digest and its late reply preserve the connection")
+
         // SF-01: hold actual downstream consumption, not the main callback. Main remains free.
         received.holdOutput = true
         let total = 6 * 1024 * 1024
@@ -112,8 +128,92 @@ struct RemoteClientBackpressureCheck {
             check(received.largestEventBatch <= RemoteHostClient.deliveryBudgetEvents,
                   "nonterminal delivery batches respect the event count budget")
         }
+        // Independent optional design invalidations must survive coalescing in either order.
+        client.onDesignChanged = { received.design($0, revision: $1, comments: $2) }
+        received.holdOutput = true
+        host.push(.output(sessionID: SessionID(), data: Data([1])))
+        let beforeHints = received.hops
+        check(try await eventually("output gates design delivery") { received.hops > beforeHints }, "output gate installed")
+        let designA = DesignID(), designB = DesignID(), designC = DesignID()
+        for event: RemoteReply in [
+            .designChanged(designID: designA, revision: 1, commentsRevision: nil),
+            .designChanged(designID: designA, revision: nil, commentsRevision: 2),
+            .designChanged(designID: designA, revision: 3, commentsRevision: nil),
+            .designChanged(designID: designA, revision: nil, commentsRevision: 4),
+            .designChanged(designID: designB, revision: nil, commentsRevision: 5),
+            .designChanged(designID: designB, revision: 6, commentsRevision: nil),
+            .designChanged(designID: designB, revision: nil, commentsRevision: 7),
+            .designChanged(designID: designB, revision: 8, commentsRevision: nil),
+            .designChanged(designID: designC, revision: 9, commentsRevision: nil),
+            .designChanged(designID: designA, revision: nil, commentsRevision: 10)
+        ] { host.push(event) }
+        _ = try await client.nativeThread(agentID: AgentID(rawValue: "a"), request: .snapshot())
+        check(received.designs.isEmpty, "hints remain behind the held delivery")
+        received.releaseOutput()
+        check(try await eventually("coalesced design hints drain") { received.designs.count == 4 }, "design hints drained")
+        let hints = received.designs
+        check(hints[0].0 == designA && hints[0].1 == 3 && hints[0].2 == 4, "board-first keeps both latest fields")
+        check(hints[1].0 == designB && hints[1].1 == 8 && hints[1].2 == 7, "comments-first keeps both latest fields")
+        check(hints[2].0 == designC && hints[2].1 == 9 && hints[2].2 == nil, "different design owns its invalidation")
+        check(hints[3].0 == designA && hints[3].1 == nil && hints[3].2 == 10, "never coalesce across another owner")
         client.disconnect()
-        print("PASS: cancelled reads let go, late replies are dropped, pushes are bounded and states coalesce")
+        try await checkReconnectFence()
+        print("PASS: parser/push budgets, independent design hints, pre-consumer reconnect fences, cancellable digest reads")
+    }
+
+    @MainActor
+    static func checkReconnectFence() async throws {
+        let oldAgent = AgentID(rawValue: "old"), newAgent = AgentID(rawValue: "new")
+        let stale: [RemoteReply] = [
+            .stateChanged(state: state("old")),
+            .output(sessionID: SessionID(), data: Data("old".utf8)),
+            .browserDrive(.handBack(agentID: oldAgent))
+        ]
+        for oldEvent in stale {
+            var first: [Int32] = [-1, -1], second: [Int32] = [-1, -1]
+            precondition(socketpair(AF_UNIX, SOCK_STREAM, 0, &first) == 0)
+            precondition(socketpair(AF_UNIX, SOCK_STREAM, 0, &second) == 0)
+            for fd in [first[0], second[0]] { precondition(fcntl(fd, F_SETFL, O_NONBLOCK) == 0) }
+            let sockets = SocketSequence([first[0], second[0]])
+            let host = ScriptedHost(fd: first[1]), replacement = ScriptedHost(fd: second[1])
+            let client = RemoteHostClient(socketOpen: { _, _ in sockets.next() })
+            let received = Received()
+            received.holdOutput = true
+            client.onOutputConsumed = { _, bytes, completion in received.output(bytes, completion: completion) }
+            client.onStateChanged = { received.state($0) }
+            client.onBrowserDrive = { received.control($0) }
+            client.onDisconnected = { received.disconnected($0) }
+            host.start(); replacement.start()
+            _ = try await client.connect(host: "fixture", port: 1, token: "t", clientName: "old")
+            let blocker = DispatchSemaphore(value: 0)
+            DispatchQueue.main.async { blocker.wait() }
+            try await Task.detached {
+                defer { blocker.signal() }
+                host.push(oldEvent)
+                // Reply handling is queue-local: this proves the pushed batch was captured
+                // behind blocked main before teardown, not merely left unread in the socket.
+                _ = try await client.nativeThread(agentID: oldAgent, request: .snapshot())
+                client.disconnect()
+                _ = try? await client.request { .stateFetch(id: $0) }
+                _ = try await client.connect(host: "fixture", port: 1, token: "t", clientName: "new")
+                let session = SessionID()
+                replacement.push(.output(sessionID: session, data: Data([1])))
+                replacement.push(.stateChanged(state: Self.state("new")))
+                replacement.push(.browserDrive(.handBack(agentID: newAgent)))
+                replacement.push(.output(sessionID: session, data: Data([2])))
+                _ = try await client.nativeThread(agentID: newAgent, request: .snapshot())
+            }.value
+            check(try await eventually("new connection delivers its first output") { received.hops >= 1 }, "new connection is live")
+            _ = try await client.nativeThread(agentID: newAgent, request: .snapshot())
+            check(received.hops == 1 && received.outputBytes == 1, "old batch never invokes output or retires the new output gate")
+            check(received.stateNames.isEmpty && received.controls.isEmpty, "old state and command batches never reach current handlers")
+            check(received.disconnectReason == nil, "old disconnect notification is fenced too")
+            received.releaseOutput()
+            check(try await eventually("new connection drains after consumption") { received.hops == 2 }, "new output completion resumes delivery")
+            check(received.outputBytes == 2 && received.stateNames == ["new"], "only new output/state delivered exactly once")
+            check(received.controls == [.handBack(agentID: newAgent)], "only the new command reached its owner")
+            client.disconnect()
+        }
     }
 
     @discardableResult
@@ -149,6 +249,14 @@ final class Received: @unchecked Sendable {
     private var names: [String] = []
     private var exit = false
     private var reason: String?
+    private var designHints: [(DesignID, UInt64?, UInt64?)] = []
+    private var controlPushes: [BrowserDrivePush] = []
+    var designs: [(DesignID, UInt64?, UInt64?)] { lock.lock(); defer { lock.unlock() }; return designHints }
+    var controls: [BrowserDrivePush] { lock.lock(); defer { lock.unlock() }; return controlPushes }
+    func design(_ id: DesignID, revision: UInt64?, comments: UInt64?) {
+        lock.lock(); defer { lock.unlock() }; designHints.append((id, revision, comments))
+    }
+    func control(_ push: BrowserDrivePush) { lock.lock(); defer { lock.unlock() }; controlPushes.append(push) }
     private var missionCount = 0
     private var eventBatch = 0
     private var largestBatch = 0
@@ -203,6 +311,16 @@ final class Received: @unchecked Sendable {
     var disconnectReason: String? { lock.lock(); defer { lock.unlock() }; return reason }
 }
 
+private final class SocketSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var descriptors: [Int32]
+    init(_ descriptors: [Int32]) { self.descriptors = descriptors }
+    func next() -> Int32 {
+        lock.lock(); defer { lock.unlock() }
+        return descriptors.removeFirst()
+    }
+}
+
 /// The host's end of the socketpair: answers hello and the state fetch, answers a snapshot
 /// request at once or holds it (`hold`), and pushes whatever it is handed with blocking writes.
 final class ScriptedHost: @unchecked Sendable {
@@ -210,7 +328,8 @@ final class ScriptedHost: @unchecked Sendable {
     private let lock = NSLock()
     /// One frame at a time on the wire; a blocked write holds only this.
     private let writeLock = NSLock()
-    private var held: [Int] = []
+    private var held: [RemoteReply] = []
+    var heldCount: Int { lock.lock(); defer { lock.unlock() }; return held.count }
     private var requests = 0
     private let requested = DispatchSemaphore(value: 0)
     var hold: Bool {
@@ -242,10 +361,10 @@ final class ScriptedHost: @unchecked Sendable {
     /// Answers every held snapshot request.
     func releaseHeld() {
         lock.lock()
-        let ids = held
+        let replies = held
         held = []
         lock.unlock()
-        for id in ids { push(.nativeThread(id: id, result: .snapshot(value: Self.snapshot))) }
+        for reply in replies { push(reply) }
     }
 
     func push(_ reply: RemoteReply) {
@@ -282,15 +401,20 @@ final class ScriptedHost: @unchecked Sendable {
                 let request = try! NDJSON.decode(RemoteRequest.self, from: line)
                 switch request {
                 case .hello(let id, _, _, _, _):
-                    push(.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.nativeThreadCapability]))
+                    push(.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeFleetDigestCapability]))
                 case .stateFetch(let id):
                     push(.state(id: id, state: ShepherdState()))
                 case .nativeThread(let id, _, _):
                     if hold {
-                        lock.lock(); held.append(id); lock.unlock()
+                        lock.lock(); held.append(.nativeThread(id: id, result: .snapshot(value: Self.snapshot))); lock.unlock()
                     } else {
                         push(.nativeThread(id: id, result: .snapshot(value: Self.snapshot)))
                     }
+                    requested.signal()
+                case .fleetDigest(let id, _, _, _):
+                    let reply = RemoteReply.fleetDigest(id: id, result: .digest(FleetDigest(Self.snapshot)))
+                    if hold { lock.lock(); held.append(reply); lock.unlock() }
+                    else { push(reply) }
                     requested.signal()
                 default:
                     break
