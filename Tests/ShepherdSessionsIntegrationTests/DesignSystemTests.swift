@@ -89,6 +89,106 @@ struct DesignSystemTests {
                           sources: ["web/static/tokens.css"], install: install, baseRevision: base)
     }
 
+    @Test func systemMetadataReadsOnlyTokensAndTheReadmePrefix() async throws {
+        let root = try makeScratchDirectory("system-metadata")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("acme-web")
+        let tokens = try JSONEncoder().encode(Self.tokens)
+        // The prefix cuts through a multibyte character, just as the previous whole-file read did.
+        let readme = Data(("#" + String(repeating: "é", count: 40_000)).utf8)
+        var files = ["tokens.json": tokens, "README.md": readme,
+                     "tokens.css": Data(Self.stylesheet.utf8),
+                     "components/Button.html": Data("<button>Export CSV</button>".utf8)]
+        for index in 0..<8 {
+            files["fonts/Face-\(index).woff2"] = Data("wOF2".utf8) + Data(repeating: UInt8(index), count: 750_000 - 4)
+        }
+        #expect(files.values.reduce(0) { $0 + $1.count } < DesignSystemFile.maxTotalBytes)
+        for (path, data) in files {
+            let url = folder.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url)
+        }
+        let store = DesignSystemStore(directory: root)
+        let bytesRead = Locked<[String: Int]>([:])
+        let metadata = try await store.read("acme-web") { path, handle, limit in
+            let data: Data
+            if let limit { data = try handle.read(upToCount: limit) ?? Data() }
+            else { data = try handle.readToEnd() ?? Data() }
+            bytesRead.withValue { $0[path, default: 0] += data.count }
+            return data
+        }
+        #expect(bytesRead.current == ["tokens.json": tokens.count, "README.md": DesignSystemRead.maxReadmeBytes])
+        #expect(metadata.tokens == (try DesignSystemTokens(json: Self.tokens)))
+        #expect(metadata.readme == String(decoding: readme.prefix(DesignSystemRead.maxReadmeBytes), as: UTF8.self))
+        #expect(metadata.files == files.keys.sorted())
+        let contents = try await store.contents("acme-web")
+        #expect(contents.summary == metadata.summary && contents.files == files, "full-content consumers still get every byte")
+        #expect(try await store.read("acme-web") == metadata)
+
+        try Data("Updated README".utf8).write(to: folder.appendingPathComponent("README.md"))
+        #expect(try await store.read("acme-web").readme == "Updated README", "no persistent metadata cache")
+        let failed = try await store.read("acme-web") { path, handle, limit in
+            if path == DesignSystemFile.readme { throw CocoaError(.fileReadUnknown) }
+            return try handle.readToEnd() ?? Data()
+        }
+        #expect(failed.readme == nil && !failed.files.contains("README.md"), "failed payload reads stay omitted")
+
+        store.register(.init(info: .init(namespace: "acme-web", title: "Built in", createdAt: 0), files: files))
+        let builtIn = try await store.read("acme-web") { _, _, _ in
+            Issue.record("built-ins must not read the filesystem")
+            throw CocoaError(.fileReadUnknown)
+        }
+        #expect(builtIn.summary.builtIn && builtIn.files == metadata.files && builtIn.tokens == metadata.tokens)
+        #expect(builtIn.readme == metadata.readme)
+    }
+
+    @Test func systemMetadataKeepsDiscoveryFencesAndUnreadableFileOmission() async throws {
+        let root = try makeScratchDirectory("system-discovery")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("acme-web")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for name in ["tokens.json", "README.md", "empty.css", ".hidden.md", "invalid name.css", "system.json", "denied.css"] {
+            try Data().write(to: folder.appendingPathComponent(name))
+        }
+        let denied = folder.appendingPathComponent("denied.css")
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: denied.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: denied.path) }
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("directory.css"), withIntermediateDirectories: true)
+        let outside = root.appendingPathComponent("outside.md")
+        try Data("private".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("outside.md"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("inside.md"),
+                                                 withDestinationURL: folder.appendingPathComponent("README.md"))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: folder)
+        let store = DesignSystemStore(directory: root)
+        let contents = try await store.contents("acme-web").files
+        let metadata = try await store.read("acme-web")
+        // A privileged test runner may read mode-000 files; compare actual readability, not mode bits.
+        let readableDenied = (try? Data(contentsOf: denied)) != nil
+        let names = ["tokens.json", "README.md", "empty.css"] + (readableDenied ? ["denied.css"] : [])
+        #expect(metadata.files == names.sorted() && metadata.files == contents.keys.sorted())
+        #expect(metadata.tokens == nil && metadata.summary.unreadable && metadata.readme == "")
+        await #expect(throws: DesignSystemError.notAFolder("linked")) { _ = try await store.read("linked") }
+        await #expect(throws: DesignSystemError.invalidNamespace("Bad Name")) { _ = try await store.read("Bad Name") }
+        await #expect(throws: DesignSystemError.noSuchSystem("missing")) { _ = try await store.read("missing") }
+    }
+
+    @Test func systemMetadataPreservesTheExistingDiscoveryCountBoundary() async throws {
+        let root = try makeScratchDirectory("system-count")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("acme-web")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for index in 0..<(DesignSystemFile.maxFiles + 6) {
+            try Data("file \(index)".utf8).write(to: folder.appendingPathComponent("file-\(index).txt"))
+        }
+        let store = DesignSystemStore(directory: root)
+        let contents = try await store.contents("acme-web").files
+        let metadata = try await store.read("acme-web")
+        #expect(metadata.files == contents.keys.sorted())
+        // Keep the existing inclusive enumeration bound; correcting it is not this optimization.
+        #expect(metadata.files.count == DesignSystemFile.maxFiles + 1)
+    }
+
     @Test func bundledFontBytesAndDCComponentsSurviveSystemInstallationAndExportInputs() async throws {
         let w = try await workspace()
         defer { w.h.stop() }

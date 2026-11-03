@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -147,8 +148,39 @@ public final class DesignSystemStore: @unchecked Sendable {
     }
 
     public func read(_ namespace: String) async throws -> DesignSystemRead {
+        try await read(namespace) { _, file, limit in
+            if let limit { return try file.read(upToCount: limit) ?? Data() }
+            return try file.readToEnd() ?? Data()
+        }
+    }
+
+    /// Internal read seam counts payload bytes without replacing discovery or its fences.
+    func read(_ namespace: String,
+              readPayload: @escaping @Sendable (String, FileHandle, Int?) throws -> Data) async throws -> DesignSystemRead {
         try await run {
-            let (summary, files) = try self.loadOnQueue(namespace)
+            let summary: DesignSystemSummary
+            let files: [String: Data]
+            if let builtIn = self.builtIns[namespace] {
+                summary = Self.summary(builtIn)
+                files = builtIn.files
+            } else {
+                let folder = try self.ownFolder(namespace)
+                summary = try self.summaryOnQueue(namespace)
+                files = self.filesOnQueue(folder) { path, url in
+                    // Opening still omits unreadable files. Assets need names, not their bytes.
+                    let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+                    guard fd >= 0 else { return nil }
+                    let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+                    defer { try? file.close() }
+                    var info = stat()
+                    guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+                    switch path {
+                    case DesignSystemFile.tokens: return try? readPayload(path, file, nil)
+                    case DesignSystemFile.readme: return try? readPayload(path, file, DesignSystemRead.maxReadmeBytes)
+                    default: return Data()
+                    }
+                }
+            }
             let tokens = files[DesignSystemFile.tokens].flatMap { try? DesignSystemTokens.decode($0) }
             let readme = files[DesignSystemFile.readme].map { data -> String in
                 String(decoding: data.prefix(DesignSystemRead.maxReadmeBytes), as: UTF8.self)
@@ -551,9 +583,9 @@ public final class DesignSystemStore: @unchecked Sendable {
         try Self.writeFile(data, to: folder.appendingPathComponent(DesignSystemFile.info))
     }
 
-    /// Every file of a system's folder by path: regular files inside it (links are not
-    /// followed), by the file grammar, `system.json` left out.
-    private func filesOnQueue(_ folder: URL) -> [String: Data] {
+    /// Discover files with the same fences and enumeration/count semantics for metadata and
+    /// full contents. A loader that cannot read a file leaves it out, without consuming a slot.
+    private func filesOnQueue(_ folder: URL, read: (String, URL) -> Data? = { _, url in try? Data(contentsOf: url) }) -> [String: Data] {
         var files: [String: Data] = [:]
         let root = folder.resolvingSymlinksInPath().path + "/"
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
@@ -564,7 +596,7 @@ public final class DesignSystemStore: @unchecked Sendable {
             let relative = String(resolved.dropFirst(root.count))
             let values = try? url.resourceValues(forKeys: Set(keys))
             guard values?.isRegularFile == true, values?.isSymbolicLink != true, DesignSystemFile.isPath(relative),
-                  let data = try? Data(contentsOf: url) else { continue }
+                  let data = read(relative, url) else { continue }
             files[relative] = data
         }
         return files
