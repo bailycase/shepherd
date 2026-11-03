@@ -270,7 +270,6 @@ struct ThreadEventTests {
         let openingID = UUID()
         t.queue.async {
             t.state.sendOpeningPrompt("tools:0 first message", id: openingID)
-            t.state.bootstrap(timeout: 0.5)
         }
         let store = NativeThreadStore(startingLimit: .seconds(3600))
         let request: NativeThreadStore.Request = { await t.request($0) }
@@ -279,6 +278,10 @@ struct ThreadEventTests {
         try await eventuallyOnMain("the store to see startup") { store.starting }
         store.suspend()
         polling.cancel()
+        // Observe startup before arming its short bound: a loaded runner may otherwise
+        // schedule the observer only after the deadline, correctly skipping to failure.
+        // The unchanged half-second deadline must still expire with no reader attached.
+        t.queue.async { t.state.bootstrap(timeout: 0.5) }
 
         try await eventually("the live pi to fail readiness while hidden", timeout: .seconds(2)) { @Sendable in
             await t.request(.snapshot()).failureCode == NativeThreadCode.unavailable
