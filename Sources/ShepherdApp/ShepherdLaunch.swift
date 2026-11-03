@@ -49,7 +49,10 @@ final class ShepherdLaunch<Model: AnyObject> {
 /// What the window shows while the workspace is being opened: the window's own background, and,
 /// only if it takes a while, a small progress line (so a quick start never flashes one).
 struct LaunchSurface: View {
-    @State private var slow = false
+    @State private var slow: Bool
+
+    /// `slow` starts with the progress line shown (previews).
+    init(slow: Bool = false) { _slow = State(initialValue: slow) }
 
     var body: some View {
         ZStack {
@@ -65,6 +68,7 @@ struct LaunchSurface: View {
         }
         .shAnimation(.content, value: slow)
         .task {
+            guard !slow else { return }
             try? await Task.sleep(for: AppLayout.startingIndicatorDelay)
             guard !Task.isCancelled else { return }
             slow = true

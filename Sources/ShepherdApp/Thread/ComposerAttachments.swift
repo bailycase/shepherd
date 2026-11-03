@@ -54,6 +54,13 @@ struct ComposerAttachments: Equatable {
         items.removeAll { $0.id == id }
     }
 
+    /// A thumbnail decoded after its image was attached (a restored send's); gone images are left alone.
+    mutating func setThumbnail(_ thumbnail: Image, for id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        let item = items[index]
+        items[index] = ImageAttachment(id: item.id, name: item.name, image: item.image, thumbnail: thumbnail, source: item.source, pixels: item.pixels)
+    }
+
     /// Sent: the images went with the message.
     mutating func removeAll() {
         items.removeAll()

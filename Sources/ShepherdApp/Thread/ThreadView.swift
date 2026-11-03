@@ -111,6 +111,8 @@ struct ThreadView: View {
     @State private var arrivals = ThreadArrivals()
     @State private var rowIndex = ThreadRowIndex()
     @State private var shownSignpost = ThreadShownSignpost()
+    /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
+    @State private var loopRun = 0
     @Environment(\.designCommentCards) private var commentCards
     @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
 
@@ -175,6 +177,8 @@ struct ThreadView: View {
                                 .equatable()
                                 .environment(\.shUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
                         }
+                        // Sends captured but not yet accepted: sending, refused (restore or discard) or of unknown outcome.
+                        if projectSend == nil { ThreadSubmissions(store: store, input: input) }
                         if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
@@ -352,13 +356,15 @@ struct ThreadView: View {
             historyAnchor.cancel()
             tailGuard.stop()
             store.stop(owner: storeOwner)
+            // Another view still showing the thread runs it again if this one's loop was running.
+            readerPins?.stopped(store, owner: storeOwner)
             readerPins?.unpin(store, owner: storeOwner)
             if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
             wheelMonitor = nil
         }
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
-        .task(id: active) {
+        .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
             guard active else {
                 if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
@@ -368,12 +374,16 @@ struct ThreadView: View {
                 historyAnchor.animating = false
                 tailGuard.stop()
                 store.suspend(owner: storeOwner)
-                // Left scrolled up into the history: it stays loaded while this view keeps the place.
-                if !follower.sticky { readerPins?.pin(store, owner: storeOwner) }
+                readerPins?.stopped(store, owner: storeOwner)
+                // Hidden: left scrolled up into the history, it stays loaded while this view keeps the place;
+                // following the tail, it lets it go (it reloads to the tail when shown).
+                if follower.sticky { readerPins?.unpin(store, owner: storeOwner) } else { readerPins?.pin(store, owner: storeOwner) }
                 return
             }
-            readerPins?.unpin(store, owner: storeOwner)
+            // On screen: this view needs the history whichever view's loop polls the store.
+            readerPins?.pin(store, owner: storeOwner)
             installWheelMonitor()
+            readerPins?.started(store, owner: storeOwner) { [$loopRun] in $loopRun.wrappedValue &+= 1 }
             await store.run(request: request, preview: preview, owner: storeOwner)
         }
     }
@@ -636,6 +646,12 @@ final class CatchUpGate {
         guard let caughtUpAt else { return true }
         return caughtUpAt > drawn
     }
+}
+
+/// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
+private struct LoopKey: Equatable {
+    let active: Bool
+    let run: Int
 }
 
 /// A thread's row IDs and its live row. The IDs (and their set) are structural: rebuilt only

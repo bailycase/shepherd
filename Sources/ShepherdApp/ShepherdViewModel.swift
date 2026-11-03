@@ -710,6 +710,9 @@ final class ShepherdViewModel {
         threadStores.hostName = { _ in localHostName }
         threadStores.pins = threadReaderPins
         remoteThreadStores.pins = threadReaderPins
+        // Remote threads on screen (in any window) ask their host for revision hints; a hint wakes only a store already polling.
+        remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
+        hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
         instructions.piHome = server.pi.home

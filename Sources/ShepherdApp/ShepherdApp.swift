@@ -35,6 +35,19 @@ struct MainWindowReader: NSViewRepresentable {
     }
 }
 
+/// What the Dock and the quit confirmation need from the main window, installed by whatever it
+/// shows first (the launch surface while the workspace opens, then the workspace): reopening
+/// it from the Dock works even if it is closed before the workspace is ready.
+struct MainWindowRoutes: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content
+            .background { MainWindowReader() }
+            .onAppear { MainWindow.open = { [openWindow] in openWindow(id: MainWindow.id) } }
+    }
+}
+
 /// The Mac app, exposed as a library so an Xcode app target can provide the
 /// entry point. Launch it with `ShepherdMacApp.main()` — SwiftUI must own the
 /// instance for the delegate adaptor and state objects to be managed.
@@ -85,8 +98,9 @@ public struct ShepherdMacApp: App {
         // One window, never tabbed. Sessions belong to the app, not the window: closing it
         // leaves every agent running, and the Dock or Window menu brings it back.
         Window(ShepherdEdition.current.displayName, id: MainWindow.id) {
-            if let vm = launch.model {
-                RootView(vm: vm)
+            Group {
+                if let vm = launch.model {
+                    RootView(vm: vm)
                     // Host role: bind the remote listener if this Mac serves its
                     // sessions (the toggle persists; a host stays a host). Workspace ownership
                     // was acquired before the view model was constructed.
@@ -95,9 +109,11 @@ public struct ShepherdMacApp: App {
                         vm.applyRemoteListenerSetting()
                         vm.startSkillChecks()
                     }
-            } else {
-                LaunchSurface()
+                } else {
+                    LaunchSurface()
+                }
             }
+            .modifier(MainWindowRoutes())
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)

@@ -128,6 +128,14 @@ final class NewThreadState {
     var prompt = ""
     /// Go to pi with the opening prompt, as a thread's composer sends them.
     var attachments = ComposerAttachments()
+    /// Dropped or pasted images still being resized and read off the main actor.
+    private(set) var preparingImages = 0
+    /// How dropped images are resized and read; a test holds it to see a send wait.
+    @ObservationIgnored var prepareImages: ([NSItemProvider]) async -> [(URL, ImageFile?)] = { providers in
+        await ImageFile.read(await AppImageDrop.resolve(providers))
+    }
+    /// Why Send waits for the images being read; nil when none are.
+    var imagesPending: String? { preparingImages > 0 ? "Adding images…" : nil }
     /// Design pieces (this Mac's designs) that go with the opening message, each pinned at the
     /// revision it was picked at: the @ picker's, and a pasted reference's. They reach this Mac's
     /// projects only; with none typed, they alone start the thread, as a thread's composer sends
@@ -239,8 +247,12 @@ final class NewThreadState {
     /// Dropped or pasted images, resized on the way in as the thread's composer does.
     func attach(_ providers: [NSItemProvider]) {
         attachments.clearError()
+        // Send waits while images are being read (`imagesPending`), so a read never lands in a draft sent without it.
+        preparingImages += 1
+        let prepare = prepareImages
         Task {
-            let files = await ImageFile.read(await AppImageDrop.resolve(providers))
+            let files = await prepare(providers)
+            preparingImages -= 1
             attachments.add(files: files)
         }
     }
@@ -404,6 +416,7 @@ final class NewThreadState {
         }
         // A design piece alone starts a thread, as it sends from a thread's composer.
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, references.isEmpty { return "Describe the task first." }
+        if let imagesPending { return imagesPending }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }
         return referencesRefusal() ?? imagesRefusal(vm)
     }

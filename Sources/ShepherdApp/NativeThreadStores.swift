@@ -10,7 +10,7 @@ import ShepherdRemote
 /// recently shown, or past `historyBudget` bytes in all, the threads shown longest ago let
 /// their history go (`NativeThreadStore.release`) and reload when shown again. The store, its
 /// draft, attachments and deck identity stay. A thread is never released while on screen,
-/// selected (`protected`), pinned by a reader scrolled into its history (`ThreadReaderPins`), or
+/// selected (`protected`), pinned by a view showing it or scrolled into its history (`ThreadReaderPins`), or
 /// while the store says it holds unsettled work (`canReleaseHistory`); protected threads may
 /// keep the total over budget.
 @MainActor
@@ -140,12 +140,45 @@ final class NativeThreadStores<Key: Hashable> {
     }
 }
 
-/// Views reading a thread that is off screen but still mounted (a hidden deck layout, a Mission
-/// station, a design chat) scrolled up into its history: the history stays loaded, so the reader's
-/// place survives. Per view owner, so one reader leaving never unpins another's.
+/// The views that need a thread's loaded history: every view showing it on screen, whichever
+/// one's loop polls the store, and a hidden but mounted one (a deck layout, a Mission station, a
+/// design chat) left scrolled up into the history, so its place survives. Per view owner, so one
+/// view leaving or hiding never unpins another's.
+///
+/// It also hands a store's poll loop back when views share it (a deck thread and a Mission
+/// station): the newest view to show the thread runs the loop (a run ends the one before it);
+/// when that view hides or goes, the most recent view still showing the thread runs it again. A
+/// loop stopped for any other reason (the store detached, the agent held off) is not restarted.
+/// Pins (who needs the history) and the loop (who polls) stay separate.
 @MainActor
 final class ThreadReaderPins {
     private var owners: [ObjectIdentifier: Set<UUID>] = [:]
+    private struct Runner {
+        let owner: UUID
+        let resume: @MainActor () -> Void
+    }
+    /// Views showing each store, oldest first; the last started the loop that runs.
+    private var runners: [ObjectIdentifier: [Runner]] = [:]
+
+    /// `owner`'s view started the store's loop; `resume` has it run the loop again.
+    func started(_ store: NativeThreadStore, owner: UUID, resume: @escaping @MainActor () -> Void) {
+        let id = ObjectIdentifier(store)
+        var list = runners[id] ?? []
+        list.removeAll { $0.owner == owner }
+        list.append(Runner(owner: owner, resume: resume))
+        runners[id] = list
+    }
+
+    /// `owner`'s view no longer shows the store. If its loop was the one running, the most recent
+    /// view still showing the thread runs it again.
+    func stopped(_ store: NativeThreadStore, owner: UUID) {
+        let id = ObjectIdentifier(store)
+        guard var list = runners[id], let index = list.firstIndex(where: { $0.owner == owner }) else { return }
+        let wasDriving = index == list.count - 1
+        list.remove(at: index)
+        runners[id] = list.isEmpty ? nil : list
+        if wasDriving, let next = list.last { next.resume() }
+    }
 
     func pin(_ store: NativeThreadStore, owner: UUID) {
         owners[ObjectIdentifier(store), default: []].insert(owner)
