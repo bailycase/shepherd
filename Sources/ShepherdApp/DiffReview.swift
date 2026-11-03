@@ -53,6 +53,8 @@ final class ReviewSession: Identifiable {
     var reference: String?
     /// A legacy review showing its PR diff.
     var isPRMode: Bool = false
+    /// A GitHub pull request's diff (Issues & PRs' Changes tab): no working tree to switch to.
+    var pullRequestOnly = false
     var files: [DiffFile] {
         didSet {
             updateTotals()

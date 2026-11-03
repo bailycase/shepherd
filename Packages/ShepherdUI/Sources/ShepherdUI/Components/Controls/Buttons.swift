@@ -18,6 +18,9 @@ public struct SHButtonStyle: ButtonStyle {
         case danger
         /// Failed fill: a confirmed destructive action (Delete).
         case dangerFill
+        /// Text-colored fill on the window's color: a page header's state action beside its
+        /// secondary buttons (PRReview's Merge, IssueReview's Start a thread).
+        case strong
     }
 
     /// s 24 · m 28 · l 32.
@@ -67,7 +70,7 @@ private struct SHStyledButton: View {
         }
         let (height, padding, fontSize) = settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
         let radius = settings ? M.radius : SH.Radius.s
-        let filled = kind == .primary || kind == .dangerFill
+        let filled = kind == .primary || kind == .dangerFill || kind == .strong
         let shape = RoundedRectangle(cornerRadius: radius)
         configuration.label
             .font(.shSans(fontSize, filled ? .semibold : .medium))
@@ -96,6 +99,7 @@ private struct SHStyledButton: View {
         case .ghost: tint ?? (hovering && enabled && !configuration.isPressed ? sh.textPrimary : sh.textSecondary)
         case .danger: sh.failed
         case .dangerFill: sh.textOnFailed
+        case .strong: sh.bgWindow
         }
     }
 
@@ -108,6 +112,8 @@ private struct SHStyledButton: View {
         case .dangerFill:
             // A confirmed destructive action stays put on hover and sinks while pressed.
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.failedPressed : sh.failed)
+        case .strong:
+            return AnyShapeStyle(enabled && configuration.isPressed ? sh.textSecondary : sh.textPrimary)
         case .secondary:
             // The Settings boards' buttons rest on the page's own fill.
             return AnyShapeStyle(active ? sh.bgSelected : scale == .settings ? sh.bgWindow : sh.bgRaised)

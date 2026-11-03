@@ -37,6 +37,8 @@ enum SidebarActivityItem: Identifiable, Equatable {
     case automation(SidebarAutomation, expanded: Bool?)
     case project(SidebarLogicalProject)
     case mission(SidebarMission)
+    /// A pull request or issue pinned from Issues & PRs, in Pinned (PRSidebarPinned).
+    case forgePin(SidebarForgePin)
 
     var id: AnyHashable {
         switch self {
@@ -45,6 +47,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
         case .automation(let automation, _): AnyHashable(automation.key)
         case .project(let project): AnyHashable(project.ref)
         case .mission(let mission): AnyHashable(mission.id)
+        case .forgePin(let pin): AnyHashable(pin.ref)
         }
     }
 }
@@ -101,7 +104,7 @@ extension SidebarLists {
     /// `selectedAutomation`: the automation the Automations page shows, marked on its row.
     func items(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = [], projects: [SidebarLogicalProject] = [],
                showsProjects: Bool = true, missions: [SidebarMission] = [], showsMissions: Bool = false,
-               selectedAutomation: AutomationKey? = nil) -> [SidebarActivityItem] {
+               selectedAutomation: AutomationKey? = nil, forgePins: [SidebarForgePin] = []) -> [SidebarActivityItem] {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
@@ -111,6 +114,13 @@ extension SidebarLists {
         for (section, rows) in sections {
             if section == .automations {
                 items += automationBlock(collapsed: collapsed, openRunGroups: openRunGroups, selected: selectedAutomation)
+                continue
+            }
+            // Pinned threads, then pinned pull requests and issues, under one header.
+            if section == .pinned, !forgePins.isEmpty {
+                let folded = collapsed.contains(.pinned)
+                items.append(.header(.pinned, count: rows.count + forgePins.count, collapsed: folded))
+                if !folded { items += rows.map(SidebarActivityItem.row) + forgePins.map(SidebarActivityItem.forgePin) }
                 continue
             }
             items += block(section, rows)
@@ -158,7 +168,15 @@ extension ShepherdViewModel {
         presentedSidebarLists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
                                     projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
                                     missions: sidebarMissions, showsMissions: settings.missionsEnabled,
-                                    selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil)
+                                    selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil,
+                                    forgePins: sidebarForgePins)
+    }
+
+    /// Issues & PRs' pins as Pinned draws them, newest first.
+    var sidebarForgePins: [SidebarForgePin] {
+        guard let sidebar = forgeStore.sidebar else { return [] }
+        let viewer = forgeStore.lists.values.lazy.compactMap(\.viewer).first
+        return sidebar.pins.map { SidebarForgePin($0, viewer: viewer) }
     }
 
     /// The Missions section's rows, shared by every sidebar style.
