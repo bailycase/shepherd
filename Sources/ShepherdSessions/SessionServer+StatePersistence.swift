@@ -131,6 +131,12 @@ extension SessionServer {
                 guard self.logicalProjectEpoch == epoch else { throw SessionServerError.persistFailed("Workspace restarted while saving.") }
                 guard !self.projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
                 guard self.store.version == version else { return false }
+                // Process/session authority can change without a workspace write. Preparation
+                // is pure: replay its guards in the same queue turn as rename/publication.
+                var revalidated = self.store.state
+                try mutate(&revalidated)
+                Self.reconcileProjectAutomations(&revalidated, before: before)
+                guard revalidated == candidate else { return false }
                 do { try self.store.commitLogicalProjects(candidate, version: version, staged: staged) }
                 catch { throw SessionServerError.persistFailed(String(describing: error)) }
                 self.stateDidCommit(before: before)

@@ -56,31 +56,34 @@ struct StatePersistenceTests {
         #expect(try h.persisted() == h.server.state)
     }
 
-    @Test func aStagedExtensionSessionCannotOverwriteANewerRPCConversation() async throws {
+    @Test(arguments: [false, true])
+    func aStagedExtensionSessionCannotOverwriteANewerRPCConversation(naming: Bool) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let original = try await pi.ready()
+        let prepared = Locked(false)
+        let version = try await h.server.enqueue {
+            // Exercise an idle RPC-only change, with no incidental live goal/status write.
+            h.server.rpcThread(forAgent: pi.agent.id)?.onGoalChanged = nil
+            h.server.stateWritePrepared = { prepared.withValue { $0 = true } }
+            return h.server.store.version
+        }
+        let before = h.server.state
         let gate = DispatchSemaphore(value: 0)
         h.server.logicalProjectFiles.async { gate.wait() }
         defer { gate.signal() }
         let client = try ExtensionClient(path: h.socketPath)
-        try client.send(.setAgentSession(agentID: pi.agent.id, piSessionID: "older-extension-session"))
-        try await eventually("extension save admitted") { try await h.server.enqueue { h.server.stateWritesInFlight > 0 } }
+        if naming { try client.send(.setAgentName(agentID: pi.agent.id, name: "Obsolete name", sessionID: nil)) }
+        else { try client.send(.setAgentSession(agentID: pi.agent.id, piSessionID: "older-extension-session")) }
+        try await eventually("old metadata captured for staging") { prepared.current }
         try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.session.send(.newSession) }
-        let current = try await pi.snapshot { $0.generation != original.generation }
-        try await h.server.enqueue {
-            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
-            thread.recoveryResumePending = true
-            #expect(h.server.checkpointAgentRecovery(sessionID: pi.sessionID, thread: thread))
-        }
-        try await eventually("RPC identity durably reconciled") {
-            h.server.state.agents.first { $0.id == pi.agent.id }?.effectivePiSessionID == current.piSessionID
-        }
+        _ = try await pi.snapshot { $0.generation != original.generation }
+        #expect(try await h.server.enqueue { h.server.store.version } == version)
         gate.signal()
         try await eventually("extension stage drained") { try await h.server.enqueue { h.server.stateWritesInFlight == 0 } }
-        #expect(h.server.state.agents.first?.effectivePiSessionID == current.piSessionID)
-        #expect(try h.persisted().agents.first?.effectivePiSessionID == current.piSessionID)
+        #expect(h.server.state == before)
+        #expect(try h.persisted() == before)
     }
 
     @Test func anExtensionSessionThatPrecedesItsMatchingRPCSwitchStillPersists() async throws {

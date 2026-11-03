@@ -132,6 +132,39 @@ struct RecoveryStagingTests {
         #expect(saved.items.map(\.entry.text) == ["first"])
     }
 
+    @Test(arguments: [false, true])
+    func sessionSwitchAnswersEveryDuplicateStagedSendExactlyOnce(evicted: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let request: NativeThreadRequest = .send(expectedSessionID: ready.piSessionID, generation: ready.generation,
+            operationID: UUID(), text: "must never reach pi", delivery: .followUp, images: images(1 << 20))
+        let replies = Locked([[NativeThreadResult]](repeating: [], count: 2))
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            for index in 0..<2 { thread.handle(request) { result in replies.withValue { $0[index].append(result) } } }
+            if evicted {
+                for _ in 0..<RPCThreadState.operationTableSize {
+                    thread.handle(.queue(expectedSessionID: ready.piSessionID, generation: ready.generation,
+                        operationID: UUID(), action: .delete(id: UUID()))) { #expect(!$0.wasAccepted) }
+                }
+            }
+        }
+        try await eventually("one shared recovery preparation") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 1 } }
+        try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.session.send(.newSession) }
+        _ = try await pi.snapshot { $0.generation != ready.generation }
+        try await eventually("both callers answered before worker release") { replies.current.allSatisfy { $0.count == 1 } }
+        #expect(replies.current.allSatisfy { $0.first == .failure(code: "stale_session", message: "Refresh the thread before acting.") })
+        #expect(pi.stdin("prompt").isEmpty)
+        gate.signal()
+        try await eventually("cancelled stage drained") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        #expect(replies.current.allSatisfy { $0.count == 1 })
+        #expect(pi.stdin("prompt").isEmpty)
+    }
+
     @Test(arguments: ["stop", "restart", "revoke", "disk", "exit", "retire"])
     func invalidatedOrFailedAdmissionNeverPublishesOrReachesPi(boundary: String) async throws {
         let h = try ScratchServer.fresh()

@@ -509,8 +509,9 @@ extension ShepherdViewModel {
                 try await withThrowingTaskGroup(of: ChangesFileDiff.self) { group in
                     var pending = list.files.makeIterator()
                     func next() {
-                        guard let file = pending.next() else { return }
-                        group.addTask { @MainActor in
+                        guard !Task.isCancelled, let file = pending.next() else { return }
+                        group.addTaskUnlessCancelled { @MainActor in
+                            try Task.checkCancellation()
                             guard case .changesFile(let diff) = try await query(.changesFile(revision: list.revision, path: file.path,
                                                                                                oldPath: file.oldPath, options: options))
                             else { throw unexpected() }
@@ -519,6 +520,7 @@ extension ShepherdViewModel {
                     }
                     for _ in 0..<ChangesRemote.concurrentFiles { next() }
                     while let diff = try await group.next() {
+                        try Task.checkCancellation()
                         files.append(diff.file)
                         if diff.truncated { truncated.insert(diff.file.id) }
                         next()

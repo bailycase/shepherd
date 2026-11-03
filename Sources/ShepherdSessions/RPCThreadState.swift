@@ -80,10 +80,11 @@ final class RPCThreadState {
         var bytes: Int? = nil
     }
 
-    private struct Operation {
+    private final class Operation {
         let fingerprint: SHA256.Digest
         var result: NativeThreadResult?
         var waiters: [(NativeThreadResult) -> Void] = []
+        init(fingerprint: SHA256.Digest) { self.fingerprint = fingerprint }
     }
 
     let session: RPCSession
@@ -1111,25 +1112,27 @@ final class RPCThreadState {
                 }
                 return
             }
-            operations.append((key, Operation(fingerprint: fingerprint)))
+            let operation = Operation(fingerprint: fingerprint)
+            operations.append((key, operation))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
             perform(request, operationID: operationID, alone: olderClient || isolateSend,
                     recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization, inputAuthorization: inputAuthorization) { [weak self] result in
-                guard let self else { completion(result); return }
-                guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
-                    // Evicted while in flight; still answer this caller.
-                    completion(result)
-                    return
+                let answer: NativeThreadResult = if let self, self.generation != generation {
+                    .failure(code: "stale_session", message: "Refresh the thread before acting.")
+                } else { result }
+                // An in-flight operation retains its waiters even if the outcome cache evicts
+                // it. Never look up a newer operation that happens to reuse this identifier.
+                operation.result = answer
+                let waiters = operation.waiters
+                operation.waiters = []
+                if let self, self.generation == generation {
+                    // One revision: the change the action made, or the answer alone.
+                    let revision = self.revision
+                    self.commit()
+                    if self.revision == revision { self.bumpRevision() }
                 }
-                self.operations[index].operation.result = result
-                let waiters = self.operations[index].operation.waiters
-                self.operations[index].operation.waiters = []
-                // One revision: the change the action made, or the answer alone.
-                let revision = self.revision
-                self.commit()
-                if self.revision == revision { self.bumpRevision() }
-                completion(result)
-                waiters.forEach { $0(result) }
+                completion(answer)
+                waiters.forEach { $0(answer) }
             }
         }
     }
@@ -2039,7 +2042,15 @@ final class RPCThreadState {
         historyPending = true
         generation = UUID().uuidString
         diagnosticTimings.removeAll(keepingCapacity: true)
+        // The first caller lives in its operation's completion; drain duplicate callers when
+        // discarding the old generation. Clear them before invoking reentrant completions.
+        let waiters = operations.flatMap { entry in
+            let waiters = entry.operation.waiters
+            entry.operation.waiters = []
+            return waiters
+        }
         operations.removeAll()
+        waiters.forEach { $0(.failure(code: "stale_session", message: "Refresh the thread before acting.")) }
         live.removeAll()
         toolStarts.removeAll()
         streamingCalls.removeAll()
