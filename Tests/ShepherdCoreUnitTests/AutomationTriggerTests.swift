@@ -82,14 +82,19 @@ struct AutomationTriggerTests {
         #expect(!written.contains("trigger") && !written.contains("limits"))
     }
 
-    @Test func triggeredRecordsRoundTrip() throws {
+    @Test(arguments: [0, 1, 3, 10]) func triggeredRecordsRoundTrip(maxConcurrent: Int) throws {
         let automation = Automation(
             name: "loop", prompt: "speckit it", cwd: "/tmp",
             trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled, .pullRequestReview], labels: ["shepherd"])]),
             destination: .thread(AgentID(rawValue: "t")), workspace: .local, authorGate: .anyone,
-            limits: AutomationLimits(maxConcurrent: 3, maxPerDay: 9), model: "m", thinking: .high, serviceTier: .fast)
+            limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: 9), model: "m", thinking: .high, serviceTier: .fast)
         let decoded = try JSONDecoder().decode(Automation.self, from: JSONEncoder().encode(automation))
         #expect(decoded == automation)
+        #expect(decoded.limits.validationError == nil)
+        var patched = Automation(name: "loop", prompt: "speckit it", cwd: "/tmp")
+        let settings = try JSONDecoder().decode(AutomationSettings.self, from: JSONEncoder().encode(AutomationSettings(of: decoded)))
+        try settings.apply(to: &patched)
+        #expect(patched.limits == automation.limits)
         let schedule = Automation(name: "s", prompt: "p", cwd: "/", trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY", start: 5)))
         #expect(try JSONDecoder().decode(Automation.self, from: JSONEncoder().encode(schedule)) == schedule)
     }
@@ -110,7 +115,7 @@ struct AutomationTriggerTests {
         #expect(automation.model == nil)
         let before = automation
         #expect(throws: AutomationSettingsError.self) {
-            try AutomationSettings(limits: AutomationLimits(maxConcurrent: 0, maxPerDay: 5)).apply(to: &automation)
+            try AutomationSettings(limits: AutomationLimits(maxConcurrent: -1, maxPerDay: 5)).apply(to: &automation)
         }
         #expect(throws: AutomationSettingsError.self) {
             try AutomationSettings(trigger: .manual, destination: .thread(AgentID(rawValue: "x"))).apply(to: &automation)
@@ -120,6 +125,12 @@ struct AutomationTriggerTests {
         var copy = Automation(name: "n", prompt: "p", cwd: "/tmp")
         try AutomationSettings(of: before).apply(to: &copy)
         #expect(copy.trigger == before.trigger && copy.model == before.model)
+    }
+
+    @Test func concurrencyLimitsKeepDefaultsAndRejectInvalidValues() throws {
+        #expect(try JSONDecoder().decode(AutomationLimits.self, from: Data("{}".utf8)) == .default)
+        #expect(AutomationLimits(maxConcurrent: 11, maxPerDay: 5).validationError != nil)
+        #expect(AutomationLimits(maxConcurrent: 0, maxPerDay: 0).validationError != nil)
     }
 
     @Test func eventSummary() {

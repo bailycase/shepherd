@@ -378,7 +378,7 @@ public struct AutomationLimits: Hashable, Sendable, Codable {
     public static let concurrentRange = 1...10
     public static let perDayRange = 1...200
 
-    /// Runs going at once; more events wait.
+    /// Runs going at once; more events wait. Zero means no concurrency limit.
     public var maxConcurrent: Int
     /// Runs started per local calendar day; more events wait.
     public var maxPerDay: Int
@@ -397,7 +397,7 @@ public struct AutomationLimits: Hashable, Sendable, Codable {
     }
 
     public var validationError: String? {
-        if !Self.concurrentRange.contains(maxConcurrent) { return "Runs at once must be 1 to 10." }
+        if maxConcurrent != 0 && !Self.concurrentRange.contains(maxConcurrent) { return "Runs at once must be 1 to 10, or 0 for no limit." }
         if !Self.perDayRange.contains(maxPerDay) { return "Runs a day must be 1 to 200." }
         return nil
     }

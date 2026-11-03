@@ -183,6 +183,8 @@ enum RemoteSamples {
         .create(draft: RemoteAutomationDraft(name: "loop", prompt: "p", cwd: "/r", enabled: true, settings: AutomationSettings(
             trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled, .pullRequestMerged], labels: ["shepherd"])]),
             workspace: .worktree, limits: AutomationLimits(maxConcurrent: 2, maxPerDay: 20)))),
+        .update(draft: RemoteAutomationDraft(name: "unlimited", prompt: "p", cwd: "/r", enabled: true,
+                                             settings: AutomationSettings(limits: AutomationLimits(maxConcurrent: 0, maxPerDay: 20)))),
         .status, .pause, .resume, .runEvent(eventID: "acme/app#1:opened"), .dismissEvent(eventID: "schedule:5"),
         .markRead(runID: op), .setAllPaused(paused: true),
     ]

@@ -495,7 +495,7 @@ public actor AutomationTriggers {
             for next in record.pending {
                 // One run per item at a time: a second event for it waits for the first run.
                 let key = next.event.itemKey
-                if running < automation.limits.maxConcurrent, today < automation.limits.maxPerDay,
+                if (automation.limits.maxConcurrent == 0 || running < automation.limits.maxConcurrent), today < automation.limits.maxPerDay,
                    key.map({ !busy.contains($0) }) ?? true {
                     batch.append([next])
                     running += 1

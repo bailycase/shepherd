@@ -119,18 +119,21 @@ struct AutomationTriggerPresentationTests {
 
     // MARK: Form
 
-    @Test func theFormRoundTripsSavedSettings() {
+    @Test(arguments: [0, 3]) func theFormRoundTripsSavedSettings(maxConcurrent: Int) {
         var automation = Self.triggered(.github([GitHubTrigger(repo: "o/r", events: [.issueLabeled, .pullRequestLabeled],
                                                                labels: ["a", "b"], authors: ["me"], titleContains: "crash", number: 7)]),
                                         destination: .thread(AgentID(rawValue: "t")))
         automation.workspace = .local
         automation.authorGate = .anyone
-        automation.limits = AutomationLimits(maxConcurrent: 3, maxPerDay: 40)
+        automation.limits = AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: 40)
         automation.model = "m"
         automation.thinking = .high
         automation.serviceTier = .fast
         let settings = AutomationSettings(of: automation)
-        #expect(AutomationTriggerForm(settings).settings == settings)
+        let form = AutomationTriggerForm(settings)
+        #expect(form.settings == settings)
+        #expect(form.check(calendar: Self.utcCalendar).error == nil)
+        #expect(AutomationTriggerText.limits(automation.limits) == (maxConcurrent == 0 ? "No concurrency limit · 40 a day" : "3 at once · 40 a day"))
         automation.serviceTier = nil
         #expect(AutomationTriggerForm(AutomationSettings(of: automation)).settings.serviceTier == "", "unset is the default speed")
     }

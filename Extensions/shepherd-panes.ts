@@ -751,7 +751,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     destination: Type.Optional(Type.String({ description: "newThread (default: one new thread per run, receiving the event) or thisThread (every firing is sent to this thread as a message)" })),
     workspace: Type.Optional(Type.String({ description: "worktree (default: a fresh worktree per run off the default branch) or local (the cwd itself)" })),
     authorGate: Type.Optional(Type.String({ description: "Whose GitHub activity fires: collaborators (default: owners, members, collaborators), contributors, or anyone. Widen only when the user asks." })),
-    maxConcurrent: Type.Optional(Type.Number({ description: "Runs at once, 1-10 (default 2)" })),
+    maxConcurrent: Type.Optional(Type.Number({ description: "Runs at once, 1-10 (default 2), or 0 for no concurrency limit. No limit can increase simultaneous resource usage and model spending; daily run limits still apply." })),
     maxPerDay: Type.Optional(Type.Number({ description: "Runs started per day, 1-200 (default 20)" })),
     model: Type.Optional(Type.String({ description: "Pin a model for runs; empty string clears (runs use the default)" })),
     thinking: Type.Optional(Type.String({ description: "Pin a thinking level; empty string clears" })),
@@ -781,7 +781,9 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       : `github ${(t.triggers ?? []).map((g) => `${g.repo ?? "origin"}:${(g.events ?? []).join("/")}${g.labels?.length ? `[${g.labels.join(",")}]` : ""}`).join("; ")}`;
     const s = a.triggerStatus;
     const state = s ? `${s.state}${s.reason ? ` (${s.reason})` : ""}, ${s.pending?.length ?? 0} pending, ${s.runsToday} today` : "";
-    return `\n    trigger: ${what}${state ? ` [${state}]` : ""}`;
+    const limits = a.settings?.limits;
+    const cap = limits ? `\n    limits: ${limits.maxConcurrent === 0 ? "no concurrency limit" : `${limits.maxConcurrent} at once`}, ${limits.maxPerDay} a day` : "";
+    return `\n    trigger: ${what}${state ? ` [${state}]` : ""}${cap}`;
   }
 
   if (!isAutomationAgent) pi.registerTool({
@@ -837,7 +839,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     name: "automation_list",
     label: "List Automations",
     description:
-      "List the user's Shepherd automations: id, name, cwd, enabled, and run state " +
+      "List the user's Shepherd automations: id, name, cwd, enabled, trigger limits, and run state " +
       "(the watch agent's status, or stopped).",
     promptSnippet: line(DEFER, "List Shepherd automations"),
     ...later(DEFER, AUTOMATIONS),

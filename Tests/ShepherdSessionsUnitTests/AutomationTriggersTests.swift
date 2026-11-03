@@ -204,6 +204,34 @@ struct AutomationTriggersTests {
         #expect(await engine.status(of: world.automations[0]).pending.isEmpty)
     }
 
+    @Test func unlimitedConcurrencyStillHonorsTheDailyLimit() async {
+        let world = World()
+        world.automations = [Self.loop(AutomationLimits(maxConcurrent: 0, maxPerDay: 13))]
+        let engine = await Self.engine(world)
+        await engine.tick()
+        world.advance(61)
+        world.items = (1...12).map { Self.labeled($0, at: world.now.addingTimeInterval(-5)) }
+        await engine.tick()
+        #expect(world.started.count == 12)
+        #expect(world.live[world.automations[0].id]?.count == 12)
+        #expect(await engine.status(of: world.automations[0]).pending.isEmpty)
+        // Existing live runs impose no cap, but the independent daily bound still does.
+        world.advance(61)
+        world.items += (13...15).map { Self.labeled($0, at: world.now.addingTimeInterval(-5)) }
+        await engine.tick()
+        #expect(world.started.count == 13)
+        let status = await engine.status(of: world.automations[0])
+        #expect(status.pending.count == 2 && status.runsToday == 13)
+        #expect(world.notes.filter { $0.contains("daily limit") }.count == 1)
+        world.live = [:]
+        world.advance(61)
+        await engine.tick()
+        #expect(world.started.count == 13)
+        world.advance(86_400)
+        await engine.tick()
+        #expect(world.started.count == 15)
+    }
+
     /// A lasting error pauses with its reason and one note; a passing one backs off and retries.
     @Test func failures() async {
         let world = World()
