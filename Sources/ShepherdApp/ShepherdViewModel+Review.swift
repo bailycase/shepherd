@@ -262,8 +262,6 @@ extension ShepherdViewModel {
     func cancelReviews(for agentID: AgentID) {
         let doomed = reviewSessions.values.filter { $0.agentID == agentID }.map(\.paneID)
         for paneID in doomed {
-            reviewSessions[paneID]?.loadTask?.cancel()
-            reviewSessions[paneID]?.overviewTask?.cancel()
             reviewSessions.removeValue(forKey: paneID)
         }
         subagentInspector.forget(.local(agentID))
@@ -273,8 +271,6 @@ extension ShepherdViewModel {
         let liveAgents = Set(state.agents.map(\.id))
         let doomed = reviewSessions.values.filter { !liveAgents.contains($0.agentID) }
         for session in doomed {
-            session.loadTask?.cancel()
-            session.overviewTask?.cancel()
             reviewSessions.removeValue(forKey: session.paneID)
         }
         let panes = subagentInspector

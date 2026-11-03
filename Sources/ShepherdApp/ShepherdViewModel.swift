@@ -235,7 +235,11 @@ final class ShepherdViewModel {
     /// Native diff-review panes keyed by their review leaf. Ephemeral: review
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
-    var reviewSessions: [PaneID: ReviewSession] = [:]
+    var reviewSessions: [PaneID: ReviewSession] = [:] {
+        didSet {
+            for (id, session) in oldValue where reviewSessions[id] !== session { session.cancelLoads() }
+        }
+    }
     /// Per-agent file tree models for the Files tab, keyed by agent ID. Created on first
     /// Files tab open; removed when the thread is gone.
     var fileTrees: [AgentID: FileTreeModel] = [:]
@@ -320,7 +324,11 @@ final class ShepherdViewModel {
             return (try GitDiff.load(cwd: cwd, reference: resolved), resolved)
         }.value
     }
-    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:]
+    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:] {
+        didSet {
+            for (id, session) in oldValue where remoteReviews[id] !== session { session.cancelLoads() }
+        }
+    }
     /// Where a local review reads its changes from; tests put a fixed engine here. Nil: this Mac's
     /// `server.changes`.
     @ObservationIgnored var changesEngineOverride: ((AgentID, String) -> ChangesEngine)?

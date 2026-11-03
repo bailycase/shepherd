@@ -56,6 +56,79 @@ struct StatePersistenceTests {
         #expect(try h.persisted() == h.server.state)
     }
 
+    @Test func aStagedExtensionSessionCannotOverwriteANewerRPCConversation() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let original = try await pi.ready()
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let client = try ExtensionClient(path: h.socketPath)
+        try client.send(.setAgentSession(agentID: pi.agent.id, piSessionID: "older-extension-session"))
+        try await eventually("extension save admitted") { try await h.server.enqueue { h.server.stateWritesInFlight > 0 } }
+        try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.session.send(.newSession) }
+        let current = try await pi.snapshot { $0.generation != original.generation }
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            thread.recoveryResumePending = true
+            #expect(h.server.checkpointAgentRecovery(sessionID: pi.sessionID, thread: thread))
+        }
+        try await eventually("RPC identity durably reconciled") {
+            h.server.state.agents.first { $0.id == pi.agent.id }?.effectivePiSessionID == current.piSessionID
+        }
+        gate.signal()
+        try await eventually("extension stage drained") { try await h.server.enqueue { h.server.stateWritesInFlight == 0 } }
+        #expect(h.server.state.agents.first?.effectivePiSessionID == current.piSessionID)
+        #expect(try h.persisted().agents.first?.effectivePiSessionID == current.piSessionID)
+    }
+
+    @Test func aStagedBindingCannotReplaceANewerLeafOwner() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(), agent = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([agent], space: space))
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let pane = try #require(agent.agent.paneID)
+        let binding = Task { try await h.server.updatePaneSession(tabID: agent.tab.id, paneID: pane, sessionID: SessionID()) }
+        try await eventually("old binding admitted") { try await h.server.enqueue { h.server.stateWritesInFlight == 1 } }
+        let newer = SessionID()
+        var tab = agent.tab
+        tab.layout = tab.layout.updatingLeaf(pane) { $0.cwd = "/new-owner"; $0.sessionID = newer }
+        try await h.server.updateTab(tab)
+        gate.signal()
+        await #expect(throws: SessionServerError.self) { try await binding.value }
+        #expect(h.server.state.tabs.first?.layout.firstLeaf.sessionID == newer)
+        #expect(try h.persisted().tabs.first?.layout.firstLeaf.cwd == "/new-owner")
+    }
+
+    @Test func redundantFailureReportsDoNotConsumeAdmissionAndSaturatedMetadataEventuallySaves() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(), agent = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([agent], space: space))
+        try await h.server.enqueue {
+            for _ in 0..<100 { h.server.recordAgentFailure(agentID: agent.agent.id, nil) }
+            #expect(h.server.stateWritesInFlight == 0)
+        }
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let saves = (0..<SessionServer.maximumStateWrites).map { _ in Task { try await h.server.renameAgent(agent.agent.id, to: "Saved") } }
+        try await eventually("writer saturated") { try await h.server.enqueue { h.server.stateWritesInFlight == SessionServer.maximumStateWrites } }
+        try await h.server.enqueue {
+            h.server.recordAgentFailure(agentID: agent.agent.id, "older failure")
+            h.server.recordAgentFailure(agentID: agent.agent.id, nil)
+            h.server.recordAgentFailure(agentID: agent.agent.id, "latest failure")
+            #expect(h.server.pendingMetadata.count == 1)
+        }
+        gate.signal()
+        for save in saves { try await save.value }
+        try await eventually("latest failure durable") { try h.persisted().agents.first?.lastFailure == "latest failure" }
+    }
+
     @Test func cancelledStagedWriteNeverPublishes() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

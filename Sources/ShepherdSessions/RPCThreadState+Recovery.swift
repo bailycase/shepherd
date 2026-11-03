@@ -2,6 +2,33 @@ import Foundation
 import ShepherdProtocol
 
 extension RPCThreadState {
+    static var recoverySaveFailure: NativeThreadResult {
+        .failure(code: "persist_failed", message: "The queue changed or could not be saved for recovery. Your input was not accepted; try again.")
+    }
+
+    func prepareRecovery(_ candidate: AgentRecoveryStore.Checkpoint?, authorization: @escaping () -> Bool = { true },
+                         completion: @escaping (Bool) -> Void) {
+        guard let onPrepareRecovery else { completion(authorization()); return }
+        let generation = generation, epoch = recoveryEpoch
+        onPrepareRecovery(candidate, { [weak self] in
+            guard let self else { return false }
+            return self.generation == generation && self.recoveryEpoch == epoch && self.session.isAlive && authorization()
+        }, completion)
+    }
+
+    /// Immutable write-ahead intent: the live queue/pending rows do not change until rename.
+    func checkpointForInput(_ item: QueueItem, pending: Bool) -> AgentRecoveryStore.Checkpoint {
+        var candidate = recoveryCheckpoint(sessionID: piSessionID ?? "")
+            ?? .init(sessionID: piSessionID ?? "", active: false, items: items, pending: [], paused: paused, mode: effectiveMode)
+        if pending { candidate.pending.append(item) } else { candidate.items.append(item) }
+        candidate.attempts = 0
+        candidate.operationID = nil
+        candidate.token = nil
+        candidate.fence = nil
+        candidate.active = (running && !runFailed || retry != nil) && !stopRequested && !recoveryWaiting
+        return candidate
+    }
+
     func recoveryCheckpoint(sessionID: String) -> AgentRecoveryStore.Checkpoint? {
         let waiting = recoveryWaiting
         var pending = stopRequested ? [] : dispatches.filter(\.expectsMessage).map { dispatch in
@@ -143,10 +170,6 @@ extension RPCThreadState {
             self.recoveryToken = token
             self.recoveryFence = fence
             // Reserve both operation identity and checkpoint before the engine can call a model.
-            guard self.onRecoveryChanged?() != false else {
-                self.pauseRecovery("Recovery could not be saved. Nothing was continued.")
-                return
-            }
             let send = { [weak self] in
                 guard let self else { return }
                 guard self.generation == generation, self.restartRequestID == requestID, !self.stopRequested else {
@@ -169,7 +192,11 @@ extension RPCThreadState {
                     self.commit()
                 }
             }
-            if let beforePrompt = self.beforePrompt { beforePrompt(send) } else { send() }
+            self.prepareRecovery(self.recoveryCheckpoint(sessionID: self.piSessionID ?? "")) { [weak self] saved in
+                guard let self else { return }
+                guard saved else { self.pauseRecovery("Recovery could not be saved. Nothing was continued."); return }
+                if let beforePrompt = self.beforePrompt { beforePrompt(send) } else { send() }
+            }
         }
     }
 }

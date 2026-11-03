@@ -418,6 +418,25 @@ struct ReviewFlowTests {
         #expect(vm.reviewSessions.isEmpty && vm.subagentInspector.open.isEmpty)
     }
 
+    @Test func closingALoadingReviewCancelsBothJobsBeforeDiffWork() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path), agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let loads = HeldLists()
+        vm.changesEngineOverride = { _, _ in loads.engine(key: { $0.label }) }
+        vm.openReview(agentID: agent.agent.id, path: nil)
+        let session = try #require(vm.reviewSessions.values.first)
+        try await loads.waitFor("Uncommitted")
+        let listTask = try #require(session.loadTask)
+        let overviewTask = try #require(session.overviewTask)
+        vm.cancelReview(session)
+        #expect(listTask.isCancelled && overviewTask.isCancelled)
+        loads.finish("Uncommitted")
+        await listTask.value
+        #expect(loads.diffsStarted.isEmpty)
+    }
+
     /// Switching scopes quickly starts overlapping loads; only the newest may land, whether an
     /// older one finishes first or last, and whether it succeeds or fails.
     @Test func aStaleDiffLoadNeverReplacesTheNewestOne() async throws {

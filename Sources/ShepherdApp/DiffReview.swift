@@ -37,6 +37,10 @@ final class ReviewSession: Identifiable {
     var loadRequestID = UUID()
     @ObservationIgnored var loadTask: Task<Void, Never>?
     @ObservationIgnored var overviewTask: Task<Void, Never>?
+    func cancelLoads() {
+        loadTask?.cancel()
+        overviewTask?.cancel()
+    }
     var isSubmitting = false
     var hostReviewPane = false
     let agentID: AgentID

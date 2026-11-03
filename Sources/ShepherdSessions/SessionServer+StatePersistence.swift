@@ -2,10 +2,48 @@ import Foundation
 import os
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 extension SessionServer {
     static let maximumStateWrites = 8
     static let maximumStateWriteAttempts = 8
+    enum MetadataKind: Equatable { case failure, session, name }
+    struct MetadataMutation {
+        var agent: AgentID
+        var kind: MetadataKind
+        var epoch: UInt64
+        var mutate: @Sendable (inout ShepherdState) throws -> Void
+        var completed: () -> Void
+    }
+
+    /// At most one deferred intent per field per live owner, not a second write queue. Once a
+    /// FIFO slot opens it uses exactly the same version-fenced writer as an awaited UI mutation.
+    func scheduleMetadataMutation(agent: AgentID, kind: MetadataKind,
+                                  _ mutate: @escaping @Sendable (inout ShepherdState) throws -> Void,
+                                  completed: @escaping () -> Void = {}) {
+        guard store.state.agents.contains(where: { $0.id == agent }) else { return }
+        pendingMetadata.removeAll { $0.agent == agent && $0.kind == kind }
+        pendingMetadata.append(.init(agent: agent, kind: kind, epoch: logicalProjectEpoch, mutate: mutate, completed: completed))
+        drainMetadataMutations()
+    }
+
+    func drainMetadataMutations() {
+        let live = Set(store.state.agents.map(\.id))
+        let obsolete = pendingMetadata.filter { !live.contains($0.agent) || $0.epoch != logicalProjectEpoch }
+        pendingMetadata.removeAll { !live.contains($0.agent) || $0.epoch != logicalProjectEpoch }
+        obsolete.forEach { $0.completed() }
+        failureIntents = failureIntents.filter { live.contains($0.key) }
+        while stateWritesInFlight < Self.maximumStateWrites, !pendingMetadata.isEmpty {
+            let pending = pendingMetadata.removeFirst()
+            scheduleStateMutation(pending.mutate) { result in
+                if case .failure(let error) = result {
+                    ShepherdLog.warning("Could not persist agent metadata: \(error)")
+                }
+                pending.completed()
+            }
+        }
+    }
+
     static let storageSignposter = OSSignposter(subsystem: "com.shepherd.app", category: "Storage")
 
     /// Guarded mutations stage on the file queue, in arrival order. Preparation has no effects
@@ -44,6 +82,7 @@ extension SessionServer {
                         completion(result)
                         self.stateWriteQueue.removeFirst()
                         self.stateWriteQueue.first?()
+                        self.drainMetadataMutations()
                     }
                 }
             }

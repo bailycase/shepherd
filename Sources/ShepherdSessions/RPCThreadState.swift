@@ -132,6 +132,10 @@ final class RPCThreadState {
     var onRevision: (() -> Void)?
     /// Recovery observes intent even when a change does not alter the rendered snapshot.
     var onRecoveryChanged: (() -> Bool)?
+    var onPrepareRecovery: ((AgentRecoveryStore.Checkpoint?, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
+    var recoveryWritePending = false
+    var recoveryWriteAttempts = 0
+    var recoveryEpoch: UInt64 = 0
     var recoveryAttempts = 0
     var restoringRecovery = true
     var recoveryAtLaunch: AgentRecoveryStore.Checkpoint?
@@ -1005,6 +1009,7 @@ final class RPCThreadState {
     /// `isolateSend`: host-managed operation identity must survive even an all-at-once queue.
     func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false, startupDialogs: Bool = true,
                 recoveryBinding: CheckpointRecoveryBinding? = nil, recoveryAuthorization: @escaping () -> Bool = { true },
+                inputAuthorization: @escaping () -> Bool = { true },
                 completion: @escaping (NativeThreadResult) -> Void) {
         if !isServable {
             if !startupDialogs, dialogs.contains(where: { $0.unavailable == nil }) {
@@ -1087,7 +1092,7 @@ final class RPCThreadState {
             operations.append((key, Operation(fingerprint: fingerprint)))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
             perform(request, operationID: operationID, alone: olderClient || isolateSend,
-                    recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization) { [weak self] result in
+                    recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization, inputAuthorization: inputAuthorization) { [weak self] result in
                 guard let self else { completion(result); return }
                 guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
                     // Evicted while in flight; still answer this caller.
@@ -1158,7 +1163,8 @@ final class RPCThreadState {
     var onUserInputWhileRunning: (() -> Void)?
 
     private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool,
-                         recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
+                         recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool,
+                         inputAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
@@ -1184,7 +1190,7 @@ final class RPCThreadState {
                  // would give way.
                  alone: alone || !(designReferences ?? []).isEmpty || !elements.isEmpty, context: context,
                  designPayloads: (designReferences ?? []).compactMap(\.payloadID),
-                 elements: elements.map(\.withoutHTML)) { [weak self] result in
+                 elements: elements.map(\.withoutHTML), authorization: inputAuthorization) { [weak self] result in
                 if interruptsBackgroundWait, case .accepted = result { self?.onUserInputWhileRunning?() }
                 completion(result)
             }
@@ -1193,7 +1199,7 @@ final class RPCThreadState {
             // waiting on an answer would not stop.
             stop { settle($0) }
         case .queue(_, _, _, let action):
-            perform(action, operationID: operationID, completion: completion)
+            perform(action, operationID: operationID, authorization: inputAuthorization, completion: completion)
         case .setModel(_, _, _, let model):
             // "provider/id"; ids may themselves contain "/" so split on the first one only.
             guard let slash = model.firstIndex(of: "/"), slash > model.startIndex, model.index(after: slash) < model.endIndex else {
@@ -2669,7 +2675,7 @@ final class RPCThreadState {
     /// nothing else does. Each part's hash is taken once per change: the lists here when they are
     /// assigned, a live row by the first commit after its value changed.
     func commit() {
-        _ = onRecoveryChanged?()
+        guard onRecoveryChanged?() != false else { return }
         var hasher = Hasher()
         hasher.combine(history.count)
         hasher.combine(historyVersion)
