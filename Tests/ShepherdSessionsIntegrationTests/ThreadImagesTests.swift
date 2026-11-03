@@ -71,6 +71,8 @@ struct ThreadImagesTests {
         let first = try await Self.fetch(try #require(block.imageID), from: pi, session: settled.piSessionID)
         #expect(first.data == big && first.mime == "image/png")
         #expect(first.pieces == (big.count + NativeImage.chunkBytes - 1) / NativeImage.chunkBytes && first.pieces >= 3)
+        #expect(pi.stdin("get_image").count == 1, "all chunks share one verified image")
+        #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.imageVerificationCount } == 1)
 
         // A restart loads pi's saved history again; the image is still there under a name that finds it.
         let replay = try await PiAgent.launch(on: h, env: ["STUB_PI_MESSAGES_FILE": history.path])
@@ -79,6 +81,75 @@ struct ThreadImagesTests {
         #expect(again.imageID == block.imageID, "the name does not depend on the process")
         let second = try await Self.fetch(try #require(again.imageID), from: replay, session: restored.piSessionID)
         #expect(second.data == big)
+    }
+
+    @Test func concurrentReadersShareVerificationAndEvictionIsBounded() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let history = h.dir.appendingPathComponent("images.json")
+        let record: [[String: Any]] = (0..<5).map { index in
+            ["role": "user", "timestamp": index + 1,
+             "content": [["type": "image", "data": Self.png(side: index + 8, bytes: 600_000).base64EncodedString(), "mimeType": "image/png"]]]
+        }
+        try JSONSerialization.data(withJSONObject: record).write(to: history)
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_MESSAGES_FILE": history.path])
+        let ready = try await pi.ready()
+        let ids = ready.messages.flatMap(\.blocks).compactMap(\.imageID)
+        #expect(ids.count == 5)
+        let held = DispatchSemaphore(value: 0), entered = Locked(false), replies = Locked<[NativeThreadResult]>([])
+        defer { held.signal() }
+        try await h.server.enqueue {
+            let thread = h.server.rpcThread(forAgent: pi.agent.id)!
+            thread.beforeImageVerification = { entered.withValue { $0 = true }; held.wait() }
+            for offset in 0..<8 {
+                thread.handle(.image(expectedSessionID: ready.piSessionID, imageID: ids[0], offset: offset)) { result in
+                    replies.withValue { $0.append(result) }
+                }
+            }
+        }
+        try await eventually("one shared verification held") { entered.current }
+        #expect(pi.stdin("get_image").count == 1)
+        #expect(try await pi.request(.snapshot()).snapshotValue != nil)
+        try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.beforeImageVerification = nil }
+        held.signal()
+        try await eventually("all concurrent readers answered") { replies.current.count == 8 }
+        #expect(replies.current.allSatisfy { if case .imageChunk = $0 { true } else { false } })
+        _ = try await Self.fetch(ids[0], from: pi, session: ready.piSessionID)
+        #expect(pi.stdin("get_image").count == 1)
+        for id in ids.dropFirst() { _ = try await Self.fetch(id, from: pi, session: ready.piSessionID) }
+        #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)!.verifiedImageBytes } <= RPCThreadState.verifiedImageCacheBytes)
+        _ = try await Self.fetch(ids[0], from: pi, session: ready.piSessionID)
+        #expect(pi.stdin("get_image").count == 6, "the fifth image evicts the oldest of four entries")
+        try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.dropHistory(from: 0) }
+        #expect(try await pi.request(.image(expectedSessionID: ready.piSessionID, imageID: ids[0], offset: 0)).failureCode == NativeImageCode.unknown)
+    }
+
+    @Test func switchingSessionsCompletesSharedReadersAndDiscardsTheirVerifiedBytes() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let history = h.dir.appendingPathComponent("images.json")
+        let record: [[String: Any]] = [["role": "user", "timestamp": 1,
+            "content": [["type": "image", "data": Self.png(bytes: 600_000).base64EncodedString(), "mimeType": "image/png"]]]]
+        try JSONSerialization.data(withJSONObject: record).write(to: history)
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_MESSAGES_FILE": history.path])
+        let ready = try await pi.ready()
+        let imageID = try #require(ready.messages.flatMap(\.blocks).compactMap(\.imageID).first)
+        let held = DispatchSemaphore(value: 0), entered = Locked(false), replies = Locked<[NativeThreadResult]>([])
+        defer { held.signal() }
+        try await h.server.enqueue {
+            let thread = h.server.rpcThread(forAgent: pi.agent.id)!
+            thread.beforeImageVerification = { entered.withValue { $0 = true }; held.wait() }
+            for _ in 0..<2 {
+                thread.handle(.image(expectedSessionID: ready.piSessionID, imageID: imageID, offset: 0)) { result in replies.withValue { $0.append(result) } }
+            }
+        }
+        try await eventually("old session image held") { entered.current }
+        _ = try await pi.send("resume-nonempty", from: ready)
+        _ = try await pi.snapshot("new session history") { $0.piSessionID != ready.piSessionID }
+        #expect(replies.current.count == 2 && replies.current.allSatisfy { $0.failureCode == "stale_session" })
+        #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)!.verifiedImageBytes } == 0)
+        held.signal()
+        #expect(try await pi.request(.image(expectedSessionID: ready.piSessionID, imageID: imageID, offset: 0)).failureCode == "stale_session")
     }
 
     // MARK: Received

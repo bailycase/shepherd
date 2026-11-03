@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// A Shepherd host for screenshots, inside the fixture app: a real TCP listener on 127.0.0.1
 /// speaking the remote protocol, so the app connects through `MobileHosts` and
@@ -32,6 +33,10 @@ final class FixtureHost: @unchecked Sendable {
 
     /// Request kinds this host received, in order.
     var requests: [String] { lock.withLock { seen } }
+
+    /// From now on a hello goes unanswered, so the app stays connecting (a reconnect under way).
+    func holdHello() { lock.withLock { holdsHello = true } }
+    private var holdsHello = false
 
     /// The changes `FixtureHostData.accepts` took, exactly as sent, in order.
     var accepted: [RemoteRequest] { lock.withLock { taken } }
@@ -142,6 +147,7 @@ final class FixtureHost: @unchecked Sendable {
         switch request {
         case .hello(let id, let token, _, _, _):
             note("hello")
+            if lock.withLock({ holdsHello }) { return [] }
             guard token == FixtureHostData.token, !data.refusesToken else {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
@@ -164,6 +170,21 @@ final class FixtureHost: @unchecked Sendable {
                                                                   revision: snapshot.revision))]
             }
             return [.nativeThread(id: id, result: .snapshot(value: snapshot))]
+        case .nativeThreadSubscribe(let id, _):
+            note("nativeThreadSubscribe")
+            return [.ok(id: id)]
+        case .fleetDigest(let id, let agentID, let session, let revision):
+            // As a host: the snapshot's digest, `unchanged` only for its own session and revision.
+            note("fleetDigest")
+            guard let snapshot = data.threads[agentID] else {
+                return [.error(id: id, code: "agent_not_found", message: "No thread in this fixture.")]
+            }
+            if snapshot.revision != 0, session == NativeThreadSession(piSessionID: snapshot.piSessionID, generation: snapshot.generation),
+               revision == snapshot.revision {
+                return [.fleetDigest(id: id, result: .unchanged(piSessionID: snapshot.piSessionID, generation: snapshot.generation,
+                                                                revision: snapshot.revision))]
+            }
+            return [.fleetDigest(id: id, result: .digest(FleetDigest(snapshot)))]
         case .listModels(let id):
             note("listModels")
             return [.models(id: id, models: data.models, defaultModel: data.models.first, withoutThinking: data.withoutThinking,
@@ -325,7 +346,7 @@ final class FixtureHost: @unchecked Sendable {
         case .pushUnregister(let id, _):
             note("pushUnregister")
             return [.ok(id: id)]
-        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery:
+        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest:
             return nil
         }
     }

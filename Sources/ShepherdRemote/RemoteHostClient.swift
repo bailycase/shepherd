@@ -45,7 +45,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Remote host state pushed after every host-side mutation. Main queue.
     public var onStateChanged: ((ShepherdState) -> Void)?
     /// PTY output (replay or live) for an attached session. Main queue.
+    public var onNativeThreadChanged: ((AgentID) -> Void)?
     public var onOutput: ((SessionID, Data) -> Void)?
+    /// Completion must follow downstream parser consumption, including retirement on detach.
+    public var onOutputConsumed: ((SessionID, Data, @escaping @Sendable () -> Void) -> Void)?
     /// An attached session's process exited. Main queue.
     public var onSessionExited: ((SessionID, Int32?) -> Void)?
     /// A connection `connect` returned died (readable EOF, write failure, or
@@ -78,7 +81,13 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var storedCapabilities: Set<String> = []
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
-    private var connectionGeneration = UUID()
+    // Written on the client queue; main checks it before invoking a captured delivery batch.
+    private let generationLock = NSLock()
+    private var storedConnectionGeneration = UUID()
+    private var connectionGeneration: UUID {
+        get { generationLock.lock(); defer { generationLock.unlock() }; return storedConnectionGeneration }
+        set { generationLock.lock(); storedConnectionGeneration = newValue; generationLock.unlock() }
+    }
     private let socketOpen: (@Sendable (String, UInt16) throws -> Int32)?
     private var pendingOpen: RemoteSocketOpen?
     private var fd: Int32 = -1
@@ -105,11 +114,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// (the host side has the same one-delivery rule). Kept as one FIFO for
     /// every event kind so `sessionExited` still follows that session's
     /// last bytes. A newer whole state replaces one still waiting (only the
-    /// last is adopted), each hop carries at most `deliveryBudgetBytes` of
-    /// output, and the socket is not read while more than `pauseReadsAtBytes`
-    /// wait, so a fast terminal behind a slow main thread backs up the host,
-    /// not the phone's memory. Client queue only.
+    /// last is adopted). Every event contributes encoded content cost and event count;
+    /// batches have both budgets (one oversized frame may run alone). Socket reads pause
+    /// at either high watermark. Output completion includes downstream parsing, not merely
+    /// the main callback, so stalled consumers back up the host. Client queue only.
     private enum PushedEvent {
+        case nativeThreadChanged(AgentID)
         case state(ShepherdState)
         case output(SessionID, Data)
         case exited(SessionID, Int32?)
@@ -121,15 +131,23 @@ public final class RemoteHostClient: @unchecked Sendable {
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
     }
-    private var pendingEvents: [PushedEvent] = []
-    /// Output bytes among `pendingEvents`.
+    private struct QueuedEvent {
+        var event: PushedEvent
+        var bytes: Int
+    }
+    private var pendingEvents: [QueuedEvent] = []
+    /// Encoded content cost of all event kinds among `pendingEvents`.
     private var pendingEventBytes = 0
     private var deliveryInFlight = false
+    private var deliveryToken: UUID?
     /// The read source is suspended until a delivery drains the backlog.
     private var readsPaused = false
     static let pauseReadsAtBytes = 4 * 1024 * 1024
     static let resumeReadsAtBytes = 1 * 1024 * 1024
     static let deliveryBudgetBytes = 256 * 1024
+    static let deliveryBudgetEvents = 64
+    static let pauseReadsAtEvents = 1024
+    static let resumeReadsAtEvents = 256
     /// One turn of the read handler reads at most this much before giving the queue back, so a
     /// teardown or a timer never waits behind a stream that stays readable.
     static let readTurnBytes = 1024 * 1024
@@ -530,6 +548,27 @@ public final class RemoteHostClient: @unchecked Sendable {
             value.supportedActions.removeAll { $0 == action }
         }
         return value.supportedActions == before ? result : .snapshot(value: value)
+    }
+
+    /// Replaces this connection's watch set. Reconnect starts with no subscriptions.
+    public func subscribeNativeThreads(_ agentIDs: [AgentID]) async throws {
+        guard capabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability), agentIDs.count <= 64 else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "Thread revision hints are unavailable.")
+        }
+        let reply = try await request { .nativeThreadSubscribe(id: $0, agentIDs: agentIDs) }
+        if case .ok = reply { return }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+        throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected subscription reply")
+    }
+
+    public func fleetDigest(agentID: AgentID, session: NativeThreadSession? = nil, revision: UInt64? = nil) async throws -> NativeFleetDigestResult {
+        guard capabilities.contains(RemoteProtocol.nativeFleetDigestCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "Fleet digests are unavailable.")
+        }
+        let reply = try await request(cancellable: true) { .fleetDigest(id: $0, agentID: agentID, session: session, revision: revision) }
+        if case .fleetDigest(_, let result) = reply { return result }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+        throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected digest reply")
     }
 
     public func nativeThread(agentID: AgentID, request original: NativeThreadRequest) async throws -> NativeThreadResult {
@@ -1307,8 +1346,9 @@ public final class RemoteHostClient: @unchecked Sendable {
             ShepherdLog.warning("undecodable remote reply: \(error)")
             return
         }
+        func push(_ event: PushedEvent) { self.push(event, bytes: line.count) }
         switch reply {
-        case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
+        case .fleetDigest(let id, _), .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
@@ -1318,6 +1358,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
+        case .nativeThreadChanged(let agentID):
+            push(.nativeThreadChanged(agentID))
         case .stateChanged(let state):
             push(.state(Self.shown(state, capabilities: capabilities)))
         case .output(let sessionID, let data):
@@ -1337,35 +1379,55 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
-            self.push(.browserDrive(push))
+            self.push(.browserDrive(push), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
         }
     }
 
-    private func push(_ event: PushedEvent) {
-        switch event {
-        case .output(let sessionID, let data):
-            pendingEventBytes += data.count
-            // Merged up to the budget of one hop, so the feed into the terminal stays bounded too.
-            if case .output(let last, var merged)? = pendingEvents.last, last == sessionID, merged.count < Self.deliveryBudgetBytes {
-                merged.append(data)
-                pendingEvents[pendingEvents.count - 1] = .output(sessionID, merged)
-            } else {
-                pendingEvents.append(event)
-            }
-        case .state:
-            // A whole state supersedes the one before it; nothing else reads it in between.
-            if let index = pendingEvents.lastIndex(where: { if case .state = $0 { return true } else { return false } }) {
-                pendingEvents[index] = event
-            } else {
-                pendingEvents.append(event)
-            }
-        default:
-            pendingEvents.append(event)
+    private func push(_ event: PushedEvent, bytes: Int) {
+        var event = event
+        var bytes = bytes
+        if case .designChanged(let id, let revision, let comments) = event,
+           let last = pendingEvents.last,
+           case .designChanged(let previousID, let previousRevision, let previousComments) = last.event,
+           id == previousID {
+            // Board and comment hints invalidate independently; nil means no news, not clear.
+            let revision = revision ?? previousRevision, comments = comments ?? previousComments
+            event = .designChanged(id, revision, comments)
+            bytes = (try? NDJSON.encode(RemoteReply.designChanged(designID: id, revision: revision, commentsRevision: comments)).count)
+                ?? (last.bytes + bytes)
         }
-        if !readsPaused, pendingEventBytes >= Self.pauseReadsAtBytes, let readSource {
+        // Only adjacent replacement is safe across command-like pushes and output/exit barriers.
+        func replaces(_ previous: PushedEvent) -> Bool {
+            switch (previous, event) {
+            case (.nativeThreadChanged(let a), .nativeThreadChanged(let b)): return a == b
+            case (.state, .state), (.capabilities, .capabilities), (.designSystemsChanged, .designSystemsChanged): return true
+            case (.designChanged(let a, _, _), .designChanged(let b, _, _)): return a == b
+            case (.projectExecutionChanged(let a, _), .projectExecutionChanged(let b, _)): return a == b
+            case (.missionChanged(let a, _), .missionChanged(let b, _)): return a == b
+            case (.missionLive(let a, _), .missionLive(let b, _)): return a == b
+            default: return false
+            }
+        }
+        if let last = pendingEvents.last, replaces(last.event) {
+            pendingEventBytes -= last.bytes
+            pendingEvents.removeLast()
+        }
+        if case .output(let sessionID, let data) = event,
+           let last = pendingEvents.last,
+           case .output(let previousID, var merged) = last.event,
+           previousID == sessionID, last.bytes + bytes <= Self.deliveryBudgetBytes {
+            merged.append(data)
+            pendingEvents[pendingEvents.count - 1] = QueuedEvent(event: .output(sessionID, merged), bytes: last.bytes + bytes)
+        } else {
+            pendingEvents.append(QueuedEvent(event: event, bytes: bytes))
+        }
+        pendingEventBytes += bytes
+        if !readsPaused,
+           pendingEventBytes >= Self.pauseReadsAtBytes || pendingEvents.count >= Self.pauseReadsAtEvents,
+           let readSource {
             readsPaused = true
             readSource.suspend()
         }
@@ -1373,14 +1435,23 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     /// Client queue. Hands the backlog to the main queue a bounded hop at a time (at least one
-    /// event, at most `deliveryBudgetBytes` of output); the rest waits for the next hop.
+    /// event, capped by content cost and event count); the rest waits for the next hop.
     private func scheduleDelivery() {
         guard !deliveryInFlight, !pendingEvents.isEmpty else { return }
         deliveryInFlight = true
+        let token = UUID()
+        deliveryToken = token
+        let generation = connectionGeneration
         var count = 0
         var bytes = 0
-        while count < pendingEvents.count, count == 0 || bytes < Self.deliveryBudgetBytes {
-            if case .output(_, let data) = pendingEvents[count] { bytes += data.count }
+        while count < pendingEvents.count, count < Self.deliveryBudgetEvents,
+              count == 0 || bytes + pendingEvents[count].bytes <= Self.deliveryBudgetBytes {
+            // A parser completion is a FIFO barrier: never deliver its exit (or more bytes) early.
+            if case .output = pendingEvents[count].event {
+                if count == 0 { bytes += pendingEvents[count].bytes; count += 1 }
+                break
+            }
+            bytes += pendingEvents[count].bytes
             count += 1
         }
         let batch = Array(pendingEvents[..<count])
@@ -1388,10 +1459,32 @@ public final class RemoteHostClient: @unchecked Sendable {
         pendingEventBytes -= bytes
         hopToMain { [weak self] in
             guard let self else { return }
-            for event in batch {
-                switch event {
+            let finish: @Sendable () -> Void = { [weak self] in
+                self?.queue.async { [weak self] in
+                    guard let self, self.connectionGeneration == generation, self.deliveryToken == token else { return }
+                    self.deliveryToken = nil
+                    self.deliveryInFlight = false
+                    if self.readsPaused, self.pendingEventBytes <= Self.resumeReadsAtBytes,
+                       self.pendingEvents.count <= Self.resumeReadsAtEvents {
+                        self.readsPaused = false
+                        self.readSource?.resume()
+                    }
+                    self.scheduleDelivery()
+                }
+            }
+            for queued in batch {
+                // Teardown may have retired this captured batch while main was unavailable.
+                // Check before every consumer, without waiting on the client queue.
+                guard self.connectionGeneration == generation else { finish(); return }
+                switch queued.event {
+                case .nativeThreadChanged(let agentID): self.onNativeThreadChanged?(agentID)
                 case .state(let state): self.onStateChanged?(state)
-                case .output(let sessionID, let data): self.onOutput?(sessionID, data)
+                case .output(let sessionID, let data):
+                    if let consume = self.onOutputConsumed {
+                        consume(sessionID, data, finish)
+                        return
+                    }
+                    self.onOutput?(sessionID, data)
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
@@ -1402,15 +1495,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 }
             }
-            self.queue.async { [weak self] in
-                guard let self else { return }
-                self.deliveryInFlight = false
-                if self.readsPaused, self.pendingEventBytes <= Self.resumeReadsAtBytes {
-                    self.readsPaused = false
-                    self.readSource?.resume()
-                }
-                self.scheduleDelivery()
-            }
+            finish()
         }
     }
 
@@ -1446,6 +1531,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // view state on disconnect and re-snapshots on reconnect.
         pendingEvents.removeAll()
         pendingEventBytes = 0
+        deliveryInFlight = false
         for continuation in pendingReplies.values {
             continuation.resume(throwing: RemoteHostClientError.disconnected)
         }
@@ -1453,7 +1539,11 @@ public final class RemoteHostClient: @unchecked Sendable {
         cancelledReplies.removeAll()
         if established, !disconnectNotified {
             disconnectNotified = true
-            hopToMain { [weak self] in self?.onDisconnected?(reason) }
+            let generation = connectionGeneration
+            hopToMain { [weak self] in
+                guard let self, self.connectionGeneration == generation else { return }
+                self.onDisconnected?(reason)
+            }
         }
         established = false
     }

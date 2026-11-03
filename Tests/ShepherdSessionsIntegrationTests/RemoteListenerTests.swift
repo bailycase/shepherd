@@ -21,7 +21,7 @@ struct RemoteListenerTests {
         // A bare server also has no owner Project launcher/controller installed, and Files goes
         // only to a client that lists it (this one lists nothing), as do Missions.
         let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
+            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
         }
         #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: offered))
     }
@@ -191,19 +191,40 @@ struct RemoteListenerTests {
         #expect(preview.messages.map { $0.blocks.first?.text } == ["hello there", "hi"])
         #expect(demanded.current.isEmpty, "a snapshot from a preview-capable client starts no pi")
 
+        try previewing.send(.fleetDigest(id: 20, agentID: idle.agent.id, session: nil, revision: nil))
+        guard case .fleetDigest(20, .digest(let digest)) = try await previewing.next() else { Issue.record("expected digest"); return }
+        #expect(digest == FleetDigest(preview))
+        #expect(try NDJSON.encode(RemoteReply.fleetDigest(id: 20, result: .digest(digest))).count < 32 * 1024)
+        try previewing.send(.fleetDigest(id: 21, agentID: idle.agent.id, session: digest.session, revision: digest.revision))
+        #expect(try await previewing.next() == .fleetDigest(id: 21, result: .digest(digest)), "preview revision zero is not an unchanged token")
+        try previewing.send(.fleetDigest(id: 24, agentID: idle.agent.id,
+            session: .init(piSessionID: digest.session.piSessionID, generation: "previous-connection"), revision: digest.revision))
+        #expect(try await previewing.next() == .fleetDigest(id: 24, result: .digest(digest)), "unchanged requires the entire session fence")
+        let edited = lines + [#"{"type":"message","id":"e2","parentId":"e1","timestamp":"2026-09-24T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"changed while stopped"}],"provider":"anthropic","model":"claude-x","stopReason":"stop","timestamp":3000}}"#]
+        try Data((edited.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl"))
+        try previewing.send(.fleetDigest(id: 25, agentID: idle.agent.id, session: digest.session, revision: digest.revision))
+        guard case .fleetDigest(25, .digest(let changed)) = try await previewing.next() else { Issue.record("expected edited preview digest"); return }
+        #expect(changed.result == "changed while stopped")
+        #expect(changed.revision == digest.revision, "the regression must cover the same preview revision")
+        #expect(demanded.current.isEmpty, "fleet reads must remain quiet")
+
         // Acting on the thread starts pi, as before.
         try previewing.send(.nativeThread(id: 3, agentID: idle.agent.id, request: .send(expectedSessionID: sessionID, generation: preview.generation,
                                                                                          operationID: UUID(), text: "go", delivery: .followUp)))
         guard case .error(3, let code, _) = try await previewing.next() else { Issue.record("expected starting"); return }
         #expect(code == NativeThreadCode.starting)
-        #expect(demanded.current == [idle.agent.id])
+        try await eventually("the non-preview send demands pi on main") { demanded.current == [idle.agent.id] }
 
         // A client that does not list the capability is served as before: pi is demanded.
         let older = try await r.raw()
+        try older.send(.fleetDigest(id: 22, agentID: idle.agent.id, session: nil, revision: nil))
+        guard case .error(22, "unsupported", _) = try await older.next() else { Issue.record("expected capability refusal"); return }
+        try older.send(.nativeThreadSubscribe(id: 23, agentIDs: [idle.agent.id]))
+        guard case .error(23, "unsupported", _) = try await older.next() else { Issue.record("expected capability refusal"); return }
         try older.send(.nativeThread(id: 4, agentID: idle.agent.id, request: .snapshot()))
         guard case .error(4, let olderCode, _) = try await older.next() else { Issue.record("expected starting"); return }
         #expect(olderCode == NativeThreadCode.starting)
-        #expect(demanded.current == [idle.agent.id, idle.agent.id])
+        try await eventually("both non-preview reads demand pi on main") { demanded.current == [idle.agent.id, idle.agent.id] }
     }
 
     /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and

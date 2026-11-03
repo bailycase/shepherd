@@ -2073,8 +2073,10 @@ private static func chipsAndLinks() async throws {
         func controls(_ label: String) -> [Control] {
             window.controls().filter { $0.role == ControlRole.button && $0.label == label && onTarget($0.frame) }
         }
+        // The native radio dock labels its final row differently from the Project's question card.
+        let fieldLabel = inPane ? "Something else" : "Say anything"
         func field() -> AccessibilityNode? {
-            window.elements().first { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
+            window.elements().first { $0.label == fieldLabel && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
         }
         func type(_ value: String) throws {
             let node = try #require(field()), setter = NSSelectorFromString("setAccessibilityValue:")
@@ -2166,7 +2168,7 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the task leaves waiting") { r.app.server.state.projects.first?.tasks.first?.phase != .waiting }
         try await eventuallyOnMain("the question leaves both surfaces") {
             window.layout()
-            return !window.elements().contains { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
+            return !window.elements().contains { ["Say anything", "Something else"].contains($0.label ?? "") && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
                 && !window.controls().contains { $0.label == "Use Postgres" }
         }
         #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")

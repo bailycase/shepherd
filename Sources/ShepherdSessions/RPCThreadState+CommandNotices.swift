@@ -45,46 +45,94 @@ extension RPCThreadState {
 
     /// Serialize input preflights while control commands and abort bypass this lane.
     /// A timeout fences the lane until its matching response or restart, without retrying the send.
-    func requestInput(prompt: String, images: [RPCImage], delivery: RPCStreamingBehavior,
-                      timeout: TimeInterval = RPCThreadState.promptTimeout,
+    func requestInput(prompt: String, images: [NativeImage], delivery: RPCStreamingBehavior,
+                      timeout: TimeInterval = RPCThreadState.promptTimeout, expiresAt: Double? = nil,
+                      canSend: @escaping () -> Bool = { true }, admitted: @escaping () -> Void = {},
                       completion: @escaping (NativeThreadResult?) -> Void) {
+        guard canSend() else {
+            completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
+            // A deadline can invalidate a queued continuation without cancelling later inputs.
+            if !inputActive, !waitingInputs.isEmpty { waitingInputs.removeFirst()(true) }
+            return
+        }
+        var textBytes = 0
+        for text in [prompt] + images.flatMap({ [$0.mimeType, $0.name ?? ""] }) {
+            let count = text.utf8.count
+            guard count <= RPCSession.outputQueueLimit - textBytes else {
+                completion(Self.dispatchFailure(.failure(.inputRejected))); return
+            }
+            textBytes += count
+        }
         guard !inputOutcomeUnknown else {
             completion(.failure(code: "input_pending", message: "An earlier send's outcome is unknown. Wait for the agent to answer or restart it before sending again; this message was not sent."))
             return
         }
         if inputActive {
+            guard waitingInputs.count < 64 else {
+                completion(.failure(code: "dispatch_failed", message: "Too many pending sends. Try again."))
+                return
+            }
             waitingInputs.append { [weak self] send in
                 guard send, let self else {
                     completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
                     return
                 }
-                self.requestInput(prompt: prompt, images: images, delivery: delivery, timeout: timeout, completion: completion)
+                self.requestInput(prompt: prompt, images: images, delivery: delivery, timeout: timeout, expiresAt: expiresAt,
+                                  canSend: canSend, admitted: admitted, completion: completion)
             }
             return
         }
         inputActive = true
-        let generation = generation
-        session.request(.prompt(message: prompt, images: images, streamingBehavior: delivery), timeout: timeout,
-                        onLateResponse: { [weak self] _ in
-                            guard let self else { return }
-                            self.inputOutcomeUnknown = false
-                            for dispatch in self.dispatches where dispatch.responded { self.confirmDispatch(dispatch.id) }
-                        }) { [weak self] result in
-            guard let self else { return }
-            if case .failure(.timeout) = result { self.inputOutcomeUnknown = true }
-            let failure = Self.dispatchFailure(result)
+        let laneID = UUID()
+        inputLaneID = laneID
+        let generation = generation, preparationVersion = inputPreparationVersion
+        let late: (RPCResponse) -> Void = { [weak self] _ in
+            guard let self, self.generation == generation else { return }
+            self.inputOutcomeUnknown = false
+            for dispatch in self.dispatches where dispatch.responded { self.confirmDispatch(dispatch.id) }
+        }
+        let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self else {
+                completion(.failure(code: "send_cancelled", message: "The session was retired before the send completed.")); return
+            }
+            if self.generation == generation, case .failure(.timeout) = result { self.inputOutcomeUnknown = true }
+            let failure: NativeThreadResult?
+            if case .failure(.inputRejected) = result, preparationVersion != self.inputPreparationVersion {
+                failure = .failure(code: "send_cancelled", message: "The send was cancelled before pi started it.")
+            } else {
+                failure = Self.dispatchFailure(result)
+            }
             completion(self.generation == generation ? failure : .failure(code: "stale_session", message: "The session changed while the send was pending."))
+            guard self.inputLaneID == laneID else { return }
+            self.inputLaneID = nil
             self.inputActive = false
-            if self.inputOutcomeUnknown { self.cancelWaitingInputs() }
+            if self.inputOutcomeUnknown || !self.session.isAlive { self.cancelWaitingInputs() }
             else if !self.waitingInputs.isEmpty { self.waitingInputs.removeFirst()(true) }
             self.refreshSkillsIfIdle()
+        }
+        if expiresAt != nil || !images.isEmpty || prompt.utf8.count >= RPCSession.offQueueDecodeBytes {
+            // Account for raw images, base64 strings and the encoded frame, plus worst-case
+            // JSON text escaping. Input queues themselves retain their existing separate bounds.
+            let preparationBytes = textBytes * 12
+                + images.reduce(0) { $0 + $1.data.count } * 6 + 64 * 1024
+            session.requestPrepared(type: "prompt", timeout: timeout, expiresAt: expiresAt, preparationBytes: preparationBytes, prepare: {
+                .prompt(message: prompt, images: images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }, streamingBehavior: delivery)
+            }, isCurrent: { [weak self] in
+                guard let self else { return false }
+                return self.generation == generation && self.inputPreparationVersion == preparationVersion && self.workAdmission() && canSend()
+            }, onAdmitted: admitted, onLateResponse: late, completion: receive)
+        } else {
+            session.request(.prompt(message: prompt, streamingBehavior: delivery), timeout: timeout,
+                            onAdmitted: admitted, onLateResponse: late, completion: receive)
         }
     }
 
     func cancelWaitingInputs() {
+        inputPreparationVersion &+= 1
         let waiting = waitingInputs
         waitingInputs.removeAll()
         for cancel in waiting { cancel(false) }
+        session.cancelPreparedRequests()
     }
 
     /// pi's `notify`: kept only while a command the user sent is in flight.

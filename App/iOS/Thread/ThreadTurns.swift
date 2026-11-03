@@ -344,6 +344,8 @@ struct ActivityLineView: View, Equatable {
     @State private var expanded = false
     @State private var expandedCalls: Set<String> = []
     @State private var sheet: ToolOutput?
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static func == (lhs: ActivityLineView, rhs: ActivityLineView) -> Bool {
@@ -363,7 +365,7 @@ struct ActivityLineView: View, Equatable {
                 .shTransition(.disclosure)
             }
         }
-        .sheet(item: $sheet) { ToolOutputSheet(output: $0) }
+        .sheet(item: $sheet.whenActive(detailActive)) { ToolOutputSheet(output: $0) }
     }
 
     private var kind: SHActivityLine.Kind {

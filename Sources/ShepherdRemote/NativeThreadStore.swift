@@ -1,21 +1,8 @@
 import Foundation
 import Observation
+import os
 import ShepherdCore
 import ShepherdProtocol
-
-/// Which pi session a thread shows: a new session or a new generation of it is a different
-/// thread (history, echoes, and questions belong to one).
-public struct NativeThreadSession: Hashable, Sendable {
-    public var piSessionID: String
-    public var generation: String
-
-    public init(piSessionID: String, generation: String) {
-        self.piSessionID = piSessionID
-        self.generation = generation
-    }
-
-    public var key: String { piSessionID + ":" + generation }
-}
 
 /// One turn as the thread lists it: the turn, and for a reply its presentation and the
 /// prompt that opened it. Equatable, so a row that did not change is not redrawn.
@@ -60,12 +47,62 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     }
 }
 
+/// A locally captured composer send, not provider acceptance. Uncertain sends are retained
+/// for inspection, never offered as retryable content until the host gives a definite refusal.
+public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
+    public enum State: Equatable, Sendable { case sending, failed, uncertain }
+    public var id: UUID
+    public var typed: String
+    public var files: [NativeAttachedFile]
+    public var references: [NativeAttachedReference]
+    public var elements: [NativeAttachedElement]
+    public var images: [NativeImage]
+    public var delivery: NativeThreadDelivery
+    public var state: State
+
+    /// Retention accounting, not RSS: all variable payload plus a fixed allowance per item.
+    public var payloadBytes: Int {
+        var bytes = 128
+        func add(_ counts: Int...) {
+            for count in counts { bytes = Self.accountedPayloadBytes(count, addingTo: bytes) }
+        }
+        add(typed.utf8.count)
+        for file in files { add(64, file.name.utf8.count, file.path.utf8.count) }
+        for reference in references {
+            let ref = reference.reference
+            add(128, ref.host.rawValue.utf8.count, ref.designID.rawValue.utf8.count,
+                ref.board?.rawValue.utf8.count ?? 0, ref.page?.utf8.count ?? 0,
+                reference.label.utf8.count, ref.label?.utf8.count ?? 0, reference.outline?.system?.utf8.count ?? 0)
+            if let element = ref.element {
+                add(element.board.utf8.count)
+                bytes = Self.accountedPayloadBytes(element.path.count, unitBytes: MemoryLayout<Int>.stride, addingTo: bytes)
+            }
+        }
+        for attachment in elements {
+            let element = attachment.element
+            add(128, element.page.utf8.count, element.selector.utf8.count, element.label.utf8.count,
+                element.source?.utf8.count ?? 0, element.html?.utf8.count ?? 0)
+        }
+        for image in images { add(64, image.data.count, image.mimeType.utf8.count, image.name?.utf8.count ?? 0) }
+        return bytes
+    }
+
+    /// Over-budget payloads need only a rejection sentinel, never an overflowing exact sum.
+    static func accountedPayloadBytes(_ count: Int, unitBytes: Int = 1, addingTo total: Int = 0) -> Int {
+        let limit = NativeThreadStore.maximumRetainedSubmissionBytes + 1
+        let (bytes, multiplicationOverflow) = count.multipliedReportingOverflow(by: unitBytes)
+        let (sum, additionOverflow) = total.addingReportingOverflow(bytes)
+        return multiplicationOverflow || additionOverflow ? limit : min(sum, limit)
+    }
+}
+
 /// A native thread for one agent: polls the host's snapshots, keeps the optimistic echoes of
 /// sends, and derives what the thread draws (rows, subagent placements) once per change, so
 /// views read stored values and typing in the composer invalidates only the composer.
 @MainActor
 @Observable
 public final class NativeThreadStore {
+    nonisolated private static let signposter = OSSignposter(subsystem: "com.shepherd.performance", category: "NativeThread")
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
     /// History from disk to show until pi answers (`preview(_:)`); nil when there is none.
     public typealias Preview = @Sendable () async -> NativeThreadSnapshot?
@@ -135,6 +172,10 @@ public final class NativeThreadStore {
     /// the tail indicator or the Stop button.
     public private(set) var settledRunning = false
     public var draft = ""
+    public private(set) var submissions: [NativeThreadSubmission] = []
+    nonisolated public static let maximumRetainedSubmissions = 8
+    nonisolated public static let maximumRetainedSubmissionBytes = 16 * 1024 * 1024
+    public private(set) var retainedSubmissionBytes = 0
     public var delivery: NativeThreadDelivery = .followUp
     /// Files waiting beside the draft (a design's boards attached to this thread); they go with
     /// the next message the draft sends.
@@ -307,6 +348,7 @@ public final class NativeThreadStore {
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
+    @ObservationIgnored private var connection: AnyHashable?
     /// Which view's loop is running (`run(owner:)`), nil for a caller that names none.
     @ObservationIgnored private var owner: UUID?
     /// Actions (their operation ids) the host has not answered yet, and those of them a suspension
@@ -335,13 +377,41 @@ public final class NativeThreadStore {
     /// that wants one asks, and holds what it got.
     @ObservationIgnored public let images = NativeThreadImages()
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
+    @ObservationIgnored private var messageIndex: [String: Int] = [:]
+    @ObservationIgnored private var toolCounts: [String: Int] = [:]
+    @ObservationIgnored private var toolPositions: [String: [Int]] = [:]
+    @ObservationIgnored private var historyDirty = 0
+    @ObservationIgnored private var messageCosts: [Int] = []
+    @ObservationIgnored private var historyPayloadBytes = 0
+    @ObservationIgnored private var tailPayloadBytes = 0
+    @ObservationIgnored private var cacheBytes = 0
+    @ObservationIgnored private var callCosts: [String: Int] = [:]
+    @ObservationIgnored private var thinkingCosts: [ProseKey: Int] = [:]
+    @ObservationIgnored private var proseCosts: [ProseKey: Int] = [:]
+    @ObservationIgnored private var displayedHistoryCount = 0
+    @ObservationIgnored private var projection = NativeTurnProjection()
+    @ObservationIgnored private var derivedHost: String?
+    @ObservationIgnored private var derivedChanges: [ChangesTurn]?
+    @ObservationIgnored private var recordedTurns: [Double: ChangesTurn] = [:]
+    @ObservationIgnored private var metadataPayloadBytes = 0
+    @ObservationIgnored private var derivedRunning = false
+    @ObservationIgnored private var derivedRetry: NativeThreadRetry?
+    @ObservationIgnored private var presentationDirty: Int?
+    /// Deterministic work counters: incoming comparisons are separate from rebuilt history.
+    @ObservationIgnored private(set) var historyComparisons = 0
+    @ObservationIgnored private(set) var projectedMessages = 0
+    @ObservationIgnored private(set) var projectedRows = 0
+    @ObservationIgnored private(set) var promptJoins = 0
+    @ObservationIgnored private(set) var markupParses = 0
+    @ObservationIgnored private var promptCache: [String: (messages: [NativeThreadMessage], text: String)] = [:]
+    @ObservationIgnored private var markupCache: [String: (messages: [NativeThreadMessage], value: NativeMarkupProposals?)] = [:]
     /// The machine the agent runs on ("build-01"), named in its errors' Details. Set by the
     /// thread's owner.
     @ObservationIgnored public var hostName: String? {
         didSet { if hostName != oldValue { derive() } }
     }
     /// Calls parse their JSON and output once; a finished call never changes.
-    @ObservationIgnored private var callCache: [String: (key: CallKey, value: NativeActivityCall)] = [:]
+    @ObservationIgnored private var callCache: [String: (key: NativeThreadMessage, value: NativeActivityCall)] = [:]
     var cachedCallCount: Int { callCache.count }
     /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it.
     @ObservationIgnored private var thinkingCache: [ProseKey: (text: String, blocks: [NativeMarkdownBlock])] = [:]
@@ -351,18 +421,36 @@ public final class NativeThreadStore {
     /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
     @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, blocks: [NativeMarkdownBlock], endsInOpenFence: Bool)] = [:]
     @ObservationIgnored private(set) var proseParses = 0
-    /// Prose and thinking still being written, parsed off main once this long: the row keeps
-    /// its last parse (a prefix of the text) until the new one lands, so a long flowing answer
-    /// never parses from its start on the main actor per poll.
+    /// Oversized prose/thinking, including cold loads, replacements and final text, parse off
+    /// main. Keep the prior presentation (or empty blocks) until a text/mode-fenced result lands.
     nonisolated public static let offMainProseBytes = 8 * 1024
-    /// The text each off-main parse was started for, by item; a newer text supersedes it.
+    /// The desired parse token per item; newer text or final mode supersedes it.
     @ObservationIgnored private var proseParsing: [ProseKey: UUID] = [:]
+    @ObservationIgnored private var proseRequests: [ProseKey: ParseRequest] = [:]
+    @ObservationIgnored private var proseKeysByTurn: [String: Set<ProseKey>] = [:]
+    @ObservationIgnored private var proseJobs: [ProseKey: (UUID, @Sendable () async -> Void)] = [:]
+    @ObservationIgnored private var proseTasks: [ProseKey: (UUID, Task<Void, Never>)] = [:]
+    static let maximumProseTasks = 2
+    var activeProseTasks: Int { proseTasks.count }
+    var proseWork: [Task<Void, Never>] { proseTasks.values.map(\.1) }
+    /// Deterministic parser drain for tests; no timers or polling.
+    func waitForProse() async {
+        while let task = proseTasks.values.first?.1 { await task.value }
+    }
+    @ObservationIgnored private(set) var mainActorLargeParses = 0
+
+    private struct ParseRequest: Equatable {
+        var text: String
+        var streaming: Bool
+    }
     /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
     @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
+    /// A non-cooperative synchronous parser gate used to verify actual worker reservations.
+    @ObservationIgnored var duringProseParse: (@Sendable () -> Void)?
     /// Parses handed off main (tests).
     @ObservationIgnored private(set) var offMainParses = 0
 
-    private struct ProseKey: Hashable {
+    private struct ProseKey: Hashable, Sendable {
         var turn: String
         var item: String
     }
@@ -380,18 +468,6 @@ public final class NativeThreadStore {
         var live: Bool
         var cards: NativeCardLayout
         var errors: NativeTurnErrorContext
-    }
-
-    private struct CallKey: Hashable {
-        var entryID: String
-        var status: String?
-        var isError: Bool?
-        var outputSize: Int
-        /// A call the model is still writing grows its arguments while its status stays.
-        var argumentsSize: Int?
-        /// A running call's output can change at the same length (the host clips a long tail,
-        /// a progress line rewrites itself), so its key carries the end of the output too.
-        var liveTail: String?
     }
 
     /// Reconcile echoes against a snapshot: gone when the real message landed or the session moved on.
@@ -427,6 +503,7 @@ public final class NativeThreadStore {
             // The newest saved message with the echo's text is the one it became.
             if let saved = persisted.last(where: { Self.userText($0) == text && aliases[$0.entryID] == nil }) {
                 aliases[saved.entryID] = echo.entryID
+                presentationDirty = 0
             }
         }
         pending.removeAll { texts.contains(Self.userText($0)) }
@@ -456,7 +533,7 @@ public final class NativeThreadStore {
             return request != nil && loadError == nil && supportedActions.contains(action)
                 && inFlight.isEmpty && (!busy || !startWaiters.isEmpty)
         }
-        return ready && !busy && supportedActions.contains(action)
+        return ready && !busy && inFlight.isEmpty && supportedActions.contains(action)
     }
 
     /// The host stops pi for a message (`interrupt` in `supportedActions`, remotely
@@ -490,34 +567,101 @@ public final class NativeThreadStore {
     /// Recomputes what the thread draws. Values are assigned only when they changed, so an
     /// unchanged poll invalidates nothing.
     private func derive() {
-        let ids = Set(messages.map(\.entryID))
-        let toolIDs = Set(messages.compactMap(\.toolCallID))
+        let interval = Self.signposter.beginInterval("Thread derive")
+        defer { Self.signposter.endInterval("Thread derive", interval) }
         let provisional = (snapshot?.provisional ?? []).filter {
-            !ids.contains($0.entryID) && ($0.toolCallID == nil || !toolIDs.contains($0.toolCallID!))
+            messageIndex[$0.entryID] == nil && ($0.toolCallID == nil || toolCounts[$0.toolCallID!] == nil)
         }
-        let displayed: [NativeThreadMessage]
+        let tail: [NativeThreadMessage]
         if snapshot?.queue != nil {
             // The host orders the run (user messages where pi read them) and shows its own
             // pending row for a send; an echo stands in only until the host's next snapshot.
             let live = Set(provisional.map(\.entryID))
-            displayed = messages + provisional + pending.filter { !live.contains($0.entryID) }
+            tail = provisional + pending.filter { !live.contains($0.entryID) }
         } else {
-            displayed = messages + pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
+            tail = pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
         }
-        if displayed != displayedMessages { displayedMessages = displayed }
+        tailPayloadBytes = tail.reduce(0) { $0 + Self.payloadBytes($1) }
+        var changed = min(historyDirty, displayedHistoryCount)
+        let suffix = Array(messages[changed...]) + tail
+        let oldSuffix = displayedMessages[changed...]
+        var equal = 0
+        for (old, new) in zip(oldSuffix, suffix) {
+            if old != new { break }
+            equal += 1
+        }
+        var changedTools = Set(oldSuffix.dropFirst(equal).compactMap(\.toolCallID))
+        changedTools.formUnion(suffix.dropFirst(equal).compactMap(\.toolCallID))
+        changed += equal
+        if changed < displayedMessages.count || equal < suffix.count {
+            displayedMessages.replaceSubrange(changed..., with: suffix.dropFirst(equal))
+        }
+        historyDirty = messages.count
+        displayedHistoryCount = messages.count
+        // Tool ids can recur in different turns. Rebuild from the earliest surviving owner
+        // when one occurrence changes/disappears, preserving the full projection's last-owner
+        // wins rule and its fallback when the later occurrence is removed.
+        for id in changedTools {
+            if let first = toolPositions[id]?.first { changed = min(changed, first) }
+            else if let first = tail.firstIndex(where: { $0.toolCallID == id }) { changed = min(changed, messages.count + first) }
+        }
+        let displayed = displayedMessages
         // A steer lands inside the running turn; it does not restart its clock.
         let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.origin != .steered }?.timestamp
         // Keep the current turn boundary when its opening message falls outside a history page.
         if let promptAt, promptAt > (lastPromptAt ?? -.infinity) { lastPromptAt = promptAt }
-        var aliases = self.aliases
-        for message in displayed where message.role == "user" {
-            if let operation = message.operationID, aliases[message.entryID] == nil { aliases[message.entryID] = "pending:\(operation.uuidString)" }
-        }
-        let turns = Self.endingCommentAnswers(nativeTurns(displayed, aliases: aliases))
-        if turns != self.turns { self.turns = turns }
         let runs = snapshot?.subagents ?? []
+        let running = loadError == nil && settledRunning
+        let changesChanged = derivedChanges != snapshot?.turnChanges
+        let runsChanged = runs != subagents
+        let metadataChanged = runsChanged || changesChanged || derivedHost != hostName
+        if changesChanged { recordedTurns = changesTurnsByMessage(snapshot?.turnChanges) }
+        if changesChanged || derivedHost != hostName { changed = 0 }
+        if runsChanged {
+            var previous = Dictionary(subagents.map { ($0.runID, $0) }, uniquingKeysWith: { _, last in last })
+            var affected: Set<String> = []
+            for run in runs {
+                let old = previous.removeValue(forKey: run.runID)
+                if old != run {
+                    if let id = old?.toolCallID { affected.insert(id) }
+                    if let id = run.toolCallID { affected.insert(id) }
+                }
+            }
+            affected.formUnion(previous.values.compactMap(\.toolCallID))
+            for id in affected {
+                if let position = toolPositions[id]?.first { changed = min(changed, position) }
+                else if let index = tail.firstIndex(where: { $0.toolCallID == id }) { changed = min(changed, messages.count + index) }
+            }
+        }
+        if metadataChanged {
+            metadataPayloadBytes = runs.reduce(0) {
+                $0 + 512 + ($1.output?.utf8.count ?? 0) + ($1.summary?.utf8.count ?? 0) + ($1.attentionText?.utf8.count ?? 0)
+            } + (snapshot?.turnChanges ?? []).reduce(0) { total, turn in
+                total + 256 + turn.files.reduce(0) { $0 + 128 + $1.path.utf8.count }
+            }
+        }
+        if derivedRunning != running || derivedRetry != snapshot?.retry {
+            changed = min(changed, projection.lastTurnStart)
+        }
+        derivedRunning = running
+        derivedRetry = snapshot?.retry
+        derivedChanges = snapshot?.turnChanges
+        derivedHost = hostName
+        if let dirty = presentationDirty { changed = min(changed, dirty) }
+        presentationDirty = nil
+        let update = projection.update(displayed, changedFrom: changed, aliases: aliases)
+        projectedMessages += update.visited
+        if update.changed { self.turns = projection.turns }
+        let turns = self.turns
+        // Removing a boundary can merge the first rebuilt reply with a changed later reply.
+        // Its predecessor still groups identically, but its error fold must be recomputed.
+        let rowStart = update.visited == 0 ? update.start
+            : turns[..<update.start].lastIndex(where: { !$0.isUser }) ?? update.start
         if runs != subagents { subagents = runs }
-        let placements = nativeSubagentPlacements(runs, turns: turns)
+        // Spawn ownership changes only in the rebuilt suffix, including changed child records.
+        var placements = self.placements
+        for row in rows.dropFirst(rowStart) { placements[row.id] = nil }
+        placements.merge(nativeSubagentPlacements(runs, turns: Array(turns.dropFirst(rowStart)))) { _, new in new }
         if placements != self.placements { self.placements = placements }
         let currentTurns = turns.suffix(from: turns.lastIndex(where: \.isUser) ?? turns.startIndex)
         let trayRuns = nativeTrayRuns(runs, placements: placements, turnOrder: currentTurns.map(\.id), lastUserMessageAt: lastPromptAt)
@@ -525,16 +669,23 @@ public final class NativeThreadStore {
         if tray != self.tray { self.tray = tray }
 
         // The streaming reply is the last one, with only queued follow-ups below it.
-        let running = loadError == nil && settledRunning
         let lastReply = turns.lastIndex { !$0.isUser }
         let liveReply = running ? lastReply.flatMap { index in
             turns[(index + 1)...].allSatisfy { $0.messages.allSatisfy { $0.status == "queued" } } ? index : nil
         } : nil
         var rows: [NativeThreadRow] = []
-        rows.reserveCapacity(turns.count)
-        var kept: Set<String> = []
-        let recorded = changesTurnsByMessage(snapshot?.turnChanges)
-        for (index, turn) in turns.enumerated() {
+        rows.reserveCapacity(turns.count - rowStart)
+        let removed = Set(self.rows.dropFirst(rowStart).map(\.id)).subtracting(turns.dropFirst(rowStart).map(\.id))
+        for id in removed {
+            presentationCache[id] = nil
+            promptCache[id] = nil
+            markupCache[id] = nil
+            for key in proseKeysByTurn.removeValue(forKey: id) ?? [] { invalidateParse(key) }
+        }
+        let recorded = recordedTurns
+        for index in rowStart..<turns.count {
+            let turn = turns[index]
+            projectedRows += 1
             if turn.isUser {
                 var row = NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil)
                 row.designComment = Self.designComment(turn)
@@ -553,31 +704,96 @@ public final class NativeThreadStore {
                 presentation = cached.value
             } else {
                 var thinkingIndex = 0
+                var used: Set<ProseKey> = []
                 presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, errors: errors, call: call,
                                                       thinking: { text in
                     defer { thinkingIndex += 1 }
+                    used.insert(ProseKey(turn: turn.id, item: "thinking:\(thinkingIndex)"))
                     return self.thinkingBlocks(turn: turn.id, index: thinkingIndex, text: text)
                 }, prose: { id, text, streaming in
-                    self.proseBlocks(turn: turn.id, item: id, text: text, streaming: streaming)
+                    used.insert(ProseKey(turn: turn.id, item: id))
+                    return self.proseBlocks(turn: turn.id, item: id, text: text, streaming: streaming)
                 })
+                for key in (proseKeysByTurn[turn.id] ?? []).subtracting(used) { invalidateParse(key) }
+                proseKeysByTurn[turn.id] = used
                 presentationCache[turn.id] = (key, presentation)
             }
-            kept.insert(turn.id)
-            let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
+            let prompt = opener.map { opener in
+                if let cached = promptCache[opener.id], cached.messages == opener.messages { return cached.text }
+                promptJoins += 1
+                let text = opener.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+                promptCache[opener.id] = (opener.messages, text)
+                return text
+            }
             let startedAt = opener?.messages.first?.timestamp
             let recordedTurn = startedAt.flatMap { recorded[$0] }
             let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
             var row = NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
                                       startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
             row.designComment = Self.opensWithCompaction(turn) ? nil : opener.flatMap(Self.designComment)
-            row.markupProposals = NativeMarkupProposals(turn)
+            let proposalMessages = turn.messages.filter { $0.toolName == "markup_propose" }
+            if let cached = markupCache[turn.id], cached.messages == proposalMessages {
+                row.markupProposals = cached.value
+            } else {
+                markupParses += 1
+                row.markupProposals = NativeMarkupProposals(NativeTurn(id: turn.id, isUser: false, messages: proposalMessages))
+                markupCache[turn.id] = (proposalMessages, row.markupProposals)
+            }
             if index == turns.count - 1, !isLive, let opener { row.retryEntryID = Self.retryEntryID(opener) }
             rows.append(row)
         }
-        if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
+        // Start from cached *unfolded* presentations, including the predecessor above, so a
+        // changed or removed successor can both fold and unfold an earlier error.
         Self.foldRepeatedErrors(&rows)
-        if rows != self.rows { self.rows = rows }
+        if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
+            self.rows.replaceSubrange(rowStart..., with: rows)
+        }
         deriveChrome()
+    }
+
+    /// Compare only the incoming page, retaining the loaded prefix and its ID indexes. Full
+    /// replacement pages still require first-difference detection; no historical content is
+    /// trusted merely because its entry id or text length stayed the same.
+    private func replaceHistory(_ page: [NativeThreadMessage], from start: Int = 0) {
+        let interval = Self.signposter.beginInterval("Thread merge")
+        defer { Self.signposter.endInterval("Thread merge", interval) }
+        var equal = 0
+        for (old, new) in zip(messages.dropFirst(start), page) {
+            historyComparisons += 1
+            if old != new { break }
+            equal += 1
+        }
+        let changed = start + equal
+        guard changed < messages.count || equal < page.count else { return }
+        for message in messages.dropFirst(changed) {
+            messageIndex[message.entryID] = nil
+            if let id = message.toolCallID {
+                let count = (toolCounts[id] ?? 1) - 1
+                toolCounts[id] = count == 0 ? nil : count
+                toolPositions[id]?.removeLast()
+                if count == 0 { toolPositions[id] = nil }
+            }
+        }
+        historyPayloadBytes -= messageCosts[changed...].reduce(0, +)
+        let costs = page.dropFirst(equal).map(Self.payloadBytes)
+        historyPayloadBytes += costs.reduce(0, +)
+        messageCosts.replaceSubrange(changed..., with: costs)
+        messages.replaceSubrange(changed..., with: page.dropFirst(equal))
+        for index in changed..<messages.count {
+            let message = messages[index]
+            messageIndex[message.entryID] = index
+            if let id = message.toolCallID {
+                toolCounts[id, default: 0] += 1
+                toolPositions[id, default: []].append(index)
+            }
+        }
+        historyDirty = min(historyDirty, changed)
+    }
+
+    private static func payloadBytes(_ message: NativeThreadMessage) -> Int {
+        256 + message.entryID.utf8.count + (message.argumentsText?.utf8.count ?? 0)
+            + message.blocks.reduce(0) { $0 + $1.text.utf8.count + 64 }
+            + (message.compaction?.summary?.utf8.count ?? 0)
     }
 
     /// The message Retry sends again for a reply `opener` opened: its last one pi has read.
@@ -692,7 +908,7 @@ public final class NativeThreadStore {
         if thinking != showsThinking { showsThinking = thinking }
         let wait = NativeLiveWait(thinking ? value?.liveRequest : nil)
         if wait != liveWait { liveWait = wait }
-        let userTurns = turns.count(where: \.isUser)
+        let userTurns = projection.userCount
         if userTurns != userTurnCount { userTurnCount = userTurns }
         if subagents.isEmpty == hasSubagents { hasSubagents = !subagents.isEmpty }
     }
@@ -732,33 +948,36 @@ public final class NativeThreadStore {
     }
 
     private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
-        let running = message.status == "running" || message.status == "streaming"
-        let key = CallKey(entryID: message.entryID, status: message.status, isError: message.isError,
-                          outputSize: message.blocks.reduce(0) { $0 + $1.text.utf8.count },
-                          argumentsSize: message.argumentsText?.utf8.count,
-                          liveTail: running ? message.blocks.last.map { String(decoding: $0.text.utf8.suffix(1024), as: UTF8.self) } : nil)
-        if let cached = callCache[message.entryID], cached.key == key { return cached.value }
+        if let cached = callCache[message.entryID], cached.key == message { return cached.value }
         let value = NativeActivityCall(message)
-        if callCache[message.entryID] == nil, callCache.count >= 4096 { callCache.removeAll(keepingCapacity: true) }
-        callCache[message.entryID] = (key, value)
+        if callCache[message.entryID] == nil, callCache.count >= 4096 {
+            callCache.removeAll(keepingCapacity: true)
+            cacheBytes -= callCosts.values.reduce(0, +)
+            callCosts = [:]
+        }
+        let cost = Self.payloadBytes(message) * 2
+        cacheBytes += cost - (callCosts[message.entryID] ?? 0)
+        callCosts[message.entryID] = cost
+        callCache[message.entryID] = (message, value)
         return value
     }
 
     private func thinkingBlocks(turn: String, index: Int, text: String) -> [NativeMarkdownBlock] {
-        let key = ProseKey(turn: turn, item: String(index))
-        if let cached = thinkingCache[key], cached.text == text { return cached.blocks }
-        // Still being written, and long: the last parse stands until the new one lands.
-        if let cached = thinkingCache[key], text.utf8.count >= Self.offMainProseBytes, text.hasPrefix(cached.text) {
-            parseOffMain(key, text: text, parse: nativeThinkingBlocks) { [weak self] value in
-                self?.thinkingCache[key] = (text, value)
-            }
+        let key = ProseKey(turn: turn, item: "thinking:\(index)")
+        if let cached = thinkingCache[key], cached.text == text {
+            invalidateParse(key)
             return cached.blocks
         }
-        proseParsing[key] = nil
+        if text.utf8.count >= Self.offMainProseBytes {
+            parseOffMain(key, text: text, streaming: false, parse: nativeThinkingBlocks) { [weak self] value in
+                self?.cacheThinking(key, text: text, blocks: value)
+            }
+            return thinkingCache[key]?.blocks ?? []
+        }
+        invalidateParse(key)
         thinkingParses += 1
         let value = nativeThinkingBlocks(text)
-        if thinkingCache[key] == nil, thinkingCache.count >= 1024 { thinkingCache.removeAll(keepingCapacity: true) }
-        thinkingCache[key] = (text, value)
+        cacheThinking(key, text: text, blocks: value)
         return value
     }
 
@@ -766,55 +985,145 @@ public final class NativeThreadStore {
         -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) {
         let key = ProseKey(turn: turn, item: item)
         if let cached = proseCache[key], cached.text == text, cached.streaming == streaming {
+            invalidateParse(key)
             return (cached.blocks, cached.endsInOpenFence)
         }
-        if streaming, let cached = proseCache[key], cached.streaming, text.utf8.count >= Self.offMainProseBytes, text.hasPrefix(cached.text) {
-            parseOffMain(key, text: text, parse: { nativeMarkdownParse($0, streaming: true) }) { [weak self] value in
-                self?.proseCache[key] = (text, true, value.blocks, value.endsInOpenFence)
+        if text.utf8.count >= Self.offMainProseBytes {
+            parseOffMain(key, text: text, streaming: streaming, parse: { nativeMarkdownParse($0, streaming: streaming) }) { [weak self] value in
+                self?.cacheProse(key, text: text, streaming: streaming, blocks: value.blocks, open: value.endsInOpenFence)
             }
-            return (cached.blocks, cached.endsInOpenFence)
+            return proseCache[key].map { ($0.blocks, $0.endsInOpenFence) } ?? ([], false)
         }
-        proseParsing[key] = nil
+        invalidateParse(key)
         proseParses += 1
         let value = nativeMarkdownParse(text, streaming: streaming)
-        if proseCache[key] == nil, proseCache.count >= 1024 { proseCache.removeAll(keepingCapacity: true) }
-        proseCache[key] = (text, streaming, value.blocks, value.endsInOpenFence)
+        cacheProse(key, text: text, streaming: streaming, blocks: value.blocks, open: value.endsInOpenFence)
         return value
     }
 
-    /// One parse per item at a time. Snapshots keep the last parsed prefix while it runs;
-    /// deriving after it lands starts one more parse of the newest text, skipping intermediate chunks.
-    private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, parse: @escaping @Sendable (String) -> Value,
-                                               land: @escaping @MainActor (Value) -> Void) {
-        guard proseParsing[key] == nil else { return }
-        let token = UUID()
-        proseParsing[key] = token
-        offMainParses += 1
-        let beforeParse = beforeProseParse
-        Task.detached(priority: .userInitiated) { [weak self] in
-            await beforeParse?()
-            let value = parse(text)
-            await MainActor.run {
-                guard let self, self.proseParsing[key] == token else { return }
-                self.proseParsing[key] = nil
-                land(value)
-                self.presentationCache[key.turn] = nil
-                self.derive()
-            }
+    private func cacheThinking(_ key: ProseKey, text: String, blocks: [NativeMarkdownBlock]) {
+        if thinkingCache[key] == nil, thinkingCache.count >= 1024 {
+            thinkingCache = [:]
+            cacheBytes -= thinkingCosts.values.reduce(0, +)
+            thinkingCosts = [:]
         }
+        let cost = text.utf8.count * 3 + blocks.count * 64
+        cacheBytes += cost - (thinkingCosts[key] ?? 0)
+        thinkingCosts[key] = cost
+        thinkingCache[key] = (text, blocks)
+    }
+
+    private func cacheProse(_ key: ProseKey, text: String, streaming: Bool, blocks: [NativeMarkdownBlock], open: Bool) {
+        if proseCache[key] == nil, proseCache.count >= 1024 {
+            proseCache = [:]
+            cacheBytes -= proseCosts.values.reduce(0, +)
+            proseCosts = [:]
+        }
+        let cost = text.utf8.count * 3 + blocks.count * 64
+        cacheBytes += cost - (proseCosts[key] ?? 0)
+        proseCosts[key] = cost
+        proseCache[key] = (text, streaming, blocks, open)
+    }
+
+    /// At most two detached parses per store, one per item. Queued work is replaced by the
+    /// newest text/mode; stale results never publish, and release/session changes fence all work.
+    private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, streaming: Bool,
+                                               parse: @escaping @Sendable (String) -> Value,
+                                               land: @escaping @MainActor @Sendable (Value) -> Void) {
+        let wanted = ParseRequest(text: text, streaming: streaming)
+        guard proseRequests[key] != wanted else { return }
+        let token = UUID()
+        proseRequests[key] = wanted
+        proseParsing[key] = token
+        let beforeParse = beforeProseParse
+        let duringParse = duringProseParse
+        proseJobs[key] = (token, { [weak self] in
+            await beforeParse?()
+            guard !Task.isCancelled else {
+                await self?.finishProseTask(key, token: token)
+                return
+            }
+            let interval = Self.signposter.beginInterval("Thread Markdown parse", id: Self.signposter.makeSignpostID())
+            let onMain = Thread.isMainThread
+            duringParse?()
+            let value = parse(text)
+            Self.signposter.endInterval("Thread Markdown parse", interval)
+            await MainActor.run {
+                guard let self, self.proseTasks[key]?.0 == token else { return }
+                self.proseTasks[key] = nil
+                if onMain { self.mainActorLargeParses += 1 }
+                if self.proseParsing[key] == token {
+                    self.invalidateParse(key)
+                    land(value)
+                    self.presentationCache[key.turn] = nil
+                    self.presentationDirty = self.projection.start(for: key.turn)
+                    let interval = Self.signposter.beginInterval("Thread parsed presentation")
+                    self.derive()
+                    Self.signposter.endInterval("Thread parsed presentation", interval)
+                }
+                self.startProseJobs()
+            }
+        })
+        startProseJobs()
+    }
+
+    private func finishProseTask(_ key: ProseKey, token: UUID) {
+        guard proseTasks[key]?.0 == token else { return }
+        proseTasks[key] = nil
+        startProseJobs()
+    }
+
+    private func startProseJobs() {
+        while proseTasks.count < Self.maximumProseTasks,
+              let key = proseJobs.keys.first(where: { proseTasks[$0] == nil }),
+              let (token, work) = proseJobs.removeValue(forKey: key) {
+            offMainParses += 1
+            proseTasks[key] = (token, Task.detached(priority: .userInitiated, operation: work))
+        }
+    }
+
+    private func invalidateParse(_ key: ProseKey) {
+        proseParsing[key] = nil
+        proseRequests[key] = nil
+        proseJobs[key] = nil
+    }
+
+    private func resetPresentationSession(_ value: NativeThreadSnapshot) {
+        guard snapshot?.piSessionID != value.piSessionID || snapshot?.generation != value.generation else { return }
+        cancelProse()
+        presentationCache = [:]
+        thinkingCache = [:]
+        proseCache = [:]
+        cacheBytes -= thinkingCosts.values.reduce(0, +) + proseCosts.values.reduce(0, +)
+        thinkingCosts = [:]
+        proseCosts = [:]
+        presentationDirty = 0
+    }
+
+    private func cancelProse() {
+        for (_, task) in proseTasks.values { task.cancel() }
+        // Cancellation invalidates publication, not the worker's reservation: a synchronous
+        // parse cannot cooperate until it returns. Its completion alone releases this slot.
+        proseJobs = [:]
+        proseRequests = [:]
+        proseParsing = [:]
+        proseKeysByTurn = [:]
     }
 
     // MARK: Polling
 
-    // The view's foreground task owns this loop, while the thread is on screen. Reconnection
-    // always starts without a revision.
+    // The view's foreground task owns this loop, while the thread is on screen. Only an
+    // explicit, unchanged connection epoch can reuse a ready snapshot across visibility flips.
     /// `preview` is read alongside the first pull while the thread has nothing to show yet.
     /// `owner`: the view whose loop this is. Several views can show one agent's store (a hidden deck thread
     /// and a Mission station's): the newest one's loop runs, and only that owner's `suspend(owner:)` or
-    /// `stop(owner:)` ends it.
-    public func run(request: @escaping Request, preview: Preview? = nil, owner: UUID? = nil) async {
+    /// `stop(owner:)` ends it. `connection` must identify one validated transport epoch; nil or a
+    /// changed token always bootstraps fresh, while visibility-only resumes may reuse a revision.
+    public func run(request: @escaping Request, preview: Preview? = nil, owner: UUID? = nil, connection: AnyHashable? = nil) async {
         guard !Task.isCancelled else { return }
+        let warm = connection != nil && connection == self.connection && ready && !previewing && loadError == nil
         suspend()
+        self.connection = connection
         self.owner = owner
         let run = epoch
         self.request = request
@@ -829,7 +1138,7 @@ public final class NativeThreadStore {
             // The newest page merges onto the history already loaded, as a poll's does: a thread
             // shown again keeps the older pages read in it. Another session or generation, or no
             // overlap, starts over from that page.
-            await pull(fresh: true)
+            await pull(fresh: !warm)
             await renewHolds(run)
             while !Task.isCancelled && epoch == run {
                 do { try await pauseUntilNextPull() } catch { break }
@@ -869,8 +1178,9 @@ public final class NativeThreadStore {
             let ids = Set(current.provisional.map(\.entryID))
             value.provisional = value.provisional.filter { !ids.contains($0.entryID) } + current.provisional
         }
+        resetPresentationSession(value)
         if value != snapshot { snapshot = value }
-        if value.messages != messages { messages = value.messages }
+        replaceHistory(value.messages)
         if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
         if !previewing { previewing = true }
         derive()
@@ -885,6 +1195,10 @@ public final class NativeThreadStore {
         guard request != nil else { return }
         pollWake.signal()
     }
+
+    /// A remote revision hint uses the same coalesced, paced loop as the local server.
+    /// Hidden/stopped stores never start work in response to a hint.
+    public func historyChanged() { revisionAvailable() }
 
     /// One pull of the run loop. It takes every push that arrived before it; one that arrives
     /// while it is in flight ends the next pause at once.
@@ -923,6 +1237,9 @@ public final class NativeThreadStore {
         if busy, startWaiters.isEmpty {
             notice = Self.outcomeUnknown
             reportedUnknown.formUnion(inFlight)
+            for index in submissions.indices where inFlight.contains(submissions[index].id) {
+                submissions[index].state = .uncertain
+            }
         }
         resumeStartWaiters(false)
         epoch = UUID()
@@ -953,6 +1270,7 @@ public final class NativeThreadStore {
 
     public func stop() {
         suspend()
+        connection = nil
         if ready { ready = false }
         // Unknown until the thread polls again.
         endStarting()
@@ -969,13 +1287,13 @@ public final class NativeThreadStore {
     /// was derived from it and the images held go, so visited threads do not add up in memory,
     /// and keeps what is the user's (the draft, attached files, images queued with a message).
     /// As `stop`, and the first pull when it is shown again reloads it whole. Nothing happens
-    /// while it is on screen.
+    /// while it is on screen or owns unsettled/recoverable user work (`canReleaseHistory`).
     public func release() {
-        guard !isLive else { return }
+        guard canReleaseHistory else { return }
         stop()
         images.releaseHeld()
         if snapshot != nil { snapshot = nil }
-        if !messages.isEmpty { messages = [] }
+        replaceHistory([])
         if olderCursor != nil { olderCursor = nil }
         if previewing { previewing = false }
         if !pending.isEmpty { pending = [] }
@@ -987,10 +1305,30 @@ public final class NativeThreadStore {
         callCache = [:]
         thinkingCache = [:]
         proseCache = [:]
-        proseParsing = [:]
+        cancelProse()
+        promptCache = [:]
+        markupCache = [:]
+        callCosts = [:]
+        thinkingCosts = [:]
+        proseCosts = [:]
+        cacheBytes = 0
         contextInputs = (nil, nil, false, true)
         deriveQueue()
         derive()
+    }
+
+    /// Reloadable history can be evicted only when it owns no unsettled user operation.
+    /// Visibility/reader pins belong to the owner; suspension alone is not evidence of safety.
+    public var canReleaseHistory: Bool {
+        !isLive && !busy && !loadingOlder && pending.isEmpty && inFlight.isEmpty
+            && submissions.isEmpty && overlays.isEmpty && holding.isEmpty
+    }
+
+    /// Conservative retained payload/projection/cache estimate, not RSS. Costs are adjusted
+    /// only for changed messages and cache entries; the getter never traverses loaded history.
+    /// User-owned drafts and queued images are intentionally excluded: release preserves them.
+    public var retainedHistoryBytes: Int {
+        (historyPayloadBytes + tailPayloadBytes + metadataPayloadBytes) * 4 + cacheBytes + images.heldBytes
     }
 
     /// Whether `release` has anything to let go.
@@ -1025,11 +1363,21 @@ public final class NativeThreadStore {
         let previous = snapshot
         let fresh = fresh || !ready
         do {
-            let result = try await request(.snapshot(
-                expectedSessionID: fresh ? nil : previous?.piSessionID,
-                afterRevision: fresh ? nil : previous?.revision
-            ))
+            let waiting = Self.signposter.beginInterval("Thread snapshot await", id: Self.signposter.makeSignpostID())
+            let result: NativeThreadResult
+            do {
+                result = try await request(.snapshot(
+                    expectedSessionID: fresh ? nil : previous?.piSessionID,
+                    afterRevision: fresh ? nil : previous?.revision
+                ))
+            } catch {
+                Self.signposter.endInterval("Thread snapshot await", waiting)
+                throw error
+            }
+            Self.signposter.endInterval("Thread snapshot await", waiting)
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
+            let applying = Self.signposter.beginInterval("Thread refresh", id: Self.signposter.makeSignpostID())
+            defer { Self.signposter.endInterval("Thread refresh", applying) }
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
                 noteStartProblem(value.startProblem!)
@@ -1046,6 +1394,7 @@ public final class NativeThreadStore {
                 // Startup questions are live, but this is not a replacement history page.
                 value.messages = messages
                 value.olderCursor = olderCursor
+                resetPresentationSession(value)
                 snapshot = value
                 ready = false
                 if loadError != nil { loadError = nil }
@@ -1061,21 +1410,23 @@ public final class NativeThreadStore {
                 derive()
             case .snapshot(var value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
+                resetPresentationSession(value)
                 if sameSession, let previous, value.revision < previous.revision { return }
                 if !resetHistory, sameSession, value.olderCursor != nil, let first = value.messages.first,
-                   !messages.contains(where: { $0.entryID == first.entryID }) {
+                   messageIndex[first.entryID] == nil {
+                    let joiningWait = Self.signposter.beginInterval("Thread history join await", id: Self.signposter.makeSignpostID())
                     value = await joining(value, request: request)
+                    Self.signposter.endInterval("Thread history join await", joiningWait)
                     guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
                 }
                 settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
                    let first = value.messages.first,
-                   let overlap = messages.firstIndex(where: { $0.entryID == first.entryID }) {
-                    let merged = Array(messages[..<overlap]) + value.messages
-                    if merged != messages { messages = merged }
+                   let overlap = messageIndex[first.entryID] {
+                    replaceHistory(value.messages, from: overlap)
                 } else {
-                    if value.messages != messages { messages = value.messages }
+                    replaceHistory(value.messages)
                     if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
                     historyEpoch = UUID()
                     if loadingOlder { loadingOlder = false }
@@ -1306,7 +1657,7 @@ public final class NativeThreadStore {
             switch result {
             case .snapshot(let page) where page.piSessionID == current.piSessionID && page.generation == current.generation:
                 let ids = Set(messages.map(\.entryID))
-                messages = page.messages.filter { !ids.contains($0.entryID) } + messages
+                replaceHistory(page.messages.filter { !ids.contains($0.entryID) } + messages)
                 olderCursor = page.olderCursor
                 derive()
             case .failure(let code, let message):
@@ -1670,7 +2021,7 @@ public final class NativeThreadStore {
     /// Goal controls remain available during a turn and its separate evaluation.
     @discardableResult
     public func goalAction(_ action: NativeGoalAction, displayedGoal: NativeGoal? = nil) async -> Bool {
-        guard ready, !busy, loadError == nil, supportedActions.contains("goal"), action.isValid, let current = snapshot,
+        guard ready, !busy, inFlight.isEmpty, loadError == nil, supportedActions.contains("goal"), action.isValid, let current = snapshot,
               action != .resume && action != .confirm || dialogs.isEmpty else { return false }
         let displayed = displayedGoal ?? goal
         if action == .pause || action == .resume || action == .confirm {
@@ -1762,6 +2113,8 @@ public final class NativeThreadStore {
         }
         guard epoch == run else { return }
         busy = false
+        // Stop can change the allowed actions while the host settles. Unlike ordinary sends,
+        // this multi-action path has no inFlight record to gate readiness through reconciliation.
         ready = false
         await refresh(fresh: true)
         if epoch == run { notice = failure }
@@ -1798,6 +2151,18 @@ public final class NativeThreadStore {
             notice = "This thread isn't connected right now, so nothing was done. Open it and try again."
             return false
         }
+        let submission = typed.flatMap { typed in
+            sentText.map { _ in NativeThreadSubmission(id: operation, typed: typed, files: files, references: references,
+                                                       elements: elements, images: images, delivery: delivery, state: .sending) }
+        }
+        let submissionBytes = submission?.payloadBytes ?? 0
+        if submission != nil {
+            guard submissions.count < Self.maximumRetainedSubmissions,
+                  submissionBytes <= Self.maximumRetainedSubmissionBytes - retainedSubmissionBytes else {
+                notice = "Unresolved sends have reached the local recovery limit. Restore or explicitly discard a settled record before sending more. Nothing was sent; your draft is unchanged."
+                return false
+            }
+        }
         let run = epoch
         let answeringStartup: Bool
         if case .answer = action { answeringStartup = current.initializing == true }
@@ -1809,6 +2174,13 @@ public final class NativeThreadStore {
         busy = true
         notice = nil
         inFlight.insert(operation)
+        if let submission {
+            let interval = Self.signposter.beginInterval("Thread submit capture")
+            submissions.append(submission)
+            retainedSubmissionBytes += submissionBytes
+            clearCapturedDraft(submission.typed, files: files, references: references, elements: elements)
+            Self.signposter.endInterval("Thread submit capture", interval)
+        }
         defer {
             inFlight.remove(operation)
             reportedUnknown.remove(operation)
@@ -1818,12 +2190,21 @@ public final class NativeThreadStore {
             }
         }
         do {
-            let result = try await request(action)
+            let waiting = Self.signposter.beginInterval("Thread submit admission await", id: Self.signposter.makeSignpostID())
+            let result: NativeThreadResult
+            do { result = try await request(action) }
+            catch {
+                Self.signposter.endInterval("Thread submit admission await", waiting)
+                throw error
+            }
+            Self.signposter.endInterval("Thread submit admission await", waiting)
+            let outcome = Self.signposter.beginInterval("Thread submit outcome")
+            settleSubmission(operation, result: result)
+            Self.signposter.endInterval("Thread submit outcome", outcome)
             if case .retry = action,
                epoch != run || snapshot?.generation != current.generation || snapshot?.piSessionID != current.piSessionID { return false }
             guard epoch == run else {
-                return settledAfterRestart(result, operation: operation, sentText: sentText, typed: typed, files: files,
-                                           references: references, elements: elements)
+                return settledAfterRestart(result, operation: operation)
             }
             let startupFinished = answeringStartup && current.piSessionID.isEmpty
                 && snapshot?.initializing != true && snapshot?.piSessionID.isEmpty == false
@@ -1836,7 +2217,6 @@ public final class NativeThreadStore {
             case .accepted(let accepted) where accepted == operation:
                 wasAccepted = true
                 if let sentText {
-                    forgetSent(sentText, typed: typed, files: files, references: references, elements: elements)
                     lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {
@@ -1878,10 +2258,16 @@ public final class NativeThreadStore {
                 }
                 notice = message
                 modelUnavailable = code == "model_unavailable"
+                if code == "stale_session" { ready = false }
             default:
                 notice = Self.outcomeUnknown
             }
         } catch {
+            if case RemoteHostClientError.rejected(let code, let message) = error {
+                settleSubmission(operation, result: .failure(code: code, message: message))
+            } else {
+                settleSubmission(operation, result: nil)
+            }
             guard epoch == run else { return false }
             if case .retry = action,
                snapshot?.generation != current.generation || snapshot?.piSessionID != current.piSessionID { return false }
@@ -1891,16 +2277,61 @@ public final class NativeThreadStore {
         }
         guard epoch == run else { return wasAccepted }
         busy = !startWaiters.isEmpty || inFlight.contains { $0 != operation }
-        ready = false
-        await refresh(fresh: true)
+        // inFlight still gates new actions through reconciliation, without marking a known
+        // acceptance unknown if visibility changes while its refresh is in flight.
+        // Actions retain the ready-to-send contract. A stale-session refusal, startup answer
+        // or actual connection loss still takes refresh's full bootstrap path.
+        await refresh()
         return wasAccepted
     }
 
-    /// What a message the host took no longer waits for in the composer: the words (while the
-    /// draft is still as they were), the files, the references and the elements it carried.
-    private func forgetSent(_ sentText: String, typed: String?, files: [NativeAttachedFile], references: [NativeAttachedReference],
-                            elements: [NativeAttachedElement]) {
-        if draft == (typed ?? sentText) { draft = "" }
+    private func settleSubmission(_ operation: UUID, result: NativeThreadResult?) {
+        guard let index = submissions.firstIndex(where: { $0.id == operation }) else { return }
+        switch result {
+        case .accepted(let id) where id == operation: _ = removeSubmission(at: index)
+        case .failure(let code, _) where code != "outcome_unknown": submissions[index].state = .failed
+        default: submissions[index].state = .uncertain
+        }
+    }
+
+    /// Restore only a definite refusal and only into an empty composer. The caller restores
+    /// the returned image batch into its own attachment model; new drafts are never overwritten.
+    @discardableResult
+    public func restoreSubmission(_ id: UUID) -> NativeThreadSubmission? {
+        guard !hasDraft, !inFlight.contains(id),
+              let index = submissions.firstIndex(where: { $0.id == id && $0.state == .failed }) else { return nil }
+        let value = removeSubmission(at: index)
+        draft = value.typed
+        attachedFiles = value.files
+        attachedReferences = value.references
+        attachedElements = value.elements
+        return value
+    }
+
+    /// Explicit disposal is local acknowledgment only. It never retracts, retries or sends a
+    /// remote action, and cannot remove a record whose operation is still being reconciled.
+    public func canDiscardSubmission(_ id: UUID) -> Bool {
+        !inFlight.contains(id) && submissions.contains { $0.id == id && ($0.state == .failed || $0.state == .uncertain) }
+    }
+
+    @discardableResult
+    public func discardSubmission(_ id: UUID) -> Bool {
+        guard canDiscardSubmission(id), let index = submissions.firstIndex(where: { $0.id == id }) else { return false }
+        _ = removeSubmission(at: index)
+        return true
+    }
+
+    private func removeSubmission(at index: Int) -> NativeThreadSubmission {
+        let value = submissions.remove(at: index)
+        retainedSubmissionBytes -= value.payloadBytes
+        return value
+    }
+
+    /// Move the captured draft and attachments out of the composer before awaiting admission.
+    /// Direct non-composer sends never touch it, even when their text happens to match.
+    private func clearCapturedDraft(_ typed: String, files: [NativeAttachedFile], references: [NativeAttachedReference],
+                                    elements: [NativeAttachedElement]) {
+        if draft == typed { draft = "" }
         if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
         if !references.isEmpty { attachedReferences.removeAll { sent in references.contains { $0.id == sent.id } } }
         if !elements.isEmpty { attachedElements.removeAll { sent in elements.contains { $0.id == sent.id } } }
@@ -1912,14 +2343,11 @@ public final class NativeThreadStore {
     /// still the action's outcome. A message it took has gone (it leaves the composer, so it is
     /// not sent twice) and the "outcome unknown" the suspension raised for it goes; a refusal is
     /// said in the host's words in its place.
-    private func settledAfterRestart(_ result: NativeThreadResult, operation: UUID, sentText: String?, typed: String?,
-                                     files: [NativeAttachedFile], references: [NativeAttachedReference],
-                                     elements: [NativeAttachedElement]) -> Bool {
+    private func settledAfterRestart(_ result: NativeThreadResult, operation: UUID) -> Bool {
         let unsure = reportedUnknown.contains(operation) && notice == Self.outcomeUnknown
         switch result {
         case .accepted(let accepted) where accepted == operation:
             if unsure { notice = nil }
-            if let sentText { forgetSent(sentText, typed: typed, files: files, references: references, elements: elements) }
             return true
         case .failure(let code, let message):
             if unsure || notice == nil {

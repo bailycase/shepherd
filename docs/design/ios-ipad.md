@@ -183,7 +183,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   glyphs, then "2:44 PM · 3m 12s · 6 tool calls" in mono 11 `textTertiary`, and "· 3 subagents"
   as a link when the turn spawned runs. At rest (no hover).
 - **Notices** (caption `textTertiary`, above the turns; the app's, not the boards'): "<host> is
-  offline · showing the last known thread", "This agent is no longer on <host>.", "Update
+  offline · showing the last known thread" with Retry connection (while a try is under way,
+  "Reconnecting to <host> · showing the last known thread", or "Connecting to <host>…" for a
+  thread not loaded yet, with the same button off as "Connecting…"), "This agent is no longer on <host>.", "Update
   Shepherd on <host> to open threads here.", one line for each thing the host reported
   shortening (Thread › Notices; nothing for older history or a long message), "This host was
   forgotten.", and a pi that can't start as the phone's one line (iPhone:
