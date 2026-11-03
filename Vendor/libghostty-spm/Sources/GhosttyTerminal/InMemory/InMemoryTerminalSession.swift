@@ -162,13 +162,11 @@ public final class InMemoryTerminalSession: @unchecked Sendable {
         receive(data, completion: nil)
     }
 
-    /// Enqueue host output and invoke `completion` after Ghostty has processed
-    /// it on the same generation-bound serial surface queue.
+    /// Enqueue host output and invoke `completion` exactly once after processing,
+    /// or retirement when its surface generation is gone. Never tied to a surface operation
+    /// that can skip its callback on replacement.
     public func receive(_ data: Data, completion: (@Sendable () -> Void)?) {
-        surfaceAccess.enqueueWrite(data)
-        if let completion {
-            _ = surfaceAccess.enqueueSurfaceOperation { _ in completion() }
-        }
+        surfaceAccess.enqueueWrite(data, completion: completion)
         TerminalDebugLog.log(
             .output,
             "terminal <- host \(TerminalDebugLog.describe(data))"

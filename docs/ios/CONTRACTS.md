@@ -176,8 +176,15 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   host over one file cache for both design tracks (K and L): each says which designs it has on
   screen (`watch(_:on:for:)`), the host is told them all, and every track hears the pushes
   (`observe`).
-- The terminal track (`MobileTerminals`) owns every client's `onOutput` and `onSessionExited`,
-  wiring each new connection's client on its first attach: nothing else sets them.
+- The terminal track (`MobileTerminals`) owns every client's `onOutputConsumed` and `onSessionExited`,
+  wiring each new connection's client on its first attach: nothing else sets them. Consumption is
+  acknowledged after SwiftTerm's synchronous feed, including immediate retirement for absent panes.
+  The shared client's Mac consumer acknowledges only after its asynchronous parser finishes.
+- `RemoteHostClient.subscribeNativeThreads(_:)` and `onNativeThreadChanged` offer capability-gated
+  invalidations (`native.revisions.v1`); the thread-store bridge owns the visible-viewer union,
+  clears subscriptions offscreen, and restores them for each new connection. Polling remains the
+  older-host and missed-hint fallback. `fleetDigest(agentID:session:revision:)` returns bounded Home
+  metadata (`native.fleetDigest.v1`); Home retains snapshot fallback and shares visible-thread data.
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.

@@ -371,16 +371,20 @@ struct RemoteRequestTests {
     /// `samplesCoverEveryCase` fails until it has a sample.
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
-        case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
+        case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 40
+    static let caseCount = 42
 
     static let samples: [RemoteRequest] = [
+        .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
+        .nativeThreadSubscribe(id: 96, agentIDs: []),
+        .fleetDigest(id: 97, agentID: S.agent, session: .init(piSessionID: "s", generation: "g"), revision: 9),
+        .fleetDigest(id: 98, agentID: S.agent, session: nil, revision: nil),
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .hostUpdate(id: 90, request: .status),
@@ -589,7 +593,7 @@ struct RemoteReplyTests {
 
     static func caseName(_ reply: RemoteReply) -> String {
         switch reply {
-        case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
+        case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
@@ -597,9 +601,13 @@ struct RemoteReplyTests {
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 40
+    static let caseCount = 42
 
     static let samples: [RemoteReply] = [
+        .nativeThreadChanged(agentID: S.agent),
+        .fleetDigest(id: 97, result: .unchanged(piSessionID: "s", generation: "g", revision: 9)),
+        .fleetDigest(id: 98, result: .digest(.init(session: .init(piSessionID: "s", generation: "g"), revision: 9, running: true,
+            question: .init(dialogID: "q", kind: .select, title: "Choose", options: ["yes", "no"])))),
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
                                                   offerID: S.op, offeredVersion: "2", canInstall: true)),
         .logicalProjectRuntime(id: 81, result: .project(Project(name: "Owner"))),

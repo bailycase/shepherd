@@ -167,9 +167,12 @@ final class RawRemote: @unchecked Sendable {
     private var buffer = Data()
     private var closed = false
 
-    init(port: UInt16) throws {
+    init(port: UInt16, receiveBufferBytes: Int32? = nil) throws {
         fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw WireError("socket: errno \(errno)") }
+        if var bytes = receiveBufferBytes {
+            _ = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bytes, socklen_t(MemoryLayout<Int32>.size))
+        }
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)

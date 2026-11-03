@@ -3,20 +3,6 @@ import Observation
 import ShepherdCore
 import ShepherdProtocol
 
-/// Which pi session a thread shows: a new session or a new generation of it is a different
-/// thread (history, echoes, and questions belong to one).
-public struct NativeThreadSession: Hashable, Sendable {
-    public var piSessionID: String
-    public var generation: String
-
-    public init(piSessionID: String, generation: String) {
-        self.piSessionID = piSessionID
-        self.generation = generation
-    }
-
-    public var key: String { piSessionID + ":" + generation }
-}
-
 /// One turn as the thread lists it: the turn, and for a reply its presentation and the
 /// prompt that opened it. Equatable, so a row that did not change is not redrawn.
 public struct NativeThreadRow: Equatable, Identifiable, Sendable {
