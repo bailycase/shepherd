@@ -95,26 +95,27 @@ export function descendants(pid) {
 
 export function jsonLines(onEvent, onError) {
   const decoder = new StringDecoder("utf8");
-  let buffer = "", failed = false;
+  let parts = [], bytes = 0, failed = false;
+  const fail = (error) => { failed = true; parts = []; bytes = 0; onError(error); };
   return (chunk) => {
     if (failed) return;
-    buffer += decoder.write(chunk);
-    // One pass over the chunk: a start index walks the lines and the remainder is sliced once.
-    // UTF-16 length bounds the byte length from below, so bytes are only counted near the cap.
-    const tooLong = (text) => text.length > MAX_FRAME / 4 && Buffer.byteLength(text) > MAX_FRAME;
+    const text = decoder.write(chunk);
+    // Scan/count only new decoded text; joining earlier fragments here would flatten a growing rope.
     let start = 0;
-    for (;;) {
-      const end = buffer.indexOf("\n", start);
-      if (end < 0) break;
-      const line = buffer.slice(start, end);
+    while (start < text.length) {
+      const end = text.indexOf("\n", start);
+      const part = text.slice(start, end < 0 ? text.length : end);
+      bytes += Buffer.byteLength(part);
+      if (bytes > MAX_FRAME) { fail(new Error("RPC frame exceeds 8 MiB")); return; }
+      parts.push(part);
+      if (end < 0) return;
+      const line = parts.join("");
+      parts = []; bytes = 0;
       start = end + 1;
-      if (tooLong(line)) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); return; }
       if (!line.trim()) continue;
       try { onEvent(JSON.parse(line)); }
-      catch (error) { failed = true; buffer = ""; onError(error); return; }
+      catch (error) { fail(error); return; }
     }
-    buffer = start > 0 ? buffer.slice(start) : buffer;
-    if (tooLong(buffer)) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); }
   };
 }
 

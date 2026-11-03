@@ -58,6 +58,70 @@ test("LF framing preserves fragmented UTF-8 and Unicode separators; malformed/ov
   assert.match(errors.at(-1), /exceeds/);
 });
 
+test("LF framing scans and counts near-limit fragmented Unicode only once", () => {
+  const limit = 8 * 1024 * 1024;
+  const room = limit - Buffer.byteLength(JSON.stringify({ text: "" }));
+  const value = { text: "🌱".repeat(Math.floor(room / 4)) + "a".repeat(room % 4) };
+  const data = Buffer.from(JSON.stringify(value));
+  assert.equal(data.length, limit);
+  for (const chunkSize of [1024, 65536]) {
+    const events = [];
+    const read = mod.jsonLines((event) => events.push(event), assert.fail);
+    let scanned = 0, counted = 0;
+    const indexOf = String.prototype.indexOf, byteLength = Buffer.byteLength;
+    // Do not retain mock call arguments: a regressed parser would retain every growing string.
+    String.prototype.indexOf = function (needle, start = 0) {
+      const end = indexOf.call(this, needle, start);
+      if (needle === "\n") scanned += (end < 0 ? this.length : end + 1) - start;
+      return end;
+    };
+    Buffer.byteLength = function (text, ...args) {
+      counted += text.length;
+      return byteLength.call(this, text, ...args);
+    };
+    try {
+      for (let start = 0; start < data.length; start += chunkSize) read(data.subarray(start, start + chunkSize));
+      assert.equal(events.length, 0, "a record waits for LF, even at the byte cap");
+      read(Buffer.from("\n"));
+    } finally { String.prototype.indexOf = indexOf; Buffer.byteLength = byteLength; }
+    assert.deepEqual(events, [value]);
+    // Work budgets, not timings: no searching or byte-counting earlier fragments again.
+    assert(scanned <= JSON.stringify(value).length + 1, "scan work stays within one pass");
+    assert(counted <= JSON.stringify(value).length, "byte-counting work stays within one pass");
+  }
+});
+
+test("LF framing enforces the byte cap across fragments and CRLF and fails only once", () => {
+  const limit = 8 * 1024 * 1024;
+  for (const extra of [0, 1]) {
+    const events = [], errors = [];
+    const read = mod.jsonLines((event) => events.push(event), (error) => errors.push(error.message));
+    // CR counts toward the cap; multibyte text is far shorter than the cap in UTF-16 units.
+    const room = limit - 3 + extra; // JSON quotes and CR
+    const value = "🌱".repeat(Math.floor(room / 4)) + "a".repeat(room % 4);
+    const data = Buffer.from(JSON.stringify(value) + "\r");
+    assert.equal(data.length, limit + extra);
+    for (let start = 0; start < data.length; start += 1023) read(data.subarray(start, start + 1023));
+    assert.equal(errors.length, extra, "reject an oversized unterminated frame immediately");
+    read(Buffer.from("\n\n \t\r\n{}\r\n"));
+    read(Buffer.from("bad\n{}\n"));
+    read(Buffer.from("{}\n"));
+    assert.deepEqual(events, extra ? [] : [value, {}]);
+    assert.equal(errors.length, 1);
+    if (extra) assert.match(errors[0], /exceeds/);
+  }
+});
+
+test("LF framing resets its byte count for many records in one oversized chunk", () => {
+  const value = "x".repeat(1024);
+  const line = JSON.stringify(value) + "\r\n\n";
+  const data = Buffer.from(line.repeat(8200));
+  assert(data.length > 8 * 1024 * 1024);
+  let count = 0;
+  mod.jsonLines((event) => { assert.equal(event, value); count++; }, assert.fail)(data);
+  assert.equal(count, 8200);
+});
+
 test("queued helpers stop at time, turn and token bounds without limiting ordinary children", () => {
   const run = { queueRequestID: "q", state: "running", startedAt: 0, turns: 255, tokens: 999_999 };
   assert.equal(mod.queuedChildLimit(run, 1_799_999), undefined);
