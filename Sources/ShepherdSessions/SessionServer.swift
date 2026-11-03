@@ -993,6 +993,8 @@ public final class SessionServer: @unchecked Sendable {
     /// `allowsAgentRecovery` per agent, valid for one committed state: `commit()` asks on every
     /// streamed delta, and the answer scans projects, executions and automations.
     private var recoveryAllowance: (version: UInt64, allowed: [AgentID: Bool])?
+    private var recoveryAgentIndices: (version: UInt64, indices: [AgentID: Int])?
+    private(set) var recoveryAgentIndexBuildCount = 0
     private var projectDeliveries: (version: UInt64, byAgent: [AgentID: UUID?])?
 
     private var sessions: [SessionID: ServerSession] = [:]
@@ -8290,12 +8292,21 @@ public final class SessionServer: @unchecked Sendable {
         thread.goal == nil && allowsAgentRecovery(id)
     }
 
+    /// StateStore's version covers extension/RPC session races and structural reordering.
+    private func recoveryAgentIndex(_ id: AgentID) -> Int? {
+        if recoveryAgentIndices?.version != store.version {
+            recoveryAgentIndices = (store.version, Dictionary(uniqueKeysWithValues: store.state.agents.enumerated().map { ($0.element.id, $0.offset) }))
+            recoveryAgentIndexBuildCount += 1
+        }
+        return recoveryAgentIndices?.indices[id]
+    }
+
     private func allowsAgentRecovery(_ id: AgentID) -> Bool {
         if recoveryAllowance?.version != store.version { recoveryAllowance = (store.version, [:]) }
         if let cached = recoveryAllowance?.allowed[id] { return cached }
         var allowed = false
-        if let agent = store.state.agents.first(where: { $0.id == id }),
-           agent.coordinatorFor == nil, agent.designID == nil,
+        if let index = recoveryAgentIndex(id),
+           store.state.agents[index].coordinatorFor == nil, store.state.agents[index].designID == nil,
            !store.state.isProjectWorker(id), !store.state.isMissionAgent(id),
            !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
            !Self.unattendedAgentIDs(in: store.state).contains(id) {
@@ -8323,20 +8334,20 @@ public final class SessionServer: @unchecked Sendable {
                 thread.recoveryAtLaunch = deferred
                 return true
             }
+            let index = recoveryAgentIndex(id)
+            let currentSession = index.map { store.state.agents[$0].effectivePiSessionID }
             let checkpoint = allowsAgentRecovery(id, thread: thread)
-                ? thread.recoveryCheckpoint(sessionID: store.state.agents.first(where: { $0.id == id })?.piSessionID ?? id.rawValue) : nil
-            if let checkpoint, thread.piSessionID != nil {
-                // RPC observes a session switch before the extension socket necessarily does.
-                // Recovery's synchronous write-ahead contract cannot publish a checkpoint for
-                // a session that state.json has not yet accepted. Ordinary extension reports stage.
-                if let index = store.state.agents.firstIndex(where: { $0.id == id }),
-                   store.state.agents[index].effectivePiSessionID != checkpoint.sessionID {
-                    try mutateState {
-                        $0.agents[index].piSessionID = checkpoint.sessionID
-                        $0.agents[index].nameIsFinal = false
-                    }
+                ? thread.recoveryCheckpoint(sessionID: currentSession ?? id.rawValue) : nil
+            if let checkpoint, thread.piSessionID != nil, currentSession != checkpoint.sessionID {
+                // Recovery cannot publish before state.json accepts the session identity.
+                // Ordinary extension reports stage; this admission gate remains synchronous.
+                guard let index else { return false }
+                try mutateState {
+                    $0.agents[index].piSessionID = checkpoint.sessionID
+                    $0.agents[index].nameIsFinal = false
                 }
-                guard store.state.agents.first(where: { $0.id == id })?.effectivePiSessionID == checkpoint.sessionID else { return false }
+                guard let updated = recoveryAgentIndex(id),
+                      store.state.agents[updated].effectivePiSessionID == checkpoint.sessionID else { return false }
             }
             try agentRecovery.save(checkpoint, for: id, force: force)
             return true

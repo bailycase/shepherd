@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OSLog
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -88,6 +89,11 @@ final class RPCSession: @unchecked Sendable {
 
     /// Tests only: runs on the decode queue before each off-queue decode.
     var beforeOffQueueDecode: (() -> Void)?
+    var beforeInputPreparation: (() -> Void)?
+    private static let preparationSlots = DispatchSemaphore(value: 4)
+    private static let signposter = OSSignposter(subsystem: "com.shepherd.sessions", category: "RPC work")
+    static let stderrBudgetPerTurn = 64 * 1024
+    private(set) var largestStderrTurn = 0
 
     private let queue: DispatchQueue
     private let childPID: pid_t
@@ -256,6 +262,8 @@ final class RPCSession: @unchecked Sendable {
     /// session's queue hierarchy.
     @discardableResult
     func send(_ command: RPCCommand, id: String? = nil) -> Bool {
+        let interval = Self.signposter.beginInterval("RPC dispatch", id: Self.signposter.makeSignpostID())
+        defer { Self.signposter.endInterval("RPC dispatch", interval) }
         guard isAlive, !stdinClosed else { return false }
         let line: Data
         do {
@@ -264,6 +272,13 @@ final class RPCSession: @unchecked Sendable {
             ShepherdLog.warning("rpc session \(self.id) failed to encode \(command.type): \(error)")
             return false
         }
+        return admit(line)
+    }
+
+    private func admit(_ line: Data) -> Bool {
+        let interval = Self.signposter.beginInterval("RPC admission", id: Self.signposter.makeSignpostID())
+        defer { Self.signposter.endInterval("RPC admission", interval) }
+        guard isAlive, !stdinClosed else { return false }
         guard line.count <= Self.outputQueueLimit - pendingInputBytes else {
             ShepherdLog.warning("rpc session \(self.id) command dropped: pending output limit is \(Self.outputQueueLimit) bytes")
             return false
@@ -283,6 +298,7 @@ final class RPCSession: @unchecked Sendable {
     func request(
         _ command: RPCCommand,
         timeout: TimeInterval = 10,
+        onAdmitted: (() -> Void)? = nil,
         onLateResponse: ((RPCResponse) -> Void)? = nil,
         completion: @escaping (Result<RPCResponse, RPCError>) -> Void
     ) {
@@ -296,10 +312,45 @@ final class RPCSession: @unchecked Sendable {
             completion(.failure(.inputRejected))
             return
         }
-        pendingRequests[requestID] = completion
+        onAdmitted?()
+        awaitResponse(requestID, type: command.type, timeout: timeout, onLateResponse: onLateResponse, completion: completion)
+    }
+
+    /// The thread's serialized input lane owns ordering. Control commands bypass preparation;
+    /// its cancellation/generation predicate is checked again immediately before admission.
+    func requestPrepared(type: String, timeout: TimeInterval, prepare: @escaping () -> RPCCommand,
+                         isCurrent: @escaping () -> Bool, onAdmitted: @escaping () -> Void,
+                         onLateResponse: ((RPCResponse) -> Void)?,
+                         completion: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        guard isAlive, !stdinClosed else { completion(.failure(.notAlive)); return }
+        nextRequestID += 1
+        let requestID = "\(id.rawValue)-\(nextRequestID)", hook = beforeInputPreparation
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            hook?()
+            Self.preparationSlots.wait()
+            let interval = Self.signposter.beginInterval("RPC frame preparation", id: Self.signposter.makeSignpostID())
+            let line = try? NDJSON.encode(RPCCommandFrame(id: requestID, command: prepare()))
+            Self.signposter.endInterval("RPC frame preparation", interval)
+            Self.preparationSlots.signal()
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                guard isCurrent(), let line, self.admit(line) else { completion(.failure(.inputRejected)); return }
+                onAdmitted()
+                self.awaitResponse(requestID, type: type, timeout: timeout, onLateResponse: onLateResponse, completion: completion)
+            }
+        }
+    }
+
+    private func awaitResponse(_ requestID: String, type: String, timeout: TimeInterval,
+                               onLateResponse: ((RPCResponse) -> Void)?, completion: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        let interval = Self.signposter.beginInterval("RPC engine response wait", id: Self.signposter.makeSignpostID())
+        pendingRequests[requestID] = { result in
+            Self.signposter.endInterval("RPC engine response wait", interval)
+            completion(result)
+        }
         lateResponses[requestID] = onLateResponse
-        // A deadline needs only the type, not the prompt and image payloads, after a reply.
-        queue.asyncAfter(deadline: .now() + timeout) { [weak self, type = command.type] in
+        // No prompt/image retained by the deadline after a reply.
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             self?.expire(requestID, type: type, timeout: timeout)
         }
     }
@@ -525,7 +576,9 @@ final class RPCSession: @unchecked Sendable {
         Self.decodeQueue.async { [weak self] in
             hook?()
             Self.decodeSlots.wait()
+            let interval = Self.signposter.beginInterval("RPC decode", id: Self.signposter.makeSignpostID())
             let decoded = Result { try NDJSON.decode(RPCIncoming.self, from: line) }
+            Self.signposter.endInterval("RPC decode", interval)
             Self.decodeSlots.signal()
             guard let self else { return }
             self.queue.async { self.finishOffQueueDecode(decoded) }
@@ -596,7 +649,11 @@ final class RPCSession: @unchecked Sendable {
 
     private func drainStderr() {
         guard !stderrClosed else { return }
+        let interval = Self.signposter.beginInterval("RPC stderr drain", id: Self.signposter.makeSignpostID())
+        defer { Self.signposter.endInterval("RPC stderr drain", interval) }
         var buf = [UInt8](repeating: 0, count: 16 * 1024)
+        var bytesRead = 0
+        defer { largestStderrTurn = max(largestStderrTurn, bytesRead) }
         while true {
             let n = read(stderrFD, &buf, buf.count)
             if n > 0 {
@@ -610,11 +667,21 @@ final class RPCSession: @unchecked Sendable {
                     emitStderr(stderrBuffer.prefix(Self.maxStderrLineBytes))
                     stderrBuffer.removeAll(keepingCapacity: false)
                 }
+                bytesRead += n
+                if bytesRead >= Self.stderrBudgetPerTurn {
+                    // A descendant can keep an otherwise empty pipe open after reap. Force
+                    // the final EAGAIN check next turn instead of depending on another event.
+                    if reaped { queue.async { [weak self] in self?.drainStderr() } }
+                    return
+                }
                 continue
             }
             if n == 0 { break }
             if errno == EINTR { continue }
-            if errno == EAGAIN || errno == EWOULDBLOCK { return }
+            if errno == EAGAIN || errno == EWOULDBLOCK {
+                if reaped { finishStderr() }
+                return
+            }
             break
         }
         finishStderr()
@@ -629,6 +696,8 @@ final class RPCSession: @unchecked Sendable {
         stderrClosed = true
         stderrSource?.cancel()
         stderrSource = nil
+        failRequestsAfterExit()
+        deliverExitIfReady()
     }
 
     private func emitStderr(_ bytes: Data) {
@@ -695,7 +764,7 @@ final class RPCSession: @unchecked Sendable {
         // The child's diagnostics must precede exit classification. Don't wait for descendants
         // holding stderr open, but retain its final line even without a trailing newline.
         drainStderr()
-        finishStderr()
+        // If this turn hit its budget, the read source continues draining before onExit.
         failRequestsAfterExit()
         deliverExitIfReady()
         return true
@@ -714,7 +783,7 @@ final class RPCSession: @unchecked Sendable {
     }
 
     private func deliverExitIfReady() {
-        guard reaped, stdoutClosed, !exitDelivered, !recordsInFlight else { return }
+        guard reaped, stdoutClosed, stderrClosed, !exitDelivered, !recordsInFlight else { return }
         exitDelivered = true
         onExit?(exitCode)
     }

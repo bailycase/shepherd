@@ -631,8 +631,8 @@ pi saves every image in its own session: a user message's and a tool result's `i
 whole to the session file (checked against the staged engine's `SessionManager`, user and tool-result images,
 byte for byte). The host asks for history with `images: "refs"` (Shepherd's engine patch), so each image arrives
 as `RPCImageRef`: its SHA-256, byte count and the pixel size its header gives, never its bytes. `get_image`
-returns one image's bytes by that hash. So **the host stores nothing**: it names an image in the snapshot and
-asks pi for its bytes when a client wants them. It never relies on a client's memory of
+returns one image's bytes by that hash. The host keeps **no additional on-disk image copy**: it names an image in
+the snapshot and asks pi for its bytes when a client wants them. It never relies on a client's memory of
 what it sent (`sentImages`) or on the original file.
 
 - **Snapshots carry metadata only.** An `unsupportedImage` block gains `imageID`, `mimeType`, `width`, `height`
@@ -643,8 +643,10 @@ what it sent (`sentImages`) or on the original file.
   both the snapshot and the lookup read), the position among that message's images, and the image's **whole**
   SHA-256 in hex. `ThreadImages.verified` hashes the bytes it is about to serve and refuses any whose hash is not
   the id's, or that are not the type and size the thread offers, so an id never serves bytes it did not name.
-  **The host keeps no cache.** pi remembers each saved block's hash by the block object, which never changes, so a
-  history read hashes each image once per session load.
+  The host reuses verified bytes within one session generation (at most four images and 10 MiB, least recently
+  used first), shares in-flight reads, and rechecks current-history membership for every chunk. Switching sessions
+  drops the cache. pi remembers each saved block's hash by the block object, which never changes, so a history
+  read hashes each image once per session load.
 - **Where the work runs.** pi hashes and reads headers; a history refresh in the host only checks what pi said
   against the bounds (`ThreadImages.named`) into a table (`ThreadImages.table(for:)`), and the projection looks
   entries up (`projectHistory(images:)`). A history whose images arrive inline (an older engine, a stub) is read off
@@ -653,8 +655,8 @@ what it sent (`sentImages`) or on the original file.
   answers only if the session is still the one asked about.
 - **`NativeThreadRequest.image(expectedSessionID, imageID, offset)`** answers `imageChunk` (`imageID`, `mimeType`,
   `totalBytes`, `offset`, `data`): at most `NativeImage.chunkBytes` (256 KiB, base64 about 350 KB, well under the
-  1 MiB frame), from `offset`. The host serves only an id its current history named, asks pi for that hash
-  (`get_image`) for this agent and session, checks the bytes, and serves a piece. Failures: `stale_session`
+  1 MiB frame), from `offset`. The host serves only an id its current history named. On a cache miss it asks pi
+  for that hash (`get_image`) for this agent and session, verifies the whole image once, and serves its pieces. Failures: `stale_session`
   (another session), `unknown_image` (no such image, a piece past the end, a negative offset, a made-up id). A
   client names no path.
 - **Gated** by `images` in `supportedActions` and, remotely, `native.images.v1`. `RemoteHostClient` strips the
