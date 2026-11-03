@@ -33,8 +33,12 @@ Hooks are read on the host where the agent runs.
 | Space | `<root>/.claude/settings.json`, `<root>/.claude/settings.local.json` | Claude Code |
 | Space | `<root>/.codex/hooks.json`, `<root>/.codex/config.toml` | Codex |
 
-`<root>` is the git top level of the thread's cwd, else the cwd. The home folder is never a space.
-Space files load only when pi's `trust.json` trusts `<root>`. Claude Code files and Codex files are
+`<root>` is the nearest folder at or above the thread's cwd that holds `.git`, searched below the
+home folder without running git; else the cwd. The home folder and anything above it is never a
+space. Space files load only when pi's `trust.json` trusts `<root>`: the nearest decision at or
+above it wins. In the hash, This Mac paths are `$HOME` as given (never resolved) joined with the
+relative path; space paths are the real path of `<root>` joined with it. `~/.claude/settings.local.json`
+is not read. Claude Code files and Codex files are
 read only while their reader is on (Settings › Hooks › Sources).
 
 Every file uses one shape (JSON; the TOML `[[hooks.<Event>]]` tables map to it):
@@ -43,7 +47,8 @@ Every file uses one shape (JSON; the TOML `[[hooks.<Event>]]` tables map to it):
 { "hooks": { "<Event>": [ { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "…", "timeout": 10, "statusMessage": "…", "async": false } ] } ] } }
 ```
 
-Handler `type` is `command` or `mcp_tool` (`server`, `tool`, `input` with `${field.path}`
+The TOML subset is single-line basic and literal strings, numbers and booleans inside hook tables;
+anything else there makes the file unreadable. Handler `type` is `command` or `mcp_tool` (`server`, `tool`, `input` with `${field.path}`
 placeholders). `prompt` and `agent` handlers are listed but never run. Unknown keys are kept on
 write. A file that doesn't parse is reported (`Couldn't read: line N, …`) and contributes nothing.
 
@@ -86,8 +91,14 @@ runs in `<root>` with `CLAUDE_PROJECT_DIR=<root>` and `SHEPHERD_HOOK_EVENT=<Even
 | `systemMessage` | shown to the person, not sent to the agent |
 | `continue: false`, `stopReason` | stops the agent after this step |
 
-Matching hooks run concurrently. Any deny wins over ask, ask over allow. Default timeout 60 s,
-`SessionEnd` 1 s (max 3 s). Output is capped at 64 KiB per stream.
+Matching hooks run concurrently. Any deny wins over ask, ask over allow; with no one to answer
+(automations), ask is deny. `updatedInput` is merged into the call's input. Default timeout 60 s,
+at most 600 s; `SessionEnd` 1 s (max 3 s). Output is capped at 64 KiB per stream. The Stop
+send-back count resets when the person sends a message. Hooks also run for nested tool calls.
+
+Known limits: `mcp_tool` handlers report "A hook failed" until pi gives event handlers
+`executeTool`. `SubagentStart` context and `SubagentStop` send-backs reach the parent thread as
+rows, not the subagent. `trust.json` writes are atomic and re-read first, but not locked.
 
 ## Identity and trust
 
@@ -133,8 +144,9 @@ The runtime posts `pi.sendMessage({ customType: "shepherd.hook", display: true, 
   "detail": "Edit|Write · edit .env", "lines": ["…"], "meta": "<command> · exit 2 · 41 ms", "hash": "…", "file": "…" }
 ```
 
-`running` is shown only while the hook runs, as the agent's working status (`ctx.ui.setWorkingMessage`
-or the status extension), never as a stored row. Runs with no visible effect (exit 0, no output)
+`running` is shown only while the hook runs, as an extension status (`ctx.ui.setStatus` with key
+`shepherd.hook`, cleared with no text) that the thread draws as its working line, never as a
+stored row. Only `context` and `sentBack` rows reach the model. Runs with no visible effect (exit 0, no output)
 collapse into one `ran` row per event and turn.
 
 `PreToolUse` `ask` uses `ctx.ui.select(title, ["Deny", "Allow once"])` with title
