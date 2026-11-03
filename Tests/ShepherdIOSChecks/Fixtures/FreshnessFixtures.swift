@@ -1,0 +1,461 @@
+import Foundation
+import UIKit
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
+import ShepherdUI
+
+// The November mobile audit's surfaces: Home's lazy Pinned card with many pins, a thread while
+// its host reconnects and while it is offline (one line and one button in the same place), and
+// iPad thread switches that flip visibility instead of remounting.
+extension FixtureCatalog {
+    static var freshness: [FixtureScreen] {
+        let preview = FixtureData.ref(FixtureData.preview)
+        return [
+            FixtureScreen(name: "home-pins-many", hosts: FreshnessFixtures.manyThreads(50), prepare: FreshnessFixtures.pinAll),
+            FixtureScreen(name: "thread-reconnecting", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+                          prepare: FreshnessFixtures.reconnecting),
+            FixtureScreen(name: "thread-offline", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+                          prepare: FreshnessFixtures.offline),
+            // The real ReviewStore over large files: what it holds, letting it go off screen, and a
+            // fetch that a shed overtakes. Checks only; its shot is the thread.
+            FixtureScreen(name: "review-retention", hosts: ReviewRetentionFixture.hosts(), routes: [.thread(preview)],
+                          prepare: ReviewRetentionFixture.run),
+            // UX-02: a refused send kept with its image, restored only into an empty composer, a
+            // newer draft and image kept, an unknown outcome never restorable. Shot: both banners.
+            FixtureScreen(name: "composer-refused", hosts: RefusedSendFixture.hosts(), routes: [.thread(preview)],
+                          prepare: RefusedSendFixture.run),
+            FixtureScreen(name: "pad-switch", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+                          prepare: FreshnessFixtures.switchThreads),
+            // Run with -w: a thread kept hidden in one window and shown in a second, which then closes.
+            FixtureScreen(name: "windows-deck-close", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+                          prepare: FreshnessFixtures.closeWindow),
+        ]
+    }
+}
+
+@MainActor enum FreshnessFixtures {
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
+
+    /// One host with `count` idle threads, each with a long-ish name.
+    static func manyThreads(_ count: Int) -> [FixtureHostData] {
+        let agents = (1...count).map { index in
+            FixtureData.agent(AgentID(rawValue: "pin-\(index)"), "Pinned thread \(index) · tidy the ledger exports before release", .idle)
+        }
+        return [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState(spaces: [FixtureData.shepherdSpace], agents: agents))]
+    }
+
+    /// Pins every thread, then counts the Pinned card's rows built: the card is lazy, so far
+    /// fewer than 50 at a phone's height.
+    static func pinAll(_ app: MobileApp) async {
+        await HomeFeed.of(app.hosts).refresh()
+        let sidebar = SidebarThreads.of(app.hosts)
+        SHRenderProbe.start()
+        for agent in app.hosts.hosts[0].state.agents { sidebar.togglePin(AgentRef(host: FixtureData.studio, agent: agent.id)) }
+        try? await Task.sleep(for: .seconds(1))
+        let built = SHRenderProbe.stop()["listCard.segment", default: 0]
+        check(sidebar.groups(HomeFeed.of(app.hosts).model).pinned.count == 50, "all 50 pins are in the group")
+        check(built > 0 && built < 50, "the Pinned card built \(built) of 50 rows")
+    }
+
+    /// The thread on screen; then its host's next hello goes unanswered and the app reconnects.
+    static func reconnecting(_ app: MobileApp) async {
+        FixtureHost.running(FixtureData.studio)?.holdHello()
+        app.hosts.retry(FixtureData.studio)
+        await FixtureWindows.wait("connecting", seconds: 5) { app.hosts.host(FixtureData.studio)?.phase == .connecting }
+        try? await Task.sleep(for: .milliseconds(500))
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        let labels = SidebarAutomationsCheck.labels()
+        check(labels.contains { $0.hasPrefix("Reconnecting to Studio") }, "the notice says it is reconnecting")
+        check(labels.contains("Connecting…") && !labels.contains("Retry connection"), "the button waits while a try is under way")
+        check(!labels.contains { $0.contains("is offline") }, "a reconnect is not called offline")
+    }
+
+    /// The thread on screen; then its host disconnects (as after a failed try).
+    static func offline(_ app: MobileApp) async {
+        app.hosts.disconnect(FixtureData.studio)
+        await FixtureWindows.wait("offline", seconds: 5) { app.hosts.host(FixtureData.studio)?.phase == .disconnected }
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        let labels = SidebarAutomationsCheck.labels()
+        check(labels.contains { $0.contains("Studio is offline") } && labels.contains("Retry connection"), "offline says so, with Retry")
+    }
+
+    /// iPad: preview, then another thread, then back and forth. Kept threads flip visibility:
+    /// only the newly shown thread mounts, and only the selected one is in accessibility.
+    static func switchThreads(_ app: MobileApp) async {
+        guard app.navigator.layout == .pad else {
+            check(true, "phone: no detail deck")
+            return
+        }
+        let first = FixtureData.ref(FixtureData.preview)
+        let second = FixtureData.ref(FixtureData.extensions)
+        SHRenderProbe.start()
+        for ref in [second, first, second, first] {
+            app.navigator.open(.thread(ref))
+            await FixtureWindows.wait("selected", seconds: 5) { app.navigator.padSelection == ref }
+            try? await Task.sleep(for: .milliseconds(600))
+        }
+        let mounts = SHRenderProbe.stop()["thread.appear", default: 0]
+        check(mounts == 1, "four switches between two threads mounted one new thread screen (\(mounts))")
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        let labels = SidebarAutomationsCheck.labels()
+        check(app.threads.viewers(for: second).count == 0 && app.threads.viewers(for: first).count == 1,
+              "only the shown thread runs its poll (hidden \(app.threads.viewers(for: second).count), shown \(app.threads.viewers(for: first).count))")
+        // The running thread (kept behind) has Stop agent in its bar; the idle one shown has none.
+        check(!labels.contains("Stop agent"), "a kept thread adds nothing to the bar")
+        app.navigator.open(.thread(second))
+        await FixtureWindows.wait("running thread shown", seconds: 5) { app.navigator.padSelection == second }
+        try? await Task.sleep(for: .seconds(1))
+        check(SidebarAutomationsCheck.labels().contains("Stop agent"), "the shown running thread has its Stop agent")
+        // The bar's title is the shown thread's, not a kept one's.
+        let titles = SidebarAutomationsCheck.labels()
+        check(titles.contains { $0.contains("Plan shepherd extensions") } && !titles.contains { $0.contains("Investigate SwiftUI live preview") },
+              "the title is the shown thread's (\(titles.filter { $0.contains("shepherd extensions") || $0.contains("live preview") }))")
+    }
+
+    /// iPad, two windows: preview is kept hidden behind the running thread in the first window
+    /// and shown in a second. Only the second runs it; closing that window leaves no owner behind.
+    static func closeWindow(_ app: MobileApp) async {
+        guard app.navigator.layout == .pad else {
+            check(true, "phone: no detail deck")
+            return
+        }
+        let preview = FixtureData.ref(FixtureData.preview)
+        let running = FixtureData.ref(FixtureData.extensions)
+        app.navigator.open(.thread(running))
+        await FixtureWindows.wait("running shown", seconds: 5) { app.navigator.padSelection == running }
+        try? await Task.sleep(for: .seconds(1))
+        check(app.threads.viewers(for: preview).count == 0, "a hidden thread holds no viewer")
+        await WindowsFixtures.open(preview, in: app, beside: false)
+        try? await Task.sleep(for: .seconds(1))
+        check(app.threads.viewers(for: preview).count == 1, "the second window alone runs it (\(app.threads.viewers(for: preview).count))")
+        FixtureWindows.shared.closeOthers()
+        await FixtureWindows.wait("second window closed", seconds: 6) { UIApplication.shared.openSessions.count <= 1 }
+        try? await Task.sleep(for: .seconds(1))
+        check(app.threads.viewers(for: preview).count == 0 && !app.threads.store(for: preview).isLive,
+              "closing it leaves no viewer and the store suspended")
+        // The first window runs its shown thread again once its scene is active again.
+        let primary = FixtureWindows.shared.primary
+        for _ in 0..<15 where app.threads.viewers(for: running).count != 1 { try? await Task.sleep(for: .milliseconds(200)) }
+        check(app.threads.viewers(for: running).count == 1 || primary?.activationState != .foregroundActive,
+              "the first window's shown thread runs while its scene is active (viewers \(app.threads.viewers(for: running).count), scene \(primary?.activationState.rawValue ?? -1))")
+        // Back to the kept one in the first window: shown at once, running again.
+        app.navigator.open(.thread(preview))
+        await FixtureWindows.wait("preview shown again", seconds: 5) { app.navigator.padSelection == preview }
+        try? await Task.sleep(for: .seconds(1))
+        check(app.threads.viewers(for: running).count == 0, "the thread now kept hidden lets its poll go")
+        check(app.threads.viewers(for: preview).count == (primary?.activationState == .foregroundActive ? 1 : 0),
+              "the kept thread runs again when shown in an active scene (\(app.threads.viewers(for: preview).count))")
+    }
+}
+
+/// Large reviews on the real ReviewStore. Studio (Changes engine) holds twelve Swift files of
+/// 400 lines ×40 (each under the 1 MiB frame), served at revision 1 or 2 by `box`; build-01 is an
+/// older host whose whole-diff reply for its agent waits on `gate`. Counts the file fetches.
+@MainActor enum ReviewRetentionFixture {
+    final class Box: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fetchCount = 0
+        private var second = false
+        func fetched() { lock.withLock { fetchCount += 1 } }
+        var fetches: Int { lock.withLock { fetchCount } }
+        var secondRevision: Bool {
+            get { lock.withLock { second } }
+            set { lock.withLock { second = newValue } }
+        }
+        let gate = DispatchSemaphore(value: 0)
+        private var waiting = false
+        var legacyWaiting: Bool {
+            get { lock.withLock { waiting } }
+            set { lock.withLock { waiting = newValue } }
+        }
+    }
+
+    nonisolated(unsafe) static let box = Box()
+    static let second = ChangesRevision(old: "3f2a91c0d4", new: "c0ffee0000")
+
+    static func diffText(files: Int, lines: Int, width: Int, tag: String) -> String {
+        var text = ""
+        let pad = String(repeating: "x", count: width)
+        for file in 0..<files {
+            text += "diff --git a/Sources/Big\(file).swift b/Sources/Big\(file).swift\nnew file mode 100644\n--- /dev/null\n"
+            text += "+++ b/Sources/Big\(file).swift\n@@ -0,0 +1,\(lines) @@\n"
+            for line in 0..<lines { text += "+let \(tag)\(line) = compute(\"\(pad)\")\n" }
+        }
+        return text
+    }
+
+    static func hosts() -> [FixtureHostData] {
+        let first = DiffFile.parse(diffText(files: 40, lines: 400, width: 360, tag: "rev1_"))
+        let next = DiffFile.parse(diffText(files: 40, lines: 400, width: 360, tag: "rev2_"))
+        func repo(_ files: [DiffFile]) -> ChangesFixture.Repo {
+            ChangesFixture.Repo(files: files, branch: "big", base: "main", baseName: "main", mergeBase: "3f2a91c", lastTurn: nil, turnFiles: [])
+        }
+        let one = ChangesFixture.reply(repo(first)), two = ChangesFixture.reply(repo(next))
+        let box = box
+        let second = second
+        var hosts = FixtureData.hosts()
+        hosts[0].reply = { request in
+            let later = box.secondRevision
+            if case .agentQuery(_, _, .changesFile) = request { box.fetched() }
+            guard let reply = (later ? two : one)(request) else { return nil }
+            if later, case .agentResult(let id, .changesList(var list)) = reply {
+                list.revision = second
+                return .agentResult(id: id, result: .changesList(list))
+            }
+            return reply
+        }
+        // build-01: an older host (no Changes engine) whose whole diff is just under a frame.
+        hosts[1].capabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.changesCapability }
+        let legacy = (try? JSONEncoder().encode(legacyFiles)) ?? Data()
+        hosts[1].reply = { request in
+            guard case .agentQuery(let id, _, .review) = request else { return nil }
+            box.legacyWaiting = true
+            box.gate.wait()
+            return .agentResult(id: id, result: .review(files: legacy, reference: nil))
+        }
+        return hosts
+    }
+
+    static let legacyFiles = DiffFile.parse(diffText(files: 1, lines: 7_000, width: 8, tag: "o"))
+    /// What the older host's whole diff costs the review once it lands.
+    static var legacyCost: Int { legacyFiles.reduce(0) { $0 + ReviewStore.cost(ChangesFileDiff(file: $1)) } }
+
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
+
+    /// Fetches, colors and draws the review's files (as its screen does) until it holds more than `floor`.
+    static func fill(_ store: ReviewStore, above floor: Int = .max) async {
+        for entry in store.entries {
+            store.ensure(entry.id)
+            await ReviewFixture.until { store.diffs[entry.id] != nil && store.texts[entry.id] != nil }
+            _ = store.unifiedRows(entry.id, gaps: false)
+            if store.retainedCost > floor { return }
+        }
+    }
+
+    static func sources(_ store: ReviewStore) -> [String] {
+        store.entries.flatMap { entry in
+            store.unifiedRows(entry.id, gaps: false).compactMap { row -> String? in
+                if case .line(let content) = row { return content.source } else { return nil }
+            }
+        }
+    }
+
+    static func run(_ app: MobileApp) async {
+        let reviews = ReviewStores.shared
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = reviews.store(for: ref)
+        reviews.appeared(ref)
+        await store.load(hosts: app.hosts)
+        await fill(store)
+        let files = store.entries.map(\.id)
+        check(files.count == 40 && store.retainedCost > 8 << 20 && store.cachedRowFiles == 40,
+              "the shown review holds hunks, colored text and rows (\(store.retainedCost >> 20) MiB)")
+        if let line = store.diff(files[0])?.hunks.first?.lines.first?.id {
+            store.select(fileID: files[0], lineID: line)
+            store.draft = "Name this better."
+            store.saveDraft()
+        }
+        if let line = store.diff(files[1])?.hunks.first?.lines.dropFirst().first?.id {
+            store.select(fileID: files[1], lineID: line)
+            store.draft = "Unsent thought"
+        }
+        store.toggleViewed(files[2])
+        store.toggleCollapsed(files[3])
+
+        // Revision replaced: the old rows go with their hunks at once; the new revision's fill the
+        // cache past its budget and push the old revision's hunks out. Every row is the new text.
+        box.secondRevision = true
+        await store.load(hosts: app.hosts)
+        check(store.list?.revision == second && store.cachedRowFiles == 0 && store.diffs.isEmpty && store.texts.isEmpty,
+              "a new revision lets go of the old rows, hunks and text at once")
+        await fill(store)
+        let shown = sources(store)
+        check(!shown.isEmpty && shown.allSatisfy { $0.contains("rev2_") }, "every drawn row is the new revision's text")
+        check(store.cachedDiffs < 80 && store.retainedCost > 0, "the old revision's cached hunks were evicted (\(store.cachedDiffs) cached)")
+        check(store.comments.count == 1 && store.draft == "Unsent thought" && store.viewed == [files[2]] && store.collapsed.contains(files[3]),
+              "the reviewer's marks survive the new revision")
+
+        // Off screen over budget alone: every payload owner lets go; marks stay.
+        reviews.disappeared(ref)
+        check(store.diffs.isEmpty && store.texts.isEmpty && store.cachedRowFiles == 0 && store.cachedDiffs == 0 && store.retainedCost == 0,
+              "off screen over budget: hunks, text, rows and cache all let go (\(store.retainedCost) bytes left)")
+        check(store.comments.count == 1 && store.draft == "Unsent thought" && store.viewed == [files[2]] && store.collapsed.contains(files[3]),
+              "the comment, the draft, viewed and collapsed files stay")
+
+        // Shown again: it fetches its files, marks as they were. Then held under the budget.
+        let before = box.fetches
+        reviews.appeared(ref)
+        await store.loadIfNeeded(hosts: app.hosts)
+        // Just under the budget: the late whole diff alone tips it over.
+        let floor = ReviewStores.offscreenBudget - legacyCost
+        await fill(store, above: floor)
+        check(box.fetches > before && store.comments.count == 1, "shown again it fetches its files and keeps its marks")
+        reviews.disappeared(ref)
+        let kept = store.retainedCost
+        check(kept > floor && kept <= ReviewStores.offscreenBudget, "under the budget it is kept off screen (\(kept >> 20) MiB)")
+
+        // An older host's whole diff, asked while shown and answered after its screen left: it
+        // counts at once, and the older review over budget goes.
+        let legacyRef = FixtureData.ref(FixtureData.buffer, on: FixtureData.buildBox)
+        let legacy = reviews.store(for: legacyRef)
+        reviews.appeared(legacyRef)
+        let loading = Task { await legacy.load(hosts: app.hosts) }
+        await FixtureWindows.wait("legacy reply held", seconds: 10) { box.legacyWaiting }
+        reviews.disappeared(legacyRef)
+        check(store.retainedCost == kept, "nothing goes before the reply lands")
+        box.gate.signal()
+        await loading.value
+        check(!legacy.diffs.isEmpty && legacy.retainedCost == legacyCost,
+              "the late whole diff landed (\(legacy.retainedCost >> 20) MiB)")
+        check(store.retainedCost == 0 && store.diffs.isEmpty && store.cachedRowFiles == 0, "and pushed the older review out at once")
+        check(store.comments.count == 1, "whose marks stay")
+
+        // A fetch asked for, then a shed before it runs: no request, nothing kept.
+        let asked = box.fetches
+        let task = store.ensure(files[0])
+        store.shed()
+        await task?.value
+        try? await Task.sleep(for: .milliseconds(300))
+        check(box.fetches == asked && store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0,
+              "a fetch overtaken by a shed asks nothing and keeps nothing (\(box.fetches - asked) asked)")
+        // One already asked: its reply lands after the shed and is dropped.
+        reviews.appeared(ref)
+        await store.loadIfNeeded(hosts: app.hosts)
+        let inFlight = store.ensure(files[1])
+        await Task.yield()
+        store.shed()
+        await inFlight?.value
+        check(store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0, "a reply after a shed is not kept")
+        reviews.disappeared(ref)
+    }
+}
+
+/// A host that refuses sends (`busy`) or answers them `outcome_unknown`, by `mode`.
+@MainActor enum RefusedSendFixture {
+    final class Mode: @unchecked Sendable {
+        private let lock = NSLock()
+        private var unknown = false
+        private var count = 0
+        /// Sends the host was asked for.
+        var sends: Int { lock.withLock { count } }
+        func sent() { lock.withLock { count += 1 } }
+        var outcomeUnknown: Bool {
+            get { lock.withLock { unknown } }
+            set { lock.withLock { unknown = newValue } }
+        }
+    }
+
+    static let mode = Mode()
+
+    static func hosts() -> [FixtureHostData] {
+        var hosts = ThreadFixtures.hosts()
+        let mode = mode
+        hosts[0].accepts = { request in
+            guard case .nativeThread(let id, _, .send) = request else { return nil }
+            mode.sent()
+            return mode.outcomeUnknown
+                ? .nativeThread(id: id, result: .failure(code: "outcome_unknown", message: "The agent did not answer in time."))
+                : .nativeThread(id: id, result: .failure(code: "busy", message: "The agent is busy. Try again."))
+        }
+        return hosts
+    }
+
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
+
+    static func png() -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).pngData { context in
+            UIColor.systemOrange.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        }
+    }
+
+    static func run(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        let state = ComposerStates.shared.state(for: ref)
+        let key = NativeDraftKey.text(host: ref.host, agent: ref.agent)
+        await FixtureWindows.wait("ready to send", seconds: 10) { store.acceptsSend }
+
+        // Refused: the text and image stay with the send, out of the composer, and its text is
+        // what a restart keeps.
+        store.draft = "Ship the ledger fix"
+        await state.attach([(png(), "ledger.png")])
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let refused = store.submissions.first { $0.state == .failed }
+        check(refused?.typed == "Ship the ledger fix" && refused?.images.count == 1 && state.attachments.isEmpty && store.draft.isEmpty,
+              "a refused send keeps its text and image, out of the composer")
+        check(UserDefaults.standard.string(forKey: key) == "Ship the ledger fix", "its text is saved where the draft is")
+
+        // A newer draft and image: Restore waits, and nothing of theirs is replaced.
+        store.draft = "A newer thought"
+        await state.attach([(png(), "new.png")])
+        check(!state.canRestore(into: store), "Restore waits while the composer holds something")
+        check(store.draft == "A newer thought" && state.attachments.count == 1 && store.submissions.contains { $0.id == refused?.id },
+              "the newer draft and image stay")
+
+        // Emptied: Restore brings back the text and its image.
+        store.draft = ""
+        state.clearAttachments()
+        if let id = refused?.id, state.canRestore(into: store), let value = store.restoreSubmission(id) {
+            await state.restore(value.images)
+        }
+        check(store.draft == "Ship the ledger fix" && state.attachments.count == 1 && store.submissions.isEmpty,
+              "restored into the empty composer with its image")
+
+        // Unknown outcome: kept as unknown, never restorable or resent, never saved as a draft.
+        mode.outcomeUnknown = true
+        var sends = mode.sends
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let unknown = store.submissions.first
+        check(unknown?.state == .uncertain, "an outcome_unknown answer is uncertain (\(String(describing: unknown?.state)))")
+        try? await Task.sleep(for: .milliseconds(1500))
+        check(mode.sends == sends + 1, "an unknown outcome is never sent again by the app (\(mode.sends - sends) sends)")
+        check(unknown.map { store.restoreSubmission($0.id) == nil } == true && store.submissions.count == 1, "an uncertain send cannot be restored")
+        check(UserDefaults.standard.string(forKey: key) == nil, "an uncertain send is not saved as a draft")
+        // Discarded: this device's copy goes; the host hears nothing.
+        sends = mode.sends
+        if let id = unknown?.id { check(store.canDiscardSubmission(id) && store.discardSubmission(id), "an uncertain send can be discarded") }
+        check(store.submissions.isEmpty && mode.sends == sends, "discarding sends nothing")
+
+        // The recovery limit: eight refused sends kept, the ninth refused before it leaves, its
+        // draft and image untouched.
+        mode.outcomeUnknown = false
+        for index in 1...NativeThreadStore.maximumRetainedSubmissions {
+            store.draft = "Refused \(index)"
+            await ThreadComposer.send(.followUp, store: store, state: state).value
+        }
+        sends = mode.sends
+        store.draft = "Ninth"
+        await state.attach([(png(), "ninth.png")])
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        check(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions && mode.sends == sends,
+              "past the limit nothing is sent (\(store.submissions.count) kept)")
+        check(store.draft == "Ninth" && state.attachments.count == 1 && (store.notice ?? "").contains("limit"),
+              "and its draft and image stay, with why")
+        for submission in store.submissions where store.canDiscardSubmission(submission.id) { store.discardSubmission(submission.id) }
+        check(store.submissions.isEmpty, "settled sends can all be discarded")
+        state.clearAttachments()
+
+        // Leave one unknown and one refused for the shot.
+        mode.outcomeUnknown = true
+        store.draft = "Ship the ledger fix"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        mode.outcomeUnknown = false
+        store.draft = "Not this one"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        check(store.submissions.map(\.state) == [.uncertain, .failed], "both shown: unknown and refused")
+    }
+}

@@ -10,34 +10,38 @@ import ShepherdRemote
 struct ThreadWithSidePane: View {
     let ref: AgentRef
     @Environment(MobileNavigator.self) private var navigator
+    /// False for a thread kept mounted behind the selected one (`PadDetailRoot`): the pane is the
+    /// selected thread's alone, and its thread keeps its place in the view.
+    @Environment(\.threadDetailActive) private var active
 
     var body: some View {
         let pane = navigator.sidePane
-        if pane.isOpen, pane.tab == .changes, ReviewStores.shared.store(for: ref).padLayout == .full {
+        let open = pane.isOpen && active
+        if open, pane.tab == .changes, ReviewStores.shared.store(for: ref).padLayout == .full {
             PadChangesFull(ref: ref)
         } else {
             GeometryReader { proxy in
                 let fold = proxy.verticalFold
                 let dock = PadSplitLayout.pane(column: proxy.size.width)
-                let alone = pane.isOpen && fold == nil && dock == .alone
+                let alone = open && fold == nil && dock == .alone
                 let threadWidth = fold?.lowerBound ?? dock.width.map { proxy.size.width - $0 - PadSplitLayout.dividerWidth }
                 HStack(spacing: 0) {
                     ThreadScreen(ref: ref)
-                        .paneWidth(pane.isOpen ? (alone ? 0 : fold?.lowerBound) : nil)
-                        .padding(.trailing, pane.isOpen ? fold.map { $0.upperBound - $0.lowerBound } ?? 0 : 0)
+                        .paneWidth(open ? (alone ? 0 : fold?.lowerBound) : nil)
+                        .padding(.trailing, open ? fold.map { $0.upperBound - $0.lowerBound } ?? 0 : 0)
                         .opacity(alone ? 0 : 1)
                         .accessibilityHidden(alone)
-                    if pane.isOpen {
+                    if open {
                         if !alone { SHHairline(.vertical, color: Color.sh.lineStrong) }
                         ThreadSidePane(ref: ref)
                             .paneWidth(fold != nil || alone ? nil : dock.width)
                             .shTransition(.pane, edge: .trailing)
                     }
                 }
-                .environment(\.threadTitleMaxWidth, pane.isOpen && !alone ? threadWidth : nil)
+                .environment(\.threadTitleMaxWidth, open && !alone ? threadWidth : nil)
                 // Beside the pane, the thread's title leads instead of centering across both.
-                .toolbarRole(pane.isOpen && !alone ? .editor : .automatic)
-                .shAnimation(.pane, value: pane.isOpen)
+                .toolbarRole(open && !alone ? .editor : .automatic)
+                .shAnimation(.pane, value: open)
             }
         }
     }

@@ -35,6 +35,7 @@ struct SidePaneChanges: View {
         }
         .background(Color.sh.bgWindow)
         .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
+        .reviewViewer(ref)
         // The file's hunks come when it is shown, and the next file's meanwhile.
         .task(id: store.currentFile) {
             guard let id = store.currentFile else { return }
@@ -95,6 +96,7 @@ struct PadChangesFull: View {
             navigator.sidePane.isOpen = false
         }
         .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
+        .reviewViewer(ref)
         .onChange(of: store.pullRequest) { _, _ in store.refresh() }
     }
 }
