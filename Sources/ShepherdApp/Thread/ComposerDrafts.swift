@@ -68,13 +68,15 @@ final class ComposerDrafts {
     static func load(_ data: Data?) -> ([String: [NativeRecoveredSubmission]], Data?) {
         guard let data else { return ([:], nil) }
         // Record by record: one that cannot be read is left out here, and the whole saved value kept.
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: [Any]] else { return ([:], data) }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return ([:], data) }
         var kept: [String: [NativeRecoveredSubmission]] = [:]
         var dropped = false
-        for (id, raw) in object {
+        for (id, value) in object {
+            guard let raw = value as? [Any] else { dropped = true; continue }
             var seen = Set<UUID>(), bytes = 0, list: [NativeRecoveredSubmission] = []
             for item in raw {
-                guard let itemData = try? JSONSerialization.data(withJSONObject: item),
+                guard let object = item as? [String: Any],
+                      let itemData = try? JSONSerialization.data(withJSONObject: object),
                       let record = try? JSONDecoder().decode(NativeRecoveredSubmission.self, from: itemData) else { dropped = true; continue }
                 let cost = record.typed.utf8.count + 128
                 guard !seen.contains(record.id), list.count < NativeThreadStore.maximumRetainedSubmissions,

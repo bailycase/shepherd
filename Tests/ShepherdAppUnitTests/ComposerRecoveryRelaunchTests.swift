@@ -187,10 +187,17 @@ extension ComposerRecoveryRelaunchTests {
         // One unreadable record among good ones: the good ones come back, and the whole value is kept.
         let mixed = Fixture.defaults()
         let good = try JSONSerialization.jsonObject(with: JSONEncoder().encode(records[0])) as! [String: Any]
-        let raw = try JSONSerialization.data(withJSONObject: [id.rawValue: [good, ["id": "not a uuid"]]])
+        let damaged: [Any] = [good, ["id": "not a uuid"], "not an object", 7, true, NSNull()]
+        let raw = try JSONSerialization.data(withJSONObject: [id.rawValue: damaged, "bad-agent": "not an array"])
         mixed.set(raw, forKey: ComposerDrafts.recoveriesKey)
-        #expect(ComposerDrafts(defaults: mixed).recovered(id.rawValue).map(\.typed) == ["first"])
+        let recovered = ComposerDrafts(defaults: mixed)
+        #expect(recovered.recovered(id.rawValue).map(\.typed) == ["first"])
+        #expect(recovered.recovered("bad-agent").isEmpty)
         #expect(mixed.array(forKey: ComposerDrafts.quarantineKey) as? [Data] == [raw])
+        recovered.flush()
+        let relaunched = ComposerDrafts(defaults: mixed)
+        #expect(relaunched.recovered(id.rawValue).map(\.typed) == ["first"])
+        #expect(mixed.array(forKey: ComposerDrafts.quarantineKey) as? [Data] == [raw], "rewrite preserves quarantined originals")
     }
 
     /// A deleted agent's store, captured and then pruned, writes nothing after it is gone.
