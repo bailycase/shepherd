@@ -190,12 +190,12 @@ public struct SHModelSettings: View {
             .focused($focused)
             .onKeyPress(.upArrow) {
               selection = stops.moved(selection, by: -1)
-              proxy.scrollTo(selection, anchor: .center)
+              if let selectionID { proxy.scrollTo(selectionID, anchor: .center) }
               return .handled
             }
             .onKeyPress(.downArrow) {
               selection = stops.moved(selection, by: 1)
-              proxy.scrollTo(selection, anchor: .center)
+              if let selectionID { proxy.scrollTo(selectionID, anchor: .center) }
               return .handled
             }
             .onKeyPress(.return) {
@@ -213,7 +213,7 @@ public struct SHModelSettings: View {
         .overlay(alignment: .bottom) { SHHairline() }
         ScrollView {
           LazyVStack(spacing: 0) {
-            SHMenuHeader("Model")
+            SHMenuHeader("Model").id("model-header")
             if !query.isEmpty && matches.isEmpty {
               Text("No matching models").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 .padding(SH.Space.s)
@@ -228,7 +228,7 @@ public struct SHModelSettings: View {
                   SHModelSettingsSegment(id: $0.id, title: $0.title, note: $0.note)
                 },
                 current: currentThinking, highlighted: highlighted(.thinking(0), in: stops, count: thinking.count),
-                enabled: thinkingEnabled, start: stops.index(of: .thinking(0)),
+                enabled: thinkingEnabled,
                 hover: { selection = stops.index(of: .thinking($0)) }, choose: chooseThinking)
             }
             if !speeds.isEmpty {
@@ -241,7 +241,7 @@ public struct SHModelSettings: View {
                     id: $0.id, title: $0.title, note: $0.detail, bolt: $0.boosted)
                 },
                 current: currentSpeed, highlighted: highlighted(.speed(0), in: stops, count: speeds.count),
-                enabled: speedEnabled, start: stops.index(of: .speed(0)),
+                enabled: speedEnabled,
                 hover: { selection = stops.index(of: .speed($0)) }, choose: chooseSpeed)
             }
           }
@@ -260,7 +260,7 @@ public struct SHModelSettings: View {
       }
       .onChange(of: query) { _, _ in
         search()
-        proxy.scrollTo(0, anchor: .top)
+        proxy.scrollTo("model-header", anchor: .top)
       }
     }
     .accessibilityLabel("Model, thinking and speed")
@@ -288,7 +288,7 @@ public struct SHModelSettings: View {
               .foregroundStyle(Color.sh.running)
           }
         }
-        .id(index)
+        .id("model:\(model.id)")
         .accessibilityLabel(
           model.title + (model.isCurrent ? ", current" : "") + (model.fast ? ", offers Fast" : ""))
       }
@@ -301,7 +301,7 @@ public struct SHModelSettings: View {
         Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
           .foregroundStyle(Color.sh.textTertiary)
       }
-      .id(visibleModels.count)
+      .id("all-models")
     }
     .shEnabledOpacity(modelEnabled)
   }
@@ -310,6 +310,17 @@ public struct SHModelSettings: View {
   private func highlighted(_ first: SHModelSettingsStops.Stop, in stops: SHModelSettingsStops, count: Int) -> Int? {
     let index = selection - stops.index(of: first)
     return (0..<count).contains(index) ? index : nil
+  }
+
+  /// Scroll targets name controls, not positions a search assigns to different rows.
+  private var selectionID: String? {
+    switch stops.stop(at: selection) {
+    case .model(let index): "model:\(visibleModels[index].id)"
+    case .allModels: "all-models"
+    case .thinking(let index): "Thinking:\(thinking[index].id)"
+    case .speed(let index): "Speed:\(speeds[index].id)"
+    case nil: nil
+    }
   }
 
   private func chooseSelection() {
@@ -347,8 +358,6 @@ struct SHModelSettingsSegments: View {
   /// The segment ↑↓ or the pointer is on.
   let highlighted: Int?
   let enabled: Bool
-  /// Where this control's first segment is among the popover's stops, for scrolling it into view.
-  let start: Int
   let hover: (Int) -> Void
   let choose: (String) -> Void
 
@@ -403,7 +412,7 @@ struct SHModelSettingsSegments: View {
     .contentShape(Rectangle())
     .onTapGesture { if enabled { choose(option.id) } }
     .onHover { if $0 { hover(index) } }
-    .id(start + index)
+    .id("\(label):\(option.id)")
     .help(option.note ?? "")
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
