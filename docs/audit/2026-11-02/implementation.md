@@ -5,6 +5,8 @@ Status: implementation and validation in progress. No claim of completion or spe
 The source audit is pinned to `f80d01132`. This fix branch starts from newer nightly
 `f52bf0cc7`, retaining #402, #404 and #405. It includes the audit's committed evidence
 (`e7de8b201`). Newer changes must not be reverted to make a benchmark or test pass.
+Nightly advanced to `876c570fc` during work (#406–408); its queue-boundary delivery and our
+asynchronous input preparation are being reconciled in the server lane before upstream integration.
 
 ## Ownership and closure ledger
 
@@ -133,6 +135,10 @@ require equipment that is not available; those limits must remain explicit.
   needed regeneration to recreate missing output maps. The replanned four-lane run passed **1,985
   tests/196 suites**, exit 0. Neither failed build reached tests. This result precedes `c3f131aa`
   and the still-unmerged Mac/mobile/storage consumers; it is not final-branch validation.
+  The subsequent full unit run passed **3,992 tests/451 suites**, exit 0, on that same code.
+- Mac first batch checkpointed `0ef3ade8` (31 files); integration and `c3f131aa` prerequisites
+  merged cleanly into its lane. Consumer wiring, independent frozen-source review, post-merge
+  integration tests and previews are pending. Nine focused unit suites passed before prerequisites.
 - Mobile first batch committed `ea0bf14a`; entire portable runner passed after moving the
   Foundation-only host presentation extension into the shared portable source list. Transport
   prerequisite merged cleanly into that lane. Simulator build and new portable checks reported
