@@ -752,7 +752,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     workspace: Type.Optional(Type.String({ description: "worktree (default: a fresh worktree per run off the default branch) or local (the cwd itself)" })),
     authorGate: Type.Optional(Type.String({ description: "Whose GitHub activity fires: collaborators (default: owners, members, collaborators), contributors, or anyone. Widen only when the user asks." })),
     maxConcurrent: Type.Optional(Type.Number({ description: "Runs at once, 1-10 (default 2)" })),
-    maxPerDay: Type.Optional(Type.Number({ description: "Runs started per day, 1-200 (default 20)" })),
+    maxPerDay: Type.Optional(Type.Number({ description: "Runs started per day, 1-200, or 0 for no daily limit (default 20). Does not change maxConcurrent." })),
     model: Type.Optional(Type.String({ description: "Pin a model for runs; empty string clears (runs use the default)" })),
     thinking: Type.Optional(Type.String({ description: "Pin a thinking level; empty string clears" })),
   };

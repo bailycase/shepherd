@@ -82,12 +82,12 @@ struct AutomationTriggerTests {
         #expect(!written.contains("trigger") && !written.contains("limits"))
     }
 
-    @Test func triggeredRecordsRoundTrip() throws {
+    @Test(arguments: [0, 9]) func triggeredRecordsRoundTrip(maxPerDay: Int) throws {
         let automation = Automation(
             name: "loop", prompt: "speckit it", cwd: "/tmp",
             trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled, .pullRequestReview], labels: ["shepherd"])]),
             destination: .thread(AgentID(rawValue: "t")), workspace: .local, authorGate: .anyone,
-            limits: AutomationLimits(maxConcurrent: 3, maxPerDay: 9), model: "m", thinking: .high, serviceTier: .fast)
+            limits: AutomationLimits(maxConcurrent: 3, maxPerDay: maxPerDay), model: "m", thinking: .high, serviceTier: .fast)
         let decoded = try JSONDecoder().decode(Automation.self, from: JSONEncoder().encode(automation))
         #expect(decoded == automation)
         let schedule = Automation(name: "s", prompt: "p", cwd: "/", trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY", start: 5)))
@@ -120,6 +120,19 @@ struct AutomationTriggerTests {
         var copy = Automation(name: "n", prompt: "p", cwd: "/tmp")
         try AutomationSettings(of: before).apply(to: &copy)
         #expect(copy.trigger == before.trigger && copy.model == before.model)
+    }
+
+    @Test func dailyLimitsKeepDefaultsAndValidateUnlimited() throws {
+        #expect(try JSONDecoder().decode(AutomationLimits.self, from: Data("{}".utf8)) == .default)
+        for daily in [0, 1, 200] {
+            var automation = Automation(name: "n", prompt: "p", cwd: "/tmp")
+            let limits = AutomationLimits(maxConcurrent: 2, maxPerDay: daily)
+            try AutomationSettings(limits: limits).apply(to: &automation)
+            #expect(automation.limits == limits)
+        }
+        for daily in [-1, 201] {
+            #expect(AutomationLimits(maxConcurrent: 2, maxPerDay: daily).validationError != nil)
+        }
     }
 
     @Test func eventSummary() {

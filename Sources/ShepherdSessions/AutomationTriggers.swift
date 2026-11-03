@@ -495,7 +495,8 @@ public actor AutomationTriggers {
             for next in record.pending {
                 // One run per item at a time: a second event for it waits for the first run.
                 let key = next.event.itemKey
-                if running < automation.limits.maxConcurrent, today < automation.limits.maxPerDay,
+                if running < automation.limits.maxConcurrent,
+                   automation.limits.maxPerDay == 0 || today < automation.limits.maxPerDay,
                    key.map({ !busy.contains($0) }) ?? true {
                     batch.append([next])
                     running += 1
@@ -515,7 +516,7 @@ public actor AutomationTriggers {
             case .busy:
                 break
             case .idle:
-                let room = automation.limits.maxPerDay - runsToday(record, now: now)
+                let room = automation.limits.maxPerDay == 0 ? 20 : automation.limits.maxPerDay - runsToday(record, now: now)
                 if room > 0 {
                     // Firings that piled up go as one message.
                     batch.append(Array(record.pending.prefix(min(room, 20))))
@@ -523,7 +524,8 @@ public actor AutomationTriggers {
                 }
             }
         }
-        if !record.pending.isEmpty, runsToday(record, now: now) + batch.count >= automation.limits.maxPerDay {
+        if automation.limits.maxPerDay > 0, !record.pending.isEmpty,
+           runsToday(record, now: now) + batch.count >= automation.limits.maxPerDay {
             let day = Self.dayKey(now, calendar: calendar)
             if record.capNotifiedDay != day {
                 record.capNotifiedDay = day

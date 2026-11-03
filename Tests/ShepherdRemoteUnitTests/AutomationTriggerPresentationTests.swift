@@ -105,6 +105,16 @@ struct AutomationTriggerPresentationTests {
         #expect(detail.limits == "2 at once · 20 a day" && detail.model == "Default")
     }
 
+    @Test func unlimitedDailyCapIsNotShownAsZeroRunsAllowed() throws {
+        var automation = Self.triggered(.github([GitHubTrigger(events: [.issueOpened])]))
+        automation.limits.maxPerDay = 0
+        let status = AutomationTriggerStatus(state: .active, runsToday: 201)
+        let model = AutomationsModel(hosts: [T.host([automation])], runs: [T.key("a"): []])
+        let detail = try #require(model.detail(T.key("a"), runs: [], status: status)?.trigger)
+        #expect(detail.today == "201 runs · no daily limit")
+        #expect(detail.limits == "2 at once · no daily limit")
+    }
+
     @Test func runRowsCarryTheirTriggerPullRequestAndFailure() throws {
         let automation = Self.triggered(.github([GitHubTrigger(events: [.issueOpened])]))
         let run = AutomationRun(startedAt: T.t0, endedAt: T.t0 + 1, result: .failed, trigger: "#3 Crash · issue opened",
@@ -119,13 +129,13 @@ struct AutomationTriggerPresentationTests {
 
     // MARK: Form
 
-    @Test func theFormRoundTripsSavedSettings() {
+    @Test(arguments: [0, 40]) func theFormRoundTripsSavedSettings(maxPerDay: Int) {
         var automation = Self.triggered(.github([GitHubTrigger(repo: "o/r", events: [.issueLabeled, .pullRequestLabeled],
                                                                labels: ["a", "b"], authors: ["me"], titleContains: "crash", number: 7)]),
                                         destination: .thread(AgentID(rawValue: "t")))
         automation.workspace = .local
         automation.authorGate = .anyone
-        automation.limits = AutomationLimits(maxConcurrent: 3, maxPerDay: 40)
+        automation.limits = AutomationLimits(maxConcurrent: 3, maxPerDay: maxPerDay)
         automation.model = "m"
         automation.thinking = .high
         automation.serviceTier = .fast
@@ -154,8 +164,8 @@ struct AutomationTriggerPresentationTests {
         form.github[0].events = []
         #expect(form.check(calendar: Self.utcCalendar).error == "A GitHub trigger needs at least one event.")
         form.kind = .manual
-        form.maxPerDay = 0
-        #expect(form.check(calendar: Self.utcCalendar).error == "Runs a day must be 1 to 200.")
+        form.maxPerDay = -1
+        #expect(form.check(calendar: Self.utcCalendar).error == "Runs a day must be 0 (no limit) or 1 to 200.")
     }
 
     @Test func theFormPreviewsTheNextRun() {

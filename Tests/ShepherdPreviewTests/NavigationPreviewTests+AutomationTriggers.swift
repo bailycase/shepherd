@@ -230,7 +230,7 @@ extension PreviewTests {
 
     /// A new every-30-minutes schedule pinned to Fast: the editor says the interval counts from
     /// the save, and shows the Speed pin.
-    @Test func automationEditorIntervalAndSpeed() async throws {
+    @Test(arguments: [0, 20]) func automationEditorIntervalAndSpeed(maxPerDay: Int) async throws {
         let fixture = try await triggerWorkspace()
         defer { fixture.workspace.stop() }
         let vm = fixture.workspace.vm
@@ -238,11 +238,12 @@ extension PreviewTests {
         form.kind = .schedule
         form.scheduleKind = .every
         form.speed = ServiceTier.fast.rawValue
+        form.maxPerDay = maxPerDay
         let cwd = try #require(vm.state.spaces.first?.path)
         try await vm.saveAutomation(nil, host: PageHost.localID, draft: RemoteAutomationDraft(
             name: "Check the build", prompt: "Look at the latest CI run.", cwd: cwd, enabled: true, settings: form.settings))
         let key = try #require(vm.automationsPageSelection)
-        try await Preview.render("sheet-automation-editor-interval",
+        try await Preview.render("sheet-automation-editor-interval-\(maxPerDay)",
                                  size: CGSize(width: AppLayout.automationSheetWidth + 80, height: AppLayout.automationSheetBodyMaxHeight + 260)) {
             AutomationEditorSheet(vm: vm, target: .edit(key)) {}
         }
