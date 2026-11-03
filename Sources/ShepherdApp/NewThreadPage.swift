@@ -135,7 +135,10 @@ struct NewThreadPage: View {
         .onChange(of: references?.picturesVersion) { _, _ in if mentions.isOpen { updateMentions() } }
         .onChange(of: draft.place) { _, _ in updateMentions() }
         .onChange(of: mentionShown) { _, shown in if shown { menu = nil } }
-        .onDisappear { dismissal.watch(false) }
+        .onDisappear {
+            dismissal.watch(false)
+            draft.referenceChips?.releasePictureDemand()
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             draft.attach(urls: urls)
@@ -430,15 +433,16 @@ struct NewThreadPage: View {
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
                 .shTransition(.overlay, anchor: .topLeading)
-            } else if mentionShown, menu == nil {
+            } else if mentionShown, menu == nil, let references {
                 let content = mentions.content
                 SHMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
                                 maxHeight: SHComposerMetrics.modelPickerMaxHeight, choose: { chooseMention($0) }, drill: { chooseMention($0) },
-                                back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
-                                retry: { references?.startCatalogRead() },
+                                back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references.io.startDesign,
+                                retry: { references.startCatalogRead() },
                                 appear: { id in
-                                    if let item = mentions.content.items[id] { references?.rowAppeared(item) }
-                                })
+                                    if let item = mentions.content.items[id] { references.rowAppeared(item, rowID: id) }
+                                }, disappear: { references.rowDisappeared($0) })
+                    .onDisappear { references.releasePictureDemand() }
                     .shTransition(.overlay, anchor: .topLeading)
             }
         }

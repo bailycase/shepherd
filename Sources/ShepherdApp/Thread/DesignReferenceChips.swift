@@ -166,8 +166,8 @@ final class DesignReferenceChips {
             if catalog != next {
                 catalog = next
                 if picturesActive {
-                    for item in visibleRows.values where item.kind != .element {
-                        io.rowVisibility(item, true, pictureConsumer)
+                    for (id, item) in visibleRows where item.kind != .element {
+                        io.rowVisibility(item, true, consumer(for: id))
                     }
                 }
             }
@@ -240,20 +240,28 @@ final class DesignReferenceChips {
     func setPictureDemandActive(_ active: Bool) {
         guard picturesActive != active else { return }
         picturesActive = active
-        for item in Array(visibleRows.values) {
-            if active { rowAppeared(item) } else { io.rowVisibility(item, false, pictureConsumer) }
+        for (id, item) in visibleRows {
+            if active { rowAppeared(item, rowID: id) } else { io.rowVisibility(item, false, consumer(for: id)) }
         }
     }
 
     func rowDisappeared(_ id: String) {
         guard let item = visibleRows.removeValue(forKey: id) else { return }
-        io.rowVisibility(item, false, pictureConsumer)
+        io.rowVisibility(item, false, consumer(for: id))
     }
 
-    /// Only rows on screen request pictures. Other catalog rows retain metadata alone.
-    func rowAppeared(_ item: DesignMentionItem) {
-        visibleRows[item.id] = item
-        if picturesActive { io.rowVisibility(item, true, pictureConsumer) }
+    /// A picker/page can leave before individual lazy rows report disappearance.
+    func releasePictureDemand() {
+        for id in Array(visibleRows.keys) { rowDisappeared(id) }
+    }
+
+    private func consumer(for rowID: String) -> String { pictureConsumer + "/" + rowID }
+
+    /// Track the displayed row ID, including Whole design/board aliases, not the catalog ID.
+    /// Each row owns its demand so overlapping aliases cannot release one another's image.
+    func rowAppeared(_ item: DesignMentionItem, rowID: String) {
+        visibleRows[rowID] = item
+        if picturesActive { io.rowVisibility(item, true, consumer(for: rowID)) }
         guard picturesActive, item.kind == .element, let catalog, let board = item.reference.board,
               let boardItem = catalog.boards[item.reference.designID]?.first(where: { $0.reference.board == board }) else { return }
         let tids = (catalog.elements[boardItem.id] ?? []).compactMap { $0.reference.element?.tid }

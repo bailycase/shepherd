@@ -772,6 +772,8 @@ final class DesignThumbnails {
 
     private(set) var entries: [DesignID: Entry] = [:]
     @ObservationIgnored private var owners: [DesignID: UUID] = [:]
+    /// Empty snapshots still advance the fence; pruning the design removes its watermark.
+    @ObservationIgnored private var revisions: [DesignID: UInt64] = [:]
     @ObservationIgnored private var visible: [DesignID: Set<String>] = [:]
     @ObservationIgnored private var oneShot: Set<DesignID> = []
     @ObservationIgnored private let rasterizer: DesignRasterizer
@@ -802,7 +804,8 @@ final class DesignThumbnails {
 
     /// Records the first board; only a visible card or an explicitly requested chip renders it.
     func update(_ id: DesignID, snapshot: DesignSnapshot) {
-        guard snapshot.designID == id, snapshot.revision >= (entries[id]?.revision ?? 0) else { return }
+        guard snapshot.designID == id, snapshot.revision >= (revisions[id] ?? 0) else { return }
+        revisions[id] = snapshot.revision
         guard let path = snapshot.index.order.first(where: { snapshot.index.boards[$0] != nil }) ?? snapshot.index.boards.keys.sorted().first,
               let board = snapshot.index.boards[path], let boardSHA = snapshot.boards[path] else {
             entries.removeValue(forKey: id)
@@ -851,8 +854,8 @@ final class DesignThumbnails {
     @ObservationIgnored var landed: (() -> Void)?
 
     func prune(keeping ids: Set<DesignID>) {
-        for id in Set(entries.keys).union(visible.keys).union(oneShot).subtracting(ids) {
-            entries.removeValue(forKey: id); visible.removeValue(forKey: id); oneShot.remove(id)
+        for id in Set(revisions.keys).union(entries.keys).union(visible.keys).union(oneShot).subtracting(ids) {
+            entries.removeValue(forKey: id); visible.removeValue(forKey: id); oneShot.remove(id); revisions.removeValue(forKey: id)
             if let owner = owners.removeValue(forKey: id) { rasterizer.images.removeAll(in: owner) }
         }
     }
