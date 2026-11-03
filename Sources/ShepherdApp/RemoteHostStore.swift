@@ -422,10 +422,11 @@ final class RemoteHostStore {
             connection.stateGeneration &+= 1
             connection.state = state
         }
-        client.onOutput = { [weak connection] sessionID, data in
+        client.onOutputConsumed = { [weak connection] sessionID, data, completion in
             guard let connection,
-                  connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            connection.panes[sessionID]?.receive(data)
+                  connection.client.map(ObjectIdentifier.init) == clientID,
+                  let pane = connection.panes[sessionID] else { completion(); return }
+            pane.receive(data, completion: completion)
         }
         client.onSessionExited = { [weak connection] sessionID, code in
             guard let connection,
@@ -797,23 +798,20 @@ final class RemotePaneSession {
         // returning creates a fresh, blank ghostty surface. Mirror the local
         // resync: release the replacement, then re-attach so the host
         // re-sends its screen snapshot into the new surface.
-        terminal.onSurfaceReplaced = { [weak self] generation in
-            guard let self else { return }
+        terminal.onSurfaceAttachmentChanged = { [weak self] generation in
+            guard let self, let generation else { return }
             _ = self.terminal.replaceWithReplay(Data(), generation: generation)
             guard self.attachStarted, let client = self.client else { return }
-            if case .live = self.phase {
-                client.detach(sessionID: self.sessionID)
-                Task { [weak self] in
-                    guard let self, let client = self.client else { return }
-                    // detach and attach are queued in order on the client's
-                    // serial queue, so the host re-registers and snapshots
-                    // after dropping the old attachment.
-                    _ = try? await client.attach(
-                        sessionID: self.sessionID,
-                        cols: self.lastCols,
-                        rows: self.lastRows
-                    )
-                }
+            client.detach(sessionID: self.sessionID)
+            Task { [weak self] in
+                guard let self, let client = self.client else { return }
+                // First attachment and replacements both replay: bytes retired while there
+                // was no surface are represented by this authoritative screen, not buffered.
+                _ = try? await client.attach(
+                    sessionID: self.sessionID,
+                    cols: self.lastCols,
+                    rows: self.lastRows
+                )
             }
         }
     }
@@ -870,8 +868,8 @@ final class RemotePaneSession {
         }
     }
 
-    func receive(_ data: Data) {
-        terminal.feed(data)
+    func receive(_ data: Data, completion: @escaping @Sendable () -> Void) {
+        terminal.feed(data, completion: completion)
     }
 
     func detach() {

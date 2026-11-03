@@ -83,7 +83,7 @@ final class InMemoryTerminalSurfaceAccess: @unchecked Sendable {
     }
 
     @discardableResult
-    func enqueueWrite(_ data: Data) -> Bool {
+    func enqueueWrite(_ data: Data, completion: (@Sendable () -> Void)? = nil) -> Bool {
         condition.lock()
         guard surface != nil else {
             pendingWrites.append(data)
@@ -92,11 +92,14 @@ final class InMemoryTerminalSurfaceAccess: @unchecked Sendable {
                 pendingWrites.removeFirst(excess)
             }
             condition.unlock()
+            completion?()
             return true
         }
         let writeGeneration = generation
         condition.unlock()
         outputQueue.async { [self] in
+            // Retirement is acknowledged even when replacement invalidates this write.
+            defer { completion?() }
             withSurface(generation: writeGeneration) { surface in
                 write(surface, data)
             }

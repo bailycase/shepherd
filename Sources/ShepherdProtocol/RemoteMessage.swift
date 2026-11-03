@@ -16,6 +16,8 @@ public enum RemoteProtocol {
     /// worktree's base, before any agent exists. Older hosts leave the base a typed name.
     public static let creationBranchesCapability = "agent.creation.branches.v1"
     public static let nativeThreadCapability = "native.thread.v1"
+    public static let nativeThreadRevisionsCapability = "native.revisions.v1"
+    public static let nativeFleetDigestCapability = "native.fleetDigest.v1"
     /// v2: snapshot runtime/stats/commands, setModel/setThinking, send images.
     public static let nativeThreadV2Capability = "native.thread.v2"
     /// The host answers `NativeThreadCode.starting` while an agent's pi starts. Older hosts
@@ -45,7 +47,7 @@ public enum RemoteProtocol {
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
     /// And it browses a thread's folder (`filesCapability`), which a host offers only to a client that lists it.
-    public static let clientCapabilities = [filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -178,7 +180,7 @@ public enum RemoteProtocol {
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
     public static let filesCapability = "files.v1"
-    public static let capabilities = [filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostConfigCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostConfigCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -534,6 +536,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case pushRegistration(id: Int, registration: RemotePushRegistration)
     case pushUnregister(id: Int, registrationID: String)
     case nativeThread(id: Int, agentID: AgentID, request: NativeThreadRequest)
+    case nativeThreadSubscribe(id: Int, agentIDs: [AgentID])
+    case fleetDigest(id: Int, agentID: AgentID, session: NativeThreadSession?, revision: UInt64?)
     /// Authenticate with the host's shared token (`remote-token` in its
     /// support directory). `capabilities` says what the client understands
     /// (`RemoteProtocol.clientCapabilities`); older clients send none.
@@ -634,7 +638,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case browserAnswer(requestToken: Int, outcome: BrowserOutcome)
 
     private enum CodingKeys: String, CodingKey {
-        case registration, registrationID
+        case registration, registrationID, agentIDs, session, revision
         case request, frame
         case type, id, token, clientName, protocolVersion, capabilities
         case sessionID, cols, rows, data, viewportGeneration
@@ -646,7 +650,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case pushRegistration, pushUnregister
-        case nativeThread, projectExecution
+        case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
@@ -668,6 +672,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .pushUnregister(id: try c.decode(Int.self, forKey: .id), registrationID: try c.decode(String.self, forKey: .registrationID))
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
+        case .nativeThreadSubscribe:
+            self = .nativeThreadSubscribe(id: try c.decode(Int.self, forKey: .id), agentIDs: try c.decode([AgentID].self, forKey: .agentIDs))
+        case .fleetDigest:
+            self = .fleetDigest(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), session: try c.decodeIfPresent(NativeThreadSession.self, forKey: .session), revision: try c.decodeIfPresent(UInt64.self, forKey: .revision))
         case .tunnel:
             self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
         case .browserClaim:
@@ -820,6 +828,16 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .nativeThreadSubscribe(let id, let agentIDs):
+            try c.encode(Kind.nativeThreadSubscribe, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentIDs, forKey: .agentIDs)
+        case .fleetDigest(let id, let agentID, let session, let revision):
+            try c.encode(Kind.fleetDigest, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(session, forKey: .session)
+            try c.encodeIfPresent(revision, forKey: .revision)
         case .nativeThread(let id, let agentID, let request):
             try c.encode(Kind.nativeThread, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1012,6 +1030,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 /// unsolicited push after every host-side mutation.
 public enum RemoteReply: Codable, Hashable, Sendable {
     case nativeThread(id: Int, result: NativeThreadResult)
+    case nativeThreadChanged(agentID: AgentID)
+    case fleetDigest(id: Int, result: NativeFleetDigestResult)
     case uploadResult(id: Int, result: RemoteUploadResult)
     case creationOptions(id: Int, options: RemoteCreationOptions)
     case helloOk(id: Int, protocolVersion: Int, capabilities: [String])
@@ -1103,7 +1123,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case nativeThread, projectExecution, projectExecutionChanged
+        case nativeThread, nativeThreadChanged, fleetDigest, projectExecution, projectExecutionChanged
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
@@ -1120,6 +1140,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeThreadResult.self, forKey: .result))
+        case .nativeThreadChanged:
+            self = .nativeThreadChanged(agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .fleetDigest:
+            self = .fleetDigest(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeFleetDigestResult.self, forKey: .result))
         case .tunnel:
             self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
         case .browserClaimed:
@@ -1266,6 +1290,13 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .nativeThreadChanged(let agentID):
+            try c.encode(Kind.nativeThreadChanged, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+        case .fleetDigest(let id, let result):
+            try c.encode(Kind.fleetDigest, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         case .nativeThread(let id, let result):
             try c.encode(Kind.nativeThread, forKey: .type)
             try c.encode(id, forKey: .id)

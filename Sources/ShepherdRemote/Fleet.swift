@@ -2,6 +2,9 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
+public typealias NativeThreadSession = ShepherdProtocol.NativeThreadSession
+public typealias FleetChanges = ShepherdProtocol.FleetChanges
+
 // Home across several hosts (the iOS client's Home, Needs you, Recents, the iPad sidebar and
 // overview): plain values derived once per change from each host's pushed state and, for what
 // the state does not say (a question's text, the command running now), one thread snapshot per
@@ -49,69 +52,12 @@ public struct FleetHost: Equatable, Sendable {
 
 /// What one thread snapshot tells Home: the question waiting on the user, what runs now, and
 /// when the thread last moved. A subagent's question is not the user's: it goes to its parent.
-public struct FleetDigest: Equatable, Sendable {
-    public struct Question: Equatable, Sendable {
-        public var dialogID: String
-        public var kind: NativeThreadDialog.Kind
-        public var title: String
-        public var message: String?
-        public var options: [String]
-        /// False when the host cannot carry an answer from here (`unavailable`).
-        public var answerable: Bool
+public typealias FleetDigest = NativeFleetDigest
 
-        public init(dialogID: String, kind: NativeThreadDialog.Kind, title: String, message: String? = nil,
-                    options: [String] = [], answerable: Bool = true) {
-            self.dialogID = dialogID
-            self.kind = kind
-            self.title = title
-            self.message = message
-            self.options = options
-            self.answerable = answerable
-        }
-    }
-
-    public var session: NativeThreadSession
-    public var revision: UInt64
-    public var running: Bool
-    public var question: Question?
-    /// A subagent is still running: background children outlive their parent's turn, and the
-    /// thread's own question may follow from the parent that answers them.
-    public var liveSubagents: Bool
-    /// A subagent is running and not paused: the thread works though its own turn ended, as the
-    /// Mac's sidebar shows it (`SidebarModel.presentationState`).
-    public var subagentsWorking: Bool
-    /// Subagents still going (running, or finished their turn to wait on their parent's answer),
-    /// and how many of them wait on their parent (the overview's "3 subagents · 1 waiting on
-    /// parent").
-    public var subagentsLive: Int
-    public var subagentsAsking: Int
-    /// Its last turn ended in an error and nothing has run since (a remote client hears no turn
-    /// failure from the host, so the thread says it, as `NativeThreadStore.lastTurnFailed` does).
-    public var lastTurnFailed: Bool
-    /// The call running now ("swift build", "edit ThreadView.swift"); nil when none is.
-    public var activity: String?
-    /// When that call started (ms since epoch).
-    public var activitySince: Double?
-    /// What a running thread does now, as a verb ("Running python", "Editing Fleet.swift"),
-    /// "Thinking" between calls; nil when it isn't running.
-    public var doing: String?
-    /// The newest moment in the thread (ms since epoch).
-    public var lastActivity: Double?
-    /// Subagents that finished and do not wait on their parent.
-    public var subagentsDone = 0
-    /// Messages waiting in its queue.
-    public var queued = 0
-    /// What its latest turn changed.
-    public var changes: FleetChanges?
-    /// Its goal and where it stands ("Ship the glance surfaces · checking").
-    public var goal: String?
-    /// Its last reply's first line, once the turn is over.
-    public var result: String?
-
+extension NativeFleetDigest {
     public init(_ snapshot: NativeThreadSnapshot) {
-        session = NativeThreadSession(piSessionID: snapshot.piSessionID, generation: snapshot.generation)
-        revision = snapshot.revision
-        running = snapshot.running
+        self.init(session: NativeThreadSession(piSessionID: snapshot.piSessionID, generation: snapshot.generation),
+                  revision: snapshot.revision, running: snapshot.running)
         // Without `answer` among the thread's actions its own composer refuses an answer too, so
         // the question is answered in the thread.
         let answers = snapshot.supportedActions.contains("answer")
@@ -206,19 +152,6 @@ public struct FleetDigest: Equatable, Sendable {
 // MARK: Rows
 
 /// A time a row shows beside its status: live while it runs, or how long ago it moved.
-/// The files a turn changed.
-public struct FleetChanges: Equatable, Sendable {
-    public var files: Int
-    public var added: Int
-    public var removed: Int
-
-    public init(files: Int, added: Int, removed: Int) {
-        self.files = files
-        self.added = added
-        self.removed = removed
-    }
-}
-
 public enum FleetClock: Equatable, Sendable {
     /// Counting up from a moment (a running call), in ms since epoch.
     case elapsed(since: Double)
