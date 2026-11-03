@@ -578,7 +578,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const defaults = childDefaults();
   let missions;
   let owner, active = false, timer, sessionContext;
-  // Inspector requests to settled runs, while no tick runs: run id -> watcher of its control dir.
+  // Inspector requests even while no tick runs: run id -> watcher of its control dir.
   const controlWatchers = new Map();
   const root = path.join(path.dirname(process.env.SHEPHERD_SOCKET), "children");
   const bridge = process.env.SHEPHERD_EXT_CHILDREN;
@@ -637,8 +637,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     syncTick();
   }
   // The one-second tick (inspector controls, then a publish) runs only while a run is live, so
-  // an idle parent never wakes. Settled runs keep taking inspector requests through a watch on
-  // their control directory, which costs nothing until a request is written.
+  // an idle parent never wakes. Keep control watches throughout the parent session: closing and
+  // reopening them at each live/idle transition can lose pending filesystem notifications.
   function syncTick() {
     const live = active && [...runs.values()].some((run) => run.state === "running" || run.state === "queued");
     if (live && !timer) {
@@ -653,7 +653,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     } else if (!live && timer) {
       timers.clearInterval(timer); timer = undefined;
     }
-    if (live || !active) {
+    if (!active) {
       for (const watcher of controlWatchers.values()) watcher?.close();
       controlWatchers.clear();
       return;
