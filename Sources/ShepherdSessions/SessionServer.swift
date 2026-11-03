@@ -5738,8 +5738,12 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         syncServiceTiers(state)
-        broadcastRemoteState(state)
-        if before.missions != state.missions { pushMissionChanges(before: before.missions, after: state.missions) }
+        let missionsChanged = before.missions != state.missions
+        // Private mission progress has its own hints; the fleet would contain identical data.
+        if !missionsChanged || before.withoutMissions != state.withoutMissions {
+            broadcastRemoteState(state)
+        }
+        if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
         if !browserOwners.isEmpty { pruneBrowserOwners(state) }
