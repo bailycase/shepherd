@@ -23,9 +23,7 @@ struct CommandPaletteView: View {
             contentSearch: { query, existing in
                 let targets = vm.paletteSearchTargets
                 let root = vm.server.pi.sessionsRoot
-                let matches = await Task.detached(priority: .userInitiated) {
-                    PaletteContentSearch.search(query: query, agents: targets, sessionsRoot: root)
-                }.value
+                let matches = await PaletteContentSearch.search(query: query, agents: targets, sessionsRoot: root)
                 guard !Task.isCancelled else { return [] }
                 let local = vm.paletteContentRows(matches: matches, excluding: existing)
                 return local + (await vm.remoteContentRows(query: query, excluding: existing))
@@ -85,6 +83,10 @@ struct PaletteCard: View {
         .onAppear {
             query = initialQuery
             fieldFocused = true
+        }
+        .onDisappear {
+            contentSearchTask?.cancel()
+            contentSearchTask = nil
         }
         .onChange(of: query) {
             highlight.move(to: 0)

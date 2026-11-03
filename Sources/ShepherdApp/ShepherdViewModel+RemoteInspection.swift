@@ -44,9 +44,9 @@ extension ShepherdViewModel {
                         result = .children(self.children(of: agentID))
                     case .search(let query):
                         let root = self.server.pi.sessionsRoot
-                        let matches = await Task.detached {
-                            PaletteContentSearch.search(query: query, agents: [(agentID, agent.effectivePiSessionID, cwd)], sessionsRoot: root)
-                        }.value
+                        let matches = await PaletteContentSearch.search(
+                            query: query, agents: [(agentID, agent.effectivePiSessionID, cwd)], sessionsRoot: root
+                        )
                         result = .search(snippet: matches.first?.snippet)
                     case .reviewPane(let paneID, let pullRequest):
                         guard let review = self.reviewSessions[paneID], review.agentID == agentID else { throw RemoteCreateAgentError("Review closed on host") }
