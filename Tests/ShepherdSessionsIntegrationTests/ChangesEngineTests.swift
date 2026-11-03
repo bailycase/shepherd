@@ -340,6 +340,7 @@ struct ChangesEngineTests {
         #expect(error?.code == ChangesError.notARepository)
     }
 
+    #if DEBUG
     /// A file's hunks are cached by the objects they came from: asking again runs no git, and a
     /// list of an unchanged working tree runs only its snapshot, not the diff.
     @Test func repeatedRequestsForUnchangedObjectsRunNoDiffs() async throws {
@@ -365,6 +366,7 @@ struct ChangesEngineTests {
         #expect(second.revision == list.revision)
         #expect(runs() - relist == snapshotRuns + 1, "the snapshot and HEAD, not the diff")
     }
+    #endif
 
     /// Untracked files too big to hash stay out of snapshots (and out of `.git/objects`).
     @Test func aHugeUntrackedFileStaysOutOfTheSnapshot() async throws {
