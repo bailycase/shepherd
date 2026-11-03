@@ -1,0 +1,92 @@
+[
+  {
+    "file": "/Users/sam/.shepherd/hooks.json",
+    "event": "PreToolUse",
+    "matcher": "Bash",
+    "handler": {
+      "type": "command",
+      "command": "~/.shepherd/hooks/confirm-rm.sh"
+    },
+    "canonical": "{\"command\":\"~/.shepherd/hooks/confirm-rm.sh\",\"type\":\"command\"}",
+    "hash": "973520b73ade3449c7754a65a49d64338916428901004704483dbb61455af5b6"
+  },
+  {
+    "file": "/Users/sam/code/payments/.shepherd/hooks.json",
+    "event": "PreToolUse",
+    "matcher": "Edit|Write",
+    "handler": {
+      "timeout": 10,
+      "type": "command",
+      "statusMessage": "Checking the path",
+      "command": "\"$CLAUDE_PROJECT_DIR\"/.shepherd/hooks/no-env.sh"
+    },
+    "canonical": "{\"command\":\"\\\"$CLAUDE_PROJECT_DIR\\\"/.shepherd/hooks/no-env.sh\",\"statusMessage\":\"Checking the path\",\"timeout\":10,\"type\":\"command\"}",
+    "hash": "4eb4f7404b5559b5c84119b2a25cc4e3445a369e197fb04fcf4586f587f18d92"
+  },
+  {
+    "file": "/Users/sam/code/payments/.shepherd/hooks.json",
+    "event": "Stop",
+    "matcher": "",
+    "handler": {
+      "type": "command",
+      "command": "npm test --silent",
+      "async": false
+    },
+    "canonical": "{\"async\":false,\"command\":\"npm test --silent\",\"type\":\"command\"}",
+    "hash": "1ffaf08bd558e049f338788e300fd0849b0b3100f1ba9a11f5a3d99904209b98"
+  },
+  {
+    "file": "/Users/sam/.claude/settings.json",
+    "event": "Notification",
+    "matcher": "",
+    "handler": {
+      "type": "command",
+      "command": "osascript -e 'display notification \"Needs you\"'\n\ttab/slash\u0001é→😀"
+    },
+    "canonical": "{\"command\":\"osascript -e 'display notification \\\"Needs you\\\"'\\n\\ttab/slash\\u0001é→😀\",\"type\":\"command\"}",
+    "hash": "64a805e4df61dc1190f245f6bd122fa358d783920a17c9a803eca391dbfddd3c"
+  },
+  {
+    "file": "/Users/sam/.codex/hooks.json",
+    "event": "PostToolUse",
+    "matcher": "Write|Edit",
+    "handler": {
+      "type": "mcp_tool",
+      "server": "scanner",
+      "tool": "scan_patch",
+      "input": {
+        "patch": "${tool_input.command}",
+        "n": 3,
+        "f": 1.5,
+        "neg": -2,
+        "z": null,
+        "b": true,
+        "list": [
+          1,
+          "a",
+          {
+            "y": 1,
+            "x": 2
+          }
+        ]
+      },
+      "timeout": 30
+    },
+    "canonical": "{\"input\":{\"b\":true,\"f\":1.5,\"list\":[1,\"a\",{\"x\":2,\"y\":1}],\"n\":3,\"neg\":-2,\"patch\":\"${tool_input.command}\",\"z\":null},\"server\":\"scanner\",\"timeout\":30,\"tool\":\"scan_patch\",\"type\":\"mcp_tool\"}",
+    "hash": "4483cb97a8de92b89a8276a438ebefdb0dabf272630a3ac1df4d597d0320da0e"
+  },
+  {
+    "file": "/Users/sam/.shepherd/hooks.json",
+    "event": "SessionStart",
+    "matcher": "startup|resume",
+    "handler": {
+      "Zeta": 1,
+      "alpha": 2,
+      "_": 3,
+      "type": "command",
+      "command": "python3 ~/.claude/hooks/session_notes.py"
+    },
+    "canonical": "{\"Zeta\":1,\"_\":3,\"alpha\":2,\"command\":\"python3 ~/.claude/hooks/session_notes.py\",\"type\":\"command\"}",
+    "hash": "e9ed2a2a40bb5dfe57ed91e110dab3e5f55e5f27363fea3b89e66ab5529e7429"
+  }
+]
