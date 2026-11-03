@@ -190,6 +190,10 @@ public final class NativeThreadStore {
     nonisolated public static let maximumRetainedSubmissions = 8
     nonisolated public static let maximumRetainedSubmissionBytes = 16 * 1024 * 1024
     public private(set) var retainedSubmissionBytes = 0
+    /// Optional owner admission/persistence at the actual capture boundary, after readiness.
+    /// Runs synchronously with the exact payload before clearing input or sending. False retains
+    /// the composer unchanged; the owner may supply a notice. Must not mutate this store's input.
+    @ObservationIgnored public var captureAdmission: (@MainActor (NativeThreadSubmission) -> Bool)?
     public var delivery: NativeThreadDelivery = .followUp
     /// Files waiting beside the draft (a design's boards attached to this thread); they go with
     /// the next message the draft sends.
@@ -2174,6 +2178,15 @@ public final class NativeThreadStore {
             guard submissions.count < Self.maximumRetainedSubmissions,
                   submissionBytes <= Self.maximumRetainedSubmissionBytes - retainedSubmissionBytes else {
                 notice = "Unresolved sends have reached the local recovery limit. Restore or explicitly discard a settled record before sending more. Nothing was sent; your draft is unchanged."
+                return false
+            }
+        }
+        if let submission, let captureAdmission {
+            notice = nil
+            guard captureAdmission(submission) else {
+                if notice == nil {
+                    notice = "Unresolved sends have reached the local recovery limit. Restore or explicitly discard a settled record before sending more. Nothing was sent; your draft is unchanged."
+                }
                 return false
             }
         }
