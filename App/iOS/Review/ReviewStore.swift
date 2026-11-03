@@ -208,6 +208,8 @@ final class ReviewStore {
 
     @ObservationIgnored private weak var hosts: MobileHosts?
     @ObservationIgnored private let request: (RemoteHostClient, AgentID, RemoteAgentQuery) async throws -> RemoteAgentResult
+    typealias PrepareText = @Sendable (DiffFile, ReviewTextPalette, Bool) -> [Int: AttributedString]
+    @ObservationIgnored private let prepareText: PrepareText
     @ObservationIgnored private var loadID = UUID()
     /// The connection and side the files were loaded for: showing the review again reloads
     /// only when either changed.
@@ -216,7 +218,7 @@ final class ReviewStore {
     /// scope whose trees did not move costs no request.
     @ObservationIgnored private var diffCache = ReviewCostCache<FileKey, ChangesFileDiff>(budget: ReviewStore.diffCacheBudget)
     @ObservationIgnored private var fileLoads: [String: UUID] = [:]
-    @ObservationIgnored private var textLoads: [String: UUID] = [:]
+    @ObservationIgnored private var textLoads: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     @ObservationIgnored private var wantedFiles: Set<String> = []
     @ObservationIgnored private var listOptions: ChangesOptions?
     /// Files asked for whole (a gap row tapped): their unchanged lines come with the hunks.
@@ -245,11 +247,13 @@ final class ReviewStore {
         let rows: [Row]
     }
 
-    init(ref: AgentRef, request: @escaping (RemoteHostClient, AgentID, RemoteAgentQuery) async throws -> RemoteAgentResult = {
-        try await $0.agentQuery(agentID: $1, query: $2)
-    }) {
+    init(ref: AgentRef, prepareText: @escaping PrepareText = { ReviewText.prepare($0, palette: $1, words: $2) },
+         request: @escaping (RemoteHostClient, AgentID, RemoteAgentQuery) async throws -> RemoteAgentResult = {
+             try await $0.agentQuery(agentID: $1, query: $2)
+         }) {
         self.ref = ref
         self.request = request
+        self.prepareText = prepareText
         finalize = FinalizeStore(ref: ref)
     }
 
@@ -287,7 +291,7 @@ final class ReviewStore {
         fileErrors = [:]
         truncated = []
         fileLoads = [:]
-        textLoads = [:]
+        cancelTextLoads()
         wantedFiles = []
         unifiedCache = [:]
         splitCache = [:]
@@ -411,7 +415,7 @@ final class ReviewStore {
         fileErrors = [:]
         truncated = []
         fileLoads = [:]
-        textLoads = [:]
+        cancelTextLoads()
         wholeFiles = []
         expandedRuns = [:]
         // Rows hold their lines' text and colors: they go with the hunks they were drawn from.
@@ -515,7 +519,7 @@ final class ReviewStore {
         textCosts = [:]
         unifiedCache = [:]
         splitCache = [:]
-        textLoads = [:]
+        cancelTextLoads()
         for id in diffs.keys {
             fileVersions[id, default: 0] &+= 1
             prepare(id)
@@ -670,7 +674,7 @@ final class ReviewStore {
         if diff.truncated { truncated.insert(id) } else { truncated.remove(id) }
         fileErrors[id] = nil
         texts[id] = nil
-        textLoads[id] = nil
+        textLoads.removeValue(forKey: id)?.task.cancel()
         fileVersions[id, default: 0] &+= 1
         prepare(id)
         grew()
@@ -691,26 +695,39 @@ final class ReviewStore {
     /// Whether a gap row can open (the host sends whole files).
     var opensGaps: Bool { usesChanges && !options.fullFiles }
 
+    private func cancelTextLoads() {
+        for load in textLoads.values { load.task.cancel() }
+        textLoads = [:]
+    }
+
     /// Colors a file's lines and tints its changed words, off the main thread, once.
     private func prepare(_ id: String) {
         guard texts[id] == nil, textLoads[id] == nil, let file = diffs[id], !file.isBinary else { return }
         let requestID = UUID()
-        textLoads[id] = requestID
         let palette = ReviewTextPalette(Color.sh)
         let words = wordDiffs
         let started = epoch
-        Task {
-            let lines = await Task.detached(priority: .userInitiated) { ReviewText.prepare(file, palette: palette, words: words) }.value
-            guard epoch == started, textLoads[id] == requestID, diffs[id] == file else { return }
-            textLoads[id] = nil
-            texts[id] = lines
-            textCosts[id] = Self.textCost(lines)
+        let prepareText = prepareText
+        let task = Task { [weak self] in
+            guard !Task.isCancelled else { return }
+            let work = Task.detached(priority: .userInitiated) { prepareText(file, palette, words) }
+            let lines = await withTaskCancellationHandler {
+                await work.value
+            } onCancel: {
+                work.cancel()
+            }
+            guard !Task.isCancelled, let self, self.epoch == started,
+                  self.textLoads[id]?.id == requestID, self.diffs[id] == file else { return }
+            self.textLoads[id] = nil
+            self.texts[id] = lines
+            self.textCosts[id] = Self.textCost(lines)
             // Rows drawn uncolored hold plain copies: they are drawn again with the colors.
-            unifiedCache[id] = nil
-            splitCache[id] = nil
-            fileVersions[id, default: 0] &+= 1
-            grew()
+            self.unifiedCache[id] = nil
+            self.splitCache[id] = nil
+            self.fileVersions[id, default: 0] &+= 1
+            self.grew()
         }
+        textLoads[id] = (requestID, task)
     }
 
     func toggleViewed(_ fileID: String) {
@@ -972,28 +989,39 @@ struct ReviewTextPalette: Sendable {
 
 /// A file's lines as drawn: syntax colors, and each changed word's stronger tint.
 enum ReviewText {
-    static func prepare(_ file: DiffFile, palette: ReviewTextPalette, words: Bool) -> [Int: AttributedString] {
+    // ponytail: cancellation stops between lexer calls, not inside one long line's lexer.
+    // Add lexer checkpoints only if measured single-line latency warrants the wider change.
+    static func prepare(_ file: DiffFile, palette: ReviewTextPalette, words: Bool,
+                        isCancelled: () -> Bool = { Task.isCancelled }) -> [Int: AttributedString] {
+        guard !isCancelled() else { return [:] }
         let language = ReviewSyntax.language(forPath: file.displayPath)
-        let changed = words ? DiffWords.changes(in: file) : [:]
+        let changed = words ? DiffWords.changes(in: file, isCancelled: isCancelled) : [:]
+        guard !isCancelled() else { return [:] }
         var lines: [Int: AttributedString] = [:]
         for line in file.hunks.lazy.flatMap(\.lines) {
+            guard !isCancelled() else { return [:] }
             let ranges = changed[line.id] ?? []
             guard language != nil || !ranges.isEmpty else { continue }
-            var text = language.map { colored(ReviewSyntax.spans(line.text, language: $0), palette) } ?? AttributedString(line.text)
+            var text = language.map { colored(ReviewSyntax.spans(line.text, language: $0), palette, isCancelled: isCancelled) }
+                ?? AttributedString(line.text)
+            guard !isCancelled() else { return [:] }
             let tint = line.kind == .added ? palette.addedWord : palette.removedWord
             for range in DiffWords.stringRanges(ranges, in: line.text) {
+                guard !isCancelled() else { return [:] }
                 guard let lower = AttributedString.Index(range.lowerBound, within: text),
                       let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
                 text[lower..<upper].backgroundColor = tint
             }
             lines[line.id] = text
         }
-        return lines
+        return isCancelled() ? [:] : lines
     }
 
-    private static func colored(_ spans: [ReviewSyntax.Span], _ palette: ReviewTextPalette) -> AttributedString {
+    private static func colored(_ spans: [ReviewSyntax.Span], _ palette: ReviewTextPalette,
+                                isCancelled: () -> Bool) -> AttributedString {
         var text = AttributedString()
         for span in spans {
+            guard !isCancelled() else { return AttributedString() }
             var part = AttributedString(span.text)
             switch span.kind {
             case .keyword?: part.foregroundColor = palette.keyword
