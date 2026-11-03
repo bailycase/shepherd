@@ -19,6 +19,7 @@ struct LogicalProjectPane: View {
     let project: Project
     let presentation: ProjectPagePresentation
     @State private var folded: Set<ProjectTaskGroup> = []
+    @State private var items = ProjectPaneItemsCache()
     @FocusState private var searchFocused: Bool
 
     /// The workers whose rows are on screen: each row's subtitle is its worker's own native activity, so those threads are read
@@ -137,7 +138,7 @@ struct LogicalProjectPane: View {
     // MARK: Threads
 
     private var threads: some View {
-        let shown = presentation.visibleRows(query: vm.logicalProjectPaneQuery, groups: vm.logicalProjectPaneFilter)
+        let shown = items.items(presentation, query: vm.logicalProjectPaneQuery, groups: vm.logicalProjectPaneFilter, folded: folded)
         return ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: SH.Space.xl) {
                 SHLeadWelcome(name: vm.projectViewerName, status: presentation.status)
@@ -151,9 +152,21 @@ struct LogicalProjectPane: View {
                     Text("No thread matches.").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                         .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
                 } else {
-                    let grouped = Dictionary(grouping: shown, by: \.group)
-                    VStack(alignment: .leading, spacing: SH.Space.xs) {
-                        ForEach(ProjectTaskGroup.allCases, id: \.self) { group in groupView(group, rows: grouped[group] ?? []) }
+                    // One lazy list: only the rows in view are made. The gaps are the grouped layout's (`xs` between groups,
+                    // `rowGap` under a header and between rows).
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(shown) { item in
+                            switch item {
+                            case .header(let group, let count, let open):
+                                SHLeadGroupHeader(group.rawValue, count: count, expanded: open) {
+                                    if open { folded.insert(group) } else { folded.remove(group) }
+                                }
+                                .padding(.top, item.id == shown.first?.id ? 0 : SH.Space.xs)
+                            case .row(let row):
+                                ProjectTaskListRow(vm: vm, home: ref.home, row: row)
+                                    .padding(.top, SHLeadMetrics.rowGap)
+                            }
+                        }
                     }
                 }
             }
@@ -163,33 +176,31 @@ struct LogicalProjectPane: View {
         .scrollBounceBehavior(.basedOnSize)
     }
 
-    @ViewBuilder private func groupView(_ group: ProjectTaskGroup, rows: [ProjectTaskRow]) -> some View {
-        if !rows.isEmpty {
-            let open = !folded.contains(group)
-            VStack(alignment: .leading, spacing: SHLeadMetrics.rowGap) {
-                SHLeadGroupHeader(group.rawValue, count: rows.count, expanded: open) {
-                    if open { folded.insert(group) } else { folded.remove(group) }
-                }
-                if open {
-                    ForEach(rows) { row in
-                        SHLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .working ? row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home) : row.detail,
-                                        tone: row.tone,
-                                        age: row.settledAt.map(Self.age) ?? vm.workerStarted(row.workerAgentID, home: ref.home).map(Self.age)) {
-                            vm.logicalProjectPaneTask = row.id
-                        }
-                        .equatable()
-                    }
-                }
-            }
-        }
-    }
-
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.
     static func age(_ settledAt: Double) -> String {
         let seconds = max(0, Date().timeIntervalSince1970 - settledAt / 1000)
         if seconds < 3600 { return "\(max(1, Int(seconds / 60)))m" }
         if seconds < 86_400 { return "\(Int(seconds / 3600))h" }
         return "\(Int(seconds / 86_400))d"
+    }
+}
+
+/// One task in the pane's list. Its worker's activity and start time are read here, so an update to that worker's thread
+/// re-renders this row only. Resolved work is not polled, so its row reads only a store already made: a label never creates one.
+private struct ProjectTaskListRow: View {
+    var vm: ShepherdViewModel
+    let home: LogicalProjectHome
+    let row: ProjectTaskRow
+
+    var body: some View {
+        let polled = row.group != .resolved
+        let detail = row.group == .working ? row.detail ?? vm.workerActivity(row.workerAgentID, home: home, polled: polled) : row.detail
+        let age = row.settledAt.map(LogicalProjectPane.age)
+            ?? vm.workerStarted(row.workerAgentID, home: home, polled: polled).map(LogicalProjectPane.age)
+        SHLeadThreadRow(title: row.title, lead: row.lead, detail: detail, tone: row.tone, age: age) {
+            vm.logicalProjectPaneTask = row.id
+        }
+        .equatable()
     }
 }
 

@@ -136,6 +136,7 @@ struct RootView: View {
         .shDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .environment(\.presentImages, ImageViewerPresenter(model: vm))
+        .environment(\.threadReaderPins, vm.threadReaderPins)
         .environment(\.shDiagramPresentation, vm.diagramPresentation)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still

@@ -1037,13 +1037,8 @@ struct Composer: View {
             }
             return
         }
-        let images = input.attachments.images
-        let submitted = input.attachments.ids
-        Task {
-            if await store.send(images: images, delivery: delivery) {
-                for id in submitted { input.attachments.remove(id) }
-            }
-        }
+        // The images leave the composer when the store captures them with the words (`ThreadSubmissions`), not at acceptance.
+        Task { await ComposerImageCapture.send(store: store, input: input, delivery: delivery) }
     }
 
     /// ⌘↩ (or the rebound chord): steers the focused queued message now, or sends the draft that way.
