@@ -80,7 +80,8 @@ struct ThreadStoreCheck {
         try await wait { pendingAction != nil }
         guard case .send(let session, let generation, let operation, let text, let delivery, _, _, _, _) = requests.last else { fatalError("send missing") }
         precondition(session == "session" && generation == "generation" && text == "continue" && delivery == .steer)
-        precondition(store.draft == "continue")
+        precondition(store.draft.isEmpty, "captured input must leave the composer immediately")
+        precondition(store.submissions.contains { $0.id == operation && $0.typed == "continue" && $0.state == .sending })
         store.draft = "edited while pending"
         pendingAction!.resume(returning: .accepted(operationID: operation))
         pendingAction = nil
@@ -98,21 +99,27 @@ struct ThreadStoreCheck {
         store.draft = "keep on unknown"
         let unknown = Task { await store.send() }
         try await wait { pendingAction != nil }
+        guard case .send(_, _, let unknownID, _, _, _, _, _, _) = requests.last else { fatalError("send missing") }
+        precondition(store.draft.isEmpty)
         pendingAction!.resume(throwing: RemoteHostClientError.outcomeUnknown(message: "test timeout"))
         pendingAction = nil
         await unknown.value
-        precondition(store.draft == "keep on unknown" && store.notice?.contains("Nothing will be resent automatically") == true)
+        precondition(store.draft.isEmpty && store.notice?.contains("Nothing will be resent automatically") == true)
+        precondition(store.submissions.contains { $0.id == unknownID && $0.typed == "keep on unknown" && $0.state == .uncertain })
         let sendCount = requests.filter { if case .send = $0 { return true }; return false }.count
         await store.refresh()
         precondition(requests.filter { if case .send = $0 { return true }; return false }.count == sendCount)
 
-        // A mismatched acknowledgement cannot clear the draft.
+        // A mismatched acknowledgement retains the captured input as uncertain, not resendable.
+        store.draft = "keep on mismatch"
         let mismatch = Task { await store.send() }
         try await wait { pendingAction != nil }
+        guard case .send(_, _, let mismatchID, _, _, _, _, _, _) = requests.last else { fatalError("send missing") }
         pendingAction!.resume(returning: .accepted(operationID: UUID()))
         pendingAction = nil
         await mismatch.value
-        precondition(store.draft == "keep on unknown" && store.sentCount == 2)
+        precondition(store.draft.isEmpty && store.sentCount == 2)
+        precondition(store.submissions.contains { $0.id == mismatchID && $0.typed == "keep on mismatch" && $0.state == .uncertain })
 
         current = try snapshot(ids: ["new"], cursor: "new", revision: 4, dialogs: true)
         // This fixture replaces unrelated history; do not let the gap-joining pull consume
@@ -153,20 +160,25 @@ struct ThreadStoreCheck {
         pendingAction = nil
         await abort.value
 
-        // Leaving first makes the outcome unknown. A matching late acknowledgement settles
-        // that send and clears its unchanged draft without reattaching or drawing an echo.
+        // Leaving makes the captured outcome unknown. A matching late acknowledgement settles
+        // that record without reattaching, losing other uncertain inputs, or drawing an echo.
+        store.draft = "late captured input"
         let lateSend = Task { await store.send(delivery: .followUp) }
         try await wait { pendingAction != nil }
         guard case .send(_, _, let lateID, _, _, _, _, _, _) = requests.last else { fatalError("send missing") }
         run.cancel()
         store.stop()
-        precondition(!store.ready && store.draft == "keep on unknown" && store.notice != nil)
+        precondition(!store.ready && store.draft.isEmpty && store.notice != nil)
+        precondition(store.submissions.contains { $0.id == lateID && $0.typed == "late captured input" && $0.state == .uncertain })
         pendingAction!.resume(returning: .accepted(operationID: lateID))
         pendingAction = nil
         let acceptedAfterStop = await lateSend.value
         await run.value
         precondition(acceptedAfterStop && !store.ready && !store.busy)
         precondition(store.draft.isEmpty && store.notice == nil && store.sentCount == 2)
+        precondition(!store.submissions.contains { $0.id == lateID })
+        precondition(store.submissions.contains { $0.id == unknownID && $0.state == .uncertain })
+        precondition(store.submissions.contains { $0.id == mismatchID && $0.state == .uncertain })
         let stoppedCount = requests.count
         try await Task.sleep(for: .milliseconds(600))
         precondition(requests.count == stoppedCount)
