@@ -3,6 +3,7 @@
 // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set. Status reporting
 // is best-effort; native codemode failures remain visible as normal tool errors.
 import * as net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -318,19 +319,13 @@ export default function shepherdStatus(pi: ExtensionAPI) {
         retryDelay = 500;
         flush();
       });
-      let replies = "";
-      s.on("data", (chunk) => {
-        replies += chunk.toString();
-        if (Buffer.byteLength(replies) > 1024 * 1024) { s.destroy(); return; }
-        for (let newline; (newline = replies.indexOf("\n")) >= 0;) {
-          const line = replies.slice(0, newline);
-          replies = replies.slice(newline + 1);
-          try {
-            const reply = JSON.parse(line);
-            if (reply.type === "ok" || reply.type === "error") pendingBoundaries.get(reply.id)?.();
-          } catch {}
-        }
-      });
+      const read = textLines(line => {
+        try {
+          const reply = JSON.parse(line);
+          if (reply.type === "ok" || reply.type === "error") pendingBoundaries.get(reply.id)?.();
+        } catch {}
+      }, { limit: 1024 * 1024, measure: Buffer.byteLength, onOverflow: () => s.destroy() });
+      s.on("data", chunk => read(chunk.toString()));
       s.on("error", () => {});
       s.on("close", () => {
         for (const finish of pendingBoundaries.values()) finish();

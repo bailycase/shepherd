@@ -641,10 +641,30 @@ class VerifyAppTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = self.make_app(root, "Shepherd.app", **self.info("main"))
             os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "shepherd-panes.ts"))
+            os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "shepherd-lines.mjs"))
             os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "SKILL.md"))
             self.assertEqual(release.verify_app(path, "main", "1.0.0"),
                              ["extensions: design-skill/SKILL.md is not a bundled file",
+                              "extensions: shepherd-lines.mjs is not a bundled file",
                               "extensions: shepherd-panes.ts is not a bundled file"])
+
+    def test_socket_framing_dependency_is_installed_beside_each_consumer(self):
+        installers = {
+            "browser": "Browser", "design": "Design", "design-refs": "DesignReferences",
+            "panes": "Panes", "review": "Review", "instructions": "Instructions", "namer": "Namer",
+            "project-context": "ProjectContext", "status": "Status", "children": "Children",
+            "cli": "Children", "cli-client": "Children",
+        }
+        consumers = [file for file in Path(ROOT, "Extensions").iterdir()
+                     if file.is_file() and '"./shepherd-lines.mjs"' in file.read_text()]
+        self.assertEqual(len(consumers), len(installers))
+        for consumer in consumers:
+            installer = installers[consumer.stem.removeprefix("shepherd-")]
+            source = Path(ROOT, "Sources", "ShepherdApp", installer + "Extension.swift").read_text()
+            if installer == "Children":
+                self.assertIn('(\"shepherd-lines.mjs\", EmbeddedExtensions.source(\"shepherd-lines.mjs\"))', source)
+            else:
+                self.assertRegex(source, r'EmbeddedExtensions\.install\("shepherd-lines\.mjs", at: \w+\.appendingPathComponent\("shepherd-lines\.mjs"\)\)')
 
     def test_linked_or_stale_extensions_are_refused(self):
         with tempfile.TemporaryDirectory() as root:

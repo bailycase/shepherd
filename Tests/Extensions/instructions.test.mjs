@@ -217,7 +217,10 @@ async function withSuggestions(files, answer, body) {
       if (index < 0) return;
       const frame = JSON.parse(buffer.slice(0, index));
       frames.push(frame);
-      socket.write(JSON.stringify(answer(frame)) + "\n");
+      const reply = answer(frame);
+      const text = typeof reply === "string" ? reply : JSON.stringify(reply) + "\n";
+      socket.write(text.slice(0, 7));
+      setImmediate(() => socket.end(text.slice(7)));
     });
   });
   await new Promise((resolve) => server.listen(socketPath, resolve));
@@ -281,6 +284,22 @@ test("a suggestion goes to Shepherd, and the reply says what became of it", asyn
     });
     // A file it may suggest for is kept; anything else falls back to the first.
     assert.deepEqual(frames.map((frame) => frame.file), ["AGENTS.md", "APPEND_SYSTEM.md", "AGENTS.md", "AGENTS.md"]);
+  });
+});
+
+test("suggestion replies keep first-line, empty/malformed, CRLF and unknown-reply behavior", async () => {
+  for (const line of ["\n", "not-json\n"]) {
+    await withSuggestions("AGENTS.md", () => line + '{"type":"suggestion","outcome":"waiting"}\n', async tools => {
+      await assert.rejects(tools.get("suggest_instruction").execute("call", { line: "- Test", reason: "" }), /could not read.*protocol/);
+    });
+  }
+  // The tool validates reply type, but historically does not correlate its id.
+  await withSuggestions("AGENTS.md", () => '{"type":"unknown","id":999,"outcome":"waiting"}\r\nnot-json\n', async tools => {
+    await assert.rejects(tools.get("suggest_instruction").execute("call", { line: "- Test", reason: "" }), /Shepherd did not take the suggestion/);
+  });
+  await withSuggestions("AGENTS.md", () => '{"type":"suggestion","id":999,"outcome":"waiting"}\r\nnot-json\n', async tools => {
+    const result = await tools.get("suggest_instruction").execute("call", { line: "- Test", reason: "" });
+    assert.match(result.content[0].text, /Suggested for AGENTS.md/);
   });
 });
 
