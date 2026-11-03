@@ -41,3 +41,25 @@ struct AskExtensionTests {
         #expect(try String(contentsOf: installed, encoding: .utf8) == canonical)
     }
 }
+
+@Suite("Hooks extension")
+struct HooksExtensionTests {
+    @Test func theInstalledRuntimeIsPrivateByteIdenticalAndItsTrustFolderExistsBesideThePiHome() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = PiEngine(command: ["/tmp/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node"))
+        let home = PiHome(directory: directory.appendingPathComponent("pi"), engine: engine)
+        try FileManager.default.createDirectory(at: home.directory, withIntermediateDirectories: true)
+        let installed = try HooksExtension.install(in: home)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let canonical = try String(contentsOf: root.appendingPathComponent("Extensions/shepherd-hooks.ts"), encoding: .utf8)
+        #expect(HooksExtension.environmentKey == "SHEPHERD_HOOKS_DIR")
+        #expect(HooksExtension.path(in: home) == installed.path)
+        #expect(try posixPermissions(installed) == 0o600)
+        #expect(try String(contentsOf: installed, encoding: .utf8) == canonical)
+        let hooks = HooksExtension.directory(in: home)
+        #expect(hooks.standardizedFileURL.path == directory.appendingPathComponent("hooks").standardizedFileURL.path)
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(atPath: hooks.path, isDirectory: &isDirectory) && isDirectory.boolValue)
+    }
+}

@@ -27,7 +27,7 @@ const extension = (name) => path.join(root, "Extensions", name);
 export const THREAD_EXTENSIONS = [
   ["status", "shepherd-status.ts"], ["service-tier", "shepherd-service-tier.ts"],
   ["instructions", "shepherd-instructions.ts"], ["panes", "shepherd-panes.ts"], ["review", "shepherd-review.ts"],
-  ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["goal", "shepherd-goal.ts"], ["ask", "shepherd-ask.ts"], ["namer", "shepherd-namer.ts"],
+  ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["goal", "shepherd-goal.ts"], ["ask", "shepherd-ask.ts"], ["hooks", "shepherd-hooks.ts"], ["namer", "shepherd-namer.ts"],
   ["design", "shepherd-design.ts"], ["design-refs", "shepherd-design-refs.ts"],
   ["browser", "shepherd-browser.ts"], ["mcp", null], ["context", "shepherd-context.ts"],
 ];
@@ -211,6 +211,8 @@ export async function startThread(options = {}) {
     if (wants("goal")) Object.assign(env, { SHEPHERD_EXT_GOAL: "1", SHEPHERD_GOALS_ENABLED: "0", SHEPHERD_GOAL_MODELS: "" });
     // ask_user: a thread's or a design's pi, never an automation run's (nobody watches one).
     if (wants("ask") && !options.automation) env.SHEPHERD_EXT_ASK = "1";
+    // Hooks: every agent but a coordinator, with an empty trust folder, so nothing runs.
+    if (wants("hooks")) env.SHEPHERD_HOOKS_DIR = path.join(support, "hooks");
     if (options.needsName !== false) env.SHEPHERD_NEEDS_NAME = "1";
     if (options.automation) env.SHEPHERD_AUTOMATION = "1";
     if (deferOn) env.SHEPHERD_DEFER_TOOLS = "1";

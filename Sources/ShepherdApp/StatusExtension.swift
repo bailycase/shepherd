@@ -151,7 +151,7 @@ enum StatusExtension {
         // ask_user: a person watches a thread or a design; nobody answers an automation run.
         let askExtensionPath = isAutomation ? nil : AskExtension.path(in: home)
         var extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
-                          childrenExtensionPath, GoalExtension.path(in: home), askExtensionPath, namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
+                          childrenExtensionPath, GoalExtension.path(in: home), askExtensionPath, HooksExtension.path(in: home), namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
                           browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
         if let projectContext {
             if projectContext.coordinator { extensions = [extensionPath, ServiceTierExtension.path(in: home)] }
@@ -210,6 +210,8 @@ enum StatusExtension {
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
         // Keep the controller loaded so the experiment can change without restarting pi.
         env[GoalExtension.environmentKey] = "1"
+        // Hooks (docs/hooks.md): the runtime reads trust.json from here; a coordinator runs none.
+        env[HooksExtension.environmentKey] = HooksExtension.directory(in: home).path
         env["SHEPHERD_GOALS_ENABLED"] = goalsEnabled ? "1" : "0"
         // Always override an inherited opt-in; absence would leak the app's launch environment.
         env["SHEPHERD_GOAL_MODELS"] = goalCrossProviderEvaluation
@@ -218,7 +220,7 @@ enum StatusExtension {
             env["SHEPHERD_PROJECT_CONTEXT"] = projectContext.json
             env["SHEPHERD_PROJECT_COORDINATOR"] = projectContext.coordinator ? "1" : "0"
             if projectContext.coordinator {
-                for key in ["SHEPHERD_EXT_PANES", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN", "SHEPHERD_EXT_BROWSER", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_EXT_GOAL"] { env[key] = "" }
+                for key in ["SHEPHERD_EXT_PANES", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN", "SHEPHERD_EXT_BROWSER", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_EXT_GOAL", HooksExtension.environmentKey] { env[key] = "" }
                 env["SHEPHERD_GOALS_ENABLED"] = "0"
             }
         }
