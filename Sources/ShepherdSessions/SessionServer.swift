@@ -1854,7 +1854,11 @@ public final class SessionServer: @unchecked Sendable {
                 // idle agent: it gets what the session file holds, and starts pi by acting.
                 servePreviewSnapshot(agent: agent, cwd: leaf.cwd, completion: completion)
             } else {
-                hopToMain { [weak self] in self?.onNativeThreadDemand?(agentID) }
+                // Project admission owns coordinator launches. A snapshot during Resume must not
+                // race that launch with an ordinary pane start and pause the Project on binding failure.
+                if agent.coordinatorFor == nil {
+                    hopToMain { [weak self] in self?.onNativeThreadDemand?(agentID) }
+                }
                 completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             }
             return
