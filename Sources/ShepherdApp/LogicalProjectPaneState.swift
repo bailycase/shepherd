@@ -38,3 +38,59 @@ extension ProjectPagePresentation {
         }
     }
 }
+
+/// One line of the pane's task list, flattened so the list is one lazy stack: a group's header, or a task under an open one.
+enum ProjectPaneItem: Identifiable, Equatable {
+    case header(ProjectTaskGroup, count: Int, open: Bool)
+    case row(ProjectTaskRow)
+
+    enum ID: Hashable {
+        case header(ProjectTaskGroup)
+        case row(ProjectTaskID)
+    }
+
+    var id: ID {
+        switch self {
+        case .header(let group, _, _): .header(group)
+        case .row(let row): .row(row.id)
+        }
+    }
+}
+
+extension ProjectPagePresentation {
+    /// The visible rows in group order, each non-empty group led by its header; a folded group keeps only its header.
+    func paneItems(query: String, groups: Set<ProjectTaskGroup>, folded: Set<ProjectTaskGroup>) -> [ProjectPaneItem] {
+        let grouped = Dictionary(grouping: visibleRows(query: query, groups: groups), by: \.group)
+        return ProjectTaskGroup.allCases.flatMap { group -> [ProjectPaneItem] in
+            guard let rows = grouped[group], !rows.isEmpty else { return [] }
+            let open = !folded.contains(group)
+            return [.header(group, count: rows.count, open: open)] + (open ? rows.map(ProjectPaneItem.row) : [])
+        }
+    }
+}
+
+/// The pane's list, derived once per change of what it is derived from, not per render (a worker's update re-renders only its row).
+@MainActor
+final class ProjectPaneItemsCache {
+    private struct Key: Equatable {
+        var rows: [ProjectTaskRow]
+        var query: String
+        var groups: Set<ProjectTaskGroup>
+        var folded: Set<ProjectTaskGroup>
+    }
+    private var key: Key?
+    private(set) var items: [ProjectPaneItem] = []
+    /// Derivations (tests).
+    private(set) var derivations = 0
+
+    func items(_ presentation: ProjectPagePresentation, query: String, groups: Set<ProjectTaskGroup>,
+               folded: Set<ProjectTaskGroup>) -> [ProjectPaneItem] {
+        let next = Key(rows: presentation.rows, query: query, groups: groups, folded: folded)
+        if next != key {
+            key = next
+            items = presentation.paneItems(query: query, groups: groups, folded: folded)
+            derivations += 1
+        }
+        return items
+    }
+}

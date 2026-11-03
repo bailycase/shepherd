@@ -251,12 +251,22 @@ extension ShepherdViewModel {
         }
     }
 
+    /// A worker's store when one is already made (its thread shown or polled), never making one for a label.
+    func existingProjectWorkerStore(_ home: LogicalProjectHome, _ agent: AgentID) -> NativeThreadStore? {
+        switch home {
+        case .local: threadStores.existing(for: agent)
+        case .host(let host): remoteThreadStores.existing(for: RemoteAgentRef(hostID: host, agentID: agent))
+        }
+    }
+
     /// What a running worker is doing, from its own native thread: the current step of the plan it reported, else its activity line
     /// (the call running now, else the last burst), never a typed-in sentence. nil while it has shown nothing.
-    func workerActivity(_ agent: AgentID, home: LogicalProjectHome = .local) -> String? {
+    /// `polled`: the worker's thread is read while its row shows (the pane polls unresolved work), so its store is made here;
+    /// otherwise only a store already made is read.
+    func workerActivity(_ agent: AgentID, home: LogicalProjectHome = .local, polled: Bool = true) -> String? {
         // The worker's own plan says what it is doing now (ProjectLead-Started: "Writing the OpenAPI spec"): the typed `project_plan` step
         // that is current, when it has reported one in its latest turn. Otherwise the call running now.
-        let latest = projectWorkerStore(home, agent).rows.last { $0.presentation != nil }?.presentation
+        let latest = (polled ? projectWorkerStore(home, agent) : existingProjectWorkerStore(home, agent))?.rows.last { $0.presentation != nil }?.presentation
         if let current = latest?.latestProjectPlan?.steps.first(where: { $0.state == .current }) { return current.text }
         let items = latest?.items ?? []
         for item in items.reversed() {
@@ -270,8 +280,8 @@ extension ShepherdViewModel {
 
     /// When a running worker's current work began, in milliseconds: the time of the last message a person or the project sent it
     /// (its assignment, or the latest follow-up), else when its status last changed. nil when neither is known yet (no age is drawn).
-    func workerStarted(_ agent: AgentID, home: LogicalProjectHome = .local) -> Double? {
-        projectWorkerStore(home, agent).rows.last { $0.turn.isUser }?.turn.messages.first?.timestamp
+    func workerStarted(_ agent: AgentID, home: LogicalProjectHome = .local, polled: Bool = true) -> Double? {
+        (polled ? projectWorkerStore(home, agent) : existingProjectWorkerStore(home, agent))?.rows.last { $0.turn.isUser }?.turn.messages.first?.timestamp
             ?? statusSince[agent].map { $0.timeIntervalSince1970 * 1000 }
     }
 

@@ -79,11 +79,16 @@ struct ViewerImage: Identifiable, Equatable {
     /// A transcript thumbnail: the picture decoded no larger than `longestSide` pixels (ImageIO scales while decoding, so a
     /// 4096 × 4096 image never becomes a full bitmap just to be drawn at 240 points).
     static func thumbnail(_ data: Data, longestSide: CGFloat) -> NSImage? {
+        decodedThumbnail(data, longestSide: longestSide).map { NSImage(cgImage: $0.image, size: $0.size) }
+    }
+
+    /// The decoding half of `thumbnail`, safe off the main actor; the `NSImage` is made where it is drawn.
+    static func decodedThumbnail(_ data: Data, longestSide: CGFloat) -> (image: CGImage, size: NSSize)? {
         guard let size = acceptedSize(data), let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
                                         kCGImageSourceThumbnailMaxPixelSize: Int(max(1, longestSide.rounded(.up)))]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: image, size: NSSize(width: min(size.width, CGFloat(image.width)), height: min(size.height, CGFloat(image.height))))
+        return (image, NSSize(width: min(size.width, CGFloat(image.width)), height: min(size.height, CGFloat(image.height))))
     }
 
     nonisolated static func == (a: ViewerImage, b: ViewerImage) -> Bool {

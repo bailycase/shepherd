@@ -27,6 +27,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.isEditable = context.environment.isEnabled
         textView.setAccessibilityLabel(accessibilityLabel)
         textView.string = text
+        textView.textStorage?.delegate = context.coordinator
 
         let scroll = NSScrollView()
         scroll.documentView = textView
@@ -82,11 +83,19 @@ struct InstructionsEditor: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: InstructionsEditor
         /// What the text view was last styled for: a render that changes none of it leaves the
         /// text alone (and an input method's marked text with it).
-        private var styled: (text: String, saved: String, scale: CGFloat)?
+        private var styled: (text: String, scale: CGFloat, markdown: Bool)?
+        /// Characters typed since the last styling (UTF-16, in the text as it is now): only their
+        /// lines are styled again.
+        private var edited: NSRange?
+        /// The tint's diff: the text and saved version it was asked for, and the one in flight.
+        private var diffed: (text: String, saved: String)?
+        private(set) var diffing: Task<Void, Never>?
+        /// Tint diffs run (tests).
+        private(set) var diffRuns = 0
 
         /// `**bold**` in a project file: compiled once, not per line per keystroke.
         private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*]+\\*\\*")
@@ -95,28 +104,71 @@ struct InstructionsEditor: NSViewRepresentable {
             self.parent = parent
         }
 
+        /// Every change of characters (typing, paste, undo, an input method), in the text's new coordinates.
+        nonisolated func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+                                     range editedRange: NSRange, changeInLength delta: Int) {
+            guard editedMask.contains(.editedCharacters) else { return }
+            MainActor.assumeIsolated { noteEdit(editedRange, delta: delta, length: textStorage.length) }
+        }
+
+        func noteEdit(_ range: NSRange, delta: Int, length: Int) {
+            guard var previous = edited else { edited = range; return }
+            // An earlier pending range shifts with an edit before it.
+            if range.location <= previous.location { previous.location = max(0, previous.location + delta) }
+            let union = NSUnionRange(previous, range)
+            let end = min(length, NSMaxRange(union))
+            edited = NSRange(location: min(union.location, end), length: end - min(union.location, end))
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? InstructionsTextView else { return }
             parent.text = textView.string
             restyle(textView, saved: parent.saved)
         }
 
-        /// Sets every line's attributes from its highlight, and which lines are tinted.
+        /// Styles what changed: the edited lines after typing, every line for another file or text
+        /// size. While an input method is composing, styling waits for it to commit. The changed
+        /// lines' tint is diffed off the main actor.
         func restyle(_ textView: InstructionsTextView, saved: String) {
             guard let storage = textView.textStorage else { return }
             let text = textView.string
             let scale = ThemeStore.shared.textScale
-            if let styled, styled.text == text, styled.saved == saved, styled.scale == scale { return }
-            styled = (text, saved, scale)
-            let styles = InstructionsEditorStyles(scale: scale, project: parent.project, plain: parent.plain)
+            let markdown = parent.markdown
+            if !textView.hasMarkedText(), styled.map({ $0.text != text || $0.scale != scale || $0.markdown != markdown }) ?? true {
+                let styles = InstructionsEditorStyles(scale: scale, project: parent.project, plain: parent.plain)
+                let full = NSRange(location: 0, length: storage.length)
+                // Only typing restyles part of the text; anything else (first styling, text size) restyles it all.
+                let sameStyles = styled.map { $0.scale == scale && $0.markdown == markdown } ?? false
+                let lines = sameStyles ? edited.map { Self.lineRange(of: $0, in: text as NSString) } ?? full : full
+                styled = (text, scale, markdown)
+                edited = nil
+                style(storage, range: lines, styles: styles)
+                textView.typingAttributes = styles.base
+            }
+            tint(textView, text: text, saved: saved)
+        }
+
+        /// The whole lines (split at "\n", as the gutter numbers them) that `range` touches.
+        static func lineRange(of range: NSRange, in text: NSString) -> NSRange {
+            let length = text.length
+            let lower = min(range.location, length), upper = min(NSMaxRange(range), length)
+            let before = text.range(of: "\n", options: .backwards, range: NSRange(location: 0, length: lower))
+            let start = before.location == NSNotFound ? 0 : NSMaxRange(before)
+            let after = text.range(of: "\n", range: NSRange(location: upper, length: length - upper))
+            let end = after.location == NSNotFound ? length : after.location
+            return NSRange(location: start, length: end - start)
+        }
+
+        private func style(_ storage: NSTextStorage, range: NSRange, styles: InstructionsEditorStyles) {
+            let text = storage.string as NSString
             storage.beginEditing()
-            storage.setAttributes(styles.base, range: NSRange(location: 0, length: storage.length))
-            var location = 0
-            for line in text.components(separatedBy: "\n") {
+            storage.setAttributes(styles.base, range: range)
+            var location = range.location
+            for line in text.substring(with: range).components(separatedBy: "\n") {
                 for span in parent.markdown ? InstructionsText.highlight(line: line) : [] {
-                    let range = NSRange(location: location + span.range.lowerBound, length: span.range.count)
-                    guard NSMaxRange(range) <= storage.length else { continue }
-                    storage.addAttributes(styles.attributes(for: span.role), range: range)
+                    let spanRange = NSRange(location: location + span.range.lowerBound, length: span.range.count)
+                    guard NSMaxRange(spanRange) <= storage.length else { continue }
+                    storage.addAttributes(styles.attributes(for: span.role), range: spanRange)
                 }
                 if parent.project, parent.markdown, line.contains("**") {
                     for match in Self.bold.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
@@ -126,12 +178,44 @@ struct InstructionsEditor: NSViewRepresentable {
                 location += (line as NSString).length + 1
             }
             storage.endEditing()
-            textView.typingAttributes = styles.base
-            let changed = InstructionsText.changedLines(saved: saved, draft: text)
-            if textView.changedLines != changed {
-                textView.changedLines = changed
-                textView.needsDisplay = true
+        }
+
+        /// The changed lines' tint, diffed in a detached task: one at a time, the newest text
+        /// next. A result for text the editor no longer holds never lands.
+        private func tint(_ textView: InstructionsTextView, text: String, saved: String) {
+            if let diffed, diffed.text == text, diffed.saved == saved { return }
+            diffed = (text, saved)
+            if text == saved {
+                diffing?.cancel()
+                diffing = nil
+                apply([], to: textView)
+                return
             }
+            guard diffing == nil else { return }
+            diffRuns += 1
+            diffing = Task { [weak self, weak textView] in
+                let changed = await Task.detached(priority: .userInitiated) {
+                    let interval = AppSignposts.input.beginInterval("instructions tint diff")
+                    defer { AppSignposts.input.endInterval("instructions tint diff", interval) }
+                    return InstructionsText.changedLines(saved: saved, draft: text)
+                }.value
+                guard let self, !Task.isCancelled else { return }
+                self.diffing = nil
+                guard let textView else { return }
+                if textView.string == text, self.parent.saved == saved {
+                    self.apply(changed, to: textView)
+                } else {
+                    // Superseded while it ran: diff the newest text.
+                    self.diffed = nil
+                    self.tint(textView, text: textView.string, saved: self.parent.saved)
+                }
+            }
+        }
+
+        private func apply(_ changed: Set<Int>, to textView: InstructionsTextView) {
+            guard textView.changedLines != changed else { return }
+            textView.changedLines = changed
+            textView.needsDisplay = true
         }
     }
 }

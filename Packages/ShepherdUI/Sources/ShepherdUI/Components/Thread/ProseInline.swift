@@ -12,37 +12,98 @@ import SwiftUI
 ///   HTML tags are dropped, and anything that only looks like a tag (`Array<Int>`) stays text
 @MainActor
 public enum SHProseInline {
-    private final class Entry {
+    private final class Entry: Sendable {
         let value: AttributedString
         init(_ value: AttributedString) { self.value = value }
     }
 
-    /// Keyed by text scale and text. A streaming paragraph adds a key per chunk, so the cache
-    /// evicts its oldest entries rather than everything at once (finished turns keep their style).
+    /// Cache budgets, by estimated bytes (text plus runs), not just entries: a streaming paragraph
+    /// adds a key per chunk, so a long answer's prefixes would otherwise pin megabytes. The
+    /// oldest evict first (finished turns keep their style); a text costing more than
+    /// `entryCostLimit` is never kept, so one huge answer cannot flush the rest. Eviction only
+    /// means styling again, never different styling.
+    public nonisolated static let totalCostLimit = 8 * 1024 * 1024
+    public nonisolated static let entryCostLimit = 1024 * 1024
+
+    /// Styled, keyed by text scale and text.
     private static let cache: NSCache<NSString, Entry> = {
         let cache = NSCache<NSString, Entry>()
         cache.countLimit = 4096
+        cache.totalCostLimit = totalCostLimit
         return cache
     }()
+
+    /// Parsed but not yet styled, keyed by text alone (parsing knows no theme or text scale):
+    /// filled off the main actor by `prepare`, or on it by a styling miss.
+    nonisolated(unsafe) private static let parsedCache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 4096
+        cache.totalCostLimit = totalCostLimit
+        return cache
+    }()
+
+    /// What an entry costs the cache: its text, its key and its runs.
+    nonisolated static func cost(_ text: String, _ value: AttributedString) -> Int {
+        text.utf8.count * 2 + value.runs.count * 128
+    }
+
+    /// Main-actor styled-cache misses that parsed Markdown here rather than taking a prepared parse (tests).
+    public private(set) static var mainParses = 0
 
     /// `text` styled, from the cache when it was styled before at this text scale.
     public static func attributed(_ text: String) -> AttributedString {
         let key = "\(ThemeStore.shared.textScale)\n\(text)" as NSString
         if let cached = cache.object(forKey: key) { return cached.value }
-        let value = styled(text)
-        cache.setObject(Entry(value), forKey: key)
+        let value = style(parsed(text), text: text)
+        let cost = cost(text, value)
+        if cost <= entryCostLimit { cache.setObject(Entry(value), forKey: key, cost: cost) }
+        return value
+    }
+
+    /// Whether `text` is styled (or at least parsed) already: drawing it costs no Markdown parse.
+    public static func isPrepared(_ text: String) -> Bool {
+        parsedCache.object(forKey: text as NSString) != nil
+            || cache.object(forKey: "\(ThemeStore.shared.textScale)\n\(text)" as NSString) != nil
+    }
+
+    /// Parses `texts` off the main actor, so drawing them later only styles (theme and text
+    /// scale are applied on the main actor). Stale work is harmless: it only fills the cache.
+    public nonisolated static func prepare(_ texts: [String]) async {
+        await Task.detached(priority: .userInitiated) {
+            for text in texts where parsedCache.object(forKey: text as NSString) == nil {
+                if Task.isCancelled { return }
+                store(parse(text), for: text)
+            }
+        }.value
+    }
+
+    private nonisolated static func store(_ value: AttributedString, for text: String) {
+        let cost = cost(text, value)
+        if cost <= entryCostLimit { parsedCache.setObject(Entry(value), forKey: text as NSString, cost: cost) }
+    }
+
+    private static func parsed(_ text: String) -> AttributedString {
+        if let prepared = parsedCache.object(forKey: text as NSString) { return prepared.value }
+        mainParses += 1
+        let value = parse(text)
+        store(value, for: text)
         return value
     }
 
     /// The footnote references' link scheme, inside this styler only.
-    private static let footnoteScheme = "sh-footnote"
+    private nonisolated static let footnoteScheme = "sh-footnote"
 
     /// `text` styled, uncached.
-    static func styled(_ text: String) -> AttributedString {
+    static func styled(_ text: String) -> AttributedString { style(parse(text), text: text) }
+
+    /// `text`'s inline Markdown, unstyled: pure, so it runs anywhere.
+    nonisolated static func parse(_ text: String) -> AttributedString {
         let source = text.contains("[^") ? footnoteLinks(text) : text
-        guard let parsed = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
-            return AttributedString(text)
-        }
+        return (try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+
+    private static func style(_ parsed: AttributedString, text: String) -> AttributedString {
         let sh = Color.sh
         var result = AttributedString()
         var open: [HTMLTag] = []
@@ -144,7 +205,7 @@ public enum SHProseInline {
 
     /// `[^2]` → a link the styler draws as a superscript "2", outside code spans and unless
     /// escaped (`\[^x]` reads as written).
-    private static func footnoteLinks(_ text: String) -> String {
+    private nonisolated static func footnoteLinks(_ text: String) -> String {
         var result = ""
         var index = text.startIndex
         var inCode: Int?

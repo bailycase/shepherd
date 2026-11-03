@@ -8,7 +8,7 @@ import ShepherdRemote
 /// takes: at most `NativeImage.maxPerSend`, each a raster image of at most `NativeImage.maxBytes`
 /// once resized. Dropped, pasted and picked files are resized on the way in
 /// (`AppImageDrop.resolve`: longest edge 2000px, JPEG stays JPEG, everything else PNG) before
-/// they get here. Pure: only `add(urls:)` reads files.
+/// they get here. Pure: files are read off the main actor (`ImageFile.read`) before `add(files:)`.
 struct ComposerAttachments: Equatable {
     private(set) var items: [ImageAttachment] = []
     /// Why the last add left something out.
@@ -45,9 +45,9 @@ struct ComposerAttachments: Equatable {
         }
     }
 
-    /// Files already resized by `AppImageDrop.resolve`.
-    mutating func add(urls: [URL]) {
-        add(urls.map { ($0.lastPathComponent, ImageAttachment(url: $0)) })
+    /// Files already resized by `AppImageDrop.resolve` and read by `ImageFile.read`.
+    mutating func add(files: [(URL, ImageFile?)]) {
+        add(files.map { ($0.0.lastPathComponent, $0.1.map(ImageAttachment.init)) })
     }
 
     mutating func remove(_ id: UUID) {
@@ -103,9 +103,7 @@ final class ThreadInput {
         let generation = generation
         let session = store.sessionKey
         Task {
-            let urls = await AppImageDrop.resolve(providers)
-            // Read and decoded off the main actor: a few dropped screenshots must not freeze the composer.
-            let files = await Task.detached(priority: .userInitiated) { urls.map { ($0, ImageFile(url: $0)) } }.value
+            let files = await ImageFile.read(await AppImageDrop.resolve(providers))
             guard available, self.generation == generation, store.sessionKey == session else { return }
             add(files: files, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
@@ -161,6 +159,16 @@ final class ThreadInput {
 /// so a 2000px drop is never decoded at full size, let alone three times). nil when the file is
 /// not a raster image.
 struct ImageFile: Sendable {
+    /// Each URL with what it read as an image (nil where it is not one), read and decoded off the
+    /// main actor: a few dropped screenshots must not freeze the composer.
+    static func read(_ urls: [URL]) async -> [(URL, ImageFile?)] {
+        await Task.detached(priority: .userInitiated) {
+            let interval = AppSignposts.input.beginInterval("attachment read")
+            defer { AppSignposts.input.endInterval("attachment read", interval) }
+            return urls.map { ($0, ImageFile(url: $0)) }
+        }.value
+    }
+
     let url: URL
     let data: Data
     let mimeType: String

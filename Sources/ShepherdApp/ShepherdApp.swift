@@ -41,63 +41,77 @@ struct MainWindowReader: NSViewRepresentable {
 @MainActor
 public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var vm: ShepherdViewModel
+    /// The workspace is acquired off the main thread with the window already up; the model (and
+    /// everything that restores agents or writes the workspace) is made once that succeeds.
+    @State private var launch: ShepherdLaunch<ShepherdViewModel>
     /// Menus rebuild when a shortcut is rebound: the rebindings are passed into each menu.
     private let keys: KeybindingsStore
     private let themes: ThemeManager
 
     public init() {
-        // Acquire the workspace before constructing anything that can restore agents or write it.
-        do {
-            try SessionServer.shared.start()
-        } catch {
-            NSLog("Shepherd: failed to start session server: \(error)")
-            exit(EXIT_FAILURE)
-        }
-        AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
-        let resourceSampler = SessionResourceSampler()
-        ShepherdDiagnostics.shared.start(settings: .shared, resourceSampler: {
-            await resourceSampler.sample(SessionServer.shared.resourceState())
-        })
-        if ShepherdDiagnostics.shared.isActive {
-            SessionServer.shared.onDiagnosticDuration = { operation, seconds in
-                ShepherdDiagnostics.shared.recordDuration(operation, seconds: seconds)
-            }
-            SessionServer.shared.onDiagnosticActivityDetails = { name, details in
-                guard let activity = ShepherdDiagnostics.Activity(rawValue: name) else { return }
-                ShepherdDiagnostics.shared.record(activity, details: details)
-            }
-        }
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
         SHFonts.register()
-        _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent))
+        let launch = ShepherdLaunch<ShepherdViewModel>(
+            // Acquire the workspace before constructing anything that can restore agents or write it.
+            start: { try SessionServer.shared.start() },
+            makeModel: {
+                AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
+                let resourceSampler = SessionResourceSampler()
+                ShepherdDiagnostics.shared.start(settings: .shared, resourceSampler: {
+                    await resourceSampler.sample(SessionServer.shared.resourceState())
+                })
+                if ShepherdDiagnostics.shared.isActive {
+                    SessionServer.shared.onDiagnosticDuration = { operation, seconds in
+                        ShepherdDiagnostics.shared.recordDuration(operation, seconds: seconds)
+                    }
+                    SessionServer.shared.onDiagnosticActivityDetails = { name, details in
+                        guard let activity = ShepherdDiagnostics.Activity(rawValue: name) else { return }
+                        ShepherdDiagnostics.shared.record(activity, details: details)
+                    }
+                }
+                return ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent)
+            },
+            failed: { error in
+                NSLog("Shepherd: failed to start session server: \(error)")
+                exit(EXIT_FAILURE)
+            })
+        launch.begin()
+        _launch = State(initialValue: launch)
     }
 
     public var body: some Scene {
         // One window, never tabbed. Sessions belong to the app, not the window: closing it
         // leaves every agent running, and the Dock or Window menu brings it back.
         Window(ShepherdEdition.current.displayName, id: MainWindow.id) {
-            RootView(vm: vm)
-                // Host role: bind the remote listener if this Mac serves its
-                // sessions (the toggle persists; a host stays a host). Workspace ownership
-                // was acquired before the view model was constructed.
-                .task {
-                    vm.applyRemoteListenerSetting()
-                    vm.startSkillChecks()
-                }
+            if let vm = launch.model {
+                RootView(vm: vm)
+                    // Host role: bind the remote listener if this Mac serves its
+                    // sessions (the toggle persists; a host stays a host). Workspace ownership
+                    // was acquired before the view model was constructed.
+                    .task {
+                        AppSignposts.launch.emitEvent("root view task")
+                        vm.applyRemoteListenerSetting()
+                        vm.startSkillChecks()
+                    }
+            } else {
+                LaunchSurface()
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
-            AppSettingsCommands(vm: vm)
-            FileCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
-            ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides, themes: themes)
-            PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
-            SpaceCommands(vm: vm, menu: vm.menuState, keys: keys)
-            AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            // The workspace's menus exist only once it is open: nothing acts on it before then.
+            if let vm = launch.model {
+                AppSettingsCommands(vm: vm)
+                FileCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+                ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides, themes: themes)
+                PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
+                SpaceCommands(vm: vm, menu: vm.menuState, keys: keys)
+                AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            }
         }
     }
 }

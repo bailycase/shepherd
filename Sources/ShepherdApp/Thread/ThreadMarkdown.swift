@@ -26,6 +26,13 @@ struct Prose: View, Equatable {
     /// A streaming reply is writing the last fenced block (still open): it is colored as it
     /// grows (`CodeHighlightThrottle`), and in full once it is finished.
     var writingFence = false
+    /// Large new inline text is parsed off the main actor while the last blocks stay drawn.
+    @State private var gate = ProseInlineGate()
+    @State private var landed = 0
+
+    static func == (lhs: Prose, rhs: Prose) -> Bool {
+        lhs.blocks == rhs.blocks && lhs.maxWidth == rhs.maxWidth && lhs.writingFence == rhs.writingFence
+    }
 
     init(blocks: [NativeMarkdownBlock], maxWidth: CGFloat = AppLayout.proseMaxWidth, writingFence: Bool = false) {
         self.blocks = blocks
@@ -38,6 +45,8 @@ struct Prose: View, Equatable {
     }
 
     var body: some View {
+        let _ = landed
+        let blocks = gate.blocks(for: blocks) { [$landed] in $landed.wrappedValue &+= 1 }
         let writing = writingFence ? Self.lastCode(blocks) : nil
         SHAgentProse(Self.proseBlocks(blocks), maxWidth: maxWidth, writingFence: writingFence) { code, language in
             HighlightedCodeBlock(code: code, language: language, writing: code == writing)
@@ -57,6 +66,27 @@ struct Prose: View, Equatable {
             }
         }
         return nil
+    }
+
+    /// Every inline text `proseBlocks` styles, in document order.
+    static func inlineTexts(_ blocks: [NativeMarkdownBlock]) -> [String] {
+        var texts: [String] = []
+        func walk(_ blocks: [NativeMarkdownBlock]) {
+            for block in blocks {
+                switch block {
+                case .heading(_, let text), .paragraph(let text): texts.append(text)
+                case .quote(let inner): walk(inner)
+                case .list(_, _, let items):
+                    for item in items { texts.append(item.text); walk(item.children) }
+                case .table(let table): texts += table.header; texts += table.rows.joined()
+                case .details(let summary, let inner): texts.append(summary); walk(inner)
+                case .footnotes(let notes): texts += notes.map(\.text)
+                case .code, .rule, .image: break
+                }
+            }
+        }
+        walk(blocks)
+        return texts
     }
 
     /// The parsed blocks for `SHAgentProse`, their inline runs styled once per text
@@ -110,6 +140,8 @@ struct ThinkingRow: View, Equatable {
     var since: Double? = nil
     let isExpanded: Bool
     let toggle: () -> Void
+    @State private var gate = ProseInlineGate()
+    @State private var landed = 0
 
     static func == (lhs: ThinkingRow, rhs: ThinkingRow) -> Bool {
         lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.since == rhs.since && lhs.isExpanded == rhs.isExpanded
@@ -117,6 +149,8 @@ struct ThinkingRow: View, Equatable {
     }
 
     var body: some View {
+        let _ = landed
+        let blocks = gate.blocks(for: blocks) { [$landed] in $landed.wrappedValue &+= 1 }
         let expanded = Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } })
         // Live: the shared summary so far opens under "Thinking… · 30s" (ResponseVisibility › B);
         // with none, the live line and its clock.
@@ -125,6 +159,43 @@ struct ThinkingRow: View, Equatable {
                               isExpanded: expanded)
             : SHThinking(nativeThoughtText(seconds), blocks: Prose.proseBlocks(blocks), isExpanded: expanded,
                          spokenTitle: nativeThoughtSpokenText(seconds))
+    }
+}
+
+/// Inline Markdown off the main actor for prose that is already on screen (a reply or thinking
+/// as it streams): when its blocks change and the text not yet parsed reaches
+/// `offMainBytes`, the last blocks stay drawn while the new text parses in a detached task,
+/// then the view draws the new blocks, styling them on the main actor (theme, text scale).
+/// One parse at a time: chunks that arrive meanwhile are skipped for the newest. Prose seen
+/// for the first time, and small changes, are drawn at once, so nothing waits on a blank row.
+@MainActor final class ProseInlineGate {
+    static let offMainBytes = NativeThreadStore.offMainProseBytes
+    private(set) var shown: [NativeMarkdownBlock]?
+    private var preparing: Task<Void, Never>?
+    /// The blocks the last parse off main was for.
+    private var prepared: [NativeMarkdownBlock]?
+    /// Parses handed off main (tests).
+    private(set) var offMainParses = 0
+
+    /// The blocks to draw for `blocks`; `landed` is called (on the main actor) when a deferred parse is ready.
+    func blocks(for blocks: [NativeMarkdownBlock], landed: @escaping @MainActor () -> Void) -> [NativeMarkdownBlock] {
+        // Drawn once its parse landed, whatever the cache kept: a text past the cache's entry budget is
+        // never kept, and must not be prepared again forever.
+        guard let shown, shown != blocks, blocks != prepared else { self.shown = blocks; return blocks }
+        let missing = Prose.inlineTexts(blocks).filter { !SHProseInline.isPrepared($0) }
+        guard missing.reduce(0, { $0 + $1.utf8.count }) >= Self.offMainBytes else { self.shown = blocks; return blocks }
+        if preparing == nil {
+            offMainParses += 1
+            preparing = Task { [weak self] in
+                let interval = AppSignposts.input.beginInterval("inline markdown prepare")
+                await SHProseInline.prepare(missing)
+                AppSignposts.input.endInterval("inline markdown prepare", interval)
+                self?.preparing = nil
+                self?.prepared = blocks
+                landed()
+            }
+        }
+        return shown
     }
 }
 

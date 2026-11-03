@@ -240,8 +240,8 @@ final class NewThreadState {
     func attach(_ providers: [NSItemProvider]) {
         attachments.clearError()
         Task {
-            let urls = await AppImageDrop.resolve(providers)
-            attachments.add(urls: urls)
+            let files = await ImageFile.read(await AppImageDrop.resolve(providers))
+            attachments.add(files: files)
         }
     }
 
