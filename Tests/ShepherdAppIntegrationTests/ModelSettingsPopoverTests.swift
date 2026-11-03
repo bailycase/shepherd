@@ -83,7 +83,7 @@ struct ModelSettingsPopoverTests {
         try capture("settings")
         thread.type("no-such-model")
         try await thread.settle()
-        #expect(thread.window.element("No matching models") != nil)
+        #expect(thread.window.elements().contains { $0.role == "AXStaticText" && $0.value == "No matching models" })
         try capture("no-matches")
         search.insertText("", replacementRange: NSRange(location: 0, length: (search.string as NSString).length))
         try await thread.settle()
@@ -101,6 +101,8 @@ struct ModelSettingsPopoverTests {
         }
         #expect(thread.window.element("fixture/one") != nil && thread.window.element("fixture/two") != nil,
                 "search finds every matching catalog model, not just Recent")
+        #expect(thread.window.element("claude-opus-4-5, current") == nil,
+                "filtering removes the quick-choice row instead of reusing its scroll identity")
         #expect(thread.window.element("Choose a model") == nil)
         try capture("search")
         let options = ModelCatalog(models).settingsSearchModels
@@ -159,10 +161,13 @@ struct ModelSettingsPopoverTests {
         #expect(thread.window.element("gpt-6-luna, current, offers Fast") != nil, "the model row with a Fast tier wears the bolt")
         thread.type("no-such-model")
         try await thread.settle()
-        #expect(thread.window.element("No matching models") != nil, "thinking and speed remain usable during search")
+        #expect(thread.window.elements().contains { $0.role == "AXStaticText" && $0.value == "No matching models" },
+                "thinking and speed remain usable during search")
         try thread.window.press("High", in: "Thinking")
         try await eventuallyOnMain("the thinking level to change during search") { thread.store.thinking == "high" }
         try await eventuallyOnMain("the button to show the changed thinking level") { button()?.value == "High" }
+        // The accessibility value changes before the chip finishes laying out its shorter title.
+        try await thread.settle()
         let plainWidth = try #require(button()).frame.width
 
         try thread.window.press("Fast", in: "Speed")
