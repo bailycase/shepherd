@@ -280,8 +280,8 @@ struct ProseView: View, Equatable {
                         case .trailing: .trailing
                         }
                     },
-                    header: table.header.map(SHProseInline.attributed),
-                    rows: table.rows.map { $0.map(SHProseInline.attributed) },
+                    header: table.header.map { SHProseInline.attributed($0) },
+                    rows: table.rows.map { $0.map { SHProseInline.attributed($0) } },
                     markdown: table.source))
             case .image(let alt, let source): .image(SHProseImage(alt: alt, source: source))
             case .details(let summary, let inner): .details(summary: SHProseInline.attributed(summary), blocks: proseBlocks(inner))
