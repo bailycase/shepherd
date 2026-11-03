@@ -106,8 +106,16 @@ require equipment that is not available; those limits must remain explicit.
   control tests passed, exit 0. The held-write boundary test explicitly resumes its server-side
   continuation before shutdown; request cancellation alone cannot cancel fixture-held work.
   Parent merged storage as `2cef8b03`, preserving directory-based checkout tracking and the Mac
-  lane's relocated cleanup rather than reinstating duplicate cleanup. Independent final review
-  and a 900-second-bounded combined unit/runtime/storage/control run are underway on integration.
+  lane's relocated cleanup rather than reinstating duplicate cleanup. The bounded combined run
+  completed 4,440 tests/492 suites with nine issues across five tests: one recovery-index rebuild
+  assertion (five reports) and four startup/project timing failures. All five passed the focused
+  rerun in 4.156 seconds, exit 0. The budget test now explicitly awaits recovery bootstrap before
+  measuring checkpoint lookups (servable snapshots can arrive first); its unchanged count/version
+  assertions and all 11 ServerWorkBudgetTests pass, exit 0. The four other failures remain recorded
+  as broad-run timeouts, not a proven production regression or a final full-tier pass.
+  Independent final review found a blocking interleaving: settlement during held restorePiQueue
+  staging can discard original image-bearing records/IDs before re-admission. Storage is adding
+  restoration ownership fencing and deterministic held-stage settlement coverage before acceptance.
 
 - Full Release/Python run: **361 tests, one skipped, exit 0** after correcting the design-index
   guard to exempt explicitly Removed surfaces with a required departures.md record. The first
