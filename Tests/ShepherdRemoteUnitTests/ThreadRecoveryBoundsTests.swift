@@ -8,6 +8,17 @@ import ShepherdProtocol
 struct ThreadRecoveryBoundsTests {
     typealias F = Fixture
 
+    @Test func payloadAccountingSaturatesBeforeOverflowOrAdmission() {
+        let budget = NativeThreadStore.maximumRetainedSubmissionBytes
+        #expect(NativeThreadSubmission.accountedPayloadBytes(0, addingTo: 128) == 128)
+        #expect(NativeThreadSubmission.accountedPayloadBytes(3, unitBytes: 8, addingTo: 128) == 152)
+        #expect(NativeThreadSubmission.accountedPayloadBytes(budget - 128, addingTo: 128) == budget)
+        #expect(NativeThreadSubmission.accountedPayloadBytes(budget, addingTo: 128) == budget + 1)
+        #expect(NativeThreadSubmission.accountedPayloadBytes(Int.max, addingTo: 1) == budget + 1)
+        #expect(NativeThreadSubmission.accountedPayloadBytes(Int.max, unitBytes: 8) == budget + 1)
+        #expect(NativeThreadSubmission.accountedPayloadBytes(1, addingTo: budget + 1) == budget + 1)
+    }
+
     @Test(arguments: [false, true])
     func explicitUnknownOutcomesNeverBecomeRetryable(rejectedError: Bool) async throws {
         let host = FakeHost(F.snapshot())

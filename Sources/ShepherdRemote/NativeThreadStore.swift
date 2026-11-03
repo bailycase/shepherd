@@ -76,22 +76,37 @@ public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
 
     /// Retention accounting, not RSS: all variable payload plus a fixed allowance per item.
     public var payloadBytes: Int {
-        var bytes = 128 + typed.utf8.count
-        for file in files { bytes += 64 + file.name.utf8.count + file.path.utf8.count }
+        var bytes = 128
+        func add(_ counts: Int...) {
+            for count in counts { bytes = Self.accountedPayloadBytes(count, addingTo: bytes) }
+        }
+        add(typed.utf8.count)
+        for file in files { add(64, file.name.utf8.count, file.path.utf8.count) }
         for reference in references {
             let ref = reference.reference
-            bytes += 128 + ref.host.rawValue.utf8.count + ref.designID.rawValue.utf8.count
-                + (ref.board?.rawValue.utf8.count ?? 0) + (ref.page?.utf8.count ?? 0)
-                + reference.label.utf8.count + (ref.label?.utf8.count ?? 0) + (reference.outline?.system?.utf8.count ?? 0)
-            if let element = ref.element { bytes += element.board.utf8.count + element.path.count * MemoryLayout<Int>.stride }
+            add(128, ref.host.rawValue.utf8.count, ref.designID.rawValue.utf8.count,
+                ref.board?.rawValue.utf8.count ?? 0, ref.page?.utf8.count ?? 0,
+                reference.label.utf8.count, ref.label?.utf8.count ?? 0, reference.outline?.system?.utf8.count ?? 0)
+            if let element = ref.element {
+                add(element.board.utf8.count)
+                bytes = Self.accountedPayloadBytes(element.path.count, unitBytes: MemoryLayout<Int>.stride, addingTo: bytes)
+            }
         }
         for attachment in elements {
             let element = attachment.element
-            bytes += 128 + element.page.utf8.count + element.selector.utf8.count + element.label.utf8.count
-                + (element.source?.utf8.count ?? 0) + (element.html?.utf8.count ?? 0)
+            add(128, element.page.utf8.count, element.selector.utf8.count, element.label.utf8.count,
+                element.source?.utf8.count ?? 0, element.html?.utf8.count ?? 0)
         }
-        for image in images { bytes += 64 + image.data.count + image.mimeType.utf8.count + (image.name?.utf8.count ?? 0) }
+        for image in images { add(64, image.data.count, image.mimeType.utf8.count, image.name?.utf8.count ?? 0) }
         return bytes
+    }
+
+    /// Over-budget payloads need only a rejection sentinel, never an overflowing exact sum.
+    static func accountedPayloadBytes(_ count: Int, unitBytes: Int = 1, addingTo total: Int = 0) -> Int {
+        let limit = NativeThreadStore.maximumRetainedSubmissionBytes + 1
+        let (bytes, multiplicationOverflow) = count.multipliedReportingOverflow(by: unitBytes)
+        let (sum, additionOverflow) = total.addingReportingOverflow(bytes)
+        return multiplicationOverflow || additionOverflow ? limit : min(sum, limit)
     }
 }
 
