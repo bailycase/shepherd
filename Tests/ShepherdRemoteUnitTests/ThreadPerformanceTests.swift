@@ -191,6 +191,38 @@ struct ThreadPerformanceTests {
         #expect(store.placements == nativeSubagentPlacements(store.subagents, turns: store.turns))
     }
 
+    @Test func duplicateSpawnIDsMoveToTheLastOwnerAndFallBackWhenItIsRemoved() async {
+        var history = (0..<12).flatMap { [F.user(id: "u\($0)"), F.assistant("answer", id: "a\($0)")] }
+        history[1] = F.tool("shepherd_child_start", output: "started", id: "first", callID: "shared")
+        let host = FakeHost(F.snapshot(messages: history, subagents: [F.run("child", toolCallID: "shared")]))
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        func check(owner: String) async {
+            host.snapshot.messages = history
+            host.snapshot.revision += 1
+            await store.refresh()
+            #expect(store.placements == nativeSubagentPlacements(store.subagents, turns: store.turns))
+            #expect(store.rows == fullRows(store), "both the former and new owner's presentations must match full derivation")
+            #expect(store.placements.keys.sorted() == [owner])
+            #expect(store.placements.values.flatMap(\.all).map(\.runID) == ["child"])
+        }
+        await check(owner: "u0/reply")
+        history += [F.user(id: "later"), F.tool("shepherd_child_start", output: "started", id: "second", callID: "shared")]
+        await check(owner: "later/reply")
+        history += [F.user(id: "tail"), F.assistant("tail", id: "tail-answer")]
+        await check(owner: "later/reply")
+        history[history.count - 1].blocks[0].text = "changed tail"
+        await check(owner: "later/reply")
+        history.removeAll { $0.entryID == "second" }
+        await check(owner: "u0/reply")
+        history[1].toolCallID = "different"
+        host.snapshot.messages = history
+        host.snapshot.revision += 1
+        await store.refresh()
+        #expect(store.placements.isEmpty && store.rows == fullRows(store))
+    }
+
     @Test func coldReplacementAndFinalMarkdownUseBoundedOffMainParses() async {
         let long = String(repeating: "words ", count: 1_500)
         let (gate, release) = AsyncStream<Void>.makeStream()
