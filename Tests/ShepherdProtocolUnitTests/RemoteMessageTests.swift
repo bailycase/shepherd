@@ -977,6 +977,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
             RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeThreadV2Capability,
+            RemoteProtocol.nativeThreadRevisionsCapability, RemoteProtocol.nativeFleetDigestCapability,
             RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability, RemoteProtocol.nativeStartupDialogsCapability,
             RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
@@ -1021,6 +1022,8 @@ struct RemoteProtocolConstantTests {
 
     /// Capability strings are negotiated with older peers; they must never be renamed.
     @Test func capabilityStringsAreStable() {
+        #expect(RemoteProtocol.nativeThreadRevisionsCapability == "native.revisions.v1")
+        #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
         #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")
