@@ -80,10 +80,11 @@ final class RPCThreadState {
         var bytes: Int? = nil
     }
 
-    private struct Operation {
+    private final class Operation {
         let fingerprint: SHA256.Digest
         var result: NativeThreadResult?
         var waiters: [(NativeThreadResult) -> Void] = []
+        init(fingerprint: SHA256.Digest) { self.fingerprint = fingerprint }
     }
 
     let session: RPCSession
@@ -134,6 +135,11 @@ final class RPCThreadState {
     var onRevision: (() -> Void)?
     /// Recovery observes intent even when a change does not alter the rendered snapshot.
     var onRecoveryChanged: (() -> Bool)?
+    var onPrepareRecovery: ((AgentRecoveryStore.Checkpoint?, Progress, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
+    var recoveryWritePending = false
+    var recoveryWriteAttempts = 0
+    var recoveryEpoch: UInt64 = 0
+    var recoveryPreparations: [UUID: (operation: UUID?, completion: (Bool) -> Void)] = [:]
     var recoveryAttempts = 0
     var restoringRecovery = true
     var recoveryAtLaunch: AgentRecoveryStore.Checkpoint?
@@ -637,7 +643,7 @@ final class RPCThreadState {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
             && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty
             && (retryDispatch == nil || retryDispatch == operationID)
-            && preparingPrompts.isEmpty && settleCapture == nil && sendAfterCapture == nil
+            && preparingPrompts.isEmpty && recoveryPreparations.isEmpty && settleCapture == nil && sendAfterCapture == nil
             && interrupting == nil && !interruptAbortPending && unboundSteers.isEmpty
             && steersInFlight == 0 && !settleAwaitingSteers && piSteering.isEmpty && piFollowUp.isEmpty
             && sendingDesignPayloads.isEmpty
@@ -648,7 +654,7 @@ final class RPCThreadState {
     var canCheckpointForHostUpdate: Bool {
         isServable && !historyUnread && !restoringRecovery && !inputActive && compactingRun == nil && openingPrompt == nil
             && !recoveryWaiting && dispatches.isEmpty && retryDispatch == nil && recoveryPending == nil
-            && !recoveryResumePending && preparingPrompts.isEmpty && settleCapture == nil
+            && !recoveryResumePending && preparingPrompts.isEmpty && recoveryPreparations.isEmpty && settleCapture == nil
             && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
             && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
             && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
@@ -661,7 +667,7 @@ final class RPCThreadState {
     var canMoveSpace: Bool {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
             && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty && retryDispatch == nil
-            && preparingPrompts.isEmpty && settleCapture == nil
+            && preparingPrompts.isEmpty && recoveryPreparations.isEmpty && settleCapture == nil
             && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
             && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
             && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
@@ -1010,6 +1016,7 @@ final class RPCThreadState {
     /// `isolateSend`: host-managed operation identity must survive even an all-at-once queue.
     func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false, startupDialogs: Bool = true,
                 recoveryBinding: CheckpointRecoveryBinding? = nil, recoveryAuthorization: @escaping () -> Bool = { true },
+                inputAuthorization: @escaping () -> Bool = { true },
                 completion: @escaping (NativeThreadResult) -> Void) {
         if !isServable {
             if !startupDialogs, dialogs.contains(where: { $0.unavailable == nil }) {
@@ -1027,6 +1034,22 @@ final class RPCThreadState {
             }
         }
         let piSessionID = isServable ? (self.piSessionID ?? "") : ""
+        if case .snapshot = request, onRecoveryChanged?() == false {
+            // A poll must not expose a new active/settled recovery state before its checkpoint.
+            // Immutable send candidates are not in live state yet, so their old snapshot remains
+            // available while admission is gated on disk.
+            prepareRecovery(recoveryCheckpoint(sessionID: piSessionID)) { [weak self] saved in
+                guard let self else { completion(.failure(code: "native_unavailable", message: "The thread closed.")); return }
+                guard saved else {
+                    completion(.failure(code: NativeThreadCode.starting, message: "The thread is saving its recovery state. Try again shortly."))
+                    return
+                }
+                self.handle(request, olderClient: olderClient, isolateSend: isolateSend, startupDialogs: startupDialogs,
+                            recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization,
+                            inputAuthorization: inputAuthorization, completion: completion)
+            }
+            return
+        }
         commit()
         switch request {
         case .snapshot(let expectedSessionID, let beforeEntryID, let afterRevision):
@@ -1089,25 +1112,27 @@ final class RPCThreadState {
                 }
                 return
             }
-            operations.append((key, Operation(fingerprint: fingerprint)))
+            let operation = Operation(fingerprint: fingerprint)
+            operations.append((key, operation))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
             perform(request, operationID: operationID, alone: olderClient || isolateSend,
-                    recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization) { [weak self] result in
-                guard let self else { completion(result); return }
-                guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
-                    // Evicted while in flight; still answer this caller.
-                    completion(result)
-                    return
+                    recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization, inputAuthorization: inputAuthorization) { [weak self] result in
+                let answer: NativeThreadResult = if let self, self.generation != generation {
+                    .failure(code: "stale_session", message: "Refresh the thread before acting.")
+                } else { result }
+                // An in-flight operation retains its waiters even if the outcome cache evicts
+                // it. Never look up a newer operation that happens to reuse this identifier.
+                operation.result = answer
+                let waiters = operation.waiters
+                operation.waiters = []
+                if let self, self.generation == generation {
+                    // One revision: the change the action made, or the answer alone.
+                    let revision = self.revision
+                    self.commit()
+                    if self.revision == revision { self.bumpRevision() }
                 }
-                self.operations[index].operation.result = result
-                let waiters = self.operations[index].operation.waiters
-                self.operations[index].operation.waiters = []
-                // One revision: the change the action made, or the answer alone.
-                let revision = self.revision
-                self.commit()
-                if self.revision == revision { self.bumpRevision() }
-                completion(result)
-                waiters.forEach { $0(result) }
+                completion(answer)
+                waiters.forEach { $0(answer) }
             }
         }
     }
@@ -1163,7 +1188,8 @@ final class RPCThreadState {
     var onUserInputWhileRunning: (() -> Void)?
 
     private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool,
-                         recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
+                         recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool,
+                         inputAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
@@ -1189,7 +1215,7 @@ final class RPCThreadState {
                  // would give way.
                  alone: alone || !(designReferences ?? []).isEmpty || !elements.isEmpty, context: context,
                  designPayloads: (designReferences ?? []).compactMap(\.payloadID),
-                 elements: elements.map(\.withoutHTML)) { [weak self] result in
+                 elements: elements.map(\.withoutHTML), authorization: inputAuthorization) { [weak self] result in
                 if interruptsBackgroundWait, case .accepted = result { self?.onUserInputWhileRunning?() }
                 completion(result)
             }
@@ -1198,7 +1224,7 @@ final class RPCThreadState {
             // waiting on an answer would not stop.
             stop { settle($0) }
         case .queue(_, _, _, let action):
-            perform(action, operationID: operationID, completion: completion)
+            perform(action, operationID: operationID, authorization: inputAuthorization, completion: completion)
         case .setModel(_, _, _, let model):
             // "provider/id"; ids may themselves contain "/" so split on the first one only.
             guard let slash = model.firstIndex(of: "/"), slash > model.startIndex, model.index(after: slash) < model.endIndex else {
@@ -2016,7 +2042,15 @@ final class RPCThreadState {
         historyPending = true
         generation = UUID().uuidString
         diagnosticTimings.removeAll(keepingCapacity: true)
+        // The first caller lives in its operation's completion; drain duplicate callers when
+        // discarding the old generation. Clear them before invoking reentrant completions.
+        let waiters = operations.flatMap { entry in
+            let waiters = entry.operation.waiters
+            entry.operation.waiters = []
+            return waiters
+        }
         operations.removeAll()
+        waiters.forEach { $0(.failure(code: "stale_session", message: "Refresh the thread before acting.")) }
         live.removeAll()
         toolStarts.removeAll()
         streamingCalls.removeAll()
@@ -2676,7 +2710,7 @@ final class RPCThreadState {
     /// nothing else does. Each part's hash is taken once per change: the lists here when they are
     /// assigned, a live row by the first commit after its value changed.
     func commit() {
-        _ = onRecoveryChanged?()
+        guard onRecoveryChanged?() != false else { return }
         var hasher = Hasher()
         hasher.combine(history.count)
         hasher.combine(historyVersion)

@@ -646,7 +646,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .worktreeSetup, .worktreeCommitCount, .worktreeDescription, .commitMessage, .changesOverview, .changesList: slow = true
         default: slow = false
         }
-        let reply = try await request(timeout: slow ? 150 : 30) { .agentQuery(id: $0, agentID: agentID, query: query) }
+        let cancellable: Bool
+        switch query {
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch: cancellable = true
+        default: cancellable = false // Undo, Redo and Revert must still await their outcome.
+        }
+        let reply = try await request(timeout: slow ? 150 : 30, cancellable: cancellable) { .agentQuery(id: $0, agentID: agentID, query: query) }
         if case .agentResult(_, let result) = reply { return result }
         if case .error(_, let code, let message) = reply {
             throw RemoteHostClientError.rejected(code: code, message: message)

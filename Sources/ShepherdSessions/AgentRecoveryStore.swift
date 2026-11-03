@@ -7,7 +7,7 @@ import ShepherdRemote
 final class AgentRecoveryStore {
     static let attemptLimit = 3
 
-    struct Checkpoint: Codable, Equatable {
+    struct Checkpoint: Codable, Equatable, Sendable {
         var sessionID: String
         var active: Bool
         var items: [RPCThreadState.QueueItem]
@@ -23,6 +23,42 @@ final class AgentRecoveryStore {
     private let directory: URL
     private var loaded: Set<AgentID> = []
     private var records: [AgentID: Checkpoint] = [:]
+    private var revisions: [AgentID: UInt64] = [:]
+    func revision(for agent: AgentID) -> UInt64 { revisions[agent, default: 0] }
+
+    struct Stage: Sendable {
+        var url: URL
+        var checkpoint: Checkpoint
+    }
+
+    /// Same JSON as `save`, including inline images. Older binaries can read every accepted
+    /// checkpoint; encoding and file synchronization happen only on the file worker.
+    static func stage(_ checkpoint: Checkpoint, at destination: URL) throws -> Stage {
+        let directory = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let url = directory.appendingPathComponent(".recovery-stage-\(UUID().uuidString)")
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            try file.write(contentsOf: JSONEncoder().encode(checkpoint))
+            try file.synchronize()
+            try file.close()
+            return Stage(url: url, checkpoint: checkpoint)
+        } catch {
+            try? file.close()
+            _ = unlink(url.path)
+            throw error
+        }
+    }
+
+    func commit(_ staged: Stage, for agent: AgentID, version: UInt64) throws {
+        guard revision(for: agent) == version else { throw CancellationError() }
+        guard rename(staged.url.path, file(for: agent).path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        records[agent] = staged.checkpoint
+        loaded.insert(agent)
+        revisions[agent, default: 0] &+= 1
+    }
 
     init(directory: URL) { self.directory = directory }
 
@@ -46,8 +82,8 @@ final class AgentRecoveryStore {
         return records[agent]
     }
 
-    // ponytail: synchronous write-ahead keeps admission crash-safe; stage large image blobs off
-    // queue if image-heavy recovery checkpoints measurably stall other sessions.
+    // Synchronous cancellation/startup/shutdown fences invalidate staged admission. Ordinary
+    // changes use stage/commit; no background writer can replace a newer Stop checkpoint.
     func save(_ checkpoint: Checkpoint?, for agent: AgentID, force: Bool = false) throws {
         let previous = try self.checkpoint(for: agent)
         guard force || checkpoint != previous else { return }
@@ -60,20 +96,21 @@ final class AgentRecoveryStore {
             try FileManager.default.removeItem(at: file(for: agent))
         }
         records[agent] = checkpoint
+        revisions[agent, default: 0] &+= 1
     }
 
     func prune(keeping agents: Set<AgentID>) throws {
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         let names = Set(agents.map { file(for: $0).lastPathComponent })
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            where url.pathExtension == "json" && !names.contains(url.lastPathComponent) {
+            where url.lastPathComponent.hasPrefix(".recovery-stage-") || (url.pathExtension == "json" && !names.contains(url.lastPathComponent)) {
             try FileManager.default.removeItem(at: url)
         }
         records = records.filter { agents.contains($0.key) }
         loaded.formIntersection(agents)
     }
 
-    private func file(for agent: AgentID) -> URL {
+    func file(for agent: AgentID) -> URL {
         // IDs are opaque; encoding also keeps imported IDs from becoming filesystem paths.
         let name = Data(agent.rawValue.utf8).map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent(name + ".json")

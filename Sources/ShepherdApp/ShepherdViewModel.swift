@@ -235,7 +235,11 @@ final class ShepherdViewModel {
     /// Native diff-review panes keyed by their review leaf. Ephemeral: review
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
-    var reviewSessions: [PaneID: ReviewSession] = [:]
+    var reviewSessions: [PaneID: ReviewSession] = [:] {
+        didSet {
+            for (id, session) in oldValue where reviewSessions[id] !== session { session.cancelLoads() }
+        }
+    }
     /// Per-agent file tree models for the Files tab, keyed by agent ID. Created on first
     /// Files tab open; removed when the thread is gone.
     var fileTrees: [AgentID: FileTreeModel] = [:]
@@ -320,7 +324,11 @@ final class ShepherdViewModel {
             return (try GitDiff.load(cwd: cwd, reference: resolved), resolved)
         }.value
     }
-    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:]
+    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:] {
+        didSet {
+            for (id, session) in oldValue where remoteReviews[id] !== session { session.cancelLoads() }
+        }
+    }
     /// Where a local review reads its changes from; tests put a fixed engine here. Nil: this Mac's
     /// `server.changes`.
     @ObservationIgnored var changesEngineOverride: ((AgentID, String) -> ChangesEngine)?
@@ -885,8 +893,8 @@ final class ShepherdViewModel {
             self.notifications.agentNotify(agent, title: title, body: body)
         }
         if let checkoutReader {
-            let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, cwd, checkout in
-                await server.setAgentCheckout(id, checkout, directory: cwd)
+            let monitor = CheckoutMonitor(read: checkoutReader) { [server] ids, cwd, checkout in
+                await server.setAgentCheckouts(ids, checkout, directory: cwd)
             }
             monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
             checkouts = monitor
@@ -1382,7 +1390,16 @@ final class ShepherdViewModel {
         reconcileThreadStores()
         browsers.prune(state: state)
         notifyLocalQuestions()
-        checkouts?.sync(agents: state.agents.map(\.id))
+        if let checkouts {
+            let layouts = Dictionary(state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
+            let directories = Dictionary(state.agents.compactMap { agent -> (AgentID, String)? in
+                let layout = layouts[agent.tabID]
+                guard let cwd = layout?.leaves.first(where: { $0.agentID == agent.id })?.cwd
+                    ?? agent.worktreePath ?? layout?.firstLeaf.cwd else { return nil }
+                return (agent.id, cwd)
+            }, uniquingKeysWith: { first, _ in first })
+            checkouts.sync(directories: directories, order: state.agents.map(\.id))
+        }
         // A deleted agent waits on no sign-in.
         if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {
             notSignedIn = notSignedIn.filter { entry in state.agents.contains { $0.id == entry.key } }

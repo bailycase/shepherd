@@ -344,15 +344,21 @@ extension ShepherdViewModel {
         session.loadErrorIsNotice = false
         let scope = session.scope
         let options = session.options
-        Task {
+        session.loadTask?.cancel()
+        session.loadTask = Task {
+            guard !Task.isCancelled, isCurrent(session), session.loadRequestID == requestID else { return }
             do {
                 let list = try await engine.list(scope, options)
+                try Task.checkCancellation()
+                guard isCurrent(session), session.loadRequestID == requestID else { return }
                 let diff = try await engine.diffs(list, options)
+                try Task.checkCancellation()
                 guard isCurrent(session), session.loadRequestID == requestID else { return }
                 let order = Dictionary(list.files.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
                 session.list = list
                 session.adopt(files: diff.files.sorted { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }, truncated: diff.truncated)
-            } catch {
+            } catch is CancellationError { return }
+            catch {
                 guard isCurrent(session), session.loadRequestID == requestID else { return }
                 session.list = nil
                 session.files = []
@@ -370,8 +376,10 @@ extension ShepherdViewModel {
     /// the pane's guess while the reader has not picked one.
     func loadChangesOverview(_ session: ReviewSession) {
         guard let engine = session.engine else { return }
-        Task {
-            guard let overview = try? await engine.overview(), isCurrent(session) else { return }
+        session.overviewTask?.cancel()
+        session.overviewTask = Task {
+            guard !Task.isCancelled, isCurrent(session) else { return }
+            guard let overview = try? await engine.overview(), !Task.isCancelled, isCurrent(session) else { return }
             session.overview = overview
             if !session.scopeChosen, session.sentAt == nil, overview.repository != nil, overview.defaultScope != session.scope,
                session.scope.kind != .lastTurn {
@@ -501,8 +509,9 @@ extension ShepherdViewModel {
                 try await withThrowingTaskGroup(of: ChangesFileDiff.self) { group in
                     var pending = list.files.makeIterator()
                     func next() {
-                        guard let file = pending.next() else { return }
-                        group.addTask { @MainActor in
+                        guard !Task.isCancelled, let file = pending.next() else { return }
+                        group.addTaskUnlessCancelled { @MainActor in
+                            try Task.checkCancellation()
                             guard case .changesFile(let diff) = try await query(.changesFile(revision: list.revision, path: file.path,
                                                                                                oldPath: file.oldPath, options: options))
                             else { throw unexpected() }
@@ -511,6 +520,7 @@ extension ShepherdViewModel {
                     }
                     for _ in 0..<ChangesRemote.concurrentFiles { next() }
                     while let diff = try await group.next() {
+                        try Task.checkCancellation()
                         files.append(diff.file)
                         if diff.truncated { truncated.insert(diff.file.id) }
                         next()

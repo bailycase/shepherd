@@ -122,6 +122,77 @@ struct NativeBoundaryPreparationTests {
         #expect(prompts == ["/session-name info first", "/session-name info third"])
     }
 
+    @Test func aFailedRestoreCheckpointKeepsBoundaryOwnedAndUnownedInput() async throws {
+        let t = try ThreadEventTests.Thread(env: ["STUB_PI_LOG": "boundary-inputs.jsonl"])
+        defer { t.stop() }
+        _ = try await t.ready()
+        let boundaryID = UUID(), ownedID = UUID(), done = Locked<[Bool]>([])
+        let image = ThreadImagesTests.nativeImage(ThreadImagesTests.png(bytes: 600_000))
+        t.queue.sync {
+            t.state.restoringRecovery = false
+            let boundary = RPCThreadState.QueueItem(entry: .init(id: boundaryID, text: "boundary batch", sentAt: 1), images: [image])
+            let owned = RPCThreadState.QueueItem(entry: .init(id: ownedID, text: "owned steer", sentAt: 2, state: .steering), images: [image])
+            t.state.items = [owned]
+            t.state.dispatches = [.init(id: boundaryID, text: "boundary batch", images: [image], parts: nil,
+                                        items: [boundary], expectsMessage: true, delivery: .steer)]
+            t.state.onPrepareRecovery = { _, _, _, completion in completion(false) }
+            t.state.restorePiQueue(steering: ["boundary batch", "owned steer", "extension steer"], followUp: ["extension followup"]) { saved in
+                done.withValue { $0.append(saved) }
+            }
+            #expect(t.state.paused && t.state.dispatches.isEmpty)
+            #expect(t.state.items.map(\.entry.text) == ["boundary batch", "owned steer", "extension steer", "extension followup"])
+            #expect(t.state.items.prefix(2).map(\.entry.id) == [boundaryID, ownedID])
+            #expect(t.state.items.prefix(2).allSatisfy { $0.images == [image] && $0.entry.state == .queued })
+        }
+        #expect(done.current == [false])
+    }
+
+    @Test func queuedSteeringKeepsAuthorizationThroughFramePreparation() async throws {
+        let t = try ThreadEventTests.Thread(env: ["STUB_PI_LOG": "boundary-inputs.jsonl"])
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"agent_start"}"#)
+        let held = DispatchSemaphore(value: 0), entered = Locked(false), finished = Locked(false), authorized = Locked(true)
+        defer { held.signal() }
+        let image = ThreadImagesTests.nativeImage(ThreadImagesTests.png(bytes: 600_000)), id = UUID()
+        t.queue.sync {
+            t.state.restoringRecovery = false
+            t.session.beforeInputPreparation = { entered.withValue { $0 = true }; held.wait() }
+            t.session.afterInputPreparation = { finished.withValue { $0 = true } }
+            t.state.items = [.init(entry: .init(id: id, text: "revoked queued steer", sentAt: 1), images: [image])]
+            t.state.perform(.steer(ids: [id]), operationID: UUID(), authorization: { authorized.current }) { _ in }
+        }
+        try await eventually("queued steer frame held") { entered.current }
+        authorized.withValue { $0 = false }
+        held.signal()
+        try await eventually("revoked frame released and input lane finished") { finished.current && t.queue.sync { !t.state.inputActive } }
+        let log = try String(contentsOf: t.dir.appendingPathComponent("boundary-inputs.jsonl"), encoding: .utf8)
+        #expect(!log.contains("revoked queued steer"))
+        #expect(t.queue.sync { t.state.items.first?.entry.state == .queued })
+    }
+
+    @Test func cancelledCaptureCannotBorrowANewerContinuationWithTheSameID() async throws {
+        let t = try ThreadEventTests.Thread(env: ["STUB_PI_LOG": "boundary-inputs.jsonl"])
+        defer { t.stop() }
+        _ = try await t.ready()
+        let continuations = Locked<[() -> Void]>([]), old = Locked(0), newer = Locked(0)
+        let id = UUID()
+        t.queue.sync {
+            t.state.beforePrompt = { next in continuations.withValue { $0.append(next) } }
+            t.state.dispatch(id: id, text: "cancelled old capture", images: [], parts: nil, items: []) { _ in old.withValue { $0 += 1 } }
+            t.state.cancelPreparingPrompts()
+            t.state.dispatch(id: id, text: "slow newer capture", images: [], parts: nil, items: []) { _ in newer.withValue { $0 += 1 } }
+            #expect(continuations.current.count == 2 && old.current == 1)
+            continuations.current[0]()
+            #expect(newer.current == 0 && t.state.preparingPrompts.count == 1)
+            continuations.current[1]()
+        }
+        try await eventually("new capture alone completes") { newer.current == 1 }
+        let log = try String(contentsOf: t.dir.appendingPathComponent("boundary-inputs.jsonl"), encoding: .utf8)
+        #expect(!log.contains("cancelled old capture") && log.contains("slow newer capture"))
+        #expect(old.current == 1)
+    }
+
     @Test func anAdmittedBoundaryTimeoutKeepsItsUnknownOutcomeInsteadOfRequeueing() async throws {
         let t = try ThreadEventTests.Thread(env: ["STUB_PI_LOG": "boundary-inputs.jsonl"])
         defer { t.stop() }

@@ -12,6 +12,35 @@ extension ChangesService {
         }
     }
 
+    /// Review reads have bounded admission independent of mandatory turn captures and Undo.
+    /// A running bounded subprocess may finish, but cancellation prevents the next git/parse.
+    func performReview<T>(_ body: @escaping () throws -> T) async throws -> T {
+        let cancellation = ChangesReviewCancellation()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard reviewJobs.withValue({ count in
+                    guard count < 64 else { return false }
+                    count += 1
+                    return true
+                }) else {
+                    continuation.resume(throwing: ChangesError(ChangesError.unavailable, "Too many pending reviews. Retry shortly."))
+                    return
+                }
+                reviewWork.addOperation {
+                    defer { self.reviewJobs.withValue { $0 -= 1 } }
+                    continuation.resume(with: Result {
+                        try cancellation.check()
+                        Thread.current.threadDictionary[ChangesReviewCancellation.key] = cancellation
+                        defer { Thread.current.threadDictionary.removeObject(forKey: ChangesReviewCancellation.key) }
+                        let result = try body()
+                        try cancellation.check()
+                        return result
+                    })
+                }
+            }
+        } onCancel: { cancellation.cancelled.withValue { $0 = true } }
+    }
+
     func context(_ agentID: AgentID?, cwd: String?) throws -> AgentContext {
         if let agentID, var context = agentContext(agentID) {
             if let cwd { context.cwd = cwd }
@@ -25,13 +54,13 @@ extension ChangesService {
     /// scope the pane opens on.
     public func overview(agentID: AgentID?, cwd: String? = nil) async throws -> ChangesOverview {
         let context = try context(agentID, cwd: cwd)
-        return try await perform { try self.overviewNow(agentID: agentID, context: context) }
+        return try await performReview { try self.overviewNow(agentID: agentID, context: context) }
     }
 
     /// A scope's files, counts, compare row and revision.
     public func list(agentID: AgentID?, scope: ChangesScope, options: ChangesOptions = ChangesOptions(), cwd: String? = nil) async throws -> ChangesList {
         let context = try context(agentID, cwd: cwd)
-        return try await perform {
+        return try await performReview {
             let repository = try self.repository(context.cwd)
             let resolution = try self.resolve(scope, agentID: agentID, context: context, repository: repository)
             let files = try self.files(repository, resolution.revision, options)
@@ -44,7 +73,7 @@ extension ChangesService {
     public func file(agentID: AgentID?, revision: ChangesRevision, path: String, oldPath: String? = nil,
                      options: ChangesOptions = ChangesOptions(), cwd: String? = nil) async throws -> ChangesFileDiff {
         let context = try context(agentID, cwd: cwd)
-        return try await perform {
+        return try await performReview {
             try self.fileDiff(try self.repository(context.cwd), revision, path: path, oldPath: oldPath, options: options)
         }
     }
@@ -53,20 +82,20 @@ extension ChangesService {
     public func diffs(agentID: AgentID?, revision: ChangesRevision, options: ChangesOptions = ChangesOptions(),
                       cwd: String? = nil) async throws -> [DiffFile] {
         let context = try context(agentID, cwd: cwd)
-        return try await perform { try self.allDiffs(try self.repository(context.cwd), revision, options: options) }
+        return try await performReview { try self.allDiffs(try self.repository(context.cwd), revision, options: options) }
     }
 
     /// The base picker's branches.
     public func branches(agentID: AgentID?, cwd: String? = nil) async throws -> ChangesBranches {
         let context = try context(agentID, cwd: cwd)
-        return try await perform { try self.branches(try self.repository(context.cwd), context: context) }
+        return try await performReview { try self.branches(try self.repository(context.cwd), context: context) }
     }
 
     /// A revision's diff as a patch (Copy as patch, Copy git apply command).
     public func patch(agentID: AgentID?, revision: ChangesRevision, options: ChangesOptions = ChangesOptions(),
                       cwd: String? = nil) async throws -> String {
         let context = try context(agentID, cwd: cwd)
-        return try await perform { try self.patch(try self.repository(context.cwd), revision, options: options) }
+        return try await performReview { try self.patch(try self.repository(context.cwd), revision, options: options) }
     }
 
     // MARK: Overview

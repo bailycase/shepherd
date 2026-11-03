@@ -620,6 +620,10 @@ public final class SessionServer: @unchecked Sendable {
         file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
     var stateWriteQueue: [() -> Void] = []
+    var pendingMetadata: [MetadataMutation] = []
+    var failureIntents: [AgentID: (value: String?, token: UUID)] = [:]
+    var recoveryWritesInFlight = 0
+    var recoveryWriteBytes = 0
     var stateWritesInFlight: Int { stateWriteQueue.count }
     /// Test gate after capturing a candidate/version, before staging it on the file queue.
     var stateWritePrepared: (() -> Void)?
@@ -1923,7 +1927,16 @@ public final class SessionServer: @unchecked Sendable {
         }
         thread.handle(request, olderClient: olderClient, startupDialogs: startupDialogs,
                       recoveryBinding: CheckpointRecoveryBinding(agentID: agentID, spaceID: agent.spaceID, tabID: agent.tabID, paneID: paneID),
-                      recoveryAuthorization: recoveryAuthorization) { [weak self] result in
+                      recoveryAuthorization: recoveryAuthorization, inputAuthorization: { [weak self, weak thread] in
+                          guard let self, let thread, transportAuthorization(), self.isStarted,
+                                self.rpcThread(forAgent: agentID) === thread,
+                                !self.movingThreads.contains(agentID), self.sessions[sessionID]?.isAlive == true,
+                                let current = self.store.state.agents.first(where: { $0.id == agentID }) else { return false }
+                          return current.spaceID == agent.spaceID && current.tabID == agent.tabID && current.paneID == paneID
+                              && current.worktreePath == agent.worktreePath
+                              && self.executionSpaceAuthority[agent.spaceID] == spaceAuthority
+                              && self.store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: paneID)?.cwd == leaf.cwd
+                      }) { [weak self] result in
             if isSend, case .failure = result, self?.sessions[sessionID]?.isAlive == true {
                 thread.pushRunArmed = previousPush.0
                 thread.pushAwaitingStart = previousPush.1
@@ -2354,8 +2367,9 @@ public final class SessionServer: @unchecked Sendable {
                                  previews: client.clientCapabilities.contains(RemoteProtocol.nativeThreadPreviewCapability),
                                  transportAuthorization: { [weak self, weak client] in
                                      guard let self, let client else { return false }
-                                     return client.authenticated && self.clients[client.fd] === client
-                                         && client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability)
+                                     guard client.authenticated && self.clients[client.fd] === client else { return false }
+                                     if case .retry = request { return client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) }
+                                     return true
                                  }) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
                 switch outcome {
@@ -5462,10 +5476,18 @@ public final class SessionServer: @unchecked Sendable {
     /// state.json so a relaunch shows the row as failed rather than idle; nil clears it. Writes
     /// only when it changes, and never fails the run it records.
     func recordAgentFailure(agentID: AgentID, _ message: String?) {
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
-              store.state.agents[index].lastFailure != message else { return }
-        do { try mutateState { $0.agents[index].lastFailure = message } }
-        catch { ShepherdLog.warning("agent \(agentID): could not record its failure: \(error)") }
+        guard let index = recoveryAgentIndex(agentID) else { return }
+        if let intent = failureIntents[agentID] {
+            guard intent.value != message else { return }
+        } else if store.state.agents[index].lastFailure == message { return }
+        let token = UUID()
+        failureIntents[agentID] = (message, token)
+        scheduleMetadataMutation(agent: agentID, kind: .failure, { state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+            state.agents[index].lastFailure = message
+        }, completed: {
+            if self.failureIntents[agentID]?.token == token { self.failureIntents.removeValue(forKey: agentID) }
+        })
     }
 
     /// Server queue: the question an agent's thread asks first changed (its title and the
@@ -5521,24 +5543,19 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentSession(agentID: AgentID, piSessionID: String) {
         let trimmed = piSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let index = recoveryAgentIndex(agentID) else {
-            ShepherdLog.warning("setAgentSession for unknown agent \(agentID); dropped")
-            return
-        }
-        guard store.state.agents[index].effectivePiSessionID != trimmed else { return }
-        do {
-            // A different session is a different conversation: whatever name
-            // the agent wore described the old one, so naming reopens and the
-            // namer extension may retitle (pi's own session name for free, or
-            // one cheap call on the resumed conversation's opening prompt).
-            try mutateState {
-                $0.agents[index].piSessionID = trimmed
-                $0.agents[index].nameIsFinal = false
-            }
-            ShepherdLog.info("agent \(agentID) moved to pi session \(trimmed)")
-        } catch {
-            ShepherdLog.error("failed to persist session for agent \(agentID): \(error)")
-        }
+        let owner = rpcThread(forAgent: agentID)
+        let generation = owner?.generation
+        let observedSession = owner?.piSessionID
+        scheduleMetadataMutation(agent: agentID, kind: .session, { state in
+            guard self.rpcThread(forAgent: agentID) === owner,
+                  (owner?.generation == generation && owner?.piSessionID == observedSession)
+                    || owner?.piSessionID == trimmed,
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  state.agents[index].effectivePiSessionID != trimmed else { return }
+            // A different conversation reopens naming, but never before it is durable.
+            state.agents[index].piSessionID = trimmed
+            state.agents[index].nameIsFinal = false
+        })
     }
 
     /// Apply a namer-proposed title. Provisional names only: a user rename (or
@@ -5546,24 +5563,17 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentName(agentID: AgentID, name: String, sessionID: String?) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else {
-            ShepherdLog.warning("setAgentName for unknown agent \(agentID); dropped")
-            return
-        }
-        if let sessionID, sessionID != store.state.agents[index].effectivePiSessionID { return }
-        guard !store.state.agents[index].nameIsFinal else {
-            ShepherdLog.info("setAgentName for agent \(agentID) ignored; name is final")
-            return
-        }
-        do {
-            try mutateState {
-                $0.agents[index].name = trimmed
-                $0.agents[index].nameIsFinal = true
-            }
-            ShepherdLog.info("agent \(agentID) named '\(trimmed)'")
-        } catch {
-            ShepherdLog.error("failed to persist name for agent \(agentID): \(error)")
-        }
+        let owner = rpcThread(forAgent: agentID)
+        let generation = owner?.generation
+        scheduleMetadataMutation(agent: agentID, kind: .name, { state in
+            guard self.rpcThread(forAgent: agentID) === owner,
+                  owner?.generation == generation || (sessionID != nil && owner?.piSessionID == sessionID),
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  !state.agents[index].nameIsFinal else { return }
+            if let sessionID, sessionID != state.agents[index].effectivePiSessionID { return }
+            state.agents[index].name = trimmed
+            state.agents[index].nameIsFinal = true
+        })
     }
 
     // MARK: - State mutations (server queue)
@@ -5762,13 +5772,11 @@ public final class SessionServer: @unchecked Sendable {
         paneID: PaneID,
         sessionID: SessionID?
     ) async throws {
-        try await enqueue {
-            guard let index = self.store.state.tabs.firstIndex(where: { $0.id == tabID }) else {
-                throw SessionServerError.noSuchTab(tabID)
-            }
-            guard self.store.state.tabs[index].layout.contains(paneID) else {
-                throw SessionServerError.noSuchPane(paneID)
-            }
+        // Refuse a process started for a moving thread before staging; retry validation below
+        // has no effects, and is rerun after every conflicting workspace commit.
+        let expected = try await enqueue {
+            guard let tab = self.store.state.tabs.first(where: { $0.id == tabID }) else { throw SessionServerError.noSuchTab(tabID) }
+            guard let leaf = tab.layout.leaf(withID: paneID) else { throw SessionServerError.noSuchPane(paneID) }
             if self.store.state.agents.contains(where: { $0.tabID == tabID && $0.paneID == paneID && self.movingThreads.contains($0.id) }) {
                 if let sessionID, case .rpc(let rpc, _)? = self.sessions[sessionID] {
                     self.startRecords[sessionID]?.requestStop()
@@ -5776,12 +5784,21 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 throw ProjectFileError("thread_moving", "This thread is moving to another space.")
             }
-            let previous = self.store.state.tabs[index].layout.leaf(withID: paneID)?.sessionID
-            try self.mutateState {
-                $0.tabs[index].layout = $0.tabs[index].layout.updatingLeaf(paneID) {
-                    $0.sessionID = sessionID
-                }
+            return (tab.spaceID, leaf.cwd, leaf.agentID, leaf.sessionID)
+        }
+        try await mutateStateOffQueue({ state in
+            guard let index = state.tabs.firstIndex(where: { $0.id == tabID }) else { throw SessionServerError.noSuchTab(tabID) }
+            guard let leaf = state.tabs[index].layout.leaf(withID: paneID) else { throw SessionServerError.noSuchPane(paneID) }
+            guard state.tabs[index].spaceID == expected.0, leaf.cwd == expected.1,
+                  leaf.agentID == expected.2, leaf.sessionID == expected.3 else {
+                throw SessionServerError.conflict("Pane ownership changed while binding its process.")
             }
+            guard !state.agents.contains(where: { $0.tabID == tabID && $0.paneID == paneID && self.movingThreads.contains($0.id) }) else {
+                throw ProjectFileError("thread_moving", "This thread is moving to another space.")
+            }
+            state.tabs[index].layout = state.tabs[index].layout.updatingLeaf(paneID) { $0.sessionID = sessionID }
+        }, didCommit: { before in
+            let previous = before.tabs.first(where: { $0.id == tabID })?.layout.leaf(withID: paneID)?.sessionID
             // A pi started again in place of one that stopped before it served takes over the
             // opening prompt that one never read.
             if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous),
@@ -5795,7 +5812,7 @@ public final class SessionServer: @unchecked Sendable {
                     self.dispatchPeerTask(id)
                 }
             }
-        }
+        })
     }
 
     /// `first` puts it at the top of the projects (a project the user adds: the sidebar's project
@@ -6170,17 +6187,30 @@ public final class SessionServer: @unchecked Sendable {
     /// state, like a status: broadcast at once (remote clients draw it in their headers), never
     /// validated or written on its own, and a no-op when nothing changed.
     public func setAgentCheckout(_ agentID: AgentID, _ checkout: AgentCheckout?, directory: String? = nil) async {
+        await setAgentCheckouts([agentID], checkout, directory: directory)
+    }
+
+    /// One shared checkout read publishes once. Membership and directory authority are checked
+    /// here, not in the app's earlier snapshot, so moved/deleted agents never receive stale data.
+    public func setAgentCheckouts(_ agentIDs: [AgentID], _ checkout: AgentCheckout?, directory: String? = nil) async {
         await enqueueValue {
-            guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
-                  self.store.state.agents[index].checkout != checkout else { return }
-            if let directory {
+            let members = Set(agentIDs)
+            let layouts = Dictionary(self.store.state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
+            let indices = self.store.state.agents.indices.filter { index in
                 let agent = self.store.state.agents[index]
-                let layout = self.store.state.tabs.first { $0.id == agent.tabID }?.layout
-                let cwd = layout?.leaves.first { $0.agentID == agentID }?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd
-                guard let cwd,
-                      URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path == directory else { return }
+                guard members.contains(agent.id), agent.checkout != checkout else { return false }
+                if let directory {
+                    let layout = layouts[agent.tabID]
+                    let cwd = layout?.leaves.first { $0.agentID == agent.id }?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd
+                    guard let cwd,
+                          URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path == directory else { return false }
+                }
+                return true
             }
-            self.store.updateLive { $0.agents[index].checkout = checkout }
+            guard !indices.isEmpty else { return }
+            self.store.updateLive { state in
+                for index in indices { state.agents[index].checkout = checkout }
+            }
             let committedState = self.store.state
             self.broadcastRemoteState(committedState)
             self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -7726,8 +7756,12 @@ public final class SessionServer: @unchecked Sendable {
                     server.restoreAgentRecovery(sessionID: sid)
                     return !thread.restoringRecovery
                 } else {
-                    return server.checkpointAgentRecovery(sessionID: sid, thread: thread)
+                    return server.checkpointAgentRecoveryAsync(sessionID: sid, thread: thread)
                 }
+            }
+            thread.onPrepareRecovery = { [weak serverWeak, weak thread] candidate, progress, authorized, done in
+                guard let server = serverWeak, let thread else { done(false); return }
+                server.stageAgentRecovery(sessionID: sid, thread: thread, candidate: candidate, cancellation: progress, authorized: authorized, completion: done)
             }
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             thread.onQuestionChanged = { [weak serverWeak] question in
@@ -7808,7 +7842,11 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.beforePrompt = { [weak serverWeak] completion in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
-                server.changes.prepareTurn(agentID: agentID) { sessionQueue.async(execute: completion) }
+                let phase = Self.storageSignposter.beginInterval("Before prompt capture", id: Self.storageSignposter.makeSignpostID())
+                server.changes.prepareTurn(agentID: agentID) {
+                    Self.storageSignposter.endInterval("Before prompt capture", phase)
+                    sessionQueue.async(execute: completion)
+                }
             }
             thread.captureSettledTurn = { [weak serverWeak] completion in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
@@ -8391,8 +8429,97 @@ public final class SessionServer: @unchecked Sendable {
         return allowed
     }
 
+    /// Routine checkpoints never encode image queues on the server queue. A changing producer
+    /// retries at most eight times; a disk failure waits for a future explicit change, not a loop.
+    private func checkpointAgentRecoveryAsync(sessionID: SessionID, thread: RPCThreadState) -> Bool {
+        // Explicit cancellation is a write-ahead fence, not a replaceable presentation update.
+        if thread.stopRequested || (thread.restoringRecovery && thread.unreadOpeningPrompt != nil) {
+            return checkpointAgentRecovery(sessionID: sessionID, thread: thread)
+        }
+        guard !thread.restoringRecovery, let id = recoveryAgentID(sessionID: sessionID),
+              let index = recoveryAgentIndex(id) else { return true }
+        let candidate = allowsAgentRecovery(id, thread: thread)
+            ? thread.recoveryCheckpoint(sessionID: store.state.agents[index].effectivePiSessionID) : nil
+        do {
+            if try agentRecovery.checkpoint(for: id) == candidate { return true }
+            // Clearing settled intent is a cheap cancellation fence, even while an older
+            // image-bearing stage is held. Never publish idle while retaining active recovery.
+            if candidate == nil { try agentRecovery.save(nil, for: id); return true }
+        } catch { return false }
+        guard !thread.recoveryWritePending, thread.recoveryWriteAttempts < 8 else { return false }
+        thread.recoveryWritePending = true
+        thread.recoveryWriteAttempts += 1
+        stageAgentRecovery(sessionID: sessionID, thread: thread, candidate: candidate, authorized: { true }) { saved in
+            thread.recoveryWritePending = false
+            if saved { thread.recoveryWriteAttempts = 0; thread.commit() }
+            else if thread.recoveryWriteAttempts < 8, thread.recoveryCheckpoint(sessionID: candidate?.sessionID ?? "") != candidate { thread.commit() }
+            else { thread.recoveryWriteAttempts = 0 }
+        }
+        return false
+    }
+
+    /// A checkpoint is an ordinary version-fenced staging file, never a new persisted format.
+    /// Admission callbacks run in the same queue turn as rename, before anything can supersede it.
+    private func stageAgentRecovery(sessionID: SessionID, thread: RPCThreadState, candidate: AgentRecoveryStore.Checkpoint?,
+                                    cancellation: Progress? = nil, authorized: @escaping () -> Bool, completion: @escaping (Bool) -> Void) {
+        guard let id = recoveryAgentID(sessionID: sessionID), allowsAgentRecovery(id, thread: thread) else { completion(authorized()); return }
+        guard let index = recoveryAgentIndex(id), authorized(), isStarted else { completion(false); return }
+        let baseline = thread.recoveryCheckpoint(sessionID: store.state.agents[index].effectivePiSessionID)
+        let generation = thread.generation, epoch = thread.recoveryEpoch, lifecycle = logicalProjectEpoch
+        do {
+            // RPC identity may lead the extension socket. Persist that identity before admitting
+            // a checkpoint for it, retaining the existing session reconciliation contract.
+            if let candidate, store.state.agents[index].effectivePiSessionID != candidate.sessionID {
+                try mutateState { $0.agents[index].piSessionID = candidate.sessionID; $0.agents[index].nameIsFinal = false }
+            }
+            if try agentRecovery.checkpoint(for: id) == candidate { completion(true); return }
+            guard let candidate else { try agentRecovery.save(nil, for: id); completion(true); return }
+            let retained = candidate.items + candidate.pending + (baseline?.items ?? []) + (baseline?.pending ?? [])
+            let bytes = retained.reduce(0) { total, item in
+                total + item.entry.text.utf8.count + item.images.reduce(0) { $0 + $1.data.count }
+            }
+            guard recoveryWritesInFlight < 8, bytes <= (32 << 20) - recoveryWriteBytes else { completion(false); return }
+            recoveryWritesInFlight += 1
+            recoveryWriteBytes += bytes
+            let version = agentRecovery.revision(for: id), url = agentRecovery.file(for: id)
+            logicalProjectFiles.async {
+                let phase = Self.storageSignposter.beginInterval("Recovery staging", id: Self.storageSignposter.makeSignpostID())
+                let result = Result {
+                    if cancellation?.isCancelled == true { throw CancellationError() }
+                    return try AgentRecoveryStore.stage(candidate, at: url)
+                }
+                Self.storageSignposter.endInterval("Recovery staging", phase)
+                self.queue.async {
+                    self.recoveryWritesInFlight -= 1
+                    self.recoveryWriteBytes -= bytes
+                    guard case .success(let staged) = result else { completion(false); return }
+                    defer { _ = unlink(staged.url.path) }
+                    guard self.isStarted, self.logicalProjectEpoch == lifecycle,
+                          self.sessions[sessionID]?.thread === thread, self.recoveryAgentID(sessionID: sessionID) == id,
+                          self.allowsAgentRecovery(id, thread: thread), thread.generation == generation,
+                          thread.recoveryEpoch == epoch, authorized(),
+                          thread.recoveryCheckpoint(sessionID: baseline?.sessionID ?? candidate.sessionID) == baseline else {
+                        completion(false); return
+                    }
+                    do {
+                        let existing = try self.agentRecovery.checkpoint(for: id)
+                        if existing != candidate {
+                            // A background save of the unchanged baseline may have completed
+                            // first; that is not a competing intent and may be safely rebased.
+                            guard self.agentRecovery.revision(for: id) == version || existing == baseline else {
+                                completion(false); return
+                            }
+                            try self.agentRecovery.commit(staged, for: id, version: self.agentRecovery.revision(for: id))
+                        }
+                        completion(true)
+                    } catch { completion(false) }
+                }
+            }
+        } catch { completion(false) }
+    }
+
     @discardableResult
-    private func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState, force: Bool = false) -> Bool {
+    func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState, force: Bool = false) -> Bool {
         guard let id = recoveryAgentID(sessionID: sessionID) else { return true }
         do {
             // Bootstrap must not overwrite saved work with initial idle state. Stop is an
@@ -8414,9 +8541,13 @@ public final class SessionServer: @unchecked Sendable {
             let checkpoint = allowsAgentRecovery(id, thread: thread)
                 ? thread.recoveryCheckpoint(sessionID: currentSession ?? id.rawValue) : nil
             if let checkpoint, thread.piSessionID != nil, currentSession != checkpoint.sessionID {
-                // Reconcile only an actual identity change; synchronous admission still verifies
-                // persistence before any send, including an extension/RPC session-switch race.
-                applyAgentSession(agentID: id, piSessionID: checkpoint.sessionID)
+                // Recovery cannot publish before state.json accepts the session identity.
+                // Ordinary extension reports stage; this admission gate remains synchronous.
+                guard let index else { return false }
+                try mutateState {
+                    $0.agents[index].piSessionID = checkpoint.sessionID
+                    $0.agents[index].nameIsFinal = false
+                }
                 guard let updated = recoveryAgentIndex(id),
                       store.state.agents[updated].effectivePiSessionID == checkpoint.sessionID else { return false }
             }
