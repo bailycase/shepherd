@@ -177,12 +177,20 @@ extension ComposerRecoveryRelaunchTests {
         #expect(loaded.count == NativeThreadStore.maximumRetainedSubmissions)
         #expect(Set(loaded.map(\.id)).count == loaded.count)
         #expect(loaded.first?.typed == "first")
-        #expect(defaults.data(forKey: ComposerDrafts.quarantineKey) == data, "the saved value is kept whole")
+        #expect(defaults.array(forKey: ComposerDrafts.quarantineKey) as? [Data] == [data], "the saved value is kept whole")
 
         let other = Fixture.defaults()
         other.set(Data("not json".utf8), forKey: ComposerDrafts.recoveriesKey)
         #expect(ComposerDrafts(defaults: other).recovered(id.rawValue).isEmpty)
-        #expect(other.data(forKey: ComposerDrafts.quarantineKey) == Data("not json".utf8))
+        #expect(other.array(forKey: ComposerDrafts.quarantineKey) as? [Data] == [Data("not json".utf8)])
+
+        // One unreadable record among good ones: the good ones come back, and the whole value is kept.
+        let mixed = Fixture.defaults()
+        let good = try JSONSerialization.jsonObject(with: JSONEncoder().encode(records[0])) as! [String: Any]
+        let raw = try JSONSerialization.data(withJSONObject: [id.rawValue: [good, ["id": "not a uuid"]]])
+        mixed.set(raw, forKey: ComposerDrafts.recoveriesKey)
+        #expect(ComposerDrafts(defaults: mixed).recovered(id.rawValue).map(\.typed) == ["first"])
+        #expect(mixed.array(forKey: ComposerDrafts.quarantineKey) as? [Data] == [raw])
     }
 
     /// A deleted agent's store, captured and then pruned, writes nothing after it is gone.
@@ -200,5 +208,64 @@ extension ComposerRecoveryRelaunchTests {
         _ = store.discardSubmission(store.submissions[0].id)
         await Task.yield()
         #expect(persisted().count == 1, "no write for an agent that is gone")
+    }
+}
+
+extension ComposerRecoveryRelaunchTests {
+    /// Records from before the relaunch and live ones share one budget, checked on the exact capture: a send
+    /// past it captures nothing, and the draft and the composer's images stay as they were.
+    @Test func theBudgetCoversRecoveredAndLiveRecordsAtTheCapture() async throws {
+        let earlier = (0..<(NativeThreadStore.maximumRetainedSubmissions - 1)).map {
+            NativeRecoveredSubmission(id: UUID(), typed: "earlier \($0)", sessionID: "s", generation: "g", capturedAt: 1)
+        }
+        defaults.set(try JSONEncoder().encode([id.rawValue: earlier]), forKey: ComposerDrafts.recoveriesKey)
+        let host = Host()
+        host.answer = .unknown
+        let stores = launch()
+        let store = stores.store(for: id)
+        #expect(store.submissions.count == earlier.count)
+        let loop = await run(store, host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        store.draft = "fills the budget"
+        await ComposerImageCapture.send(store: store, input: input, delivery: .followUp)
+        #expect(persisted().count == NativeThreadStore.maximumRetainedSubmissions)
+
+        input.attachments.add([("kept.png", ImageAttachment(name: "kept.png", image: NativeImage(mimeType: "image/png", data: Data([1]))))])
+        store.draft = "one too many"
+        let sends = host.sends
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) == false)
+        #expect(host.sends == sends)
+        #expect(store.draft == "one too many")
+        #expect(input.attachments.items.map(\.name) == ["kept.png"])
+        #expect(persisted().count == NativeThreadStore.maximumRetainedSubmissions, "nothing written for a refused capture")
+
+        // Recovered records are read-only: no restore, no retry; only discard (which frees room).
+        let recovered = try #require(store.submissions.first)
+        #expect(recovered.state == .uncertain)
+        #expect(!ThreadSubmissions.canRestore(recovered, store: store, input: input))
+        #expect(store.restoreSubmission(recovered.id) == nil)
+        #expect(store.discardSubmission(recovered.id))
+        while persisted().count == NativeThreadStore.maximumRetainedSubmissions { await Task.yield() }
+        #expect(!persisted().contains { $0.id == recovered.id }, "a discarded record is not written back")
+    }
+
+    /// A refused send restored and then edited: the relaunch brings back the edited draft, not the record.
+    @Test func aRestoredThenEditedDraftIsWhatComesBack() async {
+        let host = Host()
+        let stores = launch()
+        let store = stores.store(for: id)
+        let loop = await run(store, host)
+        defer { loop.cancel() }
+        store.draft = "first wording"
+        await store.send(delivery: .followUp)
+        #expect(store.restoreSubmission(store.submissions[0].id) != nil)
+        while !persisted().isEmpty { await Task.yield() }
+        store.draft = "second wording"
+        stores.drafts?.note(id.rawValue, draft: store.draft)
+        stores.drafts?.flush()
+        let relaunched = launch().store(for: id)
+        #expect(relaunched.draft == "second wording")
+        #expect(relaunched.submissions.isEmpty)
     }
 }

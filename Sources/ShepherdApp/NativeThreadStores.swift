@@ -76,21 +76,25 @@ final class NativeThreadStores<Key: Hashable> {
         }
     }
 
-    /// The store's captured sends, kept as they change. A capture is written at once, before its emptied
-    /// draft can be; a record leaving (accepted, discarded, restored into the draft) is written with
-    /// the draft as it is then, so restored words are never only in memory.
+    /// The store's captured sends, kept through a quit or crash (text only). A capture is written at the
+    /// capture itself (`captureAdmission`, the exact payload, before the draft clears or anything is sent);
+    /// a record leaving (accepted, discarded, restored into the draft) is written with the draft as it is
+    /// then, draft first, so restored words are never only in memory. A pruned agent's store writes nothing.
     private func watchRecoveries(_ store: NativeThreadStore, key: Key, id: String, drafts: ComposerDrafts) {
+        store.captureAdmission = { [weak self, weak store] submission in
+            guard let self, let store, self.stores[key] === store else { return true }
+            let record = NativeRecoveredSubmission(id: submission.id, typed: submission.typed, sessionID: store.snapshot?.piSessionID,
+                                                   generation: store.snapshot?.generation, capturedAt: Date().timeIntervalSince1970 * 1000)
+            drafts.saveRecoveries(id, store.recoverySnapshot + [record])
+            return true
+        }
         store.onRecoveryChanged = { [weak self, weak store] records in
-            guard let self, let store, stores[key] === store else { return }
-            if records.count >= drafts.recovered(id).count {
-                drafts.saveRecoveries(id, records)
-            } else {
-                Task { @MainActor [weak self, weak store] in
-                    // A deleted agent's store writes nothing late.
-                    guard let self, let store, self.stores[key] === store else { return }
-                    drafts.note(id, draft: store.draft)
-                    drafts.saveRecoveries(id, store.recoverySnapshot)
-                }
+            guard let self, let store, self.stores[key] === store, records.count < drafts.recovered(id).count else { return }
+            Task { @MainActor [weak self, weak store] in
+                // Written from the store as it is then: a record discarded meanwhile never comes back.
+                guard let self, let store, self.stores[key] === store else { return }
+                drafts.note(id, draft: store.draft)
+                drafts.saveRecoveries(id, store.recoverySnapshot)
             }
         }
     }

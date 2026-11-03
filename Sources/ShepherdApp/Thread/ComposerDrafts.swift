@@ -36,7 +36,12 @@ final class ComposerDrafts {
         recoveries = loaded.0
         quarantine = loaded.1
         // What could not be taken in whole is kept as it was, beside the records, never truncated away.
-        if let quarantine, defaults.data(forKey: Self.quarantineKey) == nil { defaults.set(quarantine, forKey: Self.quarantineKey) }
+        // Before anything rewrites the records key.
+        if let quarantine {
+            var kept = defaults.array(forKey: Self.quarantineKey) as? [Data] ?? []
+            if !kept.contains(quarantine) { kept.append(quarantine) }
+            defaults.set(kept, forKey: Self.quarantineKey)
+        }
         // A quit does not wait for the pause.
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.flush() }
@@ -62,12 +67,15 @@ final class ComposerDrafts {
     /// left out or it could not be read.
     static func load(_ data: Data?) -> ([String: [NativeRecoveredSubmission]], Data?) {
         guard let data else { return ([:], nil) }
-        guard let decoded = try? JSONDecoder().decode([String: [NativeRecoveredSubmission]].self, from: data) else { return ([:], data) }
+        // Record by record: one that cannot be read is left out here, and the whole saved value kept.
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: [Any]] else { return ([:], data) }
         var kept: [String: [NativeRecoveredSubmission]] = [:]
         var dropped = false
-        for (id, records) in decoded {
+        for (id, raw) in object {
             var seen = Set<UUID>(), bytes = 0, list: [NativeRecoveredSubmission] = []
-            for record in records {
+            for item in raw {
+                guard let itemData = try? JSONSerialization.data(withJSONObject: item),
+                      let record = try? JSONDecoder().decode(NativeRecoveredSubmission.self, from: itemData) else { dropped = true; continue }
                 let cost = record.typed.utf8.count + 128
                 guard !seen.contains(record.id), list.count < NativeThreadStore.maximumRetainedSubmissions,
                       bytes + cost <= NativeThreadStore.maximumRetainedSubmissionBytes else { dropped = true; continue }
