@@ -1,6 +1,7 @@
 import CryptoKit
 import Dispatch
 import Foundation
+import OSLog
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -100,6 +101,18 @@ final class RPCThreadState {
     // Only a successfully installed history supersedes an older request still hydrating images.
     private var historyRequestSequence: UInt64 = 0
     private var appliedHistorySequence: UInt64 = 0
+    static let signposter = OSSignposter(subsystem: "com.shepherd.sessions", category: "Thread work")
+    private static let historySlots = DispatchSemaphore(value: 4)
+    private var activeHistoryJobs = 0
+    private var pendingHistoryJob: (sequence: UInt64, start: () -> Void, superseded: () -> Void)?
+    private(set) var historyProjectionCount = 0
+    private(set) var historyReconciliationCount = 0
+    private let transcriptReader: ChildTranscriptReader
+    private let readCache: ThreadReadCache
+    private let readCacheOwner = UUID()
+    private var transcriptRequests = 0
+    var beforeTranscriptRead: (() -> Void)?
+    private(set) var transcriptBuildCount = 0
     /// Installed by SessionServer: called once, on the session queue, when the thread first
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
@@ -233,15 +246,23 @@ final class RPCThreadState {
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
     var stopProjectChildren: ((@escaping (String?) -> Void) -> Void)?
-    private(set) var history: [NativeThreadMessage] = [] { didSet { historyBytes = Array(repeating: -1, count: history.count) } }
+    private(set) var history: [NativeThreadMessage] = []
     /// Each history row's encoded size, taken by the first snapshot that shows it (-1 until then).
     private var historyBytes: [Int] = []
     /// Bumped whenever a refresh changes history, so a same-length change (a compaction) is a
     /// new revision.
     private var historyVersion = 0
     var live: [LiveItem] = []
+    private typealias VerifiedImage = ThreadReadCache.Image
+    static let verifiedImageCacheBytes = 10 * 1024 * 1024
+    private var verifiedImageOrder: [String] = []
+    var verifiedImageBytes: Int { readCache.imageBytes(owner: readCacheOwner) }
+    private var imageReads: [String: [(VerifiedImage?) -> Void]] = [:]
+    var beforeImageVerification: (() -> Void)?
+    private(set) var imageVerificationCount = 0
     /// Tests only: runs off the queue before a history's images are read (`refreshMessages`).
     var beforeHistoryImages: (() -> Void)?
+    var beforeHistoryReconciliation: (() -> Void)?
     private var sequence = 0
     private var currentAssistant: Int? {
         didSet { if currentAssistant != oldValue { streamingThinking.removeAll(keepingCapacity: true) } }
@@ -549,6 +570,8 @@ final class RPCThreadState {
     var commandNotices: [CommandNotice] = []
     var commandWindows: Set<UUID> = []
     var inputActive = false
+    var inputLaneID: UUID?
+    var inputPreparationVersion: UInt64 = 0
     var inputOutcomeUnknown = false
     var waitingInputs: [(Bool) -> Void] = []
     /// How long a command's toasts count as its own after pi answers it.
@@ -566,11 +589,15 @@ final class RPCThreadState {
         pattern: "\u{1B}(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u{07}\u{1B}]*(?:\u{07}|\u{1B}\\\\)|[@-Z\\\\-_])"
     )
 
-    init(session: RPCSession, queue: DispatchQueue, originStore: ThreadOriginStore? = nil) {
+    init(session: RPCSession, queue: DispatchQueue, originStore: ThreadOriginStore? = nil, readCache: ThreadReadCache = .shared) {
         self.session = session
         self.queue = queue
         self.originStore = originStore
+        self.readCache = readCache
+        self.transcriptReader = ChildTranscriptReader(cache: readCache, owner: readCacheOwner)
     }
+
+    deinit { readCache.remove(owner: readCacheOwner) }
 
     /// pi may not read stdin until startup finishes. Bound readiness, not its lifetime: keep
     /// late answers so a slow pi can still serve and take its opening prompt, without retries.
@@ -1027,7 +1054,7 @@ final class RPCThreadState {
                 completion(.failure(code: "unknown_run", message: "That subagent is no longer listed."))
                 return
             }
-            completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
+            serveTranscript(runID: runID, file: file, beforeEntryID: beforeEntryID, completion: completion)
         case .send(let expectedSessionID, let generation, let operationID, _, _, _, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
@@ -1317,40 +1344,122 @@ final class RPCThreadState {
         let generation = generation
         let sessionID = piSessionID
         let stale = NativeThreadResult.failure(code: "stale_session", message: "Refresh the thread before acting.")
-        session.request(.getImage(sha256: want.hash), timeout: 30) { [weak self] result in
-            guard let self, generation == self.generation else { completion(stale); return }
+        let answer: (VerifiedImage?) -> Void = { [weak self] found in
+            guard let self, generation == self.generation, sessionID == self.piSessionID else { completion(stale); return }
+            guard self.history.contains(where: { $0.blocks.contains { $0.imageID == imageID } }), let found else {
+                completion(notHere); return
+            }
+            if let chunk = ThreadImages.chunk(imageID, mimeType: found.mimeType, data: found.data, offset: offset) {
+                completion(.imageChunk(value: chunk))
+            } else {
+                completion(.failure(code: NativeImageCode.unknown, message: "That part of the image is past its end."))
+            }
+        }
+        if case .image(let found) = readCache.value(owner: readCacheOwner, name: imageID) {
+            verifiedImageOrder.removeAll { $0 == imageID }
+            verifiedImageOrder.append(imageID)
+            answer(found)
+            return
+        }
+        if let waiting = imageReads[imageID] {
+            guard waiting.count < 64 else { completion(notHere); return }
+            imageReads[imageID]?.append(answer)
+            return
+        }
+        guard imageReads.count < 4, let reservation = readCache.reserve(bytes: ThreadReadCache.imageWorkBytes) else {
+            completion(notHere); return
+        }
+        imageReads[imageID] = [answer]
+        // Retain the owner through this bounded request so deletion still answers every waiter.
+        session.request(.getImage(sha256: want.hash), timeout: 30) { [self, reservation] result in
+            defer { withExtendedLifetime(reservation) {} }
+            guard generation == self.generation else { return }
             guard case .success(let response) = result, response.success,
                   let mime = response.data?["mimeType"]?.stringValue, let base64 = response.data?["data"]?.stringValue else {
-                completion(notHere)
+                self.finishImageRead(imageID, found: nil)
                 return
             }
-            DispatchQueue.global(qos: .utility).async { [weak self] in
+            let hook = self.beforeImageVerification
+            self.imageVerificationCount += 1
+            DispatchQueue.global(qos: .utility).async { [self] in
+                hook?()
                 let found = ThreadImages.verified(imageID, mimeType: mime, base64: base64)
-                let chunk = found.flatMap { ThreadImages.chunk(imageID, mimeType: $0.mimeType, data: $0.data, offset: offset) }
-                guard let self else { completion(stale); return }
-                self.queue.async { [weak self] in
-                    guard let self, generation == self.generation, sessionID == self.piSessionID else { completion(stale); return }
-                    if let chunk { completion(.imageChunk(value: chunk)); return }
-                    completion(found == nil ? notHere
-                                            : .failure(code: NativeImageCode.unknown, message: "That part of the image is past its end."))
+                self.queue.async { [self, reservation] in
+                    defer { withExtendedLifetime(reservation) {} }
+                    guard generation == self.generation else { return }
+                    self.finishImageRead(imageID, found: found)
                 }
             }
         }
     }
 
+    private func finishImageRead(_ imageID: String, found: VerifiedImage?) {
+        if let found {
+            while verifiedImageBytes + found.data.count > Self.verifiedImageCacheBytes || verifiedImageOrder.count >= 4 {
+                guard let first = verifiedImageOrder.first else { break }
+                verifiedImageOrder.removeFirst()
+                readCache.remove(owner: readCacheOwner, name: first)
+            }
+            readCache.insert(.image(found), bytes: found.data.count, owner: readCacheOwner, name: imageID)
+            verifiedImageOrder.append(imageID)
+        }
+        let waiting = imageReads.removeValue(forKey: imageID) ?? []
+        waiting.forEach { $0(found) }
+    }
+
+    private func resetVerifiedImages() {
+        readCache.remove(owner: readCacheOwner)
+        verifiedImageOrder.removeAll()
+        let waiting = imageReads.values.flatMap { $0 }
+        imageReads.removeAll()
+        waiting.forEach { $0(nil) }
+    }
+
     // MARK: - Subagent transcript
+
+    private func serveTranscript(runID: String, file: String, beforeEntryID: String?, completion: @escaping (NativeThreadResult) -> Void) {
+        guard transcriptRequests < 32 else {
+            completion(.failure(code: "transcript_unavailable", message: "Too many transcript reads. Try again."))
+            return
+        }
+        transcriptRequests += 1
+        let generation = generation, hook = beforeTranscriptRead, reader = transcriptReader, ownerQueue = queue
+        reader.queue.async { [weak self] in
+            hook?()
+            let (result, built) = reader.read(runID: runID, file: file, generation: generation, before: beforeEntryID)
+            ownerQueue.async { [weak self] in
+                guard let self else {
+                    completion(.failure(code: "stale_session", message: "Refresh the thread before acting.")); return
+                }
+                self.transcriptRequests -= 1
+                if built { self.transcriptBuildCount += 1 }
+                guard self.generation == generation else {
+                    completion(.failure(code: "stale_session", message: "Refresh the thread before acting.")); return
+                }
+                guard self.subagents.contains(where: { $0.runID == runID && $0.sessionFile == file }) else {
+                    completion(.failure(code: "unknown_run", message: "That subagent is no longer listed.")); return
+                }
+                completion(result)
+            }
+        }
+    }
 
     /// One page of a child's pi session JSONL, projected with the same rules as history.
     /// Entry ids are the session entry ids ("c:<id>"); a stale cursor fails like history paging.
     static func transcript(runID: String, file: String, beforeEntryID: String?) -> NativeThreadResult {
-        guard let handle = FileHandle(forReadingAtPath: file) else {
+        guard let projected = transcriptMessages(file: file) else {
             return .failure(code: "transcript_unavailable", message: "The subagent's session file is not readable.")
         }
+        return transcriptPage(runID: runID, projected: projected, beforeEntryID: beforeEntryID)
+    }
+
+    static func transcriptMessages(file: String) -> [NativeThreadMessage]? {
+        guard let handle = FileHandle(forReadingAtPath: file) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()).map(Int.init) ?? 0
         let start = max(0, size - transcriptReadLimit)
         try? handle.seek(toOffset: UInt64(start))
-        var data = (try? handle.readToEnd()) ?? Data()
+        var data = (try? handle.read(upToCount: size - start)) ?? Data()
         if start > 0, let newline = data.firstIndex(of: UInt8(ascii: "\n")) { data = data[data.index(after: newline)...] }
         struct Entry: Decodable { let type: String; let id: String?; let message: RPCMessage? }
         let decoder = JSONDecoder()
@@ -1376,6 +1485,10 @@ final class RPCThreadState {
             if fromUser.contains(entry.id) { value.origin = .user }
             return [value] + nestedRows(entry.message, parentEntryID: value.entryID)
         }
+        return projected
+    }
+
+    static func transcriptPage(runID: String, projected: [NativeThreadMessage], beforeEntryID: String?) -> NativeThreadResult {
         var end = projected.count
         if let beforeEntryID {
             guard let index = projected.firstIndex(where: { $0.entryID == beforeEntryID }) else {
@@ -1413,7 +1526,7 @@ final class RPCThreadState {
         let size = (try? handle.seekToEnd()).map(Int.init) ?? 0
         let start = max(0, size - userMessagesReadLimit)
         try? handle.seek(toOffset: UInt64(start))
-        var data = (try? handle.readToEnd()) ?? Data()
+        var data = (try? handle.read(upToCount: size - start)) ?? Data()
         if start > 0, let newline = data.firstIndex(of: UInt8(ascii: "\n")) { data = data[data.index(after: newline)...] }
         struct Line: Decodable { let text: String; let at: Double }
         let decoder = JSONDecoder()
@@ -1557,6 +1670,7 @@ final class RPCThreadState {
         }
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             guard let self else { return }
+            guard generation == self.generation, sequence > self.appliedHistorySequence else { measured(result); return }
             // The live rows that had ended when pi answered are the ones this history holds. One that ends while the images
             // below are read (the next message pi starts, a Steer now's above all) is not in it, and stays live.
             let persisted = Set(self.live.filter(Self.persisted).map(\.value.entryID))
@@ -1567,23 +1681,90 @@ final class RPCThreadState {
             // Projecting the whole history (and reading + hashing its images) is O(messages); it runs here, off the thread's
             // queue, from a snapshot of the small tables the projection consults. The queue only swaps in the result.
             let hook = self.beforeHistoryImages
-            let marked = self.markingStopped(messages)
+            let stopped = self.stoppedReplies
             let sentReferences = self.origins.compactMapValues(\.references)
             let adjust = self.historyAdjuster()
-            // The thread on screen waits for this page: not utility, which a busy machine starves.
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                hook?()
-                let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: messages) : [:]
-                let history = Self.projectHistory(marked, sentReferences: sentReferences, images: images, adjust: adjust)
-                let estimate = Self.estimate(messages)
-                self?.queue.async { [weak self] in
-                    self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap,
-                                        projected: (history, estimate), persisted: persisted, done: measured)
+            self.enqueueHistoryProjection(sequence: sequence, superseded: { measured(result) }) { [weak self] in
+                guard let self else { return }
+                self.historyProjectionCount += 1
+                // Hooks do not occupy a compute slot: held tests can still exercise newer answers.
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    hook?()
+                    Self.historySlots.wait()
+                    let interval = Self.signposter.beginInterval("History projection", id: Self.signposter.makeSignpostID())
+                    let marked = Self.markingStopped(messages, stopped: stopped)
+                    let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: messages) : [:]
+                    let history = Self.projectHistory(marked, sentReferences: sentReferences, images: images, adjust: adjust)
+                    let estimate = Self.estimate(messages)
+                    Self.signposter.endInterval("History projection", interval)
+                    Self.historySlots.signal()
+                    self?.queue.async { [weak self] in
+                        self?.reconcileHistory(history, estimate: estimate, result: result, generation: generation,
+                                               sequence: sequence, bootstrap: bootstrap, persisted: persisted) { [weak self] result in
+                            measured(result)
+                            self?.finishHistoryProjection()
+                        }
+                    }
                 }
             }
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
+    }
+
+    /// Two in flight preserve newer-success progress while an older answer hydrates. Only
+    /// successful answers enter this lane; a newer failure can never supersede useful work.
+    private func enqueueHistoryProjection(sequence: UInt64, superseded: @escaping () -> Void, start: @escaping () -> Void) {
+        if activeHistoryJobs < 2 {
+            activeHistoryJobs += 1
+            start()
+        } else if let pending = pendingHistoryJob, pending.sequence > sequence {
+            superseded()
+        } else {
+            pendingHistoryJob?.superseded()
+            pendingHistoryJob = (sequence, start, superseded)
+        }
+    }
+
+    private func finishHistoryProjection() {
+        activeHistoryJobs -= 1
+        if let pending = pendingHistoryJob {
+            pendingHistoryJob = nil
+            activeHistoryJobs += 1
+            pending.start()
+        }
+    }
+
+    private typealias ReconciledHistory = (history: [NativeThreadMessage], estimate: ContextEstimate, changed: Bool, sizes: [Int])
+
+    private func reconcileHistory(_ projected: [NativeThreadMessage], estimate: ContextEstimate,
+                                  result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64,
+                                  bootstrap: Bool, persisted: Set<String>, done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        guard generation == self.generation, sequence > appliedHistorySequence else { done(result); return }
+        let version = historyVersion, previous = history, records = placedRecords
+        let questions = questions, notices = commandNotices, hook = beforeHistoryReconciliation
+        historyReconciliationCount += 1
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            hook?()
+            Self.historySlots.wait()
+            let interval = Self.signposter.beginInterval("History reconciliation", id: Self.signposter.makeSignpostID())
+            let kept = Self.keepingSummarized(previous: previous, next: Self.interleave(records, into: projected))
+            let changed = kept != previous
+            let sizes = changed ? Array(repeating: -1, count: kept.count) : []
+            Self.signposter.endInterval("History reconciliation", interval)
+            Self.historySlots.signal()
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                guard generation == self.generation, sequence > self.appliedHistorySequence else { done(result); return }
+                guard version == self.historyVersion, questions == self.questions, notices == self.commandNotices else {
+                    self.reconcileHistory(projected, estimate: estimate, result: result, generation: generation,
+                                          sequence: sequence, bootstrap: bootstrap, persisted: persisted, done: done)
+                    return
+                }
+                self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap,
+                                   projected: (kept, estimate, changed, sizes), persisted: persisted, done: done)
+            }
+        }
     }
 
     /// A live row pi has persisted: a fetch of its history from then on holds it.
@@ -1633,7 +1814,7 @@ final class RPCThreadState {
     }
 
     private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64, bootstrap: Bool,
-                               projected: (history: [NativeThreadMessage], estimate: ContextEstimate)?, persisted: Set<String>,
+                               projected: ReconciledHistory?, persisted: Set<String>,
                                done: ((Result<RPCResponse, RPCError>) -> Void)?) {
         do {
             defer { done?(result) }
@@ -1648,7 +1829,7 @@ final class RPCThreadState {
                 self.announceIfServable()
                 self.drainIfReady()
             }
-            guard let (history, estimate) = projected else {
+            guard let (history, estimate, changed, sizes) = projected else {
                 self.historyUnread = true
                 return
             }
@@ -1657,9 +1838,9 @@ final class RPCThreadState {
             self.appliedHistorySequence = sequence
             self.historyUnread = false
             self.liveLeftOut = 0
-            let kept = Self.keepingSummarized(previous: self.history, next: Self.interleave(self.placedRecords, into: history))
-            if kept != self.history {
-                self.history = kept
+            if changed {
+                self.history = history
+                self.historyBytes = sizes
                 self.historyVersion += 1
             }
             if estimate != self.estimate { self.estimate = estimate }
@@ -1676,11 +1857,11 @@ final class RPCThreadState {
     }
 
     /// pi's error replies to a Stop, as the stops they were.
-    private func markingStopped(_ messages: [RPCMessage]) -> [RPCMessage] {
-        guard !stoppedReplies.isEmpty else { return messages }
+    private static func markingStopped(_ messages: [RPCMessage], stopped: Set<Double>) -> [RPCMessage] {
+        guard !stopped.isEmpty else { return messages }
         return messages.map { message in
             guard message.role == "assistant", message.stopReason == "error", let time = message.timestamp,
-                  stoppedReplies.contains(time) else { return message }
+                  stopped.contains(time) else { return message }
             var stopped = message
             stopped.stopReason = "aborted"
             return stopped
@@ -1855,6 +2036,8 @@ final class RPCThreadState {
         goalCommandFailure = nil
         onGoalChanged?(nil)
         history.removeAll()
+        historyBytes.removeAll()
+        resetVerifiedImages()
         historyVersion += 1
         currentAssistant = nil
         historyUnread = false
@@ -1863,6 +2046,9 @@ final class RPCThreadState {
         questions.removeAll()
         commandNotices.removeAll()
         cancelWaitingInputs()
+        inputLaneID = nil
+        inputActive = false
+        inputOutcomeUnknown = false
         // A question still open from the last session is not this one's to record.
         askedAt.removeAll()
         estimate = nil
@@ -1889,6 +2075,7 @@ final class RPCThreadState {
     func dropHistory(from index: Int) {
         guard history.indices.contains(index) else { return }
         history.removeSubrange(index...)
+        historyBytes.removeSubrange(index...)
         historyVersion += 1
     }
 
@@ -2126,6 +2313,7 @@ final class RPCThreadState {
                 // History may have replaced the provisional row before the socket was read.
                 // Its observer invalidates encoded row sizes; the version notifies clients.
                 history[historyIndex].timing = timing
+                historyBytes[historyIndex] = -1
                 historyVersion += 1
             }
             if timingByTimestamp[time] == nil, timingByTimestamp.count >= Self.timingLimit,
