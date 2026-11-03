@@ -76,9 +76,13 @@ extension View {
 }
 
 private struct TurnUndoAlert: ViewModifier {
+    /// Only the shown thread presents it, not one iPad keeps mounted behind it.
+    @Environment(\.threadDetailActive) private var active
+
     func body(content: Content) -> some View {
         let store = TurnUndoStore.shared
-        content.alert(store.failure?.title ?? "", isPresented: Binding(get: { store.failure != nil }, set: { if !$0 { store.failure = nil } }),
+        let active = active
+        content.alert(store.failure?.title ?? "", isPresented: Binding(get: { active && store.failure != nil }, set: { if !$0 { store.failure = nil } }),
                       presenting: store.failure) { _ in
             Button("OK", role: .cancel) { store.failure = nil }
         } message: { failure in

@@ -136,4 +136,20 @@ struct InstructionsTextTests {
         #expect(InstructionsText.rebased("- edited\n", from: "- a\n- b\n", to: "- a\n") == "- edited\n")
         #expect(InstructionsText.rebased("- edited\n", from: "- a", to: "- ab\n") == "- edited\n")
     }
+
+    /// A one-line edit compares only the lines between what the versions share: a long file is
+    /// not quadratic, and does not fall past the cutoff into every line changed.
+    @Test func aOneLineEditOfALongFileMarksOnlyThatLine() {
+        for count in [100, 1_000, 10_000] {
+            var lines = (0..<count).map { "line \($0)" }
+            let saved = lines.joined(separator: "\n") + "\n"
+            lines[count / 2] = "edited"
+            #expect(InstructionsText.changedLines(saved: saved, draft: lines.joined(separator: "\n") + "\n") == [count / 2])
+        }
+        // Under the cutoff between shared ends: still a real LCS (head, one common middle line, tail), not all-changed.
+        let middle = (0..<1_000).map { "m\($0)" }
+        let old = (["head"] + middle + ["tail"]).joined(separator: "\n")
+        let new = (["head"] + middle.reversed() + ["tail"]).joined(separator: "\n")
+        #expect(InstructionsText.diff(from: old, to: new).filter { $0.kind == .context }.count == 3)
+    }
 }

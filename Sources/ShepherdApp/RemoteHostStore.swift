@@ -260,6 +260,12 @@ final class RemoteHostStore {
     /// A host said something about an agent's browser (`BrowserDrivePush`): the host, the client
     /// that heard it (an answer goes back on it) and the push.
     @ObservationIgnored var onBrowserDrive: ((UUID, RemoteHostClient, BrowserDrivePush) -> Void)?
+    /// A host hinted that a subscribed thread has a newer revision (`native.revisions.v1`): one callback
+    /// for every window; at most one per agent per 250 ms from the host. A hint to pull, never content.
+    @ObservationIgnored var onNativeThreadChanged: ((RemoteAgentRef) -> Void)?
+    /// What each host was asked to hint about, and the threads on screen to ask for (`updateThreadHints`).
+    @ObservationIgnored private var threadHints = RemoteThreadHints()
+    @ObservationIgnored private var liveThreads: Set<RemoteAgentRef> = []
     /// Every host's design files, by hash (in memory).
     let designCache = RemoteDesignCache()
     private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
@@ -271,6 +277,35 @@ final class RemoteHostStore {
 
     var hosts: [HostConfig] {
         connections.map(\.config)
+    }
+
+    /// The remote threads polling on screen in any window: each connected host that offers revision hints is asked
+    /// for its own ordinary ones (`RemoteThreadHints`), only when that set changes. Polling stays as the fallback.
+    func updateThreadHints(live: Set<RemoteAgentRef>) {
+        liveThreads = live
+        sendThreadHints()
+    }
+
+    private func sendThreadHints() {
+        let hinting = connections.filter { connection in
+            connection.phase == .connected && connection.client?.capabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability) == true
+        }
+        let byID = Dictionary(uniqueKeysWithValues: hinting.map { ($0.id, $0) })
+        let plan = threadHints.plan(live: liveThreads, hosts: Set(byID.keys)) { ref in
+            guard let state = byID[ref.hostID]?.state, let agent = state.agents.first(where: { $0.id == ref.agentID }) else { return false }
+            return state.isOrdinaryThread(agent)
+        }
+        for (host, ids) in plan {
+            guard let client = byID[host]?.client else { continue }
+            Task { [weak self, weak client] in
+                do { try await client?.subscribeNativeThreads(ids) }
+                catch {
+                    // Refused or dropped: the poll carries on, and the next change (or reconnect) asks again.
+                    guard let self, self.connections.first(where: { $0.id == host })?.client === client else { return }
+                    self.threadHints.forget(host)
+                }
+            }
+        }
     }
 
     init(defaults: UserDefaults = .standard, childRefreshInterval: Duration = .seconds(3), connects: Bool = true) {
@@ -387,6 +422,9 @@ final class RemoteHostStore {
                     connection.state = state
                 }
                 connection.phase = .connected
+                // A new connection holds no subscriptions: ask again for the threads on screen.
+                self.threadHints.forget(connection.id)
+                self.sendThreadHints()
                 connection.designs.connect(client, available: client.capabilities.contains(RemoteProtocol.designsCapability))
                 connection.connectMissions(client)
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
@@ -422,10 +460,11 @@ final class RemoteHostStore {
             connection.stateGeneration &+= 1
             connection.state = state
         }
-        client.onOutput = { [weak connection] sessionID, data in
+        client.onOutputConsumed = { [weak connection] sessionID, data, completion in
             guard let connection,
-                  connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            connection.panes[sessionID]?.receive(data)
+                  connection.client.map(ObjectIdentifier.init) == clientID,
+                  let pane = connection.panes[sessionID] else { completion(); return }
+            pane.receive(data, completion: completion)
         }
         client.onSessionExited = { [weak connection] sessionID, code in
             guard let connection,
@@ -448,6 +487,10 @@ final class RemoteHostStore {
         client.onMissionLive = { [weak connection] mission, live in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.missions.liveChanged(mission, live)
+        }
+        client.onNativeThreadChanged = { [weak self, weak connection] agent in
+            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onNativeThreadChanged?(RemoteAgentRef(hostID: connection.id, agentID: agent))
         }
         client.onBrowserDrive = { [weak self, weak connection, weak client] push in
             guard let self, let connection, let client, connection.client === client else { return }
@@ -797,23 +840,20 @@ final class RemotePaneSession {
         // returning creates a fresh, blank ghostty surface. Mirror the local
         // resync: release the replacement, then re-attach so the host
         // re-sends its screen snapshot into the new surface.
-        terminal.onSurfaceReplaced = { [weak self] generation in
-            guard let self else { return }
+        terminal.onSurfaceAttachmentChanged = { [weak self] generation in
+            guard let self, let generation else { return }
             _ = self.terminal.replaceWithReplay(Data(), generation: generation)
             guard self.attachStarted, let client = self.client else { return }
-            if case .live = self.phase {
-                client.detach(sessionID: self.sessionID)
-                Task { [weak self] in
-                    guard let self, let client = self.client else { return }
-                    // detach and attach are queued in order on the client's
-                    // serial queue, so the host re-registers and snapshots
-                    // after dropping the old attachment.
-                    _ = try? await client.attach(
-                        sessionID: self.sessionID,
-                        cols: self.lastCols,
-                        rows: self.lastRows
-                    )
-                }
+            client.detach(sessionID: self.sessionID)
+            Task { [weak self] in
+                guard let self, let client = self.client else { return }
+                // First attachment and replacements both replay: bytes retired while there
+                // was no surface are represented by this authoritative screen, not buffered.
+                _ = try? await client.attach(
+                    sessionID: self.sessionID,
+                    cols: self.lastCols,
+                    rows: self.lastRows
+                )
             }
         }
     }
@@ -870,8 +910,8 @@ final class RemotePaneSession {
         }
     }
 
-    func receive(_ data: Data) {
-        terminal.feed(data)
+    func receive(_ data: Data, completion: @escaping @Sendable () -> Void) {
+        terminal.feed(data, completion: completion)
     }
 
     func detach() {

@@ -9,6 +9,8 @@ struct ThreadGoalCard: View {
     var size: SHGoalSize = .touch
     var framed = true
     @State private var editing = false
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
     @State private var text = ""
     @State private var editedGoal: NativeGoal?
     @FocusState private var focused: Bool
@@ -32,7 +34,7 @@ struct ThreadGoalCard: View {
                        }, clear: { act(.clear, goal: goal) })
                 .disabled(!enabled)
                 .onChange(of: store.goalID) { _, _ in editing = false }
-                .sheet(isPresented: $editing) {
+                .sheet(isPresented: $editing.whenActive(detailActive)) {
                     NavigationStack {
                         VStack(alignment: .leading, spacing: SH.Space.m) {
                             TextField("Goal condition", text: $text, axis: .vertical)

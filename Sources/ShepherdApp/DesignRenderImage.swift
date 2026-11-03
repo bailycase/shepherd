@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import ShepherdProtocol
 import UniformTypeIdentifiers
 
 /// The picture `board_render` hands a design agent, kept small: it goes into pi's session and is
@@ -15,7 +16,7 @@ enum DesignRenderImage {
     static let shrinkStep = 0.75
     static let maxShrinks = 5
 
-    struct Encoded: Equatable {
+    struct Encoded: Equatable, Sendable {
         var data: Data
         var mimeType: String
         var width: Int
@@ -24,17 +25,40 @@ enum DesignRenderImage {
         var isPNG: Bool { mimeType == "image/png" }
     }
 
+    /// Capture stays on main; resizing, codecs and the wire representation do not.
+    static func encodeDetached(_ image: CGImage, deadline: Date?) async throws -> (Encoded, String)? {
+        let work = Task.detached(priority: .userInitiated) {
+            func check() throws {
+                try Task.checkCancellation()
+                if let deadline, Date() >= deadline {
+                    throw DesignRenderFailure(code: "timeout", message: "The render expired while encoding its picture.")
+                }
+            }
+            try check()
+            let encoded = encode(image, shouldContinue: { !Task.isCancelled && (deadline.map { Date() < $0 } ?? true) })
+            try check()
+            guard let encoded else { return nil as (Encoded, String)? }
+            let base64 = encoded.data.base64EncodedString()
+            try check()
+            return (encoded, base64)
+        }
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: { work.cancel() }
+    }
+
     /// The image within the caps, or nil when it can't be encoded at all.
-    static func encode(_ image: CGImage, maxEdge: Int = maxEdge, maxBytes: Int = maxBytes) -> Encoded? {
+    static func encode(_ image: CGImage, maxEdge: Int = maxEdge, maxBytes: Int = maxBytes,
+                       shouldContinue: () -> Bool = { true }) -> Encoded? {
         var (width, height) = BrowserImageClamp.size(width: image.width, height: image.height, maxEdge: maxEdge)
         var current: CGImage? = BrowserImageClamp.resized(image, width: width, height: height)
         for _ in 0...maxShrinks {
-            guard let candidate = current else { return nil }
+            guard shouldContinue(), let candidate = current else { return nil }
             if let png = png(candidate), png.count <= maxBytes {
                 return Encoded(data: png, mimeType: "image/png", width: candidate.width, height: candidate.height)
             }
             for quality in jpegQualities {
-                guard let data = BrowserImageClamp.jpeg(candidate, quality: quality) else { return nil }
+                guard shouldContinue(), let data = BrowserImageClamp.jpeg(candidate, quality: quality) else { return nil }
                 if data.count <= maxBytes { return Encoded(data: data, mimeType: "image/jpeg", width: candidate.width, height: candidate.height) }
             }
             width = max(1, Int((Double(width) * shrinkStep).rounded()))

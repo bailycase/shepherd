@@ -45,6 +45,11 @@ DYLD_LIBRARY_PATH="$build" "$build/sidebar-check"
 echo 'SIDEBAR CHECK COMPLETE'
 if [ "$mode" = --sidebar-only ]; then exit 0; fi
 
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
+    App/iOS/Thread/ThreadStores.swift App/iOS/Thread/ThreadRecovery.swift \
+    Tests/ShepherdIOSChecks/MobileRecoveryCheck.swift -o "$build/recovery-check"
+DYLD_LIBRARY_PATH="$build" "$build/recovery-check"
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
     -parse-as-library Tests/ShepherdIOSChecks/ThreadStoreCheck.swift \
     -o "$build/thread-check"
@@ -55,3 +60,9 @@ DYLD_LIBRARY_PATH="$build" "$build/connect-check"
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
     -parse-as-library Tests/ShepherdIOSChecks/RemoteClientBackpressureCheck.swift -o "$build/backpressure-check"
 DYLD_LIBRARY_PATH="$build" "$build/backpressure-check"
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
+    App/iOS/Home/HomeFeed.swift App/iOS/App/MobileReadiness.swift App/iOS/Review/ReviewRetention.swift \
+    App/iOS/Thread/ThreadStores.swift App/iOS/Thread/ThreadRecovery.swift App/iOS/Hosts/ThreadRevisionHints.swift \
+    Tests/ShepherdIOSChecks/MobileFreshnessCheck.swift -o "$build/freshness-check"
+DYLD_LIBRARY_PATH="$build" "$build/freshness-check"

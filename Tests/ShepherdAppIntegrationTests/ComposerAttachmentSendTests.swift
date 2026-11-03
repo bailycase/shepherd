@@ -10,7 +10,7 @@ import Testing
 @MainActor
 struct ComposerAttachmentSendTests {
     @Test(arguments: [true, false])
-    func aDelayedSendConsumesOnlyAcknowledgedAttachments(accepted: Bool) async throws {
+    func aDelayedSendCapturesItsImagesAndKeepsImagesAddedMeanwhile(accepted: Bool) async throws {
         let store = NativeThreadStore()
         let input = ThreadInput()
         var snapshot = ComposerThread.snapshot(messages: 0, commands: [])
@@ -53,16 +53,22 @@ struct ComposerAttachmentSendTests {
         #expect(keyMonitor.handle(event))
         try await eventuallyOnMain("real composer send to await acknowledgement") { reply != nil }
         #expect(submitted == [sent.image])
-        #expect(input.attachments.ids == [sent.id])
+        // Captured with the words: the image left the composer for the thread's sending row.
+        try await eventuallyOnMain("the captured image to leave the composer") { input.attachments.isEmpty }
+        #expect(store.submissions.map(\.images) == [[sent.image]])
         input.attachments.add([(later.name, later)])
         let pending = try #require(reply)
         reply = nil
         pending.resume(returning: accepted ? .accepted(operationID: try #require(operation))
                        : .failure(code: "refused", message: "send refused"))
         try await eventuallyOnMain("send acknowledgement to finish") {
-            !store.busy && (accepted ? input.attachments.ids == [later.id] : store.notice == "send refused")
+            !store.busy && (accepted ? store.submissions.isEmpty : store.notice == "send refused")
         }
-        #expect(input.attachments.ids == (accepted ? [later.id] : [sent.id, later.id]))
-        #expect(input.attachments.images == (accepted ? [later.image] : [sent.image, later.image]))
+        // An image added while it waited stays either way. Refused, the sent one waits in the thread (the composer
+        // is no longer empty, so it is not put back over the new image) to be restored or discarded.
+        #expect(input.attachments.ids == [later.id])
+        #expect(input.attachments.images == [later.image])
+        #expect(store.submissions.map(\.images) == (accepted ? [] : [[sent.image]]))
+        #expect(store.submissions.map(\.state) == (accepted ? [] : [.failed]))
     }
 }

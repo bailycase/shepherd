@@ -7,7 +7,7 @@ import ShepherdProtocol
 /// The client's image fetching (`NativeThreadImages`): pieces in order into one image, a cache that is bounded, one fetch for many
 /// askers, fetches that stop when the thread leaves, and a host that answers wrongly is not believed.
 @MainActor
-@Suite("Thread image fetching")
+@Suite("Thread image fetching", .timeLimit(.minutes(1)))
 struct NativeThreadImagesTests {
     /// A real PNG of `side` × `side` pixels, padded after its end marker to `bytes` (a decoder ignores trailing bytes), so a test serves
     /// bytes the client's raster check accepts at the size it needs.
@@ -27,7 +27,7 @@ struct NativeThreadImagesTests {
         var images: [String: Data]
         var asked: [(id: String, offset: Int)] = []
         var chunk = NativeImage.chunkBytes
-        var delay: Duration?
+        var gate: Gate?
         var lie: ((NativeImageChunk) -> NativeImageChunk)?
         var failure: NativeThreadResult?
         /// How many requests were being answered at once, and the most there were.
@@ -41,13 +41,55 @@ struct NativeThreadImagesTests {
             active += 1
             peak = max(peak, active)
             defer { active -= 1 }
-            if let delay { try await Task.sleep(for: delay) }
+            if let gate { await gate.wait() }
             if let failure { return failure }
             guard let data = images[id], offset < data.count else { return .failure(code: NativeImageCode.unknown, message: "gone") }
             let end = min(data.count, offset + chunk)
             let piece = NativeImageChunk(imageID: id, mimeType: "image/png", totalBytes: data.count, offset: offset, data: data[offset..<end])
             return .imageChunk(value: lie?(piece) ?? piece)
         }
+    }
+
+    /// A deliberately non-cancellable host answer: clients must return cancellation without
+    /// waiting for transport completion. Tests release every continuation during cleanup.
+    @MainActor final class Gate {
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        private var open = false
+
+        func wait() async {
+            guard !open else { return }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+
+        /// A test timeout cancels this await, not the simulated transport. Unblock that
+        /// transport on timeout so the test can unwind and run its deferred cleanup.
+        func result(of task: Task<NativeThreadImages.Outcome, Never>) async -> NativeThreadImages.Outcome {
+            await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+                Task { @MainActor in self.releaseAll() }
+            }
+        }
+
+        func releaseFirst() { waiting.removeFirst().resume() }
+
+        func releaseAll() {
+            open = true
+            let held = waiting
+            waiting.removeAll()
+            for continuation in held { continuation.resume() }
+        }
+    }
+
+    /// Counts expose registration, not a notification. Yield only until that state is reached;
+    /// the iteration bound diagnoses missing registration, never asserts a response speed.
+    static func registered(_ description: String, _ condition: () -> Bool) async throws {
+        for _ in 0..<100_000 {
+            if condition() { return }
+            await Task.yield()
+        }
+        try #require(condition(), "\(description)")
     }
 
     static func ref(_ id: String, bytes: Int = png.count, side: Int = 100) -> NativeImageRef {
@@ -76,34 +118,40 @@ struct NativeThreadImagesTests {
         #expect(host.asked.count == before && images.cached("a") == Self.png)
     }
 
-    @Test func manyAskersForOneImageShareOneFetch() async {
-        let host = Host(["a": Self.png])
-        host.delay = .milliseconds(30)
+    @Test func manyAskersForOneImageShareOneFetch() async throws {
+        let host = Host(["a": Self.png]), gate = Gate()
+        host.gate = gate
         let images = Self.store(host)
-        async let one = images.image(Self.ref("a"))
-        async let two = images.image(Self.ref("a"))
-        async let three = images.image(Self.ref("a"))
-        let results = await [one, two, three]
+        var entered = 0
+        let askers = (0..<3).map { _ in Task { @MainActor in
+            entered += 1
+            return await images.image(Self.ref("a"))
+        } }
+        defer { for asker in askers { asker.cancel() }; gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("all askers joined the held fetch") { entered == 3 && host.active == 1 }
+        gate.releaseAll()
+        var results: [NativeThreadImages.Outcome] = []
+        for asker in askers { results.append(await gate.result(of: asker)) }
         #expect(results.allSatisfy { $0 == .image(Self.png) })
         #expect(host.asked.filter { $0.offset == 0 }.count == 1, "one fetch, not three")
         #expect(images.started == 1)
     }
 
-    @Test func cancellingStopsAskingForTheRest() async {
-        let host = Host(["a": Self.png])
+    @Test func cancellingStopsAskingForTheRest() async throws {
+        let host = Host(["a": Self.png]), gate = Gate()
         host.chunk = 64 * 1024
-        host.delay = .milliseconds(40)
+        host.gate = gate
         let images = Self.store(host)
         let task = Task { await images.image(Self.ref("a")) }
-        try? await Task.sleep(for: .milliseconds(90))
+        defer { task.cancel(); gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("the first chunk is held") { host.active == 1 }
         images.cancelAll()
-        let outcome = await task.value
-        let askedWhenStopped = host.asked.count
-        try? await Task.sleep(for: .milliseconds(200))
-        #expect(host.asked.count <= askedWhenStopped + 1, "no more pieces after cancel")
-        #expect(host.asked.count < 11, "it did not run to the end: \(host.asked.count)")
+        #expect(await gate.result(of: task) == .cancelled)
+        #expect(host.active == 1, "cancellation returned before the host answered")
+        gate.releaseAll()
+        try await Self.registered("the cancelled host request drained") { host.active == 0 }
+        #expect(host.asked.map(\.offset) == [0], "no more pieces after cancel")
         #expect(images.cached("a") == nil)
-        if case .image = outcome { Issue.record("a cancelled fetch gave an image") }
     }
 
     @Test func aNewSessionForgetsWhatTheOldOneHeld() async {
@@ -175,13 +223,18 @@ struct NativeThreadImagesTests {
         if case .failed = await images.image(Self.ref("c")) {} else { Issue.record("a lost connection should be a failure the viewer can retry") }
     }
 
-    @Test func noMoreThanTheLimitAreAskedForAtOnce() async {
-        let host = Host(Dictionary(uniqueKeysWithValues: (0..<10).map { ("i\($0)", Self.image(side: 100)) }))
-        host.delay = .milliseconds(30)
+    @Test func noMoreThanTheLimitAreAskedForAtOnce() async throws {
+        let host = Host(Dictionary(uniqueKeysWithValues: (0..<10).map { ("i\($0)", Self.image(side: 100)) })), gate = Gate()
+        host.gate = gate
         let images = Self.store(host)
         let small = Self.image(side: 100)
         let tasks = (0..<10).map { i in Task { @MainActor in await images.image(Self.ref("i\(i)", bytes: small.count)) } }
-        for task in tasks { _ = await task.value }
+        defer { for task in tasks { task.cancel() }; gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("the host is full and the other fetches queued") {
+            host.active == NativeThreadImages.maxInFlight && images.queued == 10 - NativeThreadImages.maxInFlight
+        }
+        gate.releaseAll()
+        for task in tasks { _ = await gate.result(of: task) }
         #expect(images.started == 10 && host.asked.count == 10, "every image arrived")
         #expect(host.peak == NativeThreadImages.maxInFlight, "four at a time: \(host.peak)")
     }
@@ -276,101 +329,128 @@ struct NativeThreadImagesTests {
     // MARK: Cancellation
 
     /// An old fetch that is cancelled finishes later and must not remove a newer fetch's entry or fill the new session's cache.
-    @Test func anOldCancelledFetchDoesNotClobberANewerOne() async {
-        let host = Host(["a": Self.png])
-        host.delay = .milliseconds(60)
+    @Test func anOldCancelledFetchDoesNotClobberANewerOne() async throws {
+        let host = Host(["a": Self.png]), gate = Gate()
+        host.gate = gate
         let images = Self.store(host)
         let old = Task { await images.image(Self.ref("a")) }
-        try? await Task.sleep(for: .milliseconds(20))
+        defer { old.cancel(); gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("the old request is held") { host.active == 1 }
         images.cancelAll()
-        _ = await old.value
+        #expect(await gate.result(of: old) == .cancelled)
         let newer = Task { await images.image(Self.ref("a")) }
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(images.inFlight == 1, "the newer fetch is registered")
-        try? await Task.sleep(for: .milliseconds(100))
-        #expect(await newer.value == .image(Self.png) && images.cached("a") == Self.png)
+        defer { newer.cancel() }
+        try await Self.registered("the newer request is held beside the old one") { host.active == 2 }
+        gate.releaseFirst()
+        try await Self.registered("the old request drained while the newer one is held") { host.active == 1 }
+        #expect(images.inFlight == 1 && images.cached("a") == nil, "the old completion left the newer entry alone")
+        gate.releaseAll()
+        #expect(await gate.result(of: newer) == .image(Self.png) && images.cached("a") == Self.png)
     }
 
-    @Test func aFetchFromTheOldSessionNeverFillsTheNewOnesCache() async {
-        let host = Host(["a": Self.png])
-        host.delay = .milliseconds(50)
+    @Test func aFetchFromTheOldSessionNeverFillsTheNewOnesCache() async throws {
+        let host = Host(["a": Self.png]), gate = Gate()
+        host.gate = gate
         let images = Self.store(host)
         let old = Task { await images.image(Self.ref("a")) }
-        try? await Task.sleep(for: .milliseconds(20))
+        defer { old.cancel(); gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("the old session's request is held") { host.active == 1 }
         images.configure(sessionID: "next", fetch: { try await host.answer($0) })
-        _ = await old.value
-        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await gate.result(of: old) == .cancelled)
+        #expect(host.active == 1, "the session switch did not await the host")
+        gate.releaseAll()
+        try await Self.registered("the old session's request drained") { host.active == 0 }
         #expect(images.cached("a") == nil && images.heldBytes == 0, "an id belongs to its session")
     }
 
     /// The fetch goes on while any asker still wants it, and stops when the last one has gone: cancelling one of two askers returns
     /// that one at once and leaves the other its image; cancelling the last stops the chunk loader.
-    @Test func theFetchEndsWithItsLastAskerAndNotBefore() async {
-        let host = Host(["a": Self.png])
+    @Test func theFetchEndsWithItsLastAskerAndNotBefore() async throws {
+        let host = Host(["a": Self.png, "b": Self.png]), gate = Gate()
         host.chunk = 64 * 1024
-        host.delay = .milliseconds(30)
+        host.gate = gate
         let images = Self.store(host)
-        let first = Task { await images.image(Self.ref("a")) }
-        let second = Task { await images.image(Self.ref("a")) }
-        try? await Task.sleep(for: .milliseconds(70))
-        first.cancel()
-        let early = await first.value
-        if case .image = early { Issue.record("a cancelled asker was given an image") }
-        #expect(images.inFlight == 1, "the other asker still needs it")
-        #expect(await second.value == .image(Self.png), "and it gets the whole image")
+        var entered = 0
+        let askers = (0..<2).map { _ in Task { @MainActor in
+            entered += 1
+            return await images.image(Self.ref("a"))
+        } }
+        defer { for asker in askers { asker.cancel() }; host.gate?.releaseAll(); images.cancelAll() }
+        try await Self.registered("both askers joined the held fetch") { entered == 2 && host.active == 1 }
+        askers[0].cancel()
+        #expect(await gate.result(of: askers[0]) == .cancelled)
+        #expect(images.inFlight == 1 && host.active == 1, "the other asker still needs the held fetch")
+        gate.releaseAll()
+        #expect(await gate.result(of: askers[1]) == .image(Self.png), "and it gets the whole image")
         #expect(host.asked.filter { $0.offset == 0 }.count == 1, "one fetch served both")
 
+        let loneGate = Gate()
+        host.gate = loneGate
         let lone = Task { await images.image(Self.ref("b")) }
-        let host2 = host
-        host2.images["b"] = Self.png
-        try? await Task.sleep(for: .milliseconds(70))
+        defer { lone.cancel(); loneGate.releaseAll() }
+        try await Self.registered("the lone asker's first chunk is held") { host.active == 1 }
         lone.cancel()
-        _ = await lone.value
-        let asked = host.asked.count
-        try? await Task.sleep(for: .milliseconds(250))
-        #expect(host.asked.count <= asked + 1, "the last asker left: the loader stopped asking")
+        #expect(await loneGate.result(of: lone) == .cancelled)
+        #expect(host.active == 1, "the last asker returned before the host answered")
+        loneGate.releaseAll()
+        try await Self.registered("the lone host request drained") { host.active == 0 }
+        #expect(host.asked.filter { $0.id == "b" }.map(\.offset) == [0], "the last asker left: no further chunks")
         #expect(images.inFlight == 0 && images.cached("b") == nil)
     }
 
     /// Nothing is left hanging: cancelled askers all return, with none left behind in the table.
-    @Test func cancellingEveryAskerReturnsThemAllAndLeavesNothingBehind() async {
-        let host = Host(["a": Self.png])
-        host.delay = .milliseconds(200)
+    @Test func cancellingEveryAskerReturnsThemAllAndLeavesNothingBehind() async throws {
+        let host = Host(["a": Self.png]), gate = Gate()
+        host.gate = gate
         let images = Self.store(host)
-        let askers = (0..<6).map { _ in Task { await images.image(Self.ref("a")) } }
-        try? await Task.sleep(for: .milliseconds(30))
+        var entered = 0
+        let askers = (0..<6).map { _ in Task { @MainActor in
+            entered += 1
+            return await images.image(Self.ref("a"))
+        } }
+        defer { for asker in askers { asker.cancel() }; gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("every asker joined the held fetch") { entered == 6 && host.active == 1 }
         for asker in askers { asker.cancel() }
-        let outcomes = await withTaskGroup(of: NativeThreadImages.Outcome.self) { group in
-            for asker in askers { group.addTask { await asker.value } }
-            var all: [NativeThreadImages.Outcome] = []
-            for await outcome in group { all.append(outcome) }
-            return all
-        }
-        #expect(outcomes.count == 6, "every asker returned")
+        var outcomes: [NativeThreadImages.Outcome] = []
+        for asker in askers { outcomes.append(await gate.result(of: asker)) }
+        #expect(outcomes.count == 6 && outcomes.allSatisfy { $0 == .cancelled }, "every asker returned cancellation")
+        #expect(host.active == 1, "all askers returned while the host was still held")
+        gate.releaseAll()
+        try await Self.registered("the shared cancelled host request drained") { host.active == 0 }
+        #expect(host.asked.count == 1)
         #expect(images.inFlight == 0 && images.queued == 0)
     }
 
     /// Fetches queued behind the limit leave the line when cancelled, take no place, and do not wait for a running one to finish.
-    @Test func aCancelledFetchInTheLineLeavesItAndNeverTakesAPlace() async {
-        let ids = (0..<8).map { "i\($0)" }
-        let host = Host(Dictionary(uniqueKeysWithValues: ids.map { ($0, Self.image(side: 100)) }))
-        host.delay = .milliseconds(300)
+    @Test func aCancelledFetchInTheLineLeavesItAndNeverTakesAPlace() async throws {
+        let ids = (0..<8).map { "i\($0)" }, small = Self.image(side: 100)
+        let host = Host(Dictionary(uniqueKeysWithValues: ids.map { ($0, small) })), gate = Gate()
+        host.gate = gate
         let images = Self.store(host)
-        let small = Self.image(side: 100).count
-        let askers = ids.map { id in Task { await images.image(Self.ref(id, bytes: small)) } }
-        // Wait for the state itself, not for a time: four fetches running and the other four in the line.
-        for _ in 0..<200 where !(images.started == NativeThreadImages.maxInFlight && images.queued == 8 - NativeThreadImages.maxInFlight) {
-            try? await Task.sleep(for: .milliseconds(5))
+        let askers = Dictionary(uniqueKeysWithValues: ids.map { id in
+            (id, Task { await images.image(Self.ref(id, bytes: small.count)) })
+        })
+        defer { for asker in askers.values { asker.cancel() }; gate.releaseAll(); images.cancelAll() }
+        try await Self.registered("four actual host requests are held and all other requests have registered in the queue") {
+            host.active == NativeThreadImages.maxInFlight && images.inFlight == ids.count
+                && images.queued == ids.count - NativeThreadImages.maxInFlight
         }
-        #expect(images.inFlight == 8 && images.queued == 8 - NativeThreadImages.maxInFlight, "four run, the rest wait: inFlight \(images.inFlight) queued \(images.queued) asked \(host.asked.count) started \(images.started)")
-        let waiting = Array(askers[NativeThreadImages.maxInFlight...])
-        let started = Date()
-        for asker in waiting { asker.cancel() }
-        for asker in waiting { _ = await asker.value }
-        #expect(Date().timeIntervalSince(started) < 0.25, "the queued ones returned without waiting for a running fetch to finish")
-        #expect(images.queued == 0, "the line is empty")
-        for asker in askers[0..<NativeThreadImages.maxInFlight] { _ = await asker.value }
-        #expect(host.asked.count == NativeThreadImages.maxInFlight, "a cancelled queued fetch never asked the host: \(host.asked.count)")
-        #expect(images.inFlight == 0)
+        // Executor scheduling need not match creation order: only recorded host calls identify
+        // the active IDs. Everything else has registered in the queue above.
+        let activeIDs = Set(host.asked.map(\.id))
+        let queuedIDs = Set(ids).subtracting(activeIDs)
+        try #require(activeIDs.count == NativeThreadImages.maxInFlight && queuedIDs.count == 4)
+        for id in queuedIDs { askers[id]!.cancel() }
+        for id in queuedIDs { #expect(await gate.result(of: askers[id]!) == .cancelled) }
+        // The gate is still closed: completing the awaits above proves responsiveness without
+        // depending on how much wall time a parallel Release run gave this test.
+        #expect(host.active == NativeThreadImages.maxInFlight)
+        try await Self.registered("cancelled loaders have left the admission queue") { images.queued == 0 }
+        #expect(images.inFlight == activeIDs.count)
+        gate.releaseAll()
+        for id in activeIDs { #expect(await gate.result(of: askers[id]!) == .image(small)) }
+        #expect(Set(host.asked.map(\.id)) == activeIDs && host.asked.count == activeIDs.count,
+                "no cancelled queued ID reached the host, even after active fetches released their slots")
+        #expect(images.inFlight == 0 && images.queued == 0)
     }
 }

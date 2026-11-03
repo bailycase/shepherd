@@ -14,6 +14,7 @@ extension EnvironmentValues {
     @Entry var threadStartingDelay: Duration = AppLayout.startingIndicatorDelay
     /// A design's chat: its comments' cards, which messages carrying a comment draw.
     @Entry var designCommentCards: DesignCommentCards? = nil
+    @Entry var threadReaderPins: ThreadReaderPins? = nil
 }
 
 /// An agent's thread (SHThread board): an 820pt column of turns in a scroll view that follows
@@ -86,6 +87,7 @@ struct ThreadView: View {
     /// Whether the scroll view keeps the tail itself (`ThreadTailAnchor.isNative`); a test drives either.
     var nativeTail = ThreadTailAnchor.isNative
     @Environment(\.presentImages) private var presentImages
+    @Environment(\.threadReaderPins) private var readerPins
     /// This view's claim on the store's poll loop: one agent's store can be shown by two views at once.
     @State private var storeOwner = UUID()
     @State private var fallbackInput = ThreadInput()
@@ -108,6 +110,9 @@ struct ThreadView: View {
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
     @State private var rowIndex = ThreadRowIndex()
+    @State private var shownSignpost = ThreadShownSignpost()
+    /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
+    @State private var loopRun = 0
     @Environment(\.designCommentCards) private var commentCards
     @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
 
@@ -121,9 +126,10 @@ struct ThreadView: View {
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
         let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
-        // The IDs and the live row, derived once per thread change rather than per render (every streamed chunk).
-        let _ = rowIndex.update(rows, version: store.threadVersion)
-        let liveRow = rowIndex.liveRow
+        // The IDs, rebuilt only when the store's row structure changes, never per streamed chunk.
+        let _ = rowIndex.update(rows, revision: store.rowStructureRevision, filter: origins.runtime)
+        // Set with the rows: a turn that finishes with unchanged IDs ends its waiting line.
+        let liveRowID = store.liveRowID
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
         // is written. Between tools the thread ends in "Thinking…", the live turn's last part (or
         // on its own before the reply has a row). A question waits in the composer instead, and a
@@ -133,6 +139,7 @@ struct ThreadView: View {
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
         let settled = active && !catchingUp
+        let _ = shownSignpost.render(active: active, settled: settled)
         let arrived = arrivals.update(rowIndex.ids, session: store.sessionKey, active: active, catchingUp: catchingUp)
         ScrollViewReader { proxy in
             let _ = keepTail(proxy)
@@ -171,7 +178,9 @@ struct ThreadView: View {
                                 .equatable()
                                 .environment(\.shUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
                         }
-                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
+                        // Sends captured but not yet accepted: sending, refused (restore or discard) or of unknown outcome.
+                        if projectSend == nil { ThreadSubmissions(store: store, input: input) }
+                        if thinking, liveRowID == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -348,12 +357,15 @@ struct ThreadView: View {
             historyAnchor.cancel()
             tailGuard.stop()
             store.stop(owner: storeOwner)
+            // Another view still showing the thread runs it again if this one's loop was running.
+            readerPins?.stopped(store, owner: storeOwner)
+            readerPins?.unpin(store, owner: storeOwner)
             if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
             wheelMonitor = nil
         }
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
-        .task(id: active) {
+        .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
             guard active else {
                 if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
@@ -363,10 +375,19 @@ struct ThreadView: View {
                 historyAnchor.animating = false
                 tailGuard.stop()
                 store.suspend(owner: storeOwner)
+                readerPins?.stopped(store, owner: storeOwner)
+                // Hidden: left scrolled up into the history, it stays loaded while this view keeps the place;
+                // following the tail, it lets it go (it reloads to the tail when shown).
+                if follower.sticky { readerPins?.unpin(store, owner: storeOwner) } else { readerPins?.pin(store, owner: storeOwner) }
                 return
             }
+            // On screen: this view needs the history whichever view's loop polls the store.
+            readerPins?.pin(store, owner: storeOwner)
             installWheelMonitor()
+            readerPins?.started(store, owner: storeOwner) { [$loopRun] in $loopRun.wrappedValue &+= 1 }
             await store.run(request: request, preview: preview, owner: storeOwner)
+            // Returned while this view still shows the thread: stopped, detached or taken over, never handed back.
+            if !Task.isCancelled { readerPins?.loopEnded(store, owner: storeOwner) }
         }
     }
 
@@ -630,31 +651,42 @@ final class CatchUpGate {
     }
 }
 
-/// A thread's row IDs and its live row, derived once per change of the rows (their version, count
-/// and ends), never per render: the thread renders on every streamed chunk.
+/// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
+private struct LoopKey: Equatable {
+    let active: Bool
+    let run: Int
+}
+
+/// A thread's row IDs, structural: rebuilt only when the store's row structure revision
+/// (`NativeThreadStore.rowStructureRevision`) moves or the view's filter (a Project's runtime
+/// operations, which hide wake-up turns) changes, never when only a row's text or live state
+/// does (every streamed chunk). Content-only updates compare the key (the filter's operations,
+/// not the rows), no walk over the rows.
 @MainActor
 final class ThreadRowIndex {
     private(set) var ids: [String] = []
     private(set) var set: Set<String> = []
-    private(set) var liveRow: NativeThreadRow?
-    /// Bumped when the index was rebuilt, so a reader can skip an equal set.
+    /// Bumped when the IDs were rebuilt, so a reader can skip an equal set.
     private(set) var stamp = 0
     private var key: Key?
 
     private struct Key: Equatable {
-        var version: Int
-        var count: Int
-        var first: String?
-        var last: String?
+        let revision: Int
+        let count: Int
+        let first: String?
+        let last: String?
+        let filter: Set<UUID>
     }
 
-    func update(_ rows: [NativeThreadRow], version: Int) {
-        let key = Key(version: version, count: rows.count, first: rows.first?.id, last: rows.last?.id)
+    /// `filter` is what decides which of the store's rows `rows` keeps: a new one can swap interior rows at one revision.
+    func update(_ rows: [NativeThreadRow], revision: Int, filter: Set<UUID> = []) {
+        let key = Key(revision: revision, count: rows.count, first: rows.first?.id, last: rows.last?.id, filter: filter)
         guard key != self.key else { return }
         self.key = key
-        ids = rows.map(\.id)
+        let ids = rows.map(\.id)
+        guard ids != self.ids else { return }
+        self.ids = ids
         set = Set(ids)
-        liveRow = rows.last(where: \.live)
         stamp &+= 1
     }
 }

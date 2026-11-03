@@ -235,7 +235,11 @@ final class ShepherdViewModel {
     /// Native diff-review panes keyed by their review leaf. Ephemeral: review
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
-    var reviewSessions: [PaneID: ReviewSession] = [:]
+    var reviewSessions: [PaneID: ReviewSession] = [:] {
+        didSet {
+            for (id, session) in oldValue where reviewSessions[id] !== session { session.cancelLoads() }
+        }
+    }
     /// Per-agent file tree models for the Files tab, keyed by agent ID. Created on first
     /// Files tab open; removed when the thread is gone.
     var fileTrees: [AgentID: FileTreeModel] = [:]
@@ -320,7 +324,11 @@ final class ShepherdViewModel {
             return (try GitDiff.load(cwd: cwd, reference: resolved), resolved)
         }.value
     }
-    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:]
+    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:] {
+        didSet {
+            for (id, session) in oldValue where remoteReviews[id] !== session { session.cancelLoads() }
+        }
+    }
     /// Where a local review reads its changes from; tests put a fixed engine here. Nil: this Mac's
     /// `server.changes`.
     @ObservationIgnored var changesEngineOverride: ((AgentID, String) -> ChangesEngine)?
@@ -375,6 +383,11 @@ final class ShepherdViewModel {
     @ObservationIgnored private(set) var restoredAt = Date()
     /// The workspace has been adopted at least once.
     @ObservationIgnored private(set) var didAdopt = false
+    /// What the membership prunes last ran for (`adopt`).
+    @ObservationIgnored private var membershipFingerprint: Int?
+    /// Adoptions of a changed snapshot, and the membership prunes they ran (tests).
+    @ObservationIgnored private(set) var changedAdoptions = 0
+    @ObservationIgnored private(set) var membershipPrunes = 0
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
     @ObservationIgnored var mcpOpenServer: String?
     /// This Mac's daily look for newer skills (`startSkillChecks`).
@@ -602,6 +615,8 @@ final class ShepherdViewModel {
     /// Native thread state per local agent and per remote agent.
     let threadStores = NativeThreadStores<AgentID>()
     let remoteThreadStores = NativeThreadStores<RemoteAgentRef>()
+    /// Hidden readers scrolled into a thread's history, shared by both store sets (`NativeThreadStores`).
+    let threadReaderPins = ThreadReaderPins()
     /// Keyboard commands for the thread on screen.
     let threadCommands = ThreadCommandCenter()
     /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).
@@ -701,6 +716,11 @@ final class ShepherdViewModel {
         let hosts = remoteHosts ?? RemoteHostStore()
         self.remoteHosts = hosts
         threadStores.hostName = { _ in localHostName }
+        threadStores.pins = threadReaderPins
+        remoteThreadStores.pins = threadReaderPins
+        // Remote threads on screen (in any window) ask their host for revision hints; a hint wakes only a store already polling.
+        remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
+        hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
         instructions.piHome = server.pi.home
@@ -739,6 +759,9 @@ final class ShepherdViewModel {
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
         }
+        // The selected thread keeps its history whatever its recency (`NativeThreadStores`).
+        threadStores.protected = { [weak self] in self?.selectedAgentID.map { [$0] } ?? [] }
+        remoteThreadStores.protected = { [weak self] in self?.selectedRemoteAgent.map { [$0] } ?? [] }
         // A sign-in or sign-out: Settings reads both sides again.
         self.piAuth.onChanged = { [weak yourPi = self.yourPi] in
             Task { await yourPi?.refresh() }
@@ -870,8 +893,8 @@ final class ShepherdViewModel {
             self.notifications.agentNotify(agent, title: title, body: body)
         }
         if let checkoutReader {
-            let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, cwd, checkout in
-                await server.setAgentCheckout(id, checkout, directory: cwd)
+            let monitor = CheckoutMonitor(read: checkoutReader) { [server] ids, cwd, checkout in
+                await server.setAgentCheckouts(ids, checkout, directory: cwd)
             }
             monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
             checkouts = monitor
@@ -1367,10 +1390,16 @@ final class ShepherdViewModel {
         reconcileThreadStores()
         browsers.prune(state: state)
         notifyLocalQuestions()
-        checkouts?.sync(agents: state.agents.map(\.id))
-        pruneReviewSessions()
-        pruneDesigns()
-        pruneFileTrees()
+        if let checkouts {
+            let layouts = Dictionary(state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
+            let directories = Dictionary(state.agents.compactMap { agent -> (AgentID, String)? in
+                let layout = layouts[agent.tabID]
+                guard let cwd = layout?.leaves.first(where: { $0.agentID == agent.id })?.cwd
+                    ?? agent.worktreePath ?? layout?.firstLeaf.cwd else { return nil }
+                return (agent.id, cwd)
+            }, uniquingKeysWith: { first, _ in first })
+            checkouts.sync(directories: directories, order: state.agents.map(\.id))
+        }
         // A deleted agent waits on no sign-in.
         if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {
             notSignedIn = notSignedIn.filter { entry in state.agents.contains { $0.id == entry.key } }
@@ -1383,7 +1412,8 @@ final class ShepherdViewModel {
             if waitingForImport != all { waitingForImport = all }
         }
         didAdopt = true
-        pruneSidebarPins()
+        changedAdoptions += 1
+        pruneMembership()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run), once the first
         // launch's welcome step is over.
@@ -1419,14 +1449,33 @@ final class ShepherdViewModel {
             sessions.restoreAgents(localRecentsOrder + state.agents.map(\.id),
                                          first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
-        focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
-
         if let focused = focusedPaneID, activeTab?.layout.contains(focused) == true {
             // Focused pane survived the new snapshot; keep it.
         } else {
             syncFocus()
         }
         planMounting()
+    }
+
+    /// What only follows which agents, tabs, spaces and designs exist (reviews, designs' screens and reference chips, file
+    /// trees, pins, focus memory) runs when those change, never for a snapshot that changed only statuses or checkouts (a
+    /// fleet's reports, one adoption each). Every snapshot is still adopted in order; what depends on each transition
+    /// (completions, questions, selection, focus, restoration) runs per snapshot in `adopt`.
+    private func pruneMembership() {
+        var key = Hasher()
+        for agent in state.agents { key.combine(agent.id); key.combine(agent.tabID); key.combine(agent.spaceID) }
+        for tab in state.tabs { key.combine(tab) }
+        for space in state.spaces { key.combine(space.id); key.combine(space.hidden); key.combine(space.path) }
+        for design in state.designs { key.combine(design.id); key.combine(design.lastActiveAt); key.combine(design.boardCount) }
+        let fingerprint = key.finalize()
+        guard fingerprint != membershipFingerprint else { return }
+        membershipFingerprint = fingerprint
+        membershipPrunes += 1
+        pruneReviewSessions()
+        pruneDesigns()
+        pruneFileTrees()
+        pruneSidebarPins()
+        focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus, failure: TurnFailure?) {

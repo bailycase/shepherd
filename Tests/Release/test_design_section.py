@@ -301,10 +301,15 @@ class RealDesignDocsTests(unittest.TestCase):
             raise unittest.SkipTest("docs/design does not exist")
         cls.docs = design_section.Docs(cls.dir)
 
-    def test_every_board_in_the_index_resolves_to_a_spec(self):
+    def test_every_active_board_in_the_index_resolves_to_a_spec(self):
         self.assertGreater(len(self.docs.boards), 150)
         unresolved = []
         for board in self.docs.boards:
+            if board.status.startswith("Removed"):
+                # Removed surfaces remain in the index for historical traceability.
+                self.assertIn("departures.md", board.status, board.names[0])
+                self.assertIn("departures.md", self.docs.lines)
+                continue
             found = []
             for entry in docsplit.split_top(board.specified, ";"):
                 found += docsplit.resolve_entry(entry, self.docs.sections)

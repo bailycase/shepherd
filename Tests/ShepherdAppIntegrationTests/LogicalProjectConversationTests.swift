@@ -102,7 +102,10 @@ struct LogicalProjectConversationTests {
     }
 
     @Test func aQueuedMessageStaysInUpNextThroughAPausedRelaunchAndASlowStartAndOnlyTheHandoffMovesIt() async {
-        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.upNextUntilHandoff() } }
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent, \.standardErrorContent]) { await completingScenario { try await Self.upNextUntilHandoff() } }
+        if let result, !result.standardErrorContent.isEmpty {
+            print(String(decoding: result.standardErrorContent, as: UTF8.self))
+        }
         expectScenarioCompleted(result)
     }
 
@@ -1230,10 +1233,21 @@ private static func chipsAndLinks() async throws {
         let app = try AppHarness(directory: directory)
         defer { app.stop() }
         app.settings.projectsEnabled = true
-        // The owner's launch is the only start path here: with agents restored at launch, the app's own restored start can still be in
-        // flight when Resume asks the owner to launch the coordinator, and that launch is refused (`paneUnavailable`), which pauses the
-        // Project again. That race is the owner lifecycle's, reported separately; this test is about what the conversation draws.
         let vm = try await app.start()
+        // Hold the runtime launch across a native snapshot: the reader must not race Resume with its own pi launch.
+        let launch = try #require(app.server.onProjectRuntimeLaunch)
+        let heldLaunch = Locked<(ProjectRuntimeLaunch, @Sendable (Result<AgentID, Error>) -> Void)?>(nil)
+        let launchCount = Locked(0)
+        app.server.onProjectRuntimeLaunch = { request, done in
+            launchCount.withValue { $0 += 1 }
+            heldLaunch.withValue { $0 = (request, done) }
+        }
+        let demand = app.server.onNativeThreadDemand
+        let demands = Locked<[AgentID]>([])
+        app.server.onNativeThreadDemand = { id in
+            demands.withValue { $0.append(id) }
+            demand?(id)
+        }
         func message(_ id: UUID) -> ProjectMessage? { app.server.state.projects.first?.messages.first { $0.id == id } }
         // The relaunch never claims an in-flight delivery happened, and never resends it: it is unknown.
         #expect(message(lost.id)?.phase == .unknown, "in flight at quit is unknown after a relaunch: \(String(describing: message(lost.id)?.phase))")
@@ -1272,14 +1286,25 @@ private static func chipsAndLinks() async throws {
         // The runtime's resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
         let pausedProject = try #require(app.server.state.projects.first)
         _ = try await vm.projectCoordinator.perform(projectID: pausedProject.id, expectedRevision: pausedProject.revision, request: .resume)
-        let watchedUntil = ContinuousClock.now + .milliseconds(900)
+        try await eventuallyOnMain("Resume owns the held coordinator launch") { heldLaunch.current != nil }
+        do {
+            _ = try await app.server.projectConversation(project.id, request: .snapshot())
+            Issue.record("an unlaunched coordinator must report starting")
+        } catch let error as RemoteHostClientError {
+            #expect(error.rejectionCode == NativeThreadCode.starting)
+        }
+        #expect(demands.current.isEmpty, "reading the starting coordinator must not launch a second pi")
+        #expect(await app.server.listSessions().isEmpty)
+        let (request, done) = try #require(heldLaunch.current)
+        launch(request, done)
+        func piLaunches() -> [StubPi.Launch] { StubPi.launches().filter { $0.argv.contains(fixture.agent.effectivePiSessionID) } }
         var moved = false
-        try await eventuallyOnMain("the start is watched") {
+        try await eventuallyOnMain("the coordinator reaches its gated pi startup") {
             window.layout()
             if message(waiting.id)?.phase != .queued || labelled(row) != 1 || echoes() != 0 || labelled(waiting.text) != 0 { moved = true }
-            return ContinuousClock.now >= watchedUntil
+            return !piLaunches().isEmpty
         }
-        #expect(!moved, "while pi starts, the message stays queued and in Up next only: \(String(describing: message(waiting.id)?.phase))")
+        #expect(!moved, "while pi starts, the message stays queued and in Up next only")
 
         // pi serves: the owner hands the message over. Once the transcript holds the delivery's pending row it is there alone, still
         // `.delivering`: pi has neither accepted nor started it.
@@ -1304,6 +1329,10 @@ private static func chipsAndLinks() async throws {
         // Nothing undelivered was resent on its own.
         #expect(message(refused.id)?.phase == .failed && message(lost.id)?.phase == .unknown)
         #expect(app.server.state.projects.first?.messages.count == 4, "no new message was made for a retry")
+        #expect(store.rows.flatMap(\.turn.messages).count { $0.operationID == delivery() } == 1, "one native handoff of the queued operation")
+        #expect(launchCount.current == 1 && piLaunches().count == 1, "Resume is the coordinator's only launch owner")
+        #expect(await app.server.listSessions().count == 1)
+        #expect(demands.current.isEmpty)
     }
 
     /// F9: before the first message there is no coordinator, so its native snapshot (empty `supportedActions`) says nothing. The
@@ -2073,8 +2102,10 @@ private static func chipsAndLinks() async throws {
         func controls(_ label: String) -> [Control] {
             window.controls().filter { $0.role == ControlRole.button && $0.label == label && onTarget($0.frame) }
         }
+        // The native radio dock labels its final row differently from the Project's question card.
+        let fieldLabel = inPane ? "Something else" : "Say anything"
         func field() -> AccessibilityNode? {
-            window.elements().first { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
+            window.elements().first { $0.label == fieldLabel && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
         }
         func type(_ value: String) throws {
             let node = try #require(field()), setter = NSSelectorFromString("setAccessibilityValue:")
@@ -2166,7 +2197,7 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the task leaves waiting") { r.app.server.state.projects.first?.tasks.first?.phase != .waiting }
         try await eventuallyOnMain("the question leaves both surfaces") {
             window.layout()
-            return !window.elements().contains { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
+            return !window.elements().contains { ["Say anything", "Something else"].contains($0.label ?? "") && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
                 && !window.controls().contains { $0.label == "Use Postgres" }
         }
         #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")

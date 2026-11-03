@@ -140,8 +140,8 @@ export async function startThread(options = {}) {
   const baseUrl = `http://127.0.0.1:${fake.port}${api === "anthropic-messages" ? "" : "/v1"}`;
   fs.writeFileSync(path.join(config, "models.json"), JSON.stringify({ providers: { openai: { baseUrl, apiKey: "fixture-not-secret", api, models: [model] } } }));
 
-  // The app's extension socket: connections are accepted and, unless `onFrame` answers, never answered. `frames` is every
-  // frame the extensions sent, in order.
+  // The app's extension socket: acknowledge empty native queue boundaries like SessionServer; other
+  // requests are answered by `onFrame`. `frames` is every frame the extensions sent, in order.
   const socketPath = path.join(dir, "s");
   const sockets = new Set();
   const frames = [];
@@ -154,7 +154,9 @@ export async function startThread(options = {}) {
         try {
           const frame = JSON.parse(buffered.slice(0, nl));
           frames.push(frame);
-          options.onFrame?.(frame, (reply) => socket.write(JSON.stringify(reply) + "\n"));
+          const reply = (value) => socket.write(JSON.stringify(value) + "\n");
+          if (frame.type === "nativeQueueBoundary") reply({ type: "ok", id: frame.id });
+          else options.onFrame?.(frame, reply);
         } catch {}
       }
     });

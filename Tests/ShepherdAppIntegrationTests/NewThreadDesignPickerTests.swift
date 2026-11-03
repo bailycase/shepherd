@@ -6,6 +6,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import ShepherdUI
 import Testing
+import SwiftUI
 @testable import ShepherdApp
 
 /// The New thread page's @ picker and its chip, in a real window with the real model behind them,
@@ -30,6 +31,12 @@ struct NewThreadDesignPickerTests {
     @Test func theDesignsAreSaidToBeLoadingThenListedOnTheNewThreadPage() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.loadingThenListed() }
+        }
+    }
+
+    @Test func pickerRowsAndPageTeardownReleaseOnlyTheirOwnPictureDemand() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.pictureDemandLifetime() }
         }
     }
 
@@ -132,6 +139,71 @@ struct NewThreadDesignPickerTests {
         draft.prompt = ""
         try await eventuallyOnMain("Send to be off") { window.controls().first { $0.label == "Send" }?.isEnabled == false }
         #expect(draft.blocker(w.vm) == "Describe the task first.")
+    }
+
+    @MainActor
+    static func pictureDemandLifetime() async throws {
+        let w = try await NewThreadDesignTests.workspace()
+        defer { w.app.stop() }
+        w.vm.openNewThread()
+        var catalog = await w.app.server.designMentionCatalog()
+        let design = try #require(catalog.designs.first)
+        // Enough real picker rows to scroll out of the lazy viewport; the host's design is first.
+        for i in 0..<40 {
+            let reference = try #require(DesignReference(designID: DesignID(rawValue: "extra-\(i)"), board: nil))
+            catalog.designs.append(DesignMentionItem(kind: .design, reference: reference, title: "Extra \(i)", breadcrumb: []))
+        }
+        let listing = catalog
+        var active: [String: String] = [:]
+        let io = DesignReferenceChips.IO(catalog: { listing }, rowVisibility: { item, shown, consumer in
+            active[consumer] = shown ? item.id : nil
+        })
+        let chips = DesignReferenceChips(agentID: AgentID(), io: io)
+        let peer = DesignReferenceChips(agentID: AgentID(), io: io)
+        let wholeID = MentionPickerContent.wholeID(design)
+        peer.rowAppeared(design, rowID: wholeID)
+        let peerOwner = try #require(active.keys.first)
+        defer { chips.releasePictureDemand(); peer.releasePictureDemand() }
+        let draft = w.vm.newThread
+        draft.referenceChips = chips
+        draft.prompt = "@"
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 800), dark: true, NewThreadPage(vm: w.vm, chrome: PageHeaderChrome()))
+        defer { window.close() }
+        try await eventuallyOnMain("the page's first picker rows to request pictures") {
+            window.layout()
+            return active.values.filter { $0 == design.id }.count == 2
+        }
+        func scrollViews(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+        }
+        let scroll = try #require(scrollViews(window.host).first { ($0.documentView?.frame.height ?? 0) > $0.contentSize.height * 2 })
+        scroll.contentView.scroll(to: CGPoint(x: 0, y: max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentSize.height)))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        let lastID = try #require(catalog.designs.last?.id)
+        try await eventuallyOnMain("scrolling to release the first row without releasing its peer") {
+            window.layout()
+            return active.values.contains(lastID) && active.values.filter { $0 == design.id }.count == 1
+        }
+        draft.prompt = "@" + design.title + MentionScope.separator
+        try await eventuallyOnMain("the actual Whole design row to own its picture") {
+            window.layout()
+            return active.keys.filter { $0.hasSuffix("/" + wholeID) }.count == 2
+        }
+        draft.prompt = ""
+        try await eventuallyOnMain("closing the picker to release its rows") {
+            window.layout()
+            return Set(active.keys) == [peerOwner]
+        }
+        draft.prompt = "@" + design.title + MentionScope.separator
+        try await eventuallyOnMain("the reopened picker to request its whole row") {
+            window.layout()
+            return active.keys.filter { $0.hasSuffix("/" + wholeID) }.count == 2
+        }
+        window.show(EmptyView())
+        try await eventuallyOnMain("page teardown to release its owner, never the peer") { Set(active.keys) == [peerOwner] }
+        chips.setPictureDemandActive(false)
+        chips.setPictureDemandActive(true)
+        #expect(Set(active.keys) == [peerOwner], "No removed row can be restored after page teardown")
     }
 
     @MainActor

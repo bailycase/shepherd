@@ -173,6 +173,7 @@ struct Composer: View {
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
+            && input.preparingImages == 0
     }
     private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? SHLeadMetrics.turnGap : AppLayout.composerFade }
     /// A Project conversation whose coordinator's pi is not serving (none yet, held off, paused, starting): the chip names and sets the
@@ -609,8 +610,9 @@ struct Composer: View {
                                 retry: { references?.startCatalogRead() },
                                 appear: { id in
                                     // An element's row on screen: its picture is cut now, not before.
-                                    if let item = mentions.content.items[id] { references?.rowAppeared(item) }
-                                })
+                                    if let item = mentions.content.items[id] { references?.rowAppeared(item, rowID: id) }
+                                }, disappear: { references?.rowDisappeared($0) })
+                    .onChange(of: active, initial: true) { _, active in references?.setPictureDemandActive(active) }
                     .shTransition(.overlay, anchor: .bottomLeading)
             }
             // The picker and the thinking menu compare what they draw, so a composer redraw for
@@ -1036,13 +1038,8 @@ struct Composer: View {
             }
             return
         }
-        let images = input.attachments.images
-        let submitted = input.attachments.ids
-        Task {
-            if await store.send(images: images, delivery: delivery) {
-                for id in submitted { input.attachments.remove(id) }
-            }
-        }
+        // The images leave the composer when the store captures them with the words (`ThreadSubmissions`), not at acceptance.
+        Task { await ComposerImageCapture.send(store: store, input: input, delivery: delivery) }
     }
 
     /// ⌘↩ (or the rebound chord): steers the focused queued message now, or sends the draft that way.

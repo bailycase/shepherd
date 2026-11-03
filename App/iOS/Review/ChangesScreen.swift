@@ -86,6 +86,7 @@ struct ChangesScreen: View {
             ChangesBasePicker(store: store) { store.pickingBase = false }
         }
         .task(id: host?.session) { await store.loadIfNeeded(hosts: hosts) }
+        .reviewViewer(ref)
         .onChange(of: store.pullRequest) { _, _ in store.refresh() }
     }
 

@@ -66,6 +66,7 @@ extension ShepherdViewModel {
             rowPicture: { [weak self] in self?.mentionPicture($0) },
             wantCrop: { [weak self] in self?.wantMentionCrop($0, board: $1, tids: $2) },
             wantPictures: { [weak self] in self?.wantMentionPictures($0) },
+            rowVisibility: { [weak self] in self?.mentionPictureVisibility($0, visible: $1, consumer: $2) },
             open: { [weak self] in self?.openDesignReference($0) },
             attach: { [weak self] reference in
                 guard let self else { return }
@@ -111,9 +112,9 @@ extension ShepherdViewModel {
         if reference.page != nil { return nil }
         if let board = reference.board {
             if let image = designRendering.host(for: reference.designID)?.image(board) { return image }
-            if let image = designRendering.boardPictures.image(reference.designID, board) { return image }
+            if let image = designRendering.boardPictures.image(reference.designID, board, requestIfMissing: true) { return image }
         }
-        return designRendering.thumbnails.image(reference.designID)
+        return designRendering.thumbnails.image(reference.designID, requestIfMissing: true)
     }
 
     /// A picker row's picture: a design's first board, a board's own, an element cut from its
@@ -145,6 +146,22 @@ extension ShepherdViewModel {
                                                      revision: revision, tids: tids))
     }
 
+    func mentionPictureVisibility(_ item: DesignMentionItem, visible: Bool, consumer: String) {
+        guard item.kind != .element else { return }
+        let id = item.reference.designID, rendering = designRendering
+        if let path = item.reference.board {
+            rendering.boardPictures.demand(id, path, visible: visible, consumer: consumer)
+        } else {
+            rendering.thumbnails.demand(id, visible: visible, consumer: consumer)
+        }
+        guard visible else { return }
+        Task {
+            guard let snapshot = try? await server.designSnapshot(id), design(id) != nil else { return }
+            if item.reference.board != nil { rendering.boardPictures.request(id, snapshot: snapshot) }
+            else { rendering.thumbnails.update(id, snapshot: snapshot) }
+        }
+    }
+
     /// The picker opened on `scope`: its designs' first boards, or a design's boards, are drawn
     /// if they aren't yet.
     func wantMentionPictures(_ scope: MentionScope) {
@@ -163,6 +180,7 @@ extension ShepherdViewModel {
         Task {
             guard let snapshot = try? await server.designSnapshot(id) else { return }
             rendering.boardPictures.request(id, snapshot: snapshot)
+            rendering.thumbnails.update(id, snapshot: snapshot)
         }
     }
 

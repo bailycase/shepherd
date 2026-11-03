@@ -10,6 +10,30 @@ import ShepherdTestSupport
 /// paste, exits, and output framing.
 @Suite("Remote sessions", .integrationTimeLimit)
 struct RemoteSessionTests {
+    @Test func aNonreadingSocketOverrunsExplicitlyAndReconnectReplaysTheFinalScreen() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let info = try await r.host.shell("stty -echo -opost; printf READY; IFS= read -r _; awk 'BEGIN{for(i=0;i<120000;i++)print \"01234567890123456789012345678901234567890123456789\"}'; printf FINAL; IFS= read -r _")
+        try await r.host.waitForScreen(info.id, toContain: "READY")
+        let slow = try RawRemote(port: r.port, receiveBufferBytes: 4096)
+        try await slow.hello(token: r.token)
+        try slow.send(.attach(id: 2, sessionID: info.id, cols: 80, rows: 24, viewportGeneration: 0))
+        guard case .attached = try await slow.next() else { Issue.record("expected attach"); return }
+        r.server.write(sessionID: info.id, data: Data("go\n".utf8))
+        // Intentionally do not read: socket queue overflow is a connection failure, not silent
+        // output dropping or unlimited host buffering. The authoritative screen still advances.
+        try await eventually("host reaches the final screen", timeout: .seconds(60)) {
+            await r.host.screen(info.id).contains("FINAL")
+        }
+        #expect(try await slow.disconnected())
+        let fresh = try await r.typed()
+        defer { fresh.disconnect() }
+        let output = Locked(Data())
+        fresh.onOutput = { _, data in output.withValue { $0.append(data) } }
+        _ = try await fresh.attach(sessionID: info.id, cols: 80, rows: 24)
+        try await eventually("authoritative replay after overrun") { String(decoding: output.current, as: UTF8.self).contains("FINAL") }
+    }
+
     @Test func attachReplaysTheScreenThenStreamsLiveOutput() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

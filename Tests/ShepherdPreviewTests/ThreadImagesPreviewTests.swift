@@ -47,7 +47,7 @@ struct ThreadImagesPreviewTests {
             let image = Self.attachment("clipboard.png", bytes: 0)
             clipboard.setData(image.image.data, forType: .png)
             let urls = await AppImageDrop.resolve(AppImageDrop.providers(from: clipboard))
-            input.attachments.add(urls: urls)
+            input.attachments.add(files: await ImageFile.read(urls))
             #expect(input.attachments.items.count == 1)
         }
         fixture.store.draft = state == "long" ? String(repeating: "Please compare this screenshot with the current checkout and explain the overlapping labels. ", count: 18)

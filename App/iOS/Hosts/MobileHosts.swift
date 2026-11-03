@@ -77,6 +77,17 @@ final class MobileHost: Identifiable {
     }
 }
 
+// Lives beside the host (not with the missions' presentation) so the portable checks that
+// compile this file without ShepherdUI have it too.
+extension MobileHost {
+    /// The host offers missions now (`missions.v1`, its experiment on).
+    var servesMissions: Bool { missions.available }
+
+    /// The host's state as thread lists read it: without the agents its missions own (their threads
+    /// are the mission's). Home, the sidebar, Search, New thread and the widgets all list from this.
+    var threadState: ShepherdState { state.withoutAgents(missions.agentIDs) }
+}
+
 /// Every host the phone knows, each with its own `RemoteHostClient`, connected while the app is
 /// in the foreground and reconnecting with backoff (1, 2, 4… up to 30 s) when one drops or cannot
 /// be reached. A host that refuses the token or speaks another protocol waits for Edit or Retry.
@@ -115,6 +126,9 @@ final class MobileHosts {
     @ObservationIgnored var onHostDisconnected: ((MobileHost) -> Void)?
     /// The app came to the foreground or left it (`setForeground`).
     @ObservationIgnored var onForegroundChanged: ((Bool) -> Void)?
+    /// A thread a host watches for this device moved (`native.revisions.v1`): a hint to read
+    /// again, never content. One app-level owner (`ThreadRevisionHints`) sets it.
+    @ObservationIgnored var onNativeThreadChanged: ((MobileHost, AgentID) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
@@ -312,6 +326,12 @@ final class MobileHosts {
                 guard let host, host.attempt == attempt, host.phase == .connected, host.capabilities != capabilities else { return }
                 host.capabilities = capabilities
                 host.connectMissions()
+            }
+        }
+        client.onNativeThreadChanged = { [weak self, weak host] agentID in
+            MainActor.assumeIsolated {
+                guard let self, let host, host.attempt == attempt else { return }
+                self.onNativeThreadChanged?(host, agentID)
             }
         }
         client.onDesignChanged = { [weak host] design, revision, comments in

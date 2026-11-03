@@ -1602,7 +1602,16 @@ for raw in sys.stdin.buffer:
             steering[:] = raced
             follow_up.clear()
         queue_update()
-        respond(cmd, t, data=cleared)
+        if os.path.exists("clear-reply-gate"):
+            # Hold only this reply after clearing, leaving Stop/session controls responsive.
+            os.remove("clear-reply-gate")
+            open("clear-reply-held", "w").close()
+            def reply_cleared(request=cmd, data=cleared):
+                wait_for_file("clear-reply-go")
+                respond(request, "clear_queue", data=data)
+            threading.Thread(target=reply_cleared, daemon=True).start()
+        else:
+            respond(cmd, t, data=cleared)
     elif t == "extension_ui_response" and QUESTION["id"] is not None and cmd.get("id") == QUESTION["id"]:
         QUESTION["response"] = cmd
         QUESTION["answered"].set()

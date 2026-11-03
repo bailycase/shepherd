@@ -26,6 +26,8 @@ struct ThreadComposer: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @Environment(MobileNavigator.self) private var navigator
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
     /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
     @FocusState private var focused: Bool
@@ -46,6 +48,31 @@ struct ThreadComposer: View {
                 banner(notice)
             }
             if state.pendingImports > 0 { banner("Adding images…") }
+            if threads.setAside.contains(ref) {
+                banner("Not every unsent message saved on this device is shown here: the ones below fit; the full set is kept aside on this device, unchanged.", failed: true)
+            }
+            // Sends an earlier launch kept: their text only.
+            ForEach(threads.recovered[ref] ?? []) { record in
+                SubmissionBanner(typed: record.typed, refused: record.state == .failed, images: record.images, imagesKept: false,
+                                 canRestore: state.canRestore(into: store), canDiscard: true) {
+                    guard state.canRestore(into: store) else { return }
+                    threads.restoreRecovered(record.id, for: ref)
+                } discard: {
+                    threads.discardRecovered(record.id, for: ref)
+                }
+            }
+            ForEach(store.submissions.filter { $0.state != .sending }) { submission in
+                SubmissionBanner(typed: submission.typed, refused: submission.state == .failed, images: submission.images.count,
+                                 imagesKept: true, canRestore: state.canRestore(into: store),
+                                 canDiscard: store.canDiscardSubmission(submission.id)) {
+                    guard state.canRestore(into: store), let restored = store.restoreSubmission(submission.id) else { return }
+                    Task { await state.restore(restored.images) }
+                    state.saveDraft(store)
+                } discard: {
+                    guard store.discardSubmission(submission.id) else { return }
+                    state.saveDraft(store)
+                }
+            }
             if store.running, store.hasDraft || !state.attachments.isEmpty {
                 banner("Hold Send to steer now · ⌘↩ Steer now")
             }
@@ -134,15 +161,15 @@ struct ThreadComposer: View {
         .onAppear { state.restoreDraft(in: store) }
         .task(id: store.draft) {
             do { try await Task.sleep(for: ComposerState.draftSaveDelay) } catch { return }
-            state.saveDraft(store.draft)
+            state.saveDraft(store)
         }
-        .onDisappear { state.saveDraft(store.draft) }
+        .onDisappear { state.saveDraft(store) }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { state.saveDraft(store.draft) }
+            if phase != .active { state.saveDraft(store) }
         }
         .onChange(of: store.sentCount) { _, _ in
             focused = false
-            state.saveDraft(store.draft)
+            state.saveDraft(store)
         }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
@@ -169,10 +196,10 @@ struct ThreadComposer: View {
         .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
             if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
         }
-        .sheet(isPresented: Binding(get: { presentation.showingContext }, set: { presentation.showingContext = $0 })) {
+        .sheet(isPresented: Binding(get: { presentation.showingContext }, set: { presentation.showingContext = $0 }).whenActive(detailActive)) {
             ContextDetailsSheet(store: store, live: live) { id in presentation.find(id) }
         }
-        .sheet(isPresented: Binding(get: { presentation.choosingModel }, set: { presentation.choosingModel = $0 })) {
+        .sheet(isPresented: Binding(get: { presentation.choosingModel }, set: { presentation.choosingModel = $0 }).whenActive(detailActive)) {
             ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
                 Task { await store.setModel(model) }
             }
@@ -353,12 +380,17 @@ struct ThreadComposer: View {
         guard state.pendingImports == 0 else { return Task {} }
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
+        let earlier = Set(store.submissions.map(\.id))
         return Task {
-            if await store.send(images: images, delivery: delivery) {
-                state.saveDraft(store.draft)
+            let accepted = await store.send(images: images, delivery: delivery)
+            // Taken, or kept by the store as a refused or unknown send (its images with it): the
+            // composer lets go of the images it sent. Images added meanwhile stay; a send the
+            // store never took keeps them where they were.
+            if accepted || store.submissions.contains(where: { !earlier.contains($0.id) }) {
                 for id in submitted { state.remove(id) }
                 if state.attachments.isEmpty { state.clearAttachments() }
             }
+            state.saveDraft(store)
         }
     }
 
@@ -472,6 +504,62 @@ struct ThreadComposer: View {
     private static func command(_ command: NativeCommand) -> SHTouchCommand {
         SHTouchCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: NativeSlashMatches.tag(command))
+    }
+}
+
+/// A send that did not go through (UX-02): refused by the host, with Restore back into an empty
+/// composer, or of unknown outcome, shown whole to check against the thread and never resent or
+/// restored by the app. Discard (after a confirmation: the text goes) only lets go of this
+/// device's copy; it asks the host nothing.
+private struct SubmissionBanner: View {
+    let typed: String
+    let refused: Bool
+    let images: Int
+    /// False for an earlier launch's send: only its text was kept.
+    let imagesKept: Bool
+    let canRestore: Bool
+    let canDiscard: Bool
+    let restore: () -> Void
+    let discard: () -> Void
+    @State private var confirming = false
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
+
+    var body: some View {
+        let extra = images == 0 ? "" : " · \(images) image\(images == 1 ? "" : "s")" + (imagesKept ? "" : " not kept")
+        Group {
+            if refused {
+                SHBanner(.failed, title: "Not sent" + extra,
+                         message: typed.isEmpty ? nil : typed + (canRestore ? "" : "\nClear the composer to restore it.")) {
+                    discardButton
+                    Button("Restore") { restore() }
+                        .buttonStyle(.sh(.secondary))
+                        .disabled(!canRestore)
+                }
+                .lineLimit(4)
+            } else {
+                SHBanner(.attention, title: "Delivery unknown" + extra,
+                         message: (typed.isEmpty ? "" : typed + "\n")
+                            + "It may have reached the agent. Check the thread before sending it again.") {
+                    discardButton
+                }
+                .lineLimit(8)
+            }
+        }
+        .confirmationDialog(refused ? "Discard this unsent message?" : "Discard this message's copy?",
+                            isPresented: $confirming.whenActive(detailActive), titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { discard() }
+        } message: {
+            Text(refused
+                 ? "Its text and images are removed from this device. Nothing is sent."
+                 : "This only removes the copy kept on this device. It doesn't cancel or recall the message if the agent already received it.")
+        }
+    }
+
+    private var discardButton: some View {
+        Button("Discard") { confirming = true }
+            .buttonStyle(.sh(.ghost))
+            .disabled(!canDiscard)
     }
 }
 

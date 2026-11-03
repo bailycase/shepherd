@@ -24,6 +24,8 @@ struct ThreadScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.threadTitleMaxWidth) private var titleMaxWidth
+    /// False while iPad keeps this thread mounted behind the selected one (`PadDetailRoot`).
+    @Environment(\.threadDetailActive) private var detailActive
     @State private var visible = false
     /// The thread's height: the composer may take a share of it (`composerMaxHeight`).
     @State private var height: CGFloat = 0
@@ -45,7 +47,7 @@ struct ThreadScreen: View {
         let agent = host?.agent(ref.agent)
         let store = threads.store(for: ref)
         let supported = host?.supports(RemoteProtocol.nativeThreadCapability) == true
-        let key = RunKey(ref: ref, session: supported && agent != nil ? host?.session : nil, active: visible && scenePhase == .active)
+        let key = RunKey(ref: ref, session: supported && agent != nil ? host?.session : nil, active: visible && detailActive && scenePhase == .active)
         let status = ThreadTitle.Status(store: store, agent: agent)
         // Where the agent works (the branch chip); the host is named once there is more than one.
         let branch = agent.flatMap { AgentBranchLabel(agent: $0, host: hosts.hosts.count > 1 ? host?.name : nil) }
@@ -112,48 +114,54 @@ struct ThreadScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(removing: inlineTitle ? .title : nil)
         .toolbar {
-            if sidebarHidden, !inlineTitle {
-                ToolbarItem(placement: .topBarLeading) { ThreadSidebarButton(inBar: true) }
-            }
-            if !inlineTitle {
-                ToolbarItem(placement: .principal) {
-                    // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
-                    title.frame(maxWidth: titleMaxWidth, alignment: .leading)
+            // A thread kept mounted behind the selected one adds nothing to the bar.
+            if detailActive {
+                if sidebarHidden, !inlineTitle {
+                    ToolbarItem(placement: .topBarLeading) { ThreadSidebarButton(inBar: true) }
                 }
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if agent != nil {
-                    if arranged {
-                        // What sits above the composer in the laptop pose (DuoLaptop's capsule).
-                        ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
-                            navigator.sidePane.arrangedTerminal = $0
-                        }
-                    } else if sizeClass == .regular {
-                        // The side pane's one button, lit while it is open (DuoOpenSidePane).
-                        ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
-                            withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
-                        }
+                if !inlineTitle {
+                    ToolbarItem(placement: .principal) {
+                        // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
+                        title.frame(maxWidth: titleMaxWidth, alignment: .leading)
                     }
-                    ThreadStopButton(store: store, enabled: key.session != nil)
                 }
-            }
-            // The system's ••• menu, so it overflows with the bar's items where the bar runs
-            // down the side (iPhone Duo).
-            if agent != nil {
-                ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
-            }
-            // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
-            // horizontal bar leaves it to the sidebar's row.
-            if sizeClass == .regular, verticalBars {
-                ToolbarItem(placement: .bottomBar) {
-                    Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
-                        .buttonStyle(.glassProminent)
-                        .disabled(hosts.hosts.isEmpty)
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if agent != nil {
+                        if arranged {
+                            // What sits above the composer in the laptop pose (DuoLaptop's capsule).
+                            ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
+                                navigator.sidePane.arrangedTerminal = $0
+                            }
+                        } else if sizeClass == .regular {
+                            // The side pane's one button, lit while it is open (DuoOpenSidePane).
+                            ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
+                                withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
+                            }
+                        }
+                        ThreadStopButton(store: store, enabled: key.session != nil)
+                    }
                 }
-                .visibilityPriority(.high)
+                // The system's ••• menu, so it overflows with the bar's items where the bar runs
+                // down the side (iPhone Duo).
+                if agent != nil {
+                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
+                }
+                // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
+                // horizontal bar leaves it to the sidebar's row.
+                if sizeClass == .regular, verticalBars {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
+                            .buttonStyle(.glassProminent)
+                            .disabled(hosts.hosts.isEmpty)
+                    }
+                    .visibilityPriority(.high)
+                }
             }
         }
-        .onAppear { visible = true }
+        .onAppear {
+            visible = true
+            SHRenderProbe.tick("thread.appear")
+        }
         .onDisappear { visible = false }
         .task(id: key) {
             // Through the thread's viewers: the same thread may be on screen in another window.
@@ -177,6 +185,11 @@ struct ThreadScreen: View {
     /// One short line for the states that matter; the store keeps the full reason.
     private func banner(host: MobileHost?, agent: Agent?, store: NativeThreadStore, supported: Bool) -> String? {
         guard let host else { return "This host was forgotten." }
+        // Trying now (a foreground's reconnect, a retry after a drop) is not a failure; between
+        // tries, and once a host refuses, it is offline. Same line either way: nothing moves.
+        if host.phase == .connecting {
+            return agent == nil ? "Connecting to \(host.name)…" : "Reconnecting to \(host.name) · showing the last known thread"
+        }
         if !host.phase.isConnected {
             return agent == nil ? "\(host.name) is offline · connect to load this thread" : "\(host.name) is offline · showing the last known thread"
         }
@@ -186,6 +199,27 @@ struct ThreadScreen: View {
         if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
         if let notice = store.clipNotice { return notice.text }
         return nil
+    }
+}
+
+extension EnvironmentValues {
+    /// Whether this thread is the one shown: false for one iPad keeps mounted behind the selected
+    /// thread (`PadDetailRoot`), which polls, watches terminals and presents nothing.
+    @Entry var threadDetailActive = true
+}
+
+extension Binding where Value == Bool {
+    /// Presents only while `active`: a thread kept mounted behind the selected one keeps its
+    /// sheet's state but shows nothing until it is shown again.
+    func whenActive(_ active: Bool) -> Binding<Bool> {
+        Binding(get: { active && wrappedValue }, set: { wrappedValue = $0 })
+    }
+}
+
+extension Binding {
+    /// An item presented only while `active` (see `Binding<Bool>.whenActive`).
+    func whenActive<Item>(_ active: Bool) -> Binding<Item?> where Value == Item? {
+        Binding<Item?>(get: { active ? wrappedValue : nil }, set: { wrappedValue = $0 })
     }
 }
 
@@ -230,8 +264,12 @@ struct ThreadTranscript: View {
                         Text(banner).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if let host = hosts.host(ref.host), !host.phase.isConnected {
-                            Button("Retry connection") { hosts.retry(ref.host) }
+                            // One button in one place through every try and wait, so the turns
+                            // under it never shift: off while a try is under way.
+                            let connecting = host.phase == .connecting
+                            Button(connecting ? "Connecting…" : "Retry connection") { hosts.retry(ref.host) }
                                 .buttonStyle(.sh(.secondary))
+                                .disabled(connecting)
                         }
                     }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {

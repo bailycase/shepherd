@@ -27,7 +27,8 @@ extension RPCThreadState {
 
     private func admitsQueue(_ candidate: [QueueItem]) -> Bool {
         candidate.count <= Self.queueItemLimit
-            && Self.bytes(NativeQueue(items: candidate.map(\.entry), mode: effectiveMode)) <= Self.queueEncodedLimit
+            && Self.bytes(NativeQueue(items: candidate.map(\.entry), mode: effectiveMode))
+                + candidate.reduce(0) { $0 + $1.images.reduce(0) { $0 + (($1.data.count + 2) / 3) * 4 } } <= Self.queueEncodedLimit
     }
 
     private var queueFull: NativeThreadResult {
@@ -39,7 +40,7 @@ extension RPCThreadState {
     /// A delete or clear can be undone this long.
     static let deletedLimit = 64
 
-    struct QueueItem: NativeQueueEntry, Codable, Equatable {
+    struct QueueItem: NativeQueueEntry, Codable, Equatable, Sendable {
         var entry: NativeQueuedMessage
         var images: [NativeImage]
         /// The text pi queued for a steering item (its `queue_update`), which is what its user
@@ -88,7 +89,7 @@ extension RPCThreadState {
 
     /// pi is working, or about to be on a prompt it has not answered: a send now waits in the
     /// queue (or steers).
-    var piBusy: Bool { running || recoveryResumePending || retryDispatch != nil || !dispatches.isEmpty || settleCapture != nil }
+    var piBusy: Bool { running || steersInFlight > 0 || recoveryResumePending || retryDispatch != nil || !dispatches.isEmpty || settleCapture != nil || recoveryPreparations.values.contains { $0.operation != nil } }
 
     /// pi settling does not leave the agent idle: a prompt of ours is on its way, or the
     /// queue goes next.
@@ -151,8 +152,9 @@ extension RPCThreadState {
     /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
               context: String? = nil, designPayloads: [UUID] = [], elements: [BrowserElement] = [],
+              authorization: @escaping () -> Bool = { true }, preparedItem: QueueItem? = nil,
               completion: @escaping (NativeThreadResult) -> Void) {
-        guard workAdmission() else {
+        guard workAdmission(), authorization() else {
             completion(.failure(code: "host_updating", message: "Host update in progress."))
             return
         }
@@ -192,15 +194,30 @@ extension RPCThreadState {
             paused = false
             queueNotice = nil
             dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], designPayloads: designPayloads,
-                     completion: completion)
+                     authorization: authorization, completion: completion)
             return
         }
-        var item = QueueItem(
+        var item = preparedItem ?? QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000, elements: elements),
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
+        if preparedItem == nil {
+            var candidate = checkpointForInput(item, pending: false)
+            if delivery == .steer {
+                if canSteerNow { NativeQueueRules.steer([id], in: &candidate.items) }
+                else { NativeQueueRules.move(id, toQueuedIndex: waitingHeadIndex, in: &candidate.items) }
+            }
+            prepareRecovery(candidate, operation: id, authorization: authorization) { [weak self] saved in
+                guard let self else { return }
+                guard saved else { completion(Self.recoverySaveFailure); return }
+                self.send(id: id, text: text, delivery: delivery, images: images, alone: alone, context: context,
+                          designPayloads: designPayloads, elements: elements, authorization: authorization, preparedItem: item,
+                          completion: completion)
+            }
+            return
+        }
         recoveryAttempts = 0
         restartRequestID = nil
         recoveryDispatchID = nil
@@ -211,11 +228,6 @@ extension RPCThreadState {
         recoveryAtLaunch = nil
         if delivery == .interrupt { interruptGoal() }
         items.append(item)
-        guard onRecoveryChanged?() != false else {
-            items.removeAll { $0.entry.id == id }
-            completion(.failure(code: "persist_failed", message: "Could not save this message for recovery. Try again."))
-            return
-        }
         if delivery != .interrupt { yieldGoalToQueue() }
         if delivery == .interrupt {
             // It is first in the queue for as long as pi takes to stop; the plan says how.
@@ -240,7 +252,9 @@ extension RPCThreadState {
         }
         NativeQueueRules.steer([id], in: &items)
         commit()
-        steerDispatch(id) { [weak self] failure in
+        let generation = generation
+        steerDispatch(id, authorization: authorization) { [weak self] failure in
+            guard self?.generation == generation else { completion(.failure(code: "stale_session", message: "Refresh the thread before acting.")); return }
             // pi refused it: the message was never queued, and the draft stays with the client.
             if failure != nil {
                 self?.items.removeAll { $0.entry.id == id }
@@ -251,7 +265,23 @@ extension RPCThreadState {
         }
     }
 
-    func perform(_ action: NativeQueueAction, operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
+    func perform(_ action: NativeQueueAction, operationID: UUID, authorization: @escaping () -> Bool = { true },
+                 prepared: Bool = false, completion: @escaping (NativeThreadResult) -> Void) {
+        func stage(_ items: [QueueItem], mode: NativeQueueMode? = nil) -> Bool {
+            guard !prepared else { return false }
+            var candidate = recoveryCheckpoint(sessionID: piSessionID ?? "")
+                ?? .init(sessionID: piSessionID ?? "", active: false, items: [], pending: [], paused: paused, mode: effectiveMode)
+            candidate.items = items
+            candidate.paused = paused || recoveryWaiting || stopRequested || (runFailed && retry == nil)
+                || items.contains(where: { $0.entry.held }) || startingQueueChild != nil || !unknownQueueChildren.isEmpty
+            if let mode { candidate.mode = mode }
+            prepareRecovery(candidate, operation: operationID, authorization: authorization) { [weak self] saved in
+                guard let self else { return }
+                guard saved else { completion(Self.recoverySaveFailure); return }
+                self.perform(action, operationID: operationID, authorization: authorization, prepared: true, completion: completion)
+            }
+            return true
+        }
         guard startingQueueChild == nil else {
             completion(.failure(code: "queue_busy", message: "A queued message is starting in a subagent. Wait for it to finish starting."))
             return
@@ -311,18 +341,27 @@ extension RPCThreadState {
             var candidate = items
             guard NativeQueueRules.edit(id, text: text, in: &candidate) else { completion(missing); return }
             guard admitsQueue(candidate) else { completion(queueFull); return }
+            if let index = candidate.firstIndex(where: { $0.entry.id == id }) { candidate[index].holdUntil = nil }
+            if stage(candidate) { return }
             items = candidate
             if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].holdUntil = nil }
             completion(accepted)
             drainIfReady()
         case .delete(let id):
-            let removed = NativeQueueRules.remove([id], from: &items)
+            var candidate = items
+            let removed = NativeQueueRules.remove([id], from: &candidate)
             guard !removed.isEmpty else { completion(missing); return }
+            if stage(candidate) { return }
+            items = candidate
             remember(removed)
             completion(accepted)
             unyieldGoalIfQueueEmpty()
         case .clear:
-            remember(NativeQueueRules.remove(items.filter { $0.entry.state == .queued }.map(\.entry.id), from: &items))
+            var candidate = items
+            let removed = NativeQueueRules.remove(items.filter { $0.entry.state == .queued }.map(\.entry.id), from: &candidate)
+            if stage(candidate) { return }
+            items = candidate
+            remember(removed)
             completion(accepted)
             unyieldGoalIfQueueEmpty()
         case .restore(let ids, let index):
@@ -333,18 +372,25 @@ extension RPCThreadState {
             NativeQueueRules.insert(restoring.map { var item = $0; item.entry.held = false; item.holdUntil = nil; return item },
                                     atQueuedIndex: index, into: &candidate)
             guard admitsQueue(candidate) else { completion(queueFull); return }
+            if stage(candidate) { return }
             items = candidate
             deleted.removeAll { entry in ids.contains(entry.item.entry.id) }
             yieldGoalToQueue()
             completion(accepted)
             drainIfReady()
         case .move(let id, let index):
-            guard NativeQueueRules.move(id, toQueuedIndex: index, in: &items) else { completion(missing); return }
+            var candidate = items
+            guard NativeQueueRules.move(id, toQueuedIndex: index, in: &candidate) else { completion(missing); return }
+            if stage(candidate) { return }
+            items = candidate
             completion(accepted)
         case .hold(let id, let held):
             guard let index = items.firstIndex(where: { $0.entry.id == id }) else { completion(missing); return }
-            items[index].entry.held = held
-            items[index].holdUntil = held ? Date().addingTimeInterval(Self.holdLease) : nil
+            var candidate = items
+            candidate[index].entry.held = held
+            candidate[index].holdUntil = held ? Date().addingTimeInterval(Self.holdLease) : nil
+            if stage(candidate) { return }
+            items = candidate
             if held {
                 queue.asyncAfter(deadline: .now() + Self.holdLease + 0.05) { [weak self] in
                     guard let self else { return }
@@ -356,6 +402,7 @@ extension RPCThreadState {
             completion(accepted)
             if !held { drainIfReady() }
         case .setMode(let mode):
+            if stage(items, mode: mode) { return }
             modeOverride = mode
             completion(accepted)
         case .steer(let ids):
@@ -367,10 +414,13 @@ extension RPCThreadState {
                 completion(accepted)
                 return
             }
-            let steered = NativeQueueRules.steer(ids, in: &items)
+            var candidate = items
+            let steered = NativeQueueRules.steer(ids, in: &candidate)
             guard !steered.isEmpty else { completion(missing); return }
+            if stage(candidate) { return }
+            items = candidate
             for id in steered {
-                steerDispatch(id) { [weak self] failure in
+                steerDispatch(id, authorization: authorization) { [weak self] failure in
                     // Back to the head of the queue, and say why.
                     guard let self, let failure, case .failure(_, let message) = failure else { return }
                     NativeQueueRules.unsteer(id, in: &self.items)
@@ -495,12 +545,12 @@ extension RPCThreadState {
     func deliverAtBoundary(expiresAt: Double, completion: @escaping () -> Void) {
         guard workAdmission(), running, !paused, !stopRequested, session.isAlive, isServable,
               dialogs.isEmpty, compactingRun == nil, retry == nil,
-              !inputActive, !inputOutcomeUnknown, dispatches.isEmpty, preparingPrompts.isEmpty,
+              !inputActive, !inputOutcomeUnknown, dispatches.isEmpty, preparingPrompts.isEmpty, recoveryPreparations.isEmpty,
               interrupting == nil, !interruptAbortPending, settleCapture == nil, sendAfterCapture == nil,
               !restoringRecovery, !recoveryWaiting, recoveryPending == nil, !recoveryResumePending, retryDispatch == nil,
               steersInFlight == 0, unboundSteers.isEmpty, piSteering.isEmpty, piFollowUp.isEmpty,
               startingQueueChild == nil, unknownQueueChildren.isEmpty, sendingDesignPayloads.isEmpty,
-              expiresAt > Date().timeIntervalSince1970 * 1000 else { completion(); return }
+              expiresAt.isFinite, expiresAt > Date().timeIntervalSince1970 * 1000 else { completion(); return }
         releaseLapsedHolds()
         guard !items.contains(where: { $0.entry.held }) else { completion(); return }
         let queued = items.filter { $0.entry.state == .queued }
@@ -522,16 +572,18 @@ extension RPCThreadState {
             batch.append(item)
         }
         guard !batch.isEmpty else { completion(); return }
-        items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
+        // Keep the queued values visible until the pending checkpoint has been renamed.
+        // The recovery-preparation lane keeps another drain from selecting this batch.
         // A message sent straight to interrupt is an ordinary one; several joined show apart.
         let parts = batch.count == 1 && batch[0].direct ? nil : NativeQueueRules.parts(batch)
         // The latest record among them is the viewer's screen as the batch leaves.
         let context = batch.last { $0.context != nil }?.context
+        let generation = generation
         dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), context: context, images: batch.flatMap(\.images),
                  parts: parts, items: batch, delivery: delivery, expiresAt: expiresAt) { [weak self] result in
             defer { completion() }
             // pi refused the delivery: the items return to the head, and the queue waits.
-            guard let self, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
+            guard let self, self.generation == generation, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
             NativeQueueRules.insert(batch, atQueuedIndex: 0, into: &self.items)
             self.paused = true
             self.queueNotice = message
@@ -547,8 +599,13 @@ extension RPCThreadState {
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   designPayloads: [UUID] = [], delivery: RPCStreamingBehavior = .followUp, expiresAt: Double? = nil,
+                  authorization: @escaping () -> Bool = { true }, preparedAt: Double? = nil,
                   completion: @escaping (NativeThreadResult) -> Void) {
-        guard workAdmission() else {
+        let boundaryExpired = NativeThreadResult.failure(code: "boundary_expired", message: "Queue delivery timed out before the next turn. Resume the queue to try again.")
+        guard expiresAt.map({ $0.isFinite && $0 > Date().timeIntervalSince1970 * 1000 }) ?? true else {
+            completion(boundaryExpired); return
+        }
+        guard workAdmission(), authorization() else {
             completion(.failure(code: "host_updating", message: "Host update in progress."))
             return
         }
@@ -561,7 +618,27 @@ extension RPCThreadState {
         recoveryResumePending = false
         stopRequested = false
         let expectsMessage = !isExtensionCommand(prompt)
-        dispatches.append(Dispatch(id: id, text: prompt, images: images, sentAt: Date().timeIntervalSince1970 * 1000,
+        let sentAt = preparedAt ?? Date().timeIntervalSince1970 * 1000
+        if expectsMessage, preparedAt == nil {
+            let item = QueueItem(entry: NativeQueuedMessage(id: id, text: prompt,
+                                images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) }, sentAt: sentAt),
+                                 images: images, designPayloads: designPayloads + batch.flatMap(\.designPayloads))
+            var candidate = checkpointForInput(item, pending: true)
+            candidate.items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
+            prepareRecovery(candidate, operation: id, expiresAt: expiresAt, authorization: authorization) { [weak self] saved in
+                guard let self else { return }
+                guard saved else {
+                    completion(expiresAt.map { $0 <= Date().timeIntervalSince1970 * 1000 } == true ? boundaryExpired : Self.recoverySaveFailure)
+                    return
+                }
+                self.dispatch(id: id, text: text, context: context, images: images, parts: parts, items: batch,
+                              designPayloads: designPayloads, delivery: delivery, expiresAt: expiresAt,
+                              authorization: authorization, preparedAt: sentAt, completion: completion)
+            }
+            return
+        }
+        items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
+        dispatches.append(Dispatch(id: id, text: prompt, images: images, sentAt: sentAt,
                                    parts: parts, items: batch, expectsMessage: expectsMessage,
                                    designPayloads: designPayloads + batch.flatMap(\.designPayloads), delivery: delivery))
         if expectsMessage {
@@ -570,17 +647,28 @@ extension RPCThreadState {
             row.origin = parts.map { .queue(parts: $0) }
             live.append(LiveItem(kind: .pending(id), value: row, raw: nil, ended: false))
         }
-        guard onRecoveryChanged?() != false else {
-            dropDispatch(id)
-            completion(.failure(code: "persist_failed", message: "Could not save this message for recovery. Try again."))
-            return
-        }
         commit()
-        let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let generation = generation
-        preparingPrompts[id] = completion
+        var answered = false, started = false, wasAdmitted = false
+        preparingPrompts[id] = { [weak self] result in
+            guard !answered else { return }
+            answered = true
+            if self?.generation == generation { self?.preparingPrompts.removeValue(forKey: id) }
+            completion(result)
+        }
+        if let expiresAt {
+            queue.asyncAfter(deadline: .now() + max(0, (expiresAt - Date().timeIntervalSince1970 * 1000) / 1000)) { [weak self] in
+                guard let self, self.generation == generation, !answered, !wasAdmitted,
+                      let finish = self.preparingPrompts[id] else { return }
+                self.dropDispatch(id)
+                if delivery == .followUp { self.discardPreparedTurn?() }
+                finish(boundaryExpired)
+                self.commit()
+            }
+        }
         let send = { [weak self] in
-            guard let self, let completion = self.preparingPrompts.removeValue(forKey: id) else { return }
+            guard let self, !answered, !started, let completion = self.preparingPrompts[id] else { return }
+            started = true
             guard self.generation == generation else {
                 completion(.failure(code: "stale_session", message: "The session changed before pi started the send."))
                 return
@@ -594,14 +682,24 @@ extension RPCThreadState {
             let remaining = expiresAt.map { ($0 - Date().timeIntervalSince1970 * 1000) / 1000 }
             guard remaining.map({ $0 > 0 }) ?? true else {
                 self.dropDispatch(id)
-                completion(.failure(code: "boundary_expired", message: "Queue delivery timed out before the next turn. Resume the queue to try again."))
+                if delivery == .followUp { self.discardPreparedTurn?() }
+                completion(boundaryExpired)
                 return
             }
             let commandDone = self.beginCommandWindow(for: prompt)
-            self.requestInput(prompt: prompt, images: rpcImages, delivery: delivery,
-                              timeout: remaining.map { min(5, $0) } ?? Self.promptTimeout) { [weak self] failure in
+            self.requestInput(prompt: prompt, images: images, delivery: delivery,
+                              timeout: remaining.map { min(5, $0) } ?? Self.promptTimeout, expiresAt: expiresAt,
+                              canSend: { !answered && authorization() && (expiresAt.map { $0 > Date().timeIntervalSince1970 * 1000 } ?? true) },
+                              admitted: { [weak self] in
+                wasAdmitted = true
+                self?.preparingPrompts.removeValue(forKey: id)
+            }) { [weak self] failure in
                 commandDone?()
-                guard let self else { return }
+                guard let self, !answered else { return }
+                guard self.generation == generation else {
+                    completion(.failure(code: "stale_session", message: "The session changed while the send was pending.")); return
+                }
+                let failure = !wasAdmitted && (expiresAt.map { $0 <= Date().timeIntervalSince1970 * 1000 } ?? false) ? boundaryExpired : failure
                 if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
                     self.dropDispatch(id)
                     self.discardPreparedTurn?()
@@ -627,7 +725,13 @@ extension RPCThreadState {
         session.request(.getState) { [weak self] result in
             guard let self, self.generation == generation, case .success(let response) = result, response.success,
                   response.data?["isStreaming"]?.boolValue == false, !self.inputOutcomeUnknown,
-                  self.dispatches.contains(where: { $0.id == id && $0.responded }) else { return }
+                  let dispatch = self.dispatches.first(where: { $0.id == id && $0.responded }) else { return }
+            if dispatch.delivery == .steer {
+                // A late boundary acknowledgement can arrive after settlement. Idle alone
+                // cannot discard its host-owned batch: clear/reclaim pi's steering first.
+                self.settled()
+                return
+            }
             self.dropDispatch(id)
             self.discardPreparedTurn?()
             self.onUnconsumedDispatchRetired?(id)
@@ -677,20 +781,33 @@ extension RPCThreadState {
 
     /// Hands a steering item to pi. `done` gets nil once pi queued it (or ran it at once as a
     /// command, which leaves nothing to land), else the failure.
-    func steerDispatch(_ id: UUID, done: @escaping (NativeThreadResult?) -> Void) {
+    func steerDispatch(_ id: UUID, authorization: @escaping () -> Bool = { true }, prepared: Bool = false, done: @escaping (NativeThreadResult?) -> Void) {
+        if !prepared {
+            prepareRecovery(recoveryCheckpoint(sessionID: piSessionID ?? ""), operation: id, authorization: authorization) { [weak self] saved in
+                guard let self else { return }
+                guard saved else { done(Self.recoverySaveFailure); return }
+                self.steerDispatch(id, authorization: authorization, prepared: true, done: done)
+            }
+            return
+        }
         guard let item = items.first(where: { $0.entry.id == id }) else { done(nil); return }
         if let failure = goalCommandFailure(item.promptText) { done(failure); return }
         // What pi will echo as the user message is the prompt text, not the composer's words.
         if oneShotSteers[id] != nil { oneShotSteers[id] = item.promptText }
         unboundSteers.append(id)
         steersInFlight += 1
-        let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let commandDone = beginCommandWindow(for: item.promptText)
-        requestInput(prompt: item.promptText, images: rpcImages, delivery: .steer) { [weak self] failure in
+        let generation = generation
+        requestInput(prompt: item.promptText, images: item.images, delivery: .steer, canSend: authorization) { [weak self] failure in
             commandDone?()
-            guard let self else { return }
+            guard let self else {
+                done(.failure(code: "send_cancelled", message: "The session was retired before the send completed.")); return
+            }
+            defer { self.finishSteering() }
+            guard self.generation == generation else {
+                done(.failure(code: "stale_session", message: "The session changed while the send was pending.")); return
+            }
             self.unboundSteers.removeAll { $0 == id }
-            self.steersInFlight -= 1
             if failure == nil, let index = self.items.firstIndex(where: { $0.entry.id == id && $0.entry.state == .steering }),
                self.items[index].piText == nil {
                 // pi answered without queueing anything: it ran the message at once (an
@@ -702,11 +819,29 @@ extension RPCThreadState {
             // never lands.
             done(failure)
             self.unyieldGoalIfQueueEmpty()
-            if self.steersInFlight == 0, self.settleAwaitingSteers, !self.running {
-                self.settleAwaitingSteers = false
-                self.settled()
-                self.commit()
-            }
+        }
+    }
+
+    /// A restoration owns one slot across disk staging and every re-admission, in addition
+    /// to individual steering prompts. Only the last owner may resume deferred settlement.
+    private func finishSteering() {
+        steersInFlight -= 1
+        unyieldGoalIfQueueEmpty()
+        resumeAfterSteering()
+    }
+
+    func resumeAfterSteering() {
+        guard steersInFlight == 0 else { return }
+        guard session.isAlive else { settleAwaitingSteers = false; return }
+        guard !running else { return }
+        guard !inputOutcomeUnknown else { settleAwaitingSteers = true; return }
+        if settleAwaitingSteers {
+            settleAwaitingSteers = false
+            settled()
+            commit()
+        } else {
+            drainIfReady()
+            idleAfterQueue()
         }
     }
 
@@ -729,71 +864,150 @@ extension RPCThreadState {
         piFollowUp = followUp
     }
 
+    /// Capture before clear_queue: its reply must never adopt a later run's authorization or
+    /// replace lost ownership with text-only records after Stop or a session switch.
+    struct QueueRestoration {
+        let generation: String
+        let epoch: UInt64
+        let wasRunning: Bool
+        var items: [QueueItem]
+        let dispatches: [Dispatch]
+        let oneShotSteers: [UUID: String]
+
+        init(_ thread: RPCThreadState) {
+            generation = thread.generation
+            epoch = thread.recoveryEpoch
+            wasRunning = thread.running
+            items = thread.items
+            dispatches = thread.dispatches
+            oneShotSteers = thread.oneShotSteers
+        }
+
+        func isCurrent(_ thread: RPCThreadState) -> Bool {
+            thread.generation == generation && thread.recoveryEpoch == epoch
+                && !thread.stopRequested && (!wasRunning || thread.running)
+        }
+    }
+
     /// Takes a steering item back: pi's queue is emptied and everything else in it handed back.
     /// When pi's queue no longer held it, pi read it before the clear arrived: it lands where
     /// pi read it, and the request is refused.
     private func unsteer(_ id: UUID, done: @escaping (NativeThreadResult?) -> Void) {
+        let origin = QueueRestoration(self)
+        steersInFlight += 1
         clearPiQueue { [weak self] steering, followUp, failure in
-            guard let self else { return }
+            guard let self else { done(Self.recoverySaveFailure); return }
+            defer { self.finishSteering() }
             if let failure { done(failure); return }
             var remaining = steering
             var returned = false
             // The item is still pi's to read: it returns to the head of the queue.
-            if let item = self.items.first(where: { $0.entry.id == id }), let index = remaining.firstIndex(of: item.piText ?? item.promptText) {
+            if origin.isCurrent(self), let item = self.items.first(where: { $0.entry.id == id }),
+               let index = remaining.firstIndex(of: item.piText ?? item.promptText) {
                 remaining.remove(at: index)
                 if let at = self.items.firstIndex(where: { $0.entry.id == id }) { self.items[at].piText = nil }
                 NativeQueueRules.unsteer(id, in: &self.items)
                 returned = true
             }
-            self.restorePiQueue(steering: remaining, followUp: followUp)
-            self.commit()
-            done(returned ? nil : .failure(code: "queue_item_unavailable", message: "The agent has already read that message."))
+            // Its text was removed from pi's reply; remove the same owner from matching too.
+            // Otherwise equal-text steers can borrow the returned item's images and identity.
+            var restoring = origin
+            if returned { restoring.items.removeAll { $0.entry.id == id } }
+            self.restorePiQueue(steering: remaining, followUp: followUp, origin: restoring) { saved in
+                self.commit()
+                if !saved, !origin.isCurrent(self) {
+                    done(.failure(code: self.generation == origin.generation ? "send_cancelled" : "stale_session",
+                                  message: "The run changed while the queue was being cleared. Nothing was resent."))
+                } else {
+                    done(!saved ? Self.recoverySaveFailure : returned ? nil : .failure(code: "queue_item_unavailable", message: "The agent has already read that message."))
+                }
+            }
         }
     }
 
     /// Everything `clear_queue` returned goes back to pi in order: this host's steering items
     /// are steered again, anything else pi had queued (an extension's) is re-sent as it was.
-    func restorePiQueue(steering: [String], followUp: [String]) {
-        func restoreUnowned(_ text: String, delivery: RPCStreamingBehavior) {
+    func restorePiQueue(steering: [String], followUp: [String], origin: QueueRestoration,
+                        completion: @escaping (Bool) -> Void = { _ in }) {
+        let generation = origin.generation
+        let authorized = { [weak self] in self.map { origin.isCurrent($0) } ?? false }
+        steersInFlight += 1
+        func finish(_ saved: Bool) {
+            completion(saved)
+            finishSteering()
+        }
+        func restoreUnowned(_ text: String, delivery: RPCStreamingBehavior, done: @escaping (NativeThreadResult?) -> Void) {
             let id = UUID()
-            requestInput(prompt: text, images: [], delivery: delivery) { [weak self] failure in
-                guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+            requestInput(prompt: text, images: [], delivery: delivery, canSend: authorized) { [weak self] failure in
+                defer { done(failure) }
+                guard let self, self.generation == generation, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
                 self.items.append(QueueItem(entry: NativeQueuedMessage(id: id, text: text, sentAt: Date().timeIntervalSince1970 * 1000), images: []))
                 self.paused = true
                 self.queueNotice = message
                 self.commit()
             }
         }
-        var remaining = items.filter { $0.entry.state == .steering }
-        var boundary = dispatches.filter { $0.delivery == .steer }
+        var remaining = origin.items.filter { $0.entry.state == .steering }
+        var boundary = origin.dispatches.filter { $0.delivery == .steer }
+        var restoring: [(text: String, owned: UUID?, boundary: Dispatch?)] = []
         for text in steering {
             if let index = boundary.firstIndex(where: { $0.text == text }) {
-                let dispatch = boundary.remove(at: index)
-                let images = dispatch.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
-                requestInput(prompt: text, images: images, delivery: .steer) { [weak self] failure in
-                    guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
-                    self.dropDispatch(dispatch.id)
-                    NativeQueueRules.insert(dispatch.items, atQueuedIndex: 0, into: &self.items)
-                    self.paused = true
-                    self.queueNotice = message
-                    self.commit()
-                }
+                restoring.append((text, nil, boundary.remove(at: index)))
             } else if let index = remaining.firstIndex(where: { ($0.piText ?? $0.promptText) == text }) {
                 // Equal text can carry different images; restore each item exactly once.
                 let id = remaining.remove(at: index).entry.id
-                if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
-                steerDispatch(id) { [weak self] failure in
-                    guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
-                    NativeQueueRules.unsteer(id, in: &self.items)
-                    self.paused = true
-                    self.queueNotice = message
-                    self.commit()
-                }
+                if authorized(), let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
+                restoring.append((text, id, nil))
             } else {
-                restoreUnowned(text, delivery: .steer)
+                restoring.append((text, nil, nil))
             }
         }
-        for text in followUp { restoreUnowned(text, delivery: .followUp) }
+        // One durable checkpoint precedes every re-steer, including boundary batches. Keep
+        // owned and unowned input in pi's original order; independent saves invalidate peers.
+        prepareRecovery(recoveryCheckpoint(sessionID: piSessionID ?? ""), authorization: authorized) { [weak self] saved in
+            guard let self else { completion(false); return }
+            guard saved else {
+                // clear_queue already took these out of pi. A failed/cancelled checkpoint
+                // must keep their original ownership and images, not silently lose the batch.
+                self.reclaim(steering: steering, followUp: followUp, origin: origin)
+                self.paused = true
+                self.queueNotice = "The queued messages could not be restored to the agent. Resume the queue to try again."
+                self.commit()
+                finish(false)
+                return
+            }
+            var pending = restoring.count + followUp.count
+            var restored = true
+            guard pending > 0 else { finish(true); return }
+            func admitted(_ failure: NativeThreadResult?) {
+                restored = restored && failure == nil
+                pending -= 1
+                if pending == 0 { finish(restored) }
+            }
+            for entry in restoring {
+                if let dispatch = entry.boundary {
+                    self.requestInput(prompt: entry.text, images: dispatch.images, delivery: .steer, canSend: authorized) { [weak self] failure in
+                        defer { admitted(failure) }
+                        guard let self, self.generation == generation, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                        self.dropDispatch(dispatch.id)
+                        NativeQueueRules.insert(dispatch.items, atQueuedIndex: 0, into: &self.items)
+                        self.paused = true
+                        self.queueNotice = message
+                        self.commit()
+                    }
+                } else if let id = entry.owned {
+                    self.steerDispatch(id, authorization: authorized, prepared: true) { [weak self] failure in
+                        defer { admitted(failure) }
+                        guard let self, self.generation == generation, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                        NativeQueueRules.unsteer(id, in: &self.items)
+                        self.paused = true
+                        self.queueNotice = message
+                        self.commit()
+                    }
+                } else { restoreUnowned(entry.text, delivery: .steer, done: admitted) }
+            }
+            for text in followUp { restoreUnowned(text, delivery: .followUp, done: admitted) }
+        }
     }
 
     /// `clear_queue`, answering with what pi had queued.
@@ -810,42 +1024,59 @@ extension RPCThreadState {
     /// Steering items pi still holds go back to the queue's head, in order; anything else pi
     /// had queued joins the queue after them, so nothing is lost. Items pi no longer holds have
     /// landed (or are landing).
-    func reclaim(steering: [String], followUp: [String]) {
+    func reclaim(steering: [String], followUp: [String], origin: QueueRestoration? = nil) {
+        let origin = origin ?? QueueRestoration(self)
+        let sameGeneration = origin.generation == generation
         var remaining = steering
         var back: [QueueItem] = [], dropped: Set<UUID> = []
         // A boundary batch already belongs to pi but still has its original host parts and images.
         // Reclaim those records, not a newly adopted text-only copy.
-        for dispatch in dispatches where dispatch.delivery == .steer {
+        for dispatch in origin.dispatches where dispatch.delivery == .steer {
             guard let index = remaining.firstIndex(of: dispatch.text) else { continue }
             remaining.remove(at: index)
             back.append(contentsOf: dispatch.items)
-            dropDispatch(dispatch.id)
+            if sameGeneration { dropDispatch(dispatch.id) }
         }
-        for item in items where item.entry.state == .steering {
+        for item in origin.items where item.entry.state == .steering {
             guard let index = remaining.firstIndex(of: item.piText ?? item.promptText) else { continue }
             remaining.remove(at: index)
             // A one-shot steer pi never read ends with its run: never a new turn of its own.
-            if oneShotSteers[item.entry.id] != nil { dropped.insert(item.entry.id); continue }
+            if origin.oneShotSteers[item.entry.id] != nil { dropped.insert(item.entry.id); continue }
             var returned = item
             returned.piText = nil
             back.append(returned)
         }
-        items.removeAll { item in dropped.contains(item.entry.id) || back.contains { $0.entry.id == item.entry.id } }
+        if sameGeneration {
+            // Already-queued records may have been edited while clear_queue was pending.
+            // Keep them; insert below also leaves a newer generation's reused IDs alone.
+            items.removeAll { item in dropped.contains(item.entry.id)
+                || (item.entry.state == .steering && back.contains { $0.entry.id == item.entry.id }) }
+        }
         // pi can answer a steer before its queue_update binds the text, which retires the item early; its text is
         // still pi's here. A one-shot steer is still not adopted as a message for a later turn.
-        for (id, text) in oneShotSteers where !dropped.contains(id) {
+        for (id, text) in origin.oneShotSteers where !dropped.contains(id) {
             guard let index = remaining.firstIndex(of: text) else { continue }
             remaining.remove(at: index)
             dropped.insert(id)
         }
-        for id in dropped { oneShotSteers[id] = nil }
-        undeliveredSteers.formUnion(dropped)
+        if sameGeneration {
+            for id in dropped { oneShotSteers[id] = nil }
+            undeliveredSteers.formUnion(dropped)
+        }
         let now = Date().timeIntervalSince1970 * 1000
         let adopted = (remaining + followUp).map {
             QueueItem(entry: NativeQueuedMessage(id: UUID(), text: $0, sentAt: now), images: [])
         }
-        NativeQueueRules.insert(back + adopted, atQueuedIndex: 0, into: &items)
-        unboundSteers.removeAll()
+        let ownedByDispatch = Set(dispatches.flatMap { [$0.id] + $0.items.map(\.entry.id) })
+        let currentIDs = Set(items.map(\.entry.id))
+        // Reset preserved old owned records before dropping dispatches. An ID missing in the
+        // newer generation was subsequently removed/consumed there; a late reply cannot revive it.
+        NativeQueueRules.insert(back.filter { !ownedByDispatch.contains($0.entry.id)
+            && (sameGeneration || currentIDs.contains($0.entry.id)) } + adopted, atQueuedIndex: 0, into: &items)
+        if sameGeneration {
+            let originalIDs = Set(origin.items.map(\.entry.id)).union(origin.oneShotSteers.keys)
+            unboundSteers.removeAll { originalIDs.contains($0) }
+        }
     }
 
     // MARK: - Stop and settle
@@ -855,6 +1086,19 @@ extension RPCThreadState {
     /// Stop/reset/exit must answer a send even while its filesystem preparation is still held.
     /// Project cancellation must not erase later ordinary sends in this same worker.
     func cancelExecutionPrompt(_ operation: UUID) -> Bool {
+        let staging = recoveryPreparations.filter { $0.value.operation == operation }
+        for (id, pending) in staging {
+            recoveryPreparations.removeValue(forKey: id)
+            pending.completion(false)
+        }
+        if !staging.isEmpty {
+            // A boundary batch stays in the host queue until its checkpoint commits. Its
+            // failure callback may retain the batch; withdraw this operation afterwards.
+            items.removeAll { $0.entry.id == operation }
+            commit()
+            drainIfReady()
+            return true
+        }
         if let dispatch = dispatches.first(where: { $0.id == operation || $0.items.contains { $0.entry.id == operation } }),
            let done = preparingPrompts.removeValue(forKey: dispatch.id) {
             let wasPaused = paused, notice = queueNotice
@@ -879,6 +1123,10 @@ extension RPCThreadState {
     }
 
     func cancelPreparingPrompts() {
+        recoveryEpoch &+= 1
+        let staging = recoveryPreparations
+        recoveryPreparations.removeAll()
+        staging.values.forEach { $0.completion(false) }
         cancelRecovery()
         cancelWaitingInputs()
         let pending = preparingPrompts
@@ -913,6 +1161,7 @@ extension RPCThreadState {
         // A settle or a released editor can arrive before clear_queue answers.
         paused = true
         queueNotice = nil
+        let stopSaved = onRecoveryChanged?() != false
         commit() // Persist Stop before waiting for children or pi to acknowledge it.
         cancelPreparingPrompts()
         let abort: (Bool) -> Void = { [weak self] helpersUnknown in
@@ -922,7 +1171,9 @@ extension RPCThreadState {
                 guard ifCurrent() else { done(.failure(.inputRejected)); return }
                 self.reclaim(steering: steering, followUp: followUp)
                 self.commit()
-                self.session.request(.abort) { result in done(helpersUnknown ? .failure(.timeout) : result) }
+                self.session.request(.abort) { result in
+                    done(!stopSaved ? .failure(.inputRejected) : helpersUnknown ? .failure(.timeout) : result)
+                }
             }
         }
         if let helpersUnknown { abort(helpersUnknown) }
@@ -959,7 +1210,7 @@ extension RPCThreadState {
             queueNotice = "The agent's turn ended with an error, so the queue is waiting."
         }
         // A steer pi has not answered may not be in its queue yet: clearing now would miss it.
-        guard steersInFlight == 0 else {
+        guard steersInFlight == 0, !inputOutcomeUnknown else {
             settleAwaitingSteers = true
             return
         }
@@ -1081,6 +1332,19 @@ extension RPCThreadState {
         }
         startingQueueChild = nil
         goalYieldGeneration = nil
+        settleAwaitingSteers = false
+        let preparing = Set(recoveryPreparations.values.compactMap(\.operation))
+        if steersInFlight > 0 {
+            // A clear reply may still own these records. Keep uncertain old-session input
+            // paused and durable while that reply is pending, never as a new automatic turn.
+            NativeQueueRules.insert(dispatches.filter { $0.delivery == .steer }.flatMap(\.items), atQueuedIndex: 0, into: &items)
+        }
+        if steersInFlight > 0 || items.contains(where: { preparing.contains($0.entry.id) }) {
+            // A staged boundary has not taken the batch out of the host queue yet. Preserve
+            // it, but never automatically deliver the old conversation's cancelled batch.
+            paused = true
+            queueNotice = "The session changed while queued input was pending. Check the conversation before resuming."
+        }
         cancelPreparingPrompts()
         interrupting = nil
         settleCapture = nil

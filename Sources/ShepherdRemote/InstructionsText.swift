@@ -70,34 +70,45 @@ public enum InstructionsText {
         return lines
     }
 
-    /// The line diff from `old` to `new` (a longest common subsequence of lines). Past about two
-    /// million line pairs it reports every old line removed and every new one added.
+    /// The line diff from `old` to `new` (a longest common subsequence of lines). Lines the two
+    /// share at their start and end are matched first, so a one-line edit compares only what
+    /// lies between (linear, not quadratic). Past about two million line pairs between them it
+    /// reports every line there removed and added.
     public static func diff(from old: String, to new: String) -> [InstructionsDiffLine] {
         let a = lines(old), b = lines(new)
-        guard a.count * b.count <= 2_000_000 else {
-            return a.enumerated().map { InstructionsDiffLine(kind: .removed, text: $0.element, number: $0.offset + 1) }
-                + b.enumerated().map { InstructionsDiffLine(kind: .added, text: $0.element, number: $0.offset + 1) }
-        }
-        // lcs[i][j]: the longest common subsequence of a[i...] and b[j...].
-        var lcs = Array(repeating: Array(repeating: 0, count: b.count + 1), count: a.count + 1)
-        for i in stride(from: a.count - 1, through: 0, by: -1) {
-            for j in stride(from: b.count - 1, through: 0, by: -1) {
-                lcs[i][j] = a[i] == b[j] ? lcs[i + 1][j + 1] + 1 : max(lcs[i + 1][j], lcs[i][j + 1])
+        var head = 0
+        while head < a.count, head < b.count, a[head] == b[head] { head += 1 }
+        var tail = 0
+        while tail < a.count - head, tail < b.count - head, a[a.count - 1 - tail] == b[b.count - 1 - tail] { tail += 1 }
+        let ma = a.count - head - tail, mb = b.count - head - tail
+        var result = (0..<head).map { InstructionsDiffLine(kind: .context, text: a[$0], number: $0 + 1) }
+        if ma * mb > 2_000_000 {
+            result += (head..<head + ma).map { InstructionsDiffLine(kind: .removed, text: a[$0], number: $0 + 1) }
+            result += (head..<head + mb).map { InstructionsDiffLine(kind: .added, text: b[$0], number: $0 + 1) }
+        } else if ma > 0 || mb > 0 {
+            // lcs[i][j]: the longest common subsequence of the middles' a[i...] and b[j...].
+            var lcs = Array(repeating: Array(repeating: 0, count: mb + 1), count: ma + 1)
+            for i in stride(from: ma - 1, through: 0, by: -1) {
+                for j in stride(from: mb - 1, through: 0, by: -1) {
+                    lcs[i][j] = a[head + i] == b[head + j] ? lcs[i + 1][j + 1] + 1 : max(lcs[i + 1][j], lcs[i][j + 1])
+                }
+            }
+            var i = 0, j = 0
+            while i < ma || j < mb {
+                if i < ma, j < mb, a[head + i] == b[head + j] {
+                    result.append(InstructionsDiffLine(kind: .context, text: a[head + i], number: head + i + 1))
+                    i += 1; j += 1
+                } else if j < mb, i == ma || lcs[i][j + 1] >= lcs[i + 1][j] {
+                    result.append(InstructionsDiffLine(kind: .added, text: b[head + j], number: head + j + 1))
+                    j += 1
+                } else {
+                    result.append(InstructionsDiffLine(kind: .removed, text: a[head + i], number: head + i + 1))
+                    i += 1
+                }
             }
         }
-        var result: [InstructionsDiffLine] = []
-        var i = 0, j = 0
-        while i < a.count || j < b.count {
-            if i < a.count, j < b.count, a[i] == b[j] {
-                result.append(InstructionsDiffLine(kind: .context, text: a[i], number: i + 1))
-                i += 1; j += 1
-            } else if j < b.count, i == a.count || lcs[i][j + 1] >= lcs[i + 1][j] {
-                result.append(InstructionsDiffLine(kind: .added, text: b[j], number: j + 1))
-                j += 1
-            } else {
-                result.append(InstructionsDiffLine(kind: .removed, text: a[i], number: i + 1))
-                i += 1
-            }
+        result += (0..<tail).map { k in
+            InstructionsDiffLine(kind: .context, text: a[a.count - tail + k], number: a.count - tail + k + 1)
         }
         // Within each run of changes, removed lines read first, as the review's diff draws them.
         return regrouped(result)
