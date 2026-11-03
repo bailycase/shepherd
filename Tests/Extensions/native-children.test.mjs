@@ -1,13 +1,13 @@
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children.test.mjs
 // All child sessions/configuration use a temporary directory and a local fake provider.
-import test from "node:test";
+import test, { after, mock } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as http from "node:http";
 import * as net from "node:net";
-import { createRequire } from "node:module";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set (docs/native-subagents.md › Missions).
@@ -24,6 +24,21 @@ const jiti = createJiti(import.meta.url, { alias: {
   typebox: path.join(pkg, "node_modules/typebox/build/index.mjs"),
 } });
 const source = path.join(root, "Extensions/shepherd-children.ts");
+// Jiti captures builtin exports on import; install the observer before loading the extension.
+let watches;
+const realWatch = fs.watch;
+const watchSpy = mock.method(require("node:fs"), "watch", (...args) => {
+  const watcher = realWatch(...args);
+  if (watches) {
+    const record = { path: args[0], closed: false };
+    watches.push(record);
+    const close = watcher.close.bind(watcher);
+    watcher.close = () => { record.closed = true; return close(); };
+  }
+  return watcher;
+});
+syncBuiltinESMExports();
+after(() => { watchSpy.mock.restore(); syncBuiltinESMExports(); });
 const mod = await jiti.import(source);
 const { SessionManager, ProjectTrustStore, CONFIG_DIR_NAME } = await import(path.join(pkg, "dist/index.js"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -407,7 +422,9 @@ test("migration fences reject starts and resumes without spawning after parent s
   }
 });
 
-test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async () => {
+test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async (t) => {
+  watches = [];
+  t.after(() => { watches = undefined; });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-native-"));
   const { server, requests } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -525,6 +542,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert(h.messages.every(isReport), "a slash launch never triggers a parent turn");
     h.messages.length = 0;
     const pair = await Promise.all([h.call("start", { task: "SLOW one", role: "scout" }), h.call("start", { task: "SLOW two", role: "reviewer" })]);
+    assert(watches.length > 0, "the fixture must observe the extension's filesystem watchers");
+    const migratedWatches = watches.filter((watch) => watch.path === path.join(path.dirname(migratedRun.sessionFile), "control"));
+    assert.equal(migratedWatches.length, 1, "settled control watches must survive other children starting; reopening can lose filesystem events");
+    assert.equal(migratedWatches[0].closed, false, "live children must not close settled children's control watches");
     assert.notEqual(pair[0].id, pair[1].id);
     await until(() => pair.every((child) => h.messages.some((message) => message.message.content.includes(child.id))));
     const done = await Promise.all(pair.map((run) => h.settled(run.id)));
@@ -642,6 +663,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert(Number.isFinite(askCard.lastActivity.at));
     await h.shutdown();
     assert.equal(ticks.active.size, 0);
+    assert(watches.every((watch) => watch.closed), "parent shutdown closes all control watches");
     ticks = intervalSpy();
     h = await harness(dir, h.entries, ticks.timers, outsideShepherd);
     assert.equal(ticks.active.size, 0, "restored runs are settled");
