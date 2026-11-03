@@ -132,6 +132,129 @@ struct RecoveryStagingTests {
         #expect(saved.items.map(\.entry.text) == ["first"])
     }
 
+    @Test(arguments: ["settle", "stop", "exit", "disk", "readmission", "complete"], [false, true])
+    func settlementCannotRetireImageOwnershipDuringQueueRestoration(end: String, boundary: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("tools:1 hold", from: try await pi.ready())
+        let running = try await pi.snapshot { $0.running && $0.provisional.contains { $0.toolCallID != nil } }
+        let first = UUID(), second = UUID(), firstImage = images(1024), secondImage = images(2048)
+        if boundary {
+            #expect(try await pi.send("tools:0 second image", images: secondImage, operationID: second, from: running).wasAccepted)
+            await withCheckedContinuation { continuation in
+                h.server.queue.async {
+                    h.server.rpcThread(forAgent: pi.agent.id)!.deliverAtBoundary(expiresAt: Date().timeIntervalSince1970 * 1000 + 10_000) {
+                        continuation.resume()
+                    }
+                }
+            }
+            #expect(pi.stdin("prompt").count == 2)
+        }
+        #expect(try await pi.send("tools:0 first image", delivery: .steer, images: firstImage, operationID: first, from: running).wasAccepted)
+        if !boundary {
+            #expect(try await pi.send("tools:0 second image", delivery: .steer, images: secondImage, operationID: second, from: running).wasAccepted)
+        }
+        _ = try await pi.snapshot { $0.queue?.items.count == (boundary ? 1 : 2) }
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            thread.paused = true // Keep reclaimed input visible instead of automatically draining it.
+            thread.commit()
+        }
+        try await eventually("initial checkpoints drained") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        let fileGate = DispatchSemaphore(value: 0), frameGate = DispatchSemaphore(value: 0)
+        let frameEntered = Locked(false), replies = Locked<[NativeThreadResult]>([])
+        let directory = h.dir.appendingPathComponent("agent-recovery")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            fileGate.signal(); frameGate.signal()
+        }
+        if end == "readmission" {
+            try await h.server.enqueue {
+                h.server.rpcThread(forAgent: pi.agent.id)?.session.beforeInputPreparation = {
+                    frameEntered.withValue { $0 = true }; frameGate.wait()
+                }
+            }
+        }
+        h.server.logicalProjectFiles.async { fileGate.wait() }
+        let action = Task {
+            let result = try await pi.queue(.unsteer(id: first), from: running)
+            replies.withValue { $0.append(result) }
+            return result
+        }
+        try await eventually("clear_queue answered and restore checkpoint is held") {
+            try await h.server.enqueue {
+                guard let thread = h.server.rpcThread(forAgent: pi.agent.id) else { return false }
+                return thread.items.first { $0.entry.id == first }?.entry.state == .queued
+                    && !thread.recoveryPreparations.isEmpty
+            }
+        }
+        if end == "readmission" {
+            fileGate.signal()
+            try await eventually("restored image frame awaits admission") { frameEntered.current }
+        }
+        // pi really settles after clear_queue, while disk staging or image re-admission is held.
+        if end != "complete" {
+            let abort = await withCheckedContinuation { continuation in
+                h.server.queue.async { h.server.rpcThread(forAgent: pi.agent.id)!.session.request(.abort) { continuation.resume(returning: $0) } }
+            }
+            #expect(try abort.get().success)
+            try await eventually("settlement deferred behind restoration ownership") {
+                try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.settleAwaitingSteers == true }
+            }
+        }
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            #expect(thread.steersInFlight > 0)
+            if boundary {
+                #expect(thread.dispatches.first { $0.id == second }?.images == secondImage)
+                #expect(thread.dispatches.first { $0.id == second }?.delivery == .steer)
+            } else {
+                #expect(thread.items.first { $0.entry.id == second }?.images == secondImage)
+                #expect(thread.items.first { $0.entry.id == second }?.entry.state == .steering)
+            }
+        }
+        if end == "stop" {
+            _ = try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID()))
+        } else if end == "exit" {
+            h.server.killSession(pi.sessionID)
+        } else if end == "disk" {
+            try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        }
+        if end == "stop" || end == "exit" {
+            try await eventually("cancelled restoration answered before writer release") { replies.current.count == 1 }
+        }
+        fileGate.signal(); frameGate.signal()
+        try await eventually("restoration completes exactly once") { replies.current.count == 1 }
+        let result = try await action.value
+        #expect(result.wasAccepted == (end == "complete"))
+        try await eventually("all restoration continuations and workers released") {
+            try await h.server.enqueue {
+                guard let thread = h.server.rpcThread(forAgent: pi.agent.id) else { return false }
+                return h.server.recoveryWritesInFlight == 0 && thread.recoveryPreparations.isEmpty
+                    && thread.steersInFlight == 0 && !thread.settleAwaitingSteers && !thread.inputActive
+            }
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        if end == "complete" {
+            pi.finishTool(1)
+            let delivered = try await pi.snapshot { $0.messages.contains { $0.operationID == second } }
+            #expect(delivered.messages.filter { $0.operationID == second }.count == 1)
+            let sent = try await pi.waitForStdin("prompt", count: 4)
+            #expect((sent["images"] as? [[String: Any]])?.first?["data"] as? String == secondImage[0].data.base64EncodedString())
+        } else {
+            #expect(pi.stdin("prompt").count == 3, "failed restoration cannot send another prompt")
+            try await h.server.enqueue {
+                let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+                #expect(Set(thread.items.map(\.entry.id)) == Set([first, second]))
+                #expect(thread.items.first { $0.entry.id == first }?.images == firstImage)
+                #expect(thread.items.first { $0.entry.id == second }?.images == secondImage)
+                #expect(thread.items.allSatisfy { $0.entry.state == .queued })
+            }
+        }
+        #expect(replies.current.count == 1)
+    }
+
     @Test(arguments: ["expiry", "stop", "switch", "success"])
     func boundaryStagingRetainsDeadlineDeliveryAndCancellation(end: String) async throws {
         let h = try ScratchServer.fresh()

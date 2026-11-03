@@ -90,6 +90,7 @@ extension RPCThreadState {
             guard let self, self.generation == generation else { return }
             self.inputOutcomeUnknown = false
             for dispatch in self.dispatches where dispatch.responded { self.confirmDispatch(dispatch.id) }
+            self.resumeAfterSteering()
         }
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             guard let self else {
