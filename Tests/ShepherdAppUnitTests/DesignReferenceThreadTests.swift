@@ -35,6 +35,21 @@ struct DesignReferenceThreadTests {
         return DesignMentionCatalog(designs: [checkout, events], boards: [Self.checkout: [a, b]], elements: [a.id: [card]])
     }
 
+    @Test func hidingAMountedPickerReleasesPictureDemandAndRestoresOnlyItsVisibleRows() throws {
+        var requests: [(String, Bool, String)] = []
+        let chips = DesignReferenceChips(agentID: AgentID(), io: .init(rowVisibility: { requests.append(($0.id, $1, $2)) }))
+        let row = try #require(Self.catalog.designs.first)
+        chips.rowAppeared(row)
+        chips.setPictureDemandActive(false)
+        chips.setPictureDemandActive(true)
+        chips.rowDisappeared(row.id)
+        chips.setPictureDemandActive(false)
+        chips.setPictureDemandActive(true)
+        #expect(requests.map(\.1) == [true, false, true, false])
+        #expect(Set(requests.map(\.2)).count == 1, "One picker owns its own demand")
+        #expect(requests.allSatisfy { $0.0 == row.id })
+    }
+
     // MARK: The mention
 
     @Test(arguments: [

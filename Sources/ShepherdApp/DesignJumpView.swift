@@ -20,7 +20,8 @@ struct DesignJumpOverlay: View {
                         .shTransition(.content)
                     DesignJumpCard(model: model, maxListHeight: Self.maxListHeight(in: geo.size),
                                    picture: { vm.jumpPicture($0, in: model.design) },
-                                   run: { vm.runDesignJump($0) }, close: { vm.designJump = nil })
+                                   run: { vm.runDesignJump($0) }, close: { vm.designJump = nil },
+                                   visibility: { vm.jumpPictureVisibility($0, in: model.design, visible: $1) })
                         .frame(width: max(0, min(M.width, geo.size.width - 2 * SHPaletteMetrics.margin)))
                         .accessibilityAddTraits(.isModal)
                         .shTransition(.overlay, anchor: .top)
@@ -52,6 +53,7 @@ struct DesignJumpCard: View {
     let picture: (DesignJumpItem) -> CGImage?
     let run: (DesignJumpItem) -> Void
     let close: () -> Void
+    var visibility: (DesignJumpItem, Bool) -> Void = { _, _ in }
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -98,6 +100,8 @@ struct DesignJumpCard: View {
                         SHJumpRow(item.title, meta: item.meta, tag: item.tag,
                                   picture: picture(item).map { SHReferenceImage(id: "\(item.id)@\(pictures)", image: Image(decorative: $0, scale: 2)) },
                                   highlighted: index == highlight) { run(item) }
+                            .onAppear { visibility(item, true) }
+                            .onDisappear { visibility(item, false) }
                             .onHover { if $0 { model.highlight = index } }
                             .id(item.id)
                     }

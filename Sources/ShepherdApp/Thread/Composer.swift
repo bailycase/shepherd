@@ -610,7 +610,8 @@ struct Composer: View {
                                 appear: { id in
                                     // An element's row on screen: its picture is cut now, not before.
                                     if let item = mentions.content.items[id] { references?.rowAppeared(item) }
-                                })
+                                }, disappear: { references?.rowDisappeared($0) })
+                    .onChange(of: active, initial: true) { _, active in references?.setPictureDemandActive(active) }
                     .shTransition(.overlay, anchor: .bottomLeading)
             }
             // The picker and the thinking menu compare what they draw, so a composer redraw for

@@ -44,6 +44,7 @@ final class DesignReferenceChips {
         var wantCrop: (_ element: DesignMentionItem, _ board: DesignMentionItem, _ tids: [Int]) -> Void = { _, _, _ in }
         /// Asks for the pictures of what a picker scope lists (a design's boards).
         var wantPictures: (MentionScope) -> Void = { _ in }
+        var rowVisibility: (DesignMentionItem, Bool, String) -> Void = { _, _, _ in }
         var open: (DesignReference) -> Void = { _ in }
         var attach: (DesignReference) async throws -> Void = { _ in }
         var sendLatest: (DesignReference) async throws -> Void = { _ in }
@@ -162,7 +163,14 @@ final class DesignReferenceChips {
         let next = await Self.within(catalogTimeout) { await io.catalog() }
         if let next {
             guard catalogLoad.finish(request) else { return }
-            if catalog != next { catalog = next }
+            if catalog != next {
+                catalog = next
+                if picturesActive {
+                    for item in visibleRows.values where item.kind != .element {
+                        io.rowVisibility(item, true, pictureConsumer)
+                    }
+                }
+            }
         } else {
             let whose = place == MentionPickerContent.thisMac ? "this Mac’s" : "\(place)’s"
             guard catalogLoad.fail(request, reason: "Reading \(whose) designs took too long.") else { return }
@@ -224,9 +232,29 @@ final class DesignReferenceChips {
         return io.rowPicture(item).map { SHReferenceImage(id: id, image: Image(decorative: $0, scale: 2)) }
     }
 
-    /// A picker row came on screen: an element's picture is cut if it isn't yet.
+    @ObservationIgnored private var visibleRows: [String: DesignMentionItem] = [:]
+    @ObservationIgnored private let pictureConsumer = UUID().uuidString
+    @ObservationIgnored private var picturesActive = true
+
+    /// Agent switching hides its native host without unmounting the picker.
+    func setPictureDemandActive(_ active: Bool) {
+        guard picturesActive != active else { return }
+        picturesActive = active
+        for item in Array(visibleRows.values) {
+            if active { rowAppeared(item) } else { io.rowVisibility(item, false, pictureConsumer) }
+        }
+    }
+
+    func rowDisappeared(_ id: String) {
+        guard let item = visibleRows.removeValue(forKey: id) else { return }
+        io.rowVisibility(item, false, pictureConsumer)
+    }
+
+    /// Only rows on screen request pictures. Other catalog rows retain metadata alone.
     func rowAppeared(_ item: DesignMentionItem) {
-        guard item.kind == .element, let catalog, let board = item.reference.board,
+        visibleRows[item.id] = item
+        if picturesActive { io.rowVisibility(item, true, pictureConsumer) }
+        guard picturesActive, item.kind == .element, let catalog, let board = item.reference.board,
               let boardItem = catalog.boards[item.reference.designID]?.first(where: { $0.reference.board == board }) else { return }
         let tids = (catalog.elements[boardItem.id] ?? []).compactMap { $0.reference.element?.tid }
         io.wantCrop(item, boardItem, tids)
