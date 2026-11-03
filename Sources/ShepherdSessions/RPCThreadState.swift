@@ -134,10 +134,11 @@ final class RPCThreadState {
     var onRevision: (() -> Void)?
     /// Recovery observes intent even when a change does not alter the rendered snapshot.
     var onRecoveryChanged: (() -> Bool)?
-    var onPrepareRecovery: ((AgentRecoveryStore.Checkpoint?, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
+    var onPrepareRecovery: ((AgentRecoveryStore.Checkpoint?, Progress, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
     var recoveryWritePending = false
     var recoveryWriteAttempts = 0
     var recoveryEpoch: UInt64 = 0
+    var recoveryPreparations: [UUID: (operation: UUID?, completion: (Bool) -> Void)] = [:]
     var recoveryAttempts = 0
     var restoringRecovery = true
     var recoveryAtLaunch: AgentRecoveryStore.Checkpoint?
@@ -641,7 +642,7 @@ final class RPCThreadState {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
             && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty
             && (retryDispatch == nil || retryDispatch == operationID)
-            && preparingPrompts.isEmpty && settleCapture == nil && sendAfterCapture == nil
+            && preparingPrompts.isEmpty && recoveryPreparations.isEmpty && settleCapture == nil && sendAfterCapture == nil
             && interrupting == nil && !interruptAbortPending && unboundSteers.isEmpty
             && steersInFlight == 0 && !settleAwaitingSteers && piSteering.isEmpty && piFollowUp.isEmpty
             && sendingDesignPayloads.isEmpty
@@ -652,7 +653,7 @@ final class RPCThreadState {
     var canCheckpointForHostUpdate: Bool {
         isServable && !historyUnread && !restoringRecovery && !inputActive && compactingRun == nil && openingPrompt == nil
             && !recoveryWaiting && dispatches.isEmpty && retryDispatch == nil && recoveryPending == nil
-            && !recoveryResumePending && preparingPrompts.isEmpty && settleCapture == nil
+            && !recoveryResumePending && preparingPrompts.isEmpty && recoveryPreparations.isEmpty && settleCapture == nil
             && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
             && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
             && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
@@ -665,7 +666,7 @@ final class RPCThreadState {
     var canMoveSpace: Bool {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
             && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty && retryDispatch == nil
-            && preparingPrompts.isEmpty && settleCapture == nil
+            && preparingPrompts.isEmpty && recoveryPreparations.isEmpty && settleCapture == nil
             && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
             && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
             && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
@@ -1032,6 +1033,22 @@ final class RPCThreadState {
             }
         }
         let piSessionID = isServable ? (self.piSessionID ?? "") : ""
+        if case .snapshot = request, onRecoveryChanged?() == false {
+            // A poll must not expose a new active/settled recovery state before its checkpoint.
+            // Immutable send candidates are not in live state yet, so their old snapshot remains
+            // available while admission is gated on disk.
+            prepareRecovery(recoveryCheckpoint(sessionID: piSessionID)) { [weak self] saved in
+                guard let self else { completion(.failure(code: "native_unavailable", message: "The thread closed.")); return }
+                guard saved else {
+                    completion(.failure(code: NativeThreadCode.starting, message: "The thread is saving its recovery state. Try again shortly."))
+                    return
+                }
+                self.handle(request, olderClient: olderClient, isolateSend: isolateSend, startupDialogs: startupDialogs,
+                            recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization,
+                            inputAuthorization: inputAuthorization, completion: completion)
+            }
+            return
+        }
         commit()
         switch request {
         case .snapshot(let expectedSessionID, let beforeEntryID, let afterRevision):

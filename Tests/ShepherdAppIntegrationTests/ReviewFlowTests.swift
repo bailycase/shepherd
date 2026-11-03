@@ -418,23 +418,35 @@ struct ReviewFlowTests {
         #expect(vm.reviewSessions.isEmpty && vm.subagentInspector.open.isEmpty)
     }
 
-    @Test func closingALoadingReviewCancelsBothJobsBeforeDiffWork() async throws {
+    @Test(arguments: [false, true])
+    func closingALoadingReviewCancelsBothJobsBeforeDiffWork(remote: Bool) async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path), agent = Fixture.agent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let loads = HeldLists()
-        vm.changesEngineOverride = { _, _ in loads.engine(key: { $0.label }) }
-        vm.openReview(agentID: agent.agent.id, path: nil)
-        let session = try #require(vm.reviewSessions.values.first)
+        vm.changesEngineOverride = { _, _ in loads.engine(key: { $0.label }, holdOverview: true) }
+        let session: ReviewSession
+        if remote {
+            session = ReviewSession(agentID: agent.agent.id, paneID: PaneID(), cwd: app.dir.path, reference: nil)
+            session.engine = loads.engine(key: { $0.label }, holdOverview: true)
+            vm.remoteReviews[RemoteAgentRef(hostID: UUID(), agentID: agent.agent.id)] = session
+            vm.loadChanges(session)
+        } else {
+            vm.openReview(agentID: agent.agent.id, path: nil)
+            session = try #require(vm.reviewSessions.values.first)
+        }
         try await loads.waitFor("Uncommitted")
+        try await loads.waitForOverview()
         let listTask = try #require(session.loadTask)
         let overviewTask = try #require(session.overviewTask)
         vm.cancelReview(session)
-        #expect(listTask.isCancelled && overviewTask.isCancelled)
+        #expect(listTask.isCancelled && overviewTask.isCancelled && loads.overviewCancelled.current)
         loads.finish("Uncommitted")
+        loads.finishOverview()
         await listTask.value
-        #expect(loads.diffsStarted.isEmpty)
+        await overviewTask.value
+        #expect(loads.diffsStarted.isEmpty && loads.overviewWork == 0 && session.overview == nil)
     }
 
     /// Switching scopes quickly starts overlapping loads; only the newest may land, whether an
@@ -479,9 +491,12 @@ struct ReviewFlowTests {
 @MainActor
 private final class HeldLists {
     private(set) var diffsStarted: [String] = []
+    let overviewCancelled = Locked(false)
+    private(set) var overviewWork = 0
+    private var overviewGate: CheckedContinuation<Void, Never>?
     private var pending: [String: (ChangesScope, CheckedContinuation<ChangesList, any Error>)] = [:]
 
-    func engine(key: @escaping (ChangesScope) -> String) -> ChangesEngine {
+    func engine(key: @escaping (ChangesScope) -> String, holdOverview: Bool = false) -> ChangesEngine {
         var engine = ChangesEngine.fixed([])
         engine.list = { [self] scope, _ in
             try await withCheckedThrowingContinuation { self.pending[key(scope)] = (scope, $0) }
@@ -490,9 +505,23 @@ private final class HeldLists {
             diffsStarted.append(list.comparison.head)
             return ([], [])
         }
-        engine.overview = { throw ChangesError(ChangesError.unavailable, "no overview here") }
+        engine.overview = { [self, cancelled = overviewCancelled] in
+            guard holdOverview else { throw ChangesError(ChangesError.unavailable, "no overview here") }
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { overviewGate = $0 }
+            } onCancel: { cancelled.withValue { $0 = true } }
+            try Task.checkCancellation()
+            overviewWork += 1
+            return ChangesOverview(repository: "/tmp", defaultScope: .uncommitted)
+        }
         return engine
     }
+
+    func waitForOverview() async throws {
+        try await eventuallyOnMain("overview work gated") { self.overviewGate != nil }
+    }
+
+    func finishOverview() { overviewGate?.resume(); overviewGate = nil }
 
     func waitFor(_ key: String) async throws {
         try await eventuallyOnMain("a diff load for \(key)") { self.pending[key] != nil }

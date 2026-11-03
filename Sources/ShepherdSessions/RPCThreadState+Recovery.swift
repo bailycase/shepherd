@@ -6,14 +6,26 @@ extension RPCThreadState {
         .failure(code: "persist_failed", message: "The queue changed or could not be saved for recovery. Your input was not accepted; try again.")
     }
 
-    func prepareRecovery(_ candidate: AgentRecoveryStore.Checkpoint?, authorization: @escaping () -> Bool = { true },
-                         completion: @escaping (Bool) -> Void) {
+    func prepareRecovery(_ candidate: AgentRecoveryStore.Checkpoint?, operation: UUID? = nil,
+                         authorization: @escaping () -> Bool = { true }, completion: @escaping (Bool) -> Void) {
         guard let onPrepareRecovery else { completion(authorization()); return }
-        let generation = generation, epoch = recoveryEpoch
-        onPrepareRecovery(candidate, { [weak self] in
+        let generation = generation, epoch = recoveryEpoch, id = UUID()
+        let progress = Progress(totalUnitCount: 1)
+        recoveryPreparations[id] = (operation, { saved in
+            if !saved { progress.cancel() }
+            completion(saved)
+        })
+        onPrepareRecovery(candidate, progress, { [weak self] in
             guard let self else { return false }
-            return self.generation == generation && self.recoveryEpoch == epoch && self.session.isAlive && authorization()
-        }, completion)
+            return self.recoveryPreparations[id] != nil && self.generation == generation
+                && self.recoveryEpoch == epoch && self.session.isAlive && self.workAdmission() && authorization()
+        }, { [weak self] saved in
+            guard let self, let pending = self.recoveryPreparations.removeValue(forKey: id) else { return }
+            pending.completion(saved)
+            // A turn can settle while an edit/admission is staged. Its earlier drain yielded
+            // to this preparation, so resume only after the durable candidate has been applied.
+            if saved { self.drainIfReady() }
+        })
     }
 
     /// Immutable write-ahead intent: the live queue/pending rows do not change until rename.
@@ -192,7 +204,7 @@ extension RPCThreadState {
                     self.commit()
                 }
             }
-            self.prepareRecovery(self.recoveryCheckpoint(sessionID: self.piSessionID ?? "")) { [weak self] saved in
+            self.prepareRecovery(self.recoveryCheckpoint(sessionID: self.piSessionID ?? ""), operation: id) { [weak self] saved in
                 guard let self else { return }
                 guard saved else { self.pauseRecovery("Recovery could not be saved. Nothing was continued."); return }
                 if let beforePrompt = self.beforePrompt { beforePrompt(send) } else { send() }

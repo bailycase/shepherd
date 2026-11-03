@@ -5,6 +5,10 @@ import ShepherdProtocol
 import ShepherdTestSupport
 @testable import ShepherdSessions
 
+private extension NativeThreadResult {
+    var wasAccepted: Bool { if case .accepted = self { return true }; return false }
+}
+
 @Suite("Recovery checkpoint staging", .integrationTimeLimit)
 struct RecoveryStagingTests {
     private func images(_ bytes: Int) -> [NativeImage] {
@@ -55,7 +59,80 @@ struct RecoveryStagingTests {
         #expect(legacy == saved)
     }
 
-    @Test(arguments: ["stop", "restart", "revoke", "disk"])
+    @Test func overlappingCandidatesCannotOverwriteAnAcceptedSend() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let first = Task { try await pi.send("slow", images: images(1 << 20), from: ready) }
+        try await eventually("first candidate held") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 1 } }
+        let second = Task { try await pi.send("slow second", images: images(1 << 20), from: ready) }
+        try await eventually("second candidate held") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 2 } }
+        gate.signal()
+        let results = try await [first.value, second.value]
+        #expect(results.filter(\.wasAccepted).count == 1)
+        _ = try await pi.snapshot { $0.running }
+        #expect(pi.stdin("prompt").count == 1)
+        let checkpoint = try #require(try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id))
+        #expect(checkpoint.items.isEmpty)
+        #expect(checkpoint.active)
+    }
+
+    @Test func failedQueueEditRenameKeepsTheOriginalImagesAndTextUnpublished() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("slow", from: try await pi.ready())
+        let working = try await pi.snapshot { $0.running }, id = UUID()
+        #expect(try await pi.send("original", images: images(1 << 20), operationID: id, from: working).wasAccepted)
+        let store = AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery"))
+        let original = try #require(try store.checkpoint(for: pi.agent.id))
+        let url = store.file(for: pi.agent.id), backup = url.appendingPathExtension("saved")
+        try FileManager.default.moveItem(at: url, to: backup)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+        #expect(!(try await pi.queue(.edit(id: id, text: "unwritten"), from: working)).wasAccepted)
+        let visible = try await pi.snapshot()
+        #expect(visible.queue?.items.first?.text == "original")
+        try FileManager.default.removeItem(at: url)
+        try FileManager.default.moveItem(at: backup, to: url)
+        #expect(try JSONDecoder().decode(AgentRecoveryStore.Checkpoint.self, from: Data(contentsOf: url)) == original)
+    }
+
+    @Test(arguments: [1 << 20, 5 << 20])
+    func recoveryReservationsStayBoundedUntilCancelledWorkersDrain(bytes: Int) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let limit = min(8, (32 << 20) / (bytes + "held 0".utf8.count))
+        let requests = (0..<limit).map { index in Task { try await pi.send("held \(index)", images: images(bytes), from: ready) } }
+        try await eventually("recovery reservation limit") { try await h.server.enqueue { h.server.recoveryWritesInFlight == limit } }
+        #expect(!(try await pi.send("overflow", images: images(bytes), from: ready)).wasAccepted)
+        _ = try await pi.request(.abort(expectedSessionID: ready.piSessionID, generation: ready.generation, operationID: UUID()))
+        for request in requests { #expect(!(try await request.value).wasAccepted) }
+        #expect(try await h.server.enqueue { h.server.recoveryWritesInFlight == limit && h.server.recoveryWriteBytes == limit * bytes + (0..<limit).reduce(0) { $0 + "held \($1)".utf8.count } })
+        gate.signal()
+        try await eventually("all reservations released") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 && h.server.recoveryWriteBytes == 0 } }
+        #expect(pi.stdin("prompt").isEmpty)
+    }
+
+    @Test func imageBytesCountAgainstTheWholeQueueBudget() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("slow", from: try await pi.ready())
+        let working = try await pi.snapshot { $0.running }
+        #expect(try await pi.send("first", images: images(5 << 20), from: working).wasAccepted)
+        #expect(!(try await pi.send("overflow", images: images(5 << 20), from: working)).wasAccepted)
+        let saved = try #require(try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id))
+        #expect(saved.items.map(\.entry.text) == ["first"])
+    }
+
+    @Test(arguments: ["stop", "restart", "revoke", "disk", "exit", "retire"])
     func invalidatedOrFailedAdmissionNeverPublishesOrReachesPi(boundary: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -65,14 +142,15 @@ struct RecoveryStagingTests {
         let gate = DispatchSemaphore(value: 0)
         h.server.logicalProjectFiles.async { gate.wait() }
         defer { gate.signal() }
-        let authorized = Locked(true), id = UUID()
+        let authorized = Locked(true), replies = Locked<[NativeThreadResult]>([]), id = UUID()
         let request: NativeThreadRequest = .send(expectedSessionID: ready.piSessionID, generation: ready.generation,
             operationID: id, text: "must never reach pi", delivery: .followUp, images: images(1 << 20))
         let sending = Task {
             await withCheckedContinuation { continuation in
                 h.server.queue.async {
-                    h.server.rpcThread(forAgent: pi.agent.id)!.handle(request, inputAuthorization: { authorized.current }) {
-                        continuation.resume(returning: $0)
+                    h.server.rpcThread(forAgent: pi.agent.id)!.handle(request, inputAuthorization: { authorized.current }) { result in
+                        replies.withValue { $0.append(result) }
+                        continuation.resume(returning: result)
                     }
                 }
             }
@@ -85,9 +163,17 @@ struct RecoveryStagingTests {
             h.server.stop()
             try h.server.start()
         case "revoke": authorized.withValue { $0 = false }
+        case "exit", "retire":
+            h.server.killSession(pi.sessionID)
+            try await eventually("exited staging reply") { !replies.current.isEmpty }
+            if boundary == "retire" { await h.server.retireSession(sessionID: pi.sessionID) }
         default:
             let url = AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).file(for: pi.agent.id)
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        if ["stop", "restart", "exit", "retire"].contains(boundary) {
+            try await eventually("cancelled reply before worker release") { replies.current.count == 1 }
+            #expect(try await h.server.enqueue { h.server.recoveryWritesInFlight > 0 }, "reservations stay held until the worker drains")
         }
         gate.signal()
         #expect(!(await sending.value).wasAccepted)
@@ -99,5 +185,6 @@ struct RecoveryStagingTests {
         try await eventually("staging jobs released") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
         let files = (try? FileManager.default.contentsOfDirectory(atPath: h.dir.appendingPathComponent("agent-recovery").path)) ?? []
         #expect(!files.contains { $0.hasPrefix(".recovery-stage-") })
+        #expect(replies.current.count == 1)
     }
 }

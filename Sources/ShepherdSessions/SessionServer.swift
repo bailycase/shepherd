@@ -1925,6 +1925,9 @@ public final class SessionServer: @unchecked Sendable {
                                 !self.movingThreads.contains(agentID), self.sessions[sessionID]?.isAlive == true,
                                 let current = self.store.state.agents.first(where: { $0.id == agentID }) else { return false }
                           return current.spaceID == agent.spaceID && current.tabID == agent.tabID && current.paneID == paneID
+                              && current.worktreePath == agent.worktreePath
+                              && self.executionSpaceAuthority[agent.spaceID] == spaceAuthority
+                              && self.store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: paneID)?.cwd == leaf.cwd
                       }) { [weak self] result in
             if isSend, case .failure = result, self?.sessions[sessionID]?.isAlive == true {
                 thread.pushRunArmed = previousPush.0
@@ -2301,8 +2304,9 @@ public final class SessionServer: @unchecked Sendable {
                                  previews: client.clientCapabilities.contains(RemoteProtocol.nativeThreadPreviewCapability),
                                  transportAuthorization: { [weak self, weak client] in
                                      guard let self, let client else { return false }
-                                     return client.authenticated && self.clients[client.fd] === client
-                                         && client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability)
+                                     guard client.authenticated && self.clients[client.fd] === client else { return false }
+                                     if case .retry = request { return client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) }
+                                     return true
                                  }) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
                 switch outcome {
@@ -5470,7 +5474,8 @@ public final class SessionServer: @unchecked Sendable {
         let observedSession = owner?.piSessionID
         scheduleMetadataMutation(agent: agentID, kind: .session, { state in
             guard self.rpcThread(forAgent: agentID) === owner,
-                  owner?.generation == generation, owner?.piSessionID == observedSession,
+                  (owner?.generation == generation && owner?.piSessionID == observedSession)
+                    || owner?.piSessionID == trimmed,
                   let index = state.agents.firstIndex(where: { $0.id == agentID }),
                   state.agents[index].effectivePiSessionID != trimmed else { return }
             // A different conversation reopens naming, but never before it is durable.
@@ -5485,8 +5490,10 @@ public final class SessionServer: @unchecked Sendable {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let owner = rpcThread(forAgent: agentID)
+        let generation = owner?.generation
         scheduleMetadataMutation(agent: agentID, kind: .name, { state in
             guard self.rpcThread(forAgent: agentID) === owner,
+                  owner?.generation == generation || (sessionID != nil && owner?.piSessionID == sessionID),
                   let index = state.agents.firstIndex(where: { $0.id == agentID }),
                   !state.agents[index].nameIsFinal else { return }
             if let sessionID, sessionID != state.agents[index].effectivePiSessionID { return }
@@ -7678,9 +7685,9 @@ public final class SessionServer: @unchecked Sendable {
                     return server.checkpointAgentRecoveryAsync(sessionID: sid, thread: thread)
                 }
             }
-            thread.onPrepareRecovery = { [weak serverWeak, weak thread] candidate, authorized, done in
+            thread.onPrepareRecovery = { [weak serverWeak, weak thread] candidate, progress, authorized, done in
                 guard let server = serverWeak, let thread else { done(false); return }
-                server.stageAgentRecovery(sessionID: sid, thread: thread, candidate: candidate, authorized: authorized, completion: done)
+                server.stageAgentRecovery(sessionID: sid, thread: thread, candidate: candidate, cancellation: progress, authorized: authorized, completion: done)
             }
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             thread.onQuestionChanged = { [weak serverWeak] question in
@@ -7761,7 +7768,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.beforePrompt = { [weak serverWeak] completion in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
-                let phase = Self.storageSignposter.beginInterval("Before prompt capture")
+                let phase = Self.storageSignposter.beginInterval("Before prompt capture", id: Self.storageSignposter.makeSignpostID())
                 server.changes.prepareTurn(agentID: agentID) {
                     Self.storageSignposter.endInterval("Before prompt capture", phase)
                     sessionQueue.async(execute: completion)
@@ -8345,12 +8352,18 @@ public final class SessionServer: @unchecked Sendable {
     /// retries at most eight times; a disk failure waits for a future explicit change, not a loop.
     private func checkpointAgentRecoveryAsync(sessionID: SessionID, thread: RPCThreadState) -> Bool {
         // Explicit cancellation is a write-ahead fence, not a replaceable presentation update.
-        if thread.stopRequested { return checkpointAgentRecovery(sessionID: sessionID, thread: thread) }
-        guard !thread.restoringRecovery, let id = recoveryAgentID(sessionID: sessionID) else { return true }
+        if thread.stopRequested || (thread.restoringRecovery && thread.unreadOpeningPrompt != nil) {
+            return checkpointAgentRecovery(sessionID: sessionID, thread: thread)
+        }
+        guard !thread.restoringRecovery, let id = recoveryAgentID(sessionID: sessionID),
+              let index = recoveryAgentIndex(id) else { return true }
         let candidate = allowsAgentRecovery(id, thread: thread)
-            ? thread.recoveryCheckpoint(sessionID: store.state.agents[recoveryAgentIndex(id)!].effectivePiSessionID) : nil
+            ? thread.recoveryCheckpoint(sessionID: store.state.agents[index].effectivePiSessionID) : nil
         do {
             if try agentRecovery.checkpoint(for: id) == candidate { return true }
+            // Clearing settled intent is a cheap cancellation fence, even while an older
+            // image-bearing stage is held. Never publish idle while retaining active recovery.
+            if candidate == nil { try agentRecovery.save(nil, for: id); return true }
         } catch { return false }
         guard !thread.recoveryWritePending, thread.recoveryWriteAttempts < 8 else { return false }
         thread.recoveryWritePending = true
@@ -8367,7 +8380,7 @@ public final class SessionServer: @unchecked Sendable {
     /// A checkpoint is an ordinary version-fenced staging file, never a new persisted format.
     /// Admission callbacks run in the same queue turn as rename, before anything can supersede it.
     private func stageAgentRecovery(sessionID: SessionID, thread: RPCThreadState, candidate: AgentRecoveryStore.Checkpoint?,
-                                    authorized: @escaping () -> Bool, completion: @escaping (Bool) -> Void) {
+                                    cancellation: Progress? = nil, authorized: @escaping () -> Bool, completion: @escaping (Bool) -> Void) {
         guard let id = recoveryAgentID(sessionID: sessionID), allowsAgentRecovery(id, thread: thread) else { completion(authorized()); return }
         guard let index = recoveryAgentIndex(id), authorized(), isStarted else { completion(false); return }
         let baseline = thread.recoveryCheckpoint(sessionID: store.state.agents[index].effectivePiSessionID)
@@ -8380,7 +8393,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if try agentRecovery.checkpoint(for: id) == candidate { completion(true); return }
             guard let candidate else { try agentRecovery.save(nil, for: id); completion(true); return }
-            let bytes = (candidate.items + candidate.pending).reduce(0) { total, item in
+            let retained = candidate.items + candidate.pending + (baseline?.items ?? []) + (baseline?.pending ?? [])
+            let bytes = retained.reduce(0) { total, item in
                 total + item.entry.text.utf8.count + item.images.reduce(0) { $0 + $1.data.count }
             }
             guard recoveryWritesInFlight < 8, bytes <= (32 << 20) - recoveryWriteBytes else { completion(false); return }
@@ -8388,8 +8402,11 @@ public final class SessionServer: @unchecked Sendable {
             recoveryWriteBytes += bytes
             let version = agentRecovery.revision(for: id), url = agentRecovery.file(for: id)
             logicalProjectFiles.async {
-                let phase = Self.storageSignposter.beginInterval("Recovery staging")
-                let result = Result { try AgentRecoveryStore.stage(candidate, at: url) }
+                let phase = Self.storageSignposter.beginInterval("Recovery staging", id: Self.storageSignposter.makeSignpostID())
+                let result = Result {
+                    if cancellation?.isCancelled == true { throw CancellationError() }
+                    return try AgentRecoveryStore.stage(candidate, at: url)
+                }
                 Self.storageSignposter.endInterval("Recovery staging", phase)
                 self.queue.async {
                     self.recoveryWritesInFlight -= 1
@@ -8404,10 +8421,11 @@ public final class SessionServer: @unchecked Sendable {
                         completion(false); return
                     }
                     do {
-                        if try self.agentRecovery.checkpoint(for: id) != candidate {
+                        let existing = try self.agentRecovery.checkpoint(for: id)
+                        if existing != candidate {
                             // A background save of the unchanged baseline may have completed
                             // first; that is not a competing intent and may be safely rebased.
-                            guard self.agentRecovery.revision(for: id) == version || (try self.agentRecovery.checkpoint(for: id)) == baseline else {
+                            guard self.agentRecovery.revision(for: id) == version || existing == baseline else {
                                 completion(false); return
                             }
                             try self.agentRecovery.commit(staged, for: id, version: self.agentRecovery.revision(for: id))

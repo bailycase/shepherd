@@ -83,6 +83,41 @@ struct StatePersistenceTests {
         #expect(try h.persisted().agents.first?.effectivePiSessionID == current.piSessionID)
     }
 
+    @Test func anExtensionSessionThatPrecedesItsMatchingRPCSwitchStillPersists() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h), original = try await pi.ready()
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let client = try ExtensionClient(path: h.socketPath)
+        try client.send(.setAgentSession(agentID: pi.agent.id, piSessionID: "stub-session-2"))
+        try await eventually("extension session staged first") { try await h.server.enqueue { h.server.stateWritesInFlight > 0 } }
+        try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.session.send(.newSession) }
+        _ = try await pi.snapshot { $0.generation != original.generation }
+        gate.signal()
+        try await eventually("matching extension identity persisted") { try h.persisted().agents.first?.effectivePiSessionID == "stub-session-2" }
+    }
+
+    @Test func aNewerReturnToTheOriginalSessionIsNotDroppedBehindAPendingChange() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(), agent = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([agent], space: space))
+        let original = agent.agent.effectivePiSessionID
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let client = try ExtensionClient(path: h.socketPath)
+        try client.send(.setAgentSession(agentID: agent.agent.id, piSessionID: "pending-session"))
+        try await eventually("first identity admitted") { try await h.server.enqueue { h.server.stateWritesInFlight == 1 } }
+        try client.send(.setAgentSession(agentID: agent.agent.id, piSessionID: original))
+        try await eventually("return identity admitted") { try await h.server.enqueue { h.server.stateWritesInFlight == 2 } }
+        gate.signal()
+        try await eventually("both identity intents drained") { try await h.server.enqueue { h.server.stateWritesInFlight == 0 } }
+        #expect(try h.persisted().agents.first?.effectivePiSessionID == original)
+    }
+
     @Test func aStagedBindingCannotReplaceANewerLeafOwner() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

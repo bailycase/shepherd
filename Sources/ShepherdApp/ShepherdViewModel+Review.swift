@@ -346,6 +346,7 @@ extension ShepherdViewModel {
         let options = session.options
         session.loadTask?.cancel()
         session.loadTask = Task {
+            guard !Task.isCancelled, isCurrent(session), session.loadRequestID == requestID else { return }
             do {
                 let list = try await engine.list(scope, options)
                 try Task.checkCancellation()
@@ -377,6 +378,7 @@ extension ShepherdViewModel {
         guard let engine = session.engine else { return }
         session.overviewTask?.cancel()
         session.overviewTask = Task {
+            guard !Task.isCancelled, isCurrent(session) else { return }
             guard let overview = try? await engine.overview(), !Task.isCancelled, isCurrent(session) else { return }
             session.overview = overview
             if !session.scopeChosen, session.sentAt == nil, overview.repository != nil, overview.defaultScope != session.scope,

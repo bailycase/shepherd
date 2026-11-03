@@ -115,7 +115,7 @@ extension SessionServer {
             do {
                 staged = try await withCheckedThrowingContinuation { continuation in
                     logicalProjectFiles.async {
-                        let phase = Self.storageSignposter.beginInterval("State staging")
+                        let phase = Self.storageSignposter.beginInterval("State staging", id: Self.storageSignposter.makeSignpostID())
                         defer { Self.storageSignposter.endInterval("State staging", phase) }
                         do { continuation.resume(returning: try StateStore.stageUpdate(candidate, before: before, at: url)) }
                         catch { continuation.resume(throwing: error) }
