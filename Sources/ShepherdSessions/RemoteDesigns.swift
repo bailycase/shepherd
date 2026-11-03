@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -175,14 +176,10 @@ struct RemoteDesignService: Sendable {
             guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
             guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
             guard let kept = await server.designReferencePayload(agentID: agentID, payloadID: payloadID), let url = Self.keptPicture(kept),
-                  let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= DesignImport.maxFileBytes,
-                  let data = try? Data(contentsOf: url) else {
+                  let piece = try await server.referencePictureReader.piece(file: url, root: kept.folder, offset: offset) else {
                 throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "The thread holds no picture of that reference.")
             }
-            guard offset <= data.count else { throw RemoteDesignRefusal.badOffset(offset, size: data.count) }
-            // ponytail: reads the whole picture for each piece (at most 16 MB); a ranged read if pictures grow.
-            let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
-            return .chunk(RemoteDesignChunk(sha256: Self.sha256(data), offset: offset, total: data.count, data: data.subdata(in: offset..<end)))
+            return .chunk(piece)
         case .referenceFreshness(let reference):
             guard reference.host == .local else { throw RemoteDesignRefusal("remote_design", "That design isn't on this host.") }
             return .referenceFreshness(await server.designReferenceFreshness(reference))
@@ -268,7 +265,10 @@ struct RemoteDesignService: Sendable {
     static func keptPicture(_ kept: (payload: DesignReferencePayload, folder: URL)) -> URL? {
         guard let name = kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name,
               name == (name as NSString).lastPathComponent, !name.hasPrefix(".") else { return nil }
-        return kept.folder.appendingPathComponent(name)
+        let root = kept.folder.resolvingSymlinksInPath().standardizedFileURL
+        let file = root.appendingPathComponent(name).resolvingSymlinksInPath().standardizedFileURL
+        guard file.path.hasPrefix(root.path + "/") else { return nil }
+        return file
     }
 
     /// A board path a client sent, checked against the grammar.
@@ -280,5 +280,78 @@ struct RemoteDesignService: Sendable {
 
     static func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// DesignStore's metadata-validated digest/ranged-read pattern, for kept pictures rather than
+/// project files. Serial IO, with only 64 small digest records retained (never picture bytes).
+/// Ownership is checked by the service on every request, not by a cache hit.
+actor ReferencePictureReader {
+    private struct Digest {
+        let metadata: [Int64]
+        let sha256: String
+    }
+    private var hashes: [String: Digest] = [:]
+    private var order: [String] = []
+    private let read: @Sendable (FileHandle, Int) throws -> Data
+
+    init(read: @escaping @Sendable (FileHandle, Int) throws -> Data = { try $0.read(upToCount: $1) ?? Data() }) {
+        self.read = read
+    }
+
+    func piece(file: URL, root: URL, offset: Int) throws -> RemoteDesignChunk? {
+        let base = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = file.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path.hasPrefix(base + "/") else { return nil }
+        let fd = open(resolved.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_size >= 0, info.st_size <= DesignImport.maxFileBytes else { return nil }
+        let size = Int(info.st_size)
+        guard offset >= 0, offset <= size else { throw RemoteDesignRefusal.badOffset(offset, size: size) }
+        let metadata = Self.metadata(info)
+        let key = resolved.path
+        var whole: Data?
+        let sha: String
+        if let known = hashes[key], known.metadata == metadata {
+            sha = known.sha256
+        } else {
+            guard let data = try? read(handle, size), data.count == size else { return nil }
+            sha = RemoteDesignService.sha256(data)
+            whole = data
+        }
+        let end = offset + min(RemoteProtocol.designChunkBytes, size - offset)
+        let data: Data
+        if let whole {
+            data = whole.subdata(in: offset..<end)
+        } else if end == offset {
+            data = Data()
+        } else {
+            guard (try? handle.seek(toOffset: UInt64(offset))) != nil,
+                  let bytes = try? read(handle, end - offset), bytes.count == end - offset else { return nil }
+            data = bytes
+        }
+        // In-place writes and same-size atomic replacements invalidate the digest as well as
+        // mtime/size changes. A concurrent write during a read never seeds the cache.
+        var after = stat()
+        guard fstat(fd, &after) == 0, Self.metadata(after) == metadata else {
+            hashes[key] = nil
+            order.removeAll { $0 == key }
+            return nil
+        }
+        order.removeAll { $0 == key }
+        if order.count >= 64 { hashes.removeValue(forKey: order.removeFirst()) }
+        order.append(key)
+        hashes[key] = Digest(metadata: metadata, sha256: sha)
+        return RemoteDesignChunk(sha256: sha, offset: offset, total: size, data: data)
+    }
+
+    private static func metadata(_ info: stat) -> [Int64] {
+        [Int64(info.st_dev), Int64(bitPattern: info.st_ino), info.st_size,
+         Int64(info.st_mtimespec.tv_sec), Int64(info.st_mtimespec.tv_nsec),
+         Int64(info.st_ctimespec.tv_sec), Int64(info.st_ctimespec.tv_nsec)]
     }
 }

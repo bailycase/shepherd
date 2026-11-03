@@ -37,6 +37,38 @@ public struct AutomationHost: Equatable, Sendable {
         self.state = state
         self.triggers = triggers
     }
+
+    /// Presentation and run-refresh inputs only. A checkout, layout or unrelated thread update
+    /// must not invalidate every automation's detail. Keep `state` intact for other consumers.
+    public func hasSameAutomationInputs(as other: AutomationHost) -> Bool {
+        id == other.id && name == other.name && connected == other.connected
+            && manageable == other.manageable && triggers == other.triggers
+            && state.automations == other.state.automations && automationAgents == other.automationAgents
+    }
+
+    private struct AutomationAgent: Equatable {
+        var id: AgentID
+        var name: String?
+        var status: AgentStatus?
+        var origin: AutomationID?
+    }
+
+    private var automationAgents: [AutomationAgent] {
+        let automations = Set(state.automations.map(\.id))
+        let current = Set(state.automations.compactMap(\.agentID))
+        let destinations = Set(state.automations.compactMap { automation -> AgentID? in
+            if case .thread(let id) = automation.destination { return id }
+            return nil
+        })
+        return state.agents.compactMap { agent in
+            let origin = agent.automationOrigin?.automationID
+            let run = current.contains(agent.id) || origin.map(automations.contains) == true
+            let destination = destinations.contains(agent.id)
+            guard run || destination else { return nil }
+            return AutomationAgent(id: agent.id, name: destination ? agent.name : nil,
+                                   status: run ? agent.status : nil, origin: run ? origin : nil)
+        }
+    }
 }
 
 /// What can be done with an automation from here, and why not when nothing can.
@@ -259,27 +291,34 @@ public struct AutomationsModel: Equatable, Sendable {
     public func detail(_ key: AutomationKey, runs: [AutomationRun]?, status: AutomationTriggerStatus? = nil, now: Date = Date(),
                        timeZone: TimeZone = .current, locale: Locale = .current) -> AutomationDetail? {
         guard let row = row(key) else { return nil }
-        let rows = (runs ?? []).reversed().map { Self.runRow($0, host: key.host, timeZone: timeZone, locale: locale) }
-        let charted = Array((runs ?? []).suffix(AutomationDetail.chartLimit))
-        let longest = charted.compactMap(\.duration).max() ?? 0
-        let bars = charted.map { run in
-            let row = Self.runRow(run, host: key.host, timeZone: timeZone, locale: locale)
+        return Self.detail(row: row, runs: runs, status: status, now: now, timeZone: timeZone, locale: locale)
+    }
+
+    /// Derive a known row directly when the caller is already walking the model's rows.
+    public static func detail(row: AutomationListRow, runs: [AutomationRun]?, status: AutomationTriggerStatus? = nil,
+                              now: Date = Date(), timeZone: TimeZone = .current, locale: Locale = .current) -> AutomationDetail {
+        let key = row.key
+        let dates = RunDates(timeZone: timeZone, locale: locale)
+        let rows = (runs ?? []).reversed().map { Self.runRow($0, host: key.host, dates: dates) }
+        let charted = Array(rows.prefix(AutomationDetail.chartLimit).reversed())
+        let longest = charted.compactMap(\.seconds).max() ?? 0
+        let bars = charted.map { row in
             // A run still going, or one too short to measure, draws as a stub.
-            let height = longest > 0 ? max(Self.minimumBar, (run.duration ?? 0) / longest) : Self.minimumBar
-            return AutomationRunBar(id: run.id, height: height, tone: row.tone,
+            let height = longest > 0 ? max(Self.minimumBar, (row.seconds ?? 0) / longest) : Self.minimumBar
+            return AutomationRunBar(id: row.id, height: height, tone: row.tone,
                                     label: [row.started, row.word, row.duration].compactMap { $0 }.joined(separator: ", "))
         }
         var counts: [(String, Int)] = []
         for (result, word) in [(AutomationRunResult.stopped, "stopped"), (.interrupted, "interrupted"), (.needsYou, "asked")] {
-            let count = charted.filter { $0.result == result }.count
+            let count = charted.filter { $0.word == Self.word(result) }.count
             if count > 0 { counts.append((word, count)) }
         }
         var last = rows.first
         if let run = runs?.last { last?.started = Self.dayTime(Date(timeIntervalSince1970: run.startedAt), now: now, timeZone: timeZone, locale: locale) }
         return AutomationDetail(row: row, runs: rows, bars: bars,
                                 chartSummary: counts.isEmpty ? nil : counts.map { "\($0.0): \($0.1)" }.joined(separator: " · "),
-                                chartStart: charted.first.map { Self.stamp(Date(timeIntervalSince1970: $0.startedAt), timeZone: timeZone, locale: locale) },
-                                chartEnd: charted.last.map { Self.stamp(Date(timeIntervalSince1970: $0.startedAt), timeZone: timeZone, locale: locale) },
+                                chartStart: charted.first?.started,
+                                chartEnd: charted.last?.started,
                                 lastRun: last, runsKnown: runs != nil,
                                 trigger: row.triggered ? AutomationTriggerDetail.of(row, status: status, now: now, timeZone: timeZone, locale: locale) : nil)
     }
@@ -354,9 +393,9 @@ public struct AutomationsModel: Equatable, Sendable {
 
     static let minimumBar = 0.08
 
-    static func runRow(_ run: AutomationRun, host: UUID, timeZone: TimeZone, locale: Locale) -> AutomationRunRow {
+    private static func runRow(_ run: AutomationRun, host: UUID, dates: RunDates) -> AutomationRunRow {
         let started = Date(timeIntervalSince1970: run.startedAt)
-        return AutomationRunRow(id: run.id, started: Self.stamp(started, timeZone: timeZone, locale: locale), startedAt: started,
+        return AutomationRunRow(id: run.id, started: dates.stamp(started), startedAt: started,
                                 word: word(run.result), tone: tone(run.result),
                                 duration: run.duration.map(Self.duration), seconds: run.duration,
                                 agent: run.agentID.map { FleetRef(host: host, agent: $0) },
@@ -387,12 +426,29 @@ public struct AutomationsModel: Equatable, Sendable {
 
     /// "Sep 24 02:00".
     public static func stamp(_ date: Date, timeZone: TimeZone, locale: Locale) -> String {
-        let calendar = gregorian(timeZone)
-        let parts = calendar.dateComponents([.month, .day], from: date)
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        let month = formatter.shortMonthSymbols[(parts.month ?? 1) - 1]
-        return "\(month) \(parts.day ?? 1) \(clock(date, timeZone: timeZone))"
+        RunDates(timeZone: timeZone, locale: locale).stamp(date)
+    }
+
+    /// Value resources shared by all rows in a detail, without a DateFormatter per run.
+    private struct RunDates {
+        let calendar: Calendar
+        let months: [String]
+
+        init(timeZone: TimeZone, locale: Locale) {
+            var calendar = gregorian(timeZone)
+            calendar.locale = locale
+            self.calendar = calendar
+            // Preserve the locale's month symbols even when its default calendar differs.
+            var symbols = locale.calendar
+            symbols.locale = locale
+            months = symbols.shortMonthSymbols
+        }
+
+        func stamp(_ date: Date) -> String {
+            let parts = calendar.dateComponents([.month, .day, .hour, .minute], from: date)
+            let time = String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+            return "\(months[(parts.month ?? 1) - 1]) \(parts.day ?? 1) \(time)"
+        }
     }
 
     /// "Today 02:00", "Yesterday 02:00", else the stamp.

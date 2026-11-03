@@ -252,7 +252,8 @@ public enum CrossHostSearch {
                                    detail: segments(detail, highlighting: needle), hostName: target.hostName,
                                    status: target.status, online: target.online)
         }
-        let asked = contentTargets(needle, in: targets)
+        let matched = Set(threads.map(\.target))
+        let asked = searchesConversations(needle) ? targets.filter { $0.searchable && !matched.contains($0.id) } : []
         var conversations: [SearchResultRow] = []
         var searched = 0
         var failures: [UUID: String] = [:]

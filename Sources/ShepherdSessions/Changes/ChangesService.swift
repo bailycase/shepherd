@@ -498,30 +498,10 @@ public final class ChangesService: @unchecked Sendable {
 
     /// stdout of `executable` run with `arguments`, or nil when it fails or outlasts `timeout`.
     static func run(_ executable: String, _ arguments: [String], in directory: String, timeout: TimeInterval) -> Data? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true)
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        let finished = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in finished.signal() }
-        do { try process.run() } catch { return nil }
-        let output = ChangesLocked(Data())
-        let read = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            let data = stdout.fileHandleForReading.readDataToEndOfFile()
-            output.withValue { $0 = data }
-            read.signal()
-        }
-        if finished.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            return nil
-        }
-        read.wait()
-        return process.terminationStatus == 0 ? output.withValue { $0 } : nil
+        guard let result = try? BoundedCommand.run([executable] + arguments,
+                                                  directory: URL(fileURLWithPath: directory, isDirectory: true),
+                                                  timeout: timeout), result.status == 0 else { return nil }
+        return result.output
     }
 
     // MARK: Branches and commits

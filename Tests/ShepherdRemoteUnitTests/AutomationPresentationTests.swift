@@ -36,6 +36,47 @@ struct AutomationPresentationTests {
                       agentID: agent.map { AgentID(rawValue: $0) })
     }
 
+    @Test func automationInputsIgnoreUnrelatedStateButKeepRunAndDestinationChanges() {
+        var automation = Self.automation("a", agent: "run")
+        automation.destination = .thread(AgentID(rawValue: "destination"))
+        var original = Self.host([automation], agents: [("run", .working), ("destination", .idle), ("origin", .done), ("other", .idle)])
+        original.state.agents[2].automationOrigin = AutomationOrigin(automationID: automation.id)
+        var changed = original
+        changed.state.spaces = []
+        changed.state.agents[0].checkout = AgentCheckout(branch: "changed", changedFiles: 1)
+        changed.state.agents[0].name = "Run renamed"
+        changed.state.agents[1].status = .working
+        changed.state.agents[3].status = .blocked
+        #expect(original.hasSameAutomationInputs(as: changed))
+        #expect(original != changed, "the full host value still preserves unrelated state for other consumers")
+        changed.state.agents[0].status = .done
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.state.agents[1].name = "Renamed destination"
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.state.agents[2].status = .blocked
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.state.agents.remove(at: 2)
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.connected = false
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.triggers.toggle()
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.name = "New host name"
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.manageable.toggle()
+        #expect(!original.hasSameAutomationInputs(as: changed))
+        changed = original
+        changed.state.automations[0].enabled.toggle()
+        #expect(!original.hasSameAutomationInputs(as: changed))
+    }
+
     // MARK: Rows
 
     @Test(arguments: [
@@ -156,6 +197,8 @@ struct AutomationPresentationTests {
         let detail = try #require(model.detail(Self.key("a"), runs: runs, now: Date(timeIntervalSince1970: Self.t0 + 3600),
                                                timeZone: Self.utc, locale: Self.posix))
 
+        #expect(AutomationsModel.detail(row: detail.row, runs: runs, now: Date(timeIntervalSince1970: Self.t0 + 3600),
+                                       timeZone: Self.utc, locale: Self.posix) == detail, "row-based derivation preserves the key-based API")
         #expect(detail.runsKnown)
         #expect(detail.runs.count == 16)
         #expect(detail.runs.first?.started == "Sep 24 02:00")
@@ -170,6 +213,37 @@ struct AutomationPresentationTests {
         #expect(detail.chartSummary == "stopped: 1 · asked: 1")
         #expect(detail.chartStart == "Sep 11 02:00" && detail.chartEnd == "Sep 24 02:00", "the charted fourteen, not every run")
         #expect(detail.bars.last?.label.hasSuffix("finished, 45s") == true)
+    }
+
+    @Test(arguments: ["en_US_POSIX", "fr_FR", "ar_SA", "th_TH"])
+    func stampsPreserveLocaleSymbolsAndTheHostClock(_ identifier: String) {
+        let locale = Locale(identifier: identifier)
+        let zone = TimeZone(identifier: "Asia/Tokyo")!
+        let date = Date(timeIntervalSince1970: Self.t0)
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        let expected = "\(formatter.shortMonthSymbols[8]) 24 11:00"
+        #expect(AutomationsModel.stamp(date, timeZone: zone, locale: locale) == expected)
+    }
+
+    @Test func detailDatesFollowTheHostDayAndLocaleWithoutChangingChartOrder() throws {
+        let runs = [Self.run(0, .finished, took: 43)]
+        let model = AutomationsModel(hosts: [Self.host([Self.automation("a")])], runs: [Self.key("a"): runs])
+        func detail(_ offset: Double, zone: TimeZone = Self.utc, locale: Locale = Self.posix) throws -> AutomationDetail {
+            try #require(model.detail(Self.key("a"), runs: runs, now: Date(timeIntervalSince1970: Self.t0 + offset),
+                                      timeZone: zone, locale: locale))
+        }
+        let today = try detail(0)
+        let yesterday = try detail(86_400)
+        #expect(today.lastRun?.started == "Today 02:00")
+        #expect(yesterday.lastRun?.started == "Yesterday 02:00")
+        #expect(try detail(172_800).lastRun?.started == "Sep 24 02:00")
+        #expect(today.runs == yesterday.runs && today.bars == yesterday.bars)
+        let la = try detail(0, zone: TimeZone(identifier: "America/Los_Angeles")!)
+        #expect(la.lastRun?.started == "Today 19:00" && la.chartStart == "Sep 23 19:00")
+        let french = try detail(0, locale: Locale(identifier: "fr_FR"))
+        #expect(french.runs.first?.started != today.runs.first?.started)
+        #expect(french.bars.first?.label.hasPrefix(french.runs.first!.started) == true)
     }
 
     @Test func aDetailWhoseRunsAreNotReadYetSaysSo() throws {

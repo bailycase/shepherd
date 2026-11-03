@@ -92,6 +92,43 @@ struct SidebarProjectsTests {
         #expect(nested.visibleRows(collapsed: [SidebarProjectID.local(child.id).key]).map(\.title) == ["parent work", "deep work"])
     }
 
+    @Test func indexedParentsMatchOutermostInferenceAndKeepDuplicatePathOrder() {
+        let paths = ["/", "/code/app/sub/deep", "/code/app", "/code/app/sub", "/code/app-other",
+                     "/code/app", "relative", "relative/sub", "/elsewhere", "/code/á/sub", "/code/á"]
+        let projects = paths.enumerated().map { index, path in
+            SidebarProject(id: .local(SpaceID(rawValue: "path-\(index)")), name: "\(index)", path: path, places: [:])
+        }
+        var section = SidebarTreeSection(header: .projects, projects: projects)
+        section.nestProjects()
+        #expect(section.projects.count == projects.count)
+        for project in section.projects {
+            let expected = ProjectNesting.parent(of: project.path, among: paths)
+                .flatMap { path in projects.first { $0.path == path }?.id }
+            #expect(project.parentID == expected)
+        }
+        let root = projects[2].id
+        #expect(section.projects.filter { $0.parentID == root }.map(\.id) == [projects[1].id, projects[3].id])
+    }
+
+    @Test func explicitParentsAndCyclesStillOverrideDirectoryInference() {
+        let root = Space(name: "root", path: "/repo")
+        let other = Space(name: "other", path: "/other")
+        let child = Space(name: "child", path: "/repo/child", parentID: other.id, parentIsExplicit: true)
+        let missing = Space(name: "missing", path: "/repo/missing", parentID: SpaceID(rawValue: "gone"), parentIsExplicit: true)
+        var a = Space(name: "a", path: "/repo/a", parentIsExplicit: true)
+        let b = Space(name: "b", path: "/repo/b", parentID: a.id, parentIsExplicit: true)
+        a.parentID = b.id
+        var state = ShepherdState(spaces: [root, child, missing, a, b, other], agents: [agent("work", in: child)])
+        let before = tree(state)
+        #expect(before.projects.first { $0.space == child.id }?.parentID == .local(other.id))
+        #expect(before.projects.filter { [missing.id, a.id, b.id].contains($0.space!) }.allSatisfy { $0.parentID == nil })
+        state.agents[0].status = .blocked
+        let after = tree(state)
+        #expect(after.projects.map(\.id) == before.projects.map(\.id))
+        #expect(after.projects.map(\.parentID) == before.projects.map(\.parentID))
+        #expect(after.projects.first { $0.space == other.id }?.rollup == .waiting)
+    }
+
     @Test func hidingAParentPromotesItsVisibleChildrenAndDragsStayAmongSiblings() throws {
         var parent = shepherd
         let child = Fixture.space("hub", path: parent.path + "/hub")

@@ -14,6 +14,7 @@
 // until they add it.
 import * as fs from "node:fs";
 import * as net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -41,7 +42,6 @@ function piAgentDirectory(): string {
 // an error reply.
 function request(socketPath: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
-    let buffer = "";
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const socket = net.createConnection(socketPath);
@@ -56,16 +56,14 @@ function request(socketPath: string, payload: Record<string, unknown>): Promise<
     timer.unref?.();
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.write(JSON.stringify({ ...payload, id: 1 }) + "\n"));
-    socket.on("data", (chunk: string) => {
-      buffer += chunk;
-      const index = buffer.indexOf("\n");
-      if (index < 0) return;
+    socket.on("data", textLines((line: string) => {
       try {
-        finish(JSON.parse(buffer.slice(0, index)));
+        finish(JSON.parse(line));
       } catch {
         finish({ type: "error", code: "protocol", message: "Shepherd sent a reply it could not read" });
       }
-    });
+      return false;
+    }));
     socket.on("error", (error) => finish({ type: "error", code: "unavailable", message: `Shepherd is not reachable: ${error.message}` }));
     socket.on("close", () => finish({ type: "error", code: "disconnected", message: "Shepherd closed the connection" }));
     socket.unref();

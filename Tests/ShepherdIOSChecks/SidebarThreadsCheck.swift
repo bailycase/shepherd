@@ -15,6 +15,7 @@ struct SidebarThreadsCheck {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let defaults = UserDefaults(suiteName: scratch.appendingPathComponent("defaults").path)!
+        try await TerminalActivityCheck.run(defaults: UserDefaults(suiteName: scratch.appendingPathComponent("terminals").path)!)
 
         let shared = AgentID(rawValue: "same-id")
         let home = Space(id: SpaceID(rawValue: "home"), name: "Home", path: "/src/home")
@@ -138,14 +139,31 @@ final class ActionHost: @unchecked Sendable {
     let fd: Int32
     let port: UInt16
     private let lock = NSLock()
+    private let writing = NSLock()
     private var actions: [RemoteAgentAction] = []
     private var current: ShepherdState
     private var clients: [Int32] = []
+    private let terminalActivity: Bool
+    private var terminalReads = 0
+    private var holdsTerminals = false
+    private var heldTerminals: [(Int32, RemoteReply)] = []
 
     var received: [RemoteAgentAction] { lock.withLock { actions } }
+    var terminalRequests: Int { lock.withLock { terminalReads } }
+    var heldTerminalRequests: Int { lock.withLock { heldTerminals.count } }
+    func holdTerminals() { lock.withLock { holdsTerminals = true } }
+    func releaseTerminals() {
+        let pending = lock.withLock {
+            holdsTerminals = false
+            defer { heldTerminals.removeAll() }
+            return heldTerminals
+        }
+        for (client, reply) in pending { try? write(client, reply) }
+    }
 
-    init(state: ShepherdState) throws {
+    init(state: ShepherdState, terminalActivity: Bool = false) throws {
         current = state
+        self.terminalActivity = terminalActivity
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -197,12 +215,15 @@ final class ActionHost: @unchecked Sendable {
                 RemoteProtocol.agentActionsCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.worktreeActionsCapability,
                 // Finalize checks the worktree setup first, which the client sends only to a host that advertises it.
                 RemoteProtocol.worktreeSetupCapability,
-            ]))
+            ] + (terminalActivity ? [RemoteProtocol.terminalActivityCapability] : [])))
             while true {
                 let request = try NDJSON.decode(RemoteRequest.self, from: readLine(client))
                 switch request {
                 case .stateFetch(let id):
-                    let state = lock.withLock { clients.append(client); return current }
+                    let state = lock.withLock {
+                        if !clients.contains(client) { clients.append(client) }
+                        return current
+                    }
                     try write(client, .state(id: id, state: state))
                 case .agentAction(let id, _, let action):
                     lock.withLock { actions.append(action) }
@@ -211,6 +232,26 @@ final class ActionHost: @unchecked Sendable {
                     } else {
                         try write(client, .ok(id: id))
                     }
+                case .agentQuery(let id, let agentID, .terminals):
+                    let reply: RemoteReply? = lock.withLock {
+                        terminalReads += 1
+                        let agent = current.agents.first { $0.id == agentID }
+                        let layout = current.tabs.first { $0.id == agent?.tabID }?.layout
+                        let tabs = layout.map { TerminalPanel.tabs(in: $0, thread: agent?.paneID) } ?? []
+                        let rows = tabs.compactMap { tab in
+                            tab.leaf.sessionID.map {
+                                RemoteTerminalActivity(paneID: tab.id, sessionID: $0, process: "zsh", command: nil, outputSequence: 1)
+                            }
+                        }
+                        let reply = RemoteReply.agentResult(id: id, result: .terminals(rows))
+                        if holdsTerminals {
+                            holdsTerminals = false
+                            heldTerminals.append((client, reply))
+                            return nil
+                        }
+                        return reply
+                    }
+                    if let reply { try write(client, reply) }
                 case .agentQuery(let id, _, let query):
                     let result: RemoteAgentResult
                     switch query {
@@ -248,7 +289,7 @@ final class ActionHost: @unchecked Sendable {
 
     private func write(_ fd: Int32, _ reply: RemoteReply) throws {
         let data = try NDJSON.encode(reply)
-        let written = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, data.count) }
+        let written = writing.withLock { data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, data.count) } }
         guard written == data.count else { throw CocoaError(.fileWriteUnknown) }
     }
 }

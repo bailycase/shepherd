@@ -14,6 +14,7 @@
 // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set; every failure is
 // swallowed so this extension can never break or slow the pi session.
 import * as net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -177,7 +178,6 @@ export default function shepherdNamer(pi: ExtensionAPI) {
   // uses. One connection, one reply line, then close.
   function siblingNames(): Promise<string[]> {
     return new Promise((resolve) => {
-      let buffer = "";
       let socket;
       const finish = (names: string[]) => {
         clearTimeout(timer);
@@ -190,12 +190,9 @@ export default function shepherdNamer(pi: ExtensionAPI) {
           socket.write(JSON.stringify({ type: "listAgents", id: 1, agentID }) + "\n");
         });
         socket.setEncoding("utf8");
-        socket.on("data", (chunk) => {
-          buffer += chunk;
-          const newline = buffer.indexOf("\n");
-          if (newline < 0) return;
+        socket.on("data", textLines((line) => {
           try {
-            const reply = JSON.parse(buffer.slice(0, newline));
+            const reply = JSON.parse(line);
             const names = (reply.agents ?? [])
               .filter((a) => !a.isSelf && typeof a.name === "string")
               .map((a) => a.name.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE_LENGTH))
@@ -204,7 +201,8 @@ export default function shepherdNamer(pi: ExtensionAPI) {
           } catch {
             finish([]);
           }
-        });
+          return false;
+        }));
         socket.on("error", () => finish([]));
         socket.on("close", () => finish([]));
         socket.unref();

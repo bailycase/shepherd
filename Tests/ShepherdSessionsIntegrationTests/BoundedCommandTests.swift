@@ -14,6 +14,8 @@ struct BoundedCommandTests {
         #!/bin/bash
         trap '' TERM
         pgid=$(/bin/ps -o pgid= -p $$ | /usr/bin/tr -d ' ')
+        # Never arm group cleanup if a regressed runner inherited the test's process group.
+        if [ "$pgid" = "\(getpgrp())" ]; then exit 99; fi
         /bin/bash -c 'trap - TERM; sleep 12; kill -KILL -- -'"$pgid" >/dev/null 2>&1 &
         echo "$pgid" > '\(dir.path)/group'
         echo $$ > '\(dir.path)/leader'
@@ -99,6 +101,22 @@ struct BoundedCommandTests {
         #expect(owned.count == 2)
         try await eventually("git helper processes to exit") { owned.allSatisfy { kill($0, 0) != 0 } }
         #expect(String(decoding: try SkillsGit.run(["--version"], in: dir, timeout: 1), as: UTF8.self).hasPrefix("git version"))
+    }
+
+    @Test(arguments: ["hang", "closedPipes", "leaderExit"])
+    func changesCommandsBoundInheritedPipesAndCleanUpTheirHelpers(mode: String) async throws {
+        let dir = try makeScratchDirectory()
+        defer { cleanup(dir) }
+        let executable = try script(in: dir, mode: mode)
+        let start = ContinuousClock.now
+        let output = ChangesService.run(executable.path, [], in: dir.path, timeout: 1)
+        #expect(ContinuousClock.now - start < .seconds(6))
+        #expect(output == (mode == "leaderExit" ? Data() : nil))
+        let owned = pids(dir)
+        #expect(owned.count == 2)
+        try await eventually("Changes command helpers to exit") { owned.allSatisfy { kill($0, 0) != 0 } }
+        #expect(ChangesService.run("/bin/sh", ["-c", "printf ready"], in: dir.path, timeout: 1) == Data("ready".utf8))
+        #expect(ChangesService.run("/bin/sh", ["-c", "printf failure; exit 7"], in: dir.path, timeout: 1) == nil)
     }
 
     @Test func cancellationKillsTheCommandGroupWithoutWaitingForItsDeadline() async throws {

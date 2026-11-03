@@ -82,6 +82,7 @@ enum StatusExtension {
     static func installedPath() throws -> String {
         let dir = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try EmbeddedExtensions.install("shepherd-lines.mjs", at: dir.appendingPathComponent("shepherd-lines.mjs"))
         let url = dir.appendingPathComponent("shepherd-status.ts")
         let source = Data(extensionSource.utf8)
         if (try? Data(contentsOf: url)) != source {

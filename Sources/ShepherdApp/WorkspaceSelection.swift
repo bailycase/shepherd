@@ -84,8 +84,11 @@ struct WorkspaceSelection: Equatable {
 
     /// The layouts holding a terminal pane: any leaf but the agent's own thread.
     static func terminalTabs(in state: ShepherdState) -> Set<TabID> {
-        Set(state.tabs.filter { tab in
-            tab.layout.leaves.contains { primaryAgent(in: tab, pane: $0, agents: state.agents) == nil }
+        let agentsByID = Dictionary(grouping: state.agents, by: \.id)
+        return Set(state.tabs.filter { tab in
+            tab.layout.leaves.contains { pane in
+                primaryAgent(in: tab, pane: pane, agents: pane.agentID.flatMap { agentsByID[$0] } ?? []) == nil
+            }
         }.map(\.id))
     }
 

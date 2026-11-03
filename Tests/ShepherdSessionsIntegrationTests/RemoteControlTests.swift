@@ -135,20 +135,108 @@ struct RemoteControlTests {
         defer { r.stop() }
         let folder = try makeScratchDirectory("browse")
         defer { try? FileManager.default.removeItem(at: folder) }
-        for name in ["beta", "Alpha", ".pi"] {
+        let directories = ["beta", "Alpha", ".pi"] + (0..<2_100).map { "folder-\($0)" }
+        for name in directories {
             try FileManager.default.createDirectory(at: folder.appendingPathComponent(name), withIntermediateDirectories: true)
         }
         FileManager.default.createFile(atPath: folder.appendingPathComponent("file.txt").path, contents: Data())
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("linked"), withDestinationURL: folder.appendingPathComponent("beta"))
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("broken"), withDestinationURL: folder.appendingPathComponent("missing"))
         let client = try await r.typed()
         defer { client.disconnect() }
 
         let listing = try await client.listDir(path: folder.path)
         #expect(listing.path == folder.path)
-        #expect(listing.dirs == [".pi", "Alpha", "beta"])
+        #expect(listing.dirs == (directories + ["linked"]).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
         #expect(listing.parent == folder.deletingLastPathComponent().path)
-        #expect(try await client.listDir(path: "").path == FileManager.default.homeDirectoryForCurrentUser.path)
-        #expect(try await client.listDir(path: "/").parent == nil)
-        await #expect(throws: RemoteHostClientError.self) { _ = try await client.listDir(path: "/definitely/not/a/dir") }
+        await #expect(throws: RemoteHostClientError.self) { _ = try await client.listDir(path: folder.appendingPathComponent("missing").path) }
+    }
+
+    @Test func heldDirectoryReadsKeepTheServerResponsiveAndStayReservedAfterTimeout() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let folder = try makeScratchDirectory("held-directory")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("child"), withIntermediateDirectories: true)
+        let (started, signal) = AsyncStream<Void>.makeStream()
+        let release = DispatchSemaphore(value: 0)
+        let reads = Locked(0)
+        let cancelled = Locked(0)
+        r.server.enumerateRemoteDirectory = { path in
+            let number = reads.withValue { $0 += 1; return $0 }
+            if number <= SessionServer.directoryReadLimit {
+                signal.yield(())
+                release.wait()
+                if Task.isCancelled { cancelled.withValue { $0 += 1 } }
+            }
+            return try FileManager.default.contentsOfDirectory(atPath: path)
+        }
+        // Exercise the production five-second deadline, without a wall-clock performance assertion.
+        #expect(SessionServer.directoryReadTimeout == 5 && SessionServer.directoryReadLimit == 2)
+        defer { release.signal(); release.signal(); signal.finish() }
+        let client = try await r.raw()
+        try client.send(.listDir(id: 10, path: folder.path))
+        try client.send(.listDir(id: 11, path: folder.path))
+        var iterator = started.makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await iterator.next()
+        try client.send(.listDir(id: 12, path: folder.path))
+        guard case .error(12, "busy", _) = try await client.next() else { Issue.record("expected busy"); return }
+        try client.send(.stateFetch(id: 13))
+        guard case .state(13, _) = try await client.next() else {
+            Issue.record("the server must handle other requests while filesystem reads are held"); return
+        }
+        var timedOut: Set<Int> = []
+        for _ in 0..<2 {
+            guard case .error(let id, "timeout", _) = try await client.next() else { Issue.record("expected timeout"); return }
+            timedOut.insert(id)
+        }
+        #expect(timedOut == [10, 11])
+        try client.send(.listDir(id: 14, path: folder.path))
+        guard case .error(14, "busy", _) = try await client.next() else { Issue.record("timed-out syscalls must retain their slots"); return }
+        release.signal(); release.signal()
+        try await eventually("cancelled filesystem calls exit") { cancelled.current == 2 }
+        try await eventually("directory slots become available without publishing stale replies") {
+            try client.send(.listDir(id: 15, path: folder.path))
+            switch try await client.next() {
+            case .error(15, "busy", _): return false
+            case .dirListing(15, _, _, let dirs): return dirs == ["child"]
+            default: Issue.record("unexpected stale directory reply"); return true
+            }
+        }
+        #expect(reads.current == 3)
+    }
+
+    @Test func replacedDirectoryRequestsCancelWithoutPublishingTheirOldReply() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let folder = try makeScratchDirectory("replaced-directory")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (started, signal) = AsyncStream<Void>.makeStream()
+        let release = DispatchSemaphore(value: 0)
+        let reads = Locked(0)
+        let cancelled = Locked(false)
+        r.server.enumerateRemoteDirectory = { path in
+            if reads.withValue({ $0 += 1; return $0 }) == 1 {
+                signal.yield(())
+                release.wait()
+                cancelled.withValue { $0 = Task.isCancelled }
+            }
+            return try FileManager.default.contentsOfDirectory(atPath: path)
+        }
+        defer { release.signal(); signal.finish() }
+        let client = try await r.raw()
+        try client.send(.listDir(id: 10, path: folder.path))
+        var iterator = started.makeAsyncIterator()
+        _ = await iterator.next()
+        try client.send(.listDir(id: 10, path: folder.path))
+        guard case .dirListing(10, _, _, _) = try await client.next() else { Issue.record("expected replacement listing"); return }
+        release.signal()
+        try await eventually("replaced read observes cancellation") { cancelled.current }
+        client.closeConnection()
+        let replacement = try await r.typed()
+        defer { replacement.disconnect() }
+        #expect(try await replacement.listDir(path: folder.path).dirs.isEmpty)
     }
 
     // MARK: - Agents
@@ -391,19 +479,41 @@ struct RemoteControlTests {
         #expect(remote.messages == local.messages)
     }
 
-    @Test func tcpNativeRequestsAreBoundedAndNeedARunningPi() async throws {
+    @Test func tcpNativeTextUsesTransportBoundsAndUnknownAgentsAreRefused() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let s = try await pi.ready()
         let client = try await r.raw()
+        // State pushes may precede a request's reply. Queue one deterministically.
+        try await r.server.renameAgent(pi.agent.id, to: "Limit fixture")
+        func nextReply() async throws -> RemoteReply {
+            try await client.next(timeout: .seconds(10), where: {
+                if case .stateChanged = $0 { return false }
+                return true
+            })
+        }
+        // Complete text within the transport frame is valid; there is no separate 64 KiB cap.
+        let operation = UUID()
+        let text = String(repeating: "x", count: 64 * 1024)
         try client.send(.nativeThread(id: 1, agentID: pi.agent.id, request: .send(
-            expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
-            text: String(repeating: "x", count: 64 * 1024), delivery: .followUp)))
-        guard case .error(1, "native_limit", _) = try await client.next() else { Issue.record("an oversized request was accepted"); return }
+            expectedSessionID: s.piSessionID, generation: s.generation, operationID: operation,
+            text: text, delivery: .followUp)))
+        guard case .nativeThread(1, .accepted(let accepted)) = try await nextReply() else {
+            Issue.record("valid text was not accepted"); return
+        }
+        #expect(accepted == operation)
+        #expect(try await pi.waitForStdin("prompt")["message"] as? String == text)
 
         try client.send(.nativeThread(id: 2, agentID: AgentID(), request: .snapshot()))
-        guard case .error(2, "native_unavailable", _) = try await client.next() else { Issue.record("an unknown agent was served"); return }
-        #expect(pi.stdin("prompt").isEmpty)
+        guard case .error(2, "native_unavailable", _) = try await nextReply() else { Issue.record("an unknown agent was served"); return }
+
+        // A raw peer bypasses the typed client's preflight: the host must enforce its frame cap.
+        // It may close while the last bytes are still being written.
+        try? client.send(.nativeThread(id: 3, agentID: pi.agent.id, request: .send(
+            expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+            text: String(repeating: "x", count: NDJSON.maxPayloadBytes + 1), delivery: .followUp)))
+        #expect(try await client.disconnected())
+        #expect(pi.stdin("prompt").count == 1, "an oversized frame must never reach pi")
     }
 }

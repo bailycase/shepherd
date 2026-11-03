@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import UIKit
 import ShepherdCore
 import ShepherdProtocol
@@ -21,6 +22,8 @@ extension FixtureCatalog {
             // fetch that a shed overtakes. Checks only; its shot is the thread.
             FixtureScreen(name: "review-retention", hosts: ReviewRetentionFixture.hosts(), routes: [.thread(preview)],
                           prepare: ReviewRetentionFixture.run),
+            FixtureScreen(name: "review-preparation-cancellation", hosts: ChangesFixture.hosts(), routes: [.thread(preview)],
+                          prepare: ReviewPreparationFixture.run),
             // UX-02: a refused send kept with its image, restored only into an empty composer, a
             // newer draft and image kept, an unknown outcome never restorable. Shot: both banners.
             FixtureScreen(name: "composer-refused", hosts: RefusedSendFixture.hosts(), routes: [.thread(preview)],
@@ -349,6 +352,161 @@ extension FixtureCatalog {
         await inFlight?.value
         check(store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0, "a reply after a shed is not kept")
         reviews.disappeared(ref)
+    }
+}
+
+/// Exercises the real store's outer-task cancellation forwarding, not just stale publication.
+@MainActor enum ReviewPreparationFixture {
+    private final class Worker: @unchecked Sendable {
+        private let lock = NSLock()
+        private let gate = DispatchSemaphore(value: 0)
+        private var entered = false
+        private var observedCancel = false
+        private var finished = false
+        private var expired = false
+        private var calls = 0
+        var waiting: Bool { lock.withLock { entered } }
+        var workerObservedCancel: Bool { lock.withLock { observedCancel } }
+        var firstFinished: Bool { lock.withLock { finished } }
+        var timedOut: Bool { lock.withLock { expired } }
+
+        func release() { gate.signal() }
+
+        func prepare(_ file: DiffFile, _ palette: ReviewTextPalette, _ words: Bool) -> [Int: AttributedString] {
+            let first = lock.withLock { calls += 1; return calls == 1 }
+            var checked = false
+            let lines = ReviewText.prepare(file, palette: palette, words: words, isCancelled: {
+                if first && !checked {
+                    checked = true
+                    lock.withLock { entered = true }
+                    // Only a detached worker waits, with a backstop even if the fixture exits.
+                    if gate.wait(timeout: .now() + 10) == .timedOut { lock.withLock { expired = true } }
+                }
+                if first && Task.isCancelled { lock.withLock { observedCancel = true } }
+                return Task.isCancelled
+            })
+            if first { lock.withLock { finished = true } }
+            return lines
+        }
+    }
+
+    private enum Invalidation: String, CaseIterable {
+        case shed, forget, whitespace, fullFiles, scope, words, replacement
+    }
+
+    private static let path = "preparation.swift"
+    private static func file(_ version: Int) -> DiffFile {
+        DiffFile.parse("""
+        diff --git a/preparation.swift b/preparation.swift
+        --- a/preparation.swift
+        +++ b/preparation.swift
+        @@ -1,2 +1,2 @@
+        -let value = compute(1)
+        -let label = "old"
+        +let value = compute(\(version + 2))
+        +let label = "version\(version)"
+        """).first!
+    }
+
+    private static func check(_ ok: Bool, _ message: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(message)")
+    }
+
+    static func run(_ app: MobileApp) async {
+        let palette = ReviewTextPalette(Color.sh)
+        // Every cancellation checkpoint must discard partial output, including mid-file work.
+        for words in [false, true] {
+            var checks = 0
+            let full = ReviewText.prepare(file(0), palette: palette, words: words, isCancelled: { checks += 1; return false })
+            check(full.count == 4 && checks > 4, "normal mobile preparation keeps all four colored lines")
+            var discardedEveryPartial = true
+            for stop in 1...checks {
+                var seen = 0
+                let cancelled = ReviewText.prepare(file(0), palette: palette, words: words,
+                                                   isCancelled: { seen += 1; return seen >= stop })
+                discardedEveryPartial = discardedEveryPartial && cancelled.isEmpty
+            }
+            check(discardedEveryPartial, "mobile preparation discards partial output at all \(checks) checkpoints, words=\(words)")
+        }
+        for invalidation in Invalidation.allCases { await invalidate(invalidation, app: app) }
+        await twoViewers(app)
+        print("REVIEW PREPARATION CANCELLATION CHECK COMPLETE")
+    }
+
+    private static func invalidate(_ invalidation: Invalidation, app: MobileApp) async {
+        let worker = Worker()
+        defer { worker.release() } // All normal/early-return paths release the held worker.
+        var requests = 0
+        func makeStore() -> ReviewStore {
+            ReviewStore(ref: FixtureData.ref(FixtureData.preview), prepareText: { worker.prepare($0, $1, $2) }) { _, _, query in
+                switch query {
+                case .changesList(let scope, _):
+                    return .changesList(ChangesList(scope: scope, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
+                                                   comparison: ChangesComparison(head: "working", base: "HEAD"),
+                                                   files: [ChangesFixture.listed(file(0))]))
+                case .changesFile:
+                    requests += 1
+                    return .changesFile(ChangesFileDiff(file: file(requests)))
+                default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+                }
+            }
+        }
+        var store = makeStore()
+        await store.load(hosts: app.hosts)
+        await store.ensure(path)?.value
+        await FixtureCheck.wait("\(invalidation) worker entered", seconds: 5) { worker.waiting }
+        let old = store
+        switch invalidation {
+        case .shed:
+            store.shed()
+            await store.loadIfNeeded(hosts: app.hosts)
+        case .forget:
+            store.forget()
+            store = makeStore()
+            await store.load(hosts: app.hosts)
+        case .whitespace: store.setIgnoreWhitespace(true)
+        case .fullFiles: store.setFullFiles(true)
+        case .scope: store.pick(.unstaged)
+        case .words: store.setWordDiffs(false)
+        case .replacement: store.loadWhole(path)
+        }
+        await FixtureCheck.wait("\(invalidation) replacement list", seconds: 5) { !store.loading }
+        store.ensure(path)
+        await FixtureCheck.wait("\(invalidation) replacement publishes before obsolete worker finishes", seconds: 5) {
+            store.texts[path] != nil
+        }
+        worker.release()
+        await FixtureCheck.wait("\(invalidation) obsolete worker completed", seconds: 5) { worker.firstFinished }
+        check(!worker.timedOut && worker.workerObservedCancel, "\(invalidation): workerObservedCancel, not merely rejected publication")
+        let expected = store.diff(path).map { ReviewText.prepare($0, palette: ReviewTextPalette(Color.sh), words: store.wordDiffs) }
+        check(expected?.isEmpty == false && store.texts[path] == expected, "\(invalidation): replacement publishes the current file/options")
+        if invalidation == .forget { check(old.texts.isEmpty && old.diffs.isEmpty, "forgotten store stays empty") }
+        store.forget()
+    }
+
+    private static func twoViewers(_ app: MobileApp) async {
+        let reviews = ReviewStores.shared
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = reviews.store(for: ref)
+        reviews.appeared(ref)
+        reviews.appeared(ref)
+        defer { reviews.disappeared(ref) }
+        await store.load(hosts: app.hosts)
+        let files = Array(store.entries.prefix(2)).map(\.id) // Current file plus existing next-file prefetch.
+        check(files.count == 2, "two-viewer fixture has a current and prefetched file")
+        for id in files { await store.ensure(id)?.value }
+        await FixtureCheck.wait("initial shared preparation", seconds: 5) { files.allSatisfy { store.texts[$0] != nil } }
+        // Starts owned jobs synchronously; this actor has not yielded before one reader leaves.
+        store.setWordDiffs(false)
+        reviews.disappeared(ref)
+        check(store.viewers == 1, "one of two readers leaving preserves the shared review")
+        await FixtureCheck.wait("remaining reader and prefetch preparation", seconds: 5) {
+            files.allSatisfy { store.texts[$0] != nil }
+        }
+        check(files.allSatisfy { id in
+            guard let file = store.diff(id) else { return false }
+            return store.texts[id] == ReviewText.prepare(file, palette: ReviewTextPalette(Color.sh), words: false)
+        }, "one disappearing viewer cancels neither current-file nor prefetched preparation")
     }
 }
 

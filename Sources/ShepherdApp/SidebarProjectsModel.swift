@@ -140,16 +140,24 @@ struct SidebarTreeSection: Identifiable, Equatable {
         }
         let paths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, path($0)) })
         let groups = Dictionary(grouping: projects, by: scope).mapValues { peers in
-            peers.map { (id: $0.id, path: paths[$0.id]!) }
+            Dictionary(peers.map { (paths[$0.id]!, $0.id) }, uniquingKeysWith: { first, _ in first })
         }
         let ids = Set(projects.map(\.id))
         for index in projects.indices {
             if projects[index].parentIsExplicit {
                 projects[index].parentID = projects[index].requestedParentID.flatMap { ids.contains($0) ? $0 : nil }
             } else {
-                let peers = groups[scope(projects[index])] ?? []
-                if let parentPath = ProjectNesting.parent(of: paths[projects[index].id]!, among: peers.map(\.path)) {
-                    projects[index].parentID = peers.first { $0.path == parentPath }?.id
+                let peers = groups[scope(projects[index])] ?? [:]
+                let directory = paths[projects[index].id]!
+                // The first matching directory prefix is the outermost parent. Work scales
+                // with path depth, not the number of peers; duplicate paths keep saved order.
+                projects[index].parentID = nil
+                for separator in directory.indices where directory[separator] == "/" {
+                    let prefix = String(directory[..<separator])
+                    if !prefix.isEmpty, let parent = peers[prefix] {
+                        projects[index].parentID = parent
+                        break
+                    }
                 }
             }
         }

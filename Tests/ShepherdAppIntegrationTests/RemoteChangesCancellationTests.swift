@@ -48,8 +48,8 @@ struct RemoteChangesCancellationTests {
 
     @Test(arguments: [RemoteAgentQuery.changesOverview, .changesList(scope: .uncommitted, options: .init()),
         .changesFile(revision: ChangesPeer.revision, path: "file", oldPath: nil, options: .init()),
-        .changesBranches, .changesPatch(revision: ChangesPeer.revision, options: .init())])
-    func cancellingAChangesReadDropsItsCallbackAndLateReplyKeepsConnectionHealthy(query: RemoteAgentQuery) async throws {
+        .changesBranches, .changesPatch(revision: ChangesPeer.revision, options: .init()), .search(query: "needle")])
+    func cancellingAReadDropsItsCallbackAndLateReplyKeepsConnectionHealthy(query: RemoteAgentQuery) async throws {
         let peer = try ChangesPeer(holdAll: true)
         defer { peer.stop() }
         let client = RemoteHostClient()
@@ -119,12 +119,13 @@ private final class ChangesPeer: @unchecked Sendable {
                     var hold = false
                     switch request {
                     case .hello(let id, _, _, _, _):
-                        reply = .helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.changesCapability, RemoteProtocol.changesRevertCapability])
+                        reply = .helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.changesCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.agentInspectionCapability])
                     case .stateFetch(let id): reply = .state(id: id, state: ShepherdState())
                     case .agentQuery(let id, _, let query):
                         let result: RemoteAgentResult
                         hold = holdAll
                         switch query {
+                        case .search: result = .search(snippet: "needle")
                         case .changesOverview: result = .changesOverview(ChangesOverview(repository: "/fixture", defaultScope: .uncommitted))
                         case .changesList(let scope, _):
                             result = .changesList(ChangesList(scope: scope, revision: Self.revision,

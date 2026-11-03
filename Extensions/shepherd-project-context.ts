@@ -1,6 +1,7 @@
 // @ts-nocheck -- loaded by pi/jiti. The host authorizes every action; context is not authority.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import { createHash } from "node:crypto";
 import { Type } from "typebox";
 
@@ -15,7 +16,8 @@ export default function projectContext(pi: ExtensionAPI) {
   const request = (action, expectedRevision = 0, signal, publication = false) => new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error("Cancelled")); return; }
     const id = ++sequence, socket = net.createConnection(socketPath);
-    let buffer = "", settled = false, sent = false;
+    socket.setEncoding("utf8");
+    let replyBytes = 0, settled = false, sent = false;
     const finish = (error, result, ownerReply = false) => {
       if (settled) return;
       if (error && sent && !ownerReply && !publication && !action.read && !action.inspect) error.outcome = "unknown";
@@ -33,13 +35,10 @@ export default function projectContext(pi: ExtensionAPI) {
         ? { type: "projectPublish", id, agentID, request: action }
         : { type: "projectRuntime", id, agentID, projectID, expectedRevision, request: action }) + "\n");
     });
-    socket.on("data", bytes => {
-      buffer += bytes.toString("utf8");
-      if (Buffer.byteLength(buffer) > 1048576) { finish(new Error("Owner reply exceeds frame budget")); return; }
-      const end = buffer.indexOf("\n"); if (end < 0) return;
+    const read = textLines(line => {
       try {
-        const reply = JSON.parse(buffer.slice(0, end));
-        if (reply.id !== id) { finish(new Error("Unexpected owner reply")); return; }
+        const reply = JSON.parse(line);
+        if (reply.id !== id) { finish(new Error("Unexpected owner reply")); return false; }
         if (reply.type === "error") { const error = new Error(reply.message); error.code = reply.code; finish(error, undefined, true); }
         else if (publication && reply.type === "projectPublish") finish(null, reply.result);
         else if (!publication && reply.type === "projectRuntime") finish(null, { ...reply.project,
@@ -48,6 +47,13 @@ export default function projectContext(pi: ExtensionAPI) {
           ...(reply.models?.length ? { availableModels: reply.models } : {}) });
         else finish(new Error("Unexpected owner reply"));
       } catch (error) { finish(error); }
+      return false;
+    });
+    socket.on("data", text => {
+      if (settled) return;
+      replyBytes += Buffer.byteLength(text);
+      if (replyBytes > 1048576) { finish(new Error("Owner reply exceeds frame budget")); return; }
+      read(text);
     });
   });
   const operation = call => {
