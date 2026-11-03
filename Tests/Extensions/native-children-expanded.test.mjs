@@ -19,7 +19,7 @@ const jiti = createJiti(import.meta.url, { alias: {
   typebox: path.join(pkg, "node_modules/typebox/build/index.mjs"),
 } });
 const config = await jiti.import(path.join(root, "Extensions/shepherd-children-config.ts"));
-const { executeWorkflow } = await jiti.import(path.join(root, "Extensions/shepherd-workflow.ts"));
+const { executeWorkflow, lifecycleWaiters } = await jiti.import(path.join(root, "Extensions/shepherd-workflow.ts"));
 const { missionStore } = await jiti.import(path.join(root, "Extensions/shepherd-missions.ts"));
 const { ProjectTrustStore } = await import(path.join(pkg, "dist/index.js"));
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
@@ -105,6 +105,35 @@ test("workflow JSON boundary rejects host constructors, imports, thenables and h
   assert.equal(thenable, "blocked");
   await assert.rejects(executeWorkflow('return { get value() { while(true) {} } };', call, { timeoutMs: 200 }), /deadline|synchronous/);
   await assert.rejects(executeWorkflow('throw { get message() { while(true) {} } };', call, { timeoutMs: 200 }), /deadline|synchronous/);
+});
+
+test("capacity waiters stay idle, recheck contested slots and cancel without a lifecycle event", async () => {
+  const changed = lifecycleWaiters(), controller = new AbortController();
+  let held = true, scans = 0, admitted = 0;
+  const contender = async () => {
+    while (true) {
+      scans++;
+      if (!held) { held = true; admitted++; return; }
+      await changed.wait(controller.signal);
+    }
+  };
+  const pending = Array.from({ length: 16 }, contender);
+  const outcomes = Promise.allSettled(pending);
+  assert.equal(changed.count, 16);
+  for (let n = 0; n < 100; n++) await Promise.resolve();
+  assert.equal(scans, 16, "idle waiters perform no scans or periodic wakeups");
+  held = false; changed.notify();
+  await Promise.resolve();
+  assert.equal(admitted, 1, "every awakened contender rechecks capacity");
+  assert.equal(changed.count, 15);
+  controller.abort();
+  assert.equal(changed.count, 0, "abort removes listeners immediately");
+  const results = await outcomes;
+  assert.equal(results.filter(r => r.status === "rejected").length, 15);
+  assert.throws(() => changed.wait(controller.signal), /abort/i);
+  // A notification in the same turn as registration cannot be lost.
+  const ready = changed.wait(); changed.notify(); await ready;
+  assert.equal(changed.count, 0);
 });
 
 test("workflow calls drain as replies arrive, not on the safety tick", async () => {

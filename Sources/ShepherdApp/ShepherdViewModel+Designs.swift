@@ -84,11 +84,27 @@ extension ShepherdViewModel {
         state.designs.filter { !$0.buildsSystem }.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)" }
     }
 
-    /// Reads each design's first board for its card.
+    /// Only visible consumers request snapshots; catalog changes refresh that demand, not every design.
     func loadDesignThumbnails() async {
-        for design in state.designs where !design.buildsSystem {
-            guard let snapshot = try? await server.designSnapshot(design.id) else { continue }
-            designRendering.thumbnails.update(design.id, snapshot: snapshot)
+        for id in designRendering.thumbnails.demandedIDs {
+            guard !Task.isCancelled, let design = design(id), !design.buildsSystem,
+                  let snapshot = try? await server.designSnapshot(id), self.design(id) != nil else { continue }
+            designRendering.thumbnails.update(id, snapshot: snapshot)
+        }
+    }
+
+    func designThumbnailVisibility(_ target: DesignTarget, visible: Bool) {
+        switch target {
+        case .local(let id):
+            designRendering.thumbnails.demand(id, visible: visible)
+            if visible {
+                Task {
+                    guard let snapshot = try? await server.designSnapshot(id), design(id) != nil else { return }
+                    designRendering.thumbnails.update(id, snapshot: snapshot)
+                }
+            }
+        case .remote(let ref):
+            remoteDesignRendering(ref.hostID)?.thumbnails.demand(ref.designID, visible: visible)
         }
     }
 

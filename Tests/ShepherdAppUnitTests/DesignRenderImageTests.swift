@@ -54,6 +54,25 @@ struct DesignRenderImageTests {
         #expect(DesignRenderImage.encode(Self.image(1_200, 800, noisy: true), maxBytes: 10) == nil)
     }
 
+    @Test func detachedEncodingKeepsCapsAndWireBytes() async throws {
+        let (encoded, base64) = try #require(try await DesignRenderImage.encodeDetached(Self.image(400, 4_000, noisy: false), deadline: nil))
+        #expect(encoded.height == DesignRenderImage.maxEdge && encoded.width == 160)
+        #expect(Data(base64Encoded: base64) == encoded.data)
+        #expect(encoded.data.count <= DesignRenderImage.maxBytes)
+    }
+
+    @Test func detachedEncodingHonorsExpiredDeadlineAndCancellation() async {
+        let image = Self.image(16, 16, noisy: false)
+        await #expect(throws: (any Error).self) {
+            try await DesignRenderImage.encodeDetached(image, deadline: .distantPast)
+        }
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await DesignRenderImage.encodeDetached(image, deadline: nil)
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
     @Test(arguments: [(500, "1 KB"), (41_000, "41 KB"), (1_234_567, "1.2 MB")])
     func sizesReadShort(_ bytes: Int, _ words: String) {
         #expect(DesignRenderImage.size(bytes) == words)

@@ -155,6 +155,11 @@ public final class TerminalSurfaceModel {
     let viewState: TerminalViewState
     let session: InMemoryTerminalSession
     private var pendingOutput = Data()
+    private var pendingOutputCompletions: [@Sendable () -> Void] = []
+
+    deinit {
+        for finish in pendingOutputCompletions { finish() }
+    }
     private var attachment = SurfaceAttachmentTracker()
     /// Whether this pane should be drawing. Hidden panes stay mounted but must
     /// not run a render loop. Also read by the drop delegate: a hidden pane
@@ -381,23 +386,30 @@ public final class TerminalSurfaceModel {
     public func replaceWithReplay(_ data: Data, generation: UInt64) -> Bool {
         guard attachment.finishReplacement(generation: generation) else { return false }
         pendingOutput.removeAll()
-        if !data.isEmpty {
-            session.receive(data)
+        let completions = pendingOutputCompletions
+        pendingOutputCompletions.removeAll()
+        if !data.isEmpty || !completions.isEmpty {
+            session.receive(data) { for finish in completions { finish() } }
         }
         return true
     }
 
-    public func feed(_ data: Data) {
+    public func feed(_ data: Data, completion: (@Sendable () -> Void)? = nil) {
         // Trust our SwiftUI-view generation rather than TerminalViewState's
         // weak surface pointer. During split collapse, an old Ghostty view can
         // detach after its replacement attached and incorrectly clear that
         // shared pointer even though the in-memory session owns a live surface.
         guard attachment.isReady else {
-            if onSurfaceAttachmentChanged == nil { pendingOutput.append(data) }
+            if onSurfaceAttachmentChanged == nil, !data.isEmpty {
+                pendingOutput.append(data)
+                if let completion { pendingOutputCompletions.append(completion) }
+            } else {
+                completion?() // The next attachment's authoritative replay replaces these bytes.
+            }
             return
         }
         flushPendingOutput()
-        session.receive(data)
+        session.receive(data, completion: completion)
     }
 
     func surfaceViewAppeared(_ id: UUID) {
@@ -531,7 +543,9 @@ public final class TerminalSurfaceModel {
 
     private func flushPendingOutput() {
         guard !pendingOutput.isEmpty else { return }
-        session.receive(pendingOutput)
+        let completions = pendingOutputCompletions
+        pendingOutputCompletions.removeAll()
+        session.receive(pendingOutput) { for finish in completions { finish() } }
         pendingOutput.removeAll()
     }
 }

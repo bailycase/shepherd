@@ -155,6 +155,12 @@ public final class SessionServer: @unchecked Sendable {
         /// `designChanged` for these.
         var watchedDesigns: Set<DesignID> = []
         var watchedExecutions: Set<ProjectExecutionKey> = []
+        var watchedThreads: Set<AgentID> = []
+        var revisedThreads: Set<AgentID> = []
+        var threadHintScheduled = false
+        var digestReads = 0
+        var digestWindow = ContinuousClock.now
+        var digestRequests = 0
         /// It reads pushed design changes and capability changes.
         var knowsDesigns: Bool { clientCapabilities.contains(RemoteProtocol.designsCapability) }
 
@@ -203,7 +209,7 @@ public final class SessionServer: @unchecked Sendable {
         var outputSequence: UInt64 = 0
         /// The output that is news to a viewer who looked away: not a redraw after a resize.
         var news = TerminalNews()
-        /// A delivery stays in flight until its main-queue callback returns.
+        /// A delivery stays in flight until its parser-consumption callback completes.
         /// A cancelled delivery still occupies this slot until its callback
         /// runs, keeping the renderer from receiving overlapping output.
         var delivery: OutputDelivery?
@@ -240,6 +246,8 @@ public final class SessionServer: @unchecked Sendable {
     /// PTY output with the server-queue sequence of the delivery's final
     /// source chunk. Coalesced deliveries retain that end sequence.
     public var onSequencedOutput: ((SessionID, Data, UInt64) -> Void)?
+    /// Preferred renderer hook. Completion retires bytes after parser consumption (or detach).
+    public var onOutputConsumed: ((SessionID, Data, UInt64, @escaping @Sendable () -> Void) -> Void)?
     /// A session's child process exited, and whether its agent stays (`SessionExit`). Delivered
     /// on the main actor.
     public var onSessionExited: ((SessionID, SessionExit) -> Void)?
@@ -993,6 +1001,8 @@ public final class SessionServer: @unchecked Sendable {
     /// `allowsAgentRecovery` per agent, valid for one committed state: `commit()` asks on every
     /// streamed delta, and the answer scans projects, executions and automations.
     private var recoveryAllowance: (version: UInt64, allowed: [AgentID: Bool])?
+    private var recoveryAgentIndices: (version: UInt64, indices: [AgentID: Int])?
+    private(set) var recoveryAgentIndexBuildCount = 0
     private var projectDeliveries: (version: UInt64, byAgent: [AgentID: UUID?])?
 
     private var sessions: [SessionID: ServerSession] = [:]
@@ -2259,6 +2269,61 @@ public final class SessionServer: @unchecked Sendable {
                 send(.ok(id: id), to: client)
             } catch {
                 send(.error(id: id, code: "push_registration", message: "Could not remove push registration."), to: client)
+            }
+        case .nativeThreadSubscribe(let id, let agentIDs):
+            let visible = Set(remoteState(store.state, for: client).agents.map(\.id))
+            guard offeredCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
+                  agentIDs.count <= 64,
+                  agentIDs.allSatisfy({ visible.contains($0) && !store.state.isProjectCoordinator($0) }) else {
+                send(.error(id: id, code: "unsupported", message: "Watch at most 64 ordinary threads."), to: client); return
+            }
+            client.watchedThreads = Set(agentIDs)
+            client.revisedThreads.formIntersection(client.watchedThreads)
+            send(.ok(id: id), to: client)
+        case .fleetDigest(let id, let agentID, let session, let revision):
+            guard offeredCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
+                  remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
+                send(.error(id: id, code: "unsupported", message: "Fleet digests require an ordinary thread."), to: client); return
+            }
+            if ContinuousClock.now - client.digestWindow >= .seconds(1) {
+                client.digestWindow = .now
+                client.digestRequests = 0
+            }
+            guard client.digestReads < 4, client.digestRequests < 64 else {
+                send(.error(id: id, code: "busy", message: "Too many fleet reads."), to: client); return
+            }
+            client.digestReads += 1
+            client.digestRequests += 1
+            // Only live RPC revisions cover all snapshot metadata. Preview/start-problem revision
+            // zero is not a content identity: always re-read and return its digest, even for a match.
+            let live = rpcThread(forAgent: agentID)
+            let matchesLive = live?.isServable == true && live?.piSessionID == session?.piSessionID
+                && live?.generation == session?.generation
+            let request = NativeThreadRequest.snapshot(afterRevision: matchesLive ? revision : nil)
+            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count,
+                                 olderClient: false, startupDialogs: true, previews: true) { [weak self, weak client] outcome in
+                guard let self, let client else { return }
+                client.digestReads -= 1
+                guard self.clients[client.fd] === client else { return }
+                switch outcome {
+                case .result(.snapshot(let snapshot)):
+                    let digest = FleetDigest(snapshot)
+                    let reply = RemoteReply.fleetDigest(id: id, result: .digest(digest))
+                    guard let encoded = try? NDJSON.encode(reply), encoded.count <= 32 * 1024 else {
+                        // Never truncate answer choices/identities: the caller may fall back to its ordinary snapshot.
+                        self.send(.error(id: id, code: "too_large", message: "Use a thread snapshot for this digest."), to: client); return
+                    }
+                    self.send(reply, to: client)
+                case .result(.unchanged(let piSessionID, let generation, let currentRevision)):
+                    guard session == NativeThreadSession(piSessionID: piSessionID, generation: generation), currentRevision == revision else {
+                        self.send(.error(id: id, code: "stale_session", message: "Refresh thread metadata."), to: client); return
+                    }
+                    self.send(.fleetDigest(id: id, result: .unchanged(piSessionID: piSessionID, generation: generation, revision: currentRevision)), to: client)
+                case .failure(let code, let message): self.send(.error(id: id, code: code, message: message), to: client)
+                default: self.send(.error(id: id, code: "not_ready", message: "Thread metadata is not ready."), to: client)
+                }
             }
         case .nativeThread(let id, let agentID, let request):
             if store.state.isProjectCoordinator(agentID), !client.clientCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) {
@@ -5445,7 +5510,7 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentSession(agentID: AgentID, piSessionID: String) {
         let trimmed = piSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else {
+        guard let index = recoveryAgentIndex(agentID) else {
             ShepherdLog.warning("setAgentSession for unknown agent \(agentID); dropped")
             return
         }
@@ -8086,17 +8151,24 @@ public final class SessionServer: @unchecked Sendable {
         let delivery = output.delivery!
         hopToMain { [weak self] in
             guard let self else { return }
+            let finish: @Sendable () -> Void = { [weak self] in
+                self?.queue.async { [weak self] in
+                    self?.finishOutputDelivery(sessionID: sessionID, delivery: delivery)
+                }
+            }
             if !delivery.isCancelled {
+                if let consume = self.onOutputConsumed {
+                    consume(sessionID, delivery.data, delivery.endSequence, finish)
+                    return
+                }
                 self.onOutput?(sessionID, delivery.data)
                 self.onSequencedOutput?(sessionID, delivery.data, delivery.endSequence)
             }
-            self.queue.async { [weak self] in
-                self?.finishOutputDelivery(sessionID: sessionID, delivery: delivery)
-            }
+            finish()
         }
     }
 
-    /// Run on the server queue after the main callback returns.
+    /// Run on the server queue after parser consumption or retirement.
     private func finishOutputDelivery(sessionID: SessionID, delivery: OutputDelivery) {
         guard let output = outputStates[sessionID],
               output.delivery === delivery else { return }
@@ -8284,12 +8356,21 @@ public final class SessionServer: @unchecked Sendable {
         thread.goal == nil && allowsAgentRecovery(id)
     }
 
+    /// StateStore's version covers extension/RPC session races and structural reordering.
+    private func recoveryAgentIndex(_ id: AgentID) -> Int? {
+        if recoveryAgentIndices?.version != store.version {
+            recoveryAgentIndices = (store.version, Dictionary(uniqueKeysWithValues: store.state.agents.enumerated().map { ($0.element.id, $0.offset) }))
+            recoveryAgentIndexBuildCount += 1
+        }
+        return recoveryAgentIndices?.indices[id]
+    }
+
     private func allowsAgentRecovery(_ id: AgentID) -> Bool {
         if recoveryAllowance?.version != store.version { recoveryAllowance = (store.version, [:]) }
         if let cached = recoveryAllowance?.allowed[id] { return cached }
         var allowed = false
-        if let agent = store.state.agents.first(where: { $0.id == id }),
-           agent.coordinatorFor == nil, agent.designID == nil,
+        if let index = recoveryAgentIndex(id),
+           store.state.agents[index].coordinatorFor == nil, store.state.agents[index].designID == nil,
            !store.state.isProjectWorker(id), !store.state.isMissionAgent(id),
            !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
            !Self.unattendedAgentIDs(in: store.state).contains(id) {
@@ -8317,12 +8398,16 @@ public final class SessionServer: @unchecked Sendable {
                 thread.recoveryAtLaunch = deferred
                 return true
             }
+            let index = recoveryAgentIndex(id)
+            let currentSession = index.map { store.state.agents[$0].effectivePiSessionID }
             let checkpoint = allowsAgentRecovery(id, thread: thread)
-                ? thread.recoveryCheckpoint(sessionID: store.state.agents.first(where: { $0.id == id })?.piSessionID ?? id.rawValue) : nil
-            if let checkpoint, thread.piSessionID != nil {
-                // RPC observes a session switch before the extension socket necessarily does.
+                ? thread.recoveryCheckpoint(sessionID: currentSession ?? id.rawValue) : nil
+            if let checkpoint, thread.piSessionID != nil, currentSession != checkpoint.sessionID {
+                // Reconcile only an actual identity change; synchronous admission still verifies
+                // persistence before any send, including an extension/RPC session-switch race.
                 applyAgentSession(agentID: id, piSessionID: checkpoint.sessionID)
-                guard store.state.agents.first(where: { $0.id == id })?.effectivePiSessionID == checkpoint.sessionID else { return false }
+                guard let updated = recoveryAgentIndex(id),
+                      store.state.agents[updated].effectivePiSessionID == checkpoint.sessionID else { return false }
             }
             try agentRecovery.save(checkpoint, for: id, force: force)
             return true
@@ -8401,6 +8486,19 @@ public final class SessionServer: @unchecked Sendable {
         if let thread = sessions[sessionID]?.thread {
             thread.projectResultDeliveryID = projectResultDeliveryID(forAgent: agentID)
             if thread.pushRunArmed { pushIfSettled(agentID: agentID, thread: thread) }
+        }
+        for client in clients.values where client.isRemote && client.authenticated && client.watchedThreads.contains(agentID) {
+            client.revisedThreads.insert(agentID)
+            guard !client.threadHintScheduled else { continue }
+            client.threadHintScheduled = true
+            queue.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self, weak client] in
+                guard let self, let client, self.clients[client.fd] === client else { return }
+                client.threadHintScheduled = false
+                let visible = Set(self.remoteState(self.store.state, for: client).agents.map(\.id))
+                let revised = client.revisedThreads.intersection(client.watchedThreads).intersection(visible)
+                client.revisedThreads.removeAll()
+                for id in revised { self.send(.nativeThreadChanged(agentID: id), to: client) }
+            }
         }
         guard let deadline = revisedThreads.insert(agentID) else { return }
         DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in

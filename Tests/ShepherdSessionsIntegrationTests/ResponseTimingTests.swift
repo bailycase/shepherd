@@ -204,10 +204,12 @@ struct ResponseTimingTests {
         let timing = try #require(after.messages.last?.timing)
         #expect(timing.sentAt == 1_000 && timing.headersAt == 1_100 && timing.firstEventAt == 1_200)
         #expect(after.revision > before.revision, "metadata-only history changes notify clients")
+        #if DEBUG
         let bytes = await withCheckedContinuation { continuation in
             t.queue.async { continuation.resume(returning: t.state.bytesOfLastSnapshot) }
         }
         #expect(bytes == (try JSONEncoder().encode(after).count), "the warmed history-size cache was invalidated")
+        #endif
         await mark(t, .message, seq: 1, at: Self.stamp)
         #expect(try await t.snapshot().revision == after.revision, "identical metadata is not a new revision")
     }

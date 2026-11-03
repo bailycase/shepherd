@@ -239,7 +239,9 @@ extension RPCThreadState {
         }
         NativeQueueRules.steer([id], in: &items)
         commit()
+        let generation = generation
         steerDispatch(id) { [weak self] failure in
+            guard self?.generation == generation else { completion(.failure(code: "stale_session", message: "Refresh the thread before acting.")); return }
             // pi refused it: the message was never queued, and the draft stays with the client.
             if failure != nil {
                 self?.items.removeAll { $0.entry.id == id }
@@ -505,10 +507,11 @@ extension RPCThreadState {
         let parts = batch.count == 1 && batch[0].direct ? nil : NativeQueueRules.parts(batch)
         // The latest record among them is the viewer's screen as the batch leaves.
         let context = batch.last { $0.context != nil }?.context
+        let generation = generation
         dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), context: context, images: batch.flatMap(\.images),
                  parts: parts, items: batch) { [weak self] result in
             // pi refused the delivery: the items return to the head, and the queue waits.
-            guard let self, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
+            guard let self, self.generation == generation, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
             NativeQueueRules.insert(batch, atQueuedIndex: 0, into: &self.items)
             self.paused = true
             self.queueNotice = message
@@ -552,11 +555,17 @@ extension RPCThreadState {
             return
         }
         commit()
-        let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let generation = generation
-        preparingPrompts[id] = completion
+        var answered = false, started = false
+        preparingPrompts[id] = { [weak self] result in
+            guard !answered else { return }
+            answered = true
+            self?.preparingPrompts.removeValue(forKey: id)
+            completion(result)
+        }
         let send = { [weak self] in
-            guard let self, let completion = self.preparingPrompts.removeValue(forKey: id) else { return }
+            guard let self, !started, let completion = self.preparingPrompts[id] else { return }
+            started = true
             guard self.generation == generation else {
                 completion(.failure(code: "stale_session", message: "The session changed before pi started the send."))
                 return
@@ -568,9 +577,14 @@ extension RPCThreadState {
                 return
             }
             let commandDone = self.beginCommandWindow(for: prompt)
-            self.requestInput(prompt: prompt, images: rpcImages, delivery: .followUp) { [weak self] failure in
+            self.requestInput(prompt: prompt, images: images, delivery: .followUp, canSend: { !answered }, admitted: { [weak self] in
+                self?.preparingPrompts.removeValue(forKey: id)
+            }) { [weak self] failure in
                 commandDone?()
-                guard let self else { return }
+                guard let self, !answered else { return }
+                guard self.generation == generation else {
+                    completion(.failure(code: "stale_session", message: "The session changed while the send was pending.")); return
+                }
                 if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
                     self.dropDispatch(id)
                     self.discardPreparedTurn?()
@@ -652,11 +666,16 @@ extension RPCThreadState {
         if oneShotSteers[id] != nil { oneShotSteers[id] = item.promptText }
         unboundSteers.append(id)
         steersInFlight += 1
-        let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let commandDone = beginCommandWindow(for: item.promptText)
-        requestInput(prompt: item.promptText, images: rpcImages, delivery: .steer) { [weak self] failure in
+        let generation = generation
+        requestInput(prompt: item.promptText, images: item.images, delivery: .steer) { [weak self] failure in
             commandDone?()
-            guard let self else { return }
+            guard let self else {
+                done(.failure(code: "send_cancelled", message: "The session was retired before the send completed.")); return
+            }
+            guard self.generation == generation else {
+                done(.failure(code: "stale_session", message: "The session changed while the send was pending.")); return
+            }
             self.unboundSteers.removeAll { $0 == id }
             self.steersInFlight -= 1
             if failure == nil, let index = self.items.firstIndex(where: { $0.entry.id == id && $0.entry.state == .steering }),
@@ -722,10 +741,11 @@ extension RPCThreadState {
     /// Everything `clear_queue` returned goes back to pi in order: this host's steering items
     /// are steered again, anything else pi had queued (an extension's) is re-sent as it was.
     func restorePiQueue(steering: [String], followUp: [String]) {
+        let generation = generation
         func restoreUnowned(_ text: String, delivery: RPCStreamingBehavior) {
             let id = UUID()
             requestInput(prompt: text, images: [], delivery: delivery) { [weak self] failure in
-                guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                guard let self, self.generation == generation, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
                 self.items.append(QueueItem(entry: NativeQueuedMessage(id: id, text: text, sentAt: Date().timeIntervalSince1970 * 1000), images: []))
                 self.paused = true
                 self.queueNotice = message
@@ -739,7 +759,7 @@ extension RPCThreadState {
                 let id = remaining.remove(at: index).entry.id
                 if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
                 steerDispatch(id) { [weak self] failure in
-                    guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                    guard let self, self.generation == generation, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
                     NativeQueueRules.unsteer(id, in: &self.items)
                     self.paused = true
                     self.queueNotice = message

@@ -22,6 +22,18 @@
     reads many threads at once (a Home screen) then starts no pi per idle agent. Any other
     request (send, abort, images…) starts pi as before, whose own snapshot replaces the preview.
     A client that does not list it has every request start pi.
+  - `native.revisions.v1`: `nativeThreadSubscribe` replaces a connection's watch set (at most
+    64 visible ordinary agents; empty unsubscribes). `nativeThreadChanged(agentID:)` is a
+    coalesced invalidation, at most one per watched agent per 250 ms batch, never a snapshot
+    or permission to send. It starts no pi. Reconnect starts unsubscribed; clients retain
+    fallback polling and fence pulls by their connection/session epochs.
+  - `native.fleetDigest.v1`: `fleetDigest` quietly derives the same Home metadata as a snapshot,
+    with no conversation messages on the wire. Matching live session/generation and revision
+    use the RPC unchanged path without deriving a snapshot. Previews always return a digest:
+    their revision zero is not a file-content identity. Four concurrent reads and 64 requests/second per connection;
+    replies cap at 32 KiB. Oversized questions are refused (`too_large`), not truncated: use the
+    ordinary snapshot fallback. Missing capability likewise uses snapshots. Idle reads use
+    previews and never launch pi; private Project coordinators are excluded.
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
