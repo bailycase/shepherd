@@ -35,6 +35,7 @@ struct ChangesGit {
     /// mean exactly those files.
     static func run(_ arguments: [String], in directory: String, index: String? = nil, literalPaths: Bool = false,
                     input: Data? = nil, timeout: TimeInterval = 10) throws -> Result {
+        try ChangesReviewCancellation.checkCurrent()
         #if DEBUG
         runs.withValue { $0[directory, default: 0] += 1 }
         #endif
@@ -52,8 +53,11 @@ struct ChangesGit {
             let result = try BoundedCommand.run([executable] + configuration + arguments,
                                                 directory: URL(fileURLWithPath: directory), environment: environment,
                                                 input: input, timeout: timeout)
+            try ChangesReviewCancellation.checkCurrent()
             return Result(status: result.status, stdout: result.output,
                           stderr: String(decoding: result.errors, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch is CancellationError {
+            throw CancellationError()
         } catch BoundedCommand.Failure.timedOut {
             // The bounded runner has stopped this command's group. git cannot clean its lock
             // after SIGKILL; `index` is always our private, caller-serialized index, never git's.
@@ -89,6 +93,17 @@ final class ChangesLocked<Value>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return try body(&value)
+    }
+}
+
+/// Scoped only to a blocking review operation's worker thread; captures and mutations never
+/// install this token. It reaches synchronous git helpers without changing their Undo semantics.
+final class ChangesReviewCancellation: @unchecked Sendable {
+    static let key = "shepherd.changes.reviewCancellation"
+    let cancelled = ChangesLocked(false)
+    func check() throws { if cancelled.withValue({ $0 }) { throw CancellationError() } }
+    static func checkCurrent() throws {
+        try (Thread.current.threadDictionary[key] as? ChangesReviewCancellation)?.check()
     }
 }
 

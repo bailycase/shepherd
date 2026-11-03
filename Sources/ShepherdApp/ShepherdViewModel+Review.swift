@@ -262,6 +262,8 @@ extension ShepherdViewModel {
     func cancelReviews(for agentID: AgentID) {
         let doomed = reviewSessions.values.filter { $0.agentID == agentID }.map(\.paneID)
         for paneID in doomed {
+            reviewSessions[paneID]?.loadTask?.cancel()
+            reviewSessions[paneID]?.overviewTask?.cancel()
             reviewSessions.removeValue(forKey: paneID)
         }
         subagentInspector.forget(.local(agentID))
@@ -271,6 +273,8 @@ extension ShepherdViewModel {
         let liveAgents = Set(state.agents.map(\.id))
         let doomed = reviewSessions.values.filter { !liveAgents.contains($0.agentID) }
         for session in doomed {
+            session.loadTask?.cancel()
+            session.overviewTask?.cancel()
             reviewSessions.removeValue(forKey: session.paneID)
         }
         let panes = subagentInspector
@@ -344,15 +348,20 @@ extension ShepherdViewModel {
         session.loadErrorIsNotice = false
         let scope = session.scope
         let options = session.options
-        Task {
+        session.loadTask?.cancel()
+        session.loadTask = Task {
             do {
                 let list = try await engine.list(scope, options)
+                try Task.checkCancellation()
+                guard isCurrent(session), session.loadRequestID == requestID else { return }
                 let diff = try await engine.diffs(list, options)
+                try Task.checkCancellation()
                 guard isCurrent(session), session.loadRequestID == requestID else { return }
                 let order = Dictionary(list.files.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
                 session.list = list
                 session.adopt(files: diff.files.sorted { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }, truncated: diff.truncated)
-            } catch {
+            } catch is CancellationError { return }
+            catch {
                 guard isCurrent(session), session.loadRequestID == requestID else { return }
                 session.list = nil
                 session.files = []
@@ -370,8 +379,9 @@ extension ShepherdViewModel {
     /// the pane's guess while the reader has not picked one.
     func loadChangesOverview(_ session: ReviewSession) {
         guard let engine = session.engine else { return }
-        Task {
-            guard let overview = try? await engine.overview(), isCurrent(session) else { return }
+        session.overviewTask?.cancel()
+        session.overviewTask = Task {
+            guard let overview = try? await engine.overview(), !Task.isCancelled, isCurrent(session) else { return }
             session.overview = overview
             if !session.scopeChosen, session.sentAt == nil, overview.repository != nil, overview.defaultScope != session.scope,
                session.scope.kind != .lastTurn {

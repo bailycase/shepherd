@@ -870,8 +870,8 @@ final class ShepherdViewModel {
             self.notifications.agentNotify(agent, title: title, body: body)
         }
         if let checkoutReader {
-            let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, cwd, checkout in
-                await server.setAgentCheckout(id, checkout, directory: cwd)
+            let monitor = CheckoutMonitor(read: checkoutReader) { [server] ids, cwd, checkout in
+                await server.setAgentCheckouts(ids, checkout, directory: cwd)
             }
             monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
             checkouts = monitor
@@ -1367,7 +1367,16 @@ final class ShepherdViewModel {
         reconcileThreadStores()
         browsers.prune(state: state)
         notifyLocalQuestions()
-        checkouts?.sync(agents: state.agents.map(\.id))
+        if let checkouts {
+            let layouts = Dictionary(state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
+            let directories = Dictionary(state.agents.compactMap { agent -> (AgentID, String)? in
+                let layout = layouts[agent.tabID]
+                guard let cwd = layout?.leaves.first(where: { $0.agentID == agent.id })?.cwd
+                    ?? agent.worktreePath ?? layout?.firstLeaf.cwd else { return nil }
+                return (agent.id, cwd)
+            }, uniquingKeysWith: { first, _ in first })
+            checkouts.sync(directories: directories, order: state.agents.map(\.id))
+        }
         pruneReviewSessions()
         pruneDesigns()
         pruneFileTrees()

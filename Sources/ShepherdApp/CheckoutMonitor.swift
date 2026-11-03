@@ -67,7 +67,7 @@ final class CheckoutMonitor {
     nonisolated static let git: Reader = { cwd in await Task.detached { CheckoutStatus.read(cwd: cwd) }.value }
 
     private let read: Reader
-    private let write: (AgentID, String, AgentCheckout?) async -> Void
+    private let write: ([AgentID], String, AgentCheckout?) async -> Void
     /// The directory each agent works in; nil once it is gone.
     var directory: (AgentID) -> String? = { _ in nil }
     private var known: [AgentID: String] = [:]
@@ -83,7 +83,7 @@ final class CheckoutMonitor {
         directory(id).map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardized.path }
     }
 
-    init(read: @escaping Reader, write: @escaping (AgentID, String, AgentCheckout?) async -> Void) {
+    init(read: @escaping Reader, write: @escaping ([AgentID], String, AgentCheckout?) async -> Void) {
         self.read = read
         self.write = write
     }
@@ -91,8 +91,13 @@ final class CheckoutMonitor {
     /// The workspace changed: read agents it has not seen, forget the ones that left.
     func sync(agents: [AgentID]) {
         let next = Dictionary(agents.compactMap { id in checkout(id).map { (id, $0) } }, uniquingKeysWith: { first, _ in first })
+        sync(directories: next, order: agents)
+    }
+
+    func sync(directories: [AgentID: String], order: [AgentID]? = nil) {
+        let next = directories.mapValues { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardized.path }
         guard next != known else { return }
-        let added = agents.filter { next[$0] != known[$0] }
+        let added = (order ?? Array(next.keys)).filter { next[$0] != nil && next[$0] != known[$0] }
         known = next
         let live = Set(next.values)
         for gone in Set(due.keys).subtracting(live) { due.removeValue(forKey: gone)?.task.cancel() }
@@ -106,8 +111,7 @@ final class CheckoutMonitor {
     }
 
     func refresh(_ id: AgentID, after delay: Duration = .zero, priority: Bool = false) {
-        guard known[id] != nil, let cwd = checkout(id) else { return }
-        known[id] = cwd
+        guard let cwd = known[id] else { return }
         if priority { prioritized.insert(cwd) }
         let deadline = ContinuousClock.now + delay
         if let pending = due[cwd], pending.deadline <= deadline { return }
@@ -148,11 +152,9 @@ final class CheckoutMonitor {
 
     private func landed(_ cwd: String, _ value: AgentCheckout?) async {
         delivering.insert(cwd)
-        for id in known.keys where known[id] == cwd {
-            // A move or removal can happen while another agent's update is being delivered.
-            guard known[id] == cwd, checkout(id) == cwd else { continue }
-            await write(id, cwd, value)
-        }
+        let members = known.keys.filter { known[$0] == cwd }
+        // The server rechecks every member in the same queue turn as the single publication.
+        if !members.isEmpty { await write(members, cwd, value) }
         delivering.remove(cwd)
         reading.remove(cwd)
         if stale.remove(cwd) != nil, known.values.contains(cwd), !waiting.contains(cwd) {

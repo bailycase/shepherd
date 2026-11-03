@@ -7,6 +7,21 @@ import ShepherdProtocol
 /// git's machine output as the Changes engine reads it, and the engine's pure rules.
 @Suite("Changes parsing")
 struct ChangesParseTests {
+    @Test func cacheEvictsByRetainedCostAndSkipsOversizedValues() {
+        let cache = ChangesCache<String>(capacity: 512, costLimit: 12)
+        cache.insert("first", "a", cost: 4)
+        cache.insert("second", "b", cost: 4)
+        #expect(cache.value("a") == "first")
+        cache.insert("third", "c", cost: 4)
+        #expect(cache.value("b") == nil)
+        #expect(cache.totalCost == 10)
+        cache.insert("oversized", "a", cost: 12)
+        #expect(cache.value("a") == nil)
+        #expect(cache.totalCost == 5)
+        for revision in 0..<50 { cache.insert("value", String(revision), cost: 4) }
+        #expect(cache.totalCost <= 12)
+    }
+
     static func nul(_ fields: [String]) -> Data { Data((fields.joined(separator: "\0") + "\0").utf8) }
 
     /// `git diff --raw --numstat -z`: statuses from the raw records, counts from numstat, a

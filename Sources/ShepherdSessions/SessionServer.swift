@@ -5386,10 +5386,13 @@ public final class SessionServer: @unchecked Sendable {
     /// state.json so a relaunch shows the row as failed rather than idle; nil clears it. Writes
     /// only when it changes, and never fails the run it records.
     func recordAgentFailure(agentID: AgentID, _ message: String?) {
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
-              store.state.agents[index].lastFailure != message else { return }
-        do { try mutateState { $0.agents[index].lastFailure = message } }
-        catch { ShepherdLog.warning("agent \(agentID): could not record its failure: \(error)") }
+        guard store.state.agents.contains(where: { $0.id == agentID }) else { return }
+        scheduleStateMutation({ state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+            state.agents[index].lastFailure = message
+        }) { result in
+            if case .failure(let error) = result { ShepherdLog.warning("agent \(agentID): could not record its failure: \(error)") }
+        }
     }
 
     /// Server queue: the question an agent's thread asks first changed (its title and the
@@ -5445,23 +5448,16 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentSession(agentID: AgentID, piSessionID: String) {
         let trimmed = piSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else {
-            ShepherdLog.warning("setAgentSession for unknown agent \(agentID); dropped")
-            return
-        }
-        guard store.state.agents[index].effectivePiSessionID != trimmed else { return }
-        do {
-            // A different session is a different conversation: whatever name
-            // the agent wore described the old one, so naming reopens and the
-            // namer extension may retitle (pi's own session name for free, or
-            // one cheap call on the resumed conversation's opening prompt).
-            try mutateState {
-                $0.agents[index].piSessionID = trimmed
-                $0.agents[index].nameIsFinal = false
-            }
-            ShepherdLog.info("agent \(agentID) moved to pi session \(trimmed)")
-        } catch {
-            ShepherdLog.error("failed to persist session for agent \(agentID): \(error)")
+        let owner = rpcThread(forAgent: agentID)
+        scheduleStateMutation({ state in
+            guard self.rpcThread(forAgent: agentID) === owner,
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  state.agents[index].effectivePiSessionID != trimmed else { return }
+            // A different conversation reopens naming, but never before it is durable.
+            state.agents[index].piSessionID = trimmed
+            state.agents[index].nameIsFinal = false
+        }) { result in
+            if case .failure(let error) = result { ShepherdLog.error("failed to persist session for agent \(agentID): \(error)") }
         }
     }
 
@@ -5470,23 +5466,16 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentName(agentID: AgentID, name: String, sessionID: String?) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else {
-            ShepherdLog.warning("setAgentName for unknown agent \(agentID); dropped")
-            return
-        }
-        if let sessionID, sessionID != store.state.agents[index].effectivePiSessionID { return }
-        guard !store.state.agents[index].nameIsFinal else {
-            ShepherdLog.info("setAgentName for agent \(agentID) ignored; name is final")
-            return
-        }
-        do {
-            try mutateState {
-                $0.agents[index].name = trimmed
-                $0.agents[index].nameIsFinal = true
-            }
-            ShepherdLog.info("agent \(agentID) named '\(trimmed)'")
-        } catch {
-            ShepherdLog.error("failed to persist name for agent \(agentID): \(error)")
+        let owner = rpcThread(forAgent: agentID)
+        scheduleStateMutation({ state in
+            guard self.rpcThread(forAgent: agentID) === owner,
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  !state.agents[index].nameIsFinal else { return }
+            if let sessionID, sessionID != state.agents[index].effectivePiSessionID { return }
+            state.agents[index].name = trimmed
+            state.agents[index].nameIsFinal = true
+        }) { result in
+            if case .failure(let error) = result { ShepherdLog.error("failed to persist name for agent \(agentID): \(error)") }
         }
     }
 
@@ -5686,13 +5675,9 @@ public final class SessionServer: @unchecked Sendable {
         paneID: PaneID,
         sessionID: SessionID?
     ) async throws {
+        // Refuse a process started for a moving thread before staging; retry validation below
+        // has no effects, and is rerun after every conflicting workspace commit.
         try await enqueue {
-            guard let index = self.store.state.tabs.firstIndex(where: { $0.id == tabID }) else {
-                throw SessionServerError.noSuchTab(tabID)
-            }
-            guard self.store.state.tabs[index].layout.contains(paneID) else {
-                throw SessionServerError.noSuchPane(paneID)
-            }
             if self.store.state.agents.contains(where: { $0.tabID == tabID && $0.paneID == paneID && self.movingThreads.contains($0.id) }) {
                 if let sessionID, case .rpc(let rpc, _)? = self.sessions[sessionID] {
                     self.startRecords[sessionID]?.requestStop()
@@ -5700,12 +5685,16 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 throw ProjectFileError("thread_moving", "This thread is moving to another space.")
             }
-            let previous = self.store.state.tabs[index].layout.leaf(withID: paneID)?.sessionID
-            try self.mutateState {
-                $0.tabs[index].layout = $0.tabs[index].layout.updatingLeaf(paneID) {
-                    $0.sessionID = sessionID
-                }
+        }
+        try await mutateStateOffQueue({ state in
+            guard let index = state.tabs.firstIndex(where: { $0.id == tabID }) else { throw SessionServerError.noSuchTab(tabID) }
+            guard state.tabs[index].layout.contains(paneID) else { throw SessionServerError.noSuchPane(paneID) }
+            guard !state.agents.contains(where: { $0.tabID == tabID && $0.paneID == paneID && self.movingThreads.contains($0.id) }) else {
+                throw ProjectFileError("thread_moving", "This thread is moving to another space.")
             }
+            state.tabs[index].layout = state.tabs[index].layout.updatingLeaf(paneID) { $0.sessionID = sessionID }
+        }, didCommit: { before in
+            let previous = before.tabs.first(where: { $0.id == tabID })?.layout.leaf(withID: paneID)?.sessionID
             // A pi started again in place of one that stopped before it served takes over the
             // opening prompt that one never read.
             if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous),
@@ -5719,7 +5708,7 @@ public final class SessionServer: @unchecked Sendable {
                     self.dispatchPeerTask(id)
                 }
             }
-        }
+        })
     }
 
     /// `first` puts it at the top of the projects (a project the user adds: the sidebar's project
@@ -6094,17 +6083,30 @@ public final class SessionServer: @unchecked Sendable {
     /// state, like a status: broadcast at once (remote clients draw it in their headers), never
     /// validated or written on its own, and a no-op when nothing changed.
     public func setAgentCheckout(_ agentID: AgentID, _ checkout: AgentCheckout?, directory: String? = nil) async {
+        await setAgentCheckouts([agentID], checkout, directory: directory)
+    }
+
+    /// One shared checkout read publishes once. Membership and directory authority are checked
+    /// here, not in the app's earlier snapshot, so moved/deleted agents never receive stale data.
+    public func setAgentCheckouts(_ agentIDs: [AgentID], _ checkout: AgentCheckout?, directory: String? = nil) async {
         await enqueueValue {
-            guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
-                  self.store.state.agents[index].checkout != checkout else { return }
-            if let directory {
+            let members = Set(agentIDs)
+            let layouts = Dictionary(self.store.state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
+            let indices = self.store.state.agents.indices.filter { index in
                 let agent = self.store.state.agents[index]
-                let layout = self.store.state.tabs.first { $0.id == agent.tabID }?.layout
-                let cwd = layout?.leaves.first { $0.agentID == agentID }?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd
-                guard let cwd,
-                      URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path == directory else { return }
+                guard members.contains(agent.id), agent.checkout != checkout else { return false }
+                if let directory {
+                    let layout = layouts[agent.tabID]
+                    let cwd = layout?.leaves.first { $0.agentID == agent.id }?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd
+                    guard let cwd,
+                          URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path == directory else { return false }
+                }
+                return true
             }
-            self.store.updateLive { $0.agents[index].checkout = checkout }
+            guard !indices.isEmpty else { return }
+            self.store.updateLive { state in
+                for index in indices { state.agents[index].checkout = checkout }
+            }
             let committedState = self.store.state
             self.broadcastRemoteState(committedState)
             self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -7732,7 +7734,11 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.beforePrompt = { [weak serverWeak] completion in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
-                server.changes.prepareTurn(agentID: agentID) { sessionQueue.async(execute: completion) }
+                let phase = Self.storageSignposter.beginInterval("Before prompt capture")
+                server.changes.prepareTurn(agentID: agentID) {
+                    Self.storageSignposter.endInterval("Before prompt capture", phase)
+                    sessionQueue.async(execute: completion)
+                }
             }
             thread.captureSettledTurn = { [weak serverWeak] completion in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
@@ -8321,7 +8327,15 @@ public final class SessionServer: @unchecked Sendable {
                 ? thread.recoveryCheckpoint(sessionID: store.state.agents.first(where: { $0.id == id })?.piSessionID ?? id.rawValue) : nil
             if let checkpoint, thread.piSessionID != nil {
                 // RPC observes a session switch before the extension socket necessarily does.
-                applyAgentSession(agentID: id, piSessionID: checkpoint.sessionID)
+                // Recovery's synchronous write-ahead contract cannot publish a checkpoint for
+                // a session that state.json has not yet accepted. Ordinary extension reports stage.
+                if let index = store.state.agents.firstIndex(where: { $0.id == id }),
+                   store.state.agents[index].effectivePiSessionID != checkpoint.sessionID {
+                    try mutateState {
+                        $0.agents[index].piSessionID = checkpoint.sessionID
+                        $0.agents[index].nameIsFinal = false
+                    }
+                }
                 guard store.state.agents.first(where: { $0.id == id })?.effectivePiSessionID == checkpoint.sessionID else { return false }
             }
             try agentRecovery.save(checkpoint, for: id, force: force)

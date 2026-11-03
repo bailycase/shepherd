@@ -33,6 +33,47 @@ struct StatePersistenceTests {
         #expect(try h.persisted() == h.server.state)
     }
 
+    @Test func stagedBindingAndNameKeepOrderingWithoutBlockingOtherAgents() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(), agent = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([agent], space: space))
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let session = SessionID(), pane = try #require(agent.agent.paneID)
+        let binding = Task { try await h.server.updatePaneSession(tabID: agent.tab.id, paneID: pane, sessionID: session) }
+        try await eventually("binding admitted") { try await h.server.enqueue { h.server.stateWritesInFlight == 1 } }
+        let naming = Task { try await h.server.renameAgent(agent.agent.id, to: "After binding") }
+        try await eventually("name admitted behind binding") { try await h.server.enqueue { h.server.stateWritesInFlight == 2 } }
+        await h.server.setAgentCheckout(agent.agent.id, .init(branch: "live", changedFiles: 1))
+        #expect(h.server.state.tabs.first?.layout.firstLeaf.sessionID == nil)
+        gate.signal()
+        try await binding.value
+        try await naming.value
+        #expect(h.server.state.tabs.first?.layout.firstLeaf.sessionID == session)
+        #expect(try h.persisted().agents.first?.name == "After binding")
+        #expect(try h.persisted() == h.server.state)
+    }
+
+    @Test func cancelledStagedWriteNeverPublishes() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(), agent = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([agent], space: space))
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        let before = h.server.state
+        let save = Task { try await h.server.renameAgent(agent.agent.id, to: "Cancelled") }
+        try await eventually("save admitted") { try await h.server.enqueue { h.server.stateWritesInFlight == 1 } }
+        save.cancel()
+        gate.signal()
+        await #expect(throws: CancellationError.self) { try await save.value }
+        #expect(h.server.state == before)
+        #expect(try h.persisted() == before)
+    }
+
     @Test func stagedWorkspaceSavesHaveBoundedAdmission() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

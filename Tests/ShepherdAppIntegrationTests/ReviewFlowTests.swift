@@ -451,6 +451,7 @@ struct ReviewFlowTests {
         await loads.finish("Pull request")
         for _ in 0..<5 { await Task.yield() }
         #expect(session.list?.comparison.head == "Last turn" && session.loadError == nil)
+        #expect(loads.diffsStarted == ["Unstaged", "Last turn"], "superseded lists never start expensive diff work")
     }
 }
 
@@ -458,6 +459,7 @@ struct ReviewFlowTests {
 /// names its key as the compare row's head.
 @MainActor
 private final class HeldLists {
+    private(set) var diffsStarted: [String] = []
     private var pending: [String: (ChangesScope, CheckedContinuation<ChangesList, any Error>)] = [:]
 
     func engine(key: @escaping (ChangesScope) -> String) -> ChangesEngine {
@@ -465,16 +467,16 @@ private final class HeldLists {
         engine.list = { [self] scope, _ in
             try await withCheckedThrowingContinuation { self.pending[key(scope)] = (scope, $0) }
         }
+        engine.diffs = { [self] list, _ in
+            diffsStarted.append(list.comparison.head)
+            return ([], [])
+        }
         engine.overview = { throw ChangesError(ChangesError.unavailable, "no overview here") }
         return engine
     }
 
     func waitFor(_ key: String) async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
-        while pending[key] == nil {
-            guard ContinuousClock.now < deadline else { throw TimedOut(what: "a diff load for \(key)") }
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await eventuallyOnMain("a diff load for \(key)") { self.pending[key] != nil }
     }
 
     func finish(_ key: String, failing: Bool = false) {

@@ -1,38 +1,64 @@
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 
 extension SessionServer {
     static let maximumStateWrites = 8
     static let maximumStateWriteAttempts = 8
+    static let storageSignposter = OSSignposter(subsystem: "com.shepherd.app", category: "Storage")
 
-    /// Guarded UI mutations stage their JSON on the file queue. A conflicting live or durable
-    /// update reruns preparation against current state; no candidate is published before rename.
-    /// Preparation must have no effects and must find indices in the state passed to it.
-    func mutateStateOffQueue(_ mutate: @escaping @Sendable (inout ShepherdState) throws -> Void) async throws {
-        let epoch: UInt64 = try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                do {
-                    try self.requireStarted()
-                    guard self.stateWritesInFlight < Self.maximumStateWrites else {
-                        throw SessionServerError.persistFailed("Too many pending workspace saves. Retry shortly.")
+    /// Guarded mutations stage on the file queue, in arrival order. Preparation has no effects
+    /// and finds indices in current state. Commit effects run on the server queue before ack.
+    func mutateStateOffQueue(_ mutate: @escaping @Sendable (inout ShepherdState) throws -> Void,
+                            didCommit: @escaping (ShepherdState) -> Void = { _ in }) async throws {
+        let progress = Progress(totalUnitCount: 1)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    self.scheduleStateMutation(mutate, cancelled: { progress.isCancelled }, didCommit: didCommit) { continuation.resume(with: $0) }
+                }
+            }
+        } onCancel: { progress.cancel() }
+    }
+
+    /// Server-queue callers join the same bounded FIFO without spawning unordered admission tasks.
+    func scheduleStateMutation(_ mutate: @escaping @Sendable (inout ShepherdState) throws -> Void,
+                               cancelled: @escaping @Sendable () -> Bool = { false },
+                               didCommit: @escaping (ShepherdState) -> Void = { _ in },
+                               completion: @escaping (Result<Void, Error>) -> Void) {
+        do {
+            try requireStarted()
+            guard stateWritesInFlight < Self.maximumStateWrites else {
+                throw SessionServerError.persistFailed("Too many pending workspace saves. Retry shortly.")
+            }
+            let epoch = logicalProjectEpoch
+            stateWriteQueue.append {
+                Task {
+                    let result: Result<Void, Error>
+                    do {
+                        try await self.performStateWrite(epoch: epoch, mutate: mutate, cancelled: cancelled, didCommit: didCommit)
+                        result = .success(())
+                    } catch { result = .failure(error) }
+                    self.queue.async {
+                        completion(result)
+                        self.stateWriteQueue.removeFirst()
+                        self.stateWriteQueue.first?()
                     }
-                    let epoch = self.logicalProjectEpoch
-                    self.stateWriteQueue.append { continuation.resume(returning: epoch) }
-                    if self.stateWriteQueue.count == 1 { self.stateWriteQueue[0]() }
-                } catch { continuation.resume(throwing: error) }
+                }
             }
-        }
-        // Retrying an earlier UI edit must never overwrite a later edit to the same field.
-        defer {
-            queue.async {
-                self.stateWriteQueue.removeFirst()
-                self.stateWriteQueue.first?()
-            }
-        }
+            if stateWriteQueue.count == 1 { stateWriteQueue[0]() }
+        } catch { completion(.failure(error)) }
+    }
+
+    private func performStateWrite(epoch: UInt64,
+                                   mutate: @escaping @Sendable (inout ShepherdState) throws -> Void,
+                                   cancelled: @escaping @Sendable () -> Bool,
+                                   didCommit: @escaping (ShepherdState) -> Void) async throws {
         for _ in 0..<Self.maximumStateWriteAttempts {
             try Task.checkCancellation()
             let preparation = try await enqueue { () -> (ShepherdState, ShepherdState, UInt64, URL)? in
+                if cancelled() { throw CancellationError() }
                 try self.requireStarted()
                 guard self.logicalProjectEpoch == epoch else { throw SessionServerError.persistFailed("Workspace restarted while saving.") }
                 guard !self.projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
@@ -50,16 +76,18 @@ extension SessionServer {
             do {
                 staged = try await withCheckedThrowingContinuation { continuation in
                     logicalProjectFiles.async {
+                        let phase = Self.storageSignposter.beginInterval("State staging")
+                        defer { Self.storageSignposter.endInterval("State staging", phase) }
                         do { continuation.resume(returning: try StateStore.stageUpdate(candidate, before: before, at: url)) }
                         catch { continuation.resume(throwing: error) }
                     }
                 }
             } catch { throw SessionServerError.persistFailed(String(describing: error)) }
-            // A unique staging file is never shared with another operation. Rename consumes it
-            // on success; cancellation, conflict and errors must also remove it.
+            // Unique staging files are consumed by rename or removed on every failure/conflict.
             defer { _ = unlink(staged.url.path) }
             try Task.checkCancellation()
             let committed = try await enqueue {
+                if cancelled() { throw CancellationError() }
                 try self.requireStarted()
                 guard self.logicalProjectEpoch == epoch else { throw SessionServerError.persistFailed("Workspace restarted while saving.") }
                 guard !self.projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
@@ -67,6 +95,7 @@ extension SessionServer {
                 do { try self.store.commitLogicalProjects(candidate, version: version, staged: staged) }
                 catch { throw SessionServerError.persistFailed(String(describing: error)) }
                 self.stateDidCommit(before: before)
+                didCommit(before)
                 return true
             }
             if committed { return }

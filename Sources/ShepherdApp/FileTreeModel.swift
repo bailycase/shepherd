@@ -328,32 +328,30 @@ final class FileTreeModel {
     private func findNode(path: String, in node: FileNode) -> FileNode? {
         if node.id == path { return node }
         guard let children = node.children else { return nil }
-        for child in children {
-            if let found = findNode(path: path, in: child) { return found }
-        }
-        return nil
+        guard let child = children.first(where: { Self.contains(path, under: $0.id) }) else { return nil }
+        return findNode(path: path, in: child)
     }
 
     private func updateNode(path: String, transform: (inout FileNode) -> Void) {
         root = Self.applyUpdate(to: root, path: path, transform: transform)
     }
 
-    private static func applyUpdate(to node: FileNode, path: String, transform: (inout FileNode) -> Void) -> FileNode {
+    /// Display paths, not resolved symlink paths: only a separator-delimited ancestor can match.
+    static func contains(_ path: String, under ancestor: String) -> Bool {
+        path == ancestor || path.hasPrefix(ancestor.hasSuffix("/") ? ancestor : ancestor + "/")
+    }
+
+    static func applyUpdate(to node: FileNode, path: String, visited: ((String) -> Void)? = nil,
+                            transform: (inout FileNode) -> Void) -> FileNode {
+        visited?(node.id)
         if node.id == path {
             var copy = node
             transform(&copy)
             return copy
         }
-        guard var children = node.children else { return node }
-        var changed = false
-        for i in children.indices {
-            let updated = applyUpdate(to: children[i], path: path, transform: transform)
-            if updated != children[i] {
-                children[i] = updated
-                changed = true
-            }
-        }
-        guard changed else { return node }
+        guard var children = node.children,
+              let index = children.firstIndex(where: { contains(path, under: $0.id) }) else { return node }
+        children[index] = applyUpdate(to: children[index], path: path, visited: visited, transform: transform)
         var copy = node
         copy.children = children
         return copy

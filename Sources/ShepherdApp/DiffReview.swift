@@ -35,6 +35,8 @@ enum ChangesMenu: Equatable {
 final class ReviewSession: Identifiable {
     let id = UUID()
     var loadRequestID = UUID()
+    @ObservationIgnored var loadTask: Task<Void, Never>?
+    @ObservationIgnored var overviewTask: Task<Void, Never>?
     var isSubmitting = false
     var hostReviewPane = false
     let agentID: AgentID
