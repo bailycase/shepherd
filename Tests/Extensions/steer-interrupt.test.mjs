@@ -1,7 +1,7 @@
 // "Steer now" against pi's real runtime: what steer, clear_queue, abort and a following prompt do in
 // `pi --mode rpc`, which is the recipe Shepherd's host relies on to interrupt an agent.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/steer-interrupt.test.mjs
-// Everything runs in a temporary HOME against a local fake OpenAI-completions provider; no extensions load.
+// Everything runs in a temporary HOME against a local fake provider; only boundary tests load the status extension.
 // Set STEER_INTERRUPT_TRACE=1 to print each test's event order.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -9,6 +9,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as http from "node:http";
+import * as net from "node:net";
+import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 
 const pkg = process.env.PI_PACKAGE_DIR;
@@ -84,7 +86,7 @@ async function startFake(script) {
 }
 
 // pi in RPC mode with no extensions, skills or templates, on a fake provider driven by `script`.
-async function startPi(dir, script, settings = {}) {
+async function startPi(dir, script, settings = {}, bridge = {}) {
   const fake = await startFake(script);
   const config = path.join(dir, "config");
   fs.mkdirSync(config);
@@ -93,9 +95,11 @@ async function startPi(dir, script, settings = {}) {
     baseUrl: `http://127.0.0.1:${fake.server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
     models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
-  const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: config, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" };
+  const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: config, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...bridge };
+  const extensions = bridge.SHEPHERD_SOCKET
+    ? ["-e", fileURLToPath(new URL("../../Extensions/shepherd-status.ts", import.meta.url))] : [];
   const child = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
-    "-ne", "-ns", "-np", "--model", "fixture/fixture"], { cwd: dir, env, stdio: ["pipe", "pipe", "pipe"] });
+    "-ne", "-ns", "-np", ...extensions, "--model", "fixture/fixture"], { cwd: dir, env, stdio: ["pipe", "pipe", "pipe"] });
   const events = [];
   let out = "", err = "", next = 0;
   child.stdout.on("data", (chunk) => {
@@ -171,6 +175,38 @@ async function withPi(script, body, settings) {
   }
 }
 
+async function withNativeBoundary(script, handle, body) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-boundary-"));
+  const socketPath = path.join(dir, "s.sock"), sockets = new Set(), errors = [];
+  let pi;
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString();
+      for (let newline; (newline = buffer.indexOf("\n")) >= 0;) {
+        const frame = JSON.parse(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        if (frame.type === "nativeQueueBoundary") Promise.resolve().then(() => handle(frame, socket, pi)).catch((error) => {
+          errors.push(error); socket.destroy();
+        });
+      }
+    });
+  });
+  try {
+    await new Promise((resolve) => server.listen(socketPath, resolve));
+    pi = await startPi(dir, script, {}, { SHEPHERD_SOCKET: socketPath, SHEPHERD_AGENT_ID: "queue-fixture" });
+    await body(pi);
+    assert.deepEqual(errors, []);
+  } finally {
+    await pi?.stop();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const flat = (content) => typeof content === "string" ? content
   : (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("");
 // A session message as "role:text".
@@ -187,6 +223,43 @@ function shape(body) {
 }
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 const twoCalls = [{ tool: "bash", command: "sleep 1.5; echo first", id: "call_a" }, { tool: "bash", command: "echo second", id: "call_b" }];
+
+test("normal queued input waits for the full tool batch and enters the very next model call", { timeout: 45000 }, async () => {
+  let queued = "outdated", sent = false;
+  await withNativeBoundary((body, i) => i === 0 ? twoCalls : [{ text: "All done." }], async (frame, socket, pi) => {
+    assert.equal(frame.agentID, "queue-fixture");
+    if (!sent) {
+      sent = true;
+      assert.equal(pi.ofType("tool_execution_end").length, 2, "both tools finish before the host queue leaves");
+      assert(pi.ofType("tool_execution_end").every((event) => !event.isError));
+      assert.equal((await pi.request({ type: "prompt", message: queued, streamingBehavior: "steer" })).success, true);
+    }
+    socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+  }, async (pi) => {
+    assert.equal((await pi.request({ type: "prompt", message: "work" })).success, true);
+    await until("the first tool to start", () => pi.ofType("tool_execution_start").length > 0);
+    queued = "edited queue message";
+    assert.equal(pi.requests.length, 1);
+    await until("the boundary-fed run to settle", () => pi.settled() === 1);
+    assert.equal(pi.requests.length, 2);
+    assert(shape(pi.requests[1]).includes("user:edited queue message"));
+    assert.deepEqual(users(pi.events), ["work", "edited queue message"]);
+    assert.equal(pi.fake.disconnected(0), false);
+  });
+});
+
+test("a missing boundary acknowledgement reaches its finite timeout without failing pi", { timeout: 45000 }, async () => {
+  let boundaries = 0;
+  await withNativeBoundary((body, i) => i === 0 ? [{ tool: "bash", command: "echo done" }] : [{ text: "All done." }], async (frame, socket) => {
+    if (++boundaries > 1) socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+  }, async (pi) => {
+    assert.equal((await pi.request({ type: "prompt", message: "work" })).success, true);
+    await until("the unacknowledged barrier to time out and the run to settle", () => pi.settled() === 1, 25000);
+    assert.equal(pi.requests.length, 2);
+    assert.equal(boundaries, 2);
+    assert.equal(pi.ofType("extension_error").length, 0);
+  });
+});
 
 test("real Pi RPC: a steer sent during a tool batch lands after the batch and before the next model call", { timeout: 60000 }, async () => {
   await withPi((body, i) => i === 0 ? twoCalls : [{ text: "All done." }], async (pi) => {
