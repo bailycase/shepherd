@@ -447,6 +447,7 @@ public struct FleetModel: Equatable, Sendable {
             let automationByAgent = Dictionary(host.state.automations.compactMap { automation in
                 automation.agentID.map { ($0, automation) }
             }, uniquingKeysWith: { first, _ in first })
+            let workers = host.state.projectWorkerIDs
             var running = 0, needs = 0
             for var agent in host.state.agents {
                 let ref = FleetRef(host: host.id, agent: agent.id)
@@ -476,7 +477,7 @@ public struct FleetModel: Equatable, Sendable {
                     runOrigins[ref] = origin
                 }
                 let space = spaces[agent.spaceID]
-                let ordinary = host.state.isSidebarThread(agent)
+                let ordinary = host.state.isSidebarThread(agent, workers: workers)
                 let attention = connected ? Self.attention(agent, ref: ref, digest: digest, automation: automation,
                                                            project: !ordinary, hostName: host.name, hostTag: tag) : []
                 needs += attention.count
