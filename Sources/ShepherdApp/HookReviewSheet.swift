@@ -37,7 +37,10 @@ struct HookReviewItem: Equatable, Identifiable {
             commandLabel = "Command, changed"
             let before = (try? HookJSON.parse(previous.entry)).map { HooksModel.command(HookHandler(raw: $0)) } ?? previous.entry
             var lines: [Line] = []
-            if previous.matcher != entry.matcher { lines.append(.init(kind: .removed, text: "- matcher " + previous.matcher)); lines.append(.init(kind: .added, text: "+ matcher " + entry.matcher)) }
+            if previous.matcher != entry.matcher {
+                lines.append(.init(kind: .removed, text: "- matcher " + (previous.matcher.isEmpty ? "–" : previous.matcher)))
+                lines.append(.init(kind: .added, text: "+ matcher " + (entry.matcher.isEmpty ? "–" : entry.matcher)))
+            }
             if before != now { lines.append(.init(kind: .removed, text: "- " + before)); lines.append(.init(kind: .added, text: "+ " + now)) }
             else if previous.entry != entry.canonical { lines.append(.init(kind: .removed, text: "- " + previous.entry)); lines.append(.init(kind: .added, text: "+ " + entry.canonical)) }
             if lines.isEmpty { lines = [.init(kind: .same, text: now)] }
@@ -57,7 +60,8 @@ struct HookReviewItem: Equatable, Identifiable {
 
 @MainActor
 @Observable
-final class HookReviewState {
+final class HookReviewState: Identifiable {
+    let id = UUID()
     let items: [HookReviewItem]
     let entries: [HookEntry]
     var checked: Set<String> = []
@@ -226,7 +230,7 @@ struct HookBadge: View {
         case .attention: (Color.sh.lanternTint, Color.sh.lanternText)
         case .failed: (Color.sh.failedTint, Color.sh.failed)
         }
-        Text(text).font(.sh(.micro)).foregroundStyle(ink).lineLimit(1)
+        Text(text).font(.shSans(SHTextStyle.micro.size, .medium)).foregroundStyle(ink).lineLimit(1)
             .padding(.horizontal, SH.Space.s).frame(height: AppLayout.hooksBadgeHeight)
             .background(fill, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .fixedSize()

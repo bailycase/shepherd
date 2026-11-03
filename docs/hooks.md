@@ -15,7 +15,7 @@ Three parts share this contract:
 | --- | --- |
 | Runtime: runs hooks on the agent's events, proposes hooks | `Extensions/shepherd-hooks.ts`, installed by `HooksExtension.swift` |
 | Catalog: finds files, parses entries, hashes, trust, writes | `Sources/ShepherdSessions/Hooks/` |
-| UI: Settings › Hooks, Sources, Edit, Review, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hooks*.swift`, `Thread/` |
+| UI: Settings › Hooks, Sources, Edit, Review, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hook*.swift`, `Thread/HookRows.swift`, `ShepherdRemote/NativeHookPresentation.swift` |
 
 The runtime and the catalog each implement parsing and hashing; the shared vectors in
 `Tests/Fixtures/hooks/` keep them equal.
@@ -134,7 +134,8 @@ The runtime posts `pi.sendMessage({ customType: "shepherd.hook", display: true, 
 ```
 
 `running` is shown only while the hook runs, as the agent's working status (`ctx.ui.setWorkingMessage`
-or the status extension), never as a stored row. Runs with no visible effect (exit 0, no output)
+or the status extension), never as a stored row: the host keeps `setStatus` key `shepherd.hook` as the
+snapshot's `hookStatus` while pi works, and the thread's live line says it. Runs with no visible effect (exit 0, no output)
 collapse into one `ran` row per event and turn.
 
 `PreToolUse` `ask` uses `ctx.ui.select(title, ["Deny", "Allow once"])` with title

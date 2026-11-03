@@ -52,7 +52,7 @@ struct HooksSettings: View {
         if model.needingReview > 0 {
             HookReviewBanner(text: model.needingReview == 1 ? "1 hook is new or changed since you trusted it. Shepherd skips it until you review it."
                                                          : "\(model.needingReview) hooks are new or changed since you trusted them. Shepherd skips them until you review them.",
-                             count: model.needingReview) { model.reviewing = .init(root: model.spaceFilter) }
+                             count: model.needingReview) { model.openReview(root: model.spaceFilter) }
         }
         if model.groups.isEmpty {
             HookEmptyState(text: "No hooks yet. Add one, or ask an agent to propose one; Shepherd also reads the hooks in Claude Code’s and Codex’s files.") {
@@ -95,10 +95,8 @@ private struct HookSheets: ViewModifier {
             .sheet(item: $model.editor) { editor in
                 HookEditSheet(editor: editor, model: model) { model.editor = nil }
             }
-            .sheet(item: $model.reviewing) { scope in
-                HookReviewSheet(review: HookReviewState(entries: model.pending(scope), label: model.sourceLabel), model: model) {
-                    model.reviewing = nil
-                }
+            .sheet(item: $model.review) { review in
+                HookReviewSheet(review: review, model: model) { model.review = nil }
             }
     }
 }
@@ -367,6 +365,7 @@ struct HooksSpacePage: View {
     var openSettings: () -> Void
 
     var body: some View {
+        // ponytail: one space's rows are filtered here per render (a handful of hooks); cache per root in the model if a space grows long.
         let space = model.space(root)
         VStack(alignment: .leading, spacing: SH.Space.xl) {
             VStack(alignment: .leading, spacing: SH.Space.s) {
@@ -396,7 +395,7 @@ struct HooksSpacePage: View {
             if space.waiting > 0 {
                 HookReviewBanner(text: space.waiting == 1 ? "1 hook in this space is new or changed. It’s skipped until you review it."
                                                           : "\(space.waiting) hooks in this space are new or changed. They’re skipped until you review them.",
-                                 count: space.waiting) { model.reviewing = .init(root: PiHome.canonical(root)) }
+                                 count: space.waiting) { model.openReview(root: PiHome.canonical(root)) }
             }
             if model.snapshot == nil {
                 Text("Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)

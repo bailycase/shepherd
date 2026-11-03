@@ -23,7 +23,7 @@ final class PreviewWorkspace {
 
     /// Settings ▸ Pi shows `yourPi` (a fixture: never this machine's pi, nor a read of the scratch one).
     init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
-         yourPi: YourPiSurvey = PreviewYourPi.imported) throws {
+         yourPi: YourPiSurvey = PreviewYourPi.imported, hooks: HooksModel? = nil) throws {
         try PreviewEnvironment.install()
         scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog)
         settings = AppSettings(store: defaults)
@@ -38,7 +38,10 @@ final class PreviewWorkspace {
             // Fixtures set the checkout each header shows.
             checkoutReader: nil,
             mcp: mcp,
-            yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi)
+            yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi),
+            // Hooks read the scratch folder's home, never this machine's.
+            hooks: hooks ?? HooksModel(home: scratch.dir.appendingPathComponent("hooks-home").path,
+                                       support: scratch.dir.appendingPathComponent("hooks-support"))
         )
         // The boards' footer, never this machine's user and name.
         vm.sidebarFooterIdentity = ("Alex", SidebarDerivation.footerDetail(computerName: "demo-mac"))

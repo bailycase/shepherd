@@ -414,7 +414,7 @@ struct Composer: View {
                         }
                         .shTransition(.content)
                     case .ask(let ask):
-                        HookAskPanel(ask: ask, home: PiHome.environmentHome, enabled: enabled, answer: answer)
+                        HookAskPanel(ask: ask, home: hookPresenter?.home ?? PiHome.environmentHome, enabled: enabled, answer: answer)
                             .id(questionKey)
                             .shTransition(.content)
                     }

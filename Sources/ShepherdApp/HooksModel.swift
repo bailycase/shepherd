@@ -108,22 +108,18 @@ final class HooksModel {
     @ObservationIgnored private var reloadAgain = false
     /// Open hook asked for a hash the catalog hadn't loaded: opened by the next load.
     @ObservationIgnored var pendingEdit: String?
+    @ObservationIgnored private var pendingReview: String??
 
     var tab: Tab = .hooks
     /// The rail's event; nil for all.
     var filter: String? { didSet { if filter != oldValue { derive() } } }
     /// Settings › Hooks opened from a thread: only This Mac's hooks and that space's.
     var spaceFilter: String? { didSet { if spaceFilter != oldValue { derive() } } }
-    /// The review sheet, for every hook waiting (nil) or one space's.
-    var reviewing: ReviewScope?
+    /// The review sheet, open.
+    var review: HookReviewState?
     var editor: HookEditorModel?
     /// The last change that failed, said in the page.
     var problem: String?
-
-    struct ReviewScope: Identifiable, Equatable {
-        var root: String?
-        var id: String { root ?? "" }
-    }
 
     private(set) var rail: [HookRailItem] = []
     private(set) var groups: [HookEventGroup] = []
@@ -190,6 +186,10 @@ final class HooksModel {
             pendingEdit = nil
             edit(hash: hash)
         }
+        if let root = pendingReview {
+            pendingReview = nil
+            openReview(root: root)
+        }
     }
 
     nonisolated static func expand(_ path: String, home: String) -> String {
@@ -244,6 +244,14 @@ final class HooksModel {
         switch entry.scope {
         case .mac: "This Mac · " + Self.tilde(entry.file, home: home)
         case .space(let root): (root as NSString).lastPathComponent + " · " + Self.relative(entry.file, to: root)
+        }
+    }
+
+    /// "payments/.claude/settings.json", "~/.shepherd/hooks.json": the file, as Review names it.
+    func fileLabel(_ entry: HookEntry) -> String {
+        switch entry.scope {
+        case .mac: Self.tilde(entry.file, home: home)
+        case .space(let root): (root as NSString).lastPathComponent + "/" + Self.relative(entry.file, to: root)
         }
     }
 
@@ -305,10 +313,16 @@ final class HooksModel {
     }
 
     /// The hooks waiting for review, This Mac's and every space's, or one space's and This Mac's.
-    func pending(_ scope: ReviewScope?) -> [HookEntry] {
+    func pending(root: String?) -> [HookEntry] {
         guard let snapshot else { return [] }
-        let entries = scope.map { snapshot.entries(forSpaceRoot: $0.root) } ?? snapshot.entries
+        let entries = root.map { snapshot.entries(forSpaceRoot: $0) } ?? snapshot.entries
         return entries.filter(\.review.needsReview)
+    }
+
+    /// Opens Review for every hook waiting (nil) or one space's and This Mac's, once the catalog is loaded.
+    func openReview(root: String?) {
+        guard snapshot != nil else { pendingReview = .some(root); reload(); return }
+        review = HookReviewState(entries: pending(root: root), label: fileLabel)
     }
 
     func entry(hash: String) -> HookEntry? { snapshot?.entries.first { $0.hash == hash } }
@@ -379,7 +393,7 @@ final class HooksModel {
 
     func act(_ action: HookFileRow.Action, on row: HookFileRow, root: String?) {
         switch action {
-        case .review: reviewing = ReviewScope(root: root)
+        case .review: openReview(root: root)
         case .trustSpace: if let root { trustSpace(root) }
         case .openFile: open(row.path)
         }

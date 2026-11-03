@@ -24,7 +24,7 @@ struct HookPresenter: Equatable {
     /// Open hook: its editor, once the catalog has it.
     @MainActor func open(hash: String) { show { $0.open(hash: hash) } }
     /// Review in Settings.
-    @MainActor func review() { show { $0.reviewing = .init(root: nil); $0.reload() } }
+    @MainActor func review() { show { $0.openReview(root: nil) } }
     /// The composer glyph: Settings › Hooks filtered to the thread's space.
     @MainActor func settings(spaceRoot: String?) { show { $0.spaceFilter = spaceRoot; $0.reload() } }
     /// A proposal's Edit…: Add hook, prefilled.
@@ -37,6 +37,8 @@ struct HookPresenter: Equatable {
     @MainActor func refresh() { model?.hooks.reload() }
     @MainActor func indicator(cwd: String?) -> HookIndicator? { model?.hooks.indicator(forCwd: cwd) }
     @MainActor func ensure(cwd: String) { model?.hooks.ensure(cwd: cwd) }
+    /// The home folder paths are shown from ("~/.shepherd/hooks.json").
+    @MainActor var home: String { model?.hooks.home ?? PiHome.environmentHome }
 }
 
 extension EnvironmentValues {
@@ -172,14 +174,14 @@ struct HookProposalCard: View {
                 Grid(alignment: .leading, horizontalSpacing: SH.Space.l, verticalSpacing: SH.Space.s) {
                     pair("When") { Text(HookEvent(rawValue: proposal.event)?.label ?? proposal.event).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary) }
                     pair("Matcher") { HookMatcherChip(text: proposal.matcher.isEmpty ? "always" : proposal.matcher, any: proposal.matcher.isEmpty) }
-                    pair("Runs") { Text(proposal.command).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
+                    pair("Runs") { Text(proposal.command).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled).lineLimit(4) }
                     if let status = proposal.statusMessage, !status.isEmpty {
                         pair("While it runs") { Text(status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
                     }
                     pair("Saved in") {
                         HStack(spacing: SH.Space.l) {
                             SHSegmentedPicker("Saved in", selection: $scope, options: scopes, size: .s).fixedSize()
-                            Text(proposal.path(scope: scope)).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                            Text(Self.shown(proposal.path(scope: scope), scope: scope)).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
                         }
                     }
                 }
@@ -201,7 +203,7 @@ struct HookProposalCard: View {
             SHHairline()
             HStack(spacing: SH.Space.m) {
                 Text("Adding it trusts this exact entry. If it changes later, here or in the file, it needs your review again.")
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let presenter {
                     Button("Edit…") { presenter.edit(proposal, scope: scope) }.buttonStyle(.sh(.ghost, size: .m))
@@ -218,6 +220,12 @@ struct HookProposalCard: View {
         .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Proposed hook: \(proposal.name)")
+    }
+
+    /// "payments/.shepherd/hooks.json", "~/.shepherd/hooks.json": the file as the board names it.
+    static func shown(_ path: String, scope: String) -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        return scope == "space" ? parts.suffix(3).joined(separator: "/") : "~/" + parts.suffix(2).joined(separator: "/")
     }
 
     private func pair<V: View>(_ key: String, @ViewBuilder value: () -> V) -> some View {
@@ -248,14 +256,14 @@ struct HookAskPanel: View {
             }
             if !ask.call.isEmpty {
                 Text(ask.call).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(4)
                     .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                     .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
             }
             if !ask.reason.isEmpty {
-                Text(ask.reason).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text(ask.reason).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).lineLimit(4)
             }
             HStack(spacing: SH.Space.m) {
                 Text("The agent waits. Deny sends the hook’s reason to it.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
