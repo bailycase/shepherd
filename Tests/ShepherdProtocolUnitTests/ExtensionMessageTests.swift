@@ -15,7 +15,7 @@ struct ExtensionMessageTests {
     /// give it a sample below.
     static func caseName(_ message: ExtensionMessage) -> String {
         switch message {
-        case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming,
+        case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming, .nativeQueueBoundary,
              .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
@@ -27,7 +27,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 60
+    static let caseCount = 61
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -39,6 +39,7 @@ struct ExtensionMessageTests {
         .editProject(id: 73, agentID: agent, projectID: SpaceID(rawValue: "p1"), request: ProjectEdit(name: "New name", parentProjectID: "", folderAction: .none)),
         .deleteProject(id: 74, agentID: agent, projectID: SpaceID(rawValue: "p1")),
         .addChildProject(id: 72, agentID: agent, parentPath: "/tmp/project", path: "/tmp/project/child", name: "Child", create: true),
+        .nativeQueueBoundary(id: 78, agentID: agent, piSessionID: "session", expiresAt: 1_790_744_354_772),
         .setAgentStatus(agentID: agent, status: .blocked),
         .responseTiming(agentID: agent, seq: 3, mark: .sent, at: 1_790_744_354_772),
         .responseTiming(agentID: agent, seq: 3, mark: .headers, at: 1_790_744_355_972.5),

@@ -30,6 +30,146 @@ struct QueueTests {
         return reply
     }
 
+    @Test(arguments: [NativeQueueMode.oneAtATime, .all])
+    func normalQueueDeliversAtTheNextBoundaryAndKeepsHostEdits(mode: NativeQueueMode) async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let pi = try await PiAgent.launch(on: remote.host)
+        let client = try await remote.typed()
+        defer { client.disconnect() }
+        let configuration = remote.host.dir.appendingPathComponent("native-queue-boundary.json")
+        func boundary(expired: Bool) throws {
+            var value: [String: Any] = ["agentID": pi.agent.id.rawValue, "socket": remote.host.socketPath]
+            if expired { value["expiresAt"] = 1 }
+            try JSONSerialization.data(withJSONObject: value).write(to: configuration, options: .atomic)
+        }
+        try boundary(expired: true)
+        let running = try await startRun(pi, "tools:3 work")
+        _ = try await pi.queue(.setMode(mode: mode), from: running)
+        let edited = UUID(), deleted = UUID(), tail = UUID()
+        _ = try await pi.send("outdated", operationID: edited, from: running)
+        _ = try await pi.send("delete this", operationID: deleted, from: running)
+        _ = try await pi.send("tail", operationID: tail, from: running)
+        #expect(prompts(pi).count == 1, "the host retains the editable queue while a tool is running")
+
+        pi.finishTool(1)
+        _ = try await pi.snapshot("the next tool after an expired boundary") {
+            $0.provisional.contains { $0.toolCallID == "call_q2" && $0.status == "running" }
+        }
+        #expect(prompts(pi).count == 1, "a late boundary cannot dispatch into the next model call")
+        let replies = try String(contentsOf: remote.host.dir.appendingPathComponent("native-queue-boundary-replies.jsonl"), encoding: .utf8)
+        #expect(replies.contains("stale_boundary"))
+
+        try boundary(expired: false)
+        _ = try await pi.queue(.hold(id: edited, held: true), from: running)
+        pi.finishTool(2)
+        _ = try await pi.snapshot("the held editor to survive a valid boundary") {
+            $0.provisional.contains { $0.toolCallID == "call_q3" && $0.status == "running" }
+        }
+        #expect(prompts(pi).count == 1)
+        func remoteEdit(_ action: NativeQueueAction) async throws -> NativeThreadResult {
+            try await client.nativeThread(agentID: pi.agent.id,
+                request: .queue(expectedSessionID: running.piSessionID, generation: running.generation,
+                                operationID: UUID(), action: action))
+        }
+        #expect(try await remoteEdit(.edit(id: edited, text: "tools:1 edited")).failureCode == nil)
+        #expect(try await remoteEdit(.delete(id: deleted)).failureCode == nil)
+        pi.finishTool(3)
+        let delivered = try await pi.snapshot("the edited queue message before another model step") {
+            $0.provisional.contains { $0.toolCallID == "call_q4" && $0.status == "running" }
+        }
+        let second = try await pi.waitForStdin("prompt", count: 2)
+        #expect(second["streamingBehavior"] as? String == "steer")
+        #expect(second["message"] as? String == (mode == .all ? "tools:1 edited\n\ntail" : "tools:1 edited"))
+        #expect(delivered.queue?.items.count == (mode == .all ? 0 : 1))
+        #expect(pi.stdin("abort").isEmpty, "automatic boundary delivery never cancels the tool batch")
+        pi.finishTool(4)
+        let done = try await pi.snapshot("the queue to settle and its history to load, once, in order") { s in
+            !s.running && s.queue?.items.isEmpty == true
+                && s.messages.contains { $0.operationID == edited }
+                && (mode == .all || s.messages.contains { $0.operationID == tail })
+        }
+        #expect(prompts(pi).count == (mode == .all ? 2 : 3))
+        let users = done.messages.filter { $0.role == "user" }.map { $0.blocks.map(\.text).joined() }
+        #expect(users.filter { $0.contains("edited") }.count == 1)
+        #expect(!users.contains("outdated") && !users.contains("delete this"))
+        let message = try #require(done.messages.first { $0.role == "user" && $0.blocks.contains { $0.text.contains("edited") } })
+        let parts = try #require(message.origin?.parts)
+        #expect(parts.map { $0.id } == (mode == .all ? [edited, tail] : [edited]))
+    }
+
+    @Test(arguments: [true, false])
+    func stopAndStrandedRunsReclaimBoundaryBatchesWithTheirOriginalIDsAndImageBytes(hostStop: Bool) async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host)
+        var config: [String: Any] = ["agentID": pi.agent.id.rawValue, "socket": host.socketPath]
+        if hostStop { config["gate"] = "boundary-release" } else { config["abortAfterAck"] = true }
+        try JSONSerialization.data(withJSONObject: config).write(to: host.dir.appendingPathComponent("native-queue-boundary.json"))
+        let running = try await startRun(pi)
+        _ = try await pi.queue(.setMode(mode: .all), from: running)
+        let first = UUID(), second = UUID()
+        let image = NativeImage(mimeType: "image/png", data: Data([1, 2, 3]), name: "kept.png")
+        _ = try await pi.send("tools:0 image queue", images: [image], operationID: first, from: running)
+        _ = try await pi.send("tail", operationID: second, from: running)
+        pi.finishTool(1)
+        _ = try await pi.waitForStdin("prompt", count: 2)
+        try await eventually("pi to await release after the host acknowledged the boundary") {
+            FileManager.default.fileExists(atPath: host.dir.appendingPathComponent("native-queue-boundary-replies.jsonl").path)
+        }
+        if hostStop {
+            #expect(try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID())).failureCode == nil)
+            let stopped = try await pi.snapshot("the original queue records to return on Stop") {
+                !$0.running && $0.queue?.paused == true && $0.queue?.items.count == 2
+            }
+            #expect(stopped.queue?.items.map { $0.id } == [first, second])
+            #expect(stopped.queue?.items.first?.images.count == 1)
+            _ = try await pi.queue(.sendNow(ids: [first, second]), from: stopped)
+        }
+        let sent = try await pi.waitForStdin("prompt", count: 3)
+        let images = try #require(sent["images"] as? [[String: Any]])
+        #expect(images.first?["data"] as? String == image.data.base64EncodedString())
+        let done = try await pi.snapshot { s in
+            !s.running && s.queue?.items.isEmpty == true && s.messages.contains { $0.operationID == first }
+        }
+        let delivered = done.messages.filter { $0.role == "user" && $0.blocks.contains { $0.text.contains("image queue") } }
+        #expect(delivered.count == 1)
+        #expect(delivered.first?.origin?.parts?.map { $0.id } == [first, second])
+    }
+
+    @Test func equalTextKeepsBoundaryAndExplicitSteerOwnershipInOrder() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host)
+        let config: [String: Any] = ["agentID": pi.agent.id.rawValue, "socket": host.socketPath, "gate": "boundary-release"]
+        try JSONSerialization.data(withJSONObject: config).write(to: host.dir.appendingPathComponent("native-queue-boundary.json"))
+        let running = try await startRun(pi)
+        let automatic = UUID(), explicit = UUID(), text = "tools:0 same"
+        let image = NativeImage(mimeType: "image/png", data: Data([7, 8, 9]), name: "automatic.png")
+        _ = try await pi.send(text, images: [image], operationID: automatic, from: running)
+        pi.finishTool(1)
+        _ = try await pi.waitForStdin("prompt", count: 2)
+        _ = try await pi.send(text, delivery: .steer, operationID: explicit, from: running)
+        _ = try await pi.waitForStdin("prompt", count: 3)
+        #expect(try await pi.queue(.unsteer(id: explicit), from: running).failureCode == nil)
+        let restored = try await pi.waitForStdin("prompt", count: 4)
+        let images = try #require(restored["images"] as? [[String: Any]])
+        #expect(images.first?["data"] as? String == image.data.base64EncodedString())
+        #expect(try await pi.queue(.steer(ids: [explicit]), from: running).failureCode == nil)
+        _ = try await pi.waitForStdin("prompt", count: 5)
+        try Data().write(to: host.dir.appendingPathComponent("boundary-release"))
+        let done = try await pi.snapshot { s in
+            !s.running && s.queue?.items.isEmpty == true
+                && s.messages.contains { $0.operationID == automatic }
+                && s.messages.contains { $0.operationID == explicit }
+        }
+        let messages = done.messages.filter { $0.role == "user" && $0.blocks.filter { $0.kind == .text }.map(\.text).joined() == text }
+        #expect(messages.compactMap { $0.operationID } == [automatic, explicit])
+        #expect(messages.first?.origin?.parts?.map { $0.id } == [automatic])
+        #expect(messages.last?.origin == .steered)
+        #expect(pi.stdin("abort").isEmpty)
+    }
+
     @Test func queuedSubagentStartsWithoutInterruptingTheParentAndKeepsImages() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

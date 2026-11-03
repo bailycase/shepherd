@@ -141,6 +141,31 @@ export default function shepherdStatus(pi: ExtensionAPI) {
   let reportedSession: string | undefined;
   let sentSession: string | undefined;
   const pendingWaits = new Set<string>();
+  const pendingBoundaries = new Map<number, () => void>();
+  let boundaryID = 0;
+
+  // Pi awaits turn_end before it dequeues steering. The host acknowledges only after the
+  // selected native batch is queued; a shorter host deadline fences any late delivery.
+  async function queueBoundary(piSessionID: string, signal?: AbortSignal): Promise<void> {
+    if (!connected || !socket || signal?.aborted) return;
+    const s = socket, id = ++boundaryID;
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        pendingBoundaries.delete(id);
+        signal?.removeEventListener("abort", finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, 12_000);
+      timer.unref?.();
+      pendingBoundaries.set(id, finish);
+      signal?.addEventListener("abort", finish, { once: true });
+      try {
+        s.write(JSON.stringify({ type: "nativeQueueBoundary", id, agentID, piSessionID,
+          expiresAt: Date.now() + 10_000 }) + "\n");
+      } catch { finish(); }
+    });
+  }
   // Asking tools whose schema carries the `short` added here (a tool with its
   // own `short` keeps it, and receives it).
   const shortTools = new Set<string>();
@@ -293,8 +318,22 @@ export default function shepherdStatus(pi: ExtensionAPI) {
         retryDelay = 500;
         flush();
       });
+      let replies = "";
+      s.on("data", (chunk) => {
+        replies += chunk.toString();
+        if (Buffer.byteLength(replies) > 1024 * 1024) { s.destroy(); return; }
+        for (let newline; (newline = replies.indexOf("\n")) >= 0;) {
+          const line = replies.slice(0, newline);
+          replies = replies.slice(newline + 1);
+          try {
+            const reply = JSON.parse(line);
+            if (reply.type === "ok" || reply.type === "error") pendingBoundaries.get(reply.id)?.();
+          } catch {}
+        }
+      });
       s.on("error", () => {});
       s.on("close", () => {
+        for (const finish of pendingBoundaries.values()) finish();
         connected = false;
         socket = undefined;
         sentSession = undefined;
@@ -307,6 +346,7 @@ export default function shepherdStatus(pi: ExtensionAPI) {
   }
 
   function disconnect() {
+    for (const finish of pendingBoundaries.values()) finish();
     if (retryTimer) {
       clearTimeout(retryTimer);
       retryTimer = undefined;
@@ -349,6 +389,16 @@ export default function shepherdStatus(pi: ExtensionAPI) {
       sendSession(ctx.sessionManager.getSessionId());
     } catch {
       // Swallow; session tracking must never break the session.
+    }
+  });
+
+  pi.on("turn_end", async (event, ctx) => {
+    if (event.outcome !== "completed") return;
+    try {
+      const sessionID = ctx.sessionManager.getSessionId();
+      if (sessionID) await queueBoundary(sessionID, ctx.signal);
+    } catch {
+      // A missing host never fails a completed tool batch or throws into pi.
     }
   });
 

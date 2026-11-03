@@ -4,8 +4,8 @@ import ShepherdCore
 /// Wire traffic between pi extensions and the Unix socket the app hosts
 /// (NDJSON, one message per line).
 ///
-/// The status extension (`Extensions/shepherd-status.ts`) and the namer
-/// (`Extensions/shepherd-namer.ts`) fire and forget. The panes extension
+/// The status extension (`Extensions/shepherd-status.ts`) reports lifecycle events and awaits
+/// native queue boundaries. The namer (`Extensions/shepherd-namer.ts`) fires and forgets. The panes extension
 /// (`Extensions/shepherd-panes.ts`) issues id-correlated requests and reads
 /// `ExtensionReply` lines on the same connection, so an agent can drive its
 /// own workspace: open panes, run commands in them, read what they printed,
@@ -40,6 +40,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// clock (`message` instead carries the assistant-message timestamp for correlation). Display-only and fire-and-forget: the thread's response timing, never persisted, and
     /// it carries no payload, header or credential.
     case responseTiming(agentID: AgentID, seq: Int, mark: ResponseTimingMark, at: Double)
+    /// Awaited turn-end barrier: the host queues at most one native batch before pi continues.
+    /// `expiresAt` is an epoch-millisecond deadline; stale barriers must never deliver input.
+    case nativeQueueBoundary(id: Int, agentID: AgentID, piSessionID: String, expiresAt: Double)
     /// A custom system notification from the notify extension's tool.
     /// Fire-and-forget, like status: never persisted, dies with the app.
     case notify(agentID: AgentID, title: String, body: String)
@@ -230,11 +233,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case what
         case server, challenge, report
         case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp
-        case seq, mark, at
+        case seq, mark, at, expiresAt
     }
 
     private enum Kind: String, Codable {
-        case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent, responseTiming
+        case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent, responseTiming, nativeQueueBoundary
         case helloChildren, childCommandResult, childScope, prepareProjectConfiguration
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
@@ -283,6 +286,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID)
             )
+        case .nativeQueueBoundary:
+            self = .nativeQueueBoundary(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                piSessionID: try c.decode(String.self, forKey: .piSessionID), expiresAt: try c.decode(Double.self, forKey: .expiresAt))
         case .responseTiming:
             self = .responseTiming(
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
@@ -641,6 +647,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.refreshProjects, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
+        case .nativeQueueBoundary(let id, let agentID, let piSessionID, let expiresAt):
+            try c.encode(Kind.nativeQueueBoundary, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(piSessionID, forKey: .piSessionID)
+            try c.encode(expiresAt, forKey: .expiresAt)
         case .responseTiming(let agentID, let seq, let mark, let at):
             try c.encode(Kind.responseTiming, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
