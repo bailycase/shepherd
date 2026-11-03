@@ -4,13 +4,74 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 import ShepherdTestSupport
-import ShepherdUI
+@testable import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
 
 @Suite("Design comment controls", .integrationTimeLimit)
 struct DesignCommentControlsTests {
+    @Test func commentToolsOpenAnEditorOnTheNextElementClick() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario {
+                for dark in [false, true] { try await Self.openingEditor(dark: dark) }
+            }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @MainActor
+    private static func openingEditor(dark: Bool) async throws {
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.designToolEnabled = true
+        let vm = try await app.start()
+        vm.designNetwork = .none
+        let design = Design(name: "Comment tools", createdAt: 1_000)
+        _ = try await app.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: app.server)
+        let screen = vm.designScreen(design.id)
+        await screen.refresh()
+        screen.setActive(true)
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: dark,
+                                     DesignCanvasPane(screen: screen))
+        defer { window.close() }
+        try await eventuallyOnMain("the canvas to draw") {
+            window.layout()
+            return screen.isDrawn && !screen.visibleBoards.isEmpty
+        }
+        for boardAction in [false, true] {
+            screen.tool = .select
+            screen.closeComment()
+            screen.clearSelection()
+            if boardAction { screen.select("A.dc.html") }
+            try await eventuallyOnMain("the Comment control") {
+                window.layout()
+                return window.controls().filter { $0.label == "Comment" }.count == (boardAction ? 2 : 1)
+            }
+            let controls = boardAction ? ControlPress.controls(in: "Board actions", under: window.host) : window.controls()
+            let comment = try #require(controls.first { $0.label == "Comment" })
+            let center = CGPoint(x: comment.frame.midX, y: comment.frame.midY)
+            // NSView.hitTest takes its point in the receiver's superview, not its own coordinates.
+            let parent = try #require(window.host.superview)
+            let point = parent.convert(window.window.convertPoint(fromScreen: center), from: nil)
+            let target = try #require(window.host.hitTest(point))
+            #expect(!(target is SHCanvasInput.InputView), "the canvas input must not cover Comment at \(point), frame \(comment.frame)")
+            if boardAction { try window.press("Comment", in: "Board actions") }
+            else { try window.press("Comment") }
+            #expect(screen.tool == .comment)
+            screen.pick(SHCanvasPick(board: "A.dc.html", point: CGPoint(x: 420, y: 150)))
+            try await eventuallyOnMain("the comment editor to open") {
+                window.layout()
+                return screen.draftElement != nil && window.controls().contains { $0.label == "Add comment" }
+            }
+            #expect(screen.draftElement?.id.description == "A.dc.html#7:1/1/0")
+            try window.press("Cancel")
+            #expect(screen.draftElement == nil)
+        }
+    }
+
     @Test func aHoveredCommentCardOpensItsBoardAndResolvesThroughTheHost() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.pressing(hovering: true) }
