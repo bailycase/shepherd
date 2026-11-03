@@ -16,12 +16,12 @@ same path, not additional independent performance gains.
 | Lane | Audit IDs | Status | Required evidence |
 | --- | --- | --- | --- |
 | Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | In progress | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
-| Server | SV-01 through SV-06; server half UX-03 | Review corrections merged; parent integration tests running | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
+| Server | SV-01 through SV-06; server half UX-03 | Merged; parent 248-test integration run passed | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
 | Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | In progress | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
-| Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Review fixes tested; integration and consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
+| Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; parent tests running, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
 | Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | In progress | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
 | Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | In progress | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
-| Surfaces/extensions | SF-02 through SF-04, SV-07 | Lane tested; demand-lifetime/revision review fixes and test repair in progress | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
+| Surfaces/extensions | SF-02 through SF-04, SV-07 | Review fixes merged; parent joined tests running | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
 | Instrumentation/builds | OBS-01 through OBS-04, shared among parent and UI/thread/server lanes | In progress | Local fixed-label interaction signposts without new data uploads; meaningful existing iOS full-display completion; ordinary Release test compilation |
 
 ST-06: the user explicitly approved the additive `history_outcome_task` SQLite index during
@@ -81,14 +81,19 @@ require equipment that is not available; those limits must remain explicit.
   plus a fleet-wide cache-budget gap despite bounded individual threads. Both are fixed in
   `c8df50ad` and merged into integration. Expanded safety checks passed 248 tests/19 suites and
   ten docs guards. A second independent review of the follow-up found no actionable regressions.
-  Parent is independently running that selection on integration. The process-wide
+  Parent independently reran that selection on integration: all 248 tests/19 suites passed, exit 0.
+  The process-wide
   64 MiB/256-entry cache and 128 MiB worker reservations bound payload/storage costs, not total RSS.
   The earlier ~2.34 GiB 100-thread figure was capacity arithmetic, not measured retention.
 - Surfaces lane: 58 Swift tests and 24 pinned-runtime Node tests reported green; commit
   `c86e4eda`. Independent review found whole-row demand-key mismatch, missing New Thread picker
   teardown, and an empty-snapshot revision-watermark gap. All three require targeted fixes/tests
-  before the lane is accepted. Parent inspected the light/dark design-reference picker PNGs;
-  their layout is coherent, but visual inspection does not validate cache teardown or stale replies.
+  before acceptance. Corrected in `e01263f95` (27 focused tests, four real-window picker cases,
+  three preview tests passed in separate runs). The unrelated timing-dependent image suite is
+  repaired with controlled host continuations in `ab1aecec`. Both are merged into integration.
+  Parent inspected old/new picker light/dark PNGs; layouts remain coherent. One combined
+  preview/exit-test run timed out in the lane; separate reruns passed. Parent joined correctness
+  tests are running without mixing preview tests into process-exit suites.
 - Storage first batch: 157 tests/15 suites passed; committed as `43c53ae1`. Server prerequisite
   `4f80977f` merged into that lane as `c1570a02`, preserving staged ordinary session updates but
   synchronous session-identity durability at recovery admission. Same-thread stale session-intent
@@ -106,7 +111,8 @@ require equipment that is not available; those limits must remain explicit.
   and make fleet-digest reads cancellable without a later connection-tearing timeout. All three
   are fixed in `0f0250b1`; 76 Swift tests and real-socket portable regressions passed in the lane.
   Parent inspected the generation guard, invalidation union and cancellable request changes.
-  Integration and Mac/mobile consumers remain pending; parent is not merging code mid-build.
+  Transport is merged after the prior build finished. Parent joined correctness tests are running;
+  Mac/mobile digest/hint consumers remain pending.
 - Mobile first batch committed `ea0bf14a`; entire portable runner passed after moving the
   Foundation-only host presentation extension into the shared portable source list. Transport
   prerequisite merged cleanly into that lane. Simulator build and new portable checks reported
