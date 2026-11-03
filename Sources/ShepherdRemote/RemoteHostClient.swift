@@ -81,7 +81,13 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var storedCapabilities: Set<String> = []
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
-    private var connectionGeneration = UUID()
+    // Written on the client queue; main checks it before invoking a captured delivery batch.
+    private let generationLock = NSLock()
+    private var storedConnectionGeneration = UUID()
+    private var connectionGeneration: UUID {
+        get { generationLock.lock(); defer { generationLock.unlock() }; return storedConnectionGeneration }
+        set { generationLock.lock(); storedConnectionGeneration = newValue; generationLock.unlock() }
+    }
     private let socketOpen: (@Sendable (String, UInt16) throws -> Int32)?
     private var pendingOpen: RemoteSocketOpen?
     private var fd: Int32 = -1
@@ -559,7 +565,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard capabilities.contains(RemoteProtocol.nativeFleetDigestCapability) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "Fleet digests are unavailable.")
         }
-        let reply = try await request { .fleetDigest(id: $0, agentID: agentID, session: session, revision: revision) }
+        let reply = try await request(cancellable: true) { .fleetDigest(id: $0, agentID: agentID, session: session, revision: revision) }
         if case .fleetDigest(_, let result) = reply { return result }
         if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
         throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected digest reply")
@@ -1381,6 +1387,18 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     private func push(_ event: PushedEvent, bytes: Int) {
+        var event = event
+        var bytes = bytes
+        if case .designChanged(let id, let revision, let comments) = event,
+           let last = pendingEvents.last,
+           case .designChanged(let previousID, let previousRevision, let previousComments) = last.event,
+           id == previousID {
+            // Board and comment hints invalidate independently; nil means no news, not clear.
+            let revision = revision ?? previousRevision, comments = comments ?? previousComments
+            event = .designChanged(id, revision, comments)
+            bytes = (try? NDJSON.encode(RemoteReply.designChanged(designID: id, revision: revision, commentsRevision: comments)).count)
+                ?? (last.bytes + bytes)
+        }
         // Only adjacent replacement is safe across command-like pushes and output/exit barriers.
         func replaces(_ previous: PushedEvent) -> Bool {
             switch (previous, event) {
@@ -1455,6 +1473,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 }
             }
             for queued in batch {
+                // Teardown may have retired this captured batch while main was unavailable.
+                // Check before every consumer, without waiting on the client queue.
+                guard self.connectionGeneration == generation else { finish(); return }
                 switch queued.event {
                 case .nativeThreadChanged(let agentID): self.onNativeThreadChanged?(agentID)
                 case .state(let state): self.onStateChanged?(state)
@@ -1518,7 +1539,11 @@ public final class RemoteHostClient: @unchecked Sendable {
         cancelledReplies.removeAll()
         if established, !disconnectNotified {
             disconnectNotified = true
-            hopToMain { [weak self] in self?.onDisconnected?(reason) }
+            let generation = connectionGeneration
+            hopToMain { [weak self] in
+                guard let self, self.connectionGeneration == generation else { return }
+                self.onDisconnected?(reason)
+            }
         }
         established = false
     }
