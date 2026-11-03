@@ -71,6 +71,14 @@ final class DesignRendering {
     /// Boards drawn into images and kept now.
     var renderedImages: Int { images.count }
 
+    #if DEBUG
+    /// Per-renderer drawing seam; fixtures still exercise the real queue, cache and forget fence.
+    var drawForTesting: ((HostDesignRef, DesignPath, String) async -> UIImage?)?
+    var imageBytesForTesting: Int {
+        images.values.reduce(0) { $0 + ($1.cgImage.map { $0.bytesPerRow * $0.height } ?? 0) }
+    }
+    #endif
+
     func surface(_ ref: HostDesignRef, source: RemoteDesignSource) -> DesignSurface {
         if let surface = surfaces[ref] { return surface }
         let surface = DesignSurface(designID: ref.design, source: source)
@@ -102,6 +110,9 @@ final class DesignRendering {
         let rendered: UIImage? = await exclusively {
             // A tile scrolled away while it waited its turn draws nothing: no web view for it.
             guard !Task.isCancelled, !self.forgottenHosts.contains(ref.host) else { return nil }
+            #if DEBUG
+            if let drawForTesting = self.drawForTesting { return await drawForTesting(ref, path, sha256) }
+            #endif
             let view = self.makeView(ref, source: source, path: path, size: size)
             defer { self.release(view) }
             guard (try? await Self.load(view)) != nil, let image = try? await view.snapshot(width: min(width, size.width)) else { return nil }

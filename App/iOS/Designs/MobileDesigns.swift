@@ -66,12 +66,18 @@ final class MobileDesigns {
         store.comments = store.comments.filter { $0.key.host != host }
         store.failures = store.failures.filter { $0.key.host != host }
         store.swatches = store.swatches.filter { !$0.key.hasPrefix(host.uuidString + "/") }
+        let pictures = store.mentionPictures.keys.filter { $0.ref.host == host }
+        for key in pictures { store.mentionPictures.removeValue(forKey: key)?.task?.cancel() }
+        if !pictures.isEmpty { store.mentionPicturesVersion &+= 1 }
         store.connections[host] = nil
         store.signatures[host] = nil
         store.again.remove(host)
         store.setServing(host, false)
         store.derive()
         DesignRendering.shared.forget(host: host)
+        #if DEBUG
+        store.mentionRenderingForTesting?.forget(host: host)
+        #endif
     }
 
     private init(hosts: MobileHosts) {
@@ -416,42 +422,99 @@ final class MobileDesigns {
 
     /// Moves when a picture an @ picker row draws lands.
     private(set) var mentionPicturesVersion = 0
-    @ObservationIgnored private var mentionPictures: [String: UIImage] = [:]
-    @ObservationIgnored private var mentionPicturesWanted: Set<String> = []
+    private struct MentionPictureKey: Hashable {
+        var ref: HostDesignRef
+        var board: DesignPath?
+    }
+
+    /// The renderer owns its bounded image cache. Picker values may keep a displayed image,
+    /// but this lookup must not keep every board/revision alive after renderer eviction.
+    private final class MentionPicture {
+        let revision: UInt64
+        weak var image: UIImage?
+        var task: Task<Void, Never>?
+        init(revision: UInt64) { self.revision = revision }
+    }
+    @ObservationIgnored private var mentionPictures: [MentionPictureKey: MentionPicture] = [:]
+
+    #if DEBUG
+    @ObservationIgnored var mentionRenderingForTesting: DesignRendering?
+    @ObservationIgnored private(set) var mentionCompletionsForTesting = 0
+    var mentionImageCountForTesting: Int { mentionPictures.values.count { $0.image != nil } }
+    var mentionRequestsForTesting: Int { mentionPictures.values.count { $0.task != nil } }
+    var mentionImageBytesForTesting: Int {
+        mentionPictures.values.reduce(0) { total, value in
+            total + (value.image?.cgImage.map { $0.bytesPerRow * $0.height } ?? 0)
+        }
+    }
+    #endif
+
+    private var mentionRendering: DesignRendering {
+        #if DEBUG
+        if let mentionRenderingForTesting { return mentionRenderingForTesting }
+        #endif
+        return .shared
+    }
 
     /// An @ picker row's picture while one is drawn: a design's first board, a board's own; an
     /// element's is its board's (the phone cuts no element out of it).
     func mentionPicture(_ item: DesignMentionItem, host: UUID) -> UIImage? {
-        mentionPictures[Self.mentionKey(item, host: host)]
+        let value = mentionPictures[Self.mentionKey(item, host: host)]
+        return value?.revision == (item.revision ?? 0) ? value?.image : nil
     }
 
     /// A row came on screen: its picture is drawn on this device from the host's files.
     func wantMentionPicture(_ item: DesignMentionItem, host: UUID) {
+        // Check availability before reserving work: an offline picker can retry on reentry.
+        guard hosts.host(host)?.connectedClient != nil, let library = library(host) else { return }
         let key = Self.mentionKey(item, host: host)
-        guard mentionPictures[key] == nil, mentionPicturesWanted.insert(key).inserted, let library = library(host) else { return }
-        let ref = HostDesignRef(host: host, design: item.reference.designID)
-        Task {
-            defer { mentionPicturesWanted.remove(key) }
-            let source = library.source(item.reference.designID)
-            if item.kind == .design, let first = library.listing?.designs.first(where: { $0.id == item.reference.designID })?.firstBoard {
-                let size = CGSize(width: first.width, height: first.height)
-                guard let image = await DesignRendering.shared.image(ref, source: source, path: first.path, sha256: first.sha256, size: size,
-                                                                     width: SHReferenceMetrics.thumbnail.width) else { return }
-                mentionPictures[key] = image
-            } else {
-                guard let path = item.reference.board, let index = await sync(ref), let board = index.snapshot.index.boards[path],
-                      let sha = index.snapshot.boards[path],
-                      let image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: sha,
-                                                                     size: CGSize(width: board.w, height: board.h),
-                                                                     width: SHReferenceMetrics.thumbnail.width) else { return }
-                mentionPictures[key] = image
+        let revision = item.revision ?? 0
+        for (key, value) in mentionPictures where value.image == nil && value.task == nil {
+            mentionPictures[key] = nil
+        }
+        // Two windows may briefly have different catalogs. An older one must not supersede
+        // the newer revision's request or image; revisions belong to the whole design.
+        guard !mentionPictures.contains(where: { $0.key.ref == key.ref && $0.value.revision > revision }) else { return }
+        for (oldKey, value) in mentionPictures where oldKey.ref == key.ref && value.revision < revision {
+            value.task?.cancel()
+            mentionPictures[oldKey] = nil
+        }
+        if let value = mentionPictures[key], value.image != nil || value.task != nil { return }
+        let value = MentionPicture(revision: revision)
+        mentionPictures[key] = value
+        let rendering = mentionRendering
+        value.task = Task {
+            defer {
+                value.task = nil
+                for (key, value) in mentionPictures where value.image == nil && value.task == nil {
+                    mentionPictures[key] = nil
+                }
+                #if DEBUG
+                mentionCompletionsForTesting += 1
+                #endif
             }
+            guard !Task.isCancelled, mentionPictures[key] === value else { return }
+            let source = library.source(item.reference.designID)
+            let image: UIImage?
+            if item.kind == .design, let first = library.listing?.designs.first(where: { $0.id == item.reference.designID })?.firstBoard {
+                image = await rendering.image(key.ref, source: source, path: first.path, sha256: first.sha256,
+                                              size: CGSize(width: first.width, height: first.height), width: SHReferenceMetrics.thumbnail.width)
+            } else {
+                guard let path = item.reference.board, let index = await sync(key.ref), !Task.isCancelled,
+                      mentionPictures[key] === value, let board = index.snapshot.index.boards[path],
+                      let sha = index.snapshot.boards[path] else { return }
+                image = await rendering.image(key.ref, source: source, path: path, sha256: sha,
+                                              size: CGSize(width: board.w, height: board.h), width: SHReferenceMetrics.thumbnail.width)
+            }
+            guard !Task.isCancelled, mentionPictures[key] === value, hosts.host(host) != nil,
+                  self.library(host) != nil, let image else { return }
+            value.image = image
             mentionPicturesVersion &+= 1
         }
     }
 
-    private static func mentionKey(_ item: DesignMentionItem, host: UUID) -> String {
-        "\(host.uuidString)/\(item.reference.designID.rawValue)/\(item.reference.board?.rawValue ?? "")@\(item.revision ?? 0)"
+    private static func mentionKey(_ item: DesignMentionItem, host: UUID) -> MentionPictureKey {
+        MentionPictureKey(ref: HostDesignRef(host: host, design: item.reference.designID), board: item.reference.board)
     }
 
     /// A piece of `host`'s design pinned by the host (named `local`, as the host sees it).
