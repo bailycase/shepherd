@@ -14,16 +14,23 @@ struct ThreadFilesPane: View {
     var body: some View {
         let host = hosts.host(thread.host)
         let name = host?.name ?? "the host"
-        if let host, host.phase == .connected, !host.supports(RemoteProtocol.filesCapability) {
+        if host == nil || (host?.phase == .connected && host?.agent(thread.agent) == nil) {
+            ThreadFilesMessage(text: "This thread or host is no longer available.")
+        } else if let host, host.phase == .connected, !host.supports(RemoteProtocol.filesCapability) {
             ThreadFilesMessage(text: "Files needs a newer Shepherd on \(name).")
         } else {
             let worktree = host?.agent(thread.agent)?.worktreeBranch != nil
-            ThreadFilesContent(model: ThreadFilesStores.shared.model(for: thread, hosts: hosts),
+            let model = ThreadFilesStores.shared.model(for: thread, hosts: hosts)
+            ThreadFilesContent(model: model,
                                footer: "Read-only. The thread’s \(worktree ? "worktree" : "folder") on \(name). Tap a file to read it here.")
-                // A new connection reads again what failed while the host was away.
+                .onAppear { ThreadFilesStores.shared.appeared(thread, model: model) }
+                .onDisappear { ThreadFilesStores.shared.disappeared(thread, model: model) }
+                // A new connection retries failures. A request is shared: one disappearing
+                // window must not cancel the load another window is still waiting for.
                 .task(id: host?.session) {
-                    await ThreadFilesStores.shared.model(for: thread, hosts: hosts).loadIfNeeded()
+                    await model.loadIfNeeded()
                 }
+                .id(thread)
         }
     }
 }
@@ -37,36 +44,6 @@ struct ThreadFilesScreen: View {
             .background(Color.sh.bgWindow)
             .navigationTitle("Files")
             .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-/// One tree per thread, kept while the app runs, so leaving Files and coming back (or folding the phone) keeps the open folders.
-@MainActor
-final class ThreadFilesStores {
-    static let shared = ThreadFilesStores()
-    private var models: [AgentRef: ThreadFilesModel] = [:]
-
-    func model(for ref: AgentRef, hosts: MobileHosts) -> ThreadFilesModel {
-        if let model = models[ref] { return model }
-        let model = ThreadFilesModel(list: { [weak hosts] path, hidden in
-            try await Self.client(ref, hosts).listFiles(agentID: ref.agent, path: path, showHidden: hidden)
-        }, read: { [weak hosts] path in
-            try await Self.client(ref, hosts).readFile(agentID: ref.agent, path: path)
-        })
-        models[ref] = model
-        return model
-    }
-
-    func forget(host: UUID) {
-        models = models.filter { $0.key.host != host }
-    }
-
-    private static func client(_ ref: AgentRef, _ hosts: MobileHosts?) throws -> RemoteHostClient {
-        let host = hosts?.host(ref.host)
-        guard let client = host?.connectedClient else {
-            throw RemoteHostClientError.rejected(code: "offline", message: host.map { "\($0.name) is offline." } ?? "This host was forgotten.")
-        }
-        return client
     }
 }
 

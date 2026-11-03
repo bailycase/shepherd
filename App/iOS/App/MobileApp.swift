@@ -32,6 +32,7 @@ final class MobileApp {
         threads = ThreadStores()
         threads.hostName = { [weak hosts] ref in hosts?.host(ref.host)?.record.name }
         threads.track(hosts)
+        ThreadFilesStores.shared.track(hosts)
         self.appearance = appearance
         self.push.onEnabledHostsChanged = { GoalNotifications.shared.pushEnabledHosts = $0 }
         GoalNotifications.shared.pushEnabledHosts = self.push.enabledHosts
