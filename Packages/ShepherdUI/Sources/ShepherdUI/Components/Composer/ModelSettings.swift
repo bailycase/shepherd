@@ -108,12 +108,13 @@ struct SHModelSettingsStops: Equatable {
 /// button that opens it reads model · thinking, plus a bolt when speed is Fast.
 ///
 /// MODEL lists the current model and one recent (a bolt marks a model with a Fast tier, a check
-/// the current one) over All models…, THINKING is a segmented control of the levels the model
-/// takes, and SPEED a segmented control of its tiers (Standard | Fast). Only what the model really
+/// the current one) over All models…, with search across the full catalog. THINKING is a segmented
+/// control of the levels the model takes, and SPEED a segmented control of its tiers (Standard | Fast). Only what the model really
 /// offers appears: no Speed row for a model without a raised tier. A model choice closes the
 /// popover; a level or a speed can change while it stays open. ↑↓ move, ↩ chooses, esc closes.
 public struct SHModelSettings: View {
   let models: [SHModelOption]
+  let searchModels: [SHModelOption]
   let thinking: [SHThinkingOption]
   let currentThinking: String?
   let speeds: [SHSpeedOption]
@@ -128,10 +129,12 @@ public struct SHModelSettings: View {
   let allModels: () -> Void
   let close: () -> Void
   @State private var selection = 0
+  @State private var query = ""
+  @State private var matches: [SHModelOption] = []
   @FocusState private var focused: Bool
 
   public init(
-    models: [SHModelOption], thinking: [SHThinkingOption], currentThinking: String?,
+    models: [SHModelOption], searchModels: [SHModelOption] = [], thinking: [SHThinkingOption], currentThinking: String?,
     speeds: [SHSpeedOption], currentSpeed: String, modelEnabled: Bool = true,
     thinkingEnabled: Bool = true, speedEnabled: Bool = true, maxHeight: CGFloat? = nil,
     chooseModel: @escaping (SHModelOption) -> Void, chooseThinking: @escaping (String) -> Void,
@@ -139,6 +142,7 @@ public struct SHModelSettings: View {
     close: @escaping () -> Void
   ) {
     self.models = models
+    self.searchModels = searchModels
     self.thinking = thinking
     self.currentThinking = currentThinking
     self.speeds = speeds
@@ -154,74 +158,114 @@ public struct SHModelSettings: View {
     self.close = close
   }
 
+  private var visibleModels: [SHModelOption] { query.isEmpty ? models : matches }
+
   private var stops: SHModelSettingsStops {
-    SHModelSettingsStops(models: models.count, thinking: thinking.count, speeds: speeds.count)
+    SHModelSettingsStops(models: visibleModels.count, thinking: thinking.count, speeds: speeds.count)
+  }
+
+  private func search() {
+    let key = query.trimmingCharacters(in: .whitespaces).lowercased()
+    let current = models.first(where: \.isCurrent)?.id
+    matches = query.isEmpty ? [] : searchModels.compactMap { model in
+      guard model.id.lowercased().contains(key) else { return nil }
+      var result = model
+      result.isCurrent = model.id == current
+      return result
+    }
+    selection = 0
   }
 
   public var body: some View {
     let stops = stops
     ScrollViewReader { proxy in
-      ScrollView {
-        VStack(spacing: 0) {
-          SHMenuHeader("Model")
-          modelRows(stops)
-          if !thinking.isEmpty {
-            SHHairline().padding(.vertical, SH.Space.xs)
-            SHMenuHeader("Thinking")
-            SHModelSettingsSegments(
-              label: "Thinking",
-              segments: thinking.map {
-                SHModelSettingsSegment(id: $0.id, title: $0.title, note: $0.note)
-              },
-              current: currentThinking, highlighted: highlighted(.thinking(0), in: stops, count: thinking.count),
-              enabled: thinkingEnabled, start: stops.index(of: .thinking(0)),
-              hover: { selection = stops.index(of: .thinking($0)) }, choose: chooseThinking)
-          }
-          if !speeds.isEmpty {
-            SHHairline().padding(.vertical, SH.Space.xs)
-            SHMenuHeader("Speed")
-            SHModelSettingsSegments(
-              label: "Speed",
-              segments: speeds.map {
-                SHModelSettingsSegment(
-                  id: $0.id, title: $0.title, note: $0.detail, bolt: $0.boosted)
-              },
-              current: currentSpeed, highlighted: highlighted(.speed(0), in: stops, count: speeds.count),
-              enabled: speedEnabled, start: stops.index(of: .speed(0)),
-              hover: { selection = stops.index(of: .speed($0)) }, choose: chooseSpeed)
-          }
+      VStack(spacing: 0) {
+        HStack(spacing: SH.Space.m) {
+          Image(systemName: "magnifyingglass")
+            .foregroundStyle(Color.sh.textTertiary)
+          TextField("Search models", text: $query)
+            .textFieldStyle(.plain)
+            .font(.sh(.ui))
+            .foregroundStyle(Color.sh.textPrimary)
+            .focused($focused)
+            .onKeyPress(.upArrow) {
+              selection = stops.moved(selection, by: -1)
+              proxy.scrollTo(selection, anchor: .center)
+              return .handled
+            }
+            .onKeyPress(.downArrow) {
+              selection = stops.moved(selection, by: 1)
+              proxy.scrollTo(selection, anchor: .center)
+              return .handled
+            }
+            .onKeyPress(.return) {
+              chooseSelection()
+              return .handled
+            }
+            .onKeyPress(.escape) {
+              close()
+              return .handled
+            }
+            .accessibilityLabel("Search models")
         }
-        .padding(SH.Space.s)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHComposerMetrics.modelSearchHeight)
+        .overlay(alignment: .bottom) { SHHairline() }
+        ScrollView {
+          LazyVStack(spacing: 0) {
+            SHMenuHeader("Model")
+            if !query.isEmpty && matches.isEmpty {
+              Text("No matching models").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                .padding(SH.Space.s)
+            }
+            modelRows(stops)
+            if !thinking.isEmpty {
+              SHHairline().padding(.vertical, SH.Space.xs)
+              SHMenuHeader("Thinking")
+              SHModelSettingsSegments(
+                label: "Thinking",
+                segments: thinking.map {
+                  SHModelSettingsSegment(id: $0.id, title: $0.title, note: $0.note)
+                },
+                current: currentThinking, highlighted: highlighted(.thinking(0), in: stops, count: thinking.count),
+                enabled: thinkingEnabled, start: stops.index(of: .thinking(0)),
+                hover: { selection = stops.index(of: .thinking($0)) }, choose: chooseThinking)
+            }
+            if !speeds.isEmpty {
+              SHHairline().padding(.vertical, SH.Space.xs)
+              SHMenuHeader("Speed")
+              SHModelSettingsSegments(
+                label: "Speed",
+                segments: speeds.map {
+                  SHModelSettingsSegment(
+                    id: $0.id, title: $0.title, note: $0.detail, bolt: $0.boosted)
+                },
+                current: currentSpeed, highlighted: highlighted(.speed(0), in: stops, count: speeds.count),
+                enabled: speedEnabled, start: stops.index(of: .speed(0)),
+                hover: { selection = stops.index(of: .speed($0)) }, choose: chooseSpeed)
+            }
+          }
+          .padding(SH.Space.s)
+        }
+        .scrollBounceBehavior(.basedOnSize)
       }
-      .scrollBounceBehavior(.basedOnSize)
       .frame(width: SHComposerMetrics.modelSettingsWidth)
-      .frame(maxHeight: maxHeight)
+      .frame(maxHeight: maxHeight ?? (query.isEmpty ? nil : SHComposerMetrics.modelPickerMaxHeight))
       .fixedSize(horizontal: false, vertical: true)
       .shPopover()
-      // The popover takes the keyboard, not its scroll view (which would scroll on ↑↓ itself),
-      // as every composer menu does.
-      .focusable().focusEffectDisabled().focused($focused)
-      .onAppear { focused = true }
-      .onKeyPress(.upArrow) {
-        selection = stops.moved(selection, by: -1)
-        proxy.scrollTo(selection, anchor: .center)
-        return .handled
+      .task {
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        focused = true
       }
-      .onKeyPress(.downArrow) {
-        selection = stops.moved(selection, by: 1)
-        proxy.scrollTo(selection, anchor: .center)
-        return .handled
-      }
-      .onKeyPress(.return) {
-        chooseSelection()
-        return .handled
-      }
-      .onKeyPress(.escape) {
-        close()
-        return .handled
+      .onChange(of: query) { _, _ in
+        search()
+        proxy.scrollTo(0, anchor: .top)
       }
     }
     .accessibilityLabel("Model, thinking and speed")
+    .onChange(of: searchModels) { _, _ in search() }
+    .onChange(of: models) { _, _ in search() }
     .onChange(of: stops.count) { _, count in
       selection = min(selection, max(0, count - 1))
     }
@@ -230,7 +274,7 @@ public struct SHModelSettings: View {
   /// The model rows and All models…, which share one enabled state.
   private func modelRows(_ stops: SHModelSettingsStops) -> some View {
     Group {
-      ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
+      ForEach(Array(visibleModels.enumerated()), id: \.element.id) { index, model in
         SHMenuRow(
           highlighted: selection == index, action: { if modelEnabled { chooseModel(model) } },
           onHover: { selection = index }
@@ -249,15 +293,15 @@ public struct SHModelSettings: View {
           model.title + (model.isCurrent ? ", current" : "") + (model.fast ? ", offers Fast" : ""))
       }
       SHMenuRow(
-        highlighted: selection == models.count, action: { if modelEnabled { allModels() } },
-        onHover: { selection = models.count }
+        highlighted: selection == visibleModels.count, action: { if modelEnabled { allModels() } },
+        onHover: { selection = visibleModels.count }
       ) {
         Text("All models…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
         Spacer(minLength: 0)
         Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
           .foregroundStyle(Color.sh.textTertiary)
       }
-      .id(models.count)
+      .id(visibleModels.count)
     }
     .shEnabledOpacity(modelEnabled)
   }
@@ -270,7 +314,7 @@ public struct SHModelSettings: View {
 
   private func chooseSelection() {
     switch stops.stop(at: selection) {
-    case .model(let index): if modelEnabled { chooseModel(models[index]) }
+    case .model(let index): if modelEnabled { chooseModel(visibleModels[index]) }
     case .allModels: if modelEnabled { allModels() }
     case .thinking(let index): if thinkingEnabled { chooseThinking(thinking[index].id) }
     case .speed(let index): if speedEnabled { chooseSpeed(speeds[index].id) }

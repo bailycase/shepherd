@@ -35,6 +35,23 @@ struct ComposerMenuPerformanceTests {
                 "\(SHMenuDiagnostics.rowBodies) rows drawn for \(ModelCatalogFixture.entries.count) models")
     }
 
+    @Test func searchingTheModelSettingsDrawsOnlyTheRowsOnScreen() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.commands.send(.thinkingMenu, to: ComposerThread.key)
+        try await thread.settle()
+        try #require(thread.focusedEditor != nil, "the overlay's search field has focus")
+        SHMenuDiagnostics.rowBodies = 0
+
+        thread.type("gpt")
+        try await thread.settle()
+
+        #expect(SHMenuDiagnostics.rowBodies > 0, "the full-catalog results appeared")
+        #expect(SHMenuDiagnostics.rowBodies <= Self.rowBudget,
+                "\(SHMenuDiagnostics.rowBodies) rows drawn for \(ModelCatalogFixture.entries.count) models")
+    }
+
     /// Each keystroke in the search field draws the rows its results put on screen, not the
     /// catalog.
     @Test func filteringTheModelPickerDrawsOnlyTheRowsOnScreen() async throws {
