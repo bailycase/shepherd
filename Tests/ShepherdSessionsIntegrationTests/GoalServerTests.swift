@@ -289,7 +289,12 @@ struct GoalServerTests {
         let result = try await pi.send(text, delivery: .steer, from: running)
         #expect(result.failureCode == (text == "please refuse" ? "dispatch_failed" : nil))
         try await eventually("the consumed or refused steer to unyield") { actions(pi) == ["yield", "unyield"] }
-        #expect(try await pi.snapshot().queue?.items.isEmpty == true)
+        let stillRunning = try await pi.snapshot()
+        #expect(stillRunning.running && stillRunning.queue?.items.isEmpty == true)
+        try await host.server.enqueue {
+            let thread = try #require(host.server.rpcThread(forAgent: pi.agent.id))
+            #expect(thread.steersInFlight == 0 && thread.goalYieldGeneration == nil)
+        }
         #expect(prompts(pi) == ["tools:1 build", text])
         pi.finishTool(1)
         _ = try await pi.snapshot("the original turn settled") { !$0.running }
