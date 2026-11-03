@@ -17,6 +17,10 @@ extension FixtureCatalog {
                           prepare: FreshnessFixtures.reconnecting),
             FixtureScreen(name: "thread-offline", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.offline),
+            // The real ReviewStore over large files: what it holds, letting it go off screen, and a
+            // fetch that a shed overtakes. Checks only; its shot is the thread.
+            FixtureScreen(name: "review-retention", hosts: ReviewRetentionFixture.hosts(), routes: [.thread(preview)],
+                          prepare: ReviewRetentionFixture.run),
             FixtureScreen(name: "pad-switch", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.switchThreads),
             // Run with -w: a thread kept hidden in one window and shown in a second, which then closes.
@@ -125,13 +129,13 @@ extension FixtureCatalog {
         try? await Task.sleep(for: .seconds(1))
         check(app.threads.viewers(for: preview).count == 1, "the second window alone runs it (\(app.threads.viewers(for: preview).count))")
         FixtureWindows.shared.closeOthers()
-        await FixtureWindows.wait("second window closed", seconds: 10) { UIApplication.shared.openSessions.count <= 1 }
+        await FixtureWindows.wait("second window closed", seconds: 6) { UIApplication.shared.openSessions.count <= 1 }
         try? await Task.sleep(for: .seconds(1))
         check(app.threads.viewers(for: preview).count == 0 && !app.threads.store(for: preview).isLive,
               "closing it leaves no viewer and the store suspended")
         // The first window runs its shown thread again once its scene is active again.
         let primary = FixtureWindows.shared.primary
-        for _ in 0..<50 where app.threads.viewers(for: running).count != 1 { try? await Task.sleep(for: .milliseconds(200)) }
+        for _ in 0..<15 where app.threads.viewers(for: running).count != 1 { try? await Task.sleep(for: .milliseconds(200)) }
         check(app.threads.viewers(for: running).count == 1 || primary?.activationState != .foregroundActive,
               "the first window's shown thread runs while its scene is active (viewers \(app.threads.viewers(for: running).count), scene \(primary?.activationState.rawValue ?? -1))")
         // Back to the kept one in the first window: shown at once, running again.
@@ -141,5 +145,101 @@ extension FixtureCatalog {
         check(app.threads.viewers(for: running).count == 0, "the thread now kept hidden lets its poll go")
         check(app.threads.viewers(for: preview).count == (primary?.activationState == .foregroundActive ? 1 : 0),
               "the kept thread runs again when shown in an active scene (\(app.threads.viewers(for: preview).count))")
+    }
+}
+
+/// Large changes for the preview agent: four Swift files of 5,000 added lines each (about 9 MiB
+/// of hunks before their colored text), and a count of the file fetches the host answered.
+@MainActor enum ReviewRetentionFixture {
+    final class Fetches: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        func add() { lock.withLock { count += 1 } }
+        var value: Int { lock.withLock { count } }
+    }
+
+    nonisolated(unsafe) static let fetches = Fetches()
+
+    static func hosts() -> [FixtureHostData] {
+        var text = ""
+        let pad = String(repeating: "x", count: 380)
+        for file in 0..<4 {
+            text += "diff --git a/Sources/Big\(file).swift b/Sources/Big\(file).swift\nnew file mode 100644\n--- /dev/null\n"
+            text += "+++ b/Sources/Big\(file).swift\n@@ -0,0 +1,5000 @@\n"
+            for line in 0..<5000 { text += "+let value\(line) = compute(\"\(pad)\") // \(line)\n" }
+        }
+        let files = DiffFile.parse(text)
+        var hosts = FixtureData.hosts()
+        let changes = ChangesFixture.reply(ChangesFixture.Repo(files: files, branch: "big", base: "main", baseName: "main", mergeBase: "3f2a91c",
+                                                               lastTurn: nil, turnFiles: []))
+        let fetches = fetches
+        hosts[0].reply = { request in
+            if case .agentQuery(_, _, .changesFile) = request { fetches.add() }
+            return changes(request)
+        }
+        return hosts
+    }
+
+    static func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+
+    static func run(_ app: MobileApp) async {
+        let reviews = ReviewStores.shared
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = reviews.store(for: ref)
+        // A screen shows it: every file fetched, colored, and drawn.
+        reviews.appeared(ref)
+        await store.load(hosts: app.hosts)
+        await ChangesFixture.filesLoaded(store)
+        for entry in store.entries { _ = store.unifiedRows(entry.id, gaps: false) }
+        let files = store.entries.map(\.id)
+        let held = store.retainedCost
+        check(files.count == 4 && held > 8 << 20 && store.cachedRowFiles == 4 && !store.texts.isEmpty,
+              "the shown review holds hunks, colored text and rows (\(held >> 20) MiB, \(store.cachedRowFiles) row sets)")
+        // The reviewer's own marks.
+        if let line = store.diff(files[0])?.hunks.first?.lines.first?.id {
+            store.select(fileID: files[0], lineID: line)
+            store.draft = "Name this better."
+            store.saveDraft()
+        }
+        if let line = store.diff(files[1])?.hunks.first?.lines.dropFirst().first?.id {
+            store.select(fileID: files[1], lineID: line)
+            store.draft = "Unsent thought"
+        }
+        store.toggleViewed(files[2])
+        store.toggleCollapsed(files[3])
+
+        // It leaves the screen: past the off-screen budget alone, every payload owner lets go.
+        reviews.disappeared(ref)
+        check(store.diffs.isEmpty && store.texts.isEmpty && store.cachedRowFiles == 0 && store.cachedDiffs == 0 && store.retainedCost == 0,
+              "off screen over budget: hunks, text, rows and cache all let go (\(store.retainedCost) bytes left)")
+        check(store.comments.count == 1 && store.draft == "Unsent thought" && store.viewed == [files[2]] && store.collapsed.contains(files[3]),
+              "the comment, the draft, viewed and collapsed files stay")
+
+        // Shown again: it fetches what it needs, the marks as they were.
+        let before = fetches.value
+        reviews.appeared(ref)
+        await store.loadIfNeeded(hosts: app.hosts)
+        await ChangesFixture.filesLoaded(store)
+        check(fetches.value == before + 4 && store.comments.count == 1 && store.draft == "Unsent thought",
+              "shown again it fetches its files and keeps its marks")
+
+        // A fetch asked for, then a shed before it runs: no request, nothing kept.
+        reviews.disappeared(ref)
+        let asked = fetches.value
+        let task = store.ensure(files[0])
+        store.shed()
+        await task?.value
+        try? await Task.sleep(for: .milliseconds(300))
+        check(fetches.value == asked && store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0,
+              "a fetch overtaken by a shed asks nothing and keeps nothing (\(fetches.value - asked) asked)")
+        // And one already asked: its reply lands after the shed and is dropped.
+        reviews.appeared(ref)
+        await store.loadIfNeeded(hosts: app.hosts)
+        let inFlight = store.ensure(files[1])
+        await Task.yield()
+        store.shed()
+        await inFlight?.value
+        check(store.diffs.isEmpty && store.cachedDiffs == 0, "a reply after a shed is not kept")
+        reviews.disappeared(ref)
     }
 }

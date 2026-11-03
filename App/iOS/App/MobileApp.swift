@@ -20,6 +20,8 @@ final class MobileApp {
     let glance: GlanceBridge
     /// When the app first shows something usable, and each reconnect (signposts; diagnostics).
     let readiness: MobileReadiness
+    /// Each host's revision hints for the threads on screen in any window.
+    let hints: ThreadRevisionHints
 
     init(hosts: MobileHosts, appearance: MobileAppearance, push: PushManager? = nil) {
         SHFonts.register()
@@ -48,6 +50,11 @@ final class MobileApp {
         HomeFeed.of(hosts).openSnapshot = { [threads] ref in threads.liveSnapshot(for: ref) }
         glance = GlanceBridge(hosts: hosts, windows: windows)
         readiness = MobileReadiness(hosts: hosts) { MobileDiagnostics.reportFullyDisplayed() }
+        // A hint marks Home's digest to read again; the thread's own store keeps polling meanwhile.
+        hints = ThreadRevisionHints(hosts: hosts, threads: threads) { [weak hosts] ref in
+            guard let hosts else { return }
+            HomeFeed.of(hosts).invalidate(ref.fleetRef)
+        }
     }
 
     /// The shipped app: preferences and the Keychain.

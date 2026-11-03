@@ -21,6 +21,8 @@ final class ThreadStores {
     @ObservationIgnored private var viewers: [AgentRef: NativeThreadViewers] = [:]
     /// Threads by when they were last asked for, most recent last.
     @ObservationIgnored private var recent: [AgentRef] = []
+    /// Bumped as viewer groups come and go, so `shownRefs` is observed for new ones too.
+    private var viewerGroups = 0
 
     /// Names the host a thread's agent runs on, for its errors' Details.
     @ObservationIgnored var hostName: ((AgentRef) -> String?)?
@@ -50,7 +52,15 @@ final class ThreadStores {
         if let viewers = viewers[ref] { return viewers }
         let shared = NativeThreadViewers(store: store(for: ref))
         viewers[ref] = shared
+        viewerGroups &+= 1
         return shared
+    }
+
+    /// The threads some view runs now, in any window (`NativeThreadViewers.count`): what the
+    /// host's revision hints watch (`ThreadRevisionHints`). Observed.
+    var shownRefs: [AgentRef] {
+        _ = viewerGroups
+        return viewers.compactMap { ref, group in group.count > 0 ? ref : nil }
     }
 
     /// Drops every thread of a forgotten host.
@@ -59,6 +69,7 @@ final class ThreadStores {
             store.stop()
             stores[ref] = nil
             viewers[ref] = nil
+            viewerGroups &+= 1
         }
         recent.removeAll { $0.host == host }
     }
@@ -79,6 +90,7 @@ final class ThreadStores {
                 store.stop()
                 stores[ref] = nil
                 viewers[ref] = nil
+            viewerGroups &+= 1
                 recent.removeAll { $0 == ref }
             }
         }

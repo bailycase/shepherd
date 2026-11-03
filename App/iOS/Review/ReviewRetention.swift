@@ -48,14 +48,22 @@ struct ReviewCostCache<Key: Hashable, Value> {
 }
 
 enum ReviewRetention {
-    /// The reviews that let their reloadable data go: past the `keep` most recently shown, any
-    /// that no view (in any window) shows now. `recent` is oldest first.
-    static func overflow<Key: Hashable>(recent: [Key], keep: Int, shown: (Key) -> Bool) -> [Key] {
+    /// The reviews that let their reloadable data go: any no view (in any window) shows now,
+    /// past the `keep` most recently shown or past `budget` of retained cost between them, newest
+    /// kept first. A review on screen is never let go, whatever it holds. `recent` is oldest first.
+    static func overflow<Key: Hashable>(recent: [Key], keep: Int, budget: Int = .max, cost: (Key) -> Int = { _ in 0 },
+                                        shown: (Key) -> Bool) -> [Key] {
         var kept = 0
+        var total = 0
         var out: [Key] = []
         for key in recent.reversed() where !shown(key) {
-            kept += 1
-            if kept > keep { out.append(key) }
+            let size = cost(key)
+            if kept < keep, total + size <= budget {
+                kept += 1
+                total += size
+            } else {
+                out.append(key)
+            }
         }
         return out
     }

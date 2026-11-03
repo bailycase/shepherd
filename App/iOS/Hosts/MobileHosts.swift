@@ -126,6 +126,9 @@ final class MobileHosts {
     @ObservationIgnored var onHostDisconnected: ((MobileHost) -> Void)?
     /// The app came to the foreground or left it (`setForeground`).
     @ObservationIgnored var onForegroundChanged: ((Bool) -> Void)?
+    /// A thread a host watches for this device moved (`native.revisions.v1`): a hint to read
+    /// again, never content. One app-level owner (`ThreadRevisionHints`) sets it.
+    @ObservationIgnored var onNativeThreadChanged: ((MobileHost, AgentID) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
@@ -323,6 +326,12 @@ final class MobileHosts {
                 guard let host, host.attempt == attempt, host.phase == .connected, host.capabilities != capabilities else { return }
                 host.capabilities = capabilities
                 host.connectMissions()
+            }
+        }
+        client.onNativeThreadChanged = { [weak self, weak host] agentID in
+            MainActor.assumeIsolated {
+                guard let self, let host, host.attempt == attempt else { return }
+                self.onNativeThreadChanged?(host, agentID)
             }
         }
         client.onDesignChanged = { [weak host] design, revision, comments in

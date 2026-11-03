@@ -58,5 +58,6 @@ DYLD_LIBRARY_PATH="$build" "$build/backpressure-check"
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
     App/iOS/Home/HomeFeed.swift App/iOS/App/MobileReadiness.swift App/iOS/Review/ReviewRetention.swift \
+    App/iOS/Thread/ThreadStores.swift App/iOS/Hosts/ThreadRevisionHints.swift \
     Tests/ShepherdIOSChecks/MobileFreshnessCheck.swift -o "$build/freshness-check"
 DYLD_LIBRARY_PATH="$build" "$build/freshness-check"
