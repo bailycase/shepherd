@@ -1,0 +1,86 @@
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
+
+// Scratch-only audit harness. Links unchanged SwiftPM Release objects (-O), no DEBUG.
+@main struct ExtraDataPaths {
+    static func ms(_ d: Duration) -> Double {
+        Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
+    }
+    static func report(_ name: String, _ values: [Double], _ note: String = "") {
+        print("AUDIT name=\(name) samples=\(values) median=\(values.sorted()[values.count/2]) unit=ms n=\(values.count) \(note)")
+    }
+    @MainActor static func main() async throws {
+        for turns in [50, 500, 2500] {
+            let messages = (0..<(turns * 2)).map { i in
+                NativeThreadMessage(entryID: "m\(i)", role: i.isMultiple(of: 2) ? "user" : "assistant",
+                    blocks: [NativeThreadBlock(kind: .text, text: i.isMultiple(of: 2) ? "Question \(i/2)" : String(repeating: "Answer paragraph with enough words to wrap a line or two in the column, like a real reply.\n\n", count: 3))], truncated: false)
+            }
+            var current = NativeThreadSnapshot(piSessionID: "scratch", generation: "g", revision: 1, running: true,
+                supportedActions: ["send"], dialogsSupported: true, dialogs: [], messages: messages,
+                provisional: [NativeThreadMessage(entryID: "live", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Streaming")], truncated: false)], clipped: false)
+            let store = NativeThreadStore(pause: { _ in try await Task.sleep(for: .seconds(3600)) })
+            let run = Task { await store.run { _ in .snapshot(value: current) } }
+            let deadline = ContinuousClock.now + .seconds(5)
+            while !store.ready && ContinuousClock.now < deadline { await Task.yield() }
+            precondition(store.ready)
+            var values: [Double] = []
+            for iteration in 0..<4 {
+                current.revision += 1
+                current.provisional[0].blocks[0].text += " one more streaming sentence."
+                let start = ContinuousClock.now
+                await store.refresh()
+                let elapsed = ms(ContinuousClock.now - start)
+                if iteration > 0 { values.append(elapsed) } // first tail refresh warms caches
+                precondition(store.messages.count == turns * 2 && store.snapshot?.revision == current.revision)
+            }
+            report("store.tailRefresh.\(turns)turns", values, "historyRows=\(messages.count) displayedRows=\(store.rows.count) warmup=1 noView=true")
+            run.cancel(); store.stop(); await run.value
+        }
+        for count in [30, 300, 3000] {
+            let space = Space(name: "scratch", path: "/tmp/synthetic-not-read")
+            var tabs: [ShepherdCore.Tab] = [], agents: [Agent] = []
+            for i in 0..<count {
+                let id = AgentID(), pane = LeafPane(cwd: space.path)
+                let tab = ShepherdCore.Tab(spaceID: space.id, order: i, layout: .leaf(pane))
+                tabs.append(tab)
+                agents.append(Agent(id: id, name: "Agent \(i)", spaceID: space.id, tabID: tab.id, paneID: pane.id))
+            }
+            let state = ShepherdState(spaces: [space], tabs: tabs, agents: agents)
+            var encode: [Double] = [], decode: [Double] = [], bytes = 0
+            for iteration in 0..<4 {
+                let start = ContinuousClock.now
+                let data = try JSONEncoder().encode(state)
+                let encoded = ms(ContinuousClock.now - start)
+                let next = ContinuousClock.now
+                let restored = try JSONDecoder().decode(ShepherdState.self, from: data)
+                let decoded = ms(ContinuousClock.now - next)
+                precondition(restored.agents.count == count)
+                bytes = data.count
+                if iteration > 0 { encode.append(encoded); decode.append(decoded) }
+            }
+            report("state.encode.\(count)agents", encode, "bytes=\(bytes) warmup=1")
+            report("state.decode.\(count)agents", decode, "bytes=\(bytes) warmup=1")
+        }
+        for bytes in [65536, 1048576] {
+            let frame = Data(repeating: 120, count: bytes) + Data([10])
+            for chunk in [1024, 65536] {
+                let chunks = stride(from: 0, to: frame.count, by: chunk).map { frame.subdata(in: $0..<min($0 + chunk, frame.count)) }
+                var values: [Double] = []
+                for iteration in 0..<4 {
+                    let start = ContinuousClock.now
+                    var total = 0
+                    for _ in 0..<100 {
+                        var buffer = LineBuffer()
+                        for part in chunks { total += try buffer.append(part).reduce(0) { $0 + $1.count } }
+                    }
+                    let elapsed = ms(ContinuousClock.now - start)
+                    precondition(total == bytes * 100)
+                    if iteration > 0 { values.append(elapsed) }
+                }
+                report("framing.\(bytes)bytes.\(chunk)chunk", values, "framesPerSample=100 warmup=1 framingOnly=true")
+            }
+        }
+    }
+}

@@ -1,0 +1,35 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "/tmp/shepherd-perf-2026-11-02/reduced-release",
+    "--scratch-path",
+    "/Users/bailycase/Developer/Shepherd-perf-bench-2026-11-02/.build",
+    "--build-system",
+    "native",
+    "-j",
+    "4",
+    "-c",
+    "release",
+    "-Xswiftc",
+    "-enable-testing",
+    "--skip-build",
+    "--filter",
+    "DataPathBenchmarks/(streamingDeltaCost|snapshotBuildCost|statusReportCost|queueLatencyDuringHistoryReload|relaunchWithLongHistories)"
+  ],
+  "cwd": "/Users/bailycase/Developer/Shepherd-perf-bench-2026-11-02",
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
+    "HOME": "/tmp/shepherd-perf-2026-11-02/release-server-1/home",
+    "TMPDIR": "/tmp",
+    "LANG": "en_US.UTF-8",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_TERMINAL_PROMPT": "0",
+    "SHEPHERD_BENCHMARK": "1",
+    "SHEPHERD_PERF_REPORT": "1"
+  },
+  "timeout_seconds": 240.0
+}
