@@ -131,7 +131,11 @@ let package = Package(
             dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdSessions", "ShepherdTestKit",
                            .product(name: "ShepherdUI", package: "ShepherdUI")],
             path: "Tests/ShepherdTestSupport",
-            resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-pi-sdk.mjs")]
+            resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-pi-sdk.mjs")],
+            // SwiftPM's per-target test bundles load from <products>/<test>.xctest/Contents/MacOS,
+            // but binary dependencies such as Sparkle.framework live in <products>.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."],
+                                          .when(platforms: [.macOS]))]
         ),
         .testTarget(name: "ShepherdSessionsIntegrationTests", dependencies: ["ShepherdSessions", "ShepherdTestSupport"]),
         .testTarget(
