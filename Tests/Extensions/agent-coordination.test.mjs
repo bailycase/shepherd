@@ -129,7 +129,12 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
     assert.equal((await receive({ operation: "status" })).connectionID, initialStatus.connectionID);
 
     handle = (f) => {
-      if (f.type === "createAutomation") connection.write(JSON.stringify({ type: "ok", id: f.id }) + "\n");
+      if (f.type === "createAutomation" || f.type === "updateAutomation") connection.write(JSON.stringify({ type: "ok", id: f.id }) + "\n");
+      if (f.type === "listAutomations") connection.write(JSON.stringify({ type: "automations", id: f.id, automations: [
+        { id: "unlimited", name: "issues", cwd: dir, enabled: true, settings: {
+          trigger: { type: "github", triggers: [{ events: ["issueOpened"] }] }, limits: { maxConcurrent: 0, maxPerDay: 20 },
+        } },
+      ] }) + "\n");
     };
     await run("automation_create", { name: "watch", prompt: "Watch CI", cwd: dir, replyToCreator: true, deleteAfterRun: true });
     const reporting = frames.findLast((f) => f.type === "createAutomation");
@@ -141,6 +146,12 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
     await run("automation_create", { name: "plain", prompt: "Notify only", cwd: dir });
     assert.equal(frames.findLast((f) => f.type === "createAutomation").prompt, "Notify only");
     assert.equal(frames.findLast((f) => f.type === "createAutomation").deleteAfterRun, false);
+
+    await run("automation_create", { name: "unlimited", prompt: "One issue", cwd: dir, maxConcurrent: 0 });
+    assert.deepEqual(frames.findLast((f) => f.type === "createAutomation").settings.limits, { maxConcurrent: 0, maxPerDay: 20 });
+    await run("automation_update", { automationID: "unlimited", maxConcurrent: 0, maxPerDay: 7 });
+    assert.deepEqual(frames.findLast((f) => f.type === "updateAutomation").settings.limits, { maxConcurrent: 0, maxPerDay: 7 });
+    assert.match((await run("automation_list", {})).content[0].text, /no concurrency limit, 20 a day/);
 
     const automationTools = new Map();
     const automationEvents = new Map();

@@ -106,6 +106,14 @@ public enum AutomationSchedulePreset: Hashable, Sendable {
 }
 
 public enum AutomationTriggerText {
+    public static let unlimitedConcurrencyWarning = "No concurrency limit can increase simultaneous resource usage and model spending. Any configured daily run limit still applies."
+
+    public static func limits(_ limits: AutomationLimits) -> String {
+        let concurrent = limits.maxConcurrent == 0 ? "No concurrency limit" : "\(limits.maxConcurrent) at once"
+        let daily = limits.maxPerDay == 0 ? "no daily limit" : "\(limits.maxPerDay) a day"
+        return "\(concurrent) · \(daily)"
+    }
+
     /// What fires a run, nil for a manual automation.
     public static func summary(_ trigger: AutomationTrigger) -> String? {
         switch trigger {
@@ -255,7 +263,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
                 ? AutomationTriggerText.workspace(settings.workspace ?? .worktree) : nil,
             gate: github ? AutomationTriggerText.gate(gate) : nil,
             gateWarning: github ? AutomationTriggerText.gateWarning(gate) : nil,
-            limits: "\(limits.maxConcurrent) at once · " + (limits.maxPerDay == 0 ? "no daily limit" : "\(limits.maxPerDay) a day"),
+            limits: AutomationTriggerText.limits(limits),
             model: AutomationTriggerText.model(settings))
     }
 }

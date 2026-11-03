@@ -204,6 +204,35 @@ struct AutomationTriggersTests {
         #expect(await engine.status(of: world.automations[0]).pending.isEmpty)
     }
 
+    @Test(arguments: [0, 13]) func unlimitedConcurrencyStillHonorsTheDailyLimit(maxPerDay: Int) async {
+        let world = World()
+        world.automations = [Self.loop(AutomationLimits(maxConcurrent: 0, maxPerDay: maxPerDay))]
+        let engine = await Self.engine(world)
+        await engine.tick()
+        world.advance(61)
+        world.items = (1...12).map { Self.labeled($0, at: world.now.addingTimeInterval(-5)) }
+        await engine.tick()
+        #expect(world.started.count == 12)
+        #expect(world.live[world.automations[0].id]?.count == 12)
+        #expect(await engine.status(of: world.automations[0]).pending.isEmpty)
+        // Existing live runs impose no cap, but the independent daily bound still does.
+        world.advance(61)
+        world.items += (13...15).map { Self.labeled($0, at: world.now.addingTimeInterval(-5)) }
+        await engine.tick()
+        let expected = maxPerDay == 0 ? 15 : 13
+        #expect(world.started.count == expected)
+        let status = await engine.status(of: world.automations[0])
+        #expect(status.pending.count == 15 - expected && status.runsToday == expected)
+        #expect(world.notes.filter { $0.contains("daily limit") }.count == (maxPerDay == 0 ? 0 : 1))
+        world.live = [:]
+        world.advance(61)
+        await engine.tick()
+        #expect(world.started.count == expected)
+        world.advance(86_400)
+        await engine.tick()
+        #expect(world.started.count == 15)
+    }
+
     @Test(arguments: [false, true])
     func noDailyLimitKeepsConcurrencyAndThreadBatchBounds(existingThread: Bool) async {
         let world = World()
