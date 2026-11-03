@@ -4,9 +4,9 @@ Issue: https://github.com/bailycase/shepherd/issues/416
 
 ## Status
 
-Implemented and focused tests pass. PR publication remains blocked by the
-repository's automatic merge workflow, pending permission to pause it. No PR has
-been created, and the issue has not been modified.
+Implemented and focused tests pass. Publication safety has been verified against
+canonical GitHub state; no repository settings needed changing. The issue has
+not been modified.
 
 ## Evidence and root cause
 
@@ -93,16 +93,17 @@ Settings/palette overlay dismissal is unchanged; the original reporter's exact
 focus state remains unknown. Use `Refs #416`, rather than claiming the report is
 fully resolved, until that app-level check confirms the reported behavior.
 
-## Publication blocker and next step
+## Publication safety
 
-`.github/workflows/auto-merge.yml` runs on ready PRs into `nightly` and enables
-squash auto-merge for this run's authenticated public account, `bailycase`.
-Creating the required non-draft PR would therefore trigger the behavior this run
-was explicitly forbidden to enable. A workflow edit in the proposed branch would
-not protect its own PR because `pull_request_target` uses the base workflow.
+The initial triage incorrectly treated `.github/workflows/auto-merge.yml` on
+`nightly` as an active publication blocker. After the user authorized pausing it,
+GitHub returned HTTP 404 for both the workflow lookup and disable endpoint.
+Canonical verification found no registered auto-merge workflow, and the file is
+absent from the default branch, `master`.
 
-Permission has been requested to disable this workflow before opening the ready
-PR. That would pause automatic merging repository-wide until it is re-enabled.
-No workflow settings have been changed. After that decision, publish the existing
-branch into `nightly` using `.github/pull_request_template.md`; do not enable
-auto-merge or merge the PR.
+[GitHub's current event documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)
+states that `pull_request_target` runs in the context of the repository's default
+branch. The file on `nightly` therefore cannot enable auto-merge for this PR.
+No repository settings or workflow files were changed. Publish the non-draft PR
+into `nightly` using the required template, verify its auto-merge state is unset,
+and leave it open for human review.
