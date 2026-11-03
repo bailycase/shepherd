@@ -74,7 +74,7 @@ public final class NativeThreadViewers {
         driver = viewer
         self.connection = connection
         runner = Task { [weak self] in
-            await self?.store.run(request: request, preview: preview)
+            await self?.store.run(request: request, preview: preview, connection: connection)
             self?.ended(viewer)
         }
     }

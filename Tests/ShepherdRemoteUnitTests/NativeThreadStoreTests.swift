@@ -797,19 +797,22 @@ struct NativeThreadStoreTests {
     // MARK: Sending
 
     @Test(arguments: ["busy", "model_unavailable"])
-    func aRejectedSendKeepsTheDraftAndShowsWhy(code: String) async throws {
+    func aRejectedSendKeepsRecoverableContentAndShowsWhy(code: String) async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }
         host.action = { _ in .failure(code: code, message: "not yet") }
         store.draft = "do the thing"
         await store.send()
-        #expect(store.draft == "do the thing" && store.pending.isEmpty && store.notice == "not yet")
+        #expect(store.draft.isEmpty && store.pending.isEmpty && store.notice == "not yet")
+        let failed = try #require(store.submissions.first)
+        #expect(failed.state == .failed && failed.typed == "do the thing")
+        #expect(store.restoreSubmission(failed.id) == failed && store.draft == "do the thing")
         #expect(store.modelUnavailable == (code == "model_unavailable"))
         guard case .send(let session, let generation, _, let text, let delivery, let images, _, _, _) = try #require(host.actions.first) else {
             Issue.record("expected a send"); return
         }
         #expect(session == "s" && generation == "g" && text == "do the thing" && delivery == .followUp && images == nil)
-        #expect(host.requests.last == .snapshot(), "every action ends with a fresh snapshot")
+        #expect(host.requests.last == .snapshot(expectedSessionID: "s", afterRevision: 1), "actions reconcile from the validated revision")
         #expect(!store.busy)
     }
 
@@ -846,6 +849,10 @@ struct NativeThreadStoreTests {
         host.action = { _ in .failure(code: "busy", message: "not yet") }
         store.draft = "Build this"
         await store.send()
+        let failed = try #require(store.submissions.first)
+        #expect(store.attachedFiles.isEmpty && store.draft.isEmpty)
+        #expect(failed.files == files && failed.typed == "Build this")
+        #expect(store.restoreSubmission(failed.id) != nil)
         #expect(store.attachedFiles == files && store.draft == "Build this")
         guard case .send(_, _, _, let text, _, _, _, _, _) = try #require(host.actions.last) else { Issue.record("expected a send"); return }
         #expect(text == "Build this\n\nAttached files:\n- /drops/d1/A.html\n- /drops/d1/tokens.css")
@@ -971,7 +978,8 @@ struct NativeThreadStoreTests {
         host.action = { _ in .accepted(operationID: UUID()) }
         store.draft = "do the thing"
         await store.send()
-        #expect(store.pending.isEmpty && store.draft == "do the thing")
+        #expect(store.pending.isEmpty && store.draft.isEmpty)
+        #expect(store.submissions.first?.typed == "do the thing" && store.submissions.first?.state == .uncertain)
         #expect(store.notice?.hasPrefix("Action outcome unknown.") == true)
     }
 
@@ -1015,13 +1023,14 @@ struct NativeThreadStoreTests {
         #expect(store.pending.isEmpty)
     }
 
-    @Test func sendingRetryTextLeavesTheDraftAlone() async {
+    @Test(arguments: ["half-written", "retry this"])
+    func sendingRetryTextLeavesTheDraftAlone(_ draft: String) async {
         let (store, host, task) = await started()
         defer { task.cancel() }
         host.acceptAll()
-        store.draft = "half-written"
+        store.draft = draft
         await store.send(text: "retry this")
-        #expect(store.draft == "half-written" && store.pending.count == 1 && store.sentCount == 1)
+        #expect(store.draft == draft && store.pending.count == 1 && store.sentCount == 1)
     }
 
     /// Only a send that goes into the thread now brings the reader to the tail; a follow-up sent
@@ -1084,10 +1093,12 @@ struct NativeThreadStoreTests {
         host.action = { _ in .failure(code: "rejected", message: "No") }
         store.draft = "keep this"
         let rejected = await store.send(delivery: .followUp)
-        #expect(!rejected && store.draft == "keep this" && store.sentCount == 1)
+        #expect(!rejected && store.submissions.first?.typed == "keep this" && store.sentCount == 1)
+        if let failed = store.submissions.first { #expect(store.restoreSubmission(failed.id) != nil) }
         host.action = { _ in .accepted(operationID: UUID()) }
         let unrelated = await store.send(delivery: .followUp)
-        #expect(!unrelated && store.draft == "keep this" && store.sentCount == 1)
+        #expect(!unrelated && store.draft.isEmpty && store.sentCount == 1)
+        #expect(store.submissions.first?.typed == "keep this" && store.submissions.first?.state == .uncertain)
     }
 
     @Test func steeringUsesTheSelectedDelivery() async throws {
@@ -1108,7 +1119,9 @@ struct NativeThreadStoreTests {
         store.draft = "x"
         await store.send()
         #expect(store.notice == "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically.")
-        #expect(store.draft == "x")
+        #expect(store.draft.isEmpty)
+        #expect(store.submissions.first?.typed == "x" && store.submissions.first?.state == .uncertain)
+        if let unknown = store.submissions.first { #expect(store.restoreSubmission(unknown.id) == nil) }
     }
 
     // MARK: Other actions
@@ -1230,6 +1243,7 @@ struct NativeThreadStoreTests {
         store.draft = "next"
         await store.send()
         #expect(store.tray != nil, "a refused send preserves the completed summary")
+        if let failed = store.submissions.first { #expect(store.restoreSubmission(failed.id) != nil) }
         host.acceptAll()
         await store.send()
         #expect(store.tray == nil, "acceptance dismisses it before the host echo arrives")
@@ -1540,7 +1554,7 @@ struct NativeThreadStoreTests {
         host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("more", id: "b")])
         store.revisionAvailable()
         await until { gate.held }
-        for _ in 0..<5 { store.revisionAvailable() }
+        for _ in 0..<5 { store.historyChanged() }
         gate.release()
         await until { pauses.count == 2 }
 
@@ -1578,7 +1592,7 @@ struct NativeThreadStoreTests {
         await until { pauses.count == 1 }
 
         store.suspend()
-        for _ in 0..<3 { store.revisionAvailable() }
+        for _ in 0..<3 { store.historyChanged() }
         task.cancel()
         await task.value
         #expect(host.requests.count == 1)
@@ -2088,7 +2102,7 @@ struct NativeThreadStoreTests {
     }
 
     /// A refusal that arrives after the layout changed is said in the host's words, in place of
-    /// the suspension's "outcome unknown", and the draft stays.
+    /// the suspension's "outcome unknown", and the captured draft remains recoverable.
     @Test(arguments: LayoutChange.allCases)
     func aSendTheHostRefusedSaysWhyWhateverTheLayoutDidMeanwhile(_ change: LayoutChange) async {
         let host = supportingReferences()
@@ -2098,7 +2112,8 @@ struct NativeThreadStoreTests {
 
         let sent = await send(whileTheLayoutIs: change, host: host, store: store) { await $0.send(delivery: .followUp) }
 
-        #expect(!sent && store.draft == "Build it")
+        #expect(!sent && store.draft.isEmpty)
+        #expect(store.submissions.first?.typed == "Build it" && store.submissions.first?.state == .failed)
         #expect(store.notice == "The thread moved to another session.")
     }
 
@@ -2112,7 +2127,8 @@ struct NativeThreadStoreTests {
 
         let sent = await send(whileTheLayoutIs: .hidden, host: host, store: store) { await $0.send(delivery: .followUp) }
 
-        #expect(!sent && store.draft == "Build it")
+        #expect(!sent && store.draft.isEmpty)
+        #expect(store.submissions.first?.typed == "Build it" && store.submissions.first?.state == .uncertain)
         #expect(store.notice?.hasPrefix("Action outcome unknown.") == true)
     }
 
@@ -2141,7 +2157,7 @@ struct NativeThreadStoreTests {
 
         let sent = await sending.value
 
-        #expect(!sent && store.draft == "Build it")
+        #expect(!sent && store.draft.isEmpty && store.submissions.isEmpty, "known acceptance must not offer an accidental resend")
         #expect(store.notice == "The session changed while the action was pending. Check the thread before trying again.")
     }
 }
