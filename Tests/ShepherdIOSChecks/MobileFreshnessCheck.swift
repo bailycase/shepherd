@@ -244,9 +244,11 @@ struct MobileFreshnessCheck {
         await cancelled.value
         check(host.digests(idle).full + host.digests(idle).unchanged == idleReads && host.asked(big) == bigReads,
               "a cancelled sweep reads nothing after it")
-        var full = host.digests(run).full
+        var seen = host.reads.count
         await feed.refresh()
-        check(host.digests(run).full == full + 1, "a cancelled sweep kept no reply (\(host.digests(run).full - full))")
+        let afterCancel = host.reads.dropFirst(seen).filter { $0.agent == run }
+        check(afterCancel.first?.asked == "g2" && afterCancel.first?.whole == true,
+              "a cancelled sweep kept no reply: the next read still asks with g2 and is answered whole (\(afterCancel))")
 
         // A read held across a reconnect: its connection's reply is never kept; the new
         // connection asks with what Home last kept and reads the new generation whole.
@@ -258,11 +260,16 @@ struct MobileFreshnessCheck {
         hosts.disconnect(id)
         hosts.retry(id)
         try await waitUntil("back for freshness") { hosts.host(id)?.phase == .connected }
+        let newConnection = host.latestConnection
         host.release(run)
         await stale.value
-        full = host.digests(run).full
+        seen = host.reads.count
         await feed.refresh()
-        check(host.digests(run).full == full + 1, "the ended connection's reply was not kept")
+        let fresh = host.reads.dropFirst(seen).filter { $0.agent == run }
+        // What Home kept is what it asks with: g3 (the reply that came for the ended connection,
+        // g4, was never kept), on the new connection, answered whole.
+        check(fresh.first.map { $0.connection == newConnection && $0.asked == "g3" && $0.whole } == true,
+              "the ended connection's reply was not kept (\(fresh); all: \(host.reads.suffix(10)))")
         check(!host.mutated, "Home sent only reads")
         hosts.setForeground(false)
     }
@@ -372,6 +379,20 @@ final class FeedHost: @unchecked Sendable {
     private var busyServed = 0
     private var watches: [[AgentID]] = []
     private var connections: Set<Int32> = []
+    private var serial = 0
+    /// Each digest read: which connection asked, for which agent, with which generation, and
+    /// whether it was answered whole.
+    struct Read: CustomStringConvertible {
+        let connection: Int
+        let agent: AgentID
+        let asked: String?
+        let whole: Bool
+        var description: String { "c\(connection) \(agent.rawValue) asked:\(asked ?? "-") \(whole ? "whole" : "other")" }
+    }
+    private var readLog: [Read] = []
+    var reads: [Read] { lock.withLock { readLog } }
+    /// The newest connection's number.
+    var latestConnection: Int { lock.withLock { serial } }
 
     init(agents: [Agent], refuses: Bool = false, current: Bool = false) throws {
         self.agents = agents
@@ -430,9 +451,16 @@ final class FeedHost: @unchecked Sendable {
     func setState(_ agents: [Agent]) { lock.withLock { self.agents = agents } }
 
     private func serve(_ client: Int32) {
+        let connection = lock.withLock { serial += 1; return serial }
+        writing.withLock { owners[client] = connection }
         defer {
             lock.withLock { _ = connections.remove(client) }
-            close(client)
+            // Closed with its owner cleared under the write lock: a held reply that wakes after
+            // this never reaches a later connection the descriptor number is reused for.
+            writing.withLock {
+                owners[client] = nil
+                close(client)
+            }
         }
         do {
             guard case .hello(let id, let token, _, _, _) = try NDJSON.decode(RemoteRequest.self, from: readLine(client)) else { return }
@@ -459,6 +487,11 @@ final class FeedHost: @unchecked Sendable {
                     // preview (revision 0) always answers whole.
                     let gate = lock.withLock { held[agentID] }
                     let answer: RemoteReply = lock.withLock {
+                        let wholeBefore = digestFull[agentID] ?? 0
+                        defer {
+                            readLog.append(Read(connection: connection, agent: agentID, asked: session?.generation,
+                                                whole: (digestFull[agentID] ?? 0) > wholeBefore))
+                        }
                         digestAsked[agentID, default: []].append(revision)
                         if busy > 0 {
                             busy -= 1
@@ -478,7 +511,14 @@ final class FeedHost: @unchecked Sendable {
                         return .fleetDigest(id: id, result: .digest(digest))
                     }
                     // A held read answers later on its own thread, so the connection keeps serving.
-                    if let gate { Thread.detachNewThread { [self] in gate.wait(); try? write(client, answer) } } else { try write(client, answer) }
+                    if let gate {
+                        Thread.detachNewThread { [self] in
+                            gate.wait()
+                            write(answer, to: client, ifStill: connection)
+                        }
+                    } else {
+                        try write(client, answer)
+                    }
                 case .nativeThread(let id, let agentID, let command):
                     guard case .snapshot(_, _, let after) = command else {
                         lock.withLock { mutations += 1 }
@@ -499,7 +539,7 @@ final class FeedHost: @unchecked Sendable {
                         let snapshot = NativeThreadSnapshot(piSessionID: agentID.rawValue, generation: generation, revision: 1, running: running,
                                                             supportedActions: [], dialogsSupported: false, dialogs: [], messages: [],
                                                             provisional: [], clipped: false, runtime: "rpc")
-                        try? write(client, .nativeThread(id: id, result: .snapshot(value: snapshot)))
+                        write(.nativeThread(id: id, result: .snapshot(value: snapshot)), to: client, ifStill: connection)
                     }
                     // A held read answers later on its own thread, so the connection keeps serving.
                     if let gate { Thread.detachNewThread { gate.wait(); reply() } } else { reply() }
@@ -523,6 +563,23 @@ final class FeedHost: @unchecked Sendable {
     }
 
     private let writing = NSLock()
+    /// Which connection each open descriptor serves; guarded by `writing`.
+    private var owners: [Int32: Int] = [:]
+    /// Held replies whose connection had ended (never written).
+    private(set) var droppedLate = 0
+
+    /// A reply for `connection` only, if it is still the one on `fd`.
+    private func write(_ reply: RemoteReply, to fd: Int32, ifStill connection: Int) {
+        guard let data = try? NDJSON.encode(reply) else { return }
+        writing.withLock {
+            guard owners[fd] == connection else {
+                droppedLate += 1
+                return
+            }
+            _ = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, data.count) }
+        }
+    }
+
     private func write(_ fd: Int32, _ reply: RemoteReply) throws {
         let data = try NDJSON.encode(reply)
         let written = writing.withLock { data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, data.count) } }
