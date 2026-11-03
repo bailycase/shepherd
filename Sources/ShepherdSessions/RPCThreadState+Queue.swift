@@ -870,7 +870,7 @@ extension RPCThreadState {
         let generation: String
         let epoch: UInt64
         let wasRunning: Bool
-        let items: [QueueItem]
+        var items: [QueueItem]
         let dispatches: [Dispatch]
         let oneShotSteers: [UUID: String]
 
@@ -909,7 +909,11 @@ extension RPCThreadState {
                 NativeQueueRules.unsteer(id, in: &self.items)
                 returned = true
             }
-            self.restorePiQueue(steering: remaining, followUp: followUp, origin: origin) { saved in
+            // Its text was removed from pi's reply; remove the same owner from matching too.
+            // Otherwise equal-text steers can borrow the returned item's images and identity.
+            var restoring = origin
+            if returned { restoring.items.removeAll { $0.entry.id == id } }
+            self.restorePiQueue(steering: remaining, followUp: followUp, origin: restoring) { saved in
                 self.commit()
                 if !saved, !origin.isCurrent(self) {
                     done(.failure(code: self.generation == origin.generation ? "send_cancelled" : "stale_session",

@@ -170,6 +170,60 @@ struct QueueTests {
         #expect(pi.stdin("abort").isEmpty)
     }
 
+    @Test(arguments: [true, false], [false, true])
+    func unsteeringEqualTextKeepsEachRecordsImagesAndOperationID(returnFirst: Bool, failRestore: Bool) async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host)
+        let running = try await startRun(pi)
+        let first = UUID(), second = UUID(), text = "tools:0 identical"
+        let firstImage = NativeImage(mimeType: "image/png", data: Data([1, 2, 3]), name: "first.png")
+        let secondImage = NativeImage(mimeType: "image/png", data: Data([7, 8, 9]), name: "second.png")
+        #expect(try await pi.send(text, delivery: .steer, images: [firstImage], operationID: first, from: running).failureCode == nil)
+        #expect(try await pi.send(text, delivery: .steer, images: [secondImage], operationID: second, from: running).failureCode == nil)
+        let returned = returnFirst ? first : second, kept = returnFirst ? second : first
+        let returnedImage = returnFirst ? firstImage : secondImage, keptImage = returnFirst ? secondImage : firstImage
+        try await host.server.enqueue {
+            let thread = try #require(host.server.rpcThread(forAgent: pi.agent.id))
+            thread.paused = true // The explicitly returned record must wait for an explicit send.
+            if failRestore { thread.onPrepareRecovery = { _, _, _, completion in completion(false) } }
+        }
+        let result = try await pi.queue(.unsteer(id: returned), from: running)
+        #expect(result.failureCode == (failRestore ? "persist_failed" : nil))
+        try await host.server.enqueue {
+            let thread = try #require(host.server.rpcThread(forAgent: pi.agent.id))
+            #expect(thread.items.count == 2 && Set(thread.items.map(\.entry.id)) == Set([first, second]))
+            #expect(thread.items.first { $0.entry.id == first }?.images == [firstImage])
+            #expect(thread.items.first { $0.entry.id == second }?.images == [secondImage])
+            #expect(thread.items.first { $0.entry.id == returned }?.entry.state == .queued)
+            #expect(thread.items.first { $0.entry.id == kept }?.entry.state == (failRestore ? .queued : .steering))
+            #expect(thread.steersInFlight == 0)
+        }
+        if failRestore {
+            #expect(pi.stdin("prompt").count == 3, "failed restoration must retain both records without replay")
+            return
+        }
+        let restored = try await pi.waitForStdin("prompt", count: 4)
+        let restoredImages = try #require(restored["images"] as? [[String: Any]])
+        #expect(restoredImages.first?["data"] as? String == keptImage.data.base64EncodedString())
+        pi.finishTool(1)
+        let consumed = try await pi.snapshot("only the remaining equal-text steer to be consumed") {
+            !$0.running && $0.messages.contains { $0.operationID == kept }
+        }
+        #expect(consumed.messages.filter { $0.operationID == kept }.count == 1)
+        #expect(!consumed.messages.contains { $0.operationID == returned })
+        #expect(consumed.queue?.items.map(\.id) == [returned])
+        #expect(try await pi.queue(.sendNow(ids: [returned]), from: consumed).failureCode == nil)
+        let sent = try await pi.waitForStdin("prompt", count: 5)
+        let sentImages = try #require(sent["images"] as? [[String: Any]])
+        #expect(sentImages.first?["data"] as? String == returnedImage.data.base64EncodedString())
+        let done = try await pi.snapshot("both original operations consumed once") {
+            !$0.running && $0.queue?.items.isEmpty == true && $0.messages.contains { $0.operationID == returned }
+        }
+        #expect(done.messages.filter { $0.operationID == first || $0.operationID == second }.compactMap(\.operationID) == [kept, returned])
+        #expect(pi.stdin("prompt").count == 5)
+    }
+
     @Test func queuedSubagentStartsWithoutInterruptingTheParentAndKeepsImages() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
