@@ -651,6 +651,7 @@ private struct DiffFileSection: View, Equatable {
     let layout: ChangesLayout
     let wraps: Bool
     private var horizontalScroll: SHSplitDiffScroll { model.splitScroll(for: file.id) }
+    @State private var viewportWidth: CGFloat?
     let comments: [Int: ReviewComment]
     let editingLine: Int?
     let isFolded: Bool
@@ -716,17 +717,24 @@ private struct DiffFileSection: View, Equatable {
                 }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: {
                     model.noteHeaderHeight($0.height)
-                    updateHorizontalLimits($0.width)
+                    viewportWidth = $0.width
+                    updateHorizontalLimits()
                 }
-                .onChange(of: layout) { _, _ in updateHorizontalLimits(model.width) }
-                .onChange(of: wraps) { _, _ in updateHorizontalLimits(model.width) }
-                .onChange(of: file) { _, _ in updateHorizontalLimits(model.width) }
-                .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits(model.width) }
+                .onChange(of: isFolded) { _, _ in updateHorizontalLimits() }
+                .onChange(of: layout) { _, _ in updateHorizontalLimits() }
+                .onChange(of: wraps) { _, _ in updateHorizontalLimits() }
+                .onChange(of: file) { _, _ in updateHorizontalLimits() }
+                .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits() }
         }
     }
 
-    /// Wrapped lines never scroll sideways.
-    private func updateHorizontalLimits(_ width: CGFloat) {
+    /// Folded files keep their offsets and defer measurement until reopened. Use the header's
+    /// actual viewport, not the wider pane (which can also contain the maximized file list).
+    private func updateHorizontalLimits() {
+        #if DEBUG
+        model.widthRequests += 1
+        #endif
+        guard !isFolded, let width = viewportWidth else { return }
         let widths = wraps ? (old: 0, new: 0) : model.splitLineWidths(file, textScale: ThemeStore.shared.textScale)
         if layout == .split {
             horizontalScroll.resize(oldWidth: widths.old, newWidth: widths.new,

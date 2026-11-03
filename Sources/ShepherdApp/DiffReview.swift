@@ -378,6 +378,11 @@ final class ReviewPaneModel {
     @ObservationIgnored private var splitWidths: [String: (file: DiffFile, scale: CGFloat, old: CGFloat, new: CGFloat)] = [:]
     @ObservationIgnored private var payloadVersion: Int?
     @ObservationIgnored private var payloadFileIDs: Set<String> = []
+    #if DEBUG
+    // Model-local diagnostics let concurrent tests observe layout without resetting a global probe.
+    @ObservationIgnored var widthRequests = 0
+    @ObservationIgnored private(set) var widthMeasurements = 0
+    #endif
 
     func splitScroll(for fileID: String) -> SHSplitDiffScroll {
         if let value = splitScrolls[fileID] { return value }
@@ -516,6 +521,9 @@ final class ReviewPaneModel {
         prunePayload()
         let cacheable = payloadFileIDs.contains(file.id)
         if cacheable, let cached = splitWidths[file.id], cached.scale == textScale, cached.file == file { return (cached.old, cached.new) }
+        #if DEBUG
+        widthMeasurements += 1
+        #endif
         let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
             ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * textScale, weight: .regular)
         var old: CGFloat = 0, new: CGFloat = 0
