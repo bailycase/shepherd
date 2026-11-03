@@ -147,6 +147,61 @@ struct ThreadRecoveryBoundsTests {
         }
     }
 
+    @Test func ownerAdmissionSeesTheExactDraftAfterHeldReadinessAndCanRefuseWithoutCapture() async {
+        let store = manualStore(), host = FakeHost(F.snapshot())
+        host.starting = true
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        var seen: [NativeThreadSubmission] = []
+        store.captureAdmission = { [weak store] submission in
+            seen.append(submission)
+            #expect(store?.draft == submission.typed)
+            #expect(store?.submissions.isEmpty == true)
+            store?.reportActionNotice("Saved recovery budget reached.")
+            return submission.typed.utf8.count <= 4
+        }
+        store.draft = "ok"
+        let sending = Task { await store.send(delivery: .followUp) }
+        await until { store.busy }
+        #expect(seen.isEmpty)
+        store.draft = "edited while readiness was held"
+        host.starting = false
+        await store.refresh()
+        #expect(await sending.value == false)
+        #expect(seen.count == 1 && seen.first?.typed == store.draft)
+        #expect(seen.first?.state == .sending)
+        #expect(store.submissions.isEmpty && store.retainedSubmissionBytes == 0)
+        #expect(host.actions.isEmpty && !store.busy)
+        #expect(store.notice == "Saved recovery budget reached.")
+    }
+
+    @Test func ownerCaptureCommitPrecedesDraftClearAndDispatch() async throws {
+        let store = manualStore(), host = FakeHost(F.snapshot())
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        let file = NativeAttachedFile(name: "notes", path: "/scratch/notes.txt")
+        store.draft = "keep this text"
+        store.attach(files: [file])
+        var saved: NativeThreadSubmission?
+        store.captureAdmission = { [weak store] submission in
+            #expect(store?.draft == "keep this text" && store?.attachedFiles == [file])
+            #expect(store?.submissions.isEmpty == true && host.actions.isEmpty)
+            saved = submission
+            return true
+        }
+        host.action = { request in
+            guard case .send(_, _, let id, _, _, _, _, _, _) = request else {
+                return .failure(code: "unexpected", message: "unexpected")
+            }
+            #expect(saved?.id == id && saved?.typed == "keep this text" && saved?.files == [file])
+            #expect(store.draft.isEmpty && store.attachedFiles.isEmpty)
+            #expect(store.submissions.first?.id == id)
+            return .failure(code: "busy", message: "refused")
+        }
+        #expect(await store.send(delivery: .followUp) == false)
+        #expect(store.submissions.first?.state == .failed && host.actions.count == 1)
+    }
+
     @Test func suspensionDoesNotMakeAnOutstandingSendDisposable() async throws {
         let host = FakeHost(F.snapshot()), gate = FirstPullGate()
         let store = manualStore()
