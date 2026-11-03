@@ -81,6 +81,7 @@ extension RPCThreadState {
         /// The design references' copies the host kept for it: its user message draws a
         /// references fence as chips only when the fence names these (never ids from its text).
         var designPayloads: [UUID] = []
+        var delivery: RPCStreamingBehavior = .followUp
     }
 
     var effectiveMode: NativeQueueMode { modeOverride ?? defaultQueueMode }
@@ -489,8 +490,29 @@ extension RPCThreadState {
         deliver(count: count)
     }
 
+    /// Called while pi awaits its turn-end extension hook, before it dequeues steering.
+    /// The host keeps editing ownership until this point; one host-selected batch goes to pi.
+    func deliverAtBoundary(expiresAt: Double, completion: @escaping () -> Void) {
+        guard workAdmission(), running, !paused, !stopRequested, session.isAlive, isServable,
+              dialogs.isEmpty, compactingRun == nil, retry == nil,
+              !inputActive, !inputOutcomeUnknown, dispatches.isEmpty, preparingPrompts.isEmpty,
+              interrupting == nil, !interruptAbortPending, settleCapture == nil, sendAfterCapture == nil,
+              !restoringRecovery, !recoveryWaiting, recoveryPending == nil, !recoveryResumePending, retryDispatch == nil,
+              steersInFlight == 0, unboundSteers.isEmpty, piSteering.isEmpty, piFollowUp.isEmpty,
+              startingQueueChild == nil, unknownQueueChildren.isEmpty, sendingDesignPayloads.isEmpty,
+              expiresAt > Date().timeIntervalSince1970 * 1000 else { completion(); return }
+        releaseLapsedHolds()
+        guard !items.contains(where: { $0.entry.held }) else { completion(); return }
+        let queued = items.filter { $0.entry.state == .queued }
+        // Commands and templates retain their existing settled-run semantics.
+        guard let first = queued.first, !first.promptText.hasPrefix("/") else { completion(); return }
+        deliver(count: NativeQueueRules.batchCount(queued, mode: effectiveMode), delivery: .steer,
+                expiresAt: expiresAt, completion: completion)
+    }
+
     /// Hands the first `count` queued items to pi as one prompt.
-    private func deliver(count: Int) {
+    private func deliver(count: Int, delivery: RPCStreamingBehavior = .followUp, expiresAt: Double? = nil,
+                         completion: @escaping () -> Void = {}) {
         var batch: [QueueItem] = []
         var bytes = 0
         for item in items.filter({ $0.entry.state == .queued }).prefix(count) {
@@ -499,14 +521,15 @@ extension RPCThreadState {
             bytes += size
             batch.append(item)
         }
-        guard !batch.isEmpty else { return }
+        guard !batch.isEmpty else { completion(); return }
         items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
         // A message sent straight to interrupt is an ordinary one; several joined show apart.
         let parts = batch.count == 1 && batch[0].direct ? nil : NativeQueueRules.parts(batch)
         // The latest record among them is the viewer's screen as the batch leaves.
         let context = batch.last { $0.context != nil }?.context
         dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), context: context, images: batch.flatMap(\.images),
-                 parts: parts, items: batch) { [weak self] result in
+                 parts: parts, items: batch, delivery: delivery, expiresAt: expiresAt) { [weak self] result in
+            defer { completion() }
             // pi refused the delivery: the items return to the head, and the queue waits.
             guard let self, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
             NativeQueueRules.insert(batch, atQueuedIndex: 0, into: &self.items)
@@ -523,7 +546,8 @@ extension RPCThreadState {
     /// own (an extension, a child's report) queues it instead of refusing it; while idle pi
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
-                  designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
+                  designPayloads: [UUID] = [], delivery: RPCStreamingBehavior = .followUp, expiresAt: Double? = nil,
+                  completion: @escaping (NativeThreadResult) -> Void) {
         guard workAdmission() else {
             completion(.failure(code: "host_updating", message: "Host update in progress."))
             return
@@ -539,7 +563,7 @@ extension RPCThreadState {
         let expectsMessage = !isExtensionCommand(prompt)
         dispatches.append(Dispatch(id: id, text: prompt, images: images, sentAt: Date().timeIntervalSince1970 * 1000,
                                    parts: parts, items: batch, expectsMessage: expectsMessage,
-                                   designPayloads: designPayloads + batch.flatMap(\.designPayloads)))
+                                   designPayloads: designPayloads + batch.flatMap(\.designPayloads), delivery: delivery))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
@@ -567,8 +591,15 @@ extension RPCThreadState {
                 completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
                 return
             }
+            let remaining = expiresAt.map { ($0 - Date().timeIntervalSince1970 * 1000) / 1000 }
+            guard remaining.map({ $0 > 0 }) ?? true else {
+                self.dropDispatch(id)
+                completion(.failure(code: "boundary_expired", message: "Queue delivery timed out before the next turn. Resume the queue to try again."))
+                return
+            }
             let commandDone = self.beginCommandWindow(for: prompt)
-            self.requestInput(prompt: prompt, images: rpcImages, delivery: .followUp) { [weak self] failure in
+            self.requestInput(prompt: prompt, images: rpcImages, delivery: delivery,
+                              timeout: remaining.map { min(5, $0) } ?? Self.promptTimeout) { [weak self] failure in
                 commandDone?()
                 guard let self else { return }
                 if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
@@ -576,14 +607,15 @@ extension RPCThreadState {
                     self.discardPreparedTurn?()
                 } else if let index = self.dispatches.firstIndex(where: { $0.id == id }) {
                     self.dispatches[index].responded = true
-                    self.confirmDispatch(id)
+                    if delivery == .followUp { self.confirmDispatch(id) }
                 }
                 self.commit()
                 completion(failure ?? .accepted(operationID: id))
                 self.unyieldGoalIfQueueEmpty()
             }
         }
-        if expectsMessage, let beforePrompt { beforePrompt(send) } else { send() }
+        // Boundary steering continues this run, like explicit steering; it starts no new Changes turn.
+        if delivery == .followUp, expectsMessage, let beforePrompt { beforePrompt(send) } else { send() }
     }
 
     /// pi answered a prompt that has not started a message yet: if pi is not working, it never
@@ -733,8 +765,20 @@ extension RPCThreadState {
             }
         }
         var remaining = items.filter { $0.entry.state == .steering }
+        var boundary = dispatches.filter { $0.delivery == .steer }
         for text in steering {
-            if let index = remaining.firstIndex(where: { ($0.piText ?? $0.promptText) == text }) {
+            if let index = boundary.firstIndex(where: { $0.text == text }) {
+                let dispatch = boundary.remove(at: index)
+                let images = dispatch.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
+                requestInput(prompt: text, images: images, delivery: .steer) { [weak self] failure in
+                    guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                    self.dropDispatch(dispatch.id)
+                    NativeQueueRules.insert(dispatch.items, atQueuedIndex: 0, into: &self.items)
+                    self.paused = true
+                    self.queueNotice = message
+                    self.commit()
+                }
+            } else if let index = remaining.firstIndex(where: { ($0.piText ?? $0.promptText) == text }) {
                 // Equal text can carry different images; restore each item exactly once.
                 let id = remaining.remove(at: index).entry.id
                 if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
@@ -769,6 +813,14 @@ extension RPCThreadState {
     func reclaim(steering: [String], followUp: [String]) {
         var remaining = steering
         var back: [QueueItem] = [], dropped: Set<UUID> = []
+        // A boundary batch already belongs to pi but still has its original host parts and images.
+        // Reclaim those records, not a newly adopted text-only copy.
+        for dispatch in dispatches where dispatch.delivery == .steer {
+            guard let index = remaining.firstIndex(of: dispatch.text) else { continue }
+            remaining.remove(at: index)
+            back.append(contentsOf: dispatch.items)
+            dropDispatch(dispatch.id)
+        }
         for item in items where item.entry.state == .steering {
             guard let index = remaining.firstIndex(of: item.piText ?? item.promptText) else { continue }
             remaining.remove(at: index)
@@ -898,7 +950,7 @@ extension RPCThreadState {
     /// `agent_settled`: pi is idle. Prompts it accepted but never started are over; steering it
     /// never read (queued after its last look) is reclaimed; then the queue goes.
     func settled() {
-        for dispatch in dispatches where dispatch.responded && !inputOutcomeUnknown {
+        for dispatch in dispatches where dispatch.responded && !inputOutcomeUnknown && dispatch.delivery == .followUp {
             dropDispatch(dispatch.id)
             onUnconsumedDispatchRetired?(dispatch.id)
         }
@@ -911,14 +963,26 @@ extension RPCThreadState {
             settleAwaitingSteers = true
             return
         }
-        guard items.contains(where: { $0.entry.state == .steering }) || !piSteering.isEmpty || !piFollowUp.isEmpty else {
+        guard items.contains(where: { $0.entry.state == .steering }) || !piSteering.isEmpty || !piFollowUp.isEmpty
+                || dispatches.contains(where: { $0.delivery == .steer }) else {
             drainIfReady()
             idleAfterQueue()
             return
         }
-        clearPiQueue { [weak self] steering, followUp, _ in
+        clearPiQueue { [weak self] steering, followUp, failure in
             guard let self else { return }
+            guard failure == nil else {
+                self.paused = true
+                self.queueNotice = "Could not reclaim the agent's queued messages. The queue is waiting."
+                self.commit()
+                return
+            }
             self.reclaim(steering: steering, followUp: followUp)
+            // A boundary prompt consumed by an input handler left no message or queued text.
+            for dispatch in self.dispatches where dispatch.delivery == .steer && dispatch.responded && !self.inputOutcomeUnknown {
+                self.dropDispatch(dispatch.id)
+                self.onUnconsumedDispatchRetired?(dispatch.id)
+            }
             // Steering that landed while the clear was on its way left no text behind.
             self.items.removeAll { $0.entry.state == .steering }
             self.commit()
@@ -940,13 +1004,17 @@ extension RPCThreadState {
         var operationID: UUID?
         var kept: [UUID] = []
         var typed: String?
-        if let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
+        let dispatchIndex = boundDispatch(for: text)
+        // Boundary admission requires pi's steering queue to be empty, so this batch precedes
+        // any explicit steer subsequently added, even when their text is identical.
+        let boundaryFirst = dispatchIndex.map { dispatches[$0].delivery == .steer } ?? false
+        if !boundaryFirst, let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
             let item = items.remove(at: index)
             unboundSteers.removeAll { $0 == item.entry.id }
             origin = .steered
             operationID = item.entry.id
             kept = item.designPayloads
-        } else if let index = boundDispatch(for: text) {
+        } else if let index = dispatchIndex {
             let dispatch = dispatches[index]
             dropDispatch(dispatch.id)
             origin = dispatch.parts.map { .queue(parts: $0) }
