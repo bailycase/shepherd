@@ -43,11 +43,19 @@ struct ThreadComposer: View {
         let live = store.isLive && host?.phase.isConnected == true
         let wide = sizeClass == .regular
         let goalSize: SHGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
+        let settled: [String] = Self.settled(store.submissions)
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let notice = store.notice {
                 banner(notice)
             }
             if state.pendingImports > 0 { banner("Adding images…") }
+            ForEach(store.submissions.filter { $0.state != .sending }) { submission in
+                SubmissionBanner(submission: submission, canRestore: state.canRestore(into: store)) {
+                    guard state.canRestore(into: store), let restored = store.restoreSubmission(submission.id) else { return }
+                    Task { await state.restore(restored.images) }
+                    state.saveDraft(store)
+                }
+            }
             if store.running, store.hasDraft || !state.attachments.isEmpty {
                 banner("Hold Send to steer now · ⌘↩ Steer now")
             }
@@ -136,16 +144,18 @@ struct ThreadComposer: View {
         .onAppear { state.restoreDraft(in: store) }
         .task(id: store.draft) {
             do { try await Task.sleep(for: ComposerState.draftSaveDelay) } catch { return }
-            state.saveDraft(store.draft)
+            state.saveDraft(store)
         }
-        .onDisappear { state.saveDraft(store.draft) }
+        .onDisappear { state.saveDraft(store) }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { state.saveDraft(store.draft) }
+            if phase != .active { state.saveDraft(store) }
         }
         .onChange(of: store.sentCount) { _, _ in
             focused = false
-            state.saveDraft(store.draft)
+            state.saveDraft(store)
         }
+        // A send settling as refused is what a restart would lose: save it at the draft's place.
+        .onChange(of: settled) { _, _ in state.saveDraft(store) }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
         }
@@ -355,12 +365,17 @@ struct ThreadComposer: View {
         guard state.pendingImports == 0 else { return Task {} }
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
+        let earlier = Set(store.submissions.map(\.id))
         return Task {
-            if await store.send(images: images, delivery: delivery) {
-                state.saveDraft(store.draft)
+            let accepted = await store.send(images: images, delivery: delivery)
+            // Taken, or kept by the store as a refused or unknown send (its images with it): the
+            // composer lets go of the images it sent. Images added meanwhile stay; a send the
+            // store never took keeps them where they were.
+            if accepted || store.submissions.contains(where: { !earlier.contains($0.id) }) {
                 for id in submitted { state.remove(id) }
                 if state.attachments.isEmpty { state.clearAttachments() }
             }
+            state.saveDraft(store)
         }
     }
 
@@ -471,9 +486,42 @@ struct ThreadComposer: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// Each kept send and how it stands, to save the draft when one settles.
+    private static func settled(_ submissions: [NativeThreadSubmission]) -> [String] {
+        submissions.map { "\($0.id):\($0.state)" }
+    }
+
     private static func command(_ command: NativeCommand) -> SHTouchCommand {
         SHTouchCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: NativeSlashMatches.tag(command))
+    }
+}
+
+/// A send that did not go through (UX-02): refused by the host, with Restore back into an empty
+/// composer, or of unknown outcome, shown whole to check against the thread and never resent or
+/// restored by the app.
+private struct SubmissionBanner: View {
+    let submission: NativeThreadSubmission
+    let canRestore: Bool
+    let restore: () -> Void
+
+    var body: some View {
+        let images = submission.images.count
+        let extra = images == 0 ? "" : " · \(images) image\(images == 1 ? "" : "s")"
+        if submission.state == .failed {
+            SHBanner(.failed, title: "Not sent" + extra,
+                     message: submission.typed.isEmpty ? nil : submission.typed + (canRestore ? "" : "\nClear the composer to restore it.")) {
+                Button("Restore") { restore() }
+                    .buttonStyle(.sh(.secondary))
+                    .disabled(!canRestore)
+            }
+            .lineLimit(4)
+        } else {
+            SHBanner(.attention, title: "Delivery unknown" + extra,
+                     message: (submission.typed.isEmpty ? "" : submission.typed + "\n")
+                        + "It may have reached the agent. Check the thread before sending it again.") {}
+            .lineLimit(8)
+        }
     }
 }
 

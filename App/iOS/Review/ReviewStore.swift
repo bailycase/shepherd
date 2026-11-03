@@ -182,7 +182,9 @@ final class ReviewStore {
 
     /// Everything this review holds that it can fetch again: the shown files' hunks and colored
     /// text, the rows derived from them, and the cached hunks of other revisions (counted again
-    /// where they are the shown ones too, so the total never undercounts).
+    /// where they are the shown ones too, so the total never undercounts). Cached rows only ever
+    /// hold the shown hunks' and text's strings (each goes when they are replaced), so a row adds
+    /// its own share alone.
     var retainedCost: Int {
         let rows = (unifiedCache.values.map(\.rows.count) + splitCache.values.map(\.rows.count)).reduce(0, +)
         return diffCosts.values.reduce(0, +) + textCosts.values.reduce(0, +) + diffCache.cost + rows * Self.rowCost
@@ -343,6 +345,8 @@ final class ReviewStore {
             entries = files.map(ChangesFile.init(listing:))
             loaded = true
             loadedKey = LoadKey(session: host.session, pullRequest: pullRequest)
+            // A whole diff that lands after its screen left counts against the budget at once.
+            grew()
         } catch {
             guard loadID == id else { return }
             loadError = reviewErrorText(error)
@@ -410,6 +414,9 @@ final class ReviewStore {
         textLoads = [:]
         wholeFiles = []
         expandedRuns = [:]
+        // Rows hold their lines' text and colors: they go with the hunks they were drawn from.
+        unifiedCache = [:]
+        splitCache = [:]
         for id in fileVersions.keys { fileVersions[id, default: 0] &+= 1 }
     }
 
@@ -506,6 +513,8 @@ final class ReviewStore {
         wordDiffs = on
         texts = [:]
         textCosts = [:]
+        unifiedCache = [:]
+        splitCache = [:]
         textLoads = [:]
         for id in diffs.keys {
             fileVersions[id, default: 0] &+= 1
@@ -656,6 +665,8 @@ final class ReviewStore {
         diffs[id] = diff.file
         diffCosts[id] = Self.cost(diff)
         textCosts[id] = nil
+        unifiedCache[id] = nil
+        splitCache[id] = nil
         if diff.truncated { truncated.insert(id) } else { truncated.remove(id) }
         fileErrors[id] = nil
         texts[id] = nil
@@ -694,6 +705,9 @@ final class ReviewStore {
             textLoads[id] = nil
             texts[id] = lines
             textCosts[id] = Self.textCost(lines)
+            // Rows drawn uncolored hold plain copies: they are drawn again with the colors.
+            unifiedCache[id] = nil
+            splitCache[id] = nil
             fileVersions[id, default: 0] &+= 1
             grew()
         }

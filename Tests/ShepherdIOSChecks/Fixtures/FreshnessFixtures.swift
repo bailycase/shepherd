@@ -21,6 +21,10 @@ extension FixtureCatalog {
             // fetch that a shed overtakes. Checks only; its shot is the thread.
             FixtureScreen(name: "review-retention", hosts: ReviewRetentionFixture.hosts(), routes: [.thread(preview)],
                           prepare: ReviewRetentionFixture.run),
+            // UX-02: a refused send kept with its image, restored only into an empty composer, a
+            // newer draft and image kept, an unknown outcome never restorable. Shot: both banners.
+            FixtureScreen(name: "composer-refused", hosts: RefusedSendFixture.hosts(), routes: [.thread(preview)],
+                          prepare: RefusedSendFixture.run),
             FixtureScreen(name: "pad-switch", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.switchThreads),
             // Run with -w: a thread kept hidden in one window and shown in a second, which then closes.
@@ -31,7 +35,10 @@ extension FixtureCatalog {
 }
 
 @MainActor enum FreshnessFixtures {
-    static func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
 
     /// One host with `count` idle threads, each with a long-ish name.
     static func manyThreads(_ count: Int) -> [FixtureHostData] {
@@ -148,54 +155,111 @@ extension FixtureCatalog {
     }
 }
 
-/// Large changes for the preview agent: four Swift files of 5,000 added lines each (about 9 MiB
-/// of hunks before their colored text), and a count of the file fetches the host answered.
+/// Large reviews on the real ReviewStore. Studio (Changes engine) holds twelve Swift files of
+/// 400 lines ×40 (each under the 1 MiB frame), served at revision 1 or 2 by `box`; build-01 is an
+/// older host whose whole-diff reply for its agent waits on `gate`. Counts the file fetches.
 @MainActor enum ReviewRetentionFixture {
-    final class Fetches: @unchecked Sendable {
+    final class Box: @unchecked Sendable {
         private let lock = NSLock()
-        private var count = 0
-        func add() { lock.withLock { count += 1 } }
-        var value: Int { lock.withLock { count } }
+        private var fetchCount = 0
+        private var second = false
+        func fetched() { lock.withLock { fetchCount += 1 } }
+        var fetches: Int { lock.withLock { fetchCount } }
+        var secondRevision: Bool {
+            get { lock.withLock { second } }
+            set { lock.withLock { second = newValue } }
+        }
+        let gate = DispatchSemaphore(value: 0)
+        private var waiting = false
+        var legacyWaiting: Bool {
+            get { lock.withLock { waiting } }
+            set { lock.withLock { waiting = newValue } }
+        }
     }
 
-    nonisolated(unsafe) static let fetches = Fetches()
+    nonisolated(unsafe) static let box = Box()
+    static let second = ChangesRevision(old: "3f2a91c0d4", new: "c0ffee0000")
+
+    static func diffText(files: Int, lines: Int, width: Int, tag: String) -> String {
+        var text = ""
+        let pad = String(repeating: "x", count: width)
+        for file in 0..<files {
+            text += "diff --git a/Sources/Big\(file).swift b/Sources/Big\(file).swift\nnew file mode 100644\n--- /dev/null\n"
+            text += "+++ b/Sources/Big\(file).swift\n@@ -0,0 +1,\(lines) @@\n"
+            for line in 0..<lines { text += "+let \(tag)\(line) = compute(\"\(pad)\")\n" }
+        }
+        return text
+    }
 
     static func hosts() -> [FixtureHostData] {
-        var text = ""
-        let pad = String(repeating: "x", count: 380)
-        for file in 0..<4 {
-            text += "diff --git a/Sources/Big\(file).swift b/Sources/Big\(file).swift\nnew file mode 100644\n--- /dev/null\n"
-            text += "+++ b/Sources/Big\(file).swift\n@@ -0,0 +1,5000 @@\n"
-            for line in 0..<5000 { text += "+let value\(line) = compute(\"\(pad)\") // \(line)\n" }
+        let first = DiffFile.parse(diffText(files: 40, lines: 400, width: 360, tag: "rev1_"))
+        let next = DiffFile.parse(diffText(files: 40, lines: 400, width: 360, tag: "rev2_"))
+        func repo(_ files: [DiffFile]) -> ChangesFixture.Repo {
+            ChangesFixture.Repo(files: files, branch: "big", base: "main", baseName: "main", mergeBase: "3f2a91c", lastTurn: nil, turnFiles: [])
         }
-        let files = DiffFile.parse(text)
+        let one = ChangesFixture.reply(repo(first)), two = ChangesFixture.reply(repo(next))
+        let box = box
+        let second = second
         var hosts = FixtureData.hosts()
-        let changes = ChangesFixture.reply(ChangesFixture.Repo(files: files, branch: "big", base: "main", baseName: "main", mergeBase: "3f2a91c",
-                                                               lastTurn: nil, turnFiles: []))
-        let fetches = fetches
         hosts[0].reply = { request in
-            if case .agentQuery(_, _, .changesFile) = request { fetches.add() }
-            return changes(request)
+            let later = box.secondRevision
+            if case .agentQuery(_, _, .changesFile) = request { box.fetched() }
+            guard let reply = (later ? two : one)(request) else { return nil }
+            if later, case .agentResult(let id, .changesList(var list)) = reply {
+                list.revision = second
+                return .agentResult(id: id, result: .changesList(list))
+            }
+            return reply
+        }
+        // build-01: an older host (no Changes engine) whose whole diff is just under a frame.
+        hosts[1].capabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.changesCapability }
+        let legacy = (try? JSONEncoder().encode(legacyFiles)) ?? Data()
+        hosts[1].reply = { request in
+            guard case .agentQuery(let id, _, .review) = request else { return nil }
+            box.legacyWaiting = true
+            box.gate.wait()
+            return .agentResult(id: id, result: .review(files: legacy, reference: nil))
         }
         return hosts
     }
 
-    static func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+    static let legacyFiles = DiffFile.parse(diffText(files: 1, lines: 7_000, width: 8, tag: "o"))
+    /// What the older host's whole diff costs the review once it lands.
+    static var legacyCost: Int { legacyFiles.reduce(0) { $0 + ReviewStore.cost(ChangesFileDiff(file: $1)) } }
+
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
+
+    /// Fetches, colors and draws the review's files (as its screen does) until it holds more than `floor`.
+    static func fill(_ store: ReviewStore, above floor: Int = .max) async {
+        for entry in store.entries {
+            store.ensure(entry.id)
+            await ReviewFixture.until { store.diffs[entry.id] != nil && store.texts[entry.id] != nil }
+            _ = store.unifiedRows(entry.id, gaps: false)
+            if store.retainedCost > floor { return }
+        }
+    }
+
+    static func sources(_ store: ReviewStore) -> [String] {
+        store.entries.flatMap { entry in
+            store.unifiedRows(entry.id, gaps: false).compactMap { row -> String? in
+                if case .line(let content) = row { return content.source } else { return nil }
+            }
+        }
+    }
 
     static func run(_ app: MobileApp) async {
         let reviews = ReviewStores.shared
         let ref = FixtureData.ref(FixtureData.preview)
         let store = reviews.store(for: ref)
-        // A screen shows it: every file fetched, colored, and drawn.
         reviews.appeared(ref)
         await store.load(hosts: app.hosts)
-        await ChangesFixture.filesLoaded(store)
-        for entry in store.entries { _ = store.unifiedRows(entry.id, gaps: false) }
+        await fill(store)
         let files = store.entries.map(\.id)
-        let held = store.retainedCost
-        check(files.count == 4 && held > 8 << 20 && store.cachedRowFiles == 4 && !store.texts.isEmpty,
-              "the shown review holds hunks, colored text and rows (\(held >> 20) MiB, \(store.cachedRowFiles) row sets)")
-        // The reviewer's own marks.
+        check(files.count == 40 && store.retainedCost > 8 << 20 && store.cachedRowFiles == 40,
+              "the shown review holds hunks, colored text and rows (\(store.retainedCost >> 20) MiB)")
         if let line = store.diff(files[0])?.hunks.first?.lines.first?.id {
             store.select(fileID: files[0], lineID: line)
             store.draft = "Name this better."
@@ -208,38 +272,156 @@ extension FixtureCatalog {
         store.toggleViewed(files[2])
         store.toggleCollapsed(files[3])
 
-        // It leaves the screen: past the off-screen budget alone, every payload owner lets go.
+        // Revision replaced: the old rows go with their hunks at once; the new revision's fill the
+        // cache past its budget and push the old revision's hunks out. Every row is the new text.
+        box.secondRevision = true
+        await store.load(hosts: app.hosts)
+        check(store.list?.revision == second && store.cachedRowFiles == 0 && store.diffs.isEmpty && store.texts.isEmpty,
+              "a new revision lets go of the old rows, hunks and text at once")
+        await fill(store)
+        let shown = sources(store)
+        check(!shown.isEmpty && shown.allSatisfy { $0.contains("rev2_") }, "every drawn row is the new revision's text")
+        check(store.cachedDiffs < 80 && store.retainedCost > 0, "the old revision's cached hunks were evicted (\(store.cachedDiffs) cached)")
+        check(store.comments.count == 1 && store.draft == "Unsent thought" && store.viewed == [files[2]] && store.collapsed.contains(files[3]),
+              "the reviewer's marks survive the new revision")
+
+        // Off screen over budget alone: every payload owner lets go; marks stay.
         reviews.disappeared(ref)
         check(store.diffs.isEmpty && store.texts.isEmpty && store.cachedRowFiles == 0 && store.cachedDiffs == 0 && store.retainedCost == 0,
               "off screen over budget: hunks, text, rows and cache all let go (\(store.retainedCost) bytes left)")
         check(store.comments.count == 1 && store.draft == "Unsent thought" && store.viewed == [files[2]] && store.collapsed.contains(files[3]),
               "the comment, the draft, viewed and collapsed files stay")
 
-        // Shown again: it fetches what it needs, the marks as they were.
-        let before = fetches.value
+        // Shown again: it fetches its files, marks as they were. Then held under the budget.
+        let before = box.fetches
         reviews.appeared(ref)
         await store.loadIfNeeded(hosts: app.hosts)
-        await ChangesFixture.filesLoaded(store)
-        check(fetches.value == before + 4 && store.comments.count == 1 && store.draft == "Unsent thought",
-              "shown again it fetches its files and keeps its marks")
+        // Just under the budget: the late whole diff alone tips it over.
+        let floor = ReviewStores.offscreenBudget - legacyCost
+        await fill(store, above: floor)
+        check(box.fetches > before && store.comments.count == 1, "shown again it fetches its files and keeps its marks")
+        reviews.disappeared(ref)
+        let kept = store.retainedCost
+        check(kept > floor && kept <= ReviewStores.offscreenBudget, "under the budget it is kept off screen (\(kept >> 20) MiB)")
+
+        // An older host's whole diff, asked while shown and answered after its screen left: it
+        // counts at once, and the older review over budget goes.
+        let legacyRef = FixtureData.ref(FixtureData.buffer, on: FixtureData.buildBox)
+        let legacy = reviews.store(for: legacyRef)
+        reviews.appeared(legacyRef)
+        let loading = Task { await legacy.load(hosts: app.hosts) }
+        await FixtureWindows.wait("legacy reply held", seconds: 10) { box.legacyWaiting }
+        reviews.disappeared(legacyRef)
+        check(store.retainedCost == kept, "nothing goes before the reply lands")
+        box.gate.signal()
+        await loading.value
+        check(!legacy.diffs.isEmpty && legacy.retainedCost == legacyCost,
+              "the late whole diff landed (\(legacy.retainedCost >> 20) MiB)")
+        check(store.retainedCost == 0 && store.diffs.isEmpty && store.cachedRowFiles == 0, "and pushed the older review out at once")
+        check(store.comments.count == 1, "whose marks stay")
 
         // A fetch asked for, then a shed before it runs: no request, nothing kept.
-        reviews.disappeared(ref)
-        let asked = fetches.value
+        let asked = box.fetches
         let task = store.ensure(files[0])
         store.shed()
         await task?.value
         try? await Task.sleep(for: .milliseconds(300))
-        check(fetches.value == asked && store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0,
-              "a fetch overtaken by a shed asks nothing and keeps nothing (\(fetches.value - asked) asked)")
-        // And one already asked: its reply lands after the shed and is dropped.
+        check(box.fetches == asked && store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0,
+              "a fetch overtaken by a shed asks nothing and keeps nothing (\(box.fetches - asked) asked)")
+        // One already asked: its reply lands after the shed and is dropped.
         reviews.appeared(ref)
         await store.loadIfNeeded(hosts: app.hosts)
         let inFlight = store.ensure(files[1])
         await Task.yield()
         store.shed()
         await inFlight?.value
-        check(store.diffs.isEmpty && store.cachedDiffs == 0, "a reply after a shed is not kept")
+        check(store.diffs.isEmpty && store.cachedDiffs == 0 && store.retainedCost == 0, "a reply after a shed is not kept")
         reviews.disappeared(ref)
+    }
+}
+
+/// A host that refuses sends (`busy`) or answers them `outcome_unknown`, by `mode`.
+@MainActor enum RefusedSendFixture {
+    final class Mode: @unchecked Sendable {
+        private let lock = NSLock()
+        private var unknown = false
+        var outcomeUnknown: Bool {
+            get { lock.withLock { unknown } }
+            set { lock.withLock { unknown = newValue } }
+        }
+    }
+
+    static let mode = Mode()
+
+    static func hosts() -> [FixtureHostData] {
+        var hosts = ThreadFixtures.hosts()
+        let mode = mode
+        hosts[0].accepts = { request in
+            guard case .nativeThread(let id, _, .send) = request else { return nil }
+            return mode.outcomeUnknown
+                ? .nativeThread(id: id, result: .failure(code: "outcome_unknown", message: "The agent did not answer in time."))
+                : .nativeThread(id: id, result: .failure(code: "busy", message: "The agent is busy. Try again."))
+        }
+        return hosts
+    }
+
+    static func check(_ ok: Bool, _ what: String) {
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)")
+        fflush(stdout)
+    }
+
+    static func png() -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).pngData { context in
+            UIColor.systemOrange.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        }
+    }
+
+    static func run(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        let state = ComposerStates.shared.state(for: ref)
+        let key = NativeDraftKey.text(host: ref.host, agent: ref.agent)
+        await FixtureWindows.wait("ready to send", seconds: 10) { store.acceptsSend }
+
+        // Refused: the text and image stay with the send, out of the composer, and its text is
+        // what a restart keeps.
+        store.draft = "Ship the ledger fix"
+        await state.attach([(png(), "ledger.png")])
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let refused = store.submissions.first { $0.state == .failed }
+        check(refused?.typed == "Ship the ledger fix" && refused?.images.count == 1 && state.attachments.isEmpty && store.draft.isEmpty,
+              "a refused send keeps its text and image, out of the composer")
+        check(UserDefaults.standard.string(forKey: key) == "Ship the ledger fix", "its text is saved where the draft is")
+
+        // A newer draft and image: Restore waits, and nothing of theirs is replaced.
+        store.draft = "A newer thought"
+        await state.attach([(png(), "new.png")])
+        check(!state.canRestore(into: store), "Restore waits while the composer holds something")
+        check(store.draft == "A newer thought" && state.attachments.count == 1 && store.submissions.contains { $0.id == refused?.id },
+              "the newer draft and image stay")
+
+        // Emptied: Restore brings back the text and its image.
+        store.draft = ""
+        state.clearAttachments()
+        if let id = refused?.id, state.canRestore(into: store), let value = store.restoreSubmission(id) {
+            await state.restore(value.images)
+        }
+        check(store.draft == "Ship the ledger fix" && state.attachments.count == 1 && store.submissions.isEmpty,
+              "restored into the empty composer with its image")
+
+        // Unknown outcome: kept as unknown, never restorable, never saved as a draft.
+        mode.outcomeUnknown = true
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let unknown = store.submissions.first
+        check(unknown?.state == .uncertain, "an outcome_unknown answer is uncertain (\(String(describing: unknown?.state)))")
+        check(unknown.map { store.restoreSubmission($0.id) == nil } == true && store.submissions.count == 1, "an uncertain send cannot be restored")
+        check(UserDefaults.standard.string(forKey: key) == nil, "an uncertain send is not saved as a draft")
+
+        // Leave one refused beside it for the shot.
+        mode.outcomeUnknown = false
+        store.draft = "Not this one"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        check(store.submissions.map(\.state) == [.uncertain, .failed], "both shown: unknown and refused")
     }
 }

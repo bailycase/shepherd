@@ -60,18 +60,51 @@ final class ComposerState {
         }
     }
 
-    func saveDraft(_ text: String) {
+    /// Saves what the composer would lose to a restart: its draft, or with none, the newest send
+    /// the host refused outright (its text comes back as the draft; its images can't be saved, and
+    /// the next launch says so). A send whose outcome is unknown is never saved as a draft: it may
+    /// have been taken, and a draft invites sending it again.
+    func saveDraft(_ store: NativeThreadStore) {
         guard !forgotten, restoredDraft, let ref else { return }
+        let refused = store.submissions.last { $0.state == .failed }
+        let text = store.draft.isEmpty ? refused?.typed ?? "" : store.draft
         let key = NativeDraftKey.text(host: ref.host, agent: ref.agent)
         if text.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
         else { UserDefaults.standard.set(text, forKey: key) }
+        refusedImages = store.draft.isEmpty && refused?.images.isEmpty == false
+        saveImagePresence()
     }
+
+    /// The saved refused send has images (`saveDraft`).
+    @ObservationIgnored private var refusedImages = false
 
     private func saveImagePresence() {
         guard !forgotten, let ref else { return }
         let key = NativeDraftKey.images(host: ref.host, agent: ref.agent)
-        if attachments.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
+        if attachments.isEmpty && !refusedImages { UserDefaults.standard.removeObject(forKey: key) }
         else { UserDefaults.standard.set(true, forKey: key) }
+    }
+
+    /// A refused send's images, back beside its restored text (`NativeThreadStore.restoreSubmission`),
+    /// after any the composer holds: an image added meanwhile is never replaced.
+    func restore(_ images: [NativeImage]) async {
+        guard !images.isEmpty else { return }
+        pendingImports += 1
+        defer { pendingImports -= 1 }
+        let thumbnailPixels = MobileLayout.attachmentThumbnailPixels
+        for image in images {
+            let thumbnail = await Task.detached(priority: .userInitiated) {
+                UIImage(data: image.data)?.preparingThumbnail(of: thumbnailPixels)
+            }.value
+            guard !forgotten else { return }
+            attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail.map { Image(uiImage: $0) }))
+        }
+        saveImagePresence()
+    }
+
+    /// Whether a refused send can come back now: nothing typed, attached or still being added.
+    func canRestore(into store: NativeThreadStore) -> Bool {
+        !store.hasDraft && attachments.isEmpty && pendingImports == 0
     }
 
     func forget() {

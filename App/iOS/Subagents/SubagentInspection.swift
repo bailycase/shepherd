@@ -76,9 +76,7 @@ struct SubagentThreadKeeper: ViewModifier {
             .task(id: key) {
                 guard key.active, let session = key.session, let client = host?.connectedClient else { return }
                 let agentID = ref.agent
-                await threads.viewers(for: ref).run(connection: session) { request in
-                    try await client.nativeThread(agentID: agentID, request: request)
-                }
+                await threads.viewers(for: ref).run(connection: session, request: ThreadStores.request(client, agentID: agentID))
             }
     }
 }

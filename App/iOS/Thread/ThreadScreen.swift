@@ -171,7 +171,7 @@ struct ThreadScreen: View {
                 return
             }
             let agentID = ref.agent
-            await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
+            await viewers.run(connection: session, request: ThreadStores.request(client, agentID: agentID))
         }
     }
 

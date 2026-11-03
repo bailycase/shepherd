@@ -275,7 +275,11 @@ struct MobileFreshnessCheck {
         let id = try hosts.add(RemoteHostEntry(name: "Hints", address: "127.0.0.1", port: String(host.port), token: FeedHost.token))
         let threads = ThreadStores()
         var hinted: [AgentRef] = []
-        let hints = ThreadRevisionHints(hosts: hosts, threads: threads) { hinted.append($0) }
+        // As the app wires it: a hint wakes the thread's store only if one exists.
+        let hints = ThreadRevisionHints(hosts: hosts, threads: threads) { ref in
+            hinted.append(ref)
+            threads.existingStore(for: ref)?.historyChanged()
+        }
         hosts.setForeground(true)
         try await waitUntil("hints host connected") { hosts.host(id)?.phase == .connected && !hosts.host(id)!.state.agents.isEmpty }
         func show(_ agent: AgentID) -> Task<Void, Never> {
@@ -296,6 +300,16 @@ struct MobileFreshnessCheck {
         try await waitUntil("a watched thread's hint arrives") { hinted == [AgentRef(host: id, agent: ids[1])] }
         try await Task.sleep(for: .milliseconds(200))
         check(hinted.count == 1, "a hint for a thread not watched is ignored")
+        check(threads.existingStore(for: AgentRef(host: id, agent: ids[2])) == nil, "nor does any hint make a store")
+        // A host's explicit outcome_unknown is never a definite refusal to the store.
+        host.answerUnknown(ids[2])
+        do {
+            _ = try await ThreadStores.request(hosts.host(id)!.connectedClient!, agentID: ids[2])(.snapshot(afterRevision: nil))
+            check(false, "outcome_unknown answered as a result")
+        } catch RemoteHostClientError.outcomeUnknown {
+        } catch {
+            check(false, "outcome_unknown became \(error)")
+        }
         // A reconnect starts unwatched: the shown thread is watched again on the new connection.
         let sets = host.watchSets.count
         hosts.disconnect(id)
@@ -405,6 +419,8 @@ final class FeedHost: @unchecked Sendable {
     func digests(_ agent: AgentID) -> (full: Int, unchanged: Int, asked: [UInt64?]) {
         lock.withLock { (digestFull[agent] ?? 0, digestUnchanged[agent] ?? 0, digestAsked[agent] ?? []) }
     }
+    func answerUnknown(_ agent: AgentID) { lock.withLock { _ = unknownAnswers.insert(agent) } }
+    private var unknownAnswers: Set<AgentID> = []
     func refuseAsTooLarge(_ agent: AgentID) { lock.withLock { _ = tooLarge.insert(agent) } }
     /// The next `count` digest reads answer `busy`.
     func beBusy(_ count: Int) { lock.withLock { busy = count; busyServed = 0 } }
@@ -477,6 +493,10 @@ final class FeedHost: @unchecked Sendable {
                     guard case .snapshot(_, _, let after) = command else {
                         lock.withLock { mutations += 1 }
                         try write(client, .nativeThread(id: id, result: .failure(code: "check", message: "reads only")))
+                        continue
+                    }
+                    if lock.withLock({ unknownAnswers.contains(agentID) }) {
+                        try write(client, .nativeThread(id: id, result: .failure(code: "outcome_unknown", message: "Check the thread.")))
                         continue
                     }
                     let (gate, running, generation) = lock.withLock {

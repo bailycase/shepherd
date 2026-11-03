@@ -50,10 +50,12 @@ final class MobileApp {
         HomeFeed.of(hosts).openSnapshot = { [threads] ref in threads.liveSnapshot(for: ref) }
         glance = GlanceBridge(hosts: hosts, windows: windows)
         readiness = MobileReadiness(hosts: hosts) { MobileDiagnostics.reportFullyDisplayed() }
-        // A hint marks Home's digest to read again; the thread's own store keeps polling meanwhile.
-        hints = ThreadRevisionHints(hosts: hosts, threads: threads) { [weak hosts] ref in
+        // A hint marks Home's digest to read again and wakes the thread's store if one exists
+        // (it pulls only while live and paced; a hidden or stopped one ignores it).
+        hints = ThreadRevisionHints(hosts: hosts, threads: threads) { [weak hosts, weak threads] ref in
             guard let hosts else { return }
             HomeFeed.of(hosts).invalidate(ref.fleetRef)
+            threads?.existingStore(for: ref)?.historyChanged()
         }
     }
 
