@@ -132,6 +132,93 @@ struct RecoveryStagingTests {
         #expect(saved.items.map(\.entry.text) == ["first"])
     }
 
+    @Test(arguments: ["expiry", "stop", "switch", "success"])
+    func boundaryStagingRetainsDeadlineDeliveryAndCancellation(end: String) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("tools:1 hold", from: try await pi.ready())
+        let running = try await pi.snapshot { $0.running && $0.provisional.contains { $0.toolCallID != nil } }
+        let id = UUID(), payload = images(1 << 20)
+        #expect(try await pi.send("boundary image", images: payload, operationID: id, from: running).wasAccepted)
+        try await eventually("queued checkpoint settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        let gate = DispatchSemaphore(value: 0), done = Locked(0), captures = Locked(0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            thread.beforePrompt = { next in captures.withValue { $0 += 1 }; next() }
+            thread.deliverAtBoundary(expiresAt: Date().timeIntervalSince1970 * 1000 + (end == "expiry" ? 2_000 : 10_000)) {
+                done.withValue { $0 += 1 }
+            }
+            #expect(thread.items.map(\.entry.id) == [id], "no speculative dequeue")
+        }
+        try await eventually("boundary checkpoint held") { try await h.server.enqueue { h.server.recoveryWritesInFlight > 0 } }
+        #expect(done.current == 0 && pi.stdin("prompt").count == 1)
+        if end == "stop" {
+            #expect(try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID())).wasAccepted)
+        } else if end == "switch" {
+            try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.session.send(.newSession) }
+            // A public snapshot correctly waits for the changed recovery checkpoint. Observe
+            // the owner fence directly while this test intentionally holds that writer.
+            try await eventually("RPC generation switched behind the file gate") {
+                try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.generation != running.generation }
+            }
+        }
+        if end != "success" {
+            try await eventually("boundary answered before file worker release", timeout: .seconds(5)) { done.current == 1 }
+            #expect(pi.stdin("prompt").count == 1)
+            #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.paused == true })
+        }
+        gate.signal()
+        try await eventually("boundary workers drained") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        if end == "success" {
+            try await eventually("durable boundary admitted") { done.current == 1 }
+            let sent = try await pi.waitForStdin("prompt", count: 2)
+            #expect(sent["streamingBehavior"] as? String == "steer")
+            #expect((sent["images"] as? [[String: Any]])?.first?["data"] as? String == payload[0].data.base64EncodedString())
+            let saved = try #require(try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id))
+            #expect(saved.pending.map(\.entry.id) == [id] && saved.items.isEmpty)
+        } else {
+            #expect(pi.stdin("prompt").count == 1)
+            #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.items.map(\.entry.id) == [id] })
+        }
+        #expect(done.current == 1 && captures.current == 0, "a boundary never starts another Before prompt capture")
+    }
+
+    @Test func expiredBoundaryStageCannotCompleteANewerPreparationWithTheSameQueueID() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("tools:1 hold", from: try await pi.ready())
+        let running = try await pi.snapshot { $0.running && $0.provisional.contains { $0.toolCallID != nil } }
+        let id = UUID()
+        #expect(try await pi.send("same queue ID", images: images(1 << 20), operationID: id, from: running).wasAccepted)
+        try await eventually("queued checkpoint settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        let first = DispatchSemaphore(value: 0), second = DispatchSemaphore(value: 0)
+        defer { first.signal(); second.signal() }
+        h.server.logicalProjectFiles.async { first.wait() }
+        let old = Locked(0), newer = Locked(0)
+        try await h.server.enqueue {
+            h.server.rpcThread(forAgent: pi.agent.id)?.deliverAtBoundary(expiresAt: Date().timeIntervalSince1970 * 1000 + 2_000) {
+                old.withValue { $0 += 1 }
+            }
+        }
+        try await eventually("old boundary expires while staged", timeout: .seconds(5)) { old.current == 1 }
+        h.server.logicalProjectFiles.async { second.wait() }
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            thread.paused = false
+            thread.deliverAtBoundary(expiresAt: Date().timeIntervalSince1970 * 1000 + 10_000) { newer.withValue { $0 += 1 } }
+        }
+        first.signal()
+        try await eventually("old stage drained while new stage remains held") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 1 } }
+        #expect(old.current == 1 && newer.current == 0 && pi.stdin("prompt").count == 1)
+        second.signal()
+        try await eventually("new boundary with reused ID completes") { newer.current == 1 }
+        #expect(old.current == 1 && pi.stdin("prompt").count == 2)
+    }
+
     @Test(arguments: [false, true])
     func sessionSwitchAnswersEveryDuplicateStagedSendExactlyOnce(evicted: Bool) async throws {
         let h = try ScratchServer.fresh()
