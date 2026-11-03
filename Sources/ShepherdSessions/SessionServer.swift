@@ -3825,10 +3825,23 @@ public final class SessionServer: @unchecked Sendable {
         while offset < data.endIndex {
             let end = data.index(offset, offsetBy: Self.remoteOutputChunkBytes, limitedBy: data.endIndex) ?? data.endIndex
             let chunk = data.subdata(in: offset..<end)
-            for fd in fds {
-                if let client = clients[fd] {
-                    send(.output(sessionID: sessionID, data: chunk), to: client)
+            let payload: Data
+            do {
+                payload = try NDJSON.encode(RemoteReply.output(sessionID: sessionID, data: chunk))
+                guard payload.count - 1 <= NDJSON.maxPayloadBytes else {
+                    throw LineBufferError.payloadTooLarge(bytes: payload.count - 1, terminated: true)
                 }
+            } catch {
+                ShepherdLog.error("could not encode remote output: \(error)")
+                for fd in fds {
+                    if let client = clients[fd] { disconnect(client) }
+                }
+                return
+            }
+            // Share immutable encoded bytes, not queue accounting or write offsets. A stalled
+            // viewer still overruns its own bounded queue without disrupting the others.
+            for fd in fds {
+                if let client = clients[fd] { enqueuePayload(payload, to: client) }
             }
             offset = end
         }
