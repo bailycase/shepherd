@@ -70,7 +70,9 @@ struct RemoteAutomationTriggerTests {
         await #expect(throws: (any Error).self) { _ = try await client.automation(id, request: .create(draft: draft)) }
         #expect(server.state.automations.isEmpty)
 
-        draft.settings = AutomationSettings(trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled], labels: ["shepherd"])]))
+        let unlimited = AutomationLimits(maxConcurrent: 0, maxPerDay: 7)
+        draft.settings = AutomationSettings(trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled], labels: ["shepherd"])]),
+                                            limits: unlimited)
         _ = try await client.automation(id, request: .create(draft: draft))
         try await eventually("the automation to save") { server.state.automations.first?.isTriggered == true }
 
@@ -79,5 +81,6 @@ struct RemoteAutomationTriggerTests {
         _ = try await client.automation(id, request: .update(draft: draft))
         try await eventually("the edit to save") { server.state.automations.first?.prompt == "new prompt" }
         #expect(server.state.automations.first?.isTriggered == true)
+        #expect(server.state.automations.first?.limits == unlimited)
     }
 }

@@ -270,6 +270,9 @@ struct ExtensionMessageTests {
          .createAutomation(id: 4, name: "loop", prompt: "p", cwd: "/r", enabled: true, start: true, settings: AutomationSettings(
             trigger: .github([GitHubTrigger(events: [.issueLabeled], labels: ["shepherd"])]), destination: .thread(agent),
             workspace: .local, authorGate: .anyone, limits: AutomationLimits(maxConcurrent: 3, maxPerDay: 20), model: "", thinking: "high"))),
+        (#"{"type":"updateAutomation","id":5,"automationID":"au1","settings":{"limits":{"maxConcurrent":0,"maxPerDay":20}}}"#,
+         .updateAutomation(id: 5, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: nil,
+                           settings: AutomationSettings(limits: AutomationLimits(maxConcurrent: 0, maxPerDay: 20)))),
         (#"{"type":"updateAutomation","id":3,"automationID":"au1","enabled":false}"#,
          .updateAutomation(id: 3, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: false)),
         // No file means AGENTS.md; a missing reason is an empty one.

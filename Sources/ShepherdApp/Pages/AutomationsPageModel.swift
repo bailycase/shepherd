@@ -396,8 +396,7 @@ extension AutomationsPageDetail {
         }
         trigger.append(.init(label: "Runs in", value: thread ?? (automation.workspace == .worktree ? "New worktree" : "The folder"), mono: false))
         let today = status.map { " · \($0.runsToday) today" } ?? ""
-        let dailyLimit = automation.limits.maxPerDay == 0 ? "no daily limit" : "\(automation.limits.maxPerDay) a day"
-        trigger.append(.init(label: "Limits", value: "\(automation.limits.maxConcurrent) at once · \(dailyLimit)\(today)",
+        trigger.append(.init(label: "Limits", value: "\(AutomationTriggerText.limits(automation.limits))\(today)",
                              mono: false))
         if automation.model != nil || automation.thinking != nil || automation.serviceTier != nil {
             let pins = [automation.model ?? "default", automation.thinking.map { "thinking " + $0.title.lowercased() },

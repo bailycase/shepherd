@@ -174,8 +174,8 @@ No model is involved until a run starts.
   and first sight take a new baseline: nothing before it fires. After downtime, catch-up reaches
   back 24 hours; a missed schedule runs once. Activity on an item while this automation's own
   run for it works (its comments, pushes) never fires another run for it.
-- **Bounds:** `limits.maxConcurrent` (default 2, 1 to 10) and `limits.maxPerDay` (default 20,
-  1 to 200, or 0 for no daily cap) per automation; concurrency still applies with no daily cap.
+- **Bounds:** `limits.maxConcurrent` (default 2, 1 to 10, or 0 for no concurrency limit) and `limits.maxPerDay` (default 20,
+  1 to 200, or 0 for no daily cap) per automation; each cap is independent.
   More events wait as pending (at most 100, expiring after 7 days)
   and the first refusal each day posts one notification. Run now on a pending event passes
   both caps. A lasting error (gh missing or signed out, repository not found, no origin, the
