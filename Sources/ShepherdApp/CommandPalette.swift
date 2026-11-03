@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// One row in the command palette: a destination or an action.
 struct PaletteItem: Identifiable, Equatable {
@@ -13,6 +14,25 @@ struct PaletteItem: Identifiable, Equatable {
         case remoteChild(hostID: UUID, agentID: AgentID, child: ChildRun)
         case remoteOperation(hostID: UUID, agentID: AgentID)
         case action(String)
+
+        // Child progress is not palette presentation. Labels/durations/chords are compared by
+        // PaletteItem; the kind adds only activation identity and the rendered status color.
+        // Activation resolves the current run, never this potentially older snapshot.
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs, rhs) {
+            case let (.agent(a), .agent(b)): a == b
+            case let (.space(a), .space(b)): a == b
+            case let (.child(a, x), .child(b, y)):
+                a == b && x.runID == y.runID && x.childIndex == y.childIndex && nativeSubagentState(x) == nativeSubagentState(y)
+            case let (.remoteAgent(ah, a), .remoteAgent(bh, b)): ah == bh && a == b
+            case let (.remoteSpace(a), .remoteSpace(b)): a == b
+            case let (.remoteChild(ah, a, x), .remoteChild(bh, b, y)):
+                ah == bh && a == b && x.runID == y.runID && x.childIndex == y.childIndex && nativeSubagentState(x) == nativeSubagentState(y)
+            case let (.remoteOperation(ah, a), .remoteOperation(bh, b)): ah == bh && a == b
+            case let (.action(a), .action(b)): a == b
+            default: false
+            }
+        }
     }
 
     /// Grouping header in the results list, in display order (docs/design/dialogs-and-palette.md › Command palette:
@@ -76,6 +96,16 @@ struct PaletteItem: Identifiable, Equatable {
     /// Set on agent rows whose *session content* matched the query (the title may not
     /// contain it); shows a dim `…matched text…` snippet.
     var contentSnippet: String?
+
+    /// Results can outlive a progress update. Resolve activation from the owning parent's
+    /// current runs, including its newest payload; a removed run is no longer actionable.
+    func currentChild(in runs: [ChildRun]) -> ChildRun? {
+        switch kind {
+        case .child(_, let child), .remoteChild(_, _, let child):
+            runs.first { $0.runID == child.runID && $0.childIndex == child.childIndex }
+        default: nil
+        }
+    }
 }
 
 /// Pure matching/ordering so palette behavior is testable without views.
@@ -103,6 +133,14 @@ enum PaletteSearch {
     /// section but sections keep their fixed order. An empty query in the All scope lists
     /// only commands, this thread, and subagents.
     static func filter(_ items: [PaletteItem], query: String, scope: PaletteItem.Scope = .all) -> [PaletteItem] {
+        filter(items, query: query, scope: scope, probe: nil)
+    }
+
+    static func filter(_ items: [PaletteItem], query: String, scope: PaletteItem.Scope = .all,
+                       probe: PaletteDerivationProbe?) -> [PaletteItem] {
+        #if DEBUG
+        probe?.searches += 1
+        #endif
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         let scoped = items.filter { scope.includes($0.section) }
         guard !trimmed.isEmpty else {
@@ -110,6 +148,9 @@ enum PaletteSearch {
         }
         var ranked: [(item: PaletteItem, rank: Int)] = []
         for item in scoped {
+            #if DEBUG
+            probe?.rankedItems += 1
+            #endif
             let text = [item.title, item.subtitle].compactMap { $0 }.joined(separator: " ")
             if let r = rank(query: trimmed, in: item.title) ?? rank(query: trimmed, in: text).map({ $0 + 4 }) {
                 ranked.append((item, r))
