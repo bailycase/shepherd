@@ -222,7 +222,7 @@ struct SettingsPreviewTests {
                           check: .oauth(name: "Notion MCP", provider: "Notion", registers: true))
         case "local":
             sheetKind = .local
-            draft = .init(name: "grafana", command: "mcp-grafana --disable-write",
+            draft = .init(name: "grafana", command: "mcp-grafana", args: ["--disable-write"],
                           env: [.init(key: "GRAFANA_URL", value: "https://grafana.acme.internal", secret: false),
                                 .init(key: "GRAFANA_SERVICE_ACCOUNT_TOKEN", value: "", secret: true, stored: true)],
                           resolvedPath: "/opt/homebrew/bin/mcp-grafana", checkedAt: MCPPreviewFixtures.now)
@@ -239,6 +239,20 @@ struct SettingsPreviewTests {
         }
         try await Preview.renderMatrix("mcp-add-\(kind)", size: CGSize(width: kind == "local" ? 760 : 720, height: 620)) {
             AddMCPServerSheet(store: store, initialKind: sheetKind, editing: nil, draft: draft) {}
+        }
+    }
+
+    @Test(arguments: ["empty", "bear", "literal"])
+    func mcpLocalArguments(state: String) async throws {
+        let store = try MCPPreviewFixtures.emptyStore()
+        let command = state == "bear" ? "/Applications/Bear.app/Contents/MacOS/bearcli" : "/tmp/MCP tools/server"
+        let args = state == "empty" ? [] : state == "bear" ? ["mcp-server"] : ["two words", "\"double\" and 'single' quotes", "", #"C:\tools\server"#]
+        try store.save(.local(state, command: command, args: args), secrets: [:], replacing: nil)
+        let entry = try #require(store.entry(state))
+        // The check is fixture data, not executable discovery on the user's Mac.
+        let draft = AddMCPServerSheet.Draft(command: command, checkedAt: MCPPreviewFixtures.now)
+        try await Preview.renderMatrix("mcp-local-arguments-\(state)", size: CGSize(width: 760, height: 900)) {
+            AddMCPServerSheet(store: store, initialKind: .local, editing: entry, draft: draft) {}
         }
     }
 
