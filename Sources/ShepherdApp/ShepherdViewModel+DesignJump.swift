@@ -100,6 +100,16 @@ extension ShepherdViewModel {
         }
     }
 
+    func jumpPictureVisibility(_ item: DesignJumpItem, in design: DesignID, visible: Bool) {
+        switch item.kind {
+        case .board(let path):
+            designRendering.boardPictures.demand(design, path, visible: visible, consumer: "jump")
+        case .design(let id):
+            designRendering.thumbnails.demand(id, visible: visible, consumer: "jump")
+            if visible { Task { await loadDesignThumbnails() } }
+        }
+    }
+
     /// ⏎ on a row: the board picked and in view on this design's canvas, or the design opened.
     func runDesignJump(_ item: DesignJumpItem) {
         guard let model = designJump else { return }

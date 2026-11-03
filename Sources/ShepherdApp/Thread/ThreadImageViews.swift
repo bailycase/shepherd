@@ -74,9 +74,18 @@ final class ThreadImageLoad {
         guard let images else { state = .unavailable; return }
         task = Task { [weak self] in
             let outcome = await images.image(self?.ref ?? NativeImageRef(id: "", mimeType: ""))
+            guard !Task.isCancelled, self != nil else { return }
+            // Decoded off the main actor; a row that went away (cancelled) never lands it.
+            var thumbnail: (image: CGImage, size: NSSize)?
+            if case .image(let data) = outcome {
+                let pixels = Self.thumbnailPixels
+                thumbnail = await Task.detached(priority: .userInitiated) {
+                    ViewerImage.decodedThumbnail(data, longestSide: pixels)
+                }.value
+            }
             guard !Task.isCancelled, let self else { return }
             self.state = switch outcome {
-            case .image(let data): ViewerImage.thumbnail(data, longestSide: Self.thumbnailPixels).map { State.picture(data, $0) } ?? .unavailable
+            case .image(let data): thumbnail.map { State.picture(data, NSImage(cgImage: $0.image, size: $0.size)) } ?? .unavailable
             case .unavailable: .unavailable
             case .failed(let why): .failed(why)
             // Stopped by the thread, not by this view (which would have returned above): the image may still be there.

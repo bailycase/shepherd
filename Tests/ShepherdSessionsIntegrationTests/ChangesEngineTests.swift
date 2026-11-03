@@ -130,6 +130,24 @@ extension ChangesList {
 
 @Suite("Changes engine", .integrationTimeLimit)
 struct ChangesEngineTests {
+    @Test func cachedLargeDiffKeepsDisplayedContentAndIncompleteFlag() async throws {
+        let repo = try ChangesRepo(files: ["large.txt": "before\n"])
+        let h = try ChangesHarness(repo: repo)
+        defer {
+            try? FileManager.default.removeItem(at: repo.url)
+            try? FileManager.default.removeItem(at: h.directory)
+        }
+        try repo.write("large.txt", (0..<(ChangesLimits.fileLines + 10)).map { "line \($0)\n" }.joined())
+        let before = try repo.state()
+        let list = try await h.list(.uncommitted)
+        let first = try await h.service.file(agentID: h.agent, revision: list.revision, path: "large.txt", options: .init(fullFiles: true))
+        let cached = try await h.service.file(agentID: h.agent, revision: list.revision, path: "large.txt", options: .init(fullFiles: true))
+        #expect(first.truncated && cached.truncated)
+        #expect(first == cached)
+        #expect(cached.file.hunks.reduce(0) { $0 + $1.lines.count } == ChangesLimits.fileLines)
+        try repo.expectUnchanged(since: before)
+    }
+
     @Test(arguments: ["config", "hook", "mode", "link"])
     func preservationSnapshotDetectsMetadataAndFilesystemChanges(change: String) throws {
         let repo = try ChangesRepo()
@@ -340,6 +358,7 @@ struct ChangesEngineTests {
         #expect(error?.code == ChangesError.notARepository)
     }
 
+    #if DEBUG
     /// A file's hunks are cached by the objects they came from: asking again runs no git, and a
     /// list of an unchanged working tree runs only its snapshot, not the diff.
     @Test func repeatedRequestsForUnchangedObjectsRunNoDiffs() async throws {
@@ -365,6 +384,7 @@ struct ChangesEngineTests {
         #expect(second.revision == list.revision)
         #expect(runs() - relist == snapshotRuns + 1, "the snapshot and HEAD, not the diff")
     }
+    #endif
 
     /// Untracked files too big to hash stay out of snapshots (and out of `.git/objects`).
     @Test func aHugeUntrackedFileStaysOutOfTheSnapshot() async throws {

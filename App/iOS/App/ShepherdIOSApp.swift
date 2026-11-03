@@ -17,6 +17,8 @@ struct ShepherdIOSApp: App {
         WindowGroup(for: MobileWindowSeed.self) { $seed in
             MobileWindowRoot(app: app, seed: seed)
                 .onAppear {
+                    // Diagnostics started in `init`; the launch is usable once a window shows.
+                    app.readiness.windowAppeared()
                     // Configure the delegate once the first window appears — the app's
                     // state is ready and windows can receive routes.
                     if appDelegate.pushRouter == nil {

@@ -412,6 +412,58 @@ public struct SHListCard<Content: View>: View {
     }
 }
 
+/// `SHListCard` for a list with no cap (Home's Pinned): the same card drawn as one segment per
+/// row of a lazy stack, so only the rows on screen are built.
+public struct SHLazyListCard<Data: RandomAccessCollection, Row: View>: View where Data.Element: Identifiable {
+    let data: Data
+    @ViewBuilder let row: (Data.Element) -> Row
+
+    public init(_ data: Data, @ViewBuilder row: @escaping (Data.Element) -> Row) {
+        self.data = data
+        self.row = row
+    }
+
+    public var body: some View {
+        let first = data.first?.id
+        let last = data.last?.id
+        LazyVStack(spacing: 0) {
+            ForEach(data) { element in
+                SHListCardSegment(first: element.id == first, last: element.id == last) { row(element) }
+            }
+        }
+    }
+}
+
+/// One row's share of a list card: its corners where it ends the card, the rule above it
+/// otherwise, and the card's border along its sides.
+private struct SHListCardSegment<Content: View>: View {
+    let first: Bool
+    let last: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("listCard.segment")
+        let radius = SHListMetrics.cardRadius
+        let shape = UnevenRoundedRectangle(topLeadingRadius: first ? radius : 0, bottomLeadingRadius: last ? radius : 0,
+                                           bottomTrailingRadius: last ? radius : 0, topTrailingRadius: first ? radius : 0)
+        VStack(spacing: 0) {
+            if !first { SHHairline() }
+            content()
+        }
+        .background(Color.sh.bgRaised, in: shape)
+        .clipShape(shape)
+        // The whole card's border, run past the ends this segment doesn't own and cut to it.
+        .overlay {
+            Color.clear
+                .shBorder(.sh.lineSubtle, radius: radius)
+                .padding(.top, first ? 0 : -radius)
+                .padding(.bottom, last ? 0 : -radius)
+                .clipped()
+                .allowsHitTesting(false)
+        }
+    }
+}
+
 /// A Needs you card (MobileInbox, iPadOverview): where it comes from and when, the thread, the
 /// question, and the answers that fit in place. Its origin is a glyph in `lanternText` (a branch
 /// for a subagent, a bolt for an automation run), or, for a thread (`symbol` nil), the glowing

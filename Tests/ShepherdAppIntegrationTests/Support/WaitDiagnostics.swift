@@ -35,7 +35,9 @@ extension OffscreenWindow {
         }
         let origin = window.frame.origin
         func box(_ rect: CGRect) -> String {
-            "\(Int(rect.minX - origin.x)),\(Int(rect.minY - origin.y)) \(Int(rect.width))x\(Int(rect.height))"
+            // AX may return a null/infinite frame for an off-screen element. Reporting a timeout must not trap.
+            String(format: "%.0f,%.0f %.0fx%.0f", Double(rect.minX - origin.x), Double(rect.minY - origin.y),
+                   Double(rect.width), Double(rect.height))
         }
         var lines = ["DIAGNOSTIC (failure only, synthetic fixture)"]
         let os = ProcessInfo.processInfo.operatingSystemVersion

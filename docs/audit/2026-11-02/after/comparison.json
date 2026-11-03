@@ -1,0 +1,1715 @@
+{
+  "store.tailRefresh.50turns": {
+    "samples": [
+      0.110792,
+      0.076333,
+      0.075542
+    ],
+    "median": 0.076333,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.325625,
+        0.342792,
+        0.222708
+      ],
+      "unit": "ms",
+      "notes": [
+        "historyRows=100 displayedRows=100 warmup=1 noView=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.325625,
+      "minimum": 0.222708,
+      "maximum": 0.342792
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "store.tailRefresh.500turns": {
+    "samples": [
+      0.783916,
+      0.399208,
+      0.403583
+    ],
+    "median": 0.403583,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        2.452666,
+        2.316166,
+        2.165333
+      ],
+      "unit": "ms",
+      "notes": [
+        "historyRows=1000 displayedRows=1000 warmup=1 noView=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 2.316166,
+      "minimum": 2.165333,
+      "maximum": 2.452666
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "store.tailRefresh.2500turns": {
+    "samples": [
+      1.825792,
+      1.862875,
+      1.944667
+    ],
+    "median": 1.862875,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        10.810583,
+        10.952625,
+        9.849708
+      ],
+      "unit": "ms",
+      "notes": [
+        "historyRows=5000 displayedRows=5000 warmup=1 noView=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 10.810583,
+      "minimum": 9.849708,
+      "maximum": 10.952625
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "state.encode.30agents": {
+    "samples": [
+      0.187625,
+      0.191666,
+      0.188208
+    ],
+    "median": 0.188208,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.229625,
+        0.213875,
+        0.228667
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=14546 warmup=1"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.228667,
+      "minimum": 0.213875,
+      "maximum": 0.229625
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "state.decode.30agents": {
+    "samples": [
+      0.185541,
+      0.188541,
+      0.191291
+    ],
+    "median": 0.188541,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.220584,
+        0.233833,
+        0.224166
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=14546 warmup=1"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.224166,
+      "minimum": 0.220584,
+      "maximum": 0.233833
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "state.encode.300agents": {
+    "samples": [
+      1.835792,
+      1.930125,
+      1.8925
+    ],
+    "median": 1.8925,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        1.966208,
+        1.98,
+        1.970042
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=144006 warmup=1"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 1.970042,
+      "minimum": 1.966208,
+      "maximum": 1.98
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "state.decode.300agents": {
+    "samples": [
+      1.817708,
+      1.875667,
+      1.885708
+    ],
+    "median": 1.875667,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        1.793291,
+        1.798333,
+        1.784416
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=144006 warmup=1"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 1.793291,
+      "minimum": 1.784416,
+      "maximum": 1.798333
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "state.encode.3000agents": {
+    "samples": [
+      18.469,
+      18.775875,
+      18.566291
+    ],
+    "median": 18.566291,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        20.457958,
+        19.072084,
+        19.05725
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=1444006 warmup=1"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 19.072084,
+      "minimum": 19.05725,
+      "maximum": 20.457958
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "state.decode.3000agents": {
+    "samples": [
+      17.961833,
+      17.92125,
+      17.815
+    ],
+    "median": 17.92125,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        18.195834,
+        18.139875,
+        17.884458
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=1444006 warmup=1"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 18.139875,
+      "minimum": 17.884458,
+      "maximum": 18.195834
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "framing.65536bytes.1024chunk": {
+    "samples": [
+      1.168458,
+      1.201667,
+      1.205125
+    ],
+    "median": 1.201667,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        1.247292,
+        1.207375,
+        1.198416
+      ],
+      "unit": "ms",
+      "notes": [
+        "framesPerSample=100 warmup=1 framingOnly=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 1.207375,
+      "minimum": 1.198416,
+      "maximum": 1.247292
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "framing.65536bytes.65536chunk": {
+    "samples": [
+      1.212166,
+      1.259083,
+      1.262375
+    ],
+    "median": 1.259083,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        1.308333,
+        1.27825,
+        1.299875
+      ],
+      "unit": "ms",
+      "notes": [
+        "framesPerSample=100 warmup=1 framingOnly=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 1.299875,
+      "minimum": 1.27825,
+      "maximum": 1.308333
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "framing.1048576bytes.1024chunk": {
+    "samples": [
+      12.414166,
+      12.411625,
+      12.548292
+    ],
+    "median": 12.414166,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        12.889875,
+        12.641292,
+        13.075041
+      ],
+      "unit": "ms",
+      "notes": [
+        "framesPerSample=100 warmup=1 framingOnly=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 12.889875,
+      "minimum": 12.641292,
+      "maximum": 13.075041
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "framing.1048576bytes.65536chunk": {
+    "samples": [
+      11.089917,
+      11.019583,
+      10.832875
+    ],
+    "median": 11.019583,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        11.885291,
+        11.174917,
+        11.766375
+      ],
+      "unit": "ms",
+      "notes": [
+        "framesPerSample=100 warmup=1 framingOnly=true"
+      ],
+      "sources": [
+        "extra-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 11.766375,
+      "minimum": 11.174917,
+      "maximum": 11.885291
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.1.1MiB.decode": {
+    "samples": [
+      6.641,
+      6.724,
+      6.709
+    ],
+    "median": 6.709,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        8.15075,
+        7.595709,
+        7.383625
+      ],
+      "unit": "ms",
+      "notes": [
+        "messages=240"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 7.595709,
+      "minimum": 7.383625,
+      "maximum": 8.15075
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.1.1MiB.project": {
+    "samples": [
+      0.631,
+      0.629,
+      0.635
+    ],
+    "median": 0.631,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.961,
+        0.698709,
+        0.674416
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.698709,
+      "minimum": 0.674416,
+      "maximum": 0.961
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.1.1MiB.release": {
+    "samples": [
+      0.024,
+      0.025,
+      0.024
+    ],
+    "median": 0.024,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.035291,
+        0.02825,
+        0.026959
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.02825,
+      "minimum": 0.026959,
+      "maximum": 0.035291
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.1.1MiB.total": {
+    "samples": [
+      7.273,
+      7.353,
+      7.344
+    ],
+    "median": 7.344,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        9.11175,
+        8.294418,
+        8.058041000000001
+      ],
+      "unit": "ms",
+      "notes": [
+        "; paired decode+projection sums (original BENCH total is sum of medians)"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 8.294418,
+      "minimum": 8.058041000000001,
+      "maximum": 9.11175
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; NOT directly comparable: baseline paired sums vs current sum-of-medians"
+  },
+  "history.4.3MiB.decode": {
+    "samples": [
+      25.577,
+      26.236,
+      26.455
+    ],
+    "median": 26.236,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        28.900458,
+        28.416167,
+        28.626792
+      ],
+      "unit": "ms",
+      "notes": [
+        "messages=944"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 28.626792,
+      "minimum": 28.416167,
+      "maximum": 28.900458
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.4.3MiB.project": {
+    "samples": [
+      2.556,
+      2.567,
+      2.593
+    ],
+    "median": 2.567,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        3.013583,
+        2.903375,
+        2.76025
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 2.903375,
+      "minimum": 2.76025,
+      "maximum": 3.013583
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.4.3MiB.release": {
+    "samples": [
+      0.093,
+      0.097,
+      0.095
+    ],
+    "median": 0.095,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.139834,
+        0.120792,
+        0.119292
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.120792,
+      "minimum": 0.119292,
+      "maximum": 0.139834
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.4.3MiB.total": {
+    "samples": [
+      28.133,
+      28.803,
+      29.048
+    ],
+    "median": 28.803,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        31.914041,
+        31.319542000000002,
+        31.387041999999997
+      ],
+      "unit": "ms",
+      "notes": [
+        "; paired decode+projection sums (original BENCH total is sum of medians)"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 31.387041999999997,
+      "minimum": 31.319542000000002,
+      "maximum": 31.914041
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; NOT directly comparable: baseline paired sums vs current sum-of-medians"
+  },
+  "history.12.8MiB.decode": {
+    "samples": [
+      76.768,
+      78.808,
+      78.184
+    ],
+    "median": 78.184,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        84.369958,
+        85.120083,
+        85.544125
+      ],
+      "unit": "ms",
+      "notes": [
+        "messages=2816"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 85.120083,
+      "minimum": 84.369958,
+      "maximum": 85.544125
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.12.8MiB.project": {
+    "samples": [
+      7.968,
+      8.128,
+      8.033
+    ],
+    "median": 8.033,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        9.105041,
+        8.685459,
+        8.697084
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 8.697084,
+      "minimum": 8.685459,
+      "maximum": 9.105041
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.12.8MiB.release": {
+    "samples": [
+      0.32,
+      0.352,
+      0.316
+    ],
+    "median": 0.32,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.421583,
+        0.506334,
+        0.425875
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.425875,
+      "minimum": 0.421583,
+      "maximum": 0.506334
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "history.12.8MiB.total": {
+    "samples": [
+      84.735,
+      86.936,
+      86.218
+    ],
+    "median": 86.218,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        93.474999,
+        93.80554199999999,
+        94.241209
+      ],
+      "unit": "ms",
+      "notes": [
+        "; paired decode+projection sums (original BENCH total is sum of medians)"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 93.80554199999999,
+      "minimum": 93.474999,
+      "maximum": 94.241209
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; NOT directly comparable: baseline paired sums vs current sum-of-medians"
+  },
+  "project.output16384bytes": {
+    "samples": [
+      0.197,
+      0.22,
+      0.229
+    ],
+    "median": 0.22,
+    "unit": "us/row",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.25542,
+        0.2225,
+        0.22291999999999998
+      ],
+      "unit": "us/row",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.22291999999999998,
+      "minimum": 0.2225,
+      "maximum": 0.25542
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "project.output1048576bytes": {
+    "samples": [
+      0.566,
+      0.583,
+      0.591
+    ],
+    "median": 0.583,
+    "unit": "us/row",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.70375,
+        0.67083,
+        0.58209
+      ],
+      "unit": "us/row",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.67083,
+      "minimum": 0.58209,
+      "maximum": 0.70375
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "project.output12582912bytes": {
+    "samples": [
+      0.586,
+      0.618,
+      0.586
+    ],
+    "median": 0.586,
+    "unit": "us/row",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.85,
+        0.56,
+        0.56875
+      ],
+      "unit": "us/row",
+      "notes": [],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 0.56875,
+      "minimum": 0.56,
+      "maximum": 0.85
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "thinking.1000": {
+    "samples": [
+      5.22,
+      5.032,
+      5.242
+    ],
+    "median": 5.22,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        5.533667,
+        5.5255,
+        5.549041
+      ],
+      "unit": "ms",
+      "notes": [
+        "77000 streamed bytes"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 5.533667,
+      "minimum": 5.5255,
+      "maximum": 5.549041
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "thinking.2000": {
+    "samples": [
+      12.01,
+      11.825,
+      12.274
+    ],
+    "median": 12.01,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        13.327,
+        13.02025,
+        14.061459
+      ],
+      "unit": "ms",
+      "notes": [
+        "154000 streamed bytes"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 13.327,
+      "minimum": 13.02025,
+      "maximum": 14.061459
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "thinking.4000": {
+    "samples": [
+      27.32,
+      26.58,
+      27.443
+    ],
+    "median": 27.32,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        31.552875,
+        30.377709,
+        28.981166
+      ],
+      "unit": "ms",
+      "notes": [
+        "308000 streamed bytes"
+      ],
+      "sources": [
+        "reduced-release-data/full.log"
+      ],
+      "n": 3,
+      "median": 30.377709,
+      "minimum": 28.981166,
+      "maximum": 31.552875
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "stream.decodeDelta": {
+    "samples": [
+      3.014,
+      3.183,
+      3.137
+    ],
+    "median": 3.137,
+    "unit": "us/event",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        3.4401415999999996,
+        3.2951416000000004,
+        3.3265332
+      ],
+      "unit": "us/event",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 3,
+      "median": 3.3265332,
+      "minimum": 3.2951416000000004,
+      "maximum": 3.4401415999999996
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "stream.handleDelta.tools0": {
+    "samples": [
+      2.198,
+      2.2,
+      2.263
+    ],
+    "median": 2.2,
+    "unit": "us/event",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        2.441875,
+        2.4024165,
+        2.4452915
+      ],
+      "unit": "us/event",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 3,
+      "median": 2.441875,
+      "minimum": 2.4024165,
+      "maximum": 2.4452915
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "stream.handleDelta.tools10": {
+    "samples": [
+      4.653,
+      4.708,
+      4.75
+    ],
+    "median": 4.708,
+    "unit": "us/event",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        5.2456665,
+        5.0996875,
+        4.9508545
+      ],
+      "unit": "us/event",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 3,
+      "median": 5.0996875,
+      "minimum": 4.9508545,
+      "maximum": 5.2456665
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "stream.handleDelta.tools50": {
+    "samples": [
+      14.297,
+      14.178,
+      14.817
+    ],
+    "median": 14.297,
+    "unit": "us/event",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        15.2003955,
+        15.635271,
+        15.4630205
+      ],
+      "unit": "us/event",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 3,
+      "median": 15.4630205,
+      "minimum": 15.2003955,
+      "maximum": 15.635271
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "snapshot.fresh.roundTrip": {
+    "samples": [
+      0.05,
+      0.048,
+      0.049
+    ],
+    "median": 0.049,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.095375,
+        0.064583,
+        0.060625
+      ],
+      "unit": "ms",
+      "notes": [
+        "bytes=182504 messages=50"
+      ],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 3,
+      "median": 0.064583,
+      "minimum": 0.060625,
+      "maximum": 0.095375
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; cached ready revision, not uncached fresh-history cost"
+  },
+  "snapshot.unchanged.roundTrip": {
+    "samples": [
+      0.016,
+      0.016,
+      0.016
+    ],
+    "median": 0.016,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.031042,
+        0.019708,
+        0.039458
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 3,
+      "median": 0.031042,
+      "minimum": 0.019708,
+      "maximum": 0.039458
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "status.30agents.cpu": {
+    "samples": [
+      0.028,
+      0.032,
+      0.03
+    ],
+    "median": 0.03,
+    "unit": "ms/report",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.027,
+        0.027,
+        0.026
+      ],
+      "unit": "ms/report",
+      "notes": [
+        "state.json rewritten: false"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.027,
+      "minimum": 0.026,
+      "maximum": 0.027
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "status.100agents.cpu": {
+    "samples": [
+      0.093,
+      0.095,
+      0.095
+    ],
+    "median": 0.095,
+    "unit": "ms/report",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.082,
+        0.081,
+        0.081
+      ],
+      "unit": "ms/report",
+      "notes": [
+        "state.json rewritten: false"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.081,
+      "minimum": 0.081,
+      "maximum": 0.082
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "status.300agents.cpu": {
+    "samples": [
+      0.501,
+      0.479,
+      0.496
+    ],
+    "median": 0.496,
+    "unit": "ms/report",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.514,
+        0.511,
+        0.507
+      ],
+      "unit": "ms/report",
+      "notes": [
+        "state.json rewritten: false"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.511,
+      "minimum": 0.507,
+      "maximum": 0.514
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "queue.reload4MiB.worst": {
+    "samples": [
+      0.278,
+      0.834,
+      0.323
+    ],
+    "median": 0.323,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        2.643
+      ],
+      "unit": "ms",
+      "notes": [
+        "over16ms=0 of 122 probes, p99=0.9ms"
+      ],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 1,
+      "median": 2.643,
+      "minimum": 2.643,
+      "maximum": 2.643
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "queue.reload12MiB.worst": {
+    "samples": [
+      0.803,
+      0.811,
+      0.805
+    ],
+    "median": 0.805,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        1.2
+      ],
+      "unit": "ms",
+      "notes": [
+        "over16ms=0 of 242 probes, p99=0.9ms"
+      ],
+      "sources": [
+        "release-server-1/full.log"
+      ],
+      "n": 1,
+      "median": 1.2,
+      "minimum": 1.2,
+      "maximum": 1.2
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ"
+  },
+  "relaunch.8x4MiB.firstReady": {
+    "samples": [
+      90.449,
+      89.181,
+      91.645
+    ],
+    "median": 90.449,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        101.903,
+        141.913,
+        144.384
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 141.913,
+      "minimum": 101.903,
+      "maximum": 144.384
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.8x4MiB.allReady": {
+    "samples": [
+      95.482,
+      94.224,
+      96.793
+    ],
+    "median": 95.482,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        108.901,
+        147.633,
+        150.376
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 147.633,
+      "minimum": 108.901,
+      "maximum": 150.376
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.8x4MiB.queueWorst": {
+    "samples": [
+      0.592,
+      0.982,
+      0.856
+    ],
+    "median": 0.856,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.985,
+        0.568,
+        0.862
+      ],
+      "unit": "ms",
+      "notes": [
+        "over16ms=0 of 59",
+        "over16ms=0 of 80",
+        "over16ms=0 of 81"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.862,
+      "minimum": 0.568,
+      "maximum": 0.985
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.8x4MiB.stateReadWorst": {
+    "samples": [
+      0.022,
+      0.005,
+      0.005
+    ],
+    "median": 0.005,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.028,
+        0.012,
+        0.006
+      ],
+      "unit": "ms",
+      "notes": [
+        "total blocked 0ms over 45 reads",
+        "total blocked 0ms over 61 reads"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.012,
+      "minimum": 0.006,
+      "maximum": 0.028
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.8x4MiB.connectsRefused": {
+    "samples": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "median": 0.0,
+    "unit": "connects",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "unit": "connects",
+      "notes": [
+        "of 40",
+        "INVALID success-rate inference: sampled before detached connector finishes; raw values retained only."
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "excluded_from_inference": true
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; NOT success-rate evidence (unfinished connector); Python stub, not real app/engine launch"
+  },
+  "relaunch.30x4MiB.firstReady": {
+    "samples": [
+      174.714,
+      146.157,
+      165.191
+    ],
+    "median": 165.191,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        174.11,
+        215.215,
+        167.676
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 174.11,
+      "minimum": 167.676,
+      "maximum": 215.215
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.30x4MiB.allReady": {
+    "samples": [
+      234.204,
+      235.172,
+      235.625
+    ],
+    "median": 235.172,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        276.676,
+        265.294,
+        273.333
+      ],
+      "unit": "ms",
+      "notes": [],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 273.333,
+      "minimum": 265.294,
+      "maximum": 276.676
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.30x4MiB.queueWorst": {
+    "samples": [
+      2.921,
+      6.709,
+      3.254
+    ],
+    "median": 3.254,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        5.656,
+        5.155,
+        3.955
+      ],
+      "unit": "ms",
+      "notes": [
+        "over16ms=0 of 116",
+        "over16ms=0 of 112",
+        "over16ms=0 of 126"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 5.155,
+      "minimum": 3.955,
+      "maximum": 5.656
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.30x4MiB.stateReadWorst": {
+    "samples": [
+      0.003,
+      0.002,
+      0.003
+    ],
+    "median": 0.003,
+    "unit": "ms",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.003,
+        0.213,
+        0.083
+      ],
+      "unit": "ms",
+      "notes": [
+        "total blocked 0ms over 96 reads",
+        "total blocked 0ms over 94 reads",
+        "total blocked 0ms over 102 reads"
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.083,
+      "minimum": 0.003,
+      "maximum": 0.213
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; Python stub, not real app/engine launch"
+  },
+  "relaunch.30x4MiB.connectsRefused": {
+    "samples": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "median": 0.0,
+    "unit": "connects",
+    "sources": [
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-1/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-2/full.log",
+      "/tmp/shepherd-perf-fixes/final-benchmarks/datapath-3/full.log"
+    ],
+    "baseline": {
+      "samples": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "unit": "connects",
+      "notes": [
+        "of 150",
+        "INVALID success-rate inference: sampled before detached connector finishes; raw values retained only."
+      ],
+      "sources": [
+        "release-server-1/full.log",
+        "release-server-2/full.log",
+        "release-server-3/full.log"
+      ],
+      "n": 3,
+      "median": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "excluded_from_inference": true
+    },
+    "caveat": "3 run summaries, not pooled raw workload samples; baseline repeat counts differ; NOT success-rate evidence (unfinished connector); Python stub, not real app/engine launch"
+  }
+}

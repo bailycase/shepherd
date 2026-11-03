@@ -144,36 +144,51 @@ struct OutputDeliveryTests {
         let exits = Locked<[Bool]>([])
         let lines = 20_000
         let finalLine = Data("line \(lines) ".utf8)
-        h.server.onOutput = { _, data in received.withValue { $0.append(data) } }
+        let completion = Locked<(@Sendable () -> Void)?>(nil)
+        h.server.onOutputConsumed = { _, data, _, finish in
+            received.withValue { $0.append(data) }
+            if received.current.range(of: finalLine) != nil { completion.withValue { $0 = finish } }
+            else { finish() }
+        }
+        defer { completion.current?() }
         h.server.onSessionExited = { _, _ in exits.withValue { $0.append(received.current.range(of: finalLine) != nil) } }
         let info = try await h.shell("stty -echo -opost; IFS= read -r _; \(Self.numberedLines(lines)); exit 0")
         _ = try await h.server.attachSnapshot(sessionID: info.id, replay: false)
         h.server.write(sessionID: info.id, data: Data("go\n".utf8))
 
+        try await eventually("the final bytes at the parser", timeout: .seconds(30)) { completion.current != nil }
+        try await h.waitForExit(info.id)
+        await drainMainQueue()
+        #expect(exits.current.isEmpty, "exit must wait for consumption, not merely main dispatch")
+        completion.current?()
         try await eventually("the exit callback", timeout: .seconds(30)) { !exits.current.isEmpty }
         await drainMainQueue()
         #expect(exits.current == [true], "exactly one exit, after the final line was delivered")
     }
 
     /// A stalled renderer must stop the PTY before the child finishes; released, every byte
-    /// still arrives in order. The stall blocks the main queue, so it runs in its own process
-    /// where no other test waits on that queue.
+    /// still arrives in order. Main remains free: it is the downstream parser completion,
+    /// not callback dispatch, that is deliberately held.
     @Test func aStalledRendererBackpressuresTheChildWithoutLosingBytes() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors {
                 let h = try ScratchServer()
                 defer { h.stop() }
-                let release = DispatchSemaphore(value: 0)
-                defer { release.signal() }
+                let completion = Locked<(@Sendable () -> Void)?>(nil)
+                func release() {
+                    let finish = completion.withValue { value in let saved = value; value = nil; return saved }
+                    finish?()
+                }
+                defer { release() }
                 let received = Locked(Data())
                 let stalled = Locked(false)
                 let payloadCount = 6 * 1024 * 1024
-                h.server.onOutput = { _, data in
+                h.server.onOutputConsumed = { _, data, _, finish in
                     received.withValue { $0.append(data) }
                     if !stalled.current, data.range(of: Data("READY".utf8)) != nil {
+                        completion.withValue { $0 = finish }
                         stalled.withValue { $0 = true }
-                        release.wait()
-                    }
+                    } else { finish() }
                 }
                 let info = try await h.shell(
                     "stty raw -echo -opost; IFS= read -r _; printf READY; awk 'BEGIN{for(i=1;i<=2000000;i++)print i}' | head -c \(payloadCount); printf END; sleep 30")
@@ -193,7 +208,7 @@ struct OutputDeliveryTests {
                     return unchanged >= 5
                 }
                 #expect(!(await h.screen(info.id)).contains("END"), "the child reached its tail while the renderer was stalled")
-                release.signal()
+                release()
 
                 var payload = Data(capacity: payloadCount)
                 var n = 1

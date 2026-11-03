@@ -72,6 +72,11 @@ final class TerminalSessionStore {
         struct BufferedOutput {
             let data: Data
             let sequence: UInt64
+            var completion: (@Sendable () -> Void)? = nil
+        }
+
+        deinit {
+            for chunk in buffered { chunk.completion?() }
         }
 
         /// Output that races the attach replay. Sequence watermarks decide
@@ -135,12 +140,12 @@ final class TerminalSessionStore {
             for waiter in waiters { waiter.resume() }
         }
 
-        func receive(_ data: Data, sequence: UInt64) {
-            guard attachRequested else { return }
+        func receive(_ data: Data, sequence: UInt64, completion: @escaping @Sendable () -> Void) {
+            guard attachRequested else { completion(); return }
             if activeAttachAttempt == nil {
-                terminal.feed(data)
+                terminal.feed(data, completion: completion)
             } else {
-                buffered.append(BufferedOutput(data: data, sequence: sequence))
+                buffered.append(BufferedOutput(data: data, sequence: sequence, completion: completion))
             }
         }
 
@@ -164,11 +169,12 @@ final class TerminalSessionStore {
             guard activeAttachAttempt == attempt,
                   terminal.replaceWithReplay(replay, generation: generation) else { return false }
             let fresh = Self.output(after: watermark, from: buffered)
+            for chunk in buffered where chunk.sequence <= watermark { chunk.completion?() }
             buffered.removeAll()
             activeAttachAttempt = nil
             phase = .live
             for chunk in fresh {
-                terminal.feed(chunk.data)
+                terminal.feed(chunk.data, completion: chunk.completion)
             }
             return true
         }
@@ -176,6 +182,7 @@ final class TerminalSessionStore {
         fileprivate func stopOutput() {
             attachRequested = false
             activeAttachAttempt = nil
+            for chunk in buffered { chunk.completion?() }
             buffered.removeAll()
         }
 
@@ -277,8 +284,9 @@ final class TerminalSessionStore {
         server.onNativeThreadDemand = { [weak self] agentID in
             self?.activateAgent(agentID)
         }
-        server.onSequencedOutput = { [weak self] sessionID, data, sequence in
-            self?.session(forSessionID: sessionID)?.receive(data, sequence: sequence)
+        server.onOutputConsumed = { [weak self] sessionID, data, sequence, completion in
+            guard let pane = self?.session(forSessionID: sessionID) else { completion(); return }
+            pane.receive(data, sequence: sequence, completion: completion)
         }
         server.onSessionExited = { [weak self] sessionID, exit in
             guard let self, !self.handledExits.contains(sessionID) else { return }

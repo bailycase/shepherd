@@ -133,15 +133,44 @@ private extension View {
 }
 
 /// The detail column's root: the selected thread with its side pane, or the overview.
+///
+/// Switching threads is a visibility flip, not a remount: the `retainedDetails` threads shown
+/// most recently stay mounted, one screen per thread (its own identity, never reused for
+/// another), and only the selected one is active (`threadDetailActive`). A hidden one is
+/// transparent, untouchable, out of accessibility, contributes no toolbar, and runs no poll,
+/// terminal watch or side pane; its turns, scroll and layout wait for it to be shown again.
 private struct PadDetailRoot: View {
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileHosts.self) private var hosts
+    /// Threads shown here, most recent last.
+    @State private var mounted: [AgentRef] = []
+
+    /// How many thread screens stay mounted, the selected one among them.
+    static let retainedDetails = 3
 
     var body: some View {
-        if let ref = navigator.padSelection {
-            // One screen per thread: switching agents is a new identity, not a reused view.
-            ThreadWithSidePane(ref: ref).id(ref)
-        } else {
-            PadOverview()
+        let selected = navigator.padSelection
+        // A thread its host forgot or no longer has is not kept: it would ask for a store again.
+        let pages = (mounted.filter { $0 != selected && hosts.agent($0) != nil } + (selected.map { [$0] } ?? []))
+        ZStack {
+            // The selected one last, so its title and toolbar are the ones the bar takes.
+            ForEach(pages, id: \.self) { ref in
+                let active = ref == selected
+                ThreadWithSidePane(ref: ref)
+                    .environment(\.threadDetailActive, active)
+                    .opacity(active ? 1 : 0)
+                    .allowsHitTesting(active)
+                    .accessibilityHidden(!active)
+                    .disabled(!active)
+            }
+            if selected == nil { PadOverview() }
+        }
+        .onChange(of: selected, initial: true) { _, ref in
+            guard let ref else { return }
+            MobileSignposts.threadSwitch(retained: mounted.contains(ref))
+            mounted.removeAll { $0 == ref }
+            mounted.append(ref)
+            if mounted.count > Self.retainedDetails { mounted.removeFirst(mounted.count - Self.retainedDetails) }
         }
     }
 }

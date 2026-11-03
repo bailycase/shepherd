@@ -103,15 +103,13 @@ private struct HomeSections: View {
             }
         }
         if !groups.pinned.isEmpty {
+            // Pins have no cap and no screen of their own, so every one stays here; the card is
+            // lazy, building only the rows on screen.
             section("Pinned", count: groups.pinned.count) {
-                SHListCard {
-                    ForEach(groups.pinned) { pinned in
-                        VStack(spacing: 0) {
-                            switch pinned {
-                            case .thread(let row): threadRow(row)
-                            case .attention(let item): attentionRow(item)
-                            }
-                        }
+                SHLazyListCard(groups.pinned) { pinned in
+                    switch pinned {
+                    case .thread(let row): threadRow(row)
+                    case .attention(let item): attentionRow(item)
                     }
                 }
             }

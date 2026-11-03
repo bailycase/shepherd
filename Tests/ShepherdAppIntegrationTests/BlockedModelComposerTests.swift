@@ -43,7 +43,10 @@ struct BlockedModelComposerTests {
         }, listModels: { ModelCatalog(ModelCatalogFixture.entries) }, retainedInput: input))
         try await eventuallyOnMain("composer ready") { window.layout(); return store.ready && input.available }
         try window.press("Send")
-        try await eventuallyOnMain("model rejection displayed") { window.layout(); return store.modelUnavailable && !store.busy }
+        // Refused before anything was typed or added: the message comes straight back into the composer.
+        try await eventuallyOnMain("model rejection displayed") {
+            window.layout(); return store.modelUnavailable && !store.busy && store.submissions.isEmpty
+        }
         #expect(store.draft == "Please update the design")
         #expect(store.attachedFiles.map(\.name) == ["notes.md"])
         #expect(input.attachments.images == [image.image])

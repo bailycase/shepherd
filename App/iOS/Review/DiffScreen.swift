@@ -84,6 +84,7 @@ struct DiffScreen: View {
             }
         }
         .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
+        .reviewViewer(ref)
         // The file's hunks come when it is read, and the next file's are fetched meanwhile.
         .task(id: entry?.id) {
             guard let entry else { return }

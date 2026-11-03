@@ -84,11 +84,27 @@ extension ShepherdViewModel {
         state.designs.filter { !$0.buildsSystem }.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)" }
     }
 
-    /// Reads each design's first board for its card.
+    /// Only visible consumers request snapshots; catalog changes refresh that demand, not every design.
     func loadDesignThumbnails() async {
-        for design in state.designs where !design.buildsSystem {
-            guard let snapshot = try? await server.designSnapshot(design.id) else { continue }
-            designRendering.thumbnails.update(design.id, snapshot: snapshot)
+        for id in designRendering.thumbnails.demandedIDs {
+            guard !Task.isCancelled, let design = design(id), !design.buildsSystem,
+                  let snapshot = try? await server.designSnapshot(id), self.design(id) != nil else { continue }
+            designRendering.thumbnails.update(id, snapshot: snapshot)
+        }
+    }
+
+    func designThumbnailVisibility(_ target: DesignTarget, visible: Bool) {
+        switch target {
+        case .local(let id):
+            designRendering.thumbnails.demand(id, visible: visible)
+            if visible {
+                Task {
+                    guard let snapshot = try? await server.designSnapshot(id), design(id) != nil else { return }
+                    designRendering.thumbnails.update(id, snapshot: snapshot)
+                }
+            }
+        case .remote(let ref):
+            remoteDesignRendering(ref.hostID)?.thumbnails.demand(ref.designID, visible: visible)
         }
     }
 
@@ -345,6 +361,14 @@ extension ShepherdViewModel {
 final class NewDesignState {
     var brief = ""
     var attachments = ComposerAttachments()
+    /// Dropped or pasted images still being resized and read off the main actor.
+    private(set) var preparingImages = 0
+    /// How dropped images are resized and read; a test holds it to see a send wait.
+    @ObservationIgnored var prepareImages: ([NSItemProvider]) async -> [(URL, ImageFile?)] = { providers in
+        await ImageFile.read(await AppImageDrop.resolve(providers))
+    }
+    /// Why Send waits for the images being read; nil when none are.
+    var imagesPending: String? { preparingImages > 0 ? "Adding images…" : nil }
     /// The model and level the design agent starts with (This Mac's defaults until picked); a
     /// blank model is pi's default. They stay with the design's pi session after that.
     private(set) var model = ""
@@ -461,9 +485,13 @@ final class NewDesignState {
     /// Dropped or pasted images, resized on the way in.
     func attach(_ providers: [NSItemProvider]) {
         attachments.clearError()
+        // Send waits while images are being read (`imagesPending`), so a read never lands in a draft sent without it.
+        preparingImages += 1
+        let prepare = prepareImages
         Task {
-            let urls = await AppImageDrop.resolve(providers)
-            attachments.add(urls: urls)
+            let files = await prepare(providers)
+            preparingImages -= 1
+            attachments.add(files: files)
         }
     }
 
@@ -502,6 +530,7 @@ final class NewDesignState {
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
         if brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the design first." }
+        if let imagesPending { return imagesPending }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }
         if let host {
             if vm.newDesignHost(host) == nil { return "That host isn’t connected." }
@@ -515,8 +544,10 @@ final class NewDesignState {
     /// clears once the design exists.
     func send(_ vm: ShepherdViewModel) {
         guard blocker(vm) == nil else { NSSound.beep(); return }
+        let submittedBrief = brief
         let text = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = attachments.images
+        let submittedImages = attachments.ids
         let system = systemToInstall(vm)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinking.clamped(to: thinkingLevels())
@@ -533,8 +564,9 @@ final class NewDesignState {
                     try await vm.createDesign(brief: text, images: images, system: system,
                                               model: chosenModel.isEmpty ? nil : chosenModel, thinking: level)
                 }
-                brief = ""
-                attachments.removeAll()
+                // Only what went: words typed and images added while it was being made stay for the next one.
+                if brief == submittedBrief { brief = "" }
+                for id in submittedImages { attachments.remove(id) }
             } catch {
                 self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             }

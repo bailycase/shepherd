@@ -43,6 +43,14 @@ public final class ChangesService: @unchecked Sendable {
     var onTurnsChanged: (@Sendable (AgentID, [ChangesTurn]) -> Void)?
 
     let work = DispatchQueue(label: "shepherd.changes", qos: .userInitiated, attributes: .concurrent)
+    let reviewWork: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "shepherd.changes.review"
+        queue.maxConcurrentOperationCount = 2
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+    let reviewJobs = ChangesLocked(0)
     private let repositories = ChangesLocked<[String: Repository]>([:])
     private let indexLocks = ChangesLocked<[String: NSLock]>([:])
     private let indexSources = ChangesLocked<[String: Data]>([:])
@@ -51,7 +59,7 @@ public final class ChangesService: @unchecked Sendable {
     private let restoreLocks = ChangesLocked<[String: NSLock]>([:])
     private let emptyTrees = ChangesLocked<[String: String]>([:])
     private let lists = ChangesCache<[ChangesFile]>(capacity: 64)
-    private let diffs = ChangesCache<DiffFile>(capacity: 512)
+    private let diffs = ChangesCache<ChangesFileDiff>(capacity: 512, costLimit: 16 << 20)
     private let pullRequests = ChangesLocked<[String: (at: Date, value: ChangesPullRequest?)]>([:])
     private let recents: ChangesRecents
     let turnStore: TurnStore
@@ -373,27 +381,36 @@ public final class ChangesService: @unchecked Sendable {
     func fileDiff(_ repository: Repository, _ revision: ChangesRevision, path: String, oldPath: String?, options: ChangesOptions) throws -> ChangesFileDiff {
         guard revision.isWellFormed else { throw ChangesError(ChangesError.invalid, "Not a revision.") }
         let key = cacheKey(repository, revision, options, (oldPath ?? "") + "\u{0}" + path)
+        if let cached = diffs.value(key) { return cached }
         let file: DiffFile
-        if let cached = diffs.value(key) {
-            file = cached
-        } else {
+        do {
             let paths = [oldPath, path].compactMap { $0 }
             let result = try ChangesGit.checked(diffArguments(options) + [revision.old, revision.new, "--"] + paths,
                                                 in: repository.root, literalPaths: true)
+            try ChangesReviewCancellation.checkCurrent()
             let parsed = DiffFile.parse(result.text)
             file = parsed.first { $0.displayPath == path } ?? parsed.first
                 ?? DiffFile(oldPath: oldPath ?? path, newPath: path, displayPath: path, isNew: false, isDeleted: false,
                             isRenamed: oldPath != nil, isBinary: false, hunks: [])
-            diffs.insert(file, key)
         }
-        return Self.truncated(file, lines: ChangesLimits.fileLines)
+        let displayed = Self.truncated(file, lines: ChangesLimits.fileLines)
+        // Charge retained strings and line storage, not the much smaller patch byte count.
+        let cost = displayed.file.hunks.reduce(0) { total, hunk in
+            total + hunk.header.utf8.count + hunk.lines.reduce(0) { $0 + $1.text.utf8.count + MemoryLayout<DiffLine>.stride }
+        } + path.utf8.count + (oldPath?.utf8.count ?? 0)
+        diffs.insert(displayed, key, cost: cost)
+        return displayed
     }
 
     /// Every file's hunks at once (the Mac's pane, which is not bound by the remote frame cap).
     func allDiffs(_ repository: Repository, _ revision: ChangesRevision, options: ChangesOptions) throws -> [DiffFile] {
         guard revision.isWellFormed else { throw ChangesError(ChangesError.invalid, "Not a revision.") }
         let result = try ChangesGit.checked(diffArguments(options) + [revision.old, revision.new], in: repository.root)
-        return DiffFile.parse(result.text).map { Self.truncated($0, lines: ChangesLimits.fileLines).file }
+        try ChangesReviewCancellation.checkCurrent()
+        return try DiffFile.parse(result.text).map {
+            try ChangesReviewCancellation.checkCurrent()
+            return Self.truncated($0, lines: ChangesLimits.fileLines).file
+        }
     }
 
     /// A revision's diff as a patch `git apply` takes (binary files included).
@@ -539,12 +556,17 @@ public final class ChangesService: @unchecked Sendable {
 /// A small least-recently-used cache, keyed by the objects a result came from (so an entry is
 /// never stale, only evicted).
 final class ChangesCache<Value>: @unchecked Sendable {
-    private var values: [String: Value] = [:]
+    private var values: [String: (value: Value, cost: Int)] = [:]
+    private(set) var totalCost = 0
+    private let costLimit: Int
     private var order: [String] = []
     private let capacity: Int
     private let lock = NSLock()
 
-    init(capacity: Int) { self.capacity = capacity }
+    init(capacity: Int, costLimit: Int = .max) {
+        self.capacity = capacity
+        self.costLimit = costLimit
+    }
 
     func value(_ key: String) -> Value? {
         lock.lock()
@@ -552,15 +574,21 @@ final class ChangesCache<Value>: @unchecked Sendable {
         guard let value = values[key] else { return nil }
         if let index = order.firstIndex(of: key) { order.remove(at: index) }
         order.append(key)
-        return value
+        return value.value
     }
 
-    func insert(_ value: Value, _ key: String) {
+    func insert(_ value: Value, _ key: String, cost: Int = 0) {
         lock.lock()
         defer { lock.unlock() }
-        if values.updateValue(value, forKey: key) == nil {
-            order.append(key)
-            if order.count > capacity { values.removeValue(forKey: order.removeFirst()) }
+        if let previous = values.removeValue(forKey: key) { totalCost -= previous.cost }
+        order.removeAll { $0 == key }
+        let cost = max(0, cost) + key.utf8.count
+        guard cost <= costLimit else { return }
+        values[key] = (value, cost)
+        totalCost += cost
+        order.append(key)
+        while order.count > capacity || totalCost > costLimit {
+            if let removed = values.removeValue(forKey: order.removeFirst()) { totalCost -= removed.cost }
         }
     }
 }

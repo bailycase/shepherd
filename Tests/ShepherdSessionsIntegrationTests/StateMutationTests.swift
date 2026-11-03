@@ -211,6 +211,33 @@ struct StateMutationTests {
         #expect(h.broadcasts.current.count == 1)
     }
 
+    @Test func sharedCheckoutPublishesOnceAndRechecksMembership() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(path: "/shared/repo")
+        let workers = (0..<20).map { _ in Fixture.agent(in: space) }
+        try await h.seed(Fixture.workspace(workers, space: space))
+        var moved = workers[0].tab
+        moved.layout = moved.layout.updatingLeaf(moved.layout.firstLeaf.id) { $0.cwd = "/moved" }
+        try await h.server.updateTab(moved)
+        var remaining = h.server.state
+        remaining.agents.removeAll { $0.id == workers[1].agent.id }
+        remaining.tabs.removeAll { $0.id == workers[1].tab.id }
+        try await h.server.putState(remaining)
+        await drainMainQueue()
+        h.broadcasts.withValue { $0.removeAll() }
+        let value = AgentCheckout(branch: "main", changedFiles: 4)
+        await h.server.setAgentCheckouts(workers.map { $0.agent.id }, value, directory: "/shared/repo")
+        await drainMainQueue()
+        #expect(h.broadcasts.current.count == 1)
+        #expect(h.server.state.agents.first { $0.id == workers[0].agent.id }?.checkout == nil)
+        #expect(h.server.state.agents.filter { $0.checkout == value }.count == 18)
+        h.broadcasts.withValue { $0.removeAll() }
+        await h.server.setAgentCheckouts(workers.map { $0.agent.id }, value, directory: "/shared/repo")
+        await drainMainQueue()
+        #expect(h.broadcasts.current.isEmpty)
+    }
+
     // MARK: - putState
 
     @Test func putStateReplacesTheWholeWorkspace() async throws {

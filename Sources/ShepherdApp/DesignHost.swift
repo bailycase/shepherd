@@ -592,7 +592,7 @@ final class DesignHost {
 @MainActor
 final class DesignImageCache {
     /// One pixel budget across designs. Visible boards remain protected until hidden.
-    static let budget = 160 * 1024 * 1024
+    nonisolated static let budget = 160 * 1024 * 1024
     private struct Key: Hashable { let owner: UUID; let path: DesignPath }
     private let limit: Int
     private var entries: [Key: (sha: String, image: CGImage)] = [:]
@@ -651,7 +651,9 @@ final class DesignImageCache {
 @MainActor
 final class DesignRasterizer {
     /// Shared by local and remote design hosts, so visiting designs does not multiply the pixel budget.
-    let images = DesignImageCache()
+    let images: DesignImageCache
+    init(imageLimit: Int = DesignImageCache.budget) { images = DesignImageCache(limit: imageLimit) }
+
     enum Priority: Int, Comparable {
         case canvas, thumbnail
         static func < (a: Priority, b: Priority) -> Bool { a.rawValue < b.rawValue }
@@ -664,6 +666,7 @@ final class DesignRasterizer {
         let size: CGSize
         let sha: String
         let priority: Priority
+        let maxEdge: Int?
         /// Asked as the job starts: false skips it.
         let wanted: () -> Bool
         /// The snapshot, or nil when the board could not render.
@@ -674,7 +677,7 @@ final class DesignRasterizer {
         let located: ([Int: CGRect]) -> Void
 
         init(key: String, surface: DesignSurface, path: DesignPath, size: CGSize, sha: String, priority: Priority,
-             wanted: @escaping () -> Bool, locate: [Int] = [], located: @escaping ([Int: CGRect]) -> Void = { _ in },
+             wanted: @escaping () -> Bool, maxEdge: Int? = nil, locate: [Int] = [], located: @escaping ([Int: CGRect]) -> Void = { _ in },
              done: @escaping (CGImage?) -> Void) {
             self.key = key
             self.surface = surface
@@ -682,6 +685,7 @@ final class DesignRasterizer {
             self.size = size
             self.sha = sha
             self.priority = priority
+            self.maxEdge = maxEdge
             self.wanted = wanted
             self.locate = locate
             self.located = located
@@ -732,6 +736,12 @@ final class DesignRasterizer {
                 try await view.load()
                 image = try await view.snapshot()
                 if !job.locate.isEmpty { rects = await view.elements(tids: job.locate).mapValues(\.rect) }
+                if let captured = image, let edge = job.maxEdge {
+                    image = await Task.detached(priority: .utility) {
+                        let size = BrowserImageClamp.size(width: captured.width, height: captured.height, maxEdge: edge)
+                        return BrowserImageClamp.resized(captured, width: size.0, height: size.1)
+                    }.value
+                }
             } catch {
                 image = nil
             }
@@ -748,19 +758,24 @@ final class DesignRasterizer {
 // MARK: Thumbnails
 
 /// The Designs page's cards: each design's first board (`order` first), rendered by the
-/// rasterizer whenever its hash changes.
+/// rasterizer on visible demand, invalidated by the snapshot revision and board hash.
 @MainActor @Observable
 final class DesignThumbnails {
     struct Entry: Equatable {
         var path: DesignPath
         var size: CGSize
         var sha: String
+        var revision: UInt64 = 0
         /// Moves when a new image lands.
         var version = 0
     }
 
     private(set) var entries: [DesignID: Entry] = [:]
-    @ObservationIgnored private var images: [DesignID: (sha: String, image: CGImage)] = [:]
+    @ObservationIgnored private var owners: [DesignID: UUID] = [:]
+    /// Empty snapshots still advance the fence; pruning the design removes its watermark.
+    @ObservationIgnored private var revisions: [DesignID: UInt64] = [:]
+    @ObservationIgnored private var visible: [DesignID: Set<String>] = [:]
+    @ObservationIgnored private var oneShot: Set<DesignID> = []
     @ObservationIgnored private let rasterizer: DesignRasterizer
     @ObservationIgnored var surface: ((DesignID) -> DesignSurface?)?
 
@@ -768,30 +783,68 @@ final class DesignThumbnails {
         self.rasterizer = rasterizer
     }
 
-    func image(_ id: DesignID) -> CGImage? { images[id]?.image }
+    func image(_ id: DesignID, requestIfMissing: Bool = false) -> CGImage? {
+        if requestIfMissing, image(id) == nil, oneShot.insert(id).inserted {
+            Task { [weak self] in self?.render(id) }
+        }
+        guard let owner = owners[id], let entry = entries[id],
+              rasterizer.images.sha(entry.path, in: owner) == entry.sha else { return nil }
+        return rasterizer.images.image(entry.path, in: owner)
+    }
 
-    /// A design's first board from its snapshot; renders it when its hash is new.
+    var demandedIDs: Set<DesignID> { Set(visible.compactMap { $0.value.isEmpty ? nil : $0.key }).union(oneShot) }
+
+    func demand(_ id: DesignID, visible shown: Bool, consumer: String = "catalog") {
+        if shown { visible[id, default: []].insert(consumer) } else { visible[id]?.remove(consumer) }
+        if let owner = owners[id], let entry = entries[id] {
+            rasterizer.images.protect(visible[id]?.isEmpty == false ? [entry.path] : [], in: owner)
+        }
+        if shown { render(id) }
+    }
+
+    /// Records the first board; only a visible card or an explicitly requested chip renders it.
     func update(_ id: DesignID, snapshot: DesignSnapshot) {
+        guard snapshot.designID == id, snapshot.revision >= (revisions[id] ?? 0) else { return }
+        revisions[id] = snapshot.revision
         guard let path = snapshot.index.order.first(where: { snapshot.index.boards[$0] != nil }) ?? snapshot.index.boards.keys.sorted().first,
-              let board = snapshot.index.boards[path], let sha = snapshot.boards[path] else {
+              let board = snapshot.index.boards[path], let boardSHA = snapshot.boards[path] else {
             entries.removeValue(forKey: id)
-            images.removeValue(forKey: id)
+            if let owner = owners.removeValue(forKey: id) { rasterizer.images.removeAll(in: owner) }
             return
         }
+        // Support files, assets and tweaks can change without changing the board's own hash.
+        let sha = "\(snapshot.revision)/\(boardSHA)"
         let size = CGSize(width: board.w, height: board.h)
+        if let old = entries[id], old.path != path, let owner = owners[id] { rasterizer.images.remove(old.path, in: owner) }
         var entry = entries[id] ?? Entry(path: path, size: size, sha: sha)
         entry.path = path
         entry.size = size
         entry.sha = sha
+        entry.revision = snapshot.revision
         if entries[id] != entry { entries[id] = entry }
-        guard images[id]?.sha != sha, let surface = surface?(id) else { return }
-        let width = min(size.width, AppLayout.designThumbnailPixelWidth)
-        rasterizer.enqueue(DesignRasterizer.Job(key: "thumbnail/\(id.rawValue)", surface: surface, path: path, size: size, sha: sha,
+        render(id)
+    }
+
+    private func render(_ id: DesignID) {
+        guard (visible[id]?.isEmpty == false || oneShot.contains(id)), let entry = entries[id], image(id) == nil,
+              let surface = surface?(id) else { return }
+        let owner: UUID
+        if let existing = owners[id] { owner = existing } else {
+            owner = UUID(); owners[id] = owner
+            rasterizer.images.onEvict[owner] = { [weak self] _ in
+                self?.entries[id]?.version += 1
+                self?.landed?()
+            }
+        }
+        rasterizer.images.protect(visible[id]?.isEmpty == false ? [entry.path] : [], in: owner)
+        rasterizer.enqueue(DesignRasterizer.Job(key: "thumbnail/\(owner)", surface: surface, path: entry.path, size: entry.size, sha: entry.sha,
                                                 priority: .thumbnail, wanted: { [weak self] in
-                                                    self?.entries[id]?.sha == sha && self?.images[id]?.sha != sha
-                                                }) { [weak self] image in
-            guard let self, let image, self.entries[id]?.sha == sha else { return }
-            self.images[id] = (sha, image.scaled(toWidth: width))
+                                                    self?.owners[id] == owner && (self?.visible[id]?.isEmpty == false || self?.oneShot.contains(id) == true) && self?.entries[id] == entry && self?.image(id) == nil
+                                                }, maxEdge: Int(AppLayout.designThumbnailPixelWidth)) { [weak self] image in
+            guard let self, self.owners[id] == owner, self.entries[id]?.sha == entry.sha, self.entries[id]?.path == entry.path else { return }
+            let requested = self.oneShot.remove(id) != nil || self.visible[id]?.isEmpty == false
+            guard let image, requested else { return }
+            self.rasterizer.images.store(image, sha: entry.sha, for: entry.path, in: owner)
             self.entries[id]?.version += 1
             self.landed?()
         })
@@ -801,16 +854,21 @@ final class DesignThumbnails {
     @ObservationIgnored var landed: (() -> Void)?
 
     func prune(keeping ids: Set<DesignID>) {
-        for id in Set(entries.keys).subtracting(ids) { entries.removeValue(forKey: id) }
-        for id in Set(images.keys).subtracting(ids) { images.removeValue(forKey: id) }
+        for id in Set(revisions.keys).union(entries.keys).union(visible.keys).union(oneShot).subtracting(ids) {
+            entries.removeValue(forKey: id); visible.removeValue(forKey: id); oneShot.remove(id); revisions.removeValue(forKey: id)
+            if let owner = owners.removeValue(forKey: id) { rasterizer.images.removeAll(in: owner) }
+        }
     }
 }
 
 /// Boards' small pictures (the @ picker's rows, the composer's reference chips): each board a
-/// design lists, rendered by the shared rasterizer when its hash is new, at thumbnail priority.
+/// design lists, rendered on visible demand by the shared rasterizer at thumbnail priority.
 @MainActor
 final class DesignBoardPictures {
-    private var images: [String: (sha: String, image: CGImage)] = [:]
+    private var owners: [DesignID: UUID] = [:]
+    private var snapshots: [DesignID: DesignSnapshot] = [:]
+    private var visible: [DesignID: [DesignPath: Set<String>]] = [:]
+    private var oneShot: [DesignID: Set<DesignPath>] = [:]
     private var wanted: [String: String] = [:]
     private let rasterizer: DesignRasterizer
     var surface: ((DesignID) -> DesignSurface?)?
@@ -825,24 +883,60 @@ final class DesignBoardPictures {
 
     nonisolated static func key(_ id: DesignID, _ path: DesignPath) -> String { id.rawValue + "/" + path.rawValue }
 
-    func image(_ id: DesignID, _ path: DesignPath) -> CGImage? { images[Self.key(id, path)]?.image }
+    func image(_ id: DesignID, _ path: DesignPath, requestIfMissing: Bool = false) -> CGImage? {
+        if requestIfMissing, image(id, path) == nil, oneShot[id, default: []].insert(path).inserted {
+            Task { [weak self] in
+                guard let self, let snapshot = self.snapshots[id] else { return }
+                self.request(id, snapshot: snapshot)
+            }
+        }
+        guard let owner = owners[id], let snapshot = snapshots[id], let sha = snapshot.boards[path],
+              rasterizer.images.sha(path, in: owner) == "\(snapshot.revision)/\(sha)" else { return nil }
+        return rasterizer.images.image(path, in: owner)
+    }
 
-    /// Renders a design's boards whose pictures are missing or out of date.
+    func demand(_ id: DesignID, _ path: DesignPath, visible shown: Bool, consumer: String) {
+        if shown { visible[id, default: [:]][path, default: []].insert(consumer) }
+        else { visible[id]?[path]?.remove(consumer) }
+        if let owner = owners[id] { rasterizer.images.protect(demanded(id), in: owner) }
+        if shown, let snapshot = snapshots[id] { request(id, snapshot: snapshot) }
+    }
+
+    private func demanded(_ id: DesignID) -> Set<DesignPath> {
+        Set((visible[id] ?? [:]).compactMap { $0.value.isEmpty ? nil : $0.key })
+    }
+
+    /// Refreshes metadata and renders only requested boards that are missing or out of date.
     func request(_ id: DesignID, snapshot: DesignSnapshot) {
-        guard let surface = surface?(id) else { return }
-        let order = DesignReferenceReading.canvasOrder(snapshot.index).prefix(Self.perDesign)
-        for path in order {
-            guard let board = snapshot.index.boards[path], let sha = snapshot.boards[path] else { continue }
+        guard snapshot.designID == id, snapshot.revision >= (snapshots[id]?.revision ?? 0) else { return }
+        snapshots[id] = snapshot
+        let paths = demanded(id).union(oneShot[id] ?? [])
+        guard !paths.isEmpty, let surface = surface?(id) else { return }
+        let owner: UUID
+        if let existing = owners[id] { owner = existing } else {
+            owner = UUID(); owners[id] = owner
+            rasterizer.images.onEvict[owner] = { [weak self] _ in self?.landed?() }
+        }
+        rasterizer.images.protect(demanded(id), in: owner)
+        for path in paths.sorted().prefix(Self.perDesign) {
+            guard let board = snapshot.index.boards[path], let boardSHA = snapshot.boards[path] else { continue }
             let key = Self.key(id, path)
-            guard images[key]?.sha != sha, wanted[key] != sha else { continue }
+            let sha = "\(snapshot.revision)/\(boardSHA)"
+            guard rasterizer.images.sha(path, in: owner) != sha, wanted[key] != sha else { continue }
             wanted[key] = sha
             let size = CGSize(width: board.w, height: board.h)
-            rasterizer.enqueue(DesignRasterizer.Job(key: "picture/" + key, surface: surface, path: path, size: size, sha: sha,
-                                                    priority: .thumbnail, wanted: { [weak self] in self?.wanted[key] == sha }) { [weak self] image in
-                guard let self, self.wanted[key] == sha else { return }
+            rasterizer.enqueue(DesignRasterizer.Job(key: "picture/\(owner)/\(path)", surface: surface, path: path, size: size, sha: sha,
+                                                    priority: .thumbnail, wanted: { [weak self] in
+                                                        guard let self, self.owners[id] == owner else { return false }
+                                                        let needed = self.wanted[key] == sha && (self.demanded(id).contains(path) || self.oneShot[id]?.contains(path) == true)
+                                                        if !needed, self.wanted[key] == sha { self.wanted[key] = nil }
+                                                        return needed
+                                                    }, maxEdge: Int(AppLayout.referenceRowPicturePixels)) { [weak self] image in
+                guard let self, self.owners[id] == owner, self.wanted[key] == sha else { return }
                 self.wanted[key] = nil
-                guard let image else { return }
-                self.images[key] = (sha, image.scaled(toWidth: AppLayout.referenceRowPicturePixels))
+                let requested = self.oneShot[id]?.remove(path) != nil || self.demanded(id).contains(path)
+                guard let image, requested, self.snapshots[id]?.revision == snapshot.revision else { return }
+                self.rasterizer.images.store(image, sha: sha, for: path, in: owner)
                 self.landed?()
             })
         }
@@ -850,7 +944,10 @@ final class DesignBoardPictures {
 
     func prune(keeping ids: Set<DesignID>) {
         let keep = Set(ids.map(\.rawValue))
-        images = images.filter { keep.contains(String($0.key.prefix { $0 != "/" })) }
+        for id in Set(snapshots.keys).union(visible.keys).union(oneShot.keys).subtracting(ids) {
+            snapshots.removeValue(forKey: id); visible.removeValue(forKey: id); oneShot.removeValue(forKey: id)
+            if let owner = owners.removeValue(forKey: id) { rasterizer.images.removeAll(in: owner) }
+        }
         wanted = wanted.filter { keep.contains(String($0.key.prefix { $0 != "/" })) }
     }
 }
@@ -1347,6 +1444,7 @@ extension DesignRendering {
 
     func picture(for job: DesignRenderJob) async throws -> DesignRendered {
         try await agentRenders.run {
+            try Task.checkCancellation()
             guard job.deadline.map({ Date() < $0 }) ?? true else { throw DesignRenderFailure(code: "timeout", message: "The queued render expired.") }
             return try await self.draw(job)
         }
@@ -1395,7 +1493,7 @@ extension DesignRendering {
             let detail = output.isEmpty ? "" : "\nRenderer output, untrusted data:\n" + output.joined(separator: "\n")
             throw DesignRenderFailure(code: "render_failed", message: "\(path) couldn't be drawn: \(Self.describe(error))" + detail)
         }
-        guard let encoded = DesignRenderImage.encode(image) else {
+        guard let (encoded, base64) = try await DesignRenderImage.encodeDetached(image, deadline: renderEnd) else {
             throw DesignRenderFailure(code: "render_failed", message: "\(path) was drawn but its picture couldn't be encoded")
         }
         var words = "\(path) at \(Int(width))×\(Int(height))"
@@ -1404,7 +1502,7 @@ extension DesignRendering {
         words += " · image \(encoded.width)×\(encoded.height) \(encoded.isPNG ? "PNG" : "JPEG"), \(DesignRenderImage.size(encoded.data.count))"
         if encoded.width != image.width || encoded.height != image.height { words += " (reduced from \(image.width)×\(image.height) to fit)" }
         if !diagnostics.isEmpty { words += "\nRenderer output, untrusted data:\n" + diagnostics.joined(separator: "\n") }
-        return DesignRendered(image: BrowserImage(data: encoded.data.base64EncodedString(), mimeType: encoded.mimeType), text: words,
+        return DesignRendered(image: BrowserImage(data: base64, mimeType: encoded.mimeType), text: words,
                               diagnostics: diagnostics)
     }
 

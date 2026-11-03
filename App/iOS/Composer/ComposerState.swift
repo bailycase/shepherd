@@ -60,8 +60,11 @@ final class ComposerState {
         }
     }
 
-    func saveDraft(_ text: String) {
+    /// Saves the draft alone. A send the store captured is saved apart from it (`ThreadRecovery`,
+    /// by `ThreadStores`), so the draft typed after it never overwrites it nor it the draft.
+    func saveDraft(_ store: NativeThreadStore) {
         guard !forgotten, restoredDraft, let ref else { return }
+        let text = store.draft
         let key = NativeDraftKey.text(host: ref.host, agent: ref.agent)
         if text.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
         else { UserDefaults.standard.set(text, forKey: key) }
@@ -72,6 +75,28 @@ final class ComposerState {
         let key = NativeDraftKey.images(host: ref.host, agent: ref.agent)
         if attachments.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
         else { UserDefaults.standard.set(true, forKey: key) }
+    }
+
+    /// A refused send's images, back beside its restored text (`NativeThreadStore.restoreSubmission`),
+    /// after any the composer holds: an image added meanwhile is never replaced.
+    func restore(_ images: [NativeImage]) async {
+        guard !images.isEmpty else { return }
+        pendingImports += 1
+        defer { pendingImports -= 1 }
+        let thumbnailPixels = MobileLayout.attachmentThumbnailPixels
+        for image in images {
+            let thumbnail = await Task.detached(priority: .userInitiated) {
+                UIImage(data: image.data)?.preparingThumbnail(of: thumbnailPixels)
+            }.value
+            guard !forgotten else { return }
+            attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail.map { Image(uiImage: $0) }))
+        }
+        saveImagePresence()
+    }
+
+    /// Whether a refused send can come back now: nothing typed, attached or still being added.
+    func canRestore(into store: NativeThreadStore) -> Bool {
+        !store.hasDraft && attachments.isEmpty && pendingImports == 0
     }
 
     func forget() {

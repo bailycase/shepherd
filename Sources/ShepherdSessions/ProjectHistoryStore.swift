@@ -43,6 +43,8 @@ final class ProjectHistoryStore {
         }
         sqlite3_busy_timeout(db, 500)
         try sql("PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE; PRAGMA cache_size=-512; PRAGMA temp_store=MEMORY;")
+        // Additive indexes are compatible with older stores/binaries. Their first initialization
+        // builds them once from retained records; subsequent opens only check their existence.
         try sql("""
             CREATE TABLE IF NOT EXISTS records (
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +59,7 @@ final class ProjectHistoryStore {
                 UNIQUE(scope,source), UNIQUE(scope,messageID));
             CREATE INDEX IF NOT EXISTS history_sequence ON records(scope,kind,sequence);
             CREATE INDEX IF NOT EXISTS history_task ON records(scope,json_extract(CAST(payload AS TEXT),'$.source.taskID'),sequence) WHERE kind='message';
+            CREATE INDEX IF NOT EXISTS history_outcome_task ON records(scope,json_extract(CAST(payload AS TEXT),'$.taskID'),sequence) WHERE kind='outcome';
             CREATE INDEX IF NOT EXISTS event_delivery ON events(scope,phase,sequence);
             CREATE INDEX IF NOT EXISTS event_task ON events(scope,task,sequence);
             CREATE INDEX IF NOT EXISTS execution_worker ON records(json_extract(CAST(payload AS TEXT),'$.assignment.reservedWorkerID'),sequence) WHERE kind='execution';

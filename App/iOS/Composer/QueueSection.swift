@@ -10,6 +10,8 @@ import ShepherdRemote
 /// the turn ends, and clears it. Every change goes to the host (`NativeThreadStore`'s queue
 /// actions), which every device viewing the agent shares.
 struct QueueSection: View {
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
     let store: NativeThreadStore
     let state: ComposerState
     let presentation: ComposerPresentation
@@ -47,7 +49,7 @@ struct QueueSection: View {
             // A goal folds Up next to its header on iPhone; the iPad draws it in full (GoalStates, iPadGoal).
             .onChange(of: store.goalID, initial: true) { _, id in collapsed = id != nil && sizeClass != .regular }
             .onDisappear { closeEditor(save: false) }
-            .sheet(item: Binding(get: { presentation.editing }, set: { if $0 == nil { closeEditor(save: false) } })) { message in
+            .sheet(item: Binding(get: { presentation.editing }, set: { if $0 == nil { closeEditor(save: false) } }).whenActive(detailActive)) { message in
                 QueueEditorSheet(number: (state.queuedIndex(message.id) ?? 0) + 1, text: Binding(get: { presentation.editText }, set: { presentation.editText = $0 }),
                                  save: { closeEditor(save: true) }, cancel: { closeEditor(save: false) })
             }

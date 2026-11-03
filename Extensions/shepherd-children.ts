@@ -9,7 +9,7 @@ import { StringDecoder } from "node:string_decoder";
 import { SessionManager, createBashTool, getPackageDir, resolveCliModel } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels, parentAllows, designRelayedTools as DESIGN_RELAYED, designTools as DESIGN_TOOLS } from "./shepherd-children-config.ts";
-import { executeWorkflow } from "./shepherd-workflow.ts";
+import { executeWorkflow, lifecycleWaiters } from "./shepherd-workflow.ts";
 import { missionStore } from "./shepherd-missions.ts";
 import { registerNativeCommands } from "./shepherd-children-ui.ts";
 import { registerCliBash, expandCliPrompt, cliRelayAllowed, withoutCliDispatch } from "./shepherd-cli.ts";
@@ -510,6 +510,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const nativeChildren = process.env.SHEPHERD_NATIVE_CHILDREN === "1";
 
   const runs = new Map(), workflows = new Map(), cliRuns = new Map();
+  const admission = lifecycleWaiters(), savedStates = new WeakMap();
   let cancelCli;
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
   const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
@@ -577,7 +578,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const defaults = childDefaults();
   let missions;
   let owner, active = false, timer, sessionContext;
-  // Inspector requests to settled runs, while no tick runs: run id -> watcher of its control dir.
+  // Inspector requests even while no tick runs: run id -> watcher of its control dir.
   const controlWatchers = new Map();
   const root = path.join(path.dirname(process.env.SHEPHERD_SOCKET), "children");
   const bridge = process.env.SHEPHERD_EXT_CHILDREN;
@@ -636,8 +637,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     syncTick();
   }
   // The one-second tick (inspector controls, then a publish) runs only while a run is live, so
-  // an idle parent never wakes. Settled runs keep taking inspector requests through a watch on
-  // their control directory, which costs nothing until a request is written.
+  // an idle parent never wakes. Keep control watches throughout the parent session: closing and
+  // reopening them at each live/idle transition can lose pending filesystem notifications.
   function syncTick() {
     const live = active && [...runs.values()].some((run) => run.state === "running" || run.state === "queued");
     if (live && !timer) {
@@ -652,7 +653,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     } else if (!live && timer) {
       timers.clearInterval(timer); timer = undefined;
     }
-    if (live || !active) {
+    if (!active) {
       for (const watcher of controlWatchers.values()) watcher?.close();
       controlWatchers.clear();
       return;
@@ -679,6 +680,10 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     saveTimers.set(run.id, pending);
   }
   function save(run) {
+    if (savedStates.get(run) !== run.state) {
+      savedStates.set(run, run.state);
+      admission.notify();
+    }
     const pending = saveTimers.get(run.id);
     if (pending) { clearTimeout(pending); saveTimers.delete(run.id); }
     try {
@@ -1553,7 +1558,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         // the slot this item waited for: that refusal (and only that one) sends the item back to waiting.
         while (!receipt) {
           while ([...runs.values()].filter((r) => ["running", "queued"].includes(r.state)).length >= defaults.concurrency) {
-            await new Promise((r) => setTimeout(r, 50)); guard();
+            await admission.wait(w.controller.signal); guard();
           }
           guard();
           const promise = start({ ...params, ...(missionsOn ? (w.missionId ? { missionId: w.missionId } : { mission: false }) : {}) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
@@ -1562,7 +1567,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           catch (error) { if (error.code !== "capacity") throw error; }
           finally { w.starts.delete(promise); }
         }
-        const run = get(receipt.id); w.keys.set(key, run);
+        const run = get(receipt.id); w.keys.set(key, run); admission.notify();
         guard();
         await run.closed;
         guard();
@@ -1595,7 +1600,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         checked(Type.Object({ key: keySchema, ...(method === "steer" ? { message: textSchema, options: Type.Object({ mode: Type.Optional(StringEnum(["steer", "follow_up", "followUp", "auto"])) }, { additionalProperties: false }) } : {}) }, { additionalProperties: false }), args);
         // Keys are claimed before asynchronous Pi startup, so steering may wait for acceptance.
         while (w.claims.has(args.key) && !w.keys.has(args.key) && [...runs.values()].some((r) => r.workflowId === w.id && ["running", "queued"].includes(r.state))) {
-          await new Promise((r) => setTimeout(r, 50)); guard();
+          await admission.wait(w.controller.signal); guard();
         }
         const run = w.keys.get(args.key); if (!run) throw Error("Unknown workflow child key");
         guard();

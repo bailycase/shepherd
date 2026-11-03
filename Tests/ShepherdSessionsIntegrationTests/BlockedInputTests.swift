@@ -142,7 +142,7 @@ struct BlockedInputTests {
                     RPCThreadState.QueueItem(entry: NativeQueuedMessage(id: id, text: id.uuidString, sentAt: 1, state: .steering), images: [])
                 }
                 t.state.inputActive = true
-                t.state.restorePiQueue(steering: [first.uuidString, second.uuidString, "extension steer"], followUp: ["extension follow-up"])
+                t.state.restorePiQueue(steering: [first.uuidString, second.uuidString, "extension steer"], followUp: ["extension follow-up"], origin: .init(t.state))
                 #expect(t.state.waitingInputs.count == 4)
                 t.state.stop { _ in
                     t.state.settled()

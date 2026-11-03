@@ -29,6 +29,32 @@ struct AgentRecoveryTests {
         return PiAgent(host: host, agent: original.agent, sessionID: session.id, log: log)
     }
 
+    @Test func recoveryBootstrapFinishesWhenOwnershipIsBoundAfterPiAlreadyServes() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let log = h.dir.appendingPathComponent("late-bound-stdin.log")
+        // PiAgent.launch can reach this order naturally under load. Gate on the actual RPC
+        // bootstrap before publishing any Agent/Tab; do not synthesize recovery readiness.
+        let session = try await h.server.createSession(params: CreateSessionParams(
+            cwd: h.dir.path, command: StubPi.command, env: ["STUB_PI_LOG": log.path], runtime: .rpc))
+        try await eventually("unbound pi completed RPC bootstrap") { await h.server.threadServes(sessionID: session.id) }
+        let space = Space(name: "late-bound", path: h.dir.path)
+        try await h.server.addSpace(space)
+        let pane = LeafPane(sessionID: session.id, cwd: h.dir.path)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "late-bound", spaceID: space.id, tabID: tab.id, paneID: pane.id)
+        try await h.server.addAgent(agent, withTab: tab)
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: agent.id))
+            #expect(thread.isServable && !thread.historyUnread)
+            try #require(!thread.restoringRecovery, "late binding must finish the real recovery lifecycle")
+        }
+        let pi = PiAgent(host: h, agent: agent, sessionID: session.id, log: log)
+        #expect(try await pi.send("tools:0 after late binding", from: try await pi.ready()).failureCode == nil)
+        _ = try await pi.snapshot("late-bound ordinary input settled") { !$0.running && $0.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == "tools:0 after late binding" } } }
+        #expect(pi.stdin("prompt").count == 1)
+    }
+
     @Test(arguments: [false, true])
     func workingAgentsAndTheirQueueSurviveAnAppRestart(remoteUpdate: Bool) async throws {
         let h = try ScratchServer.fresh()

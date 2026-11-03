@@ -565,7 +565,10 @@ struct DesignPreviewTests {
         case "picker":
             draft.prompt = "Match the funnel in @"
             let chips = try #require(draft.referenceChips)
-            ready = { chips.catalog?.designs.isEmpty == false }
+            ready = {
+                chips.catalog?.designs.isEmpty == false
+                    && vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil }
+            }
         case "chip", "chip-only":
             let chips = try #require(draft.referenceChips)
             try await chips.io.attach(try #require(vm.designReference(checkout.id, board: DesignPath("A.dc.html"))))

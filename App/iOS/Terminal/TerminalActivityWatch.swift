@@ -14,6 +14,8 @@ private struct TerminalActivityWatch: ViewModifier {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.scenePhase) private var scenePhase
+    /// A thread kept mounted behind the selected one watches nothing.
+    @Environment(\.threadDetailActive) private var active
     @State private var visible = false
 
     private struct Key: Equatable {
@@ -25,8 +27,8 @@ private struct TerminalActivityWatch: ViewModifier {
         content
             .onAppear { visible = true }
             .onDisappear { visible = false }
-            .task(id: Key(session: hosts.host(ref.host)?.session, watching: visible && scenePhase == .active)) {
-                guard visible, scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
+            .task(id: Key(session: hosts.host(ref.host)?.session, watching: visible && active && scenePhase == .active)) {
+                guard visible, active, scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
                 await MobileTerminals.shared.watchActivity(ref, client: client)
             }
     }

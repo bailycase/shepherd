@@ -37,7 +37,7 @@ struct CheckoutMonitorTests {
     @Test func requestsCoalesceIntoOneReadPerCheckout() async throws {
         let reads = Reads()
         let writes = Locked<[AgentID]>([])
-        let monitor = CheckoutMonitor(read: { cwd in await reads.read(cwd) }) { id, _, _ in writes.withValue { $0.append(id) } }
+        let monitor = CheckoutMonitor(read: { cwd in await reads.read(cwd) }) { ids, _, _ in writes.withValue { $0.append(contentsOf: ids) } }
         let ids = (0..<6).map { _ in AgentID() }
         monitor.directory = { id in ids.firstIndex(of: id).map { "/agent-\($0)" } }
 
@@ -56,7 +56,11 @@ struct CheckoutMonitorTests {
         let reads = Reads()
         defer { reads.open() }
         let writes = Locked<[AgentID]>([])
-        let monitor = CheckoutMonitor(read: { await reads.read($0) }) { id, _, _ in writes.withValue { $0.append(id) } }
+        var deliveries = 0
+        let monitor = CheckoutMonitor(read: { await reads.read($0) }) { ids, _, _ in
+            deliveries += 1
+            writes.withValue { $0.append(contentsOf: ids) }
+        }
         let ids = (0..<20).map { _ in AgentID() }
         monitor.directory = { $0 == ids[0] ? "/shared/./repo" : "/shared/repo" }
         monitor.sync(agents: Array(ids.dropLast()))
@@ -65,16 +69,18 @@ struct CheckoutMonitorTests {
         reads.open()
         try await eventuallyOnMain("all agents share the result") { writes.current.count == ids.count }
         #expect(reads.started == ["/shared/repo"])
+        #expect(deliveries == 1)
         for id in ids { monitor.refresh(id) }
         try await eventuallyOnMain("one coalesced refresh") { writes.current.count == ids.count * 2 }
         #expect(reads.started.count == 2)
+        #expect(deliveries == 2)
     }
 
     @Test func movedAndRemovedAgentsDoNotReceiveTheOldCheckout() async throws {
         let reads = Reads()
         defer { reads.open() }
         let writes = Locked<[(AgentID, String)]>([])
-        let monitor = CheckoutMonitor(read: { await reads.read($0) }) { id, cwd, _ in writes.withValue { $0.append((id, cwd)) } }
+        let monitor = CheckoutMonitor(read: { await reads.read($0) }) { ids, cwd, _ in writes.withValue { $0.append(contentsOf: ids.map { ($0, cwd) }) } }
         let moved = AgentID(), removed = AgentID(), retained = AgentID()
         var directories = [moved: "/old", removed: "/old", retained: "/old"]
         monitor.directory = { directories[$0] }
@@ -96,20 +102,24 @@ struct CheckoutMonitorTests {
         defer { release.finish() }
         var writes: [AgentID] = []
         var holdFirst = true
-        let monitor = CheckoutMonitor(read: { await reads.read($0) }) { id, _, _ in
-            writes.append(id)
+        var deliveries = 0
+        var directories: [AgentID: String] = [:]
+        let monitor = CheckoutMonitor(read: { await reads.read($0) }) { ids, cwd, _ in
+            deliveries += 1
             if holdFirst {
                 holdFirst = false
                 for await _ in gate {}
             }
+            // Like the server, recheck membership at the mutation boundary.
+            writes.append(contentsOf: ids.filter { directories[$0] == cwd })
         }
         let initial = [AgentID(), AgentID()], joined = AgentID()
-        var directories = Dictionary(uniqueKeysWithValues: initial.map { ($0, "/shared") })
+        directories = Dictionary(uniqueKeysWithValues: initial.map { ($0, "/shared") })
         monitor.directory = { directories[$0] }
         monitor.sync(agents: initial)
-        try await eventuallyOnMain("first delivery held") { writes.count == 1 }
-        let retained = try #require(writes.first)
-        let removed = try #require(initial.first { $0 != retained })
+        try await eventuallyOnMain("first delivery held") { deliveries == 1 }
+        let retained = initial[0]
+        let removed = initial[1]
         directories[removed] = nil
         directories[joined] = "/shared"
         monitor.sync(agents: [retained, joined])
@@ -125,12 +135,17 @@ struct CheckoutMonitorTests {
         let script = root.appendingPathComponent("slow-git")
         try "#!/bin/sh\nexec /bin/sleep 60\n".write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let start = ContinuousClock.now
-        let result = await Task.detached {
-            CheckoutStatus.read(cwd: root.path, executable: script.path, timeout: 0.05)
+        let submitted = ContinuousClock.now
+        let (result, readDuration) = await Task.detached {
+            let start = ContinuousClock.now
+            let result = CheckoutStatus.read(cwd: root.path, executable: script.path, timeout: 0.05)
+            return (result, start.duration(to: .now))
         }.value
+        // The command's deadline includes its process cleanup, not unrelated main-actor
+        // work before this task is scheduled or after its completed result is delivered.
+        print("hung checkout read: command=\(readDuration), roundTrip=\(submitted.duration(to: .now))")
         #expect(result == nil)
-        #expect(start.duration(to: .now) < .seconds(3))
+        #expect(readDuration < .seconds(3))
     }
 }
 
