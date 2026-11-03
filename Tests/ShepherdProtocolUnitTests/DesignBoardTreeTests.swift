@@ -73,6 +73,22 @@ struct DesignBoardTreeTests {
         #expect(imbalance.line == span && imbalance.reachedLine == div)
     }
 
+    @Test func lineLookupUsesByteOffsetsIncludingNewlineAndFileBoundaries() throws {
+        let source = Self.board("<div>\r\n<p>é🙂</p>\n\n<dc-import name=\"Card\"></dc-import></div>") + "\r\n"
+        let tree = try #require(DesignBoardTree(source: source))
+        let bytes = Array(source.utf8)
+        let starts = [0] + bytes.indices.filter { bytes[$0] == 10 }.map { $0 + 1 }
+        #expect(tree.lineStarts == starts)
+        for offset in [Int.min] + Array(0...bytes.count) + [Int.max] {
+            let end = max(0, min(offset, bytes.count))
+            let expected = 1 + bytes.prefix(end).filter { $0 == 10 }.count
+            #expect(tree.line(at: offset) == expected)
+        }
+        let reference = try #require(DesignImports.raw(in: tree).first)
+        let importOffset = try #require(source.range(of: "<dc-import"))
+        #expect(reference.line == 1 + source[..<importOffset.lowerBound].utf8.filter { $0 == 10 }.count)
+    }
+
     @Test func anElementLeftOpenAtTheEndOfTheTemplateIsReported() throws {
         let tree = try Self.tree("""
         \(Self.root)
