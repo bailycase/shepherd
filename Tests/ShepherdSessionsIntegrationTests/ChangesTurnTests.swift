@@ -319,6 +319,137 @@ struct ChangesTurnTests {
         #expect(try Data(contentsOf: repo.url.appendingPathComponent(".git/index")) == index)
     }
 
+    @Test func undoAndRedoWriteEachCheckpointOnceWithUnrelatedTurnsRetained() async throws {
+        let paths = ["a.txt", "b.txt", "c.txt"]
+        let repo = try ChangesRepo(files: Dictionary(uniqueKeysWithValues: paths.map { ($0, "original \($0)\n") }))
+        let h = try ChangesHarness(repo: repo)
+        defer {
+            h.service.turnStore.flush()
+            try? FileManager.default.removeItem(at: repo.url)
+            try? FileManager.default.removeItem(at: h.directory)
+        }
+        let writes = Locked(0)
+        h.service.turnStore.beforeWrite = { _ in writes.withValue { $0 += 1 } }
+        var unrelated: [String: [TurnRecord]] = [:]
+        for _ in 0..<50 {
+            let agent = AgentID()
+            let records = (0..<20).map { index in
+                TurnRecord(turn: ChangesTurn(startedAt: Double(index), endedAt: Double(index + 1), state: .ready), cwd: repo.path)
+            }
+            unrelated[agent.rawValue] = records
+            h.service.turnStore.update(agent) { $0 = records }
+        }
+        h.service.turnStarted(agentID: h.agent)
+        await drain(h.service, h.agent)
+        for path in paths { try repo.write(path, "changed \(path)\n") }
+        h.service.turnSettled(agentID: h.agent)
+        await drain(h.service, h.agent)
+        h.service.turnStore.flush()
+        let turn = try #require(h.service.turns(agentID: h.agent).last)
+        let before = try repo.state()
+        writes.withValue { $0 = 0 }
+
+        _ = try await h.service.undoTurn(agentID: h.agent, turnID: turn.id)
+        h.service.turnStore.flush()
+        #expect(writes.current == 2 * paths.count + 1, "one before/after each file, then one final checkpoint")
+        for path in paths { #expect(repo.read(path) == "original \(path)\n") }
+        _ = try await h.service.redoTurn(agentID: h.agent, turnID: turn.id)
+        h.service.turnStore.flush()
+        #expect(writes.current == 2 * (2 * paths.count + 1))
+        try repo.expectUnchanged(since: before)
+        let persisted = try JSONDecoder().decode([String: [TurnRecord]].self,
+            from: Data(contentsOf: h.service.directory.appendingPathComponent("turns.json")))
+        #expect(persisted.filter { $0.key != h.agent.rawValue } == unrelated)
+        #expect(persisted[h.agent.rawValue]?.last?.turn.state == .ready)
+        #expect(persisted[h.agent.rawValue]?.last?.recovery == nil)
+    }
+
+    @Test func aCheckpointWaitsForPendingSavesWithoutHoldingTheRecordLock() async throws {
+        let root = try makeScratchDirectory("turn-checkpoint-order")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("turns.json")
+        let store = TurnStore(url: url)
+        let first = AgentID(), second = AgentID()
+        let firstRecord = TurnRecord(turn: ChangesTurn(startedAt: 1, state: .ready), cwd: root.path)
+        let secondRecord = TurnRecord(turn: ChangesTurn(startedAt: 2, state: .ready), cwd: root.path)
+        let writes = Locked<[[String: [TurnRecord]]]>([])
+        let (started, signal) = AsyncStream<Void>.makeStream()
+        let release = DispatchSemaphore(value: 0)
+        store.beforeWrite = { snapshot in
+            let first = writes.withValue { $0.append(snapshot); return $0.count == 1 }
+            if first { signal.yield(()); release.wait() }
+        }
+        defer { release.signal(); signal.finish(); store.flush() }
+        store.update(first) { $0 = [firstRecord] }
+        var iterator = started.makeAsyncIterator()
+        _ = await iterator.next()
+        let completed = Locked(false)
+        let checkpoint = Task.detached {
+            try store.updateAndCheckpoint(second) { $0 = [secondRecord] }
+            completed.withValue { $0 = true }
+        }
+        // This is a memory read while the older filesystem write is held, not a timing budget.
+        try await eventually("checkpoint mutation visible before waiting for the pending save") { store.latest(second) == secondRecord }
+        #expect(!completed.current && writes.current.count == 1)
+        store.update(first) { $0[0].turn.prompt = "later asynchronous capture" }
+        release.signal()
+        try await checkpoint.value
+        store.flush()
+        #expect(writes.current.count == 3, "the older save, the checkpoint, and the later ordinary save all remain")
+        #expect(writes.current.first == [first.rawValue: [firstRecord]])
+        let persisted = try JSONDecoder().decode([String: [TurnRecord]].self, from: Data(contentsOf: url))
+        #expect(persisted[first.rawValue] == store.all(first) && persisted[second.rawValue] == [secondRecord])
+        let restarted = TurnStore(url: url)
+        #expect(restarted.all(first) == store.all(first) && restarted.all(second) == [secondRecord])
+    }
+
+    @Test func aFailedCheckpointBlocksTheNextFileAndCanRetryFromTheLastWrittenJournal() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original a\n", "b.txt": "original b\n"])
+        let h = try ChangesHarness(repo: repo)
+        defer {
+            h.service.turnStore.flush()
+            try? FileManager.default.removeItem(at: repo.url)
+            try? FileManager.default.removeItem(at: h.directory)
+        }
+        let failing = Locked(true)
+        let failures = Locked(0)
+        let agent = h.agent
+        h.service.turnStore.beforeWrite = { snapshot in
+            if snapshot[agent.rawValue]?.last?.recovery?.inFlight == "b.txt", failing.current {
+                failures.withValue { $0 += 1 }
+                throw CocoaError(.fileWriteNoPermission)
+            }
+        }
+        h.service.turnStarted(agentID: agent)
+        await drain(h.service, agent)
+        try repo.write("a.txt", "changed a\n")
+        try repo.write("b.txt", "changed b\n")
+        h.service.turnSettled(agentID: agent)
+        await drain(h.service, agent)
+        h.service.turnStore.flush()
+        let turn = try #require(h.service.turns(agentID: agent).last)
+        let index = try Data(contentsOf: repo.url.appendingPathComponent(".git/index"))
+
+        let failure = await #expect(throws: ChangesError.self) { _ = try await h.service.undoTurn(agentID: agent, turnID: turn.id) }
+        #expect(failure?.code == ChangesError.gitFailed && failure?.message.contains("partially applied") == true)
+        #expect(failures.current == 2, "the pre-write checkpoint and attempted failure journal both report the write failure")
+        #expect(repo.read("a.txt") == "original a\n" && repo.read("b.txt") == "changed b\n")
+        h.service.turnStore.flush()
+        let persisted = try JSONDecoder().decode([String: [TurnRecord]].self,
+            from: Data(contentsOf: h.service.directory.appendingPathComponent("turns.json")))
+        #expect(persisted[agent.rawValue]?.last?.recovery?.completed == ["a.txt"])
+        #expect(persisted[agent.rawValue]?.last?.recovery?.inFlight == nil)
+
+        failing.withValue { $0 = false }
+        let restarted = ChangesService(directory: h.service.directory, trash: h.service.trash)
+        restarted.agentContext = { _ in ChangesService.AgentContext(cwd: repo.path) }
+        let retried = try await restarted.undoTurn(agentID: agent, turnID: turn.id)
+        #expect(retried.state == .undone && repo.read("b.txt") == "original b\n")
+        _ = try await restarted.redoTurn(agentID: agent, turnID: turn.id)
+        #expect(repo.read("a.txt") == "changed a\n" && repo.read("b.txt") == "changed b\n")
+        #expect(try Data(contentsOf: repo.url.appendingPathComponent(".git/index")) == index)
+    }
+
     @Test func anUnreadableChangedFileCannotBeMistakenForTheTurnSnapshot() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "start\n"])
         let h = try ChangesHarness(repo: repo)

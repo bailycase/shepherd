@@ -33,6 +33,8 @@ final class TurnStore: @unchecked Sendable {
     private var records: [String: [TurnRecord]]?
     private let io = DispatchQueue(label: "shepherd.changes.turns", qos: .utility)
     private var writeScheduled = false
+    /// Per-instance test seam, installed before use. Runs on `io`, outside the record lock.
+    var beforeWrite: (@Sendable ([String: [TurnRecord]]) throws -> Void)?
 
     init(url: URL) { self.url = url }
 
@@ -64,15 +66,21 @@ final class TurnStore: @unchecked Sendable {
     @discardableResult
     func update<T>(_ agentID: AgentID, _ body: (inout [TurnRecord]) -> T) -> T {
         lock.lock()
+        let result = updateLocked(agentID, body)
+        let schedule = !writeScheduled
+        writeScheduled = true
+        lock.unlock()
+        if schedule { io.async { self.save() } }
+        return result
+    }
+
+    /// Caller holds `lock`; both asynchronous captures and synchronous checkpoints mutate here.
+    private func updateLocked<T>(_ agentID: AgentID, _ body: (inout [TurnRecord]) -> T) -> T {
         var all = loaded()
         var list = all[agentID.rawValue] ?? []
         let result = body(&list)
         all[agentID.rawValue] = list.isEmpty ? nil : list
         records = all
-        let schedule = !writeScheduled
-        writeScheduled = true
-        lock.unlock()
-        if schedule { io.async { self.save() } }
         return result
     }
 
@@ -98,12 +106,16 @@ final class TurnStore: @unchecked Sendable {
     }
 
     private func write(_ snapshot: [String: [TurnRecord]]) throws {
+        try beforeWrite?(snapshot)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
     }
 
-    /// A recovery checkpoint must reach disk before the next working-tree mutation.
-    func checkpoint() throws {
+    /// A recovery mutation and its synchronous checkpoint, without also scheduling a background
+    /// save. Earlier saves still finish first; no record lock is held while waiting for `io`.
+    /// Called on a capture queue, before the next working-tree mutation.
+    func updateAndCheckpoint(_ agentID: AgentID, _ body: (inout [TurnRecord]) -> Void) throws {
+        lock.withLock { updateLocked(agentID, body) }
         try io.sync {
             lock.lock()
             let snapshot = records ?? [:]
@@ -328,12 +340,11 @@ extension ChangesService {
         }
         let action = redo ? "Redo" : "Undo"
         func checkpoint(_ reason: String) throws {
-            turnStore.update(agentID) { records in
+            try turnStore.updateAndCheckpoint(agentID) { records in
                 guard let i = records.firstIndex(where: { $0.turn.id == turnID }) else { return }
                 records[i].recovery = recovery
                 records[i].turn.reason = reason
             }
-            try turnStore.checkpoint()
         }
         // Each path is journaled before writing. After a crash, only exact source/target bytes
         // are accepted for the in-flight path; unrelated edits never become a recovery baseline.
@@ -360,13 +371,12 @@ extension ChangesService {
             publish(agentID)
             throw ChangesError(ChangesError.gitFailed, reason)
         }
-        turnStore.update(agentID) { records in
+        try turnStore.updateAndCheckpoint(agentID) { records in
             guard let i = records.firstIndex(where: { $0.turn.id == turnID }) else { return }
             records[i].turn.state = redo ? .ready : .undone
             records[i].turn.reason = nil
             records[i].recovery = nil
         }
-        try turnStore.checkpoint()
         publish(agentID)
         guard let turn = turnStore.published(agentID).last else { throw ChangesError(ChangesError.unavailable, "The turn is gone.") }
         return turn
