@@ -171,8 +171,11 @@ struct ThinkingRow: View, Equatable {
 /// unparsed, until its parse lands. The parses are kept with the blocks they draw, whatever the
 /// cache admitted, so styling them never parses on the main actor. One parse at a time: chunks
 /// that arrive meanwhile are skipped for the newest, which parses next once it lands. A change
-/// drawn at once (a small one) cancels the parse in flight, and a generation drops a late
-/// result, so nothing older ever replaces it. Keeps only the drawn blocks' parses.
+/// drawn at once (a small one) cancels the parse in flight, and a generation drops its late
+/// result, so nothing older ever replaces it. A cancelled parse keeps the gate's one slot until
+/// its work has actually exited (Foundation's Markdown parse ignores cancellation within a
+/// text), then wakes the view so the newest blocks parse next: parses never overlap. Keeps
+/// only the drawn blocks' parses.
 @MainActor final class ProseInlineGate {
     typealias Prepare = @Sendable ([String]) async -> [String: AttributedString]
     static let offMainBytes = NativeThreadStore.offMainProseBytes
@@ -193,9 +196,10 @@ struct ThinkingRow: View, Equatable {
     private var preparing: Task<Void, Never>?
     private var generation = 0
     private let prepare: Prepare
-    /// Parses handed off main, and the last one a change drawn at once cancelled (tests).
+    /// Parses handed off main (tests).
     private(set) var offMainParses = 0
-    private(set) var cancelled: Task<Void, Never>?
+    /// A parse holds the slot, current or cancelled, until its work exits (tests).
+    var isPreparing: Bool { preparing != nil }
 
     init(prepare: @escaping Prepare = { await SHProseInline.prepare($0) }) {
         self.prepare = prepare
@@ -205,7 +209,14 @@ struct ThinkingRow: View, Equatable {
 
     /// What to draw for `blocks`; `landed` is called (on the main actor) when a deferred parse is ready.
     func blocks(for blocks: [NativeMarkdownBlock], landed: @escaping @MainActor () -> Void) -> Shown {
-        if let shown, shown.blocks == blocks { return shown }
+        if let shown, shown.blocks == blocks {
+            // Back to what is drawn (A -> B -> A): the parse for B must never land over it.
+            if let preparing {
+                preparing.cancel()
+                generation &+= 1
+            }
+            return shown
+        }
         let texts = Prose.inlineTexts(blocks)
         // Parses kept for texts these blocks still draw (an earlier paragraph while the last one grows).
         let drawn = Set(texts)
@@ -213,11 +224,8 @@ struct ThinkingRow: View, Equatable {
         var seen: Set<String> = []
         let missing = texts.filter { kept[$0] == nil && seen.insert($0).inserted && !SHProseInline.isPrepared($0) }
         guard missing.reduce(0, { $0 + $1.utf8.count }) >= Self.offMainBytes else {
-            if let preparing {
-                preparing.cancel()
-                cancelled = preparing
-                self.preparing = nil
-            }
+            // The slot stays taken until the cancelled work exits.
+            preparing?.cancel()
             generation &+= 1
             let next = Shown(blocks: blocks, parsed: kept)
             shown = next
@@ -232,9 +240,12 @@ struct ThinkingRow: View, Equatable {
                 let interval = AppSignposts.input.beginInterval("inline markdown prepare")
                 let parsed = await prepare(missing)
                 AppSignposts.input.endInterval("inline markdown prepare", interval)
-                guard let self, !Task.isCancelled, self.generation == generation else { return }
+                guard let self else { return }
                 self.preparing = nil
-                self.shown = Shown(blocks: blocks, parsed: kept.merging(parsed) { $1 })
+                // A superseded parse only frees the slot; the wake lets the newest blocks parse next.
+                if !Task.isCancelled, self.generation == generation {
+                    self.shown = Shown(blocks: blocks, parsed: kept.merging(parsed) { $1 })
+                }
                 landed()
             }
         }

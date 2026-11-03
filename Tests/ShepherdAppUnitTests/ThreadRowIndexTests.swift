@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ShepherdRemote
 @testable import ShepherdApp
@@ -24,6 +25,20 @@ struct ThreadRowIndexTests {
         // A filtered view of the rows at one revision (a project thread hiding a turn): the count tells them apart.
         index.update([row("a")], revision: 1)
         #expect(index.ids == ["a"])
+        #expect(index.stamp == stamp + 1)
+    }
+
+    /// A Project's runtime operations changing can hide one interior turn and show another at the
+    /// same revision, count and ends: the filter is part of the key.
+    @Test func aNewFilterSwappingInteriorRowsRebuilds() {
+        let index = ThreadRowIndex()
+        let one = UUID(), two = UUID()
+        index.update([row("a"), row("u2"), row("c")], revision: 1, filter: [one])
+        let stamp = index.stamp
+        index.update([row("a"), row("u2"), row("c")], revision: 1, filter: [one])
+        #expect(index.stamp == stamp, "the same filter at the same revision walks nothing")
+        index.update([row("a"), row("u1"), row("c")], revision: 1, filter: [two])
+        #expect(index.ids == ["a", "u1", "c"] && index.set == ["a", "u1", "c"])
         #expect(index.stamp == stamp + 1)
     }
 

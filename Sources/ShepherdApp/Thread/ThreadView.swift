@@ -127,7 +127,7 @@ struct ThreadView: View {
         let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
         // The IDs, rebuilt only when the store's row structure changes, never per streamed chunk.
-        let _ = rowIndex.update(rows, revision: store.rowStructureRevision)
+        let _ = rowIndex.update(rows, revision: store.rowStructureRevision, filter: origins.runtime)
         // Set with the rows: a turn that finishes with unchanged IDs ends its waiting line.
         let liveRowID = store.liveRowID
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
@@ -658,9 +658,10 @@ private struct LoopKey: Equatable {
 }
 
 /// A thread's row IDs, structural: rebuilt only when the store's row structure revision
-/// (`NativeThreadStore.rowStructureRevision`) moves or the view's filter changes the count or
-/// ends, never when only a row's text or live state does (every streamed chunk). Content-only
-/// updates cost a constant-time key compare, no walk over the rows.
+/// (`NativeThreadStore.rowStructureRevision`) moves or the view's filter (a Project's runtime
+/// operations, which hide wake-up turns) changes, never when only a row's text or live state
+/// does (every streamed chunk). Content-only updates compare the key (the filter's operations,
+/// not the rows), no walk over the rows.
 @MainActor
 final class ThreadRowIndex {
     private(set) var ids: [String] = []
@@ -674,11 +675,12 @@ final class ThreadRowIndex {
         let count: Int
         let first: String?
         let last: String?
+        let filter: Set<UUID>
     }
 
-    func update(_ rows: [NativeThreadRow], revision: Int) {
-        // The same revision can still carry a different filtered view (a project hiding a turn): count and ends tell them apart.
-        let key = Key(revision: revision, count: rows.count, first: rows.first?.id, last: rows.last?.id)
+    /// `filter` is what decides which of the store's rows `rows` keeps: a new one can swap interior rows at one revision.
+    func update(_ rows: [NativeThreadRow], revision: Int, filter: Set<UUID> = []) {
+        let key = Key(revision: revision, count: rows.count, first: rows.first?.id, last: rows.last?.id, filter: filter)
         guard key != self.key else { return }
         self.key = key
         let ids = rows.map(\.id)
