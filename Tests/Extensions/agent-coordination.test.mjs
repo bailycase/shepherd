@@ -134,6 +134,9 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
         { id: "unlimited", name: "issues", cwd: dir, enabled: true, settings: {
           trigger: { type: "github", triggers: [{ events: ["issueOpened"] }] }, limits: { maxConcurrent: 0, maxPerDay: 20 },
         } },
+        { id: "unlimited-daily", name: "daily", cwd: dir, enabled: true, settings: {
+          trigger: { type: "schedule", rrule: "FREQ=DAILY" }, limits: { maxConcurrent: 2, maxPerDay: 0 },
+        } },
       ] }) + "\n");
     };
     await run("automation_create", { name: "watch", prompt: "Watch CI", cwd: dir, replyToCreator: true, deleteAfterRun: true });
@@ -151,7 +154,14 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
     assert.deepEqual(frames.findLast((f) => f.type === "createAutomation").settings.limits, { maxConcurrent: 0, maxPerDay: 20 });
     await run("automation_update", { automationID: "unlimited", maxConcurrent: 0, maxPerDay: 7 });
     assert.deepEqual(frames.findLast((f) => f.type === "updateAutomation").settings.limits, { maxConcurrent: 0, maxPerDay: 7 });
-    assert.match((await run("automation_list", {})).content[0].text, /no concurrency limit, 20 a day/);
+    const listed = (await run("automation_list", {})).content[0].text;
+    assert.match(listed, /no concurrency limit, 20 a day/);
+    assert.match(listed, /2 at once, no daily limit/);
+    assert.doesNotMatch(listed, /\b0 a day\b/);
+    await run("automation_create", { name: "unlimited daily", prompt: "One issue", cwd: dir, maxConcurrent: 2, maxPerDay: 0 });
+    assert.deepEqual(frames.findLast((f) => f.type === "createAutomation").settings.limits, { maxConcurrent: 2, maxPerDay: 0 });
+    await run("automation_update", { automationID: "unlimited-daily", maxConcurrent: 2, maxPerDay: 0 });
+    assert.deepEqual(frames.findLast((f) => f.type === "updateAutomation").settings.limits, { maxConcurrent: 2, maxPerDay: 0 });
 
     const automationTools = new Map();
     const automationEvents = new Map();

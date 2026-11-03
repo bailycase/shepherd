@@ -223,7 +223,7 @@ struct AutomationInboxActionTests {
 
     // MARK: Editor on This Mac
 
-    @Test @MainActor func thisMacsEditorSavesEveryPinIncludingSpeed() async throws {
+    @Test(arguments: [0, 20]) @MainActor func thisMacsEditorSavesEveryPinIncludingSpeed(maxPerDay: Int) async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
@@ -231,6 +231,7 @@ struct AutomationInboxActionTests {
         form.kind = .schedule
         form.scheduleKind = .every
         form.everyMinutes = 30
+        form.maxPerDay = maxPerDay
         form.speed = ServiceTier.fast.rawValue
         form.model = ScratchServer.standInModels.models.first ?? ""
         #expect(form.anchorNote == "Every 30 min, counted from when you save")
@@ -238,17 +239,20 @@ struct AutomationInboxActionTests {
         try await vm.saveAutomation(nil, host: PageHost.localID, draft: draft)
         let saved = try #require(app.server.state.automations.first)
         #expect(saved.serviceTier == .fast && saved.model == form.model.nilIfEmpty)
+        #expect(saved.limits == AutomationLimits(maxConcurrent: 2, maxPerDay: maxPerDay))
         #expect(saved.trigger == .schedule(AutomationSchedule(rrule: "FREQ=MINUTELY;INTERVAL=30")))
 
         // Read back, the editor shows what was saved; clearing Speed saves the default.
         let key = AutomationKey(host: PageHost.localID, automation: saved.id)
         var reread = AutomationTriggerForm(try #require(vm.automationDraft(key)?.settings))
         #expect(reread.speed == ServiceTier.fast.rawValue)
+        #expect(reread.maxPerDay == maxPerDay)
         reread.speed = ""
         var edited = draft
         edited.settings = reread.settings
         try await vm.saveAutomation(key, host: PageHost.localID, draft: edited)
         #expect(app.server.state.automations.first?.serviceTier == nil)
+        #expect(app.server.state.automations.first?.limits.maxPerDay == maxPerDay)
     }
 }
 
