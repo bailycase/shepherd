@@ -59,6 +59,26 @@ public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
     public var images: [NativeImage]
     public var delivery: NativeThreadDelivery
     public var state: State
+
+    /// Retention accounting, not RSS: all variable payload plus a fixed allowance per item.
+    public var payloadBytes: Int {
+        var bytes = 128 + typed.utf8.count
+        for file in files { bytes += 64 + file.name.utf8.count + file.path.utf8.count }
+        for reference in references {
+            let ref = reference.reference
+            bytes += 128 + ref.host.rawValue.utf8.count + ref.designID.rawValue.utf8.count
+                + (ref.board?.rawValue.utf8.count ?? 0) + (ref.page?.utf8.count ?? 0)
+                + reference.label.utf8.count + (ref.label?.utf8.count ?? 0) + (reference.outline?.system?.utf8.count ?? 0)
+            if let element = ref.element { bytes += element.board.utf8.count + element.path.count * MemoryLayout<Int>.stride }
+        }
+        for attachment in elements {
+            let element = attachment.element
+            bytes += 128 + element.page.utf8.count + element.selector.utf8.count + element.label.utf8.count
+                + (element.source?.utf8.count ?? 0) + (element.html?.utf8.count ?? 0)
+        }
+        for image in images { bytes += 64 + image.data.count + image.mimeType.utf8.count + (image.name?.utf8.count ?? 0) }
+        return bytes
+    }
 }
 
 /// A native thread for one agent: polls the host's snapshots, keeps the optimistic echoes of
@@ -138,6 +158,9 @@ public final class NativeThreadStore {
     public private(set) var settledRunning = false
     public var draft = ""
     public private(set) var submissions: [NativeThreadSubmission] = []
+    nonisolated public static let maximumRetainedSubmissions = 8
+    nonisolated public static let maximumRetainedSubmissionBytes = 16 * 1024 * 1024
+    public private(set) var retainedSubmissionBytes = 0
     public var delivery: NativeThreadDelivery = .followUp
     /// Files waiting beside the draft (a design's boards attached to this thread); they go with
     /// the next message the draft sends.
@@ -407,6 +430,8 @@ public final class NativeThreadStore {
     }
     /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
     @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
+    /// A non-cooperative synchronous parser gate used to verify actual worker reservations.
+    @ObservationIgnored var duringProseParse: (@Sendable () -> Void)?
     /// Parses handed off main (tests).
     @ObservationIgnored private(set) var offMainParses = 0
 
@@ -550,12 +575,21 @@ public final class NativeThreadStore {
             if old != new { break }
             equal += 1
         }
+        var changedTools = Set(oldSuffix.dropFirst(equal).compactMap(\.toolCallID))
+        changedTools.formUnion(suffix.dropFirst(equal).compactMap(\.toolCallID))
         changed += equal
         if changed < displayedMessages.count || equal < suffix.count {
             displayedMessages.replaceSubrange(changed..., with: suffix.dropFirst(equal))
         }
         historyDirty = messages.count
         displayedHistoryCount = messages.count
+        // Tool ids can recur in different turns. Rebuild from the earliest surviving owner
+        // when one occurrence changes/disappears, preserving the full projection's last-owner
+        // wins rule and its fallback when the later occurrence is removed.
+        for id in changedTools {
+            if let first = toolPositions[id]?.first { changed = min(changed, first) }
+            else if let first = tail.firstIndex(where: { $0.toolCallID == id }) { changed = min(changed, messages.count + first) }
+        }
         let displayed = displayedMessages
         // A steer lands inside the running turn; it does not restart its clock.
         let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.origin != .steered }?.timestamp
@@ -987,11 +1021,16 @@ public final class NativeThreadStore {
         proseRequests[key] = wanted
         proseParsing[key] = token
         let beforeParse = beforeProseParse
+        let duringParse = duringProseParse
         proseJobs[key] = (token, { [weak self] in
             await beforeParse?()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                await self?.finishProseTask(key, token: token)
+                return
+            }
             let interval = Self.signposter.beginInterval("Thread Markdown parse", id: Self.signposter.makeSignpostID())
             let onMain = Thread.isMainThread
+            duringParse?()
             let value = parse(text)
             Self.signposter.endInterval("Thread Markdown parse", interval)
             await MainActor.run {
@@ -1010,6 +1049,12 @@ public final class NativeThreadStore {
                 self.startProseJobs()
             }
         })
+        startProseJobs()
+    }
+
+    private func finishProseTask(_ key: ProseKey, token: UUID) {
+        guard proseTasks[key]?.0 == token else { return }
+        proseTasks[key] = nil
         startProseJobs()
     }
 
@@ -1042,7 +1087,8 @@ public final class NativeThreadStore {
 
     private func cancelProse() {
         for (_, task) in proseTasks.values { task.cancel() }
-        proseTasks = [:]
+        // Cancellation invalidates publication, not the worker's reservation: a synchronous
+        // parse cannot cooperate until it returns. Its completion alone releases this slot.
         proseJobs = [:]
         proseRequests = [:]
         proseParsing = [:]
@@ -2090,6 +2136,18 @@ public final class NativeThreadStore {
             notice = "This thread isn't connected right now, so nothing was done. Open it and try again."
             return false
         }
+        let submission = typed.flatMap { typed in
+            sentText.map { _ in NativeThreadSubmission(id: operation, typed: typed, files: files, references: references,
+                                                       elements: elements, images: images, delivery: delivery, state: .sending) }
+        }
+        let submissionBytes = submission?.payloadBytes ?? 0
+        if submission != nil {
+            guard submissions.count < Self.maximumRetainedSubmissions,
+                  submissionBytes <= Self.maximumRetainedSubmissionBytes - retainedSubmissionBytes else {
+                notice = "Unresolved sends have reached the local recovery limit. Restore or explicitly discard a settled record before sending more. Nothing was sent; your draft is unchanged."
+                return false
+            }
+        }
         let run = epoch
         let answeringStartup: Bool
         if case .answer = action { answeringStartup = current.initializing == true }
@@ -2101,11 +2159,11 @@ public final class NativeThreadStore {
         busy = true
         notice = nil
         inFlight.insert(operation)
-        if let typed, sentText != nil {
+        if let submission {
             let interval = Self.signposter.beginInterval("Thread submit capture")
-            submissions.append(NativeThreadSubmission(id: operation, typed: typed, files: files, references: references,
-                                                       elements: elements, images: images, delivery: delivery, state: .sending))
-            clearCapturedDraft(typed, files: files, references: references, elements: elements)
+            submissions.append(submission)
+            retainedSubmissionBytes += submissionBytes
+            clearCapturedDraft(submission.typed, files: files, references: references, elements: elements)
             Self.signposter.endInterval("Thread submit capture", interval)
         }
         defer {
@@ -2215,8 +2273,8 @@ public final class NativeThreadStore {
     private func settleSubmission(_ operation: UUID, result: NativeThreadResult?) {
         guard let index = submissions.firstIndex(where: { $0.id == operation }) else { return }
         switch result {
-        case .accepted(let id) where id == operation: submissions.remove(at: index)
-        case .failure: submissions[index].state = .failed
+        case .accepted(let id) where id == operation: _ = removeSubmission(at: index)
+        case .failure(let code, _) where code != "outcome_unknown": submissions[index].state = .failed
         default: submissions[index].state = .uncertain
         }
     }
@@ -2225,12 +2283,32 @@ public final class NativeThreadStore {
     /// the returned image batch into its own attachment model; new drafts are never overwritten.
     @discardableResult
     public func restoreSubmission(_ id: UUID) -> NativeThreadSubmission? {
-        guard !hasDraft, let index = submissions.firstIndex(where: { $0.id == id && $0.state == .failed }) else { return nil }
-        let value = submissions.remove(at: index)
+        guard !hasDraft, !inFlight.contains(id),
+              let index = submissions.firstIndex(where: { $0.id == id && $0.state == .failed }) else { return nil }
+        let value = removeSubmission(at: index)
         draft = value.typed
         attachedFiles = value.files
         attachedReferences = value.references
         attachedElements = value.elements
+        return value
+    }
+
+    /// Explicit disposal is local acknowledgment only. It never retracts, retries or sends a
+    /// remote action, and cannot remove a record whose operation is still being reconciled.
+    public func canDiscardSubmission(_ id: UUID) -> Bool {
+        !inFlight.contains(id) && submissions.contains { $0.id == id && ($0.state == .failed || $0.state == .uncertain) }
+    }
+
+    @discardableResult
+    public func discardSubmission(_ id: UUID) -> Bool {
+        guard canDiscardSubmission(id), let index = submissions.firstIndex(where: { $0.id == id }) else { return false }
+        _ = removeSubmission(at: index)
+        return true
+    }
+
+    private func removeSubmission(at index: Int) -> NativeThreadSubmission {
+        let value = submissions.remove(at: index)
+        retainedSubmissionBytes -= value.payloadBytes
         return value
     }
 
