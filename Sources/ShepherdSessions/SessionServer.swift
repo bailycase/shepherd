@@ -5734,8 +5734,10 @@ public final class SessionServer: @unchecked Sendable {
     private func announceServableThreads() {
         guard !unannouncedServable.isEmpty else { return }
         for sessionID in unannouncedServable {
-            guard let agentID = agentID(forSession: sessionID) else { continue }
-            unannouncedServable.remove(sessionID)
+            guard let agentID = agentID(forSession: sessionID), unannouncedServable.remove(sessionID) != nil else { continue }
+            // Pi may have served before its Agent/Tab existed. Finish recovery now that an
+            // owner is bound; remove the announcement first because recovery can commit state.
+            restoreAgentRecovery(sessionID: sessionID)
             hopToMain { [weak self] in self?.onNativeThreadServable?(agentID) }
         }
     }
