@@ -31,12 +31,18 @@ struct AddMCPServerSheet: View {
         var stored: Bool = false
     }
 
+    struct Argument: Identifiable, Equatable {
+        let id = UUID()
+        var value: String
+    }
+
     /// What the sheet opens with, already checked (a preview, or a URL pasted elsewhere).
     struct Draft {
         var name = ""
         var url = ""
         var check: Check = .idle
         var command = ""
+        var args: [String] = []
         var env: [Variable] = []
         var resolvedPath: String?
         var checkedAt: Date?
@@ -85,6 +91,7 @@ struct AddMCPServerSheet: View {
     @State private var extraHeaders: [Variable] = []
     @State private var timeout = MCPShepherdSettings.defaultTimeoutSeconds
     @State private var command = ""
+    @State private var arguments: [Argument] = []
     @State private var env: [Variable] = []
     @State private var resolvedPath: String?
     @State private var pathChecked: Date?
@@ -347,16 +354,50 @@ struct AddMCPServerSheet: View {
     @ViewBuilder private var local: some View {
         HStack(alignment: .top, spacing: SH.Space.xl) {
             field("Name") { nameField }.frame(width: AppLayout.mcpSheetNameWidth)
-            field("Command", note: project == nil ? "Runs on this Mac, in your login shell’s PATH." : "Runs on \(hostName), in the host's PATH.") {
+            field("Command", note: project == nil ? "Executable only. Runs on this Mac, in your login shell’s PATH." : "Executable only. Runs on \(hostName), in the host's PATH.") {
                 HStack(spacing: SH.Space.m) {
                     Image(systemName: "terminal").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-                    TextField("Command", text: $command, prompt: Text("npx @playwright/mcp@latest"))
+                    TextField("Command", text: $command, prompt: Text("npx"))
                         .accessibilityLabel("Command")
                         .textFieldStyle(.plain)
                         .font(.shMono(AppLayout.mcpSheetTextSize))
                 }
                 .modifier(MCPFieldChrome())
             }
+        }
+        field("Arguments", note: "One argument per row, without shell quoting. Spaces and quotes are kept as typed. An empty row passes an empty argument.") {
+            VStack(spacing: 0) {
+                ForEach($arguments) { $argument in
+                    HStack(spacing: SH.Space.l) {
+                        TextField("Argument", text: $argument.value, prompt: Text("Value (can be empty)"))
+                            .accessibilityLabel("Argument")
+                            .textFieldStyle(.plain)
+                            .font(.shMono(AppLayout.mcpSheetTextSize))
+                        Button { arguments.removeAll { $0.id == argument.id } } label: {
+                            Image(systemName: "xmark")
+                                .frame(width: SH.Height.controlS, height: SH.Height.controlS)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .accessibilityLabel("Remove argument")
+                    }
+                    .padding(.horizontal, SH.Space.m + SH.Space.xxs)
+                    .frame(height: AppLayout.mcpSheetFieldHeight)
+                    .overlay(alignment: .bottom) { SHHairline() }
+                }
+                Button { arguments.append(Argument(value: "")) } label: {
+                    Label("Add argument", systemImage: "plus")
+                        .font(.shSans(AppLayout.mcpSheetTextSize))
+                        .frame(minHeight: SH.Height.controlS)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.shLink)
+                .padding(.horizontal, SH.Space.m + SH.Space.xxs)
+                .frame(maxWidth: .infinity, minHeight: AppLayout.mcpSheetFieldHeight, alignment: .leading)
+            }
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+            .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
         }
         field("Environment", note: credentialNote) { variables($env, addTitle: "Add variable") }
         field("Runs on") {
@@ -376,7 +417,7 @@ struct AddMCPServerSheet: View {
 
     @ViewBuilder private var pathNote: some View {
         let sh = Color.sh
-        let program = MCPCommandLine.split(command).first ?? ""
+        let program = command
         if project != nil {
             Text("Starts with a thread; not checked here.").font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(sh.textTertiary)
         } else if program.isEmpty {
@@ -541,6 +582,7 @@ struct AddMCPServerSheet: View {
             check = draft.check
             checkedURL = draft.check == .idle ? nil : draft.url
             command = draft.command
+            arguments = draft.args.map { Argument(value: $0) }
             env = draft.env
             resolvedPath = draft.resolvedPath
             pathChecked = draft.checkedAt
@@ -564,7 +606,8 @@ struct AddMCPServerSheet: View {
             scopes = entry.json["oauth"]?["scope"]?.stringValue ?? ""
         }
         url = entry.url ?? ""
-        command = MCPCommandLine.join((entry.command.map { [$0] } ?? []) + entry.args)
+        command = entry.command ?? ""
+        arguments = entry.args.map { Argument(value: $0) }
         env = entry.env.sorted { $0.key < $1.key }.map { variable($0.key, $0.value) }
         var headers = entry.headers
         if let auth = headers.keys.first(where: { $0.caseInsensitiveCompare("Authorization") == .orderedSame }) {
@@ -590,7 +633,7 @@ struct AddMCPServerSheet: View {
             let parsed = URL(string: url.trimmingCharacters(in: .whitespaces))
             return nameProblem == nil && !name.isEmpty && ["http", "https"].contains(parsed?.scheme?.lowercased() ?? "") && parsed?.host != nil
         case .local:
-            return nameProblem == nil && !name.isEmpty && !MCPCommandLine.split(command).isEmpty
+            return nameProblem == nil && !name.isEmpty && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .json:
             return (try? MCPImport.parse(json).get()) != nil
         }
@@ -624,11 +667,11 @@ struct AddMCPServerSheet: View {
     }
 
     private func resolveCommand() async {
-        let program = MCPCommandLine.split(command).first ?? ""
+        let program = command
         guard command != checkedCommand else { return }
         checkedCommand = nil
         guard kind == .local, !program.isEmpty else { return }
-        if !nameEdited { name = MCPServerName.suggested(forCommand: MCPCommandLine.split(command)) }
+        if !nameEdited { name = MCPServerName.suggested(forCommand: [command] + arguments.map(\.value)) }
         guard project == nil else { return }
         try? await Task.sleep(for: .milliseconds(500))
         guard !Task.isCancelled else { return }
@@ -721,9 +764,8 @@ struct AddMCPServerSheet: View {
             entry.headers = headers
             if entry.type == nil { entry.json["type"] = .string("http") }
         case .local:
-            let words = MCPCommandLine.split(command)
-            entry.command = words.first
-            entry.args = Array(words.dropFirst())
+            entry.command = command
+            entry.args = arguments.map(\.value)
             entry.env = collect(env, keep: editing?.env ?? [:])
         case .json:
             break

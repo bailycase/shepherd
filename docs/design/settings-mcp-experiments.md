@@ -39,7 +39,9 @@ signs in through `pi mcp login`, whose tokens are pi's (`mcp-auth.json`). `codem
   with mcp.json's path and This Mac.
 - **Add server** (`AddMCPServerSheet`): Remote (a URL, checked as you paste it: the server's name,
   its transport, whether it signs in with OAuth; headers; Advanced for a client ID, secret and
-  scopes), Local (a command line, env vars whose secret values go to the Keychain) and Paste JSON,
+  scopes), Local (an executable Command and separate Arguments rows with Add argument and remove
+  controls; each row is one literal value, including an empty value; env vars whose secret values
+  go to the Keychain) and Paste JSON,
   each with Start. **Import…** takes an `mcpServers` block or file, asks before replacing
   servers of the same name, and moves plaintext secrets to the Keychain.
 - **Sign in** (`MCPSignInSheet`): three steps (finding the sign-in server, registering Shepherd,
