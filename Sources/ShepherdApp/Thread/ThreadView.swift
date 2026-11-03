@@ -126,9 +126,10 @@ struct ThreadView: View {
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
         let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
-        // The IDs and the live row, derived once per thread change rather than per render (every streamed chunk).
-        let _ = rowIndex.update(rows, version: store.threadVersion)
-        let liveRow = rowIndex.liveRow
+        // The IDs, rebuilt only when the store's row structure changes, never per streamed chunk.
+        let _ = rowIndex.update(rows, revision: store.rowStructureRevision)
+        // Set with the rows: a turn that finishes with unchanged IDs ends its waiting line.
+        let liveRowID = store.liveRowID
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
         // is written. Between tools the thread ends in "Thinking…", the live turn's last part (or
         // on its own before the reply has a row). A question waits in the composer instead, and a
@@ -179,7 +180,7 @@ struct ThreadView: View {
                         }
                         // Sends captured but not yet accepted: sending, refused (restore or discard) or of unknown outcome.
                         if projectSend == nil { ThreadSubmissions(store: store, input: input) }
-                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
+                        if thinking, liveRowID == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -656,27 +657,33 @@ private struct LoopKey: Equatable {
     let run: Int
 }
 
-/// A thread's row IDs and its live row. The IDs (and their set) are structural: rebuilt only
-/// when membership or order changes, never when only a row's text or live state does (every
-/// streamed chunk advances the thread's version). The live row is refreshed separately on every
-/// version, so a turn that finishes with unchanged IDs still ends its waiting line.
+/// A thread's row IDs, structural: rebuilt only when the store's row structure revision
+/// (`NativeThreadStore.rowStructureRevision`) moves or the view's filter changes the count or
+/// ends, never when only a row's text or live state does (every streamed chunk). Content-only
+/// updates cost a constant-time key compare, no walk over the rows.
 @MainActor
 final class ThreadRowIndex {
     private(set) var ids: [String] = []
     private(set) var set: Set<String> = []
-    private(set) var liveRow: NativeThreadRow?
     /// Bumped when the IDs were rebuilt, so a reader can skip an equal set.
     private(set) var stamp = 0
-    private var version: Int?
+    private var key: Key?
 
-    func update(_ rows: [NativeThreadRow], version: Int) {
-        // The same version can still carry a different filtered view (a project hiding a turn): count and ends tell them apart.
-        guard version != self.version || rows.count != ids.count || rows.first?.id != ids.first || rows.last?.id != ids.last else { return }
-        self.version = version
-        liveRow = rows.last(where: \.live)
-        // Element-wise, allocation-free: catches a middle replacement or reorder that count and ends would miss.
-        guard !rows.lazy.map(\.id).elementsEqual(ids) else { return }
-        ids = rows.map(\.id)
+    private struct Key: Equatable {
+        let revision: Int
+        let count: Int
+        let first: String?
+        let last: String?
+    }
+
+    func update(_ rows: [NativeThreadRow], revision: Int) {
+        // The same revision can still carry a different filtered view (a project hiding a turn): count and ends tell them apart.
+        let key = Key(revision: revision, count: rows.count, first: rows.first?.id, last: rows.last?.id)
+        guard key != self.key else { return }
+        self.key = key
+        let ids = rows.map(\.id)
+        guard ids != self.ids else { return }
+        self.ids = ids
         set = Set(ids)
         stamp &+= 1
     }

@@ -144,6 +144,52 @@ struct ThreadPerformanceTests {
         #expect(store.rows == fullRows(store))
     }
 
+    /// `rowStructureRevision` moves exactly when the row IDs do, and `liveRowID` names the live row,
+    /// across streaming, child progress, a provisional reply persisting, finishing, a new turn and an older page.
+    @Test func rowStructureRevisionMovesOnlyWithRowIDs() async {
+        var history = (0..<20).flatMap { [F.user(id: "u\($0)"), F.assistant("answer", id: "a\($0)")] }
+        history += [F.user(id: "now"), F.tool("shepherd_child_start", output: "started", id: "spawn", callID: "spawn")]
+        let host = FakeHost(F.snapshot(running: true, messages: history, subagents: [F.run("child", tokens: 1, toolCallID: "spawn")]))
+        host.snapshot.olderCursor = "u0"
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        var ids = store.rows.map(\.id), revision = store.rowStructureRevision
+        func step(structural: Bool?, _ change: () -> Void) async {
+            change()
+            host.snapshot.revision += 1
+            await store.refresh()
+            let now = store.rows.map(\.id)
+            #expect((store.rowStructureRevision != revision) == (now != ids), "the revision moves exactly when the IDs do")
+            if let structural { #expect((now != ids) == structural) }
+            #expect(store.liveRowID == store.rows.last(where: \.live)?.id)
+            ids = now
+            revision = store.rowStructureRevision
+        }
+        await step(structural: nil) { host.snapshot.provisional = [F.assistant("chunk", status: "streaming", id: "live")] }
+        for chunk in 0..<5 {
+            await step(structural: false) { host.snapshot.provisional = [F.assistant("chunk \(chunk)", status: "streaming", id: "live")] }
+        }
+        #expect(store.liveRowID != nil)
+        await step(structural: false) { host.snapshot.subagents?[0].tokens = 9 }
+        // The provisional reply persists under its own id: the same reply row.
+        await step(structural: nil) {
+            host.snapshot.provisional = []
+            host.snapshot.messages.append(F.assistant("chunk 4", id: "live"))
+        }
+        #expect(store.liveRowID != nil)
+        await step(structural: false) { host.snapshot.running = false }
+        // The finish settles after the store's own short hold; it lands in a derive of its own.
+        await until { !store.rows.contains(where: \.live) }
+        #expect(store.rows.map(\.id) == ids && store.rowStructureRevision == revision, "live -> finished with unchanged IDs")
+        #expect(store.liveRowID == nil)
+        await step(structural: true) { host.snapshot.messages += [F.user(id: "next"), F.assistant("reply", id: "reply")] }
+        host.next = [.success(.snapshot(value: F.snapshot(messages: [F.user("older", id: "older"), F.assistant("old", id: "old")], olderCursor: nil)))]
+        await store.loadOlder()
+        #expect(store.rows.map(\.id) != ids && store.rowStructureRevision != revision, "an older page prepends rows")
+        #expect(store.rows == fullRows(store))
+    }
+
     @Test(arguments: [100, 1_000, 10_000], [false, true])
     func tailWorkRetainsHistoryRatherThanVisitingIt(_ count: Int, paged: Bool) async {
         let history = (0..<(count / 2)).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant("answer", id: "a\($0)")] }

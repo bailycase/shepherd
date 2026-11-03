@@ -227,6 +227,11 @@ public final class NativeThreadStore {
     public private(set) var displayedMessages: [NativeThreadMessage] = []
     public private(set) var turns: [NativeTurn] = []
     public private(set) var rows: [NativeThreadRow] = [] { didSet { threadVersion &+= 1 } }
+    /// Bumped by `derive` when the rows' IDs or order change, never when only a row's content
+    /// or live state does (a streamed chunk): views rebuild ID indexes only then. Not observed.
+    @ObservationIgnored public private(set) var rowStructureRevision = 0
+    /// The streaming reply's row, set in the same `derive` as `rows`. Not observed.
+    @ObservationIgnored public private(set) var liveRowID: String?
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
     public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
@@ -778,6 +783,9 @@ public final class NativeThreadStore {
         // Start from cached *unfolded* presentations, including the predecessor above, so a
         // changed or removed successor can both fold and unfold an earlier error.
         Self.foldRepeatedErrors(&rows)
+        // Only the rebuilt suffix can change IDs: a stream touches the tail, never the whole thread.
+        if !self.rows.dropFirst(rowStart).lazy.map(\.id).elementsEqual(rows.lazy.map(\.id)) { rowStructureRevision &+= 1 }
+        liveRowID = liveReply.map { turns[$0].id }
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }

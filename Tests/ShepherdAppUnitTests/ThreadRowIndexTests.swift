@@ -2,7 +2,7 @@ import Testing
 @testable import ShepherdRemote
 @testable import ShepherdApp
 
-/// The thread's row IDs and live row, derived once per change rather than on every streamed chunk.
+/// The thread's row IDs, rebuilt only when the store's row structure revision moves (or the view's filter changes them).
 @Suite("Thread row index")
 @MainActor
 struct ThreadRowIndexTests {
@@ -10,66 +10,48 @@ struct ThreadRowIndexTests {
         NativeThreadRow(turn: NativeTurn(id: id, isUser: false, messages: []), presentation: nil, live: live, promptText: nil, startedAt: nil)
     }
 
-    @Test func rebuildsOnlyWhenTheRowsChange() {
+    @Test func rebuildsOnlyWhenTheStructureRevisionOrTheFilteredViewChanges() {
         let index = ThreadRowIndex()
-        index.update([row("a"), row("b", live: true)], version: 1)
+        index.update([row("a"), row("b", live: true)], revision: 1)
         #expect(index.ids == ["a", "b"])
         #expect(index.set == ["a", "b"])
-        #expect(index.liveRow?.id == "b")
         let stamp = index.stamp
 
-        // The same rows at the same version (a render for a reason other than the rows): nothing rebuilt.
-        index.update([row("a"), row("b", live: true)], version: 1)
+        // Live -> finished with unchanged IDs: same revision, nothing rebuilt.
+        index.update([row("a"), row("b")], revision: 1)
         #expect(index.stamp == stamp)
 
-        // A new version (the live row finished, IDs unchanged): the live row clears, the IDs are kept.
-        index.update([row("a"), row("b")], version: 2)
-        #expect(index.stamp == stamp)
-        #expect(index.liveRow == nil)
-
-        // A filtered view of the rows at one version (a project thread hiding a turn): the count tells them apart.
-        index.update([row("a")], version: 2)
+        // A filtered view of the rows at one revision (a project thread hiding a turn): the count tells them apart.
+        index.update([row("a")], revision: 1)
         #expect(index.ids == ["a"])
-    }
-
-    /// Streaming text in the tail of many short turns advances the version but never the IDs.
-    @Test func tailTextDoesNotRebuildStructure() {
-        let index = ThreadRowIndex()
-        var rows = (0..<200).map { row("t\($0)") } + [row("tail", live: true)]
-        index.update(rows, version: 1)
-        let stamp = index.stamp
-        for version in 2...50 { index.update(rows, version: version) }
-        #expect(index.stamp == stamp)
-        #expect(index.liveRow?.id == "tail")
-
-        // Live -> finished with unchanged IDs: the live row clears without a structural rebuild.
-        rows[rows.count - 1] = row("tail")
-        index.update(rows, version: 51)
-        #expect(index.liveRow == nil)
-        #expect(index.stamp == stamp)
+        #expect(index.stamp == stamp + 1)
     }
 
     @Test func middleReplacementPrependAndResetRebuild() {
         let index = ThreadRowIndex()
-        index.update([row("a"), row("b"), row("c")], version: 1)
+        index.update([row("a"), row("b"), row("c")], revision: 1)
         var stamp = index.stamp
 
-        index.update([row("a"), row("x"), row("c")], version: 2)
+        index.update([row("a"), row("x"), row("c")], revision: 2)
         #expect(index.stamp == stamp + 1)
         #expect(index.set == ["a", "x", "c"])
         stamp = index.stamp
 
-        index.update([row("x"), row("a"), row("c")], version: 3)
+        index.update([row("x"), row("a"), row("c")], revision: 3)
         #expect(index.stamp == stamp + 1)
         #expect(index.ids == ["x", "a", "c"])
         stamp = index.stamp
 
-        index.update([row("p"), row("x"), row("a"), row("c")], version: 4)
+        index.update([row("p"), row("x"), row("a"), row("c")], revision: 4)
         #expect(index.stamp == stamp + 1)
         stamp = index.stamp
 
-        index.update([], version: 5)
+        // A revision that moved without new IDs (a replacement put back): an equal set, no new stamp.
+        index.update([row("p"), row("x"), row("a"), row("c")], revision: 5)
+        #expect(index.stamp == stamp)
+
+        index.update([], revision: 6)
         #expect(index.stamp == stamp + 1)
-        #expect(index.ids.isEmpty && index.liveRow == nil)
+        #expect(index.ids.isEmpty)
     }
 }

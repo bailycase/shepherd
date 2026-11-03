@@ -50,11 +50,13 @@ public enum SHProseInline {
     /// Main-actor styled-cache misses that parsed Markdown here rather than taking a prepared parse (tests).
     public private(set) static var mainParses = 0
 
-    /// `text` styled, from the cache when it was styled before at this text scale.
-    public static func attributed(_ text: String) -> AttributedString {
+    /// `text` styled, from the cache when it was styled before at this text scale. `parsed` is a
+    /// parse its caller kept from `prepare` (one past the cache's entry budget is never cached),
+    /// so styling it parses nothing here.
+    public static func attributed(_ text: String, parsed prepared: AttributedString? = nil) -> AttributedString {
         let key = "\(ThemeStore.shared.textScale)\n\(text)" as NSString
         if let cached = cache.object(forKey: key) { return cached.value }
-        let value = style(parsed(text), text: text)
+        let value = style(prepared ?? parsed(text), text: text)
         let cost = cost(text, value)
         if cost <= entryCostLimit { cache.setObject(Entry(value), forKey: key, cost: cost) }
         return value
@@ -67,14 +69,23 @@ public enum SHProseInline {
     }
 
     /// Parses `texts` off the main actor, so drawing them later only styles (theme and text
-    /// scale are applied on the main actor). Stale work is harmless: it only fills the cache.
-    public nonisolated static func prepare(_ texts: [String]) async {
-        await Task.detached(priority: .userInitiated) {
-            for text in texts where parsedCache.object(forKey: text as NSString) == nil {
-                if Task.isCancelled { return }
-                store(parse(text), for: text)
+    /// scale are applied on the main actor). Returns every parse, cached or not: a text past
+    /// the entry budget is never cached, so its caller keeps it (`attributed(_:parsed:)`).
+    /// Cancelling the caller stops the parse between texts and returns what is done.
+    @discardableResult
+    public nonisolated static func prepare(_ texts: [String]) async -> [String: AttributedString] {
+        let work = Task.detached(priority: .userInitiated) {
+            var parsed: [String: AttributedString] = [:]
+            for text in texts {
+                if Task.isCancelled { break }
+                if let cached = parsedCache.object(forKey: text as NSString) { parsed[text] = cached.value; continue }
+                let value = parse(text)
+                store(value, for: text)
+                parsed[text] = value
             }
-        }.value
+            return parsed
+        }
+        return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
     }
 
     private nonisolated static func store(_ value: AttributedString, for text: String) {
