@@ -25,6 +25,10 @@ extension FixtureCatalog {
             // newer draft and image kept, an unknown outcome never restorable. Shot: both banners.
             FixtureScreen(name: "composer-refused", hosts: RefusedSendFixture.hosts(), routes: [.thread(preview)],
                           prepare: RefusedSendFixture.run),
+            // An earlier launch's kept sends (seeded before the app starts): text only, refused one
+            // restorable, unknown one not.
+            FixtureScreen(name: "composer-recovered", hosts: RefusedSendFixture.recoveredHosts(), routes: [.thread(preview)],
+                          prepare: RefusedSendFixture.recovered),
             FixtureScreen(name: "pad-switch", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FreshnessFixtures.switchThreads),
             // Run with -w: a thread kept hidden in one window and shown in a second, which then closes.
@@ -375,6 +379,31 @@ extension FixtureCatalog {
         fflush(stdout)
     }
 
+    nonisolated static let recoveredIDs = (UUID(), UUID())
+
+    /// The thread's hosts, and, for this screen only (the catalog is built for every screen), the
+    /// kept sends an earlier launch saved, written before the app makes its stores.
+    static func recoveredHosts() -> [FixtureHostData] {
+        if ProcessInfo.processInfo.environment["FIXTURE_SCREEN"] == "composer-recovered" {
+            ThreadRecovery.save([
+                ThreadRecoveryRecord(id: recoveredIDs.0, typed: "Maybe it went yesterday", state: .uncertain, images: 0),
+                ThreadRecoveryRecord(id: recoveredIDs.1, typed: "Rename the ledger export", state: .failed, images: 2),
+            ], for: FixtureData.ref(FixtureData.preview), defaults: .standard)
+        }
+        return ThreadFixtures.hosts()
+    }
+
+    static func recovered(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        check(app.threads.recovered[ref]?.map(\.state) == [.uncertain, .failed], "an earlier launch's kept sends come back")
+        check(app.threads.restoreRecovered(recoveredIDs.0, for: ref) == nil, "the unknown one is never restored")
+        store.draft = "typing now"
+        check(app.threads.restoreRecovered(recoveredIDs.1, for: ref) == nil && store.draft == "typing now", "a new draft is never replaced")
+        store.draft = ""
+        try? await Task.sleep(for: .milliseconds(500))
+    }
+
     static func png() -> Data {
         UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).pngData { context in
             UIColor.systemOrange.setFill()
@@ -397,7 +426,10 @@ extension FixtureCatalog {
         let refused = store.submissions.first { $0.state == .failed }
         check(refused?.typed == "Ship the ledger fix" && refused?.images.count == 1 && state.attachments.isEmpty && store.draft.isEmpty,
               "a refused send keeps its text and image, out of the composer")
-        check(UserDefaults.standard.string(forKey: key) == "Ship the ledger fix", "its text is saved where the draft is")
+        let saved = { ThreadRecovery.load(ref, defaults: .standard) }
+        await FixtureWindows.wait("refused send saved", seconds: 5) { saved().map(\.state) == [.failed] }
+        check(saved().first?.typed == "Ship the ledger fix" && saved().first?.images == 1 && UserDefaults.standard.string(forKey: key) == nil,
+              "its text is saved apart from the draft, without its image's bytes")
 
         // A newer draft and image: Restore waits, and nothing of theirs is replaced.
         store.draft = "A newer thought"
@@ -424,7 +456,8 @@ extension FixtureCatalog {
         try? await Task.sleep(for: .milliseconds(1500))
         check(mode.sends == sends + 1, "an unknown outcome is never sent again by the app (\(mode.sends - sends) sends)")
         check(unknown.map { store.restoreSubmission($0.id) == nil } == true && store.submissions.count == 1, "an uncertain send cannot be restored")
-        check(UserDefaults.standard.string(forKey: key) == nil, "an uncertain send is not saved as a draft")
+        await FixtureWindows.wait("unknown send saved", seconds: 5) { saved().map(\.state) == [.uncertain] }
+        check(UserDefaults.standard.string(forKey: key) == nil, "an uncertain send is saved as unknown, never as a draft")
         // Discarded: this device's copy goes; the host hears nothing.
         sends = mode.sends
         if let id = unknown?.id { check(store.canDiscardSubmission(id) && store.discardSubmission(id), "an uncertain send can be discarded") }
@@ -440,11 +473,12 @@ extension FixtureCatalog {
         sends = mode.sends
         store.draft = "Ninth"
         await state.attach([(png(), "ninth.png")])
-        await ThreadComposer.send(.followUp, store: store, state: state).value
+        await ThreadComposer.send(.followUp, store: store, state: state, admits: app.threads.admits(store.draft, for: ref)).value
         check(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions && mode.sends == sends,
               "past the limit nothing is sent (\(store.submissions.count) kept)")
-        check(store.draft == "Ninth" && state.attachments.count == 1 && (store.notice ?? "").contains("limit"),
+        check(store.draft == "Ninth" && state.attachments.count == 1 && state.attachmentError == ThreadComposer.recoveryFull,
               "and its draft and image stay, with why")
+        state.attachmentError = nil
         for submission in store.submissions where store.canDiscardSubmission(submission.id) { store.discardSubmission(submission.id) }
         check(store.submissions.isEmpty, "settled sends can all be discarded")
         state.clearAttachments()
