@@ -26,6 +26,18 @@ struct ThreadReaderHandoffTests {
                              provisional: [], clipped: false)
     }
 
+    /// Pauses between pulls that end when the test releases them.
+    @MainActor final class Pauses {
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        /// Once released, every pause (one still to come too) ends at once.
+        private var open = false
+        func wait() async {
+            if open { await Task.yield(); return }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+        func releaseAll() { open = true; let all = waiting; waiting = []; all.forEach { $0.resume() } }
+    }
+
     /// Who asked for a snapshot, in order.
     @MainActor final class Asks {
         var log: [String] = []
@@ -58,7 +70,10 @@ struct ThreadReaderHandoffTests {
             pins.pin(store, owner: owner)
             pins.started(store, owner: owner) { show(owner, who) }
             let request = asks.request(who, snapshot(who))
-            loops.append(Task { await store.run(request: request, owner: owner) })
+            loops.append(Task {
+                await store.run(request: request, owner: owner)
+                if !Task.isCancelled { pins.loopEnded(store, owner: owner) }
+            })
         }
 
         await asks.next("A") { show(deck, "A") }
@@ -84,25 +99,43 @@ struct ThreadReaderHandoffTests {
         #expect(stores.existing(for: "shared") === store)
     }
 
-    /// A loop stopped for another reason than its view leaving (the store detached) is not restarted.
-    @Test func aLoopStoppedElsewhereIsNotRestarted() async {
+    /// Two views show the thread; the loop is stopped explicitly (the store detached), then the
+    /// newer view goes: the older one does not start it again.
+    @Test func anExplicitlyStoppedLoopIsNotHandedBackWhenAViewLeaves() async {
         let pins = ThreadReaderPins()
-        let store = manualStore()
+        // Pauses end only when the test says, so a stopped loop can be seen returning.
+        let pauses = Pauses()
+        let store = NativeThreadStore(startingLimit: .seconds(60)) { _ in await pauses.wait() }
         let asks = Asks()
-        let owner = UUID()
-        var resumed = 0
-        pins.started(store, owner: owner) { resumed += 1 }
-        var loop: Task<Void, Never>?
-        defer { loop?.cancel() }
-        await asks.next("A") {
-            loop = Task { await store.run(request: asks.request("A", snapshot("a")), owner: owner) }
+        let deck = UUID(), mission_ = UUID()
+        var resumedDeck = 0
+        var loops: [Task<Void, Never>] = []
+        defer { loops.forEach { $0.cancel() } }
+        func run(_ owner: UUID, _ who: String) -> Task<Void, Never> {
+            let request = asks.request(who, snapshot(who))
+            return Task {
+                await store.run(request: request, owner: owner)
+                if !Task.isCancelled { pins.loopEnded(store, owner: owner) }
+            }
         }
-        // Detached elsewhere while its view still shows it.
+        await asks.next("A") {
+            pins.started(store, owner: deck) { resumedDeck += 1 }
+            loops.append(run(deck, "A"))
+        }
+        var mission: Task<Void, Never>?
+        await asks.next("B") {
+            pins.started(store, owner: mission_) { }
+            mission = run(mission_, "B")
+        }
+        // Detached elsewhere while both views still show the thread: B's loop returns on its own.
         store.stop()
+        pauses.releaseAll()
+        if let mission { _ = await mission.value }
         #expect(!store.isLive)
-        #expect(resumed == 0)
-        // Its own view hiding hands nothing back either: no other view shows the thread.
-        pins.stopped(store, owner: owner)
-        #expect(resumed == 0)
+        pins.stopped(store, owner: mission_)
+        #expect(resumedDeck == 0, "a stopped loop stays stopped when the view that ran it goes")
+        #expect(!store.isLive)
+        pins.stopped(store, owner: deck)
+        #expect(resumedDeck == 0)
     }
 }

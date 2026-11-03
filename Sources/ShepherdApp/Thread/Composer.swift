@@ -173,6 +173,7 @@ struct Composer: View {
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
+            && input.preparingImages == 0
     }
     private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? SHLeadMetrics.turnGap : AppLayout.composerFade }
     /// A Project conversation whose coordinator's pi is not serving (none yet, held off, paused, starting): the chip names and sets the

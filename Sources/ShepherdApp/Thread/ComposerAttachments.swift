@@ -79,12 +79,19 @@ struct ComposerAttachments: Equatable {
 @Observable
 final class ThreadInput {
     var attachments = ComposerAttachments()
+    /// Dropped or pasted images still being read off the main actor: Send and Restore wait for them,
+    /// so an image never lands in the draft after the one it was added to.
+    private(set) var preparingImages = 0
     var dropTargeted = false
     private(set) var focusRequest = 0
     var available = false {
         didSet { if available != oldValue { generation += 1 } }
     }
     private var generation = 0
+    /// How dropped images are resized and read; a test holds it to see Send wait.
+    @ObservationIgnored var prepareImages: ([NSItemProvider]) async -> [(URL, ImageFile?)] = { providers in
+        await ImageFile.read(await AppImageDrop.resolve(providers))
+    }
     @ObservationIgnored private var wheelIntentUntil = Date.distantPast
     @ObservationIgnored private var wheelUpward = false
 
@@ -109,8 +116,11 @@ final class ThreadInput {
         attachments.clearError()
         let generation = generation
         let session = store.sessionKey
+        preparingImages += 1
+        let prepare = prepareImages
         Task {
-            let files = await ImageFile.read(await AppImageDrop.resolve(providers))
+            let files = await prepare(providers)
+            preparingImages -= 1
             guard available, self.generation == generation, store.sessionKey == session else { return }
             add(files: files, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
