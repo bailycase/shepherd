@@ -144,6 +144,53 @@ struct CrossHostSearchTests {
         #expect(results.progress.total == 0)
     }
 
+    @Test(arguments: ["", "  ", "re", "review", "  build-01  "])
+    func preparedResultsKeepTheStatelessContractThroughoutMixedDeliveries(query: String) {
+        let prepared = CrossHostSearch.Prepared(query, targets: Self.targets, hosts: Self.hosts)
+        #expect(prepared.contentTargets == CrossHostSearch.contentTargets(query, in: Self.targets))
+        #expect(prepared.contentIDs == Set(prepared.contentTargets.map(\.id)))
+        var outcomes: [SearchTarget.ID: SearchOutcome] = [:]
+        let deliveries: [(SearchTarget.ID, SearchOutcome)] = [
+            (Self.targets[3].id, .found(snippet: "review build-01")),
+            (Self.targets[2].id, .failed("later target answered first")),
+            (Self.targets[1].id, .failed("first target answered later")),
+            (Self.targets[0].id, .none),
+            (Self.targets[4].id, .found(snippet: "offline result is excluded")),
+            (Self.targets[3].id, .none),
+            (Self.targets[3].id, .none),
+            (Self.targets[1].id, .found(snippet: "review build-01")),
+            (Self.target("gone", "Removed").id, .found(snippet: "excluded")),
+        ]
+        for (id, outcome) in deliveries {
+            outcomes[id] = outcome
+            #expect(prepared.results(outcomes: outcomes) == CrossHostSearch.results(
+                query, targets: Self.targets, hosts: Self.hosts, outcomes: outcomes))
+        }
+    }
+
+    @Test func preparationFreezesMetadataAndFailuresUseTargetOrderNotArrivalOrder() {
+        var targets = Self.targets
+        var hosts = Self.hosts
+        let prepared = CrossHostSearch.Prepared(" review ", targets: targets, hosts: hosts)
+        targets.reverse()
+        targets[0].title = "Changed after preparation"
+        hosts[0].name = "Renamed host"
+        hosts[0].online = false
+        #expect(prepared.query == "review")
+        #expect(prepared.contentTargets.map(\.agent.rawValue) == ["b", "c", "d"])
+        var outcomes: [SearchTarget.ID: SearchOutcome] = [Self.targets[2].id: .failed("second")]
+        #expect(prepared.results(outcomes: outcomes).notices.first == "Studio couldn’t search: second")
+        outcomes[Self.targets[1].id] = .failed("first")
+        outcomes[Self.targets[3].id] = .found(snippet: "a REVIEW of the buffer")
+        let results = prepared.results(outcomes: outcomes)
+        #expect(results.sections[0].rows.map(\.target.agent.rawValue) == ["e", "a"])
+        #expect(results.sections[0].rows[0].title.map(\.text).joined() == "Review old notes")
+        #expect(results.sections[1].rows.map(\.target.agent.rawValue) == ["d"])
+        #expect(results.sections[1].rows[0].detail.contains(SearchSegment("REVIEW", highlighted: true)))
+        #expect(results.progress == SearchProgress(searched: 3, total: 3))
+        #expect(results.notices == ["Studio couldn’t search: first", "MacBook Air is offline · its conversations weren’t searched"])
+    }
+
     // MARK: Fan-out
 
     actor Recorder {

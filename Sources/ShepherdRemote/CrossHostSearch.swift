@@ -244,49 +244,69 @@ public enum CrossHostSearch {
     /// the progress over `contentTargets` and why any host was left out.
     public static func results(_ query: String, targets: [SearchTarget], hosts: [SearchHost],
                                outcomes: [SearchTarget.ID: SearchOutcome]) -> SearchResults {
-        let needle = normalized(query)
-        guard !needle.isEmpty else { return .empty }
-        let threads = threadMatches(needle, in: targets).map { target in
-            let detail = [statusWord(target.status), target.space].compactMap { $0 }.joined(separator: " · ")
-            return SearchResultRow(kind: .thread, target: target.id, title: segments(target.title, highlighting: needle),
-                                   detail: segments(detail, highlighting: needle), hostName: target.hostName,
-                                   status: target.status, online: target.online)
-        }
-        let matched = Set(threads.map(\.target))
-        let asked = searchesConversations(needle) ? targets.filter { $0.searchable && !matched.contains($0.id) } : []
-        var conversations: [SearchResultRow] = []
-        var searched = 0
-        var failures: [UUID: String] = [:]
-        for target in asked {
-            guard let outcome = outcomes[target.id] else { continue }
-            searched += 1
-            switch outcome {
-            case .found(let raw):
-                conversations.append(SearchResultRow(kind: .conversation, target: target.id,
-                                                     title: segments(target.title, highlighting: needle),
-                                                     detail: segments(snippet(raw), highlighting: needle),
-                                                     hostName: target.hostName, status: target.status, online: target.online))
-            case .none: break
-            case .failed(let reason): failures[target.host] = failures[target.host] ?? reason
+        Prepared(query, targets: targets, hosts: hosts).results(outcomes: outcomes)
+    }
+
+    /// Stable work for one query and host-state snapshot. Streaming answers reuse the title
+    /// ranking/highlights and the exact content-target order instead of preparing them again.
+    public struct Prepared: Sendable {
+        public let query: String
+        public let contentTargets: [SearchTarget]
+        public let contentIDs: Set<SearchTarget.ID>
+        private let threads: [SearchResultRow]
+        private let hosts: [SearchHost]
+
+        public init(_ query: String, targets: [SearchTarget], hosts: [SearchHost]) {
+            let needle = normalized(query)
+            self.query = needle
+            self.hosts = hosts
+            threads = threadMatches(needle, in: targets).map { target in
+                let detail = [statusWord(target.status), target.space].compactMap { $0 }.joined(separator: " · ")
+                return SearchResultRow(kind: .thread, target: target.id, title: segments(target.title, highlighting: needle),
+                                       detail: segments(detail, highlighting: needle), hostName: target.hostName,
+                                       status: target.status, online: target.online)
             }
+            let matched = Set(threads.map(\.target))
+            contentTargets = searchesConversations(needle) ? targets.filter { $0.searchable && !matched.contains($0.id) } : []
+            contentIDs = Set(contentTargets.map(\.id))
         }
-        var sections: [SearchSection] = []
-        if !threads.isEmpty { sections.append(SearchSection(kind: .threads, rows: threads)) }
-        if !conversations.isEmpty { sections.append(SearchSection(kind: .conversations, rows: conversations)) }
-        var notices: [String] = []
-        if searchesConversations(needle) {
-            for host in hosts where host.agentCount > 0 {
-                if !host.online {
-                    notices.append("\(host.name) is offline · its conversations weren’t searched")
-                } else if !host.searchable {
-                    notices.append("Update Shepherd on \(host.name) to search its conversations")
-                } else if let reason = failures[host.id] {
-                    notices.append("\(host.name) couldn’t search: \(reason)")
+
+        public func results(outcomes: [SearchTarget.ID: SearchOutcome]) -> SearchResults {
+            guard !query.isEmpty else { return .empty }
+            var conversations: [SearchResultRow] = []
+            var searched = 0
+            var failures: [UUID: String] = [:]
+            for target in contentTargets {
+                guard let outcome = outcomes[target.id] else { continue }
+                searched += 1
+                switch outcome {
+                case .found(let raw):
+                    conversations.append(SearchResultRow(kind: .conversation, target: target.id,
+                                                         title: segments(target.title, highlighting: query),
+                                                         detail: segments(snippet(raw), highlighting: query),
+                                                         hostName: target.hostName, status: target.status, online: target.online))
+                case .none: break
+                case .failed(let reason): failures[target.host] = failures[target.host] ?? reason
                 }
             }
+            var sections: [SearchSection] = []
+            if !threads.isEmpty { sections.append(SearchSection(kind: .threads, rows: threads)) }
+            if !conversations.isEmpty { sections.append(SearchSection(kind: .conversations, rows: conversations)) }
+            var notices: [String] = []
+            if searchesConversations(query) {
+                for host in hosts where host.agentCount > 0 {
+                    if !host.online {
+                        notices.append("\(host.name) is offline · its conversations weren’t searched")
+                    } else if !host.searchable {
+                        notices.append("Update Shepherd on \(host.name) to search its conversations")
+                    } else if let reason = failures[host.id] {
+                        notices.append("\(host.name) couldn’t search: \(reason)")
+                    }
+                }
+            }
+            return SearchResults(query: query, sections: sections,
+                                 progress: SearchProgress(searched: searched, total: contentTargets.count), notices: notices)
         }
-        return SearchResults(query: needle, sections: sections, progress: SearchProgress(searched: searched, total: asked.count),
-                             notices: notices)
     }
 
     /// The status word rows use, as Home's rows and the Mac palette say it.
