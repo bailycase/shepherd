@@ -132,6 +132,95 @@ struct RecoveryStagingTests {
         #expect(saved.items.map(\.entry.text) == ["first"])
     }
 
+    @Test(arguments: ["stop", "settle", "switch", "switch-delete"], [false, true])
+    func aHeldClearReplyCannotAuthorizeAnotherRun(end: String, boundary: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("tools:1 hold", from: try await pi.ready())
+        let running = try await pi.snapshot { $0.running && $0.provisional.contains { $0.toolCallID != nil } }
+        let first = UUID(), second = UUID(), firstImage = images(1024), secondImage = images(2048)
+        if boundary {
+            #expect(try await pi.send("tools:0 second image", images: secondImage, operationID: second, from: running).wasAccepted)
+            await withCheckedContinuation { continuation in
+                h.server.queue.async {
+                    h.server.rpcThread(forAgent: pi.agent.id)!.deliverAtBoundary(expiresAt: Date().timeIntervalSince1970 * 1000 + 10_000) {
+                        continuation.resume()
+                    }
+                }
+            }
+        }
+        #expect(try await pi.send("tools:0 first image", delivery: .steer, images: firstImage, operationID: first, from: running).wasAccepted)
+        if !boundary {
+            #expect(try await pi.send("tools:0 second image", delivery: .steer, images: secondImage, operationID: second, from: running).wasAccepted)
+        }
+        #expect(pi.stdin("prompt").count == 3)
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            thread.paused = true
+            thread.commit()
+        }
+        try await eventually("initial recovery checkpoints drained") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        let gate = h.dir.appendingPathComponent("clear-reply-gate"), release = h.dir.appendingPathComponent("clear-reply-go")
+        try Data().write(to: gate)
+        defer { try? Data().write(to: release) }
+        let replies = Locked<[NativeThreadResult]>([])
+        let action = Task {
+            let result = try await pi.queue(.unsteer(id: first), from: running)
+            replies.withValue { $0.append(result) }
+            return result
+        }
+        try await eventually("pi cleared its queue but is withholding the reply") {
+            FileManager.default.fileExists(atPath: h.dir.appendingPathComponent("clear-reply-held").path)
+        }
+        if end == "stop" {
+            #expect(try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID())).wasAccepted)
+        } else if end == "settle" {
+            let aborted = await withCheckedContinuation { continuation in
+                h.server.queue.async { h.server.rpcThread(forAgent: pi.agent.id)!.session.request(.abort) { continuation.resume(returning: $0) } }
+            }
+            #expect(try aborted.get().success)
+            try await eventually("old run settled while clear reply remains held") {
+                try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.running == false }
+            }
+        } else {
+            try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.session.send(.newSession) }
+            try await eventually("new conversation serves before old clear reply") {
+                try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.generation != running.generation }
+            }
+        }
+        if end == "switch-delete" {
+            let current = try await pi.snapshot()
+            #expect(try await pi.queue(.delete(id: second), from: current).wasAccepted)
+        }
+        #expect(replies.current.isEmpty && pi.stdin("prompt").count == 3)
+        try Data().write(to: release)
+        try await eventually("obsolete clear reply completes once") { replies.current.count == 1 }
+        let result = try await action.value
+        if case .failure(let code, _) = result { #expect(code == (end.hasPrefix("switch") ? "stale_session" : "send_cancelled")) }
+        else { Issue.record("obsolete restoration was accepted") }
+        try await eventually("clear and restoration ownership fully released") {
+            try await h.server.enqueue {
+                guard let thread = h.server.rpcThread(forAgent: pi.agent.id) else { return false }
+                return thread.steersInFlight == 0 && !thread.settleAwaitingSteers && !thread.inputActive
+                    && thread.recoveryPreparations.isEmpty && h.server.recoveryWritesInFlight == 0
+            }
+        }
+        let expectedIDs = Set(end == "switch-delete" ? [first] : [first, second])
+        let expectedSecond = end == "switch-delete" ? nil : secondImage
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            #expect(thread.paused && Set(thread.items.map(\.entry.id)) == expectedIDs)
+            #expect(thread.items.first { $0.entry.id == first }?.images == firstImage)
+            #expect(thread.items.first { $0.entry.id == second }?.images == expectedSecond)
+            #expect(thread.items.allSatisfy { $0.entry.state == .queued })
+        }
+        #expect(pi.stdin("prompt").count == 3 && replies.current.count == 1)
+        let saved = try #require(try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id))
+        #expect(saved.paused && Set(saved.items.map(\.entry.id)) == expectedIDs)
+        #expect(saved.items.first { $0.entry.id == second }?.images == expectedSecond)
+    }
+
     @Test(arguments: ["settle", "stop", "exit", "disk", "readmission", "complete"], [false, true])
     func settlementCannotRetireImageOwnershipDuringQueueRestoration(end: String, boundary: Bool) async throws {
         let h = try ScratchServer.fresh()

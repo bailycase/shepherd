@@ -136,7 +136,7 @@ struct NativeBoundaryPreparationTests {
             t.state.dispatches = [.init(id: boundaryID, text: "boundary batch", images: [image], parts: nil,
                                         items: [boundary], expectsMessage: true, delivery: .steer)]
             t.state.onPrepareRecovery = { _, _, _, completion in completion(false) }
-            t.state.restorePiQueue(steering: ["boundary batch", "owned steer", "extension steer"], followUp: ["extension followup"]) { saved in
+            t.state.restorePiQueue(steering: ["boundary batch", "owned steer", "extension steer"], followUp: ["extension followup"], origin: .init(t.state)) { saved in
                 done.withValue { $0.append(saved) }
             }
             #expect(t.state.paused && t.state.dispatches.isEmpty)
