@@ -135,12 +135,17 @@ struct CheckoutMonitorTests {
         let script = root.appendingPathComponent("slow-git")
         try "#!/bin/sh\nexec /bin/sleep 60\n".write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let start = ContinuousClock.now
-        let result = await Task.detached {
-            CheckoutStatus.read(cwd: root.path, executable: script.path, timeout: 0.05)
+        let submitted = ContinuousClock.now
+        let (result, readDuration) = await Task.detached {
+            let start = ContinuousClock.now
+            let result = CheckoutStatus.read(cwd: root.path, executable: script.path, timeout: 0.05)
+            return (result, start.duration(to: .now))
         }.value
+        // The command's deadline includes its process cleanup, not unrelated main-actor
+        // work before this task is scheduled or after its completed result is delivered.
+        print("hung checkout read: command=\(readDuration), roundTrip=\(submitted.duration(to: .now))")
         #expect(result == nil)
-        #expect(start.duration(to: .now) < .seconds(3))
+        #expect(readDuration < .seconds(3))
     }
 }
 
