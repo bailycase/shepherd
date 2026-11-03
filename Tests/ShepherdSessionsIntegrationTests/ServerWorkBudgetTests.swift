@@ -336,6 +336,14 @@ struct ServerWorkBudgetTests {
         defer { h.stop() }
         let a = try await PiAgent.launch(on: h), b = try await PiAgent.launch(on: h)
         _ = try await a.ready(); _ = try await b.ready()
+        // A servable snapshot can precede asynchronous recovery bootstrap. Measure checkpoint
+        // lookup only after bootstrap, rather than its deliberate no-op while restoration owns it.
+        try await eventually("recovery bootstrap finished before measuring agent lookups") {
+            try await h.server.enqueue {
+                h.server.rpcThread(forAgent: a.agent.id)?.restoringRecovery == false
+                    && h.server.rpcThread(forAgent: b.agent.id)?.restoringRecovery == false
+            }
+        }
         try await h.server.enqueue {
             let thread = h.server.rpcThread(forAgent: a.agent.id)!
             #expect(thread.onRecoveryChanged?() == true)
