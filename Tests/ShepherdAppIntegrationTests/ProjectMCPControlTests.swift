@@ -277,7 +277,9 @@ struct ProjectMCPControlTests {
         var window = OffscreenWindow(size: CGSize(width: 570, height: 780), dark: false,
                                      AddMCPServerSheet(project: model, initialKind: .local, editing: nil) { dismissed = true })
         try await eventuallyOnMain("local form") { !window.controls().isEmpty }
-        try set("Command", to: "project-server --read-only", under: window.host)
+        try set("Command", to: "project-server", under: window.host)
+        try window.press("Add argument")
+        try set("Argument", to: "--read-only", under: window.host)
         try set("Name", to: "local-tools", under: window.host)
         try window.press("Add variable")
         try set("Name", to: "PROJECT_TOKEN", under: window.host, nth: 1)
