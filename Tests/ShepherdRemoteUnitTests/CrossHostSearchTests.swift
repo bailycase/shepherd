@@ -101,6 +101,23 @@ struct CrossHostSearchTests {
         #expect(results.notices == ["MacBook Air is offline · its conversations weren’t searched"])
     }
 
+    @Test func contextMatchesAreNotRepeatedAsConversationsOrCountedInProgress() {
+        let targets = [
+            Self.target("space", "Other work", space: "build-01"),
+            Self.target("host", "Other work", host: Self.build),
+            Self.target("title", "build-01 notes"),
+            Self.target("content", "Other work"),
+            Self.target("offline", "Other work", host: Self.laptop, online: false),
+        ]
+        let outcomes = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, SearchOutcome.found(snippet: "build-01")) })
+        let results = CrossHostSearch.results("  build-01  ", targets: targets, hosts: Self.hosts, outcomes: outcomes)
+        #expect(results.sections.map(\.kind) == [.threads, .conversations])
+        #expect(results.sections[0].rows.map(\.target.agent.rawValue) == ["title", "space", "host"])
+        #expect(results.sections[1].rows.map(\.target.agent.rawValue) == ["content"])
+        #expect(results.progress == SearchProgress(searched: 1, total: 1))
+        #expect(CrossHostSearch.contentTargets("build-01", in: targets).map(\.id) == [targets[3].id])
+    }
+
     @Test func aHostThatFailedIsNamedOnceAndItsProgressCompletes() {
         var build = Self.hosts
         build[2].agentCount = 0
