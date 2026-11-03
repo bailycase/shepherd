@@ -399,6 +399,36 @@ struct FleetTests {
         #expect(FleetModel(hosts: [], digests: [:]).offlineSummary == nil)
     }
 
+    @Test func workerClassificationIsHostScopedAndRefreshesWithProjects() {
+        var project = Project(name: "Release")
+        let plain = Self.agent("plain", .working)
+        var coordinator = Self.agent("coordinator", .working)
+        coordinator.coordinatorFor = project.id
+        let task = Self.agent("task", .blocked)
+        project.tasks = [ProjectTask(operationID: UUID(), workerAgentID: task.id, spaceID: Self.space.id,
+                                     title: "Build", prompt: "Build it")]
+        var marked = Self.agent("marked", .working)
+        marked.projectWorkerFor = project.id
+        var execution = Self.agent("execution", .working)
+        execution.executionFor = ProjectExecutionKey(ownerID: UUID(), projectID: project.id, operationID: UUID())
+        var orphan = Self.agent("orphan", .idle)
+        orphan.projectWorkerFor = ProjectID()
+        var host = Self.host(Self.studio, "Studio", agents: [plain, coordinator, task, marked, execution, orphan])
+        host.state.projects = [project]
+        let other = Self.host(Self.build, "Build", agents: [Self.agent("task", .working)])
+
+        let model = FleetModel(hosts: [host, other], digests: [:])
+        #expect(Set(model.running.map(\.ref)) == [Self.ref("plain"), Self.ref("task", on: Self.build)])
+        #expect(Set(model.recents.map(\.ref)) == [Self.ref("plain"), Self.ref("orphan"), Self.ref("task", on: Self.build)])
+        #expect(model.needsYou.map(\.ref) == [Self.ref("task")])
+        #expect(model.needsYou.first?.origin == .project)
+
+        host.state.projects = []
+        let removed = FleetModel(hosts: [host, other], digests: [:])
+        #expect(Set(removed.running.map(\.ref)) == [Self.ref("plain"), Self.ref("marked"), Self.ref("task", on: Self.build)])
+        #expect(removed.needsYou.first?.origin == .thread)
+    }
+
     // MARK: Designs
 
     /// Where a host serves designs, the agent drawing one is the design's row (the nib, "design ·
