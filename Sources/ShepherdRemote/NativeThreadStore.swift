@@ -49,6 +49,27 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
 
 /// A locally captured composer send, not provider acceptance. Uncertain sends are retained
 /// for inspection, never offered as retryable content until the host gives a definite refusal.
+/// A captured send's words as they are kept through a quit or crash: never its images, files,
+/// references, elements or anything that authorizes a request. Restored only as of unknown outcome.
+public struct NativeRecoveredSubmission: Codable, Equatable, Sendable {
+    /// The send's operation id.
+    public var id: UUID
+    public var typed: String
+    /// The pi session and generation it was captured against.
+    public var sessionID: String?
+    public var generation: String?
+    /// Milliseconds since 1970.
+    public var capturedAt: Double
+
+    public init(id: UUID, typed: String, sessionID: String?, generation: String?, capturedAt: Double) {
+        self.id = id
+        self.typed = typed
+        self.sessionID = sessionID
+        self.generation = generation
+        self.capturedAt = capturedAt
+    }
+}
+
 public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
     public enum State: Equatable, Sendable { case sending, failed, uncertain }
     public var id: UUID
@@ -157,7 +178,15 @@ public final class NativeThreadStore {
     /// the tail indicator or the Stop button.
     public private(set) var settledRunning = false
     public var draft = ""
-    public private(set) var submissions: [NativeThreadSubmission] = []
+    public private(set) var submissions: [NativeThreadSubmission] = [] {
+        didSet { noteRecoveryChange(from: oldValue) }
+    }
+    /// Told synchronously whenever the captured records' text changes (a capture, before its words
+    /// leave the draft; an acceptance, a discard, a restore), so the app can keep them through a
+    /// quit or crash (`NativeRecoveredSubmission`). Text only: never images or attachment payloads.
+    @ObservationIgnored public var onRecoveryChanged: (([NativeRecoveredSubmission]) -> Void)?
+    /// What each record was captured against, for `recoverySnapshot`.
+    @ObservationIgnored private var recoveryOrigins: [UUID: (sessionID: String?, generation: String?, capturedAt: Double)] = [:]
     nonisolated public static let maximumRetainedSubmissions = 8
     nonisolated public static let maximumRetainedSubmissionBytes = 16 * 1024 * 1024
     public private(set) var retainedSubmissionBytes = 0
@@ -2276,6 +2305,46 @@ public final class NativeThreadStore {
         case .accepted(let id) where id == operation: _ = removeSubmission(at: index)
         case .failure(let code, _) where code != "outcome_unknown": submissions[index].state = .failed
         default: submissions[index].state = .uncertain
+        }
+    }
+
+    /// The captured records as they can outlive the app: the words and what they were captured against.
+    public var recoverySnapshot: [NativeRecoveredSubmission] {
+        submissions.map { record in
+            let origin = recoveryOrigins[record.id]
+            return NativeRecoveredSubmission(id: record.id, typed: record.typed, sessionID: origin?.sessionID,
+                                             generation: origin?.generation, capturedAt: origin?.capturedAt ?? 0)
+        }
+    }
+
+    private func noteRecoveryChange(from old: [NativeThreadSubmission]) {
+        let now = Date().timeIntervalSince1970 * 1000
+        for record in submissions where recoveryOrigins[record.id] == nil {
+            recoveryOrigins[record.id] = (snapshot?.piSessionID, snapshot?.generation, now)
+        }
+        let live = Set(submissions.map(\.id))
+        recoveryOrigins = recoveryOrigins.filter { live.contains($0.key) }
+        // Only the text and membership are kept; a state change (sending → failed) writes nothing.
+        guard old.map(\.id) != submissions.map(\.id) || old.map(\.typed) != submissions.map(\.typed), !adoptingRecovered else { return }
+        onRecoveryChanged?(recoverySnapshot)
+    }
+
+    @ObservationIgnored private var adoptingRecovered = false
+
+    /// Records an earlier run of the app captured and never saw settled: shown as of unknown
+    /// outcome, text only, for the person to read, copy or discard. Never sent, retried or
+    /// restored as refused. Ids already here are skipped; the retention budget still holds.
+    public func adoptRecovered(_ records: [NativeRecoveredSubmission]) {
+        adoptingRecovered = true
+        defer { adoptingRecovered = false }
+        for record in records where !submissions.contains(where: { $0.id == record.id }) {
+            let value = NativeThreadSubmission(id: record.id, typed: record.typed, files: [], references: [], elements: [], images: [],
+                                               delivery: .followUp, state: .uncertain)
+            guard submissions.count < Self.maximumRetainedSubmissions,
+                  value.payloadBytes <= Self.maximumRetainedSubmissionBytes - retainedSubmissionBytes else { break }
+            recoveryOrigins[record.id] = (record.sessionID, record.generation, record.capturedAt)
+            submissions.append(value)
+            retainedSubmissionBytes += value.payloadBytes
         }
     }
 

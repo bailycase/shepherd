@@ -11,8 +11,9 @@ import ShepherdRemote
 /// - failed (the host refused it): Restore puts the words, files, references, elements and
 ///   images back in the composer, only when the composer is empty so nothing typed since is
 ///   overwritten; Discard lets it go;
-/// - uncertain (the outcome is unknown): never restored or retried, since it may have arrived;
-///   Discard only forgets it here and cancels nothing on the host.
+/// - uncertain (the outcome is unknown, or captured before the app last quit): never restored or
+///   retried, since it may have arrived; Copy text puts its words on the clipboard, and Discard
+///   only forgets it here and cancels nothing on the host.
 struct ThreadSubmissions: View {
     let store: NativeThreadStore
     let input: ThreadInput
@@ -28,11 +29,11 @@ struct ThreadSubmissions: View {
 
     /// A refused send goes back only into an empty composer: no words, attachments or images added since.
     static func canRestore(_ submission: NativeThreadSubmission, store: NativeThreadStore, input: ThreadInput) -> Bool {
-        submission.state == .failed && !store.hasDraft && input.attachments.isEmpty
+        submission.state == .failed && !store.hasDraft && input.attachments.isEmpty && input.preparingImages == 0
     }
 
     static func restore(_ id: UUID, store: NativeThreadStore, input: ThreadInput) {
-        guard input.attachments.isEmpty, let restored = store.restoreSubmission(id) else { return }
+        guard input.attachments.isEmpty, input.preparingImages == 0, let restored = store.restoreSubmission(id) else { return }
         // Back at once, in order and within the limits they were sent under; their thumbnails decode off the main actor.
         let attachments = restored.images.map { ImageAttachment(name: $0.name ?? "Image", image: $0) }
         input.attachments.add(attachments.map { ($0.name, $0) })
@@ -79,6 +80,15 @@ private struct SubmissionRow: View {
                             .disabled(!restorable)
                             .shHelp(restorable ? "Put this message back in the composer" : "Clear the composer first")
                     }
+                    if submission.state == .uncertain, !submission.typed.isEmpty {
+                        // Its words stay reachable without sending anything: copy them, then decide.
+                        Button("Copy text") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(submission.typed, forType: .string)
+                        }
+                        .buttonStyle(.sh(.ghost, size: .s))
+                        .shHelp("Copy the words. Nothing is sent.")
+                    }
                     Button("Discard", action: discard)
                         .buttonStyle(.sh(.ghost, size: .s))
                         .disabled(!discardable)
@@ -101,6 +111,8 @@ enum ComposerImageCapture {
     /// The composer's send: the draft and the images on the card now. Returns whether the host accepted it.
     @discardableResult
     static func send(store: NativeThreadStore, input: ThreadInput, delivery: NativeThreadDelivery) async -> Bool {
+        // An image still being read belongs to this message: Send waits for it (`Composer.canSend`).
+        guard input.preparingImages == 0 else { return false }
         let send = Send(store: store, input: input)
         send.watch()
         let accepted = await store.send(images: send.images, delivery: delivery)
@@ -164,11 +176,18 @@ enum ComposerImageCapture {
             switch current.state {
             case .sending: break
             case .failed:
+                // Refused, but the store is still reconciling it (its refresh after the refusal): it can be
+                // neither restored nor discarded yet. Look again once it settles.
+                guard store.canDiscardSubmission(current.id) else { return }
                 finished = true
                 if ThreadSubmissions.canRestore(current, store: store, input: input) {
                     ThreadSubmissions.restore(current.id, store: store, input: input)
                 }
-            case .uncertain: finished = true
+            case .uncertain:
+                // Hidden mid-send, it reads as unknown while its answer may still come (a late refusal is still
+                // put back): settled only once the store stops reconciling it.
+                guard store.canDiscardSubmission(current.id) else { return }
+                finished = true
             }
         }
     }

@@ -55,6 +55,9 @@ final class NativeThreadStores<Key: Hashable> {
         install(store, for: key)
         if let drafts, let id = Self.draftID(key) {
             if store.draft.isEmpty, let saved = drafts.restore(id) { store.draft = saved }
+            // Sends captured before the last quit or crash: back as of unknown outcome, never sent again.
+            store.adoptRecovered(drafts.recovered(id))
+            watchRecoveries(store, key: key, id: id, drafts: drafts)
             watchDraft(store, key: key, id: id, drafts: drafts)
         }
         return store
@@ -69,6 +72,25 @@ final class NativeThreadStores<Key: Hashable> {
                 guard let self, let store, stores[key] === store else { return }
                 drafts.note(id, draft: store.draft)
                 watchDraft(store, key: key, id: id, drafts: drafts)
+            }
+        }
+    }
+
+    /// The store's captured sends, kept as they change. A capture is written at once, before its emptied
+    /// draft can be; a record leaving (accepted, discarded, restored into the draft) is written with
+    /// the draft as it is then, so restored words are never only in memory.
+    private func watchRecoveries(_ store: NativeThreadStore, key: Key, id: String, drafts: ComposerDrafts) {
+        store.onRecoveryChanged = { [weak self, weak store] records in
+            guard let self, let store, stores[key] === store else { return }
+            if records.count >= drafts.recovered(id).count {
+                drafts.saveRecoveries(id, records)
+            } else {
+                Task { @MainActor [weak self, weak store] in
+                    // A deleted agent's store writes nothing late.
+                    guard let self, let store, self.stores[key] === store else { return }
+                    drafts.note(id, draft: store.draft)
+                    drafts.saveRecoveries(id, store.recoverySnapshot)
+                }
             }
         }
     }
@@ -156,6 +178,8 @@ final class ThreadReaderPins {
     private struct Runner {
         let owner: UUID
         let resume: @MainActor () -> Void
+        /// Its loop returned on its own (stopped, detached, or taken over), not because the view left.
+        var ended = false
     }
     /// Views showing each store, oldest first; the last started the loop that runs.
     private var runners: [ObjectIdentifier: [Runner]] = [:]
@@ -169,15 +193,23 @@ final class ThreadReaderPins {
         runners[id] = list
     }
 
-    /// `owner`'s view no longer shows the store. If its loop was the one running, the most recent
-    /// view still showing the thread runs it again.
+    /// `owner`'s loop returned while its view still shows the thread: it was stopped or detached
+    /// (or another view took it over). Its view leaving later hands nothing back.
+    func loopEnded(_ store: NativeThreadStore, owner: UUID) {
+        let id = ObjectIdentifier(store)
+        guard let index = runners[id]?.firstIndex(where: { $0.owner == owner }) else { return }
+        runners[id]?[index].ended = true
+    }
+
+    /// `owner`'s view no longer shows the store. If its loop was the one still running, the most
+    /// recent view still showing the thread runs it again; a loop that was stopped stays stopped.
     func stopped(_ store: NativeThreadStore, owner: UUID) {
         let id = ObjectIdentifier(store)
         guard var list = runners[id], let index = list.firstIndex(where: { $0.owner == owner }) else { return }
-        let wasDriving = index == list.count - 1
+        let handsOver = index == list.count - 1 && !list[index].ended
         list.remove(at: index)
         runners[id] = list.isEmpty ? nil : list
-        if wasDriving, let next = list.last { next.resume() }
+        if handsOver, let next = list.last { next.resume() }
     }
 
     func pin(_ store: NativeThreadStore, owner: UUID) {

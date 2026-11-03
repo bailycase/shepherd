@@ -385,6 +385,8 @@ struct ThreadView: View {
             installWheelMonitor()
             readerPins?.started(store, owner: storeOwner) { [$loopRun] in $loopRun.wrappedValue &+= 1 }
             await store.run(request: request, preview: preview, owner: storeOwner)
+            // Returned while this view still shows the thread: stopped, detached or taken over, never handed back.
+            if !Task.isCancelled { readerPins?.loopEnded(store, owner: storeOwner) }
         }
     }
 

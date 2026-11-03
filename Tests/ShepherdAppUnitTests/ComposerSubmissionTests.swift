@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 @testable import ShepherdApp
 
 /// A send's words and images leave the composer when the store captures them, not before; a
@@ -15,15 +15,26 @@ struct ComposerSubmissionTests {
         var answer: Answer = .refuse
         var hold: CheckedContinuation<Void, Never>?
         var holding = false
+        /// Holds the refresh that follows a send's answer, until `refreshHold` is resumed.
+        var holdRefresh = false
+        var refreshHold: CheckedContinuation<Void, Never>?
+        var whenRefreshHeld: (() -> Void)?
+        var whenSendHeld: (() -> Void)?
         var sends = 0
         let snapshot = NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false,
                                             supportedActions: ["send", "sendImages"], dialogsSupported: true, dialogs: [],
                                             messages: [], provisional: [], clipped: false)
 
         func request(_ request: NativeThreadRequest) async throws -> NativeThreadResult {
-            guard case .send = request else { return .snapshot(value: snapshot) }
+            guard case .send = request else {
+                if holdRefresh, sends > 0 {
+                    holdRefresh = false
+                    await withCheckedContinuation { refreshHold = $0; whenRefreshHeld?() }
+                }
+                return .snapshot(value: snapshot)
+            }
             sends += 1
-            if holding { await withCheckedContinuation { hold = $0 } }
+            if holding { await withCheckedContinuation { hold = $0; whenSendHeld?() } }
             switch answer {
             case .refuse: return .failure(code: "refused", message: "The agent refused it.")
             case .unknown: throw CancellationError()
@@ -154,5 +165,88 @@ extension ComposerSubmissionTests {
         #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
         #expect(input.attachments.isEmpty)
         #expect(store.draft.isEmpty && store.attachedFiles.isEmpty)
+    }
+}
+
+extension ComposerSubmissionTests {
+    private func changed(_ read: @escaping () -> Void) async {
+        await withCheckedContinuation { done in withObservationTracking { read() } onChange: { done.resume() } }
+    }
+
+    /// The refusal lands while the store's refresh after it is still running: the message is
+    /// put back once that settles, not dropped because it could not be restored mid-reconcile.
+    @Test func aRefusalDuringAHeldRefreshIsRestoredOnceItSettles() async {
+        let host = Host()
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("a.png", image("a.png"))])
+        store.draft = "refused while refreshing"
+        host.holdRefresh = true
+        var send: Task<Bool, Never>?
+        await withCheckedContinuation { held in
+            host.whenRefreshHeld = { held.resume() }
+            send = Task { await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) }
+        }
+        #expect(store.submissions.first?.state == .failed)
+        #expect(!store.canDiscardSubmission(store.submissions[0].id), "still reconciling")
+        #expect(store.draft.isEmpty)
+        host.refreshHold?.resume()
+        #expect(await send?.value == false)
+        #expect(store.draft == "refused while refreshing")
+        #expect(input.attachments.items.map(\.name) == ["a.png"])
+        #expect(store.submissions.isEmpty)
+    }
+
+    /// The thread is hidden (its loop suspended) while the send waits; the refusal arrives later and still comes back.
+    @Test func aLateRefusalAfterTheThreadWasSuspendedComesBack() async {
+        let host = Host()
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        store.draft = "sent before hiding"
+        host.holding = true
+        var send: Task<Bool, Never>?
+        await withCheckedContinuation { held in
+            host.whenSendHeld = { held.resume() }
+            send = Task { await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) }
+        }
+        store.suspend()
+        host.hold?.resume()
+        #expect(await send?.value == false)
+        #expect(store.draft == "sent before hiding")
+        #expect(store.submissions.isEmpty)
+    }
+
+    /// An image still being read holds Send, and Restore, until it arrives: it never lands in the next draft.
+    @Test func anImageStillBeingReadHoldsSendAndRestore() async throws {
+        let host = Host()
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.available = true
+        var held: CheckedContinuation<[(URL, ImageFile?)], Never>?
+        input.prepareImages = { _ in await withCheckedContinuation { held = $0 } }
+        store.draft = "with a screenshot"
+        input.attach([NSItemProvider()], store: store, localFiles: true, imagesSupported: true)
+        #expect(input.preparingImages == 1)
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) == false)
+        #expect(store.draft == "with a screenshot" && host.sends == 0, "nothing sent without the image")
+        let refused = NativeThreadSubmission(id: UUID(), typed: "x", files: [], references: [], elements: [], images: [], delivery: .followUp, state: .failed)
+        store.draft = ""
+        #expect(!ThreadSubmissions.canRestore(refused, store: store, input: input), "a restore would mix with the image on its way")
+        store.draft = "with a screenshot"
+        while held == nil { await Task.yield() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("held-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("shot.png")
+        try ImageViewerStateTests.flat(32).write(to: url)
+        held?.resume(returning: [(url, ImageFile(url: url))])
+        await changed { _ = input.attachments }
+        #expect(input.preparingImages == 0)
+        #expect(input.attachments.items.map(\.name) == ["shot.png"])
+        host.answer = .accept
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
+        #expect(input.attachments.isEmpty)
     }
 }
