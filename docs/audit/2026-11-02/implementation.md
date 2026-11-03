@@ -22,7 +22,7 @@ same path, not additional independent performance gains.
 | Server | SV-01 through SV-06; server half UX-03 | Merged; parent 248-test integration run passed | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
 | Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Staging tested; final review and upstream queue prerequisite pending | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
 | Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; joined parent tests passed, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
-| Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | In progress | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
+| Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | First batches merged; six final-review gaps being fixed | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
 | Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | Merged; parent full portable runner passed | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
 | Surfaces/extensions | SF-02 through SF-04, SV-07 | Review fixes merged; parent joined tests passed | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
 | Instrumentation/builds | OBS-01 through OBS-04, shared among parent and UI/thread/server lanes | In progress | Local fixed-label interaction signposts without new data uploads; meaningful existing iOS full-display completion; ordinary Release test compilation |
@@ -67,7 +67,28 @@ require equipment that is not available; those limits must remain explicit.
   durable admission rather than introducing a blob envelope or accepting queued work before its
   checkpoint is committed. Cancellation/session/revision fencing tests are required.
 
+- Mac follow-up `ae312f3f` merged after the extension run finished. Parent inspected light/dark
+  launch and submission-row previews; source-level final review is running. The lane reports all
+  2,752 selected unit tests and individually run affected integration suites passing, but a combined
+  integration attempt timed out without a final result. Parent six-lane unit/affected Mac integration
+  validation passed **4,067 tests/466 suites**, exit 0, in 78.3 seconds (tests, excluding build).
+  This replaces—not infers success from—the timed-out worker run. Final review still found:
+  multi-reader handoff can undo an explicit stop; refusal auto-restore finalizes before held
+  reconciliation completes; captured text can erase its saved draft before memory-only recovery
+  records settle; ordinary composer image imports remain ungated; first/oversized inline Markdown
+  still falls back to main-actor parsing; row IDs are still scanned per content update. These are
+  **merge blockers**, not completed audit items. Mac owns the first four fixes; mobile is checking
+  its analogous persisted-draft loss; a separate render follow-up owns cold/oversize parsing and
+  structural revision separation. Captured recovery must retain text-only uncertain records across
+  relaunch without automatic retry or claiming unpersisted image bytes survived.
+
 ## Validation recorded so far
+
+- Full Release/Python run: **361 tests, one skipped, exit 0** after correcting the design-index
+  guard to exempt explicitly Removed surfaces with a required departures.md record. The first
+  run failed only on historical PaneArtifacts/PaneArtifactEdit entries, unchanged on nightly;
+  active surfaces still require a resolvable spec and all linked files still must exist.
+  Logs: `release-python.log`, `release-python-corrected.log`.
 
 - Parent upstream-queue integration run passed **221 tests/16 suites**, exit 0.
 - Before merging the Mac batch, parent ran the refused-Send and six project-question routes on
@@ -162,7 +183,8 @@ require equipment that is not available; those limits must remain explicit.
   watchers closing/reopening across live/idle transitions, losing notifications. Fix `5f482420`
   preserves watcher lifetime through parent shutdown and explicitly acknowledges fixture boundaries;
   deterministic lifecycle/cleanup regressions fail on old code. Worker reruns passed all four files
-  plus shared consumers; parent full 57-file rerun is underway with inherited Shepherd flags cleared.
+  plus shared consumers; parent full rerun passed **57/57 files**, exit 0, with inherited Shepherd
+  flags cleared. This run includes queue-boundary integration through #408.
 - Parent's first transport/surfaces run: 172 tests, one failing capability-enumeration test/two
   issues. New capability constants were missing from its exhaustive expected list; corrected in
   `c641bde80` with stable-string assertions. The joined four-lane run now includes all remote and
