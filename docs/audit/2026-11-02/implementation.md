@@ -23,7 +23,7 @@ same path, not additional independent performance gains.
 | Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Staging tested; final review and upstream queue prerequisite pending | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
 | Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; joined parent tests passed, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
 | Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | In progress | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
-| Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | In progress | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
+| Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | Merged; parent full portable runner passed | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
 | Surfaces/extensions | SF-02 through SF-04, SV-07 | Review fixes merged; parent joined tests passed | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
 | Instrumentation/builds | OBS-01 through OBS-04, shared among parent and UI/thread/server lanes | In progress | Local fixed-label interaction signposts without new data uploads; meaningful existing iOS full-display completion; ordinary Release test compilation |
 
@@ -77,7 +77,8 @@ require equipment that is not available; those limits must remain explicit.
   changes (same four failing cases). Root cause was a stale AX selector: native pane labels the
   field “Something else”, Project card “Say anything”. Test-only correction `ca8043431` preserves
   all delivery/rejection/draft assertions and checks both fields disappear; all six routes passed
-  in the worker. Parent inspected light/dark rejection PNGs and is rerunning on integration.
+  in the worker. Parent inspected light/dark rejection PNGs and independently reran both tests
+  (including all six pane variants) on integration: passed, exit 0.
   Full logs `pre-mac-logical-project.log`, `server/nightly-merge/pre-thread-pane-baseline.log`,
   and `pane-question/` contain baseline, AX evidence and fix results.
 
@@ -156,7 +157,12 @@ require equipment that is not available; those limits must remain explicit.
 - Parent pinned-Node child extension run: 36/37 passed; the broad real-Pi lifecycle case timed out
   waiting for an inspector reply with zero active test timers. The focused real-Pi lifecycle file
   rerun passed all 14 tests, exit 0; root cause/baseline classification remain unproven. Final full
-  pinned-runtime extension validation is still required.
+  pinned-runtime run later exposed four failing files (53/57 passed). Root causes were missing
+  empty-queue acknowledgements in the shared fixture (12-second waits per turn) and inspector
+  watchers closing/reopening across live/idle transitions, losing notifications. Fix `5f482420`
+  preserves watcher lifetime through parent shutdown and explicitly acknowledges fixture boundaries;
+  deterministic lifecycle/cleanup regressions fail on old code. Worker reruns passed all four files
+  plus shared consumers; parent full 57-file rerun is underway with inherited Shepherd flags cleared.
 - Parent's first transport/surfaces run: 172 tests, one failing capability-enumeration test/two
   issues. New capability constants were missing from its exhaustive expected list; corrected in
   `c641bde80` with stable-string assertions. The joined four-lane run now includes all remote and
@@ -187,8 +193,11 @@ require equipment that is not available; those limits must remain explicit.
   whole-diff replies do not notify retention after growing offscreen, and old row caches keep text
   payloads after backing-revision eviction. Follow-up fixes and composer recovery checkpointed as
   `5239ed67`; shared recovery APIs and overflow guard through `578b24e4` merged cleanly into mobile.
-  Discard UI and final post-merge portable checks, simulator compilation and inspected light/dark
-  renders remain in progress.
+  Discard UI, mobile simulator compilation and light/dark renders passed in the lane. All mobile
+  changes through `8ae34412` are merged. Parent inspected recovery/offline/Home/Review iPhone and
+  recovery/switching/running/reconnecting iPad light/dark renders. Full portable validation passed
+  on integration, exit 0, with old send assertions updated to check captured/uncertain records,
+  edited drafts and exact late acknowledgements rather than blocking the composer until receipt.
 
 Full run logs will be retained under `/tmp/shepherd-perf-fixes`. Lasting evidence and final
 results will be summarized here before opening the PR. Build concurrency and disk use are bounded;
