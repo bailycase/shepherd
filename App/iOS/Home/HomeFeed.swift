@@ -16,7 +16,12 @@ import ShepherdRemote
 /// (`nativeThreadPreviewCapability`); on an older host a snapshot request starts the agent's pi,
 /// and a paired phone must not wake every idle agent (L23), so there their rows come from the
 /// host's pushed state alone (`Agent.lastActiveAt`, `waitingOn`). Hosts are swept
-/// concurrently and each publishes as it finishes, so a slow host delays no other.
+/// concurrently, and a changed digest is published at the sweep's next wait (with whatever else
+/// changed by then), so neither a slow host nor a slow thread later in a host's sweep holds back
+/// what was already read. After a reconnect, a thread already digested is asked with its revision:
+/// the host's `unchanged` (same pi session, generation and revision, which together name the
+/// thread's content) keeps the digest without a page. A preview (pi not running) has no such
+/// revision and is read again.
 @MainActor
 @Observable
 final class HomeFeed {
@@ -36,6 +41,12 @@ final class HomeFeed {
     @ObservationIgnored private var digests: [FleetRef: FleetDigest] = [:]
     /// The host connection each digest was read in: a new connection reads every thread again.
     @ObservationIgnored private var readIn: [FleetRef: UUID] = [:]
+    /// Threads whose digest's revision no longer names their content (another pi session or
+    /// generation answered, or an answer was just sent): read whole next time.
+    @ObservationIgnored private var readWhole: Set<FleetRef> = []
+    /// A changed digest waits for `publish()`, at the sweep's next wait or its end.
+    @ObservationIgnored private var pending = false
+    @ObservationIgnored private var publishScheduled = false
     @ObservationIgnored private var watchers = 0
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var refreshing = false
@@ -89,11 +100,30 @@ final class HomeFeed {
         let live = Set(inputs.flatMap { host in host.state.agents.map { FleetRef(host: host.id, agent: $0.id) } })
         for ref in digests.keys where !live.contains(ref) { digests[ref] = nil }
         for ref in readIn.keys where !live.contains(ref) { readIn[ref] = nil }
+        readWhole.formIntersection(live)
     }
 
     private func derive() {
+        pending = false
         let next = FleetModel(hosts: inputs, digests: digests)
         if next != model { model = next }
+    }
+
+    /// A digest changed: Home shows it once the sweep next waits, in one derive with every other
+    /// change made before then.
+    private func publishSoon() {
+        pending = true
+        guard !publishScheduled else { return }
+        publishScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            publishScheduled = false
+            publish()
+        }
+    }
+
+    private func publish() {
+        if pending { derive() }
     }
 
     // MARK: Polling
@@ -130,23 +160,23 @@ final class HomeFeed {
         defer { refreshing = false }
         repeat {
             again = false
-            // One sequential sweep per host, all hosts at once; each derives as it ends.
+            // One sequential sweep per host, all hosts at once; each publishes as it reads.
             await withTaskGroup(of: Void.self) { group in
                 for host in hosts.hosts {
                     group.addTask { @MainActor [weak self] in
                         guard let self else { return }
-                        if await self.sweep(host) { self.derive() }
+                        await self.sweep(host)
+                        self.publish()
                     }
                 }
             }
         } while again
     }
 
-    /// Reads one host's threads that matter; true when a digest changed.
-    private func sweep(_ host: MobileHost) async -> Bool {
+    /// Reads one host's threads that matter, publishing what changed as it goes.
+    private func sweep(_ host: MobileHost) async {
         guard let client = host.connectedClient, let session = host.session,
-              host.supports(RemoteProtocol.nativeThreadCapability) else { return false }
-        var changed = false
+              host.supports(RemoteProtocol.nativeThreadCapability) else { return }
         let previews = host.supports(RemoteProtocol.nativeThreadPreviewCapability)
         var quietReads = 0
         // A design's agent has no thread row to read for (its design is the row).
@@ -160,7 +190,7 @@ final class HomeFeed {
                 let next = FleetDigest(value)
                 if next != digest {
                     digests[ref] = next
-                    changed = true
+                    publishSoon()
                 }
                 readIn[ref] = session
                 continue
@@ -170,7 +200,9 @@ final class HomeFeed {
                 guard previews, !current, quietReads < Self.quietReadsPerPoll else { continue }
                 quietReads += 1
             }
-            let request = NativeThreadRequest.snapshot(afterRevision: current ? digest?.revision : nil)
+            // Its revision even on a new connection: `unchanged` is checked against the digest's
+            // pi session and generation below, so another process's equal number never passes.
+            let request = NativeThreadRequest.snapshot(afterRevision: readWhole.contains(ref) ? nil : digest?.revision)
             let result: NativeThreadResult
             do {
                 result = try await native(ref.agentRef, client: client, request: request)
@@ -190,20 +222,23 @@ final class HomeFeed {
                 let next = FleetDigest(value)
                 if next != digest {
                     digests[ref] = next
-                    changed = true
+                    publishSoon()
                 }
                 readIn[ref] = session
+                readWhole.remove(ref)
             case .unchanged(let piSessionID, let generation, let revision):
                 // Another session or generation: read the whole snapshot next time.
-                if digest?.matches(piSessionID: piSessionID, generation: generation, revision: revision) != true {
+                if digest?.matches(piSessionID: piSessionID, generation: generation, revision: revision) == true {
+                    readIn[ref] = session
+                } else {
                     readIn[ref] = nil
+                    readWhole.insert(ref)
                 }
             case .failure, .accepted, .transcript, .imageChunk:
                 // A thread still starting, or one that has none: try again next connection.
                 readIn[ref] = session
             }
         }
-        return changed
     }
 
     // MARK: Answering
@@ -246,6 +281,7 @@ final class HomeFeed {
             failures[item.id] = String(describing: error)
         }
         readIn[item.ref] = nil
+        readWhole.insert(item.ref)
         await refresh()
     }
 }

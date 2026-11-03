@@ -28,6 +28,15 @@ enum MobileDiagnostics {
         #endif
     }
 
+    /// The launch screen shows what it is for (`MobileReadiness`): ends its time-to-full-display
+    /// span, which `enableTimeToFullDisplayTracing` holds open for this. Adds no data of its own.
+    @MainActor static func reportFullyDisplayed() {
+        #if SHEPHERD_SENTRY
+        guard SentrySDK.isEnabled else { return }
+        SentrySDK.reportFullyDisplayed()
+        #endif
+    }
+
     static var configured: Bool { dsn != nil }
 
     private static let dsn: String? = {

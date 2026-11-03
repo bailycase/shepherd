@@ -33,6 +33,10 @@ final class FixtureHost: @unchecked Sendable {
     /// Request kinds this host received, in order.
     var requests: [String] { lock.withLock { seen } }
 
+    /// From now on a hello goes unanswered, so the app stays connecting (a reconnect under way).
+    func holdHello() { lock.withLock { holdsHello = true } }
+    private var holdsHello = false
+
     /// The changes `FixtureHostData.accepts` took, exactly as sent, in order.
     var accepted: [RemoteRequest] { lock.withLock { taken } }
     private var taken: [RemoteRequest] = []
@@ -142,6 +146,7 @@ final class FixtureHost: @unchecked Sendable {
         switch request {
         case .hello(let id, let token, _, _, _):
             note("hello")
+            if lock.withLock({ holdsHello }) { return [] }
             guard token == FixtureHostData.token, !data.refusesToken else {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }

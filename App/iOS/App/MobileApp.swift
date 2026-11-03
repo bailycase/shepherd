@@ -18,6 +18,8 @@ final class MobileApp {
     let pushRouter = PushRouter()
     /// The Live Activities, widgets and their buttons.
     let glance: GlanceBridge
+    /// When the app first shows something usable, and each reconnect (signposts; diagnostics).
+    let readiness: MobileReadiness
 
     init(hosts: MobileHosts, appearance: MobileAppearance, push: PushManager? = nil) {
         SHFonts.register()
@@ -45,6 +47,7 @@ final class MobileApp {
         }
         HomeFeed.of(hosts).openSnapshot = { [threads] ref in threads.liveSnapshot(for: ref) }
         glance = GlanceBridge(hosts: hosts, windows: windows)
+        readiness = MobileReadiness(hosts: hosts) { MobileDiagnostics.reportFullyDisplayed() }
     }
 
     /// The shipped app: preferences and the Keychain.

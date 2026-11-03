@@ -77,6 +77,17 @@ final class MobileHost: Identifiable {
     }
 }
 
+// Lives beside the host (not with the missions' presentation) so the portable checks that
+// compile this file without ShepherdUI have it too.
+extension MobileHost {
+    /// The host offers missions now (`missions.v1`, its experiment on).
+    var servesMissions: Bool { missions.available }
+
+    /// The host's state as thread lists read it: without the agents its missions own (their threads
+    /// are the mission's). Home, the sidebar, Search, New thread and the widgets all list from this.
+    var threadState: ShepherdState { state.withoutAgents(missions.agentIDs) }
+}
+
 /// Every host the phone knows, each with its own `RemoteHostClient`, connected while the app is
 /// in the foreground and reconnecting with backoff (1, 2, 4… up to 30 s) when one drops or cannot
 /// be reached. A host that refuses the token or speaks another protocol waits for Edit or Retry.

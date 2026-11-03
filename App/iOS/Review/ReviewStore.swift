@@ -6,18 +6,49 @@ import ShepherdRemote
 
 /// One review per agent, kept while the app runs, so leaving the changes and coming back keeps
 /// the scope, comments, viewed marks and folds (as the Mac keeps an open review's session).
+///
+/// Memory is bounded across reviews: the `retainedReviews` most recently shown keep their hunks
+/// and colored text off screen; older ones let them go (`ReviewStore.shed`, the reviewer's own
+/// marks stay) and fetch them again when shown. A review on screen in any window keeps all.
 @MainActor
 @Observable
 final class ReviewStores {
     static let shared = ReviewStores()
 
+    /// How many reviews off screen keep what they fetched.
+    static let retainedReviews = 2
+
     @ObservationIgnored private var stores: [AgentRef: ReviewStore] = [:]
     @ObservationIgnored private var forgottenHosts: Set<UUID> = []
+    /// Reviews by when they were last shown, most recent last.
+    @ObservationIgnored private var recent: [AgentRef] = []
 
     func forget(host: UUID) {
         forgottenHosts.insert(host)
         for (ref, store) in stores where ref.host == host { store.forget() }
         stores = stores.filter { $0.key.host != host }
+        recent.removeAll { $0.host == host }
+    }
+
+    /// A review screen came on screen (`reviewViewer`).
+    func appeared(_ ref: AgentRef) {
+        store(for: ref).viewers += 1
+        recent.removeAll { $0 == ref }
+        recent.append(ref)
+        trim()
+    }
+
+    /// A review screen left; past the retained few, reviews no one shows let their data go.
+    func disappeared(_ ref: AgentRef) {
+        guard let store = stores[ref] else { return }
+        store.viewers = max(0, store.viewers - 1)
+        trim()
+    }
+
+    private func trim() {
+        for ref in ReviewRetention.overflow(recent: recent, keep: Self.retainedReviews, shown: { (stores[$0]?.viewers ?? 0) > 0 }) {
+            stores[ref]?.shed()
+        }
     }
 
     func store(for ref: AgentRef) -> ReviewStore {
@@ -134,6 +165,15 @@ final class ReviewStore {
     private(set) var submitting = false
     var actionError: String?
 
+    /// Review screens showing this review now, across windows (`ReviewStores.appeared`).
+    @ObservationIgnored var viewers = 0
+    /// Bumped when fetched data is let go: a reply that started before it is not kept.
+    @ObservationIgnored private var epoch = 0
+
+    /// The most fetched hunks kept across revisions, scopes and options, in UTF-8 bytes of
+    /// their lines (with a per-line allowance).
+    static let diffCacheBudget = 8 << 20
+
     @ObservationIgnored private weak var hosts: MobileHosts?
     @ObservationIgnored private let request: (RemoteHostClient, AgentID, RemoteAgentQuery) async throws -> RemoteAgentResult
     @ObservationIgnored private var loadID = UUID()
@@ -142,7 +182,7 @@ final class ReviewStore {
     @ObservationIgnored private var loadedKey: LoadKey?
     /// Hunks by the revision and options they came from: never stale, so switching back to a
     /// scope whose trees did not move costs no request.
-    @ObservationIgnored private var diffCache: [FileKey: ChangesFileDiff] = [:]
+    @ObservationIgnored private var diffCache = ReviewCostCache<FileKey, ChangesFileDiff>(budget: ReviewStore.diffCacheBudget)
     @ObservationIgnored private var fileLoads: [String: UUID] = [:]
     @ObservationIgnored private var textLoads: [String: UUID] = [:]
     @ObservationIgnored private var wantedFiles: Set<String> = []
@@ -184,8 +224,9 @@ final class ReviewStore {
     func forget() {
         hosts = nil
         loadID = UUID()
+        epoch &+= 1
         resetFiles()
-        diffCache = [:]
+        diffCache.removeAll()
         unifiedCache = [:]
         splitCache = [:]
         wantedFiles = []
@@ -195,6 +236,33 @@ final class ReviewStore {
         overview = nil
         clearSelection()
     }
+
+    /// Off screen and past the retained few: lets go of what can be fetched again (hunks,
+    /// colored text, rows, cached revisions) and of any fetch under way, keeping what the
+    /// reviewer made (comments, the draft, viewed and collapsed files, unfolded runs, the scope
+    /// and options, the file list). Shown again, it loads as after a new connection.
+    func shed() {
+        guard loadedKey != nil || !diffs.isEmpty || diffCache.count > 0 || loading else { return }
+        loadID = UUID()
+        epoch &+= 1
+        loading = false
+        loadedKey = nil
+        diffs = [:]
+        texts = [:]
+        fileErrors = [:]
+        truncated = []
+        fileLoads = [:]
+        textLoads = [:]
+        wantedFiles = []
+        unifiedCache = [:]
+        splitCache = [:]
+        diffCache.removeAll()
+        for id in fileVersions.keys { fileVersions[id, default: 0] &+= 1 }
+        keepFoldsOnReload = true
+    }
+
+    /// An older host's next load keeps the unfolded runs a shed review had.
+    @ObservationIgnored private var keepFoldsOnReload = false
 
     // MARK: Loading
 
@@ -230,9 +298,13 @@ final class ReviewStore {
         do {
             let (files, reference) = try remoteReviewFiles(try await query(.review(pullRequest: pullRequest)))
             guard loadID == id else { return }
+            // The same diff again after a shed: its unfolded runs still name the same lines.
+            let runs = keepFoldsOnReload && filesArePR == pullRequest && self.reference == reference ? expandedRuns : [:]
+            keepFoldsOnReload = false
             self.reference = reference
             filesArePR = pullRequest
             resetFiles()
+            expandedRuns = runs.filter { id, _ in files.contains { $0.id == id } }
             diffs = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             entries = files.map(ChangesFile.init(listing:))
             loaded = true
@@ -284,7 +356,7 @@ final class ReviewStore {
         if moved {
             resetFiles()
             for file in list.files {
-                if let cached = diffCache[fileKey(file, list: list)] { setDiff(cached, for: file.id) }
+                if let cached = diffCache.value(for: fileKey(file, list: list)) { setDiff(cached, for: file.id) }
             }
         }
         if entries != list.files { entries = list.files }
@@ -511,6 +583,7 @@ final class ReviewStore {
 
     private func loadFile(_ file: ChangesFile, key: FileKey, requestID: UUID) async {
         defer { if fileLoads[file.id] == requestID { fileLoads[file.id] = nil } }
+        let started = epoch
         func isCurrent() -> Bool {
             guard fileLoads[file.id] == requestID, let list, let current = entry(file.id), listOptions == options else { return false }
             return fileKey(current, list: list) == key
@@ -518,14 +591,19 @@ final class ReviewStore {
         do {
             let reply = try await query(.changesFile(revision: key.revision, path: file.path, oldPath: file.oldPath, options: key.options))
             guard case .changesFile(let diff) = reply else { throw RemoteReviewError.unexpectedReply }
-            guard hosts != nil else { return }
-            diffCache[key] = diff
+            guard hosts != nil, epoch == started else { return }
+            diffCache.insert(diff, cost: Self.cost(diff), for: key)
             guard isCurrent() else { return }
             setDiff(diff, for: file.id)
         } catch {
             guard isCurrent() else { return }
             fileErrors[file.id] = reviewErrorText(error)
         }
+    }
+
+    /// A file's hunks as the cache counts them: their lines' bytes, and an allowance for each.
+    static func cost(_ diff: ChangesFileDiff) -> Int {
+        diff.file.hunks.reduce(0) { total, hunk in hunk.lines.reduce(total) { $0 + $1.text.utf8.count + 64 } }
     }
 
     private func setDiff(_ diff: ChangesFileDiff, for id: String) {
@@ -917,6 +995,15 @@ extension SHReviewFileRow.Item {
     init(_ summary: ReviewFileSummary) {
         self.init(name: summary.name, directory: summary.directory, status: SHFileStatus(summary.status), added: summary.added,
                   removed: summary.removed, comments: summary.comments, viewed: summary.viewed)
+    }
+}
+
+extension View {
+    /// Counts this screen among the review's viewers while it is on screen, so a review shown
+    /// anywhere keeps what it fetched (`ReviewStores.retainedReviews`).
+    func reviewViewer(_ ref: AgentRef) -> some View {
+        onAppear { ReviewStores.shared.appeared(ref) }
+            .onDisappear { ReviewStores.shared.disappeared(ref) }
     }
 }
 

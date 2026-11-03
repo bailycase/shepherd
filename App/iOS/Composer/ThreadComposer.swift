@@ -26,6 +26,8 @@ struct ThreadComposer: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @Environment(MobileNavigator.self) private var navigator
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
     /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
     @FocusState private var focused: Bool
@@ -169,10 +171,10 @@ struct ThreadComposer: View {
         .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
             if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
         }
-        .sheet(isPresented: Binding(get: { presentation.showingContext }, set: { presentation.showingContext = $0 })) {
+        .sheet(isPresented: Binding(get: { presentation.showingContext }, set: { presentation.showingContext = $0 }).whenActive(detailActive)) {
             ContextDetailsSheet(store: store, live: live) { id in presentation.find(id) }
         }
-        .sheet(isPresented: Binding(get: { presentation.choosingModel }, set: { presentation.choosingModel = $0 })) {
+        .sheet(isPresented: Binding(get: { presentation.choosingModel }, set: { presentation.choosingModel = $0 }).whenActive(detailActive)) {
             ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
                 Task { await store.setModel(model) }
             }
