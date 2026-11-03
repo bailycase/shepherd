@@ -86,13 +86,14 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   every feed's update until one ages out. So a nightly re-run whose commit already carries a
   `nightly-*` tag builds nothing (push again instead), and a tag's re-run stops at
   `gh release create`.
-- **Runs queue; they never cancel.** A push waits for the release already running, and a newer push
-  replaces only the one still waiting, so every started run finishes (a cancelled run can leave a
-  TestFlight upload unretired or the feeds half written) and the newest commit ships next. A
-  TestFlight run queues in a group of its own, so it never replaces a waiting push or is replaced
-  by one. Distinct tags keep separate build groups. Only the `publish-appcasts` job shares one
-  `appcast-publication` concurrency group (`cancel-in-progress: false`): replacing a waiting
-  publisher loses no release, because every admitted publisher rereads all completed releases.
+- **New Nightly runs cancel older runs.** A push or plain manual run on `nightly` cancels the
+  previous Mac release run for that branch, including a stale build waiting for a runner.
+  TestFlight runs queue separately without cancellation so uploads and retirement can finish.
+  Tagged releases also keep running. The `publish-appcasts` job retains its shared
+  `appcast-publication` concurrency group (`cancel-in-progress: false`), but cancellation of a
+  Nightly parent can still stop its publisher. The next successful publisher rereads all completed
+  releases, including any release made public before its parent was cancelled. A cancelled upload
+  can leave a draft release or tag; drafts are ignored by publication.
   Releases upload as drafts, including `shepherd-appcast.json` eligibility metadata, and become
   public only after their required assets exist. Publication ignores drafts, excludes marked
   ad-hoc releases, and refuses malformed present metadata. Unmarked historical releases retain
