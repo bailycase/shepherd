@@ -73,11 +73,32 @@ struct StateValidationTests {
         try Fixture.state().validate()
     }
 
-    @Test func ownershipFieldsAreOptionalForOldFiles() throws {
+    @Test(arguments: [false, true], [false, true])
+    func ownershipFieldsAreOptionalForOldFiles(agentOwns: Bool, paneOwns: Bool) throws {
         var state = Fixture.state()
-        state.agents[0].paneID = nil
-        state.tabs[0].layout = .leaf(LeafPane(cwd: "/tmp/alpha"))
+        if !agentOwns { state.agents[0].paneID = nil }
+        if !paneOwns {
+            var pane = state.tabs[0].layout.firstLeaf
+            pane.agentID = nil
+            state.tabs[0].layout = .leaf(pane)
+        }
         try state.validate()
+    }
+
+    @Test func anEarlierAgentErrorStillPrecedesADuplicateAndLeafErrors() throws {
+        var state = Fixture.state()
+        state.agents.append(state.agents[0])
+        state.agents[0].spaceID = SpaceID()
+        state.tabs.append(Tab(spaceID: state.spaces[0].id, order: 1,
+                              layout: .leaf(LeafPane(cwd: "/tmp", agentID: AgentID()))))
+        let first = try #require(#expect(throws: ShepherdStateValidationError.self) { try state.validate() })
+        #expect(Self.caseName(first) == "missingSpaceForAgent")
+        state.agents[0].spaceID = state.spaces[0].id
+        let duplicate = try #require(#expect(throws: ShepherdStateValidationError.self) { try state.validate() })
+        #expect(duplicate.description == "duplicate agent id: \(state.agents[0].id.rawValue)")
+        state.agents.removeLast()
+        let leaf = try #require(#expect(throws: ShepherdStateValidationError.self) { try state.validate() })
+        #expect(Self.caseName(leaf) == "leafAgentMissing")
     }
 
     @Test func aTabWithoutASpaceIsTolerated() throws {
