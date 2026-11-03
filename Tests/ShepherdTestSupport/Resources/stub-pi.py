@@ -817,6 +817,30 @@ def text_of(message):
     return content if isinstance(content, str) else "".join(b.get("text", "") for b in content if b.get("type") == "text")
 
 
+def native_queue_boundary():
+    """Opt-in model of the bundled extension's awaited turn-end request, before steering dequeue."""
+    filename = "native-queue-boundary.json"
+    if not os.path.isfile(filename):
+        return
+    import socket
+    with open(filename) as source:
+        config = json.load(source)
+    frame = {"type": "nativeQueueBoundary", "id": 1, "agentID": config["agentID"],
+             "piSessionID": STATE["sessionId"], "expiresAt": config.get("expiresAt", now_ms() + 10000)}
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(12)
+        connection.connect(config["socket"])
+        connection.sendall((json.dumps(frame) + "\n").encode())
+        reply = json.loads(connection.makefile("rb").readline(4096))
+    with open("native-queue-boundary-replies.jsonl", "a") as output:
+        output.write(json.dumps(reply) + "\n")
+    if config.get("abortAfterAck"):
+        RUN["abort"].set()
+    if config.get("gate"):
+        gate(config["gate"])
+    return RUN["abort"].is_set()
+
+
 def agent_run(first):
     new = []
     persisted = 0
@@ -878,6 +902,10 @@ def agent_run(first):
                 emit({"type": "message_start", "message": result})
                 emit({"type": "message_end", "message": result})
                 new.append(result)
+                if not failed and native_queue_boundary():
+                    # A later boundary handler ended the run before pi dequeued steering.
+                    aborted = True
+                    break
                 emit({"type": "turn_end", "message": ask, "toolResults": [result]})
                 done += 1
                 more = True

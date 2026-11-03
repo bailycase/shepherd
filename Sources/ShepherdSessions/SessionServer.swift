@@ -3996,7 +3996,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if coordinatorPeer {
             switch message {
-            case .setAgentStatus, .setAgentName, .setAgentSession, .helloAgent, .projectRuntime, .responseTiming: break
+            case .setAgentStatus, .setAgentName, .setAgentSession, .helloAgent, .projectRuntime, .responseTiming, .nativeQueueBoundary: break
             default:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Coordinator peer, automation and external tools are unavailable."), to: client) }
                 return
@@ -4090,6 +4090,17 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
+        case .nativeQueueBoundary(let id, let agentID, let piSessionID, let expiresAt):
+            let now = Date().timeIntervalSince1970 * 1000
+            guard expiresAt.isFinite, expiresAt > now, expiresAt <= now + 10_000,
+                  let thread = rpcThread(forAgent: agentID), thread.piSessionID == piSessionID else {
+                reply(.error(id: id, code: "stale_boundary", message: "The native queue boundary is no longer current."), to: client)
+                return
+            }
+            thread.deliverAtBoundary(expiresAt: expiresAt) { [weak self, weak client] in
+                guard let self, let client, self.clients[client.fd] === client else { return }
+                self.reply(.ok(id: id), to: client)
+            }
         case .responseTiming(let agentID, let seq, let mark, let at):
             // Display-only: the thread's response timing (RPCThreadState.recordResponseMark).
             rpcThread(forAgent: agentID)?.recordResponseMark(mark, seq: seq, at: at)

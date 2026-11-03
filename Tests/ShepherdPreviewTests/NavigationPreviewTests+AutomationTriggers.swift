@@ -28,7 +28,7 @@ extension PreviewTests {
     /// shepherd's space with one ordinary thread and two of pr-loop's runs (one asking, one
     /// finished and not opened); pr-loop watches GitHub, Nightly triage runs daily, and Weekly
     /// dependency bumps is the old manual kind.
-    private func triggerWorkspace(maxConcurrent: Int = 2) async throws -> TriggerFixture {
+    private func triggerWorkspace(maxConcurrent: Int = 2, maxPerDay: Int = 20) async throws -> TriggerFixture {
         // The asking run posts its banner as the workspace loads; the banner reads NSApp, as rendering does.
         _ = NSApplication.shared
         let workspace = try PreviewWorkspace()
@@ -38,10 +38,10 @@ extension PreviewTests {
         let prLoop = Automation(name: "pr-loop", prompt: "Fix the issue and open a PR.", cwd: space.path, enabled: false,
                                 trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled, .pullRequestComment],
                                                                 labels: ["shepherd"])]),
-                                authorGate: .contributors, limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: 20), model: "claude-sonnet-4-5")
+                                authorGate: .contributors, limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: maxPerDay), model: "claude-sonnet-4-5")
         let nightly = Automation(name: "Nightly triage", prompt: "Triage what came in overnight.", cwd: space.path, enabled: false,
                                  trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0")),
-                                 workspace: .local, limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: 20))
+                                 workspace: .local, limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: maxPerDay))
         let manual = Automation(name: "Weekly dependency bumps", prompt: "Bump dependencies.", cwd: space.path, enabled: false)
         var (mine, mineTab) = try await workspace.agent("Plan shepherd extensions", in: space, order: 0, status: .working)
         mine.lastActiveAt = (now - 120) * 1000
@@ -141,11 +141,13 @@ extension PreviewTests {
     }
 
     /// Edit Nightly triage: the Schedule section with its preset, time and next run.
-    @Test(arguments: [0, 2]) func automationEditorSchedule(maxConcurrent: Int) async throws {
-        let fixture = try await triggerWorkspace(maxConcurrent: maxConcurrent)
+    @Test(arguments: [(0, 20), (2, 20), (2, 0)]) func automationEditorSchedule(maxConcurrent: Int, maxPerDay: Int) async throws {
+        let fixture = try await triggerWorkspace(maxConcurrent: maxConcurrent, maxPerDay: maxPerDay)
         defer { fixture.workspace.stop() }
         let key = AutomationKey(host: PageHost.localID, automation: fixture.nightly.id)
-        try await Preview.render(maxConcurrent == 0 ? "sheet-automation-editor-unlimited" : "sheet-automation-editor-schedule",
+        let name = maxPerDay == 0 ? "sheet-automation-editor-no-daily-limit"
+            : maxConcurrent == 0 ? "sheet-automation-editor-unlimited" : "sheet-automation-editor-schedule"
+        try await Preview.render(name,
                                  size: CGSize(width: AppLayout.automationSheetWidth + 80, height: AppLayout.automationSheetBodyMaxHeight + 260)) {
             AutomationEditorSheet(vm: fixture.workspace.vm, target: .edit(key)) {}
         }
