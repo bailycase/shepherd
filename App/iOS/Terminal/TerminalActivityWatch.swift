@@ -19,17 +19,21 @@ private struct TerminalActivityWatch: ViewModifier {
     @State private var visible = false
 
     private struct Key: Equatable {
+        var ref: AgentRef
         var session: UUID?
         var watching: Bool
+        var hasTerminals: Bool
     }
 
     func body(content: Content) -> some View {
+        let host = hosts.host(ref.host)
         content
             .onAppear { visible = true }
             .onDisappear { visible = false }
-            .task(id: Key(session: hosts.host(ref.host)?.session, watching: visible && active && scenePhase == .active)) {
-                guard visible, active, scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
-                await MobileTerminals.shared.watchActivity(ref, client: client)
+            .task(id: Key(ref: ref, session: host?.session, watching: visible && active && scenePhase == .active,
+                          hasTerminals: MobileTerminals.hasTerminals(ref, host: host))) {
+                guard visible, active, scenePhase == .active, let host, host.connectedClient != nil else { return }
+                await MobileTerminals.shared.watchActivity(ref, host: host)
             }
     }
 }

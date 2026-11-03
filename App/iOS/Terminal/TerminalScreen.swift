@@ -21,8 +21,10 @@ struct TerminalScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     private struct ActivityKey: Equatable {
+        var ref: AgentRef
         var session: UUID?
         var active: Bool
+        var hasTerminals: Bool
     }
 
     /// When to ask for a first terminal: once the host is connected and takes terminal requests.
@@ -107,9 +109,10 @@ struct TerminalScreen: View {
         .onChange(of: liveSessions, initial: true) { _, live in
             if hosts.host(ref.host)?.phase.isConnected == true { terminals.prune(host: ref.host, live: live) }
         }
-        .task(id: ActivityKey(session: hosts.host(ref.host)?.session, active: scenePhase == .active)) {
-            guard scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
-            await terminals.watchActivity(ref, client: client)
+        .task(id: ActivityKey(ref: ref, session: hosts.host(ref.host)?.session, active: scenePhase == .active,
+                              hasTerminals: !model.tabs.isEmpty)) {
+            guard scenePhase == .active, let host = hosts.host(ref.host), host.connectedClient != nil else { return }
+            await terminals.watchActivity(ref, host: host)
         }
         .task(id: FirstTerminalKey(connected: model.connected, canChange: model.canChangeTerminals, hasLayout: model.layout != nil)) {
             guard model.connected, model.canChangeTerminals, model.layout != nil, model.tabs.isEmpty, !askedForFirst else { return }

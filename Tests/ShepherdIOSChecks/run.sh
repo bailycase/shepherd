@@ -39,8 +39,8 @@ DYLD_LIBRARY_PATH="$build" "$build/hosts-check"
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
     App/iOS/Home/SidebarThreads.swift App/iOS/Search/AgentActions.swift \
-    App/iOS/Review/FinalizeStore.swift App/iOS/Review/ReviewErrors.swift \
-    Tests/ShepherdIOSChecks/SidebarThreadsCheck.swift -o "$build/sidebar-check"
+    App/iOS/Review/FinalizeStore.swift App/iOS/Review/ReviewErrors.swift App/iOS/Terminal/MobileTerminals.swift \
+    Tests/ShepherdIOSChecks/TerminalActivityCheck.swift Tests/ShepherdIOSChecks/SidebarThreadsCheck.swift -o "$build/sidebar-check"
 DYLD_LIBRARY_PATH="$build" "$build/sidebar-check"
 echo 'SIDEBAR CHECK COMPLETE'
 if [ "$mode" = --sidebar-only ]; then exit 0; fi
