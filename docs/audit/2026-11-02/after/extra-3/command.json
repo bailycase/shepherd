@@ -1,0 +1,9 @@
+{
+  "command": [
+    "/tmp/shepherd-perf-fixes/final-benchmarks/extra-data-paths"
+  ],
+  "cwd": "/Users/bailycase/Developer/Shepherd-perf-integration-2026-11-02",
+  "timeout": 120,
+  "HOME": "/tmp/shepherd-perf-fixes/final-benchmarks/extra-3/home",
+  "additions": null
+}

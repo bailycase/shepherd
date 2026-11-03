@@ -1,14 +1,20 @@
 # Performance remediation status
 
-Status: implementation and validation in progress. No claim of completion or speedup yet.
+Status: functional fixes and review follow-ups are implemented and all stated final acceptance
+gates passed. The chronological log below records superseded intermediate failures honestly.
+[Post-fix measurements and raw samples](after/README.md) show ~5.8× faster streaming-tail refresh
+at 5,000 messages in the synthetic Release fixture, not a measured app/frame-rate or device claim.
+The chronological log below preserves superseded failures and intermediate pending states;
+the final acceptance results take precedence.
 
 The source audit is pinned to `f80d01132`. This fix branch starts from newer nightly
 `f52bf0cc7`, retaining #402, #404 and #405. It includes the audit's committed evidence
 (`e7de8b201`). Newer changes must not be reverted to make a benchmark or test pass.
 Nightly through `876c570fc` (#406–408) is integrated via reviewed server merge `93ad5359`.
 Queue-boundary delivery and durable recovery staging are reconciled in storage `64fa756b`,
-merged into integration as `2cef8b03`. All seven first batches are integrated; final-review
-follow-ups and combined validation still block release.
+merged into integration as `2cef8b03`. All seven lanes and correctness follow-ups are integrated;
+no active audit finding is intentionally deferred as a functional fix. Measurement coverage gaps
+remain explicit below and do not establish any competitive “fastest app” claim.
 
 ## Ownership and closure ledger
 
@@ -19,14 +25,14 @@ same path, not additional independent performance gains.
 
 | Lane | Audit IDs | Status | Required evidence |
 | --- | --- | --- | --- |
-| Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | Reviewed follow-ups merged and tested; UI consumers pending | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
-| Server | SV-01 through SV-06; server half UX-03 | Merged; parent 248-test integration run passed | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
-| Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Merged; final semantic review and parent tests running | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
-| Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; joined parent tests passed, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
-| Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | First batches merged; six final-review gaps being fixed | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
+| Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | Implemented; joined correctness and optimized fixture pass | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
+| Server | SV-01 through SV-06; server half UX-03 | Implemented; included in final joined correctness run | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
+| Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | Implemented; lifecycle regressions and final joined run pass | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
+| Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Consumers integrated; focused parent tests passed | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
+| Mac | MC-01 through MC-08, ST-02; UI half UX-03/UX-07 | Implemented; renderer/reader/recovery regressions and app build pass | Prepared inline markup; inactive history budgets preserving readers; transition-safe adoption; structural/live row independence; off-main attachment/text work; lazy project rows; safe startup; light/dark previews |
 | Mobile | IO-01, IO-04, IO-07, IO-08, UX-06; UI half IO-05 | Merged; parent full portable runner passed | Review byte/revision bounds and multiwindow state; progressive bounded digest publication; retained bounded iPad details; lazy pins; correct reconnect states; phone/iPad light/dark checks |
 | Surfaces/extensions | SF-02 through SF-04, SV-07 | Review fixes merged; parent joined tests passed | Off-main encoding; shared image cost budget and visible reload; safe per-load asset indexing; race-free event-driven child capacity waits |
-| Instrumentation/builds | OBS-01 through OBS-04, shared among parent and UI/thread/server lanes | In progress | Local fixed-label interaction signposts without new data uploads; meaningful existing iOS full-display completion; ordinary Release test compilation |
+| Instrumentation/builds | OBS-01 through OBS-04, shared among parent and UI/thread/server lanes | Implemented; optimized measurements and both app builds pass | Local fixed-label interaction signposts without new data uploads; meaningful existing iOS full-display completion; ordinary Release test compilation |
 
 ST-06: the user explicitly approved the additive `history_outcome_task` SQLite index during
 normal initialization. It retains existing rows and old-binary compatibility. Only scratch
@@ -35,6 +41,40 @@ DBs may be migrated during validation; the one-time index build cost must be rep
 All assigned findings must reach a recorded disposition. A blocker or invalidated diagnosis is
 not a completed fix. Physical-device tests, energy/thermal runs and competitor measurements may
 require equipment that is not available; those limits must remain explicit.
+
+## Final acceptance results
+
+- Combined Swift selection: **4,365 tests, 486 suites passed**, including all unit targets and
+  affected recovery/queue/project/storage/Mac/renderer integration suites. This is not a claim
+  that every integration test in the repository ran in the final selection.
+- Normal Release test build passed; no reduced harness or debug-only counters needed.
+- All **57 extension test files** passed with bundled Node and isolated Shepherd environment.
+  Subsequent changes do not touch extension code.
+- Full mobile portable runner passed again after the final iOS-only table-map adapter, exit 0.
+- Release/Python: **361 tests passed, one skipped**, exit 0. Final docs guards: **10 passed**.
+  Final `git diff --check` passed. Acceptance code is `d7cd8b20`; remaining edits are this report
+  and archived benchmark evidence, not app behavior.
+- macOS Dev and iOS Simulator builds passed. iOS initially exposed a shared-API map adapter
+  mismatch; `d7cd8b20` corrects the two call sites and the build now passes.
+- Renderer 256 KiB fixture retained; cancelled-work and A→B→A/structural-filter regressions pass.
+- Synthetic Release streaming-tail refresh medians: 0.326→0.076 ms (100 messages),
+  2.316→0.404 ms (1,000), 10.811→1.863 ms (5,000). The full comparison preserves small
+  regressions (100-agent status reports and 300-agent workspace decode), not just improvements.
+- Parent inspected light/dark Mac recovery, rich prose, design picker and launch surfaces;
+  phone/tablet switching/recovery/reconnect and two-scene iPad fixtures were inspected. These
+  isolated render/interaction checks do not establish production frame-time or battery budgets.
+
+**Coverage limits:** no physical-device or power-loss testing, competitive app comparison,
+presented-frame latency/typing hitch trace, long-duration thermal/energy/retained-memory soak,
+or measured one-time SQLite index creation cost on a representative large archive. UserDefaults
+text recovery is not an fsync/power-loss journal; image bytes are explicitly not persisted.
+Benchmarks use three run summaries on one M4 Max, not stable p95/p99 estimates. Full history
+transport/decode still scales with history; no new delta protocol was added.
+
+**Departures:** no supplied visual spec was intentionally changed. Pending submission/recovery
+controls and temporary unstyled text during off-main parsing are disclosed behavior changes;
+text is never silently truncated, uncertain sends are never automatically retried, and drafts
+are not cleared on local admission refusal. TestFlight is not part of this authorized Mac merge.
 
 ## Integration validation plan
 
@@ -63,7 +103,7 @@ require equipment that is not available; those limits must remain explicit.
   Clients aggregate visible owners and wake existing poll loops only, retaining polling fallback.
 - `native.fleetDigest.v1`: capability-gated bounded Home metadata with session/revision validation;
   older hosts and oversized digest responses use explicit snapshot fallback. Preview revision zero
-  must not be treated as a content freshness proof. UI integration and contract tests are pending.
+  must not be treated as a content freshness proof. UI consumers and contract tests are integrated.
 - Cache eviction: shared-store readiness/byte estimates, with host-side visibility and per-view
   reader ownership. Unresolved sends and readers are not discarded to satisfy a budget.
 - Recovery: retain the existing checkpoint JSON. Stage expensive persistence work with callback-based
@@ -84,6 +124,13 @@ require equipment that is not available; those limits must remain explicit.
   its analogous persisted-draft loss; a separate render follow-up owns cold/oversize parsing and
   structural revision separation. Captured recovery must retain text-only uncertain records across
   relaunch without automatic retry or claiming unpersisted image bytes survived.
+  Mac follow-up `014fca04` merged via `a26a557a`: explicit reader epoch invalidation, restore-before-
+  serve ordering, capture-time text recovery, selection-aware import gating and reconciliation-
+  retained refusal metadata. Parent inspected final light/dark submission renders. Review caught
+  scalar-record serialization crashing outside Swift error handling and one malformed agent hiding
+  valid siblings; parent fixed both with mixed malformed/rewrite/relaunch tests (`06efd038`).
+  Parent combined Mac recovery/composer/reader checks passed **43 tests/8 suites**, exit 0.
+  Markdown/index work remains a separate pending lane.
   Mobile recovery checkpoint `5a21659e` adds bounded text-only persisted records and real-store
   second-instance checks. It is not yet accepted: observation schedules saving asynchronously,
   and restore removes recovery before draft persistence; these ordering windows are under review.
@@ -97,10 +144,94 @@ require equipment that is not available; those limits must remain explicit.
   after readiness and shared limits, before input clearing/dispatch. Focused tests prove refused
   post-readiness edits stay intact and owner recovery is written before capture. Eight bounds
   tests and the full **1,239-test remote unit suite** passed, exit 0. Hook is cherry-picked into
-  mobile (`fcde30f37`); actual-store combined-budget and ordering consumer regressions are next.
-  Host-pruning and iPad multi-window checks remain requested.
+  mobile (`fcde30f37`). Final admission/pruning follow-up `2afc207b` is merged: exact combined
+  budgets, saving before capture, restore-to-draft before record deletion, and deleted-thread
+  resurrection fencing. Parent inspected recovered/refused phone/tablet light/dark renders and
+  is rerunning the full portable runner. Worker simulator build passed. Existing UserDefaults
+  supports orderly relaunch recovery, not fsync-grade crash/power-loss guarantees; images remain
+  memory-only and recovered banners say they were not kept. A bounded two-reader validation and
+  preservation of individually malformed legacy records are the remaining mobile checks.
+  The parent post-merge full portable runner subsequently failed the held-digest reconnect check
+  (`MobileFreshnessCheck:265`, full-reply count after reconnect). Root cause was a test-host reply
+  sent through a descriptor reused by a new connection. `27254485` guards reply/close ownership
+  under one lock and preserves unreadable saved entries. Worker reproduced 4/84 failures before
+  and 0/100 after; parent full portable rerun passed, exit 0, and the parent iOS Simulator app build
+  succeeded. Two real simulator scenes
+  passed nine checks/theme, but only one scene runs the thread at a time; simultaneous active
+  windows remain a physical-device gap. Supplied screenshots showed Home after teardown; actual
+  app-window captures were requested before claiming visual coverage. A bounded 36-check rerun
+  captured before Forget; parent inspected `final-window-shots-3` light/dark PNGs showing the app
+  and retained failed input. Only the front scene is visible/active; simultaneous side-by-side
+  rendering remains unproven. Fixture changes `bdbb67c2` await the current build before integration.
 
 ## Validation recorded so far
+
+- Broad acceptance on `f7a3f49e`: **4,365 tests/493 suites passed**, exit 0, 85.254s test execution.
+  Release compilation passed, exit 0. Checkout read duration in the broad run was 69.778ms,
+  round-trip 69.832ms; the prior 6.57s total did not isolate command duration. This test correction
+  is not a production speedup. The benchmark's first attempt stopped before compiling because
+  the script omitted the archived fixture's `.txt` suffix; the scratch path is corrected and
+  measurements/remaining build checks continue without a production-code change.
+
+- The late-binding broad rerun completed 4,365 tests with one failed wall-clock assertion:
+  checkout timeout measured 6.57s including detached-task scheduling and main-actor resumption.
+  `f7a3f49e` records command execution/cleanup inside the worker, preserving the 50ms command
+  timeout and 3s limit, and prints both timings. Six focused checkout tests passed at ~70ms.
+  A fresh broad run must confirm command duration under load; it is not yet a final pass.
+
+- Final joined selection at `3f03a2b5e` ran **4,364 tests/493 suites**, failing only two arguments
+  of the bounded-startup test: the .5s readiness deadline was armed before scheduling the UI
+  observer, so a loaded runner could correctly go directly to failure without showing Starting.
+  Test-only `25353884` observes Starting first, then hides the observer and arms the unchanged
+  half-second deadline. Both arguments pass focused; the exact broad selection is queued again.
+  Deadline expiry, hidden failure, retained opening prompt and exactly-once late delivery assertions
+  remain unchanged. No timeout was lengthened and no production startup behavior changed.
+  The ordered broad rerun at `2e94a4350` again ran 4,364 tests/493 suites: one remaining issue,
+  recovery bootstrap never completed for the agent-lookup budget test. The late agent-binding
+  path was confirmed by a deterministic reproduction: RPC bootstrap can precede Agent/Tab
+  ownership, and recovery was never retried after binding. Fix `435d61444` restores after binding
+  before UI notification and removes the announcement first to fence reentrancy. The worker's
+  reproduction failed before the fix; 112 tests/7 suites passed afterward. Parent integrated it,
+  started fresh sequential acceptance gates on that commit. Independent review found no
+  actionable issues: removal-before-restore prevents reentrant duplicate announcements and
+  `restoringRecovery` guards duplicate restoration; existing readiness/durability gates remain.
+  Prior Release compilation passed (exit 0, 428.85s); it will be rebuilt after the lifecycle fix,
+  with isolated benchmarks and final app checks gated on the new correctness result.
+  Parent also terminated three verified orphaned renderer test helpers from the earlier held-parse
+  investigation (exact PIDs, owned scratch worktree, parent PID 1), clearing benchmark contamination.
+
+- Coordinator launch fix `c55ba797b`: parent combined project/runtime/recovery selection passed
+  **75 tests/3 suites**, exit 0, after the worker's repeated held-start/relaunch regressions.
+- Rendering first batch `5223a9f6` integrated as `faa8a046e`: cold inline/block parse preparation
+  no longer depends on cache admission, and row-ID indexes follow a structural revision instead
+  of every content tick. Parent inspected rich-parts light/dark previews. The original 256 KiB
+  paragraph fixture originally timed out, but the bounded diagnostic isolated a lost-wakeup race
+  in the held-parse test helper, not a styling/layout stall. The original 256 KiB/1,537-run fixture
+  is restored and passes without truncation; no styling speedup is claimed from this probe.
+  Independent review also found a same-count interior Project filter swap could leave stale row
+  indexes, and A→B→A oversized block updates could allow pending B to overwrite A. Follow-up
+  `da58f6fb` fixes both and retains cancelled parse reservations until work truly exits. Both
+  negative controls fail without their fixes; all 29 final focused tests passed in the worker.
+  Parent integration waits for the running Release build to finish before changing source.
+- Independent audit-closure pass found no other missing functional finding beyond tracked
+  renderer follow-ups. It did not claim measured first-paint/energy/physical-device wins; those
+  validation gaps remain explicitly open.
+
+- Paused coordinator regression: `c55ba797b` prevents native snapshot demand from racing the
+  Project admission launch; ordinary agent demand and stopped-session previews are unchanged.
+  Deterministic gates prove one pi binding and one queued-operation handoff. Worker reproduced
+  the prior failure, then passed four serialized regressions and 36 affected tests. Parent combined
+  project/runtime/recovery tests and independent guard review are running. Diagnostic AX output
+  now tolerates infinite coordinates instead of trapping while explaining a test failure.
+
+- Equal-text unsteer attachment ownership: `9948de67` excludes the returned item from restoration
+  matching, keeping remaining records' IDs/images. All four worker cases (either item,
+  success/failure) and 121 queue/recovery tests passed. Parent integrated it as `a21e308e5`;
+  parent queue/recovery/control selection passed **119 tests/10 suites**, exit 0.
+
+- Parent integrated macOS Dev app build: **BUILD SUCCEEDED**, exit 0; iOS Simulator app build also
+  passed. These precede the pending Markdown and equal-text unsteer follow-ups and must be
+  incrementally revalidated on the final commit.
 
 - Storage final queue merge `64fa756b`: worker reports 218 runtime, 195 storage and 68 project
   control tests passed, exit 0. The held-write boundary test explicitly resumes its server-side
@@ -114,8 +245,19 @@ require equipment that is not available; those limits must remain explicit.
   assertions and all 11 ServerWorkBudgetTests pass, exit 0. The four other failures remain recorded
   as broad-run timeouts, not a proven production regression or a final full-tier pass.
   Independent final review found a blocking interleaving: settlement during held restorePiQueue
-  staging can discard original image-bearing records/IDs before re-admission. Storage is adding
-  restoration ownership fencing and deterministic held-stage settlement coverage before acceptance.
+  staging can discard original image-bearing records/IDs before re-admission. Correction `768e7a66`
+  retains restoration ownership through staging/re-admission and rejects late admission after the
+  originating run settles. Worker passed 12 regressions, 163 runtime and 67 controls. The correction
+  is merged. Parent combined run: 191 tests with one failing paused-relaunch/slow-start Project
+  scenario (two issues); dedicated diagnosis is underway rather than accepting its old baseline
+  history. Final review found authorization must start before the held clear_queue reply, and goal
+  unyield must recheck after final ownership release. Both corrections require new regressions.
+  `dd59178c` now captures clear authorization/ownership before RPC and rechecks goal unyield on
+  final release. Worker passed eight clear-response cases, two goal cases, 177 runtime tests and
+  67 control tests; parent merged it and is rerunning combined queue/recovery checks. Final review
+  cleared cancellation/goal fixes but found identical-text steers with different images could match
+  the wrong original after unsteer; ownership matching is being corrected with an image/ID regression.
+  The prior failing test run is retained, not rewritten as green.
 
 - Full Release/Python run: **361 tests, one skipped, exit 0** after correcting the design-index
   guard to exempt explicitly Removed surfaces with a required departures.md record. The first
