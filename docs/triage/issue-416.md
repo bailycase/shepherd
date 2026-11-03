@@ -1,51 +1,108 @@
-# Issue #416: BLOCKED triage, not a bug fix
+# Issue #416: Command+N does not create a new thread
 
-## Summary
+Issue: https://github.com/bailycase/shepherd/issues/416
 
-Refs #416: https://github.com/bailycase/shepherd/issues/416
+## Status
 
-The issue was OPEN on 2026-11-03. It is an issue in bailycase/shepherd, not a pull request. Its discussion was empty, its timeline contained only a label event, and the open PR listing and all-state PR search for `416` showed no matching implementation PR. This run handled only #416.
+Implemented and focused tests pass. PR publication remains blocked by the
+repository's automatic merge workflow, pending permission to pause it. No PR has
+been created, and the issue has not been modified.
 
-No behavior change or reproduction test is included. The reported Command+N failure remains unverified and unresolved. This report preserves triage because ready-for-review publication crosses the run's explicit no-auto-merge boundary.
+## Evidence and root cause
 
-### Evidence and affected flow
+- Canonical GitHub state was an open issue in `bailycase/shepherd`, not a PR.
+  Discussion and timeline contained no further reproduction evidence or linked
+  fix. No active PR for #416 was found.
+- `KeybindingsStore` defaults `.newAgent` to Command+N. The File menu invokes
+  `openNewThread()`, which selects the New thread page and requests composer
+  focus. Default and custom app chords are released by the terminal.
+- Asynchronous startup introduced a conditional around **all** workspace command
+  groups in `ShepherdMacApp`. At initial scene registration, `launch.model` is
+  nil, so those groups are absent.
+- An isolated native SwiftUI probe reproduced the missing File menu and an
+  unhandled Command+N after its model became ready. A control initialized ready
+  handled the shortcut. Registering the items immediately, disabled until ready,
+  handled the shortcut after native menu validation. The probe stayed offscreen
+  and never activated the application. This reproduces the startup failure, not
+  the original reporter's unspecified installed-app focus state.
 
-Inspected fetched `origin/nightly` at `7a6588b30f2129b4390ec90ea3b2d12ce8b30b4c` in the supplied clean isolated worktree.
+## Implementation
 
-- `Sources/ShepherdApp/Keybindings.swift`: `ShortcutAction.newAgent` defaults to Command+N. `KeybindingsStore.chord(for:)` uses a saved override when present. Actual user overrides were not read.
-- `Sources/ShepherdApp/ShepherdApp.swift`: workspace commands, including `FileCommands`, are installed once `launch.model` exists.
-- `Sources/ShepherdApp/AppCommands.swift`: File > New Thread reads the shortcut from the store and schedules `vm.openNewThread()` on the main actor.
-- `Sources/ShepherdApp/ShepherdViewModel+Navigation.swift`: `openNewThread()` opens the New thread destination and increments its focus request. The command palette, project/sidebar flows and dialogs also use this shared method. The sidebar destination route calls `openDestination(.newThread)` directly.
-- `Sources/TerminalSurfaceKit/TerminalSurfaceModel.swift`: `appOwnedChords` already includes `cmd+n`; custom app-wide overrides also flow through `customGhosttyUnbinds` in the keybinding store.
-- `Sources/ShepherdApp/ShepherdViewModel.swift`: the navigation key monitor handles agent digits and adjacent-agent chords, not New Thread. This alone does not establish a routing defect.
-- Existing checks in `Tests/ShepherdAppUnitTests/KeybindingsTests.swift` and `Tests/TerminalSurfaceKitUnitTests/TerminalSurfaceConfigTests.swift` cover the default display and configured terminal unbind. Source inspection is not proof of end-to-end shortcut delivery.
+`WorkspaceCommands` registers the existing menu groups unconditionally. Their
+items resolve the launched model and stay disabled until workspace ownership is
+acquired. This fixes the shared startup boundary rather than adding another
+Command+N handler or changing the saved keybinding contract. Other workspace
+menus receive the same correction. Update checks remain deferred until the
+model exists.
 
-The issue does not identify the focused control, any custom binding, whether File > New Thread works, or whether the New thread page was already shown. Adding another binding or intercepting Command+N without reproducing the failure would guess at the cause.
+`FileCreationMenuItems` keeps one copy of the real creation controls, shared by
+the File command group and a native-menu regression test. Existing menu actions,
+labels and configured chords are preserved after startup.
 
-### Reproduction and next implementation steps
+## Validation
 
-1. In an isolated Dev-app or off-screen integration harness, verify File > New Thread and the effective `newAgent` shortcut using scratch defaults, not the installed app's settings.
-2. Compare the shortcut from a thread composer, terminal, Browser surface and sidebar. Also test when the New thread page is already shown and after rebinding the shortcut.
-3. Determine whether failure occurs before the menu action, inside destination selection, or during composer focus acquisition. Follow existing `ControlPress` and `OffscreenWindow` patterns; do not post input to the user's running app.
-4. Fix the shared failing boundary and add the smallest regression test that fails before the fix. Inspect light/dark renders if the fix changes appearance.
+Passed:
 
-### Publication blocker
+```sh
+swift test --filter 'WorkspaceCommandStartupTests|TerminalFirstResponderTests/newThreadShortcut|KeybindingsTests|TerminalSurfaceConfigTests|ShepherdLaunchTests|MenuStateTests'
+```
 
-The canonical workflow at https://github.com/bailycase/shepherd/blob/nightly/.github/workflows/auto-merge.yml runs on ready, non-draft PRs targeting nightly, including PR opening and subsequent updates. For either of its two listed author IDs, it invokes `gh pr merge ... --auto --squash`.
+59 tests passed across the selected test bundles. The new tests verify that:
 
-Creating the requested ready PR can therefore enable auto-merge automatically, contrary to this run's explicit prohibition. A draft is also prohibited. Disabling auto-merge after PR creation would introduce a race, not prevent the forbidden side effect. No PR was created and no workflow, repository setting, issue state, label or comment was changed. No merge or auto-merge command was run.
+- New Thread is registered but disabled before the launch model exists.
+- After launch, the native menu dispatches Command+N to New thread exactly once.
+- Rebinding updates the native menu and dispatches the replacement chord.
+- A focused real Ghostty surface releases Command+N to the app menu.
 
-Next step: the user must arrange a repository-side opt-out from automatic merging for this PR before publication. Then open a ready-for-review PR from the preserved branch into nightly titled `docs: BLOCKED triage for issue #416 new-thread shortcut`, using this report to fill the repository PR template. Use Refs #416, not Fixes #416. Do not resume this task unattended.
+`swift build --target ShepherdApp` passed on the final source, including the
+updater's launch guard. `git diff --check` passed.
 
-## Tests run
+Earlier validation failures, investigated without weakening assertions:
 
-- Git worktree/status inspection: supplied checkout was isolated and clean before this report.
-- GitHub issue, timeline and PR queries: succeeded; results described above.
-- `git fetch origin nightly`: succeeded.
-- Canonical workflow lookup through GitHub's contents API: succeeded.
-- LSP status: no Swift language server configured; source inspection used instead.
-- No Swift build, tests, app launch or visual rendering ran. This documentation-only triage does not claim behavior validation.
+- The initial SwiftPM runner could not load
+  `@rpath/Sparkle.framework/Versions/B/Sparkle`. Ignored local symlinks under
+  `.build/out/Products/Debug/PackageFrameworks` to the built Sparkle and Sentry
+  frameworks repaired the runner's framework search layout. No tracked build
+  settings changed.
+- The first new test harness failed to compile with
+  `sending value of non-Sendable type '() async throws -> Void' risks causing data races`.
+- The second harness attempted to enter SwiftUI `App.main()` from an asynchronous
+  exit test and stalled in `NSApplication.run`. Only the owned test processes
+  were terminated. The final harness uses `NSHostingMenu` without an application
+  run loop, windows, or posted input, and passes.
+- Before the implementation, the broader command
+  `swift test --skip-build --filter 'KeybindingsTests|TerminalSurfaceConfigTests|WorkspaceNavigationTests|TerminalFirstResponderTests/newThreadShortcut'`
+  found existing failures in `aPageHidesTheThreadAndPickingARowReturnsToIt`
+  (`vm.shownDestination == page`, line 85) and
+  `switchingAwayAndBackKeepsLoadedHistoryAndScrollPosition`
+  (`abs(clip.bounds.origin.y - offset) < 1`, line 336). These unrelated workspace
+  expectations were not changed.
 
-## Notes for reviewers
+## UI and remaining verification
 
-Review the publication blocker first, then reproduce shortcut delivery before choosing a fix. No dependencies, providers, automation loops or product behavior were added. No user app-support data, running Shepherd instance or production service was accessed. The remaining work is reproduction, implementation, regression validation and safe ready-for-review PR publication.
+Design: the issue's requirement that the configured shortcut invoke New thread.
+Departures: none. The only intended visible difference is that native menu
+items exist, disabled, while the workspace opens.
+
+No light/dark menu screenshots or full app smoke test were captured. No running
+Shepherd instance or user app-support data was accessed. The tests exercise the
+real native menu items and terminal surface, not a focused full app scene.
+A reviewer should smoke-test File > New Thread and the configured shortcut after
+a cold launch, from both a composer and terminal, in light and dark appearances.
+Settings/palette overlay dismissal is unchanged; the original reporter's exact
+focus state remains unknown. Use `Refs #416`, rather than claiming the report is
+fully resolved, until that app-level check confirms the reported behavior.
+
+## Publication blocker and next step
+
+`.github/workflows/auto-merge.yml` runs on ready PRs into `nightly` and enables
+squash auto-merge for this run's authenticated public account, `bailycase`.
+Creating the required non-draft PR would therefore trigger the behavior this run
+was explicitly forbidden to enable. A workflow edit in the proposed branch would
+not protect its own PR because `pull_request_target` uses the base workflow.
+
+Permission has been requested to disable this workflow before opening the ready
+PR. That would pause automatic merging repository-wide until it is re-enabled.
+No workflow settings have been changed. After that decision, publish the existing
+branch into `nightly` using `.github/pull_request_template.md`; do not enable
+auto-merge or merge the PR.

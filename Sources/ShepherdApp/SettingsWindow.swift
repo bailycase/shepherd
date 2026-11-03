@@ -5,10 +5,10 @@ import ShepherdUI
 /// The app-menu Settings item. Settings is an in-window surface, so the
 /// command toggles view state rather than opening a second scene.
 struct SettingsCommandButton: View {
-    var vm: ShepherdViewModel
+    var vm: ShepherdViewModel?
 
     var body: some View {
-        Button(vm.showSettings ? "Back to App" : "Settings…") { vm.showSettings.toggle() }
+        Button(vm?.showSettings == true ? "Back to App" : "Settings…") { vm?.showSettings.toggle() }
             .keyboardShortcut(",", modifiers: .command)
     }
 }
