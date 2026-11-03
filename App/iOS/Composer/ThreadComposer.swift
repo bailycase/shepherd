@@ -43,14 +43,27 @@ struct ThreadComposer: View {
         let live = store.isLive && host?.phase.isConnected == true
         let wide = sizeClass == .regular
         let goalSize: SHGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
-        let settled: [String] = Self.settled(store.submissions)
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let notice = store.notice {
                 banner(notice)
             }
             if state.pendingImports > 0 { banner("Adding images…") }
+            if threads.setAside.contains(ref) {
+                banner("Not every unsent message saved on this device is shown here: the ones below fit; the full set is kept aside on this device, unchanged.", failed: true)
+            }
+            // Sends an earlier launch kept: their text only.
+            ForEach(threads.recovered[ref] ?? []) { record in
+                SubmissionBanner(typed: record.typed, refused: record.state == .failed, images: record.images, imagesKept: false,
+                                 canRestore: state.canRestore(into: store), canDiscard: true) {
+                    guard state.canRestore(into: store) else { return }
+                    threads.restoreRecovered(record.id, for: ref)
+                } discard: {
+                    threads.discardRecovered(record.id, for: ref)
+                }
+            }
             ForEach(store.submissions.filter { $0.state != .sending }) { submission in
-                SubmissionBanner(submission: submission, canRestore: state.canRestore(into: store),
+                SubmissionBanner(typed: submission.typed, refused: submission.state == .failed, images: submission.images.count,
+                                 imagesKept: true, canRestore: state.canRestore(into: store),
                                  canDiscard: store.canDiscardSubmission(submission.id)) {
                     guard state.canRestore(into: store), let restored = store.restoreSubmission(submission.id) else { return }
                     Task { await state.restore(restored.images) }
@@ -158,8 +171,6 @@ struct ThreadComposer: View {
             focused = false
             state.saveDraft(store)
         }
-        // A send settling as refused is what a restart would lose: save it at the draft's place.
-        .onChange(of: settled) { _, _ in state.saveDraft(store) }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
         }
@@ -490,11 +501,6 @@ struct ThreadComposer: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Each kept send and how it stands, to save the draft when one settles.
-    private static func settled(_ submissions: [NativeThreadSubmission]) -> [String] {
-        submissions.map { "\($0.id):\($0.state)" }
-    }
-
     private static func command(_ command: NativeCommand) -> SHTouchCommand {
         SHTouchCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: NativeSlashMatches.tag(command))
@@ -506,7 +512,11 @@ struct ThreadComposer: View {
 /// restored by the app. Discard (after a confirmation: the text goes) only lets go of this
 /// device's copy; it asks the host nothing.
 private struct SubmissionBanner: View {
-    let submission: NativeThreadSubmission
+    let typed: String
+    let refused: Bool
+    let images: Int
+    /// False for an earlier launch's send: only its text was kept.
+    let imagesKept: Bool
     let canRestore: Bool
     let canDiscard: Bool
     let restore: () -> Void
@@ -516,13 +526,11 @@ private struct SubmissionBanner: View {
     @Environment(\.threadDetailActive) private var detailActive
 
     var body: some View {
-        let images = submission.images.count
-        let extra = images == 0 ? "" : " · \(images) image\(images == 1 ? "" : "s")"
-        let refused = submission.state == .failed
+        let extra = images == 0 ? "" : " · \(images) image\(images == 1 ? "" : "s")" + (imagesKept ? "" : " not kept")
         Group {
             if refused {
                 SHBanner(.failed, title: "Not sent" + extra,
-                         message: submission.typed.isEmpty ? nil : submission.typed + (canRestore ? "" : "\nClear the composer to restore it.")) {
+                         message: typed.isEmpty ? nil : typed + (canRestore ? "" : "\nClear the composer to restore it.")) {
                     discardButton
                     Button("Restore") { restore() }
                         .buttonStyle(.sh(.secondary))
@@ -531,7 +539,7 @@ private struct SubmissionBanner: View {
                 .lineLimit(4)
             } else {
                 SHBanner(.attention, title: "Delivery unknown" + extra,
-                         message: (submission.typed.isEmpty ? "" : submission.typed + "\n")
+                         message: (typed.isEmpty ? "" : typed + "\n")
                             + "It may have reached the agent. Check the thread before sending it again.") {
                     discardButton
                 }

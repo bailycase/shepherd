@@ -60,28 +60,20 @@ final class ComposerState {
         }
     }
 
-    /// Saves what the composer would lose to a restart: its draft, or with none, the newest send
-    /// the host refused outright (its text comes back as the draft; its images can't be saved, and
-    /// the next launch says so). A send whose outcome is unknown is never saved as a draft: it may
-    /// have been taken, and a draft invites sending it again.
+    /// Saves the draft alone. A send the store captured is saved apart from it (`ThreadRecovery`,
+    /// by `ThreadStores`), so the draft typed after it never overwrites it nor it the draft.
     func saveDraft(_ store: NativeThreadStore) {
         guard !forgotten, restoredDraft, let ref else { return }
-        let refused = store.submissions.last { $0.state == .failed }
-        let text = store.draft.isEmpty ? refused?.typed ?? "" : store.draft
+        let text = store.draft
         let key = NativeDraftKey.text(host: ref.host, agent: ref.agent)
         if text.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
         else { UserDefaults.standard.set(text, forKey: key) }
-        refusedImages = store.draft.isEmpty && refused?.images.isEmpty == false
-        saveImagePresence()
     }
-
-    /// The saved refused send has images (`saveDraft`).
-    @ObservationIgnored private var refusedImages = false
 
     private func saveImagePresence() {
         guard !forgotten, let ref else { return }
         let key = NativeDraftKey.images(host: ref.host, agent: ref.agent)
-        if attachments.isEmpty && !refusedImages { UserDefaults.standard.removeObject(forKey: key) }
+        if attachments.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
         else { UserDefaults.standard.set(true, forKey: key) }
     }
 
