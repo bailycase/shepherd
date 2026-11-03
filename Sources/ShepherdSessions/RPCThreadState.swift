@@ -107,7 +107,9 @@ final class RPCThreadState {
     private var pendingHistoryJob: (sequence: UInt64, start: () -> Void, superseded: () -> Void)?
     private(set) var historyProjectionCount = 0
     private(set) var historyReconciliationCount = 0
-    private let transcriptReader = ChildTranscriptReader()
+    private let transcriptReader: ChildTranscriptReader
+    private let readCache: ThreadReadCache
+    private let readCacheOwner = UUID()
     private var transcriptRequests = 0
     var beforeTranscriptRead: (() -> Void)?
     private(set) var transcriptBuildCount = 0
@@ -255,11 +257,10 @@ final class RPCThreadState {
     /// new revision.
     private var historyVersion = 0
     var live: [LiveItem] = []
-    private typealias VerifiedImage = (mimeType: String, data: Data)
+    private typealias VerifiedImage = ThreadReadCache.Image
     static let verifiedImageCacheBytes = 10 * 1024 * 1024
-    private var verifiedImages: [String: VerifiedImage] = [:]
     private var verifiedImageOrder: [String] = []
-    private(set) var verifiedImageBytes = 0
+    var verifiedImageBytes: Int { readCache.imageBytes(owner: readCacheOwner) }
     private var imageReads: [String: [(VerifiedImage?) -> Void]] = [:]
     var beforeImageVerification: (() -> Void)?
     private(set) var imageVerificationCount = 0
@@ -592,11 +593,15 @@ final class RPCThreadState {
         pattern: "\u{1B}(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u{07}\u{1B}]*(?:\u{07}|\u{1B}\\\\)|[@-Z\\\\-_])"
     )
 
-    init(session: RPCSession, queue: DispatchQueue, originStore: ThreadOriginStore? = nil) {
+    init(session: RPCSession, queue: DispatchQueue, originStore: ThreadOriginStore? = nil, readCache: ThreadReadCache = .shared) {
         self.session = session
         self.queue = queue
         self.originStore = originStore
+        self.readCache = readCache
+        self.transcriptReader = ChildTranscriptReader(cache: readCache, owner: readCacheOwner)
     }
+
+    deinit { readCache.remove(owner: readCacheOwner) }
 
     /// pi may not read stdin until startup finishes. Bound readiness, not its lifetime: keep
     /// late answers so a slow pi can still serve and take its opening prompt, without retries.
@@ -1356,7 +1361,7 @@ final class RPCThreadState {
                 completion(.failure(code: NativeImageCode.unknown, message: "That part of the image is past its end."))
             }
         }
-        if let found = verifiedImages[imageID] {
+        if case .image(let found) = readCache.value(owner: readCacheOwner, name: imageID) {
             verifiedImageOrder.removeAll { $0 == imageID }
             verifiedImageOrder.append(imageID)
             answer(found)
@@ -1367,10 +1372,13 @@ final class RPCThreadState {
             imageReads[imageID]?.append(answer)
             return
         }
-        guard imageReads.count < 4 else { completion(notHere); return }
+        guard imageReads.count < 4, let reservation = readCache.reserve(bytes: ThreadReadCache.imageWorkBytes) else {
+            completion(notHere); return
+        }
         imageReads[imageID] = [answer]
         // Retain the owner through this bounded request so deletion still answers every waiter.
-        session.request(.getImage(sha256: want.hash), timeout: 30) { [self] result in
+        session.request(.getImage(sha256: want.hash), timeout: 30) { [self, reservation] result in
+            defer { withExtendedLifetime(reservation) {} }
             guard generation == self.generation else { return }
             guard case .success(let response) = result, response.success,
                   let mime = response.data?["mimeType"]?.stringValue, let base64 = response.data?["data"]?.stringValue else {
@@ -1382,7 +1390,8 @@ final class RPCThreadState {
             DispatchQueue.global(qos: .utility).async { [self] in
                 hook?()
                 let found = ThreadImages.verified(imageID, mimeType: mime, base64: base64)
-                self.queue.async { [self] in
+                self.queue.async { [self, reservation] in
+                    defer { withExtendedLifetime(reservation) {} }
                     guard generation == self.generation else { return }
                     self.finishImageRead(imageID, found: found)
                 }
@@ -1395,20 +1404,18 @@ final class RPCThreadState {
             while verifiedImageBytes + found.data.count > Self.verifiedImageCacheBytes || verifiedImageOrder.count >= 4 {
                 guard let first = verifiedImageOrder.first else { break }
                 verifiedImageOrder.removeFirst()
-                verifiedImageBytes -= verifiedImages.removeValue(forKey: first)?.data.count ?? 0
+                readCache.remove(owner: readCacheOwner, name: first)
             }
-            verifiedImages[imageID] = found
+            readCache.insert(.image(found), bytes: found.data.count, owner: readCacheOwner, name: imageID)
             verifiedImageOrder.append(imageID)
-            verifiedImageBytes += found.data.count
         }
         let waiting = imageReads.removeValue(forKey: imageID) ?? []
         waiting.forEach { $0(found) }
     }
 
     private func resetVerifiedImages() {
-        verifiedImages.removeAll()
+        readCache.remove(owner: readCacheOwner)
         verifiedImageOrder.removeAll()
-        verifiedImageBytes = 0
         let waiting = imageReads.values.flatMap { $0 }
         imageReads.removeAll()
         waiting.forEach { $0(nil) }
