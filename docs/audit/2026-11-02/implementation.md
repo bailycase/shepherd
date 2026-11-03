@@ -5,8 +5,9 @@ Status: implementation and validation in progress. No claim of completion or spe
 The source audit is pinned to `f80d01132`. This fix branch starts from newer nightly
 `f52bf0cc7`, retaining #402, #404 and #405. It includes the audit's committed evidence
 (`e7de8b201`). Newer changes must not be reverted to make a benchmark or test pass.
-Nightly advanced to `876c570fc` during work (#406–408); its queue-boundary delivery and our
-asynchronous input preparation are being reconciled in the server lane before upstream integration.
+Nightly through `876c570fc` (#406–408) is integrated via reviewed server merge `93ad5359`.
+Queue-boundary delivery is reconciled with bounded asynchronous input preparation; storage's
+separate recovery staging still needs that prerequisite and a combined validation run.
 
 ## Ownership and closure ledger
 
@@ -68,6 +69,18 @@ require equipment that is not available; those limits must remain explicit.
 
 ## Validation recorded so far
 
+- Parent upstream-queue integration run passed **221 tests/16 suites**, exit 0.
+- Before merging the Mac batch, parent ran the refused-Send and six project-question routes on
+  `4ef9a8d4a`: refused-Send passed; both project-text cases passed; four pane-option/pane-text
+  cases timed out. Mac's disabled-Send failure is therefore not reproduced on integration.
+  Pane failures also reproduce on server-only `93ad5359`, without new shared-thread or Mac UI
+  changes (same four failing cases). Root cause was a stale AX selector: native pane labels the
+  field “Something else”, Project card “Say anything”. Test-only correction `ca8043431` preserves
+  all delivery/rejection/draft assertions and checks both fields disappear; all six routes passed
+  in the worker. Parent inspected light/dark rejection PNGs and is rerunning on integration.
+  Full logs `pre-mac-logical-project.log`, `server/nightly-merge/pre-thread-pane-baseline.log`,
+  and `pane-question/` contain baseline, AX evidence and fix results.
+
 - Storage final staging checkpoint `b6316066`: lane reports 205 runtime tests/15 suites, 163
   storage tests/15 suites, and 67 isolated ProjectExecution/ThreadEvent tests/2 suites, all exit 0.
   Index workload counts are 37 VM steps at 100/1k/10k rows versus scans of 871/8,971/89,971
@@ -77,6 +90,8 @@ require equipment that is not available; those limits must remain explicit.
   authority not rechecked at actual persistence commit, and canceled remote reviews continuing to
   request files. The worker resumed to fix all three with held-operation/reply regressions; remote
   Changes reads may become cancellable, but Undo/Redo/Revert mutations must still await outcomes.
+  Follow-up `4f4ec3f9` passed 98 tests/9 suites in the worker. Parent initiated `93ad5359` merge;
+  storage is resolving the Queue.swift semantic joins and rerunning held-stage/deadline tests.
 
 - Parent: ordinary `swift test --build-system native -c release -j 2` now builds all test targets
   successfully. `ResponseTimingTests/lateMarksUpdateAlreadyProjectedHistory` and
@@ -139,8 +154,9 @@ require equipment that is not available; those limits must remain explicit.
   passed **1,904 tests/186 suites**, exit 0. Composer image/persistence recovery and validated
   connection-epoch wiring remain pending.
 - Parent pinned-Node child extension run: 36/37 passed; the broad real-Pi lifecycle case timed out
-  waiting for an inspector reply with zero active test timers. A focused rerun is underway; cause
-  and baseline status are not yet established.
+  waiting for an inspector reply with zero active test timers. The focused real-Pi lifecycle file
+  rerun passed all 14 tests, exit 0; root cause/baseline classification remain unproven. Final full
+  pinned-runtime extension validation is still required.
 - Parent's first transport/surfaces run: 172 tests, one failing capability-enumeration test/two
   issues. New capability constants were missing from its exhaustive expected list; corrected in
   `c641bde80` with stable-string assertions. The joined four-lane run now includes all remote and
@@ -169,8 +185,10 @@ require equipment that is not available; those limits must remain explicit.
   multiwindow-close rerun, final renders and shared-store hint/connection/composer wiring remain
   validation gates. Independent follow-up review found two additional byte-budget holes: legacy
   whole-diff replies do not notify retention after growing offscreen, and old row caches keep text
-  payloads after backing-revision eviction. Both are assigned actual-store regression tests and
-  fixes before the mobile lane can satisfy its budget claim.
+  payloads after backing-revision eviction. Follow-up fixes and composer recovery checkpointed as
+  `5239ed67`; shared recovery APIs and overflow guard through `578b24e4` merged cleanly into mobile.
+  Discard UI and final post-merge portable checks, simulator compilation and inspected light/dark
+  renders remain in progress.
 
 Full run logs will be retained under `/tmp/shepherd-perf-fixes`. Lasting evidence and final
 results will be summarized here before opening the PR. Build concurrency and disk use are bounded;
