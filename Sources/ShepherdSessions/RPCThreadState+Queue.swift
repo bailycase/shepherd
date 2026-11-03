@@ -670,7 +670,9 @@ extension RPCThreadState {
         let generation = generation
         requestInput(prompt: item.promptText, images: item.images, delivery: .steer) { [weak self] failure in
             commandDone?()
-            guard let self else { return }
+            guard let self else {
+                done(.failure(code: "send_cancelled", message: "The session was retired before the send completed.")); return
+            }
             guard self.generation == generation else {
                 done(.failure(code: "stale_session", message: "The session changed while the send was pending.")); return
             }

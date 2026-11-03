@@ -53,6 +53,14 @@ extension RPCThreadState {
             completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
             return
         }
+        var textBytes = 0
+        for text in [prompt] + images.flatMap({ [$0.mimeType, $0.name ?? ""] }) {
+            let count = text.utf8.count
+            guard count <= RPCSession.outputQueueLimit - textBytes else {
+                completion(Self.dispatchFailure(.failure(.inputRejected))); return
+            }
+            textBytes += count
+        }
         guard !inputOutcomeUnknown else {
             completion(.failure(code: "input_pending", message: "An earlier send's outcome is unknown. Wait for the agent to answer or restart it before sending again; this message was not sent."))
             return
@@ -82,7 +90,9 @@ extension RPCThreadState {
             for dispatch in self.dispatches where dispatch.responded { self.confirmDispatch(dispatch.id) }
         }
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
-            guard let self else { return }
+            guard let self else {
+                completion(.failure(code: "send_cancelled", message: "The session was retired before the send completed.")); return
+            }
             if self.generation == generation, case .failure(.timeout) = result { self.inputOutcomeUnknown = true }
             let failure: NativeThreadResult?
             if case .failure(.inputRejected) = result, preparationVersion != self.inputPreparationVersion {
@@ -94,12 +104,16 @@ extension RPCThreadState {
             guard self.inputLaneID == laneID else { return }
             self.inputLaneID = nil
             self.inputActive = false
-            if self.inputOutcomeUnknown { self.cancelWaitingInputs() }
+            if self.inputOutcomeUnknown || !self.session.isAlive { self.cancelWaitingInputs() }
             else if !self.waitingInputs.isEmpty { self.waitingInputs.removeFirst()(true) }
             self.refreshSkillsIfIdle()
         }
         if !images.isEmpty || prompt.utf8.count >= RPCSession.offQueueDecodeBytes {
-            session.requestPrepared(type: "prompt", timeout: timeout, prepare: {
+            // Account for raw images, base64 strings and the encoded frame, plus worst-case
+            // JSON text escaping. Input queues themselves retain their existing separate bounds.
+            let preparationBytes = textBytes * 12
+                + images.reduce(0) { $0 + $1.data.count } * 6 + 64 * 1024
+            session.requestPrepared(type: "prompt", timeout: timeout, preparationBytes: preparationBytes, prepare: {
                 .prompt(message: prompt, images: images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }, streamingBehavior: delivery)
             }, isCurrent: { [weak self] in
                 guard let self else { return false }
@@ -116,6 +130,7 @@ extension RPCThreadState {
         let waiting = waitingInputs
         waitingInputs.removeAll()
         for cancel in waiting { cancel(false) }
+        session.cancelPreparedRequests()
     }
 
     /// pi's `notify`: kept only while a command the user sent is in flight.

@@ -90,12 +90,24 @@ final class RPCSession: @unchecked Sendable {
     /// Tests only: runs on the decode queue before each off-queue decode.
     var beforeOffQueueDecode: (() -> Void)?
     var beforeInputPreparation: (() -> Void)?
+    var afterInputPreparation: (() -> Void)?
+    private struct Preparation {
+        let type: String
+        let timeout: TimeInterval
+        let isCurrent: () -> Bool
+        let onAdmitted: () -> Void
+        let onLateResponse: ((RPCResponse) -> Void)?
+        let completion: (Result<RPCResponse, RPCError>) -> Void
+    }
+    private var preparations: [String: Preparation] = [:]
+    var pendingPreparationCount: Int { preparations.count }
     private static let preparationSlots = DispatchSemaphore(value: 4)
     private static let signposter = OSSignposter(subsystem: "com.shepherd.sessions", category: "RPC work")
     static let stderrBudgetPerTurn = 64 * 1024
     private(set) var largestStderrTurn = 0
 
     private let queue: DispatchQueue
+    private let workBudget: ThreadReadCache
     private let childPID: pid_t
     private let ownedProcesses: OwnedProcessTree
     private var sourcesStarted = false
@@ -144,13 +156,19 @@ final class RPCSession: @unchecked Sendable {
         SessionInfo(id: id, cwd: cwd, command: command, cols: 0, rows: 0, isAlive: isAlive)
     }
 
+    convenience init(id: SessionID = SessionID(), params: CreateSessionParams, queue: DispatchQueue) throws {
+        try self.init(id: id, params: params, queue: queue, workBudget: .shared)
+    }
+
     init(
         id: SessionID = SessionID(),
         params: CreateSessionParams,
-        queue: DispatchQueue
+        queue: DispatchQueue,
+        workBudget: ThreadReadCache
     ) throws {
         self.id = id
         self.queue = queue
+        self.workBudget = workBudget
         self.cwd = params.cwd
         self.launchAgentID = params.env?["SHEPHERD_AGENT_ID"].map { AgentID(rawValue: $0) }
         self.hasGoalController = params.env?[GoalExtension.environmentKey] == "1"
@@ -312,19 +330,25 @@ final class RPCSession: @unchecked Sendable {
             completion(.failure(.inputRejected))
             return
         }
-        onAdmitted?()
         awaitResponse(requestID, type: command.type, timeout: timeout, onLateResponse: onLateResponse, completion: completion)
+        onAdmitted?()
     }
 
     /// The thread's serialized input lane owns ordering. Control commands bypass preparation;
     /// its cancellation/generation predicate is checked again immediately before admission.
-    func requestPrepared(type: String, timeout: TimeInterval, prepare: @escaping () -> RPCCommand,
+    func requestPrepared(type: String, timeout: TimeInterval, preparationBytes: Int, prepare: @escaping () -> RPCCommand,
                          isCurrent: @escaping () -> Bool, onAdmitted: @escaping () -> Void,
                          onLateResponse: ((RPCResponse) -> Void)?,
                          completion: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         guard isAlive, !stdinClosed else { completion(.failure(.notAlive)); return }
+        guard let reservation = workBudget.reserve(bytes: preparationBytes) else {
+            completion(.failure(.inputRejected)); return
+        }
         nextRequestID += 1
-        let requestID = "\(id.rawValue)-\(nextRequestID)", hook = beforeInputPreparation
+        let requestID = "\(id.rawValue)-\(nextRequestID)", hook = beforeInputPreparation, finished = afterInputPreparation
+        preparations[requestID] = Preparation(type: type, timeout: timeout, isCurrent: isCurrent, onAdmitted: onAdmitted,
+                                               onLateResponse: onLateResponse, completion: completion)
+        let ownerQueue = queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             hook?()
             Self.preparationSlots.wait()
@@ -332,13 +356,32 @@ final class RPCSession: @unchecked Sendable {
             let line = try? NDJSON.encode(RPCCommandFrame(id: requestID, command: prepare()))
             Self.signposter.endInterval("RPC frame preparation", interval)
             Self.preparationSlots.signal()
-            self?.queue.async { [weak self] in
-                guard let self else { return }
-                guard isCurrent(), let line, self.admit(line) else { completion(.failure(.inputRejected)); return }
-                onAdmitted()
-                self.awaitResponse(requestID, type: type, timeout: timeout, onLateResponse: onLateResponse, completion: completion)
+            ownerQueue.async { [weak self, reservation] in
+                defer { withExtendedLifetime(reservation) {} }
+                if let self, let pending = self.preparations.removeValue(forKey: requestID) {
+                    if pending.isCurrent(), let line, self.admit(line) {
+                        self.awaitResponse(requestID, type: pending.type, timeout: pending.timeout,
+                                           onLateResponse: pending.onLateResponse, completion: pending.completion)
+                        pending.onAdmitted()
+                    } else { pending.completion(.failure(.inputRejected)) }
+                }
+                finished?()
             }
         }
+    }
+
+    /// Only unadmitted work: cancellation can never turn a possibly delivered input into a retry.
+    func cancelPreparedRequests(_ error: RPCError = .inputRejected) {
+        let pending = preparations
+        preparations.removeAll()
+        for request in pending.values { request.completion(.failure(error)) }
+    }
+
+    deinit {
+        // Retirement normally calls shutdown. Even an owner dropped without it must resolve
+        // unadmitted requests; workers retain neither their callbacks nor admission authority.
+        let pending = preparations
+        queue.async { for request in pending.values { request.completion(.failure(.notAlive)) } }
     }
 
     private func awaitResponse(_ requestID: String, type: String, timeout: TimeInterval,
@@ -398,6 +441,7 @@ final class RPCSession: @unchecked Sendable {
         onEvent = nil
         onStderr = nil
         onExit = nil
+        cancelPreparedRequests(.notAlive)
         let outstanding = pendingRequests
         pendingRequests.removeAll()
         lateResponses.removeAll()
@@ -860,6 +904,7 @@ final class RPCSession: @unchecked Sendable {
     private func closeStdin() {
         guard !stdinClosed else { return }
         stdinClosed = true
+        cancelPreparedRequests(isAlive ? .inputRejected : .notAlive)
         onInputDrained = nil
         cancelWriteSource()
         pendingOutput.removeAll(keepingCapacity: false)

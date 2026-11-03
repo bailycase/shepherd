@@ -17,10 +17,10 @@ struct ThreadEventTests {
         let state: RPCThreadState
         let dir: URL
 
-        init(bootstrap: Bool = true, env: [String: String]? = nil) throws {
+        init(bootstrap: Bool = true, env: [String: String]? = nil, readCache: ThreadReadCache = .shared) throws {
             dir = try makeScratchDirectory("thread")
-            session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, env: env, runtime: .rpc), queue: queue)
-            state = RPCThreadState(session: session, queue: queue)
+            session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, env: env, runtime: .rpc), queue: queue, workBudget: readCache)
+            state = RPCThreadState(session: session, queue: queue, readCache: readCache)
             session.onEvent = { [weak state] event in state?.handle(event) }
             session.start()
             if bootstrap { queue.async { self.state.bootstrap() } }

@@ -643,9 +643,10 @@ what it sent (`sentImages`) or on the original file.
   both the snapshot and the lookup read), the position among that message's images, and the image's **whole**
   SHA-256 in hex. `ThreadImages.verified` hashes the bytes it is about to serve and refuses any whose hash is not
   the id's, or that are not the type and size the thread offers, so an id never serves bytes it did not name.
-  The host reuses verified bytes within one session generation (at most four images and 10 MiB, least recently
-  used first), shares in-flight reads, and rechecks current-history membership for every chunk. Switching sessions
-  drops the cache. pi remembers each saved block's hash by the block object, which never changes, so a history
+  The host reuses verified bytes within one session generation (at most four images and 10 MiB per thread),
+  shares in-flight reads, and rechecks current-history membership for every chunk. Transcript and image entries
+  also share a process-wide 64 MiB/256-entry LRU; thread ownership is part of every key. Switching sessions or
+  retiring the owner removes its entries. pi remembers each saved block's hash by the block object, which never changes, so a history
   read hashes each image once per session load.
 - **Where the work runs.** pi hashes and reads headers; a history refresh in the host only checks what pi said
   against the bounds (`ThreadImages.named`) into a table (`ThreadImages.table(for:)`), and the projection looks
@@ -653,6 +654,13 @@ what it sent (`sentImages`) or on the original file.
   the thread's queue as before. A live tool result's image is projected with no table: it is the chip until the turn
   ends and history is read again, when it is named. An image request decodes and hashes on a utility queue, and
   answers only if the session is still the one asked about.
+  The shared cache charges exact image bytes and transcript encoded bytes plus inline row storage, not measured RSS.
+  Read workers and large input-frame preparation also share 128 MiB of nonblocking work reservations (32 MiB per
+  transcript read, 8 MiB per image read; prompt reservations account for text escaping, raw images and encoded copies).
+  Cancellation does not release a worker's reservation until that worker returns. These are admission/accounting
+  bounds, not allocator limits: JSON/projection object overhead and temporary copies can exceed their charges.
+  Existing histories and input/decode/output queues retain their separate per-session bounds, including the 256 MiB
+  RPC-record ceiling; they are not covered by the cache cap. Transcript input remains an 8 MiB tail plus a 1 MiB sidecar.
 - **`NativeThreadRequest.image(expectedSessionID, imageID, offset)`** answers `imageChunk` (`imageID`, `mimeType`,
   `totalBytes`, `offset`, `data`): at most `NativeImage.chunkBytes` (256 KiB, base64 about 350 KB, well under the
   1 MiB frame), from `offset`. The host serves only an id its current history named. On a cache miss it asks pi

@@ -158,12 +158,90 @@ struct ServerWorkBudgetTests {
             t.queue.async { t.state.stop { continuation.resume(returning: $0) } }
         }
         #expect(try stopped.get().success, "abort must answer while preparation is held")
-        if !steer { #expect(result.current?.failureCode == "send_cancelled", "Stop answers the unadmitted send without waiting for preparation") }
+        #expect(result.current?.failureCode == "send_cancelled", "Stop answers both unadmitted sends and steers without waiting for preparation")
         held.signal()
         try await eventually("cancelled send answers") { result.current != nil }
         #expect(result.current?.failureCode == "send_cancelled")
         let log = try String(contentsOf: t.dir.appendingPathComponent("inputs.jsonl"), encoding: .utf8)
         #expect(!log.contains("must never reach pi"))
+    }
+
+    @Test(arguments: [false, true]) func aHeldSteerAndQueuedInputResolveBeforeSessionRetirement(shutdown: Bool) async throws {
+        final class Owner: @unchecked Sendable {
+            var session: RPCSession?
+            var thread: RPCThreadState?
+            weak var retiredSession: RPCSession?
+            weak var retiredThread: RPCThreadState?
+        }
+        let dir = try makeScratchDirectory("prep-exit"), owner = Owner()
+        let budget = ThreadReadCache()
+        let queue = DispatchQueue(label: "test.preparation-retirement")
+        let held = DispatchSemaphore(value: 0), entered = Locked(false), workerFinished = Locked(false)
+        let results = Locked<[NativeThreadResult?]>([]), retired = Locked(false)
+        defer {
+            held.signal()
+            queue.sync { owner.session?.shutdown(); owner.thread = nil; owner.session = nil }
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let image = ThreadImagesTests.nativeImage(ThreadImagesTests.png(bytes: 600_000))
+        try queue.sync {
+            let session = try RPCSession(params: .init(cwd: dir.path, command: StubPi.command,
+                                                      env: ["STUB_PI_LOG": "inputs.jsonl"], runtime: .rpc), queue: queue, workBudget: budget)
+            let thread = RPCThreadState(session: session, queue: queue, readCache: budget)
+            owner.session = session; owner.thread = thread
+            owner.retiredSession = session; owner.retiredThread = thread
+            session.beforeInputPreparation = { entered.withValue { $0 = true }; held.wait() }
+            session.afterInputPreparation = { workerFinished.withValue { $0 = true } }
+            session.onExit = { [weak owner] _ in
+                owner?.thread?.cancelPreparingPrompts()
+                owner?.thread = nil; owner?.session = nil
+                retired.withValue { $0 = true }
+            }
+            session.start()
+            let id = UUID()
+            thread.items = [.init(entry: .init(id: id, text: "held steer must not send", sentAt: 1, state: .steering), images: [image])]
+            thread.steerDispatch(id) { result in results.withValue { $0.append(result) } }
+            thread.requestInput(prompt: "queued input must not send", images: [image], delivery: .steer) { result in results.withValue { $0.append(result) } }
+            #expect(session.pendingPreparationCount == 1 && thread.waitingInputs.count == 1)
+        }
+        try await eventually("held steer preparation") { entered.current }
+        queue.sync {
+            if shutdown {
+                owner.session?.shutdown()
+                owner.thread?.cancelPreparingPrompts()
+                owner.thread = nil; owner.session = nil
+                retired.withValue { $0 = true }
+            } else { owner.session?.kill() }
+        }
+        try await eventually("unadmitted callbacks resolved and owner deallocated") {
+            retired.current && results.current.count == 2 && queue.sync { owner.retiredSession == nil && owner.retiredThread == nil }
+        }
+        #expect(results.current.allSatisfy { $0?.failureCode != nil })
+        #expect(budget.inFlightBytes > 0, "retirement must not free the still-held worker's payload allowance")
+        held.signal()
+        try await eventually("late worker returned after deallocation and released its payload") { workerFinished.current && budget.inFlightBytes == 0 }
+        #expect(results.current.count == 2, "late preparation cannot complete either input twice")
+        let log = (try? String(contentsOf: dir.appendingPathComponent("inputs.jsonl"), encoding: .utf8)) ?? ""
+        #expect(!log.contains("must not send"))
+    }
+
+    @Test(arguments: [false, true]) func oversizedInputTextOrImageMetadataNeverEntersPreparation(metadata: Bool) async throws {
+        let t = try ThreadEventTests.Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let entered = Locked(false)
+        let oversized = String(repeating: "x", count: RPCSession.outputQueueLimit + 1)
+        let result: NativeThreadResult? = await withCheckedContinuation { continuation in
+            t.queue.async {
+                t.session.beforeInputPreparation = { entered.withValue { $0 = true } }
+                t.state.requestInput(prompt: metadata ? "image" : oversized,
+                                     images: metadata ? [.init(mimeType: "image/" + oversized, data: Data([1]))] : [], delivery: .steer) {
+                    continuation.resume(returning: $0)
+                }
+            }
+        }
+        #expect(result?.failureCode == "dispatch_failed")
+        #expect(!entered.current && t.queue.sync { t.session.pendingPreparationCount == 0 && !t.state.inputActive })
     }
 
     @Test func projectCancellationUsesTheSameAdmissionFenceDuringFramePreparation() async throws {
