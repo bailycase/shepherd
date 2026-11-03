@@ -33,6 +33,8 @@ struct ModelCatalog: Sendable {
 
     /// Catalog order.
     let models: [Model]
+    /// Full ids keep providers distinguishable in the settings overlay's ungrouped search results.
+    let settingsSearchModels: [SHModelOption]
     private let index: [String: Int]
     /// Short names two or more providers offer ("gpt-6-astra" from cpa and openai-codex): a row
     /// or chip for one of these names the provider too, or nothing tells them apart.
@@ -51,6 +53,7 @@ struct ModelCatalog: Sendable {
                   thinking: NativeThinkingLevel.line(levels[$0.id] ?? []), levels: levels[$0.id] ?? [], key: $0.id.lowercased(),
                   fast: (serviceTiers?[$0.id] ?? []).contains { $0 != ServiceTier.standard.rawValue })
         }
+        settingsSearchModels = models.map { SHModelOption(id: $0.id, title: $0.id, fast: $0.fast) }
         index = Dictionary(models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         var providers: [String: Set<String>] = [:]
         for model in models { providers[model.title, default: []].insert(model.provider) }
