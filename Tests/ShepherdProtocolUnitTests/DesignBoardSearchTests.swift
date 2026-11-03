@@ -153,6 +153,84 @@ struct DesignBoardSearchTests {
         #expect(result.timedOut && result.searched < 3)
     }
 
+    @Test(arguments: [
+        DesignSearchQuery(text: "(?m)^(a+)+$", regex: true),
+        DesignSearchQuery(text: "^(a+)+$", regex: true, scope: .text),
+        DesignSearchQuery(text: "^(a+)+$", regex: true, scope: .labels),
+        DesignSearchQuery(regex: true, attribute: "aria-label", value: "^(a+)+$"),
+        DesignSearchQuery(regex: true, tag: "button", value: "^(a+)+$"),
+        DesignSearchQuery(text: "^(a+)+$", regex: true, tag: "button"),
+    ])
+    func regexProgressCancelsInsideTheLastBoardAndKeepsEarlierMatches(_ query: DesignSearchQuery) throws {
+        let hostile = String(repeating: "a", count: 32) + "!"
+        let source = query.scope == .markup && !query.isStructural
+            ? "a\n" + hostile
+            : "<x-dc><button aria-label=\"a\">a</button><button aria-label=\"\(hostile)\">\(hostile)</button></x-dc>"
+        let calls = Locked(0)
+        let result = try DesignBoardSearch.run(query, boards: [(Self.a, source)], known: [], now: {
+            calls.withValue {
+                $0 += 1
+                // Enough checks to finish the first match and enter the second regex's progress callbacks.
+                return Date(timeIntervalSince1970: $0 <= 20 ? 0 : DesignBoardSearch.budget + 1)
+            }
+        })
+        #expect(result.timedOut && result.searched == 1)
+        #expect(result.totalMatches == 1 && result.totalBoards == 1 && result.omittedBoards == 0)
+        #expect(result.boards.first?.count == 1 && result.boards.first?.matches.count == 1)
+        #expect(calls.current == 21, "cancellation is sticky after the progress callback expires")
+    }
+
+    @Test(arguments: [DesignSearchQuery.Scope.markup, .text, .labels])
+    func aRegexTimeoutWithNoMatchesStillReportsTheLastBoard(_ scope: DesignSearchQuery.Scope) throws {
+        let hostile = String(repeating: "a", count: 32) + "!"
+        let source = scope == .markup ? hostile : "<x-dc><button aria-label=\"\(hostile)\">\(hostile)</button></x-dc>"
+        let calls = Locked(0)
+        let result = try DesignBoardSearch.run(DesignSearchQuery(text: "^(a+)+$", regex: true, scope: scope),
+                                               boards: [(Self.a, source)], known: [], now: {
+            calls.withValue {
+                $0 += 1
+                return Date(timeIntervalSince1970: $0 <= 20 ? 0 : DesignBoardSearch.budget + 1)
+            }
+        })
+        #expect(result.timedOut && result.searched == 1)
+        #expect(result.boards.isEmpty && result.totalMatches == 0 && result.totalBoards == 0)
+    }
+
+    @Test(arguments: [
+        DesignSearchQuery(text: "a"),
+        DesignSearchQuery(text: "a", scope: .text),
+        DesignSearchQuery(text: "a", scope: .labels),
+        DesignSearchQuery(tag: "button"),
+        DesignSearchQuery(usages: "Card"),
+    ])
+    func nonRegexSearchLoopsStopWithinABoardAndKeepPartialCounts(_ query: DesignSearchQuery) throws {
+        let source = "<x-dc>" + String(repeating: "<button aria-label=\"a\">a</button><dc-import name=\"Card\"></dc-import>", count: 100) + "</x-dc>"
+        let calls = Locked(0)
+        let result = try DesignBoardSearch.run(query, boards: [(Self.a, source), (Self.b, source)], known: [], now: {
+            calls.withValue {
+                $0 += 1
+                return Date(timeIntervalSince1970: $0 <= 30 ? 0 : DesignBoardSearch.budget + 1)
+            }
+        })
+        #expect(result.timedOut && result.searched == 1)
+        #expect(result.totalMatches > 0 && result.totalMatches < 100)
+        #expect(result.totalBoards == 1 && result.omittedBoards == 0)
+        #expect(result.boards.first?.count == result.totalMatches)
+        #expect(result.boards.first?.matches.count == min(result.totalMatches, DesignBoardSearch.perBoard))
+    }
+
+    @Test func zeroLengthRegexMatchesKeepTheirScopeSpecificSemantics() throws {
+        let source = "<x-dc><button aria-label=\"a\">a</button></x-dc>"
+        for query in [DesignSearchQuery(text: "^", regex: true), DesignSearchQuery(text: "^", regex: true, scope: .text)] {
+            #expect(try DesignBoardSearch.run(query, boards: [(Self.a, source)], known: []).totalMatches == 0)
+        }
+        for query in [DesignSearchQuery(text: "^", regex: true, scope: .labels),
+                      DesignSearchQuery(regex: true, attribute: "aria-label", value: "^"),
+                      DesignSearchQuery(text: "^", regex: true, tag: "button")] {
+            #expect(try DesignBoardSearch.run(query, boards: [(Self.a, source)], known: []).totalMatches == 1)
+        }
+    }
+
     // MARK: Refusals
 
     @Test func aQueryNeedsSomethingToLookFor() {

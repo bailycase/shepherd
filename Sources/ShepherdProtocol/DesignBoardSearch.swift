@@ -211,6 +211,11 @@ public enum DesignBoardSearch {
         var listed: [DesignSearchBoard] = []
         var totalMatches = 0, totalBoards = 0, searched = 0
         var timedOut = false
+        let deadline = started.addingTimeInterval(budget)
+        func expired() -> Bool {
+            if !timedOut, now() > deadline { timedOut = true }
+            return timedOut
+        }
         var pieceTarget: DesignPath?
         if let name = query.usages, !name.isEmpty {
             guard let found = piece(named: name) else { throw .badPiece(name) }
@@ -218,15 +223,18 @@ public enum DesignBoardSearch {
         }
         let matcher = try Matcher(query)
         for (path, source) in boards {
-            if now().timeIntervalSince(started) > budget { timedOut = true; break }
+            if expired() { break }
             searched += 1
-            let found = matcher.search(path: path, source: source, piece: pieceTarget, deadline: started.addingTimeInterval(budget), now: now)
-            guard found.count > 0 else { continue }
-            totalMatches += found.count
-            totalBoards += 1
-            if listed.count < limit {
-                listed.append(DesignSearchBoard(path: path.rawValue, count: found.count, matches: Array(found.matches.prefix(perBoard))))
+            let found = matcher.search(path: path, source: source, piece: pieceTarget, expired: expired)
+            if found.count > 0 {
+                totalMatches += found.count
+                totalBoards += 1
+                if listed.count < limit {
+                    listed.append(DesignSearchBoard(path: path.rawValue, count: found.count, matches: Array(found.matches.prefix(perBoard))))
+                }
             }
+            // Also report a timeout inside the last board, including a board with no matches.
+            if expired() { break }
         }
         return DesignSearchResult(boards: listed, totalMatches: totalMatches, totalBoards: totalBoards, searched: searched,
                                   omittedBoards: totalBoards - listed.count, piece: pieceTarget?.rawValue,
@@ -253,29 +261,33 @@ public enum DesignBoardSearch {
         }
 
         /// Whether `haystack` holds the query's text.
-        func holds(_ haystack: String) -> Bool {
+        func holds(_ haystack: String, expired: () -> Bool) -> Bool {
+            guard !expired() else { return false }
             guard let text = query.text, !text.isEmpty else { return true }
-            return first(in: haystack, text, textPattern) != nil
+            if let textPattern { return first(in: haystack, pattern: textPattern, expired: expired) != nil }
+            return (haystack as NSString).range(of: text, options: query.ignoreCase ? [.caseInsensitive] : []).location != NSNotFound
         }
 
-        /// The first place `needle` (or its pattern) is in `haystack`, as a UTF-16 range.
-        func first(in haystack: String, _ needle: String, _ pattern: NSRegularExpression?) -> NSRange? {
-            if let pattern {
-                let range = pattern.rangeOfFirstMatch(in: haystack, range: NSRange(location: 0, length: (haystack as NSString).length))
-                return range.location == NSNotFound ? nil : range
+        /// First-match APIs do not report progress, so they cannot cancel a backtracking pattern.
+        func first(in haystack: String, pattern: NSRegularExpression, expired: () -> Bool) -> NSRange? {
+            guard !expired() else { return nil }
+            var found: NSRange?
+            pattern.enumerateMatches(in: haystack, options: [.reportProgress],
+                                     range: NSRange(location: 0, length: (haystack as NSString).length)) { match, _, stop in
+                if expired() { stop.pointee = true; return }
+                if let match { found = match.range; stop.pointee = true }
             }
-            let range = (haystack as NSString).range(of: needle, options: query.ignoreCase ? [.caseInsensitive] : [])
-            return range.location == NSNotFound ? nil : range
+            return found
         }
 
         /// Every place the query's text is in `haystack`, as UTF-16 ranges, to the deadline.
-        func all(in haystack: String, deadline: Date, now: () -> Date) -> [NSRange] {
-            guard let text = query.text, !text.isEmpty else { return [] }
+        func all(in haystack: String, expired: () -> Bool) -> [NSRange] {
+            guard !expired(), let text = query.text, !text.isEmpty else { return [] }
             let whole = NSRange(location: 0, length: (haystack as NSString).length)
             var found: [NSRange] = []
             if let pattern = textPattern {
                 pattern.enumerateMatches(in: haystack, options: [.reportProgress], range: whole) { match, _, stop in
-                    if now() > deadline { stop.pointee = true; return }
+                    if expired() { stop.pointee = true; return }
                     guard let match, match.range.length > 0 else { return }
                     found.append(match.range)
                     if found.count >= 10_000 { stop.pointee = true }
@@ -283,7 +295,7 @@ public enum DesignBoardSearch {
                 return found
             }
             var from = 0
-            while from < whole.length, found.count < 10_000 {
+            while from < whole.length, found.count < 10_000, !expired() {
                 let range = (haystack as NSString).range(of: text, options: query.ignoreCase ? [.caseInsensitive] : [],
                                                          range: NSRange(location: from, length: whole.length - from))
                 guard range.location != NSNotFound else { break }
@@ -293,35 +305,37 @@ public enum DesignBoardSearch {
             return found
         }
 
-        func valueMatches(_ value: String) -> Bool {
+        func valueMatches(_ value: String, expired: () -> Bool) -> Bool {
+            guard !expired() else { return false }
             guard let wanted = query.value else { return true }
             if let valuePattern {
-                return valuePattern.firstMatch(in: value, range: NSRange(location: 0, length: (value as NSString).length)) != nil
+                return first(in: value, pattern: valuePattern, expired: expired) != nil
             }
             return query.ignoreCase ? value.lowercased() == wanted.lowercased() : value == wanted
         }
 
-        func search(path: DesignPath, source: String, piece: DesignPath?, deadline: Date, now: () -> Date) -> (count: Int, matches: [DesignSearchMatch]) {
+        func search(path: DesignPath, source: String, piece: DesignPath?, expired: () -> Bool) -> (count: Int, matches: [DesignSearchMatch]) {
             guard let tree = DesignBoardTree(source: source) else {
                 // No template: only the raw text can match.
                 guard query.scope == .markup, !query.isStructural, query.usages == nil else { return (0, []) }
-                return markup(path: path, source: source, tree: nil, deadline: deadline, now: now)
+                return markup(path: path, source: source, tree: nil, expired: expired)
             }
-            if let piece { return usages(of: piece, path: path, tree: tree) }
-            if query.isStructural { return structural(path: path, tree: tree) }
+            guard !expired() else { return (0, []) }
+            if let piece { return usages(of: piece, path: path, tree: tree, expired: expired) }
+            if query.isStructural { return structural(path: path, tree: tree, expired: expired) }
             switch query.scope {
-            case .markup: return markup(path: path, source: source, tree: tree, deadline: deadline, now: now)
-            case .text: return texts(path: path, tree: tree, deadline: deadline, now: now)
-            case .labels: return labels(path: path, tree: tree)
+            case .markup: return markup(path: path, source: source, tree: tree, expired: expired)
+            case .text: return texts(path: path, tree: tree, expired: expired)
+            case .labels: return labels(path: path, tree: tree, expired: expired)
             }
         }
 
         // MARK: Kinds
 
-        private func markup(path: DesignPath, source: String, tree: DesignBoardTree?, deadline: Date,
-                            now: () -> Date) -> (count: Int, matches: [DesignSearchMatch]) {
+        private func markup(path: DesignPath, source: String, tree: DesignBoardTree?, expired: () -> Bool) -> (count: Int, matches: [DesignSearchMatch]) {
             let ns = source as NSString
-            let ranges = all(in: source, deadline: deadline, now: now)
+            let ranges = all(in: source, expired: expired)
+            guard !ranges.isEmpty else { return (0, []) }
             let lines = DesignTokenCheck.LineIndex(ns)
             var matches: [DesignSearchMatch] = []
             for range in ranges.prefix(DesignBoardSearch.perBoard) {
@@ -335,12 +349,13 @@ public enum DesignBoardSearch {
             return (ranges.count, matches)
         }
 
-        private func texts(path: DesignPath, tree: DesignBoardTree, deadline: Date, now: () -> Date) -> (count: Int, matches: [DesignSearchMatch]) {
+        private func texts(path: DesignPath, tree: DesignBoardTree, expired: () -> Bool) -> (count: Int, matches: [DesignSearchMatch]) {
             var count = 0
             var matches: [DesignSearchMatch] = []
             for text in tree.texts {
+                if expired() { break }
                 let words = String(decoding: tree.bytes[text.range], as: UTF8.self)
-                let hits = all(in: words, deadline: deadline, now: now)
+                let hits = all(in: words, expired: expired)
                 guard !hits.isEmpty else { continue }
                 count += hits.count
                 if matches.count < DesignBoardSearch.perBoard {
@@ -355,13 +370,15 @@ public enum DesignBoardSearch {
 
         private static let labelAttributes: Set<String> = ["aria-label", "alt", "title", "placeholder", "data-el"]
 
-        private func labels(path: DesignPath, tree: DesignBoardTree) -> (count: Int, matches: [DesignSearchMatch]) {
+        private func labels(path: DesignPath, tree: DesignBoardTree, expired: () -> Bool) -> (count: Int, matches: [DesignSearchMatch]) {
             var count = 0
             var matches: [DesignSearchMatch] = []
             for element in tree.elements {
+                if expired() { break }
                 for (name, value) in tree.attributes(of: element.tid) {
+                    if expired() { break }
                     let isLabel = Self.labelAttributes.contains(name) || (element.name == "dc-import" && name == "name")
-                    guard isLabel, holds(value) else { continue }
+                    guard isLabel, holds(value, expired: expired) else { continue }
                     count += 1
                     if matches.count < DesignBoardSearch.perBoard {
                         var match = DesignSearchMatch(snippet: "\(name)=\"\(DesignBoardSearch.cut(value, 100))\"")
@@ -373,26 +390,32 @@ public enum DesignBoardSearch {
             return (count, matches)
         }
 
-        private func structural(path: DesignPath, tree: DesignBoardTree) -> (count: Int, matches: [DesignSearchMatch]) {
+        private func structural(path: DesignPath, tree: DesignBoardTree, expired: () -> Bool) -> (count: Int, matches: [DesignSearchMatch]) {
             var count = 0
             var matches: [DesignSearchMatch] = []
             let wantedTag = query.tag?.lowercased()
             let wantedAttribute = query.attribute?.lowercased()
             for element in tree.elements {
+                if expired() { break }
                 if let wantedTag, element.name != wantedTag { continue }
                 let attributes = (wantedAttribute != nil || query.elementClass != nil) ? tree.attributes(of: element.tid) : []
                 if let wantedAttribute {
-                    guard let found = attributes.first(where: { $0.name == wantedAttribute }), valueMatches(found.value) else { continue }
+                    guard let found = attributes.first(where: { $0.name == wantedAttribute }), valueMatches(found.value, expired: expired) else { continue }
                 } else if query.value != nil, query.elementClass == nil {
                     // A value without an attribute: any attribute holds it.
-                    guard tree.attributes(of: element.tid).contains(where: { valueMatches($0.value) }) else { continue }
+                    var found = false
+                    for attribute in tree.attributes(of: element.tid) {
+                        if expired() { break }
+                        if valueMatches(attribute.value, expired: expired) { found = true; break }
+                    }
+                    guard found else { continue }
                 }
                 if let wanted = query.elementClass {
                     let classes = attributes.first { $0.name == "class" }?.value.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }) ?? []
                     guard classes.contains(where: { query.ignoreCase ? $0.lowercased() == wanted.lowercased() : $0 == wanted }) else { continue }
                 }
                 if let words = query.text, !words.isEmpty {
-                    guard let label = tree.template.labels[element.tid], holds(label) else { continue }
+                    guard let label = tree.template.labels[element.tid], holds(label, expired: expired) else { continue }
                 }
                 count += 1
                 if matches.count < DesignBoardSearch.perBoard {
@@ -402,13 +425,16 @@ public enum DesignBoardSearch {
             return (count, matches)
         }
 
-        private func usages(of piece: DesignPath, path: DesignPath, tree: DesignBoardTree) -> (count: Int, matches: [DesignSearchMatch]) {
+        private func usages(of piece: DesignPath, path: DesignPath, tree: DesignBoardTree, expired: () -> Bool) -> (count: Int, matches: [DesignSearchMatch]) {
             var count = 0
             var matches: [DesignSearchMatch] = []
-            for reference in DesignImports.references(in: tree, of: path) where reference.target == piece {
+            for element in tree.elements {
+                if expired() { break }
+                guard element.name == "dc-import", let name = tree.attribute("name", of: element.tid),
+                      DesignImports.resolve(name: name, from: path) == piece else { continue }
                 count += 1
                 if matches.count < DesignBoardSearch.perBoard {
-                    matches.append(element(DesignSearchMatch(snippet: ""), tid: reference.tid, tree: tree, path: path))
+                    matches.append(self.element(DesignSearchMatch(snippet: ""), tid: element.tid, tree: tree, path: path))
                 }
             }
             return (count, matches)
