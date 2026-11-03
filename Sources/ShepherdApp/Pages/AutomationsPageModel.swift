@@ -248,7 +248,7 @@ struct AutomationsPageModel: Equatable {
             if let next = status.nextRunAt {
                 parts.append("Next run " + when(Date(timeIntervalSince1970: next), now: now, timeZone: timeZone, locale: locale))
             }
-            parts.append("\(status.runsToday)/\(automation.limits.maxPerDay) today")
+            parts.append(automation.limits.maxPerDay == 0 ? "\(status.runsToday) today · no daily limit" : "\(status.runsToday)/\(automation.limits.maxPerDay) today")
             return (parts.joined(separator: " · "), nil)
         }
     }

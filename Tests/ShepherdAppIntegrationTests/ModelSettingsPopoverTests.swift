@@ -47,26 +47,47 @@ struct ModelSettingsPopoverTests {
 
     @Test func modelSearchTakesTheKeyboardFromTheChipAndChoosesWithArrowAndReturn() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
-            await completingScenario { try await Self.searchingModels() }
+            await completingScenario {
+                for dark in [false, true] { try await Self.searchingModels(dark: dark) }
+            }
         }
         expectScenarioCompleted(result)
     }
 
     @MainActor
-    static func searchingModels() async throws {
+    static func searchingModels(dark: Bool) async throws {
         AccessibilityNode.enable()
         let models = ["fixture/one", "fixture/two"].map { PiModelCatalog.Entry(id: $0, context: "200K", reasoning: false) }
-        let thread = ComposerThread(models: models, focused: true)
+        let thread = ComposerThread(models: models, dark: dark, focused: true)
         defer { thread.close() }
         try await thread.waitUntilReady()
         thread.store.draft = "Preserve my words"
         let chip = try thread.window.press("Model settings: anthropic/claude-opus-4-5")
         try await thread.settle()
-        let all = try thread.window.press("All models…")
-        #expect(ControlPress.undersized([chip, all], minimum: .desktop).isEmpty)
-        try await thread.settle()
+        #expect(ControlPress.undersized([chip], minimum: .desktop).isEmpty)
+        #expect(thread.window.element("Choose a model") == nil, "search needs no second picker")
+        #expect(RecentModels.load(thread.modelDefaults).isEmpty)
+        #expect(thread.window.element("fixture/one") == nil, "a non-recent model is not a quick choice")
         let search = try #require(thread.focusedEditor)
         #expect(search.string.isEmpty)
+        func capture(_ state: String) throws {
+            guard let path = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] else { return }
+            let directory = URL(fileURLWithPath: path)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let host = thread.window.host
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("composer-model-\(state)-\(dark ? "dark" : "light").png"))
+        }
+        try capture("settings")
+        thread.type("no-such-model")
+        try await thread.settle()
+        #expect(thread.window.element("No matching models") != nil)
+        try capture("no-matches")
+        search.insertText("", replacementRange: NSRange(location: 0, length: (search.string as NSString).length))
+        try await thread.settle()
+        #expect(thread.window.element("claude-opus-4-5, current") != nil, "clearing search restores quick choices")
         thread.type("fixture/")
         try await thread.settle()
         #expect(thread.store.draft == "Preserve my words")
@@ -78,7 +99,11 @@ struct ModelSettingsPopoverTests {
             thread.window.window.sendEvent(event)
             #expect(!thread.window.window.isKeyWindow)
         }
-        let options = ModelCatalog(models).list(query: "fixture/", recent: RecentModels.load(thread.modelDefaults).map(\.id), current: thread.store.model).options
+        #expect(thread.window.element("fixture/one") != nil && thread.window.element("fixture/two") != nil,
+                "search finds every matching catalog model, not just Recent")
+        #expect(thread.window.element("Choose a model") == nil)
+        try capture("search")
+        let options = ModelCatalog(models).settingsSearchModels
         let expected = try #require(options.dropFirst().first).id
         try key(125, "\u{f701}")
         try await thread.settle()
@@ -90,7 +115,9 @@ struct ModelSettingsPopoverTests {
         try await eventuallyOnMain("the highlighted model to reach the host") {
             thread.requests.contains { if case .setModel(_, _, _, let id) = $0 { id == expected } else { false } }
         }
+        try await eventuallyOnMain("the selected model to update the thread") { thread.store.model == expected }
         try await eventuallyOnMain("the composer to regain its keyboard") { thread.focusedEditor?.string == "Preserve my words" }
+        #expect(RecentModels.load(thread.modelDefaults).first?.id == expected)
         let chosen = thread.store.model
         thread.openModelPicker()
         try await thread.settle()
@@ -124,19 +151,24 @@ struct ModelSettingsPopoverTests {
         try await thread.waitUntilReady()
         let button = { thread.window.element(Self.chip) }
         #expect(button()?.value == "Medium", "Standard draws no Fast mark on the button")
-        let plainWidth = try #require(button()).frame.width
-
         try await openPopover(thread)
         var segments = thread.window.buttons(in: "Speed")
         try #require(segments.map(\.label) == ["Standard", "Fast"], "a model with a Fast tier has a Speed control")
         #expect(segments.map(\.isSelected) == [true, false])
 
         #expect(thread.window.element("gpt-6-luna, current, offers Fast") != nil, "the model row with a Fast tier wears the bolt")
+        thread.type("no-such-model")
+        try await thread.settle()
+        #expect(thread.window.element("No matching models") != nil, "thinking and speed remain usable during search")
+        try thread.window.press("High", in: "Thinking")
+        try await eventuallyOnMain("the thinking level to change during search") { thread.store.thinking == "high" }
+        try await eventuallyOnMain("the button to show the changed thinking level") { button()?.value == "High" }
+        let plainWidth = try #require(button()).frame.width
 
         try thread.window.press("Fast", in: "Speed")
         try await eventuallyOnMain("the thread to say Fast") { thread.store.serviceTier == .fast }
         #expect(tier("fast", in: thread.requests), "the host was asked for Fast")
-        try await eventuallyOnMain("the button to carry the Fast mark") { button()?.value == "Medium, Fast" }
+        try await eventuallyOnMain("the button to carry the Fast mark") { button()?.value == "High, Fast" }
         try await eventuallyOnMain("the bolt to widen the button") { (button()?.frame.width ?? 0) > plainWidth }
         segments = thread.window.buttons(in: "Speed")
         #expect(segments.map(\.isSelected) == [false, true], "the popover stayed open and shows Fast chosen")
@@ -144,7 +176,7 @@ struct ModelSettingsPopoverTests {
         try thread.window.press("Standard", in: "Speed")
         try await eventuallyOnMain("the thread to say Standard") { thread.store.serviceTier == .standard }
         #expect(tier("standard", in: thread.requests))
-        try await eventuallyOnMain("the button to lose the Fast mark") { button()?.value == "Medium" }
+        try await eventuallyOnMain("the button to lose the Fast mark") { button()?.value == "High" }
         try await eventuallyOnMain("the button to narrow again") { button()?.frame.width == plainWidth }
     }
 

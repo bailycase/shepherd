@@ -376,17 +376,22 @@ struct AutomationEditorSheet: View {
             }
         }
         SheetRow("Limits") {
-            HStack(spacing: SH.Space.l) {
-                SHPopupMenu(form.maxConcurrent == 0 ? "No limit" : "\(form.maxConcurrent) at once") {
-                    Button("No Limit") { form.maxConcurrent = 0 }
-                    Divider()
-                    ForEach(AutomationLimits.concurrentRange, id: \.self) { count in
-                        Button("\(count) at once") { form.maxConcurrent = count }
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                HStack(spacing: SH.Space.l) {
+                    SHPopupMenu(form.maxConcurrent == 0 ? "No limit" : "\(form.maxConcurrent) at once") {
+                        Button("No Limit") { form.maxConcurrent = 0 }
+                        Divider()
+                        ForEach(AutomationLimits.concurrentRange, id: \.self) { count in
+                            Button("\(count) at once") { form.maxConcurrent = count }
+                        }
                     }
+                    .accessibilityLabel("Runs at once")
+                    SHStepper("Runs a day", value: $form.maxPerDay, in: AutomationLimits.perDayRange) { $0 == 0 ? "No limit" : "\($0) a day" }
+                        .fixedSize()
                 }
-                .accessibilityLabel("Runs at once")
-                SHStepper("Runs a day", value: $form.maxPerDay, in: AutomationLimits.perDayRange) { "\($0) a day" }
-                    .fixedSize()
+                Text("No daily limit does not change the runs-at-once limit.")
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textSecondary)
             }
         }
         if form.maxConcurrent == 0 {

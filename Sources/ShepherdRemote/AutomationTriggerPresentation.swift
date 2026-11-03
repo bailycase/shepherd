@@ -106,11 +106,12 @@ public enum AutomationSchedulePreset: Hashable, Sendable {
 }
 
 public enum AutomationTriggerText {
-    public static let unlimitedConcurrencyWarning = "No concurrency limit can increase simultaneous resource usage and model spending. Daily run limits still apply."
+    public static let unlimitedConcurrencyWarning = "No concurrency limit can increase simultaneous resource usage and model spending. Any configured daily run limit still applies."
 
     public static func limits(_ limits: AutomationLimits) -> String {
         let concurrent = limits.maxConcurrent == 0 ? "No concurrency limit" : "\(limits.maxConcurrent) at once"
-        return "\(concurrent) · \(limits.maxPerDay) a day"
+        let daily = limits.maxPerDay == 0 ? "no daily limit" : "\(limits.maxPerDay) a day"
+        return "\(concurrent) · \(daily)"
     }
 
     /// What fires a run, nil for a manual automation.
@@ -251,7 +252,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
             summary: summary, state: status.map { AutomationTriggerState($0, trigger: trigger) },
             next: day(status?.nextRunAt), checked: github ? day(status?.lastCheckedAt) : nil,
             retry: status?.state == .retrying ? day(status?.retryAt) : nil,
-            today: status.map { "\($0.runsToday) of \(limits.maxPerDay) runs" },
+            today: status.map { limits.maxPerDay == 0 ? "\($0.runsToday) runs · no daily limit" : "\($0.runsToday) of \(limits.maxPerDay) runs" },
             pending: (status?.pending ?? []).map { event in
                 AutomationPendingRow(id: event.id, summary: event.summary, url: event.url.flatMap(URL.init(string:)),
                                      when: AutomationsModel.stamp(Date(timeIntervalSince1970: event.occurredAt), timeZone: timeZone, locale: locale))

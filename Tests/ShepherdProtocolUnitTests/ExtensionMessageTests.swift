@@ -85,6 +85,8 @@ struct ExtensionMessageTests {
                                                        destination: .thread(agent), limits: AutomationLimits(maxConcurrent: 1, maxPerDay: 3))),
         .updateAutomation(id: 16, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: nil,
                           settings: AutomationSettings(workspace: .local, authorGate: .anyone, model: "", thinking: "high")),
+        .updateAutomation(id: 17, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: nil,
+                          settings: AutomationSettings(limits: AutomationLimits(maxConcurrent: 2, maxPerDay: 0))),
         .deleteAutomation(id: 13, automationID: automation),
         .startAutomation(id: 14, automationID: automation),
         .stopAutomation(id: 15, automationID: automation),

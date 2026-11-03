@@ -215,13 +215,13 @@ struct AutomationTriggerSections: View {
                 }
             }
             Stepper(value: $form.maxPerDay, in: AutomationLimits.perDayRange) {
-                LabeledContent("Runs per day", value: "\(form.maxPerDay)").font(.sh(.ui))
+                LabeledContent("Runs per day", value: form.maxPerDay == 0 ? "No limit" : "\(form.maxPerDay)").font(.sh(.ui))
             }
         } header: {
             Text("Limits")
         } footer: {
             Text(form.maxConcurrent == 0 ? AutomationTriggerText.unlimitedConcurrencyWarning
-                 : "More events wait in the automation's inbox until a run ends or the day turns.")
+                 : "More events wait in the automation's inbox until a run ends or the day turns. No daily limit does not change the runs-at-once limit.")
         }
     }
 

@@ -376,11 +376,11 @@ public enum AutomationAuthorGate: String, Codable, Hashable, Sendable, CaseItera
 public struct AutomationLimits: Hashable, Sendable, Codable {
     public static let `default` = AutomationLimits(maxConcurrent: 2, maxPerDay: 20)
     public static let concurrentRange = 1...10
-    public static let perDayRange = 1...200
+    public static let perDayRange = 0...200
 
     /// Runs going at once; more events wait. Zero means no concurrency limit.
     public var maxConcurrent: Int
-    /// Runs started per local calendar day; more events wait.
+    /// Runs started per local calendar day; more events wait. Zero removes the daily cap.
     public var maxPerDay: Int
 
     public init(maxConcurrent: Int, maxPerDay: Int) {
@@ -398,7 +398,7 @@ public struct AutomationLimits: Hashable, Sendable, Codable {
 
     public var validationError: String? {
         if maxConcurrent != 0 && !Self.concurrentRange.contains(maxConcurrent) { return "Runs at once must be 1 to 10, or 0 for no limit." }
-        if !Self.perDayRange.contains(maxPerDay) { return "Runs a day must be 1 to 200." }
+        if !Self.perDayRange.contains(maxPerDay) { return "Runs a day must be 0 (no limit) or 1 to 200." }
         return nil
     }
 }

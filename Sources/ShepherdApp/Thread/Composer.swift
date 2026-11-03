@@ -626,7 +626,8 @@ struct Composer: View {
                 .shTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .settings {
-                SHModelSettings(models: settingsModels, thinking: thinkingAvailable ? thinkingOptions : [],
+                SHModelSettings(models: settingsModels, searchModels: catalog?.settingsSearchModels ?? [],
+                                thinking: thinkingAvailable ? thinkingOptions : [],
                                 currentThinking: shownThinking, speeds: store.offersServiceTier ? speedOptions : [],
                                 currentSpeed: store.serviceTier.rawValue, modelEnabled: modelSettable,
                                 thinkingEnabled: thinkingSettable, speedEnabled: store.supports("setServiceTier"), maxHeight: room,

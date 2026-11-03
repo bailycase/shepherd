@@ -82,12 +82,12 @@ struct AutomationTriggerTests {
         #expect(!written.contains("trigger") && !written.contains("limits"))
     }
 
-    @Test(arguments: [0, 1, 3, 10]) func triggeredRecordsRoundTrip(maxConcurrent: Int) throws {
+    @Test(arguments: [0, 1, 3, 10], [0, 9]) func triggeredRecordsRoundTrip(maxConcurrent: Int, maxPerDay: Int) throws {
         let automation = Automation(
             name: "loop", prompt: "speckit it", cwd: "/tmp",
             trigger: .github([GitHubTrigger(repo: "acme/app", events: [.issueLabeled, .pullRequestReview], labels: ["shepherd"])]),
             destination: .thread(AgentID(rawValue: "t")), workspace: .local, authorGate: .anyone,
-            limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: 9), model: "m", thinking: .high, serviceTier: .fast)
+            limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: maxPerDay), model: "m", thinking: .high, serviceTier: .fast)
         let decoded = try JSONDecoder().decode(Automation.self, from: JSONEncoder().encode(automation))
         #expect(decoded == automation)
         #expect(decoded.limits.validationError == nil)
@@ -127,10 +127,19 @@ struct AutomationTriggerTests {
         #expect(copy.trigger == before.trigger && copy.model == before.model)
     }
 
-    @Test func concurrencyLimitsKeepDefaultsAndRejectInvalidValues() throws {
+    @Test func limitsKeepDefaultsAndValidateUnlimited() throws {
         #expect(try JSONDecoder().decode(AutomationLimits.self, from: Data("{}".utf8)) == .default)
         #expect(AutomationLimits(maxConcurrent: 11, maxPerDay: 5).validationError != nil)
-        #expect(AutomationLimits(maxConcurrent: 0, maxPerDay: 0).validationError != nil)
+        #expect(AutomationLimits(maxConcurrent: 0, maxPerDay: 0).validationError == nil)
+        for daily in [0, 1, 200] {
+            var automation = Automation(name: "n", prompt: "p", cwd: "/tmp")
+            let limits = AutomationLimits(maxConcurrent: 2, maxPerDay: daily)
+            try AutomationSettings(limits: limits).apply(to: &automation)
+            #expect(automation.limits == limits)
+        }
+        for daily in [-1, 201] {
+            #expect(AutomationLimits(maxConcurrent: 2, maxPerDay: daily).validationError != nil)
+        }
     }
 
     @Test func eventSummary() {

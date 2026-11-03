@@ -64,10 +64,14 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 - `SHModelSettings` (the board's "One button opens one popover") floats above the card,
   leading-aligned, 328pt wide, radius 12, with 6pt padding. Its sections have mono caps
   headers (`SHMenuHeader`: MODEL, THINKING, SPEED) over hairline separators.
-  - **MODEL:** 28pt rows in mono 12: the current model (a check in `running` on its trailing
+  - A "Search models" field takes focus directly in this popover. With no query, **MODEL**
+    keeps its 28pt mono 12 quick choices: the current model (a check in `running` on its trailing
     side), one available recent model, and All models… (Geist `ui`, `textSecondary`, a trailing
-    chevron) opening the full picker. A model with a Fast tier wears a filled `SHFastBolt`
-    before its check (the picker's "fast" tag, as a glyph); a model without one wears none.
+    chevron) opening the full picker. A query replaces the quick choices with matching models
+    from the full available catalog, ignoring case and matching anywhere in the full id. Results
+    show the full id to distinguish providers and select directly without another picker; no
+    matches reads "No matching models". Clearing the query restores the quick choices. A model
+    with a Fast tier wears a filled `SHFastBolt` before its check (the picker's "fast" tag, as a glyph); a model without one wears none.
   - **THINKING:** a segmented control of the levels the model takes (Low · Medium · High ·
     Extra high; Off to Max where it has them), in equal 24pt segments on a `bgSunken` track
     (a `lineSubtle` line, radius 6); the chosen segment is lifted on `bgSelected` with a
