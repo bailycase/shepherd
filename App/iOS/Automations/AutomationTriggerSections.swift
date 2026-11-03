@@ -212,12 +212,12 @@ struct AutomationTriggerSections: View {
                 LabeledContent("Runs at once", value: "\(form.maxConcurrent)").font(.sh(.ui))
             }
             Stepper(value: $form.maxPerDay, in: AutomationLimits.perDayRange) {
-                LabeledContent("Runs per day", value: "\(form.maxPerDay)").font(.sh(.ui))
+                LabeledContent("Runs per day", value: form.maxPerDay == 0 ? "No limit" : "\(form.maxPerDay)").font(.sh(.ui))
             }
         } header: {
             Text("Limits")
         } footer: {
-            Text("More events wait in the automation's inbox until a run ends or the day turns.")
+            Text("More events wait in the automation's inbox until a run ends or the day turns. No limit removes the daily cap, not the runs-at-once limit.")
         }
     }
 

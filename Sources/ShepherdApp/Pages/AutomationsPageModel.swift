@@ -248,7 +248,7 @@ struct AutomationsPageModel: Equatable {
             if let next = status.nextRunAt {
                 parts.append("Next run " + when(Date(timeIntervalSince1970: next), now: now, timeZone: timeZone, locale: locale))
             }
-            parts.append("\(status.runsToday)/\(automation.limits.maxPerDay) today")
+            parts.append(automation.limits.maxPerDay == 0 ? "\(status.runsToday) today · no daily limit" : "\(status.runsToday)/\(automation.limits.maxPerDay) today")
             return (parts.joined(separator: " · "), nil)
         }
     }
@@ -396,7 +396,8 @@ extension AutomationsPageDetail {
         }
         trigger.append(.init(label: "Runs in", value: thread ?? (automation.workspace == .worktree ? "New worktree" : "The folder"), mono: false))
         let today = status.map { " · \($0.runsToday) today" } ?? ""
-        trigger.append(.init(label: "Limits", value: "\(automation.limits.maxConcurrent) at once · \(automation.limits.maxPerDay) a day\(today)",
+        let dailyLimit = automation.limits.maxPerDay == 0 ? "no daily limit" : "\(automation.limits.maxPerDay) a day"
+        trigger.append(.init(label: "Limits", value: "\(automation.limits.maxConcurrent) at once · \(dailyLimit)\(today)",
                              mono: false))
         if automation.model != nil || automation.thinking != nil || automation.serviceTier != nil {
             let pins = [automation.model ?? "default", automation.thinking.map { "thinking " + $0.title.lowercased() },
