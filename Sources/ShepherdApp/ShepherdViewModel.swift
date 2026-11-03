@@ -365,6 +365,8 @@ final class ShepherdViewModel {
     let suggestions: SuggestionsModel
     /// Settings ▸ Pi ▸ Slash commands: the commands pi lists on this Mac, and which the `/` menu hides.
     let slashCommands: SlashCommandsModel
+    /// Settings › Hooks and the composer's hook glyph (docs/hooks.md).
+    let hooks: HooksModel
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
@@ -699,7 +701,8 @@ final class ShepherdViewModel {
         welcomesYourPi: Bool = false,
         yourPi: YourPiModel? = nil,
         piAuth: PiAuthStore? = nil,
-        browserData: BrowserDataStores = .ephemeral
+        browserData: BrowserDataStores = .ephemeral,
+        hooks: HooksModel? = nil
     ) {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
@@ -728,6 +731,8 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
+        self.hooks = hooks ?? HooksModel(home: server.pi.userHome, support: server.pi.home.deletingLastPathComponent(),
+                                         piTrust: server.pi.home.appendingPathComponent("trust.json"))
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
@@ -1145,6 +1150,8 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installProjectRuntime()
         installProjectExecution()
+        self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
+        self.hooks.approveSpace = { [server] root in try await server.projects.prepareProjectConfiguration(for: root) }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes (docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing over your pi).

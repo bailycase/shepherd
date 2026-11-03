@@ -318,6 +318,8 @@ struct AgentTurn: View, Equatable {
             }
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .hook(_, let row):
+            HookEventRow(row: row).equatable()
         case .images(_, let images):
             // What the agent made or a tool returned, where it happened (ThreadImagesReceived): the neutral count, then the pictures.
             VStack(alignment: .leading, spacing: SH.Space.m) {

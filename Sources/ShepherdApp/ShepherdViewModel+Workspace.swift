@@ -217,7 +217,7 @@ extension ShepherdViewModel {
         switch settingsSection {
         case .subagents: return ("Save Subagent File", subagentDefinitions.canSave)
         case .projects:
-            return ("Save Space File", !projects.showingBrowser && projects.fileLoaded && !projects.saving && projects.selected?.unavailable == nil)
+            return ("Save Space File", !projects.showingBrowser && !projects.showingHooks && projects.fileLoaded && !projects.saving && projects.selected?.unavailable == nil)
         default: return nil
         }
     }

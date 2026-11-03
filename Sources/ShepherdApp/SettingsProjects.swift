@@ -19,7 +19,9 @@ struct ProjectsSettings: View {
     var body: some View {
         Group {
             if let project = model.selected {
-                ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project))
+                ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project),
+                                      hooks: project.host.id == "local" ? vm.hooks : nil,
+                                      openHooks: { vm.hooks.spaceFilter = nil; vm.settingsSection = .hooks })
             } else {
                 ScrollView(.vertical) {
                     index
