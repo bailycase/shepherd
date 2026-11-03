@@ -68,48 +68,26 @@ struct ActivityLineView: View, Equatable {
     let burst: NativeActivityBurst
     /// Opens the review pane at a file an edit or write touched.
     var review: ((String) -> Void)?
-    private let inputRows: [String: SHActivityCallRow]
-    private let inputTexts: [String: String]
+    private let didPrepareInputs: ((Int) -> Void)?
     @State private var expanded: Bool
     @State private var expandedCalls: Set<String>
+    @State private var seedScripts = true
     @State private var sheet: CallSheet?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `expanded` and `expandedCalls` open the line, and calls in it, from the start.
     init(burst: NativeActivityBurst, review: ((String) -> Void)? = nil, expanded: Bool = false, expandedCalls: Set<String> = []) {
+        self.init(burst: burst, review: review, expanded: expanded, expandedCalls: expandedCalls, didPrepareInputs: nil)
+    }
+
+    /// The optional receipt is instance-local diagnostics; the existing initializer stays intact.
+    init(burst: NativeActivityBurst, review: ((String) -> Void)? = nil, expanded: Bool = false,
+         expandedCalls: Set<String> = [], didPrepareInputs: ((Int) -> Void)?) {
         self.burst = burst
         self.review = review
-        var inputs: [String: SHActivityCallRow] = [:]
-        var texts: [String: String] = [:]
-        var open = expandedCalls
-        for call in burst.calls {
-            guard let arguments = call.arguments, !arguments.isEmpty else { continue }
-            var script = false
-            let text: String
-            if call.name == "codemode",
-               let data = arguments.data(using: .utf8),
-               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let code = object["code"] as? String {
-                script = true
-                text = code
-            } else {
-                text = arguments
-            }
-            guard !text.isEmpty else { continue }
-            let id = "\(call.id):input"
-            let lines = text.components(separatedBy: "\n")
-            inputs[id] = SHActivityCallRow(
-                id: id, label: script ? "script" : "input", detail: script ? "JavaScript" : call.name,
-                output: Array(lines.prefix(NativeActivityCall.outputHeadLines)),
-                moreLines: max(0, lines.count - NativeActivityCall.outputHeadLines),
-                accessibilityLabel: "\(call.name) \(script ? "script" : "arguments")")
-            texts[id] = text
-            if script { open.insert(id) }
-        }
-        inputRows = inputs
-        inputTexts = texts
+        self.didPrepareInputs = didPrepareInputs
         _expanded = State(initialValue: expanded)
-        _expandedCalls = State(initialValue: open)
+        _expandedCalls = State(initialValue: expandedCalls)
     }
 
     static func == (lhs: ActivityLineView, rhs: ActivityLineView) -> Bool {
@@ -117,7 +95,7 @@ struct ActivityLineView: View, Equatable {
     }
 
     /// The full output, or the raw arguments, of one call.
-    private struct CallSheet: Identifiable {
+    fileprivate struct CallSheet: Identifiable {
         let id = UUID()
         let title: String
         let text: String
@@ -139,17 +117,11 @@ struct ActivityLineView: View, Equatable {
                            accessibilityLabel: burst.accessibilityLabel,
                            action: burst.expandable ? toggle : nil, received: burst.received)
             if expanded {
-                SHActivityCalls(burst.calls.flatMap { call -> [SHActivityCallRow] in
-                    if var input = inputRows["\(call.id):input"] {
-                        input.isExpanded = expandedCalls.contains(input.id)
-                        return [input, row(call)]
-                    }
-                    return [row(call)]
-                }, onSelect: select, onShowAll: showOutput) { row in
-                    if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
-                }
-                .padding(.vertical, SH.Space.xxs)
-                .shTransition(.disclosure)
+                // The mounted disclosure state, not the initializer's seed, owns preparation.
+                ActivityCallDetails(calls: burst.calls, review: review, expandedCalls: $expandedCalls,
+                                    seedScripts: $seedScripts, sheet: $sheet, didPrepareInputs: didPrepareInputs)
+                    .padding(.vertical, SH.Space.xxs)
+                    .shTransition(.disclosure)
             }
         }
         .sheet(item: $sheet) { sheet in
@@ -183,13 +155,83 @@ struct ActivityLineView: View, Equatable {
     /// change animates as one transaction rather than from a container.
     private func toggle() {
         withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
-            if !expanded {
-                for input in inputRows.values where input.label == "script" {
-                    expandedCalls.insert(input.id)
-                }
-            }
+            if !expanded { seedScripts = true }
             expanded.toggle()
         }
+    }
+}
+
+/// Exists only while its activity line is open. No input cache survives a collapsed update;
+/// every opening receives the current arguments, including an initially-expanded preview.
+private struct ActivityCallDetails: View {
+    let calls: [NativeActivityCall]
+    let review: ((String) -> Void)?
+    private let inputRows: [String: SHActivityCallRow]
+    private let inputTexts: [String: String]
+    @Binding var expandedCalls: Set<String>
+    @Binding var seedScripts: Bool
+    @Binding var sheet: ActivityLineView.CallSheet?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    typealias CallSheet = ActivityLineView.CallSheet
+
+    init(calls: [NativeActivityCall], review: ((String) -> Void)?, expandedCalls: Binding<Set<String>>,
+         seedScripts: Binding<Bool>, sheet: Binding<ActivityLineView.CallSheet?>, didPrepareInputs: ((Int) -> Void)?) {
+        self.calls = calls
+        self.review = review
+        _expandedCalls = expandedCalls
+        _seedScripts = seedScripts
+        _sheet = sheet
+        #if DEBUG
+        didPrepareInputs?(calls.count)
+        #endif
+        var inputs: [String: SHActivityCallRow] = [:]
+        var texts: [String: String] = [:]
+        for call in calls {
+            guard let arguments = call.arguments, !arguments.isEmpty else { continue }
+            var script = false
+            let text: String
+            if call.name == "codemode",
+               let data = arguments.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let code = object["code"] as? String {
+                script = true
+                text = code
+            } else {
+                text = arguments
+            }
+            guard !text.isEmpty else { continue }
+            let id = "\(call.id):input"
+            let lines = text.components(separatedBy: "\n")
+            inputs[id] = SHActivityCallRow(
+                id: id, label: script ? "script" : "input", detail: script ? "JavaScript" : call.name,
+                output: Array(lines.prefix(NativeActivityCall.outputHeadLines)),
+                moreLines: max(0, lines.count - NativeActivityCall.outputHeadLines),
+                accessibilityLabel: "\(call.name) \(script ? "script" : "arguments")")
+            texts[id] = text
+        }
+        inputRows = inputs
+        inputTexts = texts
+    }
+
+    var body: some View {
+        SHActivityCalls(calls.flatMap { call -> [SHActivityCallRow] in
+            if var input = inputRows["\(call.id):input"] {
+                // Synchronous default for first paint/ImageRenderer; onAppear commits it for
+                // subsequent user toggles, without mutating observable state during rendering.
+                input.isExpanded = expandedCalls.contains(input.id) || (seedScripts && input.label == "script")
+                return [input, row(call)]
+            }
+            return [row(call)]
+        }, onSelect: select, onShowAll: showOutput) { row in
+            if let call = calls.first(where: { $0.id == row.id }) { menu(call) }
+        }
+        .onAppear(perform: seedInputDisclosure)
+    }
+
+    private func seedInputDisclosure() {
+        guard seedScripts else { return }
+        for input in inputRows.values where input.label == "script" { expandedCalls.insert(input.id) }
+        seedScripts = false
     }
 
     private func row(_ call: NativeActivityCall) -> SHActivityCallRow {
@@ -202,13 +244,15 @@ struct ActivityLineView: View, Equatable {
     }
 
     private func select(_ id: String) {
+        // Also covers a quick reopen before the outgoing disclosure transition unmounted.
+        seedInputDisclosure()
         if inputTexts[id] != nil {
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
             return
         }
-        guard let call = burst.calls.first(where: { $0.id == id }) else { return }
+        guard let call = calls.first(where: { $0.id == id }) else { return }
         if NSEvent.modifierFlags.contains(.option), let arguments = call.arguments {
             sheet = CallSheet(title: "\(call.name) · call", text: arguments, truncated: false)
             return
@@ -227,7 +271,7 @@ struct ActivityLineView: View, Equatable {
             sheet = CallSheet(title: input.accessibilityLabel, text: text, truncated: false)
             return
         }
-        guard let call = burst.calls.first(where: { $0.id == id }) else { return }
+        guard let call = calls.first(where: { $0.id == id }) else { return }
         sheet = CallSheet(title: "\(call.name) · \(call.detail)", text: call.output, truncated: call.truncated)
     }
 
