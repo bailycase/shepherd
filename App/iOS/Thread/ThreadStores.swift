@@ -42,17 +42,6 @@ final class ThreadStores {
     /// `ref`'s store if one exists, never making one (a revision hint wakes only what is there).
     func existingStore(for ref: AgentRef) -> NativeThreadStore? { stores[ref] }
 
-    /// A thread's requests over `client`. A host's explicit `outcome_unknown` answer is the same
-    /// uncertainty as a lost reply: it may have been taken, so it is never offered back to restore
-    /// or resend (the store keeps such a send `uncertain`).
-    static func request(_ client: RemoteHostClient, agentID: AgentID) -> NativeThreadStore.Request {
-        { request in
-            let result = try await client.nativeThread(agentID: agentID, request: request)
-            if case .failure("outcome_unknown", let message) = result { throw RemoteHostClientError.outcomeUnknown(message: message) }
-            return result
-        }
-    }
-
     /// The snapshot `ref`'s store holds while its thread is on screen and polling (`isLive`), for
     /// Home to digest instead of asking the host again (`HomeFeed.openSnapshot`); nil for a thread
     /// not open, whose store may be stale.

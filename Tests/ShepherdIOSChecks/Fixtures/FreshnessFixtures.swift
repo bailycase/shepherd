@@ -345,6 +345,10 @@ extension FixtureCatalog {
     final class Mode: @unchecked Sendable {
         private let lock = NSLock()
         private var unknown = false
+        private var count = 0
+        /// Sends the host was asked for.
+        var sends: Int { lock.withLock { count } }
+        func sent() { lock.withLock { count += 1 } }
         var outcomeUnknown: Bool {
             get { lock.withLock { unknown } }
             set { lock.withLock { unknown = newValue } }
@@ -358,6 +362,7 @@ extension FixtureCatalog {
         let mode = mode
         hosts[0].accepts = { request in
             guard case .nativeThread(let id, _, .send) = request else { return nil }
+            mode.sent()
             return mode.outcomeUnknown
                 ? .nativeThread(id: id, result: .failure(code: "outcome_unknown", message: "The agent did not answer in time."))
                 : .nativeThread(id: id, result: .failure(code: "busy", message: "The agent is busy. Try again."))
@@ -410,15 +415,44 @@ extension FixtureCatalog {
         check(store.draft == "Ship the ledger fix" && state.attachments.count == 1 && store.submissions.isEmpty,
               "restored into the empty composer with its image")
 
-        // Unknown outcome: kept as unknown, never restorable, never saved as a draft.
+        // Unknown outcome: kept as unknown, never restorable or resent, never saved as a draft.
         mode.outcomeUnknown = true
+        var sends = mode.sends
         await ThreadComposer.send(.followUp, store: store, state: state).value
         let unknown = store.submissions.first
         check(unknown?.state == .uncertain, "an outcome_unknown answer is uncertain (\(String(describing: unknown?.state)))")
+        try? await Task.sleep(for: .milliseconds(1500))
+        check(mode.sends == sends + 1, "an unknown outcome is never sent again by the app (\(mode.sends - sends) sends)")
         check(unknown.map { store.restoreSubmission($0.id) == nil } == true && store.submissions.count == 1, "an uncertain send cannot be restored")
         check(UserDefaults.standard.string(forKey: key) == nil, "an uncertain send is not saved as a draft")
+        // Discarded: this device's copy goes; the host hears nothing.
+        sends = mode.sends
+        if let id = unknown?.id { check(store.canDiscardSubmission(id) && store.discardSubmission(id), "an uncertain send can be discarded") }
+        check(store.submissions.isEmpty && mode.sends == sends, "discarding sends nothing")
 
-        // Leave one refused beside it for the shot.
+        // The recovery limit: eight refused sends kept, the ninth refused before it leaves, its
+        // draft and image untouched.
+        mode.outcomeUnknown = false
+        for index in 1...NativeThreadStore.maximumRetainedSubmissions {
+            store.draft = "Refused \(index)"
+            await ThreadComposer.send(.followUp, store: store, state: state).value
+        }
+        sends = mode.sends
+        store.draft = "Ninth"
+        await state.attach([(png(), "ninth.png")])
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        check(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions && mode.sends == sends,
+              "past the limit nothing is sent (\(store.submissions.count) kept)")
+        check(store.draft == "Ninth" && state.attachments.count == 1 && (store.notice ?? "").contains("limit"),
+              "and its draft and image stay, with why")
+        for submission in store.submissions where store.canDiscardSubmission(submission.id) { store.discardSubmission(submission.id) }
+        check(store.submissions.isEmpty, "settled sends can all be discarded")
+        state.clearAttachments()
+
+        // Leave one unknown and one refused for the shot.
+        mode.outcomeUnknown = true
+        store.draft = "Ship the ledger fix"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
         mode.outcomeUnknown = false
         store.draft = "Not this one"
         await ThreadComposer.send(.followUp, store: store, state: state).value

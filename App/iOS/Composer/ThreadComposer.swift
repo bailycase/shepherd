@@ -50,9 +50,13 @@ struct ThreadComposer: View {
             }
             if state.pendingImports > 0 { banner("Adding images…") }
             ForEach(store.submissions.filter { $0.state != .sending }) { submission in
-                SubmissionBanner(submission: submission, canRestore: state.canRestore(into: store)) {
+                SubmissionBanner(submission: submission, canRestore: state.canRestore(into: store),
+                                 canDiscard: store.canDiscardSubmission(submission.id)) {
                     guard state.canRestore(into: store), let restored = store.restoreSubmission(submission.id) else { return }
                     Task { await state.restore(restored.images) }
+                    state.saveDraft(store)
+                } discard: {
+                    guard store.discardSubmission(submission.id) else { return }
                     state.saveDraft(store)
                 }
             }
@@ -499,29 +503,55 @@ struct ThreadComposer: View {
 
 /// A send that did not go through (UX-02): refused by the host, with Restore back into an empty
 /// composer, or of unknown outcome, shown whole to check against the thread and never resent or
-/// restored by the app.
+/// restored by the app. Discard (after a confirmation: the text goes) only lets go of this
+/// device's copy; it asks the host nothing.
 private struct SubmissionBanner: View {
     let submission: NativeThreadSubmission
     let canRestore: Bool
+    let canDiscard: Bool
     let restore: () -> Void
+    let discard: () -> Void
+    @State private var confirming = false
+    /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
+    @Environment(\.threadDetailActive) private var detailActive
 
     var body: some View {
         let images = submission.images.count
         let extra = images == 0 ? "" : " · \(images) image\(images == 1 ? "" : "s")"
-        if submission.state == .failed {
-            SHBanner(.failed, title: "Not sent" + extra,
-                     message: submission.typed.isEmpty ? nil : submission.typed + (canRestore ? "" : "\nClear the composer to restore it.")) {
-                Button("Restore") { restore() }
-                    .buttonStyle(.sh(.secondary))
-                    .disabled(!canRestore)
+        let refused = submission.state == .failed
+        Group {
+            if refused {
+                SHBanner(.failed, title: "Not sent" + extra,
+                         message: submission.typed.isEmpty ? nil : submission.typed + (canRestore ? "" : "\nClear the composer to restore it.")) {
+                    discardButton
+                    Button("Restore") { restore() }
+                        .buttonStyle(.sh(.secondary))
+                        .disabled(!canRestore)
+                }
+                .lineLimit(4)
+            } else {
+                SHBanner(.attention, title: "Delivery unknown" + extra,
+                         message: (submission.typed.isEmpty ? "" : submission.typed + "\n")
+                            + "It may have reached the agent. Check the thread before sending it again.") {
+                    discardButton
+                }
+                .lineLimit(8)
             }
-            .lineLimit(4)
-        } else {
-            SHBanner(.attention, title: "Delivery unknown" + extra,
-                     message: (submission.typed.isEmpty ? "" : submission.typed + "\n")
-                        + "It may have reached the agent. Check the thread before sending it again.") {}
-            .lineLimit(8)
         }
+        .confirmationDialog(refused ? "Discard this unsent message?" : "Discard this message's copy?",
+                            isPresented: $confirming.whenActive(detailActive), titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { discard() }
+        } message: {
+            Text(refused
+                 ? "Its text and images are removed from this device. Nothing is sent."
+                 : "This only removes the copy kept on this device. It doesn't cancel or recall the message if the agent already received it.")
+        }
+    }
+
+    private var discardButton: some View {
+        Button("Discard") { confirming = true }
+            .buttonStyle(.sh(.ghost))
+            .disabled(!canDiscard)
     }
 }
 
