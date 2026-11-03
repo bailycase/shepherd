@@ -10,6 +10,58 @@ import ShepherdTestSupport
 /// never lag the state it adopts: a pi still starting reads live, and a settled run never does.
 @Suite("Automation open runs", .integrationTimeLimit)
 struct AutomationOpenRunTests {
+    @Test func simultaneousOriginsStayWithTheirAutomationWithoutDuplicatingLinkedRuns() throws {
+        let dir = try makeScratchDirectory("automation-index")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: dir.appendingPathComponent("runs.json"))
+        defer { log.flush() }
+        let space = Space(name: "Fixture", path: dir.path)
+        let first = Automation(name: "First", prompt: "fixture", cwd: dir.path)
+        let second = Automation(name: "Second", prompt: "fixture", cwd: dir.path)
+        func agent(_ name: String, origin: AutomationID? = nil) -> Agent {
+            var value = Agent(id: AgentID(rawValue: name), name: name, spaceID: space.id,
+                              tabID: TabID(), paneID: PaneID(), status: .working)
+            value.automationOrigin = origin.map { AutomationOrigin(automationID: $0, trigger: name) }
+            return value
+        }
+        let existing = agent("existing", origin: first.id)
+        let ordinary = agent("ordinary")
+        let old = ShepherdState(spaces: [space], agents: [existing, ordinary], automations: [first, second])
+        log.record(from: ShepherdState(), to: old, now: Date(timeIntervalSince1970: 1))
+
+        var next = old
+        let linked = agent("linked", origin: first.id)
+        let other = agent("other", origin: second.id)
+        next.agents += [linked, other]
+        next.automations[0].agentID = linked.id
+        next.agents[1].automationOrigin = AutomationOrigin(automationID: first.id, trigger: "gained origin",
+                                                          triggerURL: "https://example.invalid/issue/1")
+        next.agents[1].status = .blocked
+        log.record(from: old, to: next, now: Date(timeIntervalSince1970: 2))
+        let firstRuns = try #require(log.runs[first.id])
+        #expect(firstRuns.map(\.agentID) == [existing.id, linked.id, ordinary.id])
+        #expect(firstRuns.last?.result == .needsYou)
+        #expect(firstRuns.last?.trigger == "gained origin")
+        #expect(firstRuns.last?.triggerURL == "https://example.invalid/issue/1")
+        #expect(log.runs[second.id]?.map(\.agentID) == [other.id])
+        #expect(log.openRuns[first.id] == firstRuns.last)
+        #expect(log.openRuns[second.id] == log.runs[second.id]?.last)
+        let recorded = log.runs
+        log.record(from: next, to: next, now: Date(timeIntervalSince1970: 3))
+        #expect(log.runs == recorded, "Existing origins and an already linked run are not opened twice")
+
+        var settled = next
+        settled.agents.removeAll { $0.id == other.id }
+        settled.agents[0].status = .done
+        settled.agents[0].lastFailure = "fixture failure"
+        log.record(from: next, to: settled, now: Date(timeIntervalSince1970: 4))
+        #expect(log.runs[first.id]?.first?.result == .failed)
+        #expect(log.runs[first.id]?.first?.failure == "fixture failure")
+        #expect(log.runs[second.id]?.last?.result == .stopped)
+        #expect(log.runs[second.id]?.last?.endedAt == 4)
+        #expect(log.openRuns[second.id] == nil)
+    }
+
     @Test(arguments: [false, true])
     func deletesOnlyFlaggedWatchersAfterActualSettlement(deleteAfterRun: Bool) async throws {
         let h = try ScratchServer.fresh()

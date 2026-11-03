@@ -1,6 +1,7 @@
 // Internal support for ordinary `pi -p` subprocesses, installed beside the child bridge.
 import * as fs from "node:fs";
 import * as net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import * as path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { pathToFileURL } from "node:url";
@@ -67,7 +68,7 @@ export function registerCliBash(pi, { bridge, dispatch, bashOperations }) {
       const cancel = () => { for (const socket of sockets) socket.destroy(); };
       const server = net.createServer(socket => {
         sockets.add(socket);
-        let input = "", admitted = false;
+        let inputBytes = 0, admitted = false;
         const disconnect = new AbortController();
         const send = value => {
           if (socket.destroyed || socket.writableLength > cliLimits.bytes) throw Error("Pi subprocess stopped reading");
@@ -78,17 +79,12 @@ export function registerCliBash(pi, { bridge, dispatch, bashOperations }) {
         socket.setEncoding("utf8");
         socket.on("error", () => {});
         socket.on("close", () => { sockets.delete(socket); disconnect.abort(Error("Pi CLI disconnected")); });
-        socket.on("data", chunk => {
-          if (admitted) { socket.destroy(); return; }
-          input += chunk;
-          if (Buffer.byteLength(input) > 32768) { socket.destroy(); return; }
-          const end = input.indexOf("\n");
-          if (end < 0) return;
+        const read = textLines(line => {
           admitted = true;
           const work = (async () => {
             try {
               if (!ctx.isProjectTrusted()) throw Error("Approve this project before running Pi subprocesses");
-              const request = JSON.parse(input.slice(0, end));
+              const request = JSON.parse(line);
               if (fs.realpathSync(request.cwd) !== fs.realpathSync(ctx.cwd)) throw Error("Pi subprocesses must run in the calling project directory");
               if (typeof request.prompt !== "string" || !request.prompt.trim() || request.prompt.length > 16384) throw Error("Invalid Pi subprocess prompt");
               if (!["text", "json"].includes(request.mode)) throw Error("Invalid Pi subprocess output mode");
@@ -111,6 +107,14 @@ export function registerCliBash(pi, { bridge, dispatch, bashOperations }) {
             }
           })();
           pending.add(work); work.finally(() => pending.delete(work));
+          return false;
+        });
+        socket.on("data", chunk => {
+          if (admitted) { socket.destroy(); return; }
+          // This protocol admits one request only; its input budget includes trailing data.
+          inputBytes += Buffer.byteLength(chunk);
+          if (inputBytes > 32768) { socket.destroy(); return; }
+          read(chunk);
         });
       });
       signal?.addEventListener("abort", cancel, { once: true });

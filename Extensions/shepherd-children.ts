@@ -3,6 +3,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
@@ -95,26 +96,27 @@ export function descendants(pid) {
 
 export function jsonLines(onEvent, onError) {
   const decoder = new StringDecoder("utf8");
-  let buffer = "", failed = false;
+  let parts = [], bytes = 0, failed = false;
+  const fail = (error) => { failed = true; parts = []; bytes = 0; onError(error); };
   return (chunk) => {
     if (failed) return;
-    buffer += decoder.write(chunk);
-    // One pass over the chunk: a start index walks the lines and the remainder is sliced once.
-    // UTF-16 length bounds the byte length from below, so bytes are only counted near the cap.
-    const tooLong = (text) => text.length > MAX_FRAME / 4 && Buffer.byteLength(text) > MAX_FRAME;
+    const text = decoder.write(chunk);
+    // Scan/count only new decoded text; joining earlier fragments here would flatten a growing rope.
     let start = 0;
-    for (;;) {
-      const end = buffer.indexOf("\n", start);
-      if (end < 0) break;
-      const line = buffer.slice(start, end);
+    while (start < text.length) {
+      const end = text.indexOf("\n", start);
+      const part = text.slice(start, end < 0 ? text.length : end);
+      bytes += Buffer.byteLength(part);
+      if (bytes > MAX_FRAME) { fail(new Error("RPC frame exceeds 8 MiB")); return; }
+      parts.push(part);
+      if (end < 0) return;
+      const line = parts.join("");
+      parts = []; bytes = 0;
       start = end + 1;
-      if (tooLong(line)) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); return; }
       if (!line.trim()) continue;
       try { onEvent(JSON.parse(line)); }
-      catch (error) { failed = true; buffer = ""; onError(error); return; }
+      catch (error) { fail(error); return; }
     }
-    buffer = start > 0 ? buffer.slice(start) : buffer;
-    if (tooLong(buffer)) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); }
   };
 }
 
@@ -130,7 +132,7 @@ export function prepareProjectConfiguration(cwd, env = process.env) {
   if (!env.SHEPHERD_SOCKET || !env.SHEPHERD_AGENT_ID) return Promise.reject(Error("Shepherd project migration host is unavailable"));
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(env.SHEPHERD_SOCKET);
-    let buffer = "", settled = false;
+    let replyChars = 0, settled = false;
     const finish = (error) => {
       if (settled) return;
       settled = true; clearTimeout(timer); socket.destroy();
@@ -139,16 +141,19 @@ export function prepareProjectConfiguration(cwd, env = process.env) {
     const timer = setTimeout(() => finish(Error("Shepherd project migration timed out; retry the child")), 45_000);
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.write(JSON.stringify({ type: "prepareProjectConfiguration", id: 1, agentID: env.SHEPHERD_AGENT_ID, cwd }) + "\n"));
-    socket.on("data", (chunk) => {
-      buffer += chunk;
-      if (buffer.length > 1_048_576) return finish(Error("Invalid project migration reply"));
-      const end = buffer.indexOf("\n");
-      if (end < 0) return;
+    const read = textLines((line) => {
       try {
-        const reply = JSON.parse(buffer.slice(0, end));
-        if (reply.id !== 1 || reply.type !== "ok") return finish(Error(reply.message || "Project migration was refused"));
-        finish();
+        const reply = JSON.parse(line);
+        if (reply.id !== 1 || reply.type !== "ok") finish(Error(reply.message || "Project migration was refused"));
+        else finish();
       } catch { finish(Error("Invalid project migration reply")); }
+      return false;
+    });
+    socket.on("data", chunk => {
+      if (settled) return;
+      replyChars += chunk.length;
+      if (replyChars > 1_048_576) return finish(Error("Invalid project migration reply"));
+      read(chunk);
     });
     socket.on("error", () => finish(Error("Shepherd project migration host is unavailable")));
     socket.on("close", () => finish(Error("Shepherd project migration host disconnected")));

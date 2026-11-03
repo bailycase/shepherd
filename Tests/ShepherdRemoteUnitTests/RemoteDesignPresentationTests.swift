@@ -50,6 +50,25 @@ struct RemoteDesignPresentationTests {
         #expect(RemoteDesignPresentation.age(Self.ms(secondsAgo), now: Self.now, calendar: Self.utc) == text)
     }
 
+    @Test func olderAgesKeepTheirFixedFormatAcrossTimeZonesAndCalendars() {
+        // Characterize the previous POSIX DateFormatter output while replacing its per-tile allocation.
+        for zone in ["America/Los_Angeles", "Pacific/Kiritimati", "Asia/Kathmandu"] {
+            for identifier in [Calendar.Identifier.gregorian, .buddhist, .islamicUmmAlQura] {
+                var calendar = Calendar(identifier: identifier)
+                calendar.timeZone = TimeZone(identifier: zone)!
+                for (seconds, format) in [(3.0 * 86_400, "EEE"), (30.0 * 86_400, "MMM d")] {
+                    let date = Self.now.addingTimeInterval(-seconds)
+                    let previous = DateFormatter()
+                    previous.locale = Locale(identifier: "en_US_POSIX")
+                    previous.timeZone = calendar.timeZone
+                    previous.dateFormat = format
+                    #expect(RemoteDesignPresentation.age(date.timeIntervalSince1970 * 1000, now: Self.now, calendar: calendar)
+                            == previous.string(from: date))
+                }
+            }
+        }
+    }
+
     @Test func aTileSaysItsSystemBoardsAndAgeOrThatItIsDrawing() {
         let edited = Self.ms(120)
         #expect(RemoteDesignPresentation.tileDetail(system: "acme-web", boards: 4, drawing: false, edited: edited, now: Self.now)
@@ -108,6 +127,24 @@ struct RemoteDesignPresentationTests {
         #expect(model.tiles.first?.drawing == true)
         #expect(model.tiles.first?.hostTag == nil)
         #expect(model.systemsSummary == nil)
+    }
+
+    @Test func liveDesignStateWinsWithoutChangingListingFields() {
+        let listed = Self.design("d1", "Old name", edited: Self.ms(120))
+        var live = listed
+        live.name = "Live name"
+        live.boardCount = 99
+        var duplicate = live
+        duplicate.name = "Later duplicate"
+        let fallback = Self.design("d2", "Listing only", edited: Self.ms(240))
+        let host = RemoteDesignsModel.Host(id: Self.studio, name: "Studio", listing: RemoteDesignListing(
+            designs: [Self.summary(listed, boards: 4), Self.summary(fallback)], systems: []),
+            state: ShepherdState(designs: [live, duplicate]))
+        let model = RemoteDesignsModel(hosts: [host], now: Self.now)
+        #expect(model.tiles.map(\.name) == ["Live name", "Listing only"])
+        #expect(model.tiles.first?.boards == 4)
+        #expect(model.tiles.first?.revision == 3)
+        #expect(model.tiles.first?.firstBoard?.path == Self.wide)
     }
 
     @Test func noHostServingDesignsIsNoDesigns() {

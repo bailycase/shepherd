@@ -62,26 +62,35 @@ final class AutomationRunLog: @unchecked Sendable {
         guard !old.automations.isEmpty || !new.automations.isEmpty else { return }
         let time = now.timeIntervalSince1970
         let before = Dictionary(old.automations.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let oldAgents = Dictionary(old.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let agents = Dictionary(new.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var triggered: [AutomationID: [Agent]] = [:]
+        for agent in new.agents {
+            if let origin = agent.automationOrigin, oldAgents[agent.id]?.automationOrigin == nil {
+                triggered[origin.automationID, default: []].append(agent)
+            }
+        }
         var next = runs
         for automation in new.automations {
             let previous = before[automation.id]?.agentID
             var list = next[automation.id] ?? []
             if previous != automation.agentID {
                 if let previous, let index = list.lastIndex(where: { $0.agentID == previous && $0.endedAt == nil }) {
-                    let status = old.agents.first { $0.id == previous }?.status
+                    let status = oldAgents[previous]?.status
                     list[index] = Self.closed(list[index], status: status, at: time, result: nil)
                 }
                 if let agentID = automation.agentID {
-                    let status = new.agents.first { $0.id == agentID }?.status ?? .idle
+                    let status = agents[agentID]?.status ?? .idle
                     list.append(Self.following(AutomationRun(startedAt: time, result: .running, agentID: agentID),
                                                status: status, at: time))
                 }
             } else if let agentID = automation.agentID,
                       let index = list.lastIndex(where: { $0.agentID == agentID && $0.endedAt == nil }),
-                      let status = new.agents.first(where: { $0.id == agentID })?.status {
+                      let status = agents[agentID]?.status {
                 list[index] = Self.following(list[index], status: status, at: time)
             }
-            list = Self.recordTriggered(automation, list: list, old: old, new: new, at: time)
+            list = Self.recordTriggered(automation, list: list, before: oldAgents, agents: agents,
+                                        triggered: triggered[automation.id] ?? [], projects: new.projects, at: time)
             next[automation.id] = Array(list.suffix(Self.limit))
         }
         let kept = Set(new.automations.map(\.id))
@@ -97,14 +106,13 @@ final class AutomationRunLog: @unchecked Sendable {
     /// when it appears and closes when it goes; a run delivered to an existing thread
     /// (`openThreadRun`) closes when that thread settles. Both follow their thread's status and
     /// turn unread when it settles or asks.
-    static func recordTriggered(_ automation: Automation, list: [AutomationRun], old: ShepherdState, new: ShepherdState,
-                                at time: Double) -> [AutomationRun] {
+    private static func recordTriggered(_ automation: Automation, list: [AutomationRun], before: [AgentID: Agent],
+                                        agents: [AgentID: Agent], triggered: [Agent], projects: [Project],
+                                        at time: Double) -> [AutomationRun] {
         var list = list
-        let agents = Dictionary(new.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let before = Dictionary(old.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         // A Project automation's run is a Project task: it follows the task, whose worker may not exist yet.
         let tasks = automation.projectID.map { id in
-            Dictionary((new.projects.first { $0.id == id }?.tasks ?? []).map { ($0.workerAgentID, $0) }, uniquingKeysWith: { _, b in b })
+            Dictionary((projects.first { $0.id == id }?.tasks ?? []).map { ($0.workerAgentID, $0) }, uniquingKeysWith: { _, b in b })
         } ?? [:]
         for index in list.indices where list[index].endedAt == nil {
             guard let agentID = list[index].agentID, agentID != automation.agentID else { continue }
@@ -145,9 +153,8 @@ final class AutomationRunLog: @unchecked Sendable {
             }
             list[index] = run
         }
-        for agent in new.agents where agent.automationOrigin?.automationID == automation.id {
-            guard before[agent.id]?.automationOrigin == nil,
-                  !list.contains(where: { $0.agentID == agent.id }) else { continue }
+        for agent in triggered {
+            guard !list.contains(where: { $0.agentID == agent.id }) else { continue }
             let origin = agent.automationOrigin
             list.append(following(AutomationRun(startedAt: time, result: .running, agentID: agent.id,
                                                 trigger: origin?.trigger, triggerURL: origin?.triggerURL),

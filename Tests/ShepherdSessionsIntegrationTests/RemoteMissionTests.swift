@@ -101,6 +101,65 @@ struct RemoteMissionTests {
         guard case .error(5, "unsupported", _) = try await next(client, matching: { if case .error(5, _, _) = $0 { true } else { false } }) else { return }
     }
 
+    @Test(arguments: [10, 500])
+    func progressHintsDoNotResendTheUnchangedFleet(_ agentCount: Int) async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let space = Fixture.space(path: remote.host.dir.path)
+        let agents = (0..<agentCount).map { Fixture.agent(in: space, name: "Worker \($0)") }
+        try await remote.host.seed(Fixture.workspace(agents, space: space))
+        Owner().install(on: remote.server) { _ in .success(.done(mission: nil)) }
+        remote.server.setMissionsServed(true)
+        let created = try await remote.server.createMission(draft: Self.draft)
+        let run = MissionRun(model: "test/model", phase: .planning)
+        var mission = try await remote.server.setMissionRun(id: created.id, expectedRevision: created.revision, run: run)
+        let client = try RawRemote(port: remote.port)
+        _ = try await client.hello(token: remote.token, capabilities: RemoteProtocol.clientCapabilities)
+        let older = try RawRemote(port: remote.port)
+        _ = try await older.hello(token: remote.token)
+        var pushed = 0, legacyPushed = 0
+        for update in 1...8 {
+            mission = try await remote.server.updateMissionRun(id: mission.id, runID: run.id) { $0.elapsedSeconds = Double(update) }
+            let frames = try await client.frames(until: {
+                if case .missionChanged(mission.id, mission.revision) = $0 { true } else { false }
+            })
+            pushed += frames.filter { if case .stateChanged = $0 { true } else { false } }.count
+            // An ordered reply is a barrier, without relying on a quiet interval or timeout.
+            try older.send(.stateFetch(id: update + 10))
+            let legacy = try await older.frames(until: { if case .state(update + 10, _) = $0 { true } else { false } })
+            legacyPushed += legacy.filter { if case .stateChanged = $0 { true } else { false } }.count
+            #expect(!legacy.contains { if case .missionChanged = $0 { true } else { false } })
+        }
+        print("Mission progress: agents=\(agentCount), updates=8, fleetFrames=\(pushed), legacyFleetFrames=\(legacyPushed)")
+        #expect(pushed == 0)
+        #expect(legacyPushed == 0)
+        #expect(try remote.host.persisted().missions.first?.run?.elapsedSeconds == 8)
+
+        try await remote.server.renameAgent(agents[0].agent.id, to: "Renamed worker")
+        let changed = try await next(client, matching: { if case .stateChanged = $0 { true } else { false } })
+        guard case .stateChanged(let state) = changed else { Issue.record("Expected the ordinary state change"); return }
+        #expect(state.agents.first?.name == "Renamed worker")
+        #expect(state.missions.isEmpty)
+        let late = try await remote.raw()
+        try late.send(.stateFetch(id: 99))
+        guard case .state(99, let fetched) = try await late.next() else { Issue.record("Expected initial state for a new client"); return }
+        #expect(fetched.agents == state.agents)
+        #expect(fetched.missions.isEmpty)
+
+        // Exercise the shared commit path; public putState intentionally refuses mission edits.
+        try await remote.server.enqueue {
+            try remote.server.mutateState {
+                $0.agents[0].name = "Changed alongside a mission"
+                $0.missions[0].revision += 1
+            }
+        }
+        let both = try await client.frames(until: { if case .missionChanged = $0 { true } else { false } })
+        #expect(both.contains { frame in
+            if case .stateChanged(let snapshot) = frame { snapshot.agents.first?.name == "Changed alongside a mission" }
+            else { false }
+        })
+    }
+
     @Test func actionsReachTheOwnerExactlyAsSentAndItsRefusalsComeBackAsSent() async throws {
         let remote = try RemoteHost()
         defer { remote.stop() }

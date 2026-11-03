@@ -208,6 +208,43 @@ struct WorkspaceSelectionTests {
         #expect(WorkspaceSelection.terminalTabs(in: state) == [w.b.tab.id])
     }
 
+    @Test(arguments: ["valid", "global", "review", "inspector", "unbound", "unowned", "wrongAgent",
+                      "wrongTab", "wrongPane", "wrongSpace", "duplicateBefore", "duplicateAfter", "duplicatePane"])
+    func terminalIndexPreservesPrimaryOwnershipForLegacyAndMalformedState(variant: String) {
+        let w = Workspace()
+        var state = w.state
+        let index = state.tabs.firstIndex { $0.id == w.a.tab.id }!
+        var pane = state.tabs[index].layout.firstLeaf
+        switch variant {
+        case "global": state.tabs[index].spaceID = nil
+        case "review": pane.isReview = true
+        case "inspector": state.tabs[index].inspectorFor = w.a.agent.id
+        case "unbound": state.agents[0].paneID = nil
+        case "unowned": pane.agentID = nil
+        case "wrongAgent": pane.agentID = AgentID()
+        case "wrongTab": state.agents[0].tabID = w.b.tab.id
+        case "wrongPane": state.agents[0].paneID = PaneID()
+        case "wrongSpace": state.agents[0].spaceID = w.other.id // not part of primary ownership
+        case "duplicateBefore", "duplicateAfter":
+            var duplicate = state.agents[0]
+            duplicate.paneID = PaneID()
+            state.agents.insert(duplicate, at: variant == "duplicateBefore" ? 0 : state.agents.count)
+        case "duplicatePane":
+            let other = state.tabs.firstIndex { $0.id == w.b.tab.id }!
+            var otherPane = state.tabs[other].layout.firstLeaf
+            otherPane.id = pane.id
+            state.tabs[other].layout = .leaf(otherPane)
+            state.agents[1].paneID = pane.id
+        default: break
+        }
+        state.tabs[index].layout = .leaf(pane)
+        let expected: Set<TabID> = switch variant {
+        case "valid", "wrongSpace", "duplicateBefore", "duplicateAfter", "duplicatePane": []
+        default: [w.a.tab.id]
+        }
+        #expect(WorkspaceSelection.terminalTabs(in: state) == expected)
+    }
+
     // MARK: Mounting at launch
 
     @Test func pendingLayoutsWaitToMount() {

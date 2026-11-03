@@ -34,6 +34,44 @@ struct RemoteSessionTests {
         try await eventually("authoritative replay after overrun") { String(decoding: output.current, as: UTF8.self).contains("FINAL") }
     }
 
+    @Test func viewersReceiveIdenticalLiveBytesAndDetachIndependently() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let lines = SessionServer.remoteOutputChunkBytes / Data("é🐑:00000\n".utf8).count + 1
+        let info = try await r.host.shell(
+            "stty -echo -opost; printf FANOUT_READY; IFS= read -r _; "
+            + "awk 'BEGIN{for(i=0;i<\(lines);i++)printf \"é🐑:%05d\\n\",i}'; "
+            + "IFS= read -r _; printf AFTER_DETACH; IFS= read -r _")
+        try await r.host.waitForScreen(info.id, toContain: "FANOUT_READY")
+        let first = try await r.typed(), second = try await r.typed()
+        defer { first.disconnect(); second.disconnect() }
+        let firstBytes = Locked(Data()), secondBytes = Locked(Data())
+        first.onOutput = { id, data in if id == info.id { firstBytes.withValue { $0.append(data) } } }
+        second.onOutput = { id, data in if id == info.id { secondBytes.withValue { $0.append(data) } } }
+        _ = try await first.attach(sessionID: info.id, cols: 80, rows: 24)
+        _ = try await second.attach(sessionID: info.id, cols: 80, rows: 24)
+        try await eventually("both viewers receive the initial replay") {
+            String(decoding: firstBytes.current, as: UTF8.self).contains("FANOUT_READY")
+                && String(decoding: secondBytes.current, as: UTF8.self).contains("FANOUT_READY")
+        }
+        firstBytes.withValue { $0 = Data() }
+        secondBytes.withValue { $0 = Data() }
+        let expected = Data((0..<lines).map { String(format: "é🐑:%05d\n", $0) }.joined().utf8)
+        #expect(expected.count > SessionServer.remoteOutputChunkBytes)
+        r.server.write(sessionID: info.id, data: Data("go\n".utf8))
+        try await eventually("both viewers receive the complete live batch") {
+            firstBytes.current.count >= expected.count && secondBytes.current.count >= expected.count
+        }
+        #expect(firstBytes.current == expected)
+        #expect(secondBytes.current == expected)
+        first.detach(sessionID: info.id)
+        // Ordered on the same connection: detach precedes input releasing the second batch.
+        try await first.paste(sessionID: info.id, text: "go", submit: true)
+        let final = expected + Data("AFTER_DETACH".utf8)
+        try await eventually("the remaining viewer receives the second batch") { secondBytes.current == final }
+        #expect(firstBytes.current == expected)
+    }
+
     @Test func attachReplaysTheScreenThenStreamsLiveOutput() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

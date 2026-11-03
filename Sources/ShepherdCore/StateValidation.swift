@@ -130,10 +130,12 @@ public extension ShepherdState {
         }
 
         var agentIDs = Set<AgentID>()
+        var agentByID: [AgentID: Agent] = [:]
         for agent in agents {
             guard agentIDs.insert(agent.id).inserted else {
                 throw ShepherdStateValidationError.duplicateID(kind: "agent", id: agent.id.rawValue)
             }
+            agentByID[agent.id] = agent
             guard spaceIDs.contains(agent.spaceID) else {
                 throw ShepherdStateValidationError.missingSpaceForAgent(agentID: agent.id, spaceID: agent.spaceID)
             }
@@ -194,7 +196,7 @@ public extension ShepherdState {
         for tab in tabs {
             for pane in tab.layout.leaves {
                 guard let agentID = pane.agentID else { continue }
-                guard let agent = agents.first(where: { $0.id == agentID }) else {
+                guard let agent = agentByID[agentID] else {
                     throw ShepherdStateValidationError.leafAgentMissing(agentID: agentID, paneID: pane.id)
                 }
                 guard agent.tabID == tab.id else {

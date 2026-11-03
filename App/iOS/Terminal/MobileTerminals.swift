@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -49,7 +48,12 @@ final class MobileTerminals {
         let ref: AgentRef
         let client: ObjectIdentifier
     }
-    @ObservationIgnored private var activityTasks: [ActivityKey: (task: Task<Void, Never>, holders: Int)] = [:]
+    @ObservationIgnored private var activityTasks: [ActivityKey: (id: UUID, task: Task<Void, Never>, holders: Int)] = [:]
+    @ObservationIgnored private let pause: (Duration) async throws -> Void
+
+    init(pause: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.pause = pause
+    }
 
     func panel(_ ref: AgentRef) -> Panel { panels[ref] ?? Panel() }
 
@@ -65,28 +69,54 @@ final class MobileTerminals {
 
     // MARK: Activity
 
-    /// Asks the host what the thread's terminals run, every few seconds while the caller runs
-    /// (the thread or its terminal on screen). Hosts without `terminal.activity.v1` are not asked.
-    func watchActivity(_ ref: AgentRef, client: RemoteHostClient) async {
-        guard client.capabilities.contains(RemoteProtocol.terminalActivityCapability) else { return }
+    /// Presence comes from the pushed layout, not whether a shell is running (or started yet).
+    static func hasTerminals(_ ref: AgentRef, host: MobileHost?) -> Bool {
+        guard let host, let agent = host.agent(ref.agent),
+              let tab = host.state.tabs.first(where: { $0.id == agent.tabID }) else { return false }
+        return !TerminalPanel.tabs(in: tab.layout, thread: agent.paneID).isEmpty
+    }
+
+    /// Asks only while a caller is on screen and the pushed layout has terminals. Both screen
+    /// entry points key their task on presence, so the first terminal starts watching at once.
+    func watchActivity(_ ref: AgentRef, host: MobileHost) async {
+        guard !Task.isCancelled else { return }
+        guard Self.hasTerminals(ref, host: host) else { clearActivity(ref); return }
+        guard let client = host.connectedClient,
+              client.capabilities.contains(RemoteProtocol.terminalActivityCapability) else { return }
         let key = ActivityKey(ref: ref, client: ObjectIdentifier(client))
         if activityTasks[key] != nil {
             activityTasks[key]?.holders += 1
         } else {
-            activityTasks[key] = (Task { await self.pollActivity(ref, client: client) }, 1)
+            activityTasks[key] = (UUID(), Task { await self.pollActivity(ref, host: host, client: client) }, 1)
         }
+        let id = activityTasks[key]?.id
         defer {
-            activityTasks[key]?.holders -= 1
-            if activityTasks[key]?.holders == 0 {
-                activityTasks.removeValue(forKey: key)?.task.cancel()
+            // A removed layout may already have started a replacement loop on this connection.
+            if activityTasks[key]?.id == id {
+                activityTasks[key]?.holders -= 1
+                if activityTasks[key]?.holders == 0 {
+                    activityTasks.removeValue(forKey: key)?.task.cancel()
+                }
             }
         }
-        while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+        while !Task.isCancelled { try? await pause(.seconds(3600)) }
     }
 
-    private func pollActivity(_ ref: AgentRef, client: RemoteHostClient) async {
-        while !Task.isCancelled {
-            if case .terminals(let rows)? = try? await client.agentQuery(agentID: ref.agent, query: .terminals), !Task.isCancelled {
+    private func clearActivity(_ ref: AgentRef) {
+        for key in activityTasks.keys where key.ref == ref {
+            activityTasks.removeValue(forKey: key)?.task.cancel()
+        }
+        activity[ref] = nil
+    }
+
+    private func pollActivity(_ ref: AgentRef, host: MobileHost, client: RemoteHostClient) async {
+        while !Task.isCancelled, host.connectedClient === client {
+            guard Self.hasTerminals(ref, host: host) else { clearActivity(ref); return }
+            let result = try? await client.agentQuery(agentID: ref.agent, query: .terminals)
+            guard !Task.isCancelled, host.connectedClient === client else { return }
+            // A reply begun before the last terminal disappeared must not restore its activity.
+            guard Self.hasTerminals(ref, host: host) else { clearActivity(ref); return }
+            if case .terminals(let rows)? = result {
                 let byPane = Dictionary(rows.map { ($0.paneID, $0) }, uniquingKeysWith: { first, _ in first })
                 if activity[ref] != byPane { activity[ref] = byPane }
                 for row in rows where seen[SessionKey(host: ref.host, session: row.sessionID)] == nil {
@@ -94,7 +124,7 @@ final class MobileTerminals {
                     seen[SessionKey(host: ref.host, session: row.sessionID)] = row.news
                 }
             }
-            try? await Task.sleep(for: Self.activityInterval)
+            try? await pause(Self.activityInterval)
         }
     }
 

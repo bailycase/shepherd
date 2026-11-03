@@ -4,6 +4,7 @@
 // normal prompt message, so the tool does not block.
 // Inert unless Shepherd's env is present.
 import * as net from "node:net";
+import { textLines } from "./shepherd-lines.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -40,21 +41,13 @@ export default function shepherdReview(pi: ExtensionAPI) {
     connecting = new Promise((resolve, reject) => {
       const s = net.createConnection(socketPath);
       socket = s;
-      let buffer = "";
       s.setEncoding("utf8");
       s.on("connect", () => {
         socket = s;
         resolve(s);
       });
-      s.on("data", (chunk: string) => {
-        if (socket !== s) return;
-        buffer += chunk;
-        // A reply that never ends its line would grow the heap until exit: drop the connection.
-        if (buffer.length > MAX_REPLY_CHARS) { buffer = ""; s.destroy(new Error("Shepherd reply exceeds 16 MiB")); return; }
-        let index = buffer.indexOf("\n");
-        while (index >= 0) {
-          const line = buffer.slice(0, index);
-          buffer = buffer.slice(index + 1);
+      const read = textLines(
+        (line: string) => {
           if (line.trim().length > 0) {
             try {
               const reply = JSON.parse(line) as Reply;
@@ -67,9 +60,10 @@ export default function shepherdReview(pi: ExtensionAPI) {
               // Ignore undecodable lines; the request times out.
             }
           }
-          index = buffer.indexOf("\n");
-        }
-      });
+        },
+        { limit: MAX_REPLY_CHARS, onOverflow: () => s.destroy(new Error("Shepherd reply exceeds 16 MiB")) },
+      );
+      s.on("data", (chunk: string) => { if (socket === s) read(chunk); });
       s.on("error", (error) => { reject(error); });
       s.on("close", () => {
         reject(new Error("Shepherd closed the connection"));

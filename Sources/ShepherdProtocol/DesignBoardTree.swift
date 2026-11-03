@@ -82,23 +82,10 @@ public struct DesignBoardTree: Sendable {
     }
 
     /// The line (from 1) a source offset is on.
-    public func line(at offset: Int) -> Int {
-        var line = 1
-        var i = 0
-        let end = min(offset, bytes.count)
-        while i < end {
-            if bytes[i] == 0x0A { line += 1 }
-            i += 1
-        }
-        return line
-    }
+    public func line(at offset: Int) -> Int { scan.line(at: offset) }
 
     /// Where each line starts, for repeated lookups.
-    public var lineStarts: [Int] {
-        var starts = [0]
-        for (i, byte) in bytes.enumerated() where byte == 0x0A { starts.append(i + 1) }
-        return starts
-    }
+    public var lineStarts: [Int] { scan.lineStarts }
 
     /// The elements above `tid`, nearest first.
     public func ancestors(of tid: Int) -> [DesignTemplateElement] {
@@ -174,6 +161,16 @@ struct DesignMarkupScan: Sendable {
     var ends: [Int: Int] = [:]
     /// Text outside raw-text elements and `<helmet>`, with the start-tag offset of its element.
     var texts: [(range: Range<Int>, owner: Int?)] = []
+    var lineStarts: [Int] = [0]
+
+    func line(at offset: Int) -> Int {
+        var low = 0, high = lineStarts.count - 1
+        while low < high {
+            let mid = (low + high + 1) >> 1
+            if lineStarts[mid] <= offset { low = mid } else { high = mid - 1 }
+        }
+        return low + 1
+    }
 
     private struct Open {
         let name: String
@@ -203,20 +200,11 @@ struct DesignMarkupScan: Sendable {
     static let silent: Set<String> = ["style", "script", "title", "helmet", "textarea"]
 
     static func scan(bytes: [UInt8], range: Range<Int>) -> DesignMarkupScan {
-        var result = DesignMarkupScan()
+        var result = DesignMarkupScan(lineStarts: lineStarts(bytes))
         var tokenizer = HTMLTokenizer(bytes: bytes, range: range)
         var stack: [Open] = []
-        let starts = lineStarts(bytes)
 
-        func line(_ offset: Int) -> Int {
-            var low = 0
-            var high = starts.count - 1
-            while low < high {
-                let mid = (low + high + 1) >> 1
-                if starts[mid] <= offset { low = mid } else { high = mid - 1 }
-            }
-            return low + 1
-        }
+        func line(_ offset: Int) -> Int { result.line(at: offset) }
         func note(_ imbalance: DesignMarkupImbalance) {
             if result.imbalance == nil { result.imbalance = imbalance }
         }

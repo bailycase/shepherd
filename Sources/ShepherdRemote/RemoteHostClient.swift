@@ -648,7 +648,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         let cancellable: Bool
         switch query {
-        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch: cancellable = true
+        case .search, .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch: cancellable = true
         default: cancellable = false // Undo, Redo and Revert must still await their outcome.
         }
         let reply = try await request(timeout: slow ? 150 : 30, cancellable: cancellable) { .agentQuery(id: $0, agentID: agentID, query: query) }

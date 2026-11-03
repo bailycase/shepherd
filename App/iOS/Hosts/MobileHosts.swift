@@ -15,6 +15,8 @@ final class MobileHost: Identifiable {
     /// The host's last pushed state. It stays after a disconnect, so lists show the last known
     /// agents dimmed until the host is back.
     fileprivate(set) var state = ShepherdState()
+    /// Membership-only observers (Files retention) need not scan stores on status pushes.
+    private(set) var agentIDs: Set<AgentID> = []
     /// A new value for every connection that finishes its handshake; nil while none is live.
     /// Work tied to one connection (a thread's poll loop) keys on it.
     fileprivate(set) var session: UUID?
@@ -73,7 +75,10 @@ final class MobileHost: Identifiable {
     }
 
     fileprivate func adopt(_ state: ShepherdState) {
-        if self.state != state { self.state = state }
+        guard self.state != state else { return }
+        self.state = state
+        let ids = Set(state.agents.map(\.id))
+        if agentIDs != ids { agentIDs = ids }
     }
 }
 

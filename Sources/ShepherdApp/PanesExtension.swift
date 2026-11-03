@@ -8,6 +8,7 @@ enum PanesExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try EmbeddedExtensions.install("shepherd-lines.mjs", at: directory.appendingPathComponent("shepherd-lines.mjs"))
         let url = directory.appendingPathComponent("shepherd-panes.ts")
         let source = Data(extensionSource.utf8)
         if (try? Data(contentsOf: url)) != source {

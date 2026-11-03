@@ -20,7 +20,7 @@ final class AutomationsStore {
     }
 
     private(set) var model = AutomationsModel()
-    /// Each automation's detail, derived with the model.
+    /// Each automation's detail, reused until its own inputs or displayed calendar day change.
     private(set) var details: [AutomationKey: AutomationDetail] = [:]
     /// One line per connected host whose automations are read-only here, saying why.
     private(set) var readOnlyNotes: [String] = []
@@ -63,7 +63,24 @@ final class AutomationsStore {
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let readRuns: (RemoteHostClient, AutomationID) async throws -> [AutomationRun]
+    @ObservationIgnored private let readStatus: (RemoteHostClient, AutomationID) async throws -> AutomationTriggerStatus
+    @ObservationIgnored private let dates: () -> (now: Date, locale: Locale, zone: TimeZone)
+    #if DEBUG
+    // Counters distinguish cache hits from equality-suppressed publication in portable checks.
+    @ObservationIgnored private(set) var inputRevision = 0
+    @ObservationIgnored private(set) var detailDerivations: [AutomationKey: Int] = [:]
+    #endif
     @ObservationIgnored private var inputs: [AutomationHost] = []
+    @ObservationIgnored private var detailInputs: [AutomationKey: DetailInput] = [:]
+
+    private struct DetailInput: Equatable {
+        var row: AutomationListRow
+        var runs: [AutomationRun]?
+        var status: AutomationTriggerStatus?
+        var day: Date
+        var timeZone: TimeZone
+        var locale: Locale
+    }
     @ObservationIgnored private var runs: [AutomationKey: [AutomationRun]] = [:]
     /// Each triggered automation's trigger, on a host that serves `automationTriggersCapability`.
     @ObservationIgnored private var statuses: [AutomationKey: AutomationTriggerStatus] = [:]
@@ -116,9 +133,13 @@ final class AutomationsStore {
         store.derive()
     }
 
-    private init(hosts: MobileHosts, readRuns: @escaping (RemoteHostClient, AutomationID) async throws -> [AutomationRun]) {
+    init(hosts: MobileHosts, readRuns: @escaping (RemoteHostClient, AutomationID) async throws -> [AutomationRun],
+         readStatus: @escaping (RemoteHostClient, AutomationID) async throws -> AutomationTriggerStatus = { try await $0.automationStatus($1) },
+         dates: @escaping () -> (now: Date, locale: Locale, zone: TimeZone) = { (Date(), .current, .current) }) {
         self.hosts = hosts
         self.readRuns = readRuns
+        self.readStatus = readStatus
+        self.dates = dates
         chosen = Self.firstChoice
         forgotten = Self.forgottenHosts
         track()
@@ -136,7 +157,7 @@ final class AutomationsStore {
 
     /// The zone `host`'s schedules run in: its own when a status said, else this device's.
     func zone(_ host: UUID) -> AutomationHostZone {
-        AutomationHostZone(identifier: hostZones[host])
+        AutomationHostZone(identifier: hostZones[host], device: dates().zone)
     }
 
     /// Whether `host` takes triggers from here (the editor's trigger sections, the inbox).
@@ -152,6 +173,9 @@ final class AutomationsStore {
     // MARK: Inputs
 
     private func track() {
+        #if DEBUG
+        defer { inputRevision += 1 }
+        #endif
         let (next, connections) = withObservationTracking {
             (hosts.hosts.filter { !forgotten.contains($0.id) }.map { host in
                 AutomationHost(id: host.id, name: host.name, connected: host.phase.isConnected,
@@ -161,12 +185,16 @@ final class AutomationsStore {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
         }
-        if connections != sessions {
-            // A new connection reads every run again.
+        let reconnected = connections != sessions
+        if reconnected {
+            // A new connection reads every run again, even if its presentation is unchanged.
             sessions = connections
             readAt = [:]
         }
-        guard next != inputs else { return }
+        guard !next.elementsEqual(inputs, by: { $0.hasSameAutomationInputs(as: $1) }) else {
+            if reconnected, watchers > 0 { Task { await refreshRuns() } }
+            return
+        }
         inputs = next
         let live = Set(next.flatMap { host in host.state.automations.map { AutomationKey(host: host.id, automation: $0.id) } })
         runs = runs.filter { live.contains($0.key) }
@@ -180,13 +208,29 @@ final class AutomationsStore {
 
     private func derive() {
         let next = AutomationsModel(hosts: inputs, runs: runs, statuses: statuses)
+        let (now, locale, deviceZone) = dates()
         var nextDetails: [AutomationKey: AutomationDetail] = [:]
+        var nextDetailInputs: [AutomationKey: DetailInput] = [:]
         for row in next.rows {
-            nextDetails[row.key] = next.detail(row.key, runs: runs[row.key], status: statuses[row.key],
-                                               timeZone: zone(row.key.host).timeZone)
+            let hostZone = zone(row.key.host)
+            let input = DetailInput(row: row, runs: runs[row.key], status: statuses[row.key],
+                                    day: hostZone.calendar.startOfDay(for: now), timeZone: hostZone.timeZone, locale: locale)
+            nextDetailInputs[row.key] = input
+            if detailInputs[row.key] == input {
+                nextDetails[row.key] = details[row.key]
+            } else {
+                #if DEBUG
+                detailDerivations[row.key, default: 0] += 1
+                #endif
+                nextDetails[row.key] = AutomationsModel.detail(row: row, runs: input.runs, status: input.status, now: now,
+                                                               timeZone: input.timeZone, locale: input.locale)
+            }
         }
+        detailInputs = nextDetailInputs
         var zoneLines: [UUID: String] = [:]
-        for host in inputs { zoneLines[host.id] = zone(host.id).note(hostName: host.name) }
+        for host in inputs {
+            zoneLines[host.id] = zone(host.id).note(hostName: host.name, device: deviceZone, locale: locale)
+        }
         if zoneLines != zoneNotes { zoneNotes = zoneLines }
         var unread = Set<FleetRef>()
         for (key, list) in runs {
@@ -232,13 +276,25 @@ final class AutomationsStore {
     /// Keeps the runs fresh while the calling view is on screen: run it from the view's `.task`.
     func watch() async {
         watchers += 1
+        // Off-screen details may have crossed midnight or a locale/time-zone change.
+        derive()
         await refreshRuns()
         await refreshStatuses()
         // Pending events and checks change on the host without a state push: read the triggers
         // again while a screen shows them, never off screen.
         while !Task.isCancelled {
-            try? await Task.sleep(for: Self.statusInterval)
-            if !Task.isCancelled { await refreshStatuses() }
+            // Wake at a host's midnight too: Today/Yesterday must age even on a quiet host.
+            let now = dates().now
+            let midnight = inputs.compactMap { host -> Date? in
+                zone(host.id).calendar.dateInterval(of: .day, for: now)?.end
+            }.min()
+            let interval = midnight.map { min(Self.statusInterval, .seconds($0.timeIntervalSince(now))) } ?? Self.statusInterval
+            try? await Task.sleep(for: interval)
+            if !Task.isCancelled {
+                // Date labels do not wait for the host's status requests to finish.
+                derive()
+                await refreshStatuses()
+            }
         }
         watchers -= 1
     }
@@ -277,17 +333,17 @@ final class AutomationsStore {
             guard let client = host.connectedClient, host.supports(RemoteProtocol.automationTriggersCapability) else { continue }
             for automation in host.state.automations where automation.isTriggered {
                 let key = AutomationKey(host: host.id, automation: automation.id)
-                if let status = try? await client.automationStatus(automation.id) { next[key] = status }
+                if let status = try? await readStatus(client, automation.id) { next[key] = status }
             }
         }
         next = next.filter { !forgotten.contains($0.key.host) }
         var zones = hostZones
         for (key, status) in next { if let zone = status.timeZone { zones[key.host] = zone } }
-        if next != statuses || zones != hostZones {
-            statuses = next
-            hostZones = zones
-            derive()
-        }
+        if next != statuses { statuses = next }
+        if zones != hostZones { hostZones = zones }
+        // Even unchanged statuses can cross a day boundary or device locale/time-zone change.
+        // Per-detail input equality keeps the ordinary poll free of run formatting.
+        derive()
     }
 
     /// Pull to refresh: the runs and the triggers.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
+import { Duplex } from 'node:stream';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
@@ -14,6 +15,42 @@ const require = createRequire(path.join(pkg, 'package.json'));
 const { createJiti } = require('jiti');
 const jiti = createJiti(import.meta.url, { fsCache: false, alias: { typebox: path.join(pkg, 'node_modules/typebox/build/index.mjs') } });
 const { default: install } = await jiti.import(new URL('../../Extensions/shepherd-project-context.ts', import.meta.url).pathname);
+
+test('owner replies preserve UTF-8 at every multibyte boundary', async t => {
+  const saved = { ...process.env }, tools = new Map(), goal = 'é😀雪';
+  let split;
+  // A real Node stream decoder with deterministic raw-byte fragments, not socket packet timing.
+  t.mock.method(net, 'createConnection', () => {
+    const socket = new Duplex({
+      read() {},
+      write(bytes, _encoding, done) {
+        const request = JSON.parse(bytes);
+        const reply = Buffer.from(JSON.stringify({ type: 'projectRuntime', id: request.id,
+          project: { id: 'project', revision: 1, goal, tasks: [] } }) + '\r\n');
+        const boundary = reply.indexOf(Buffer.from(goal)) + split;
+        socket.push(reply.subarray(0, boundary));
+        socket.push(reply.subarray(boundary));
+        done();
+      },
+    });
+    socket.once('resume', () => socket.emit('connect'));
+    return socket;
+  });
+  try {
+    Object.assign(process.env, { SHEPHERD_PROJECT_CONTEXT: '{"projectID":"project"}',
+      SHEPHERD_PROJECT_COORDINATOR: '1', SHEPHERD_AGENT_ID: 'coordinator', SHEPHERD_SOCKET: '/unused-fixture' });
+    install({ on() {}, registerTool: tool => tools.set(tool.name, tool) });
+    for (split = 1; split < Buffer.byteLength(goal); split++) {
+      const result = await tools.get('project_read').execute('read', {});
+      assert.equal(result.isError, undefined);
+      assert.equal(JSON.parse(result.content[0].text).goal, goal, `UTF-8 byte boundary ${split}`);
+    }
+  } finally {
+    for (const key of ['SHEPHERD_PROJECT_CONTEXT', 'SHEPHERD_PROJECT_COORDINATOR', 'SHEPHERD_AGENT_ID', 'SHEPHERD_SOCKET']) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  }
+});
 
 test('real extension tools use correlated owner requests and refresh memory each turn', async () => {
   const dir = await mkdtemp('/tmp/prj-'), saved = { ...process.env };

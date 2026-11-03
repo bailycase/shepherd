@@ -267,11 +267,15 @@ func reviewCommentAge(_ date: Date, now: Date = Date()) -> String {
 
 /// A file's syntax colors by line id. Hunks are highlighted one at a time (each is a fragment of
 /// the file, or the whole file when it came whole); files without a grammar get none.
-func reviewHighlight(_ file: DiffFile, style: CodeHighlight.Style) -> [Int: AttributedString] {
+func reviewHighlight(_ file: DiffFile, style: CodeHighlight.Style,
+                     isCancelled: () -> Bool = { false }) -> [Int: AttributedString] {
     guard !file.isBinary, CodeHighlight.supports(path: file.displayPath) else { return [:] }
     var lines: [Int: AttributedString] = [:]
     for hunk in file.hunks {
-        let colored = CodeHighlight.highlightLines(hunk.lines.map(\.text), path: file.displayPath, style: style)
+        guard !isCancelled() else { return [:] }
+        let colored = CodeHighlight.highlightLines(hunk.lines.map(\.text), path: file.displayPath, style: style,
+                                                   isCancelled: isCancelled)
+        guard !isCancelled() else { return [:] }
         for (line, text) in zip(hunk.lines, colored) { lines[line.id] = text }
     }
     return lines
@@ -372,6 +376,8 @@ final class ReviewPaneModel {
     private(set) var width: CGFloat = 0
     @ObservationIgnored private var splitScrolls: [String: SHSplitDiffScroll] = [:]
     @ObservationIgnored private var splitWidths: [String: (file: DiffFile, scale: CGFloat, old: CGFloat, new: CGFloat)] = [:]
+    @ObservationIgnored private var payloadVersion: Int?
+    @ObservationIgnored private var payloadFileIDs: Set<String> = []
 
     func splitScroll(for fileID: String) -> SHSplitDiffScroll {
         if let value = splitScrolls[fileID] { return value }
@@ -416,6 +422,31 @@ final class ReviewPaneModel {
         self.actions = actions
         cwd = session.cwd
         layout = session.layoutChoice.resolved(width: 0)
+        trackPayloadFiles()
+    }
+
+    /// Own payload retention here, not in the lazy diff subtree: empty/error scopes and
+    /// detached views still release departed files. Navigation and review metadata stay put.
+    private func trackPayloadFiles() {
+        withObservationTracking {
+            _ = session.filesVersion
+        } onChange: { [weak self] in
+            guard self != nil else { return }
+            Task { @MainActor [weak self] in self?.trackPayloadFiles() }
+        }
+        prunePayload()
+    }
+
+    private func prunePayload() {
+        guard payloadVersion != session.filesVersion else { return }
+        payloadVersion = session.filesVersion
+        let live = Set(session.files.map(\.id))
+        payloadFileIDs = live
+        if highlights.keys.contains(where: { !live.contains($0) }) {
+            highlights = highlights.filter { live.contains($0.key) }
+        }
+        rowCache = rowCache.filter { live.contains($0.key) }
+        splitWidths = splitWidths.filter { live.contains($0.key) }
     }
 
     /// A legacy review's Local | PR control.
@@ -453,12 +484,14 @@ final class ReviewPaneModel {
     /// them changes. Freshness is a version check; only right after a reload is a file compared
     /// line by line, so unchanged files keep their rows and colors.
     func rows(for file: DiffFile) -> [SHChangesRow] {
+        prunePayload()
+        let cacheable = payloadFileIDs.contains(file.id)
         let version = session.filesVersion
         let revealed = revealed[file.id] ?? []
         let truncated = session.truncated.contains(file.id)
         let words = session.wordDiffs
         let highlight = highlights[file.id].flatMap { $0.version == version || $0.file == file ? $0 : nil }
-        if var cached = rowCache[file.id], cached.layout == layout, cached.revealed == revealed, cached.truncated == truncated,
+        if cacheable, var cached = rowCache[file.id], cached.layout == layout, cached.revealed == revealed, cached.truncated == truncated,
            cached.wordDiffs == words, cached.highlight === highlight, cached.version == version || cached.file == file {
             if cached.version != version {
                 cached.version = version
@@ -468,15 +501,21 @@ final class ReviewPaneModel {
         }
         let rows = ChangesRows.rows(file, layout: layout, revealed: revealed, truncated: truncated,
                                     colors: highlight?.lines, words: words ? highlight?.words : nil)
-        rowCache[file.id] = CachedRows(file: file, version: version, layout: layout, revealed: revealed, truncated: truncated,
-                                       wordDiffs: words, highlight: highlight, rows: rows)
+        // A fading-out lazy section may still request a departed file; draw it without
+        // restoring its payload to the model's cache.
+        if cacheable {
+            rowCache[file.id] = CachedRows(file: file, version: version, layout: layout, revealed: revealed, truncated: truncated,
+                                           wordDiffs: words, highlight: highlight, rows: rows)
+        }
         return rows
     }
 
     /// Each side's widest line, once per file and text scale, never on scroll. A unified file
     /// scrolls as one column, its widest line of either side.
     func splitLineWidths(_ file: DiffFile, textScale: CGFloat) -> (old: CGFloat, new: CGFloat) {
-        if let cached = splitWidths[file.id], cached.scale == textScale, cached.file == file { return (cached.old, cached.new) }
+        prunePayload()
+        let cacheable = payloadFileIDs.contains(file.id)
+        if cacheable, let cached = splitWidths[file.id], cached.scale == textScale, cached.file == file { return (cached.old, cached.new) }
         let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
             ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * textScale, weight: .regular)
         var old: CGFloat = 0, new: CGFloat = 0
@@ -486,7 +525,7 @@ final class ReviewPaneModel {
             if line.kind != .added { old = max(old, width) }
             if line.kind != .removed { new = max(new, width) }
         }
-        splitWidths[file.id] = (file, textScale, old, new)
+        if cacheable { splitWidths[file.id] = (file, textScale, old, new) }
         return (old, new)
     }
 
@@ -494,6 +533,7 @@ final class ReviewPaneModel {
     /// time off the main thread; each file's land in one assignment. Unchanged files from a
     /// reload keep theirs.
     func highlightFiles(style: CodeHighlight.Style) async {
+        prunePayload()
         let version = session.filesVersion
         let files = session.files.filter { !$0.isBinary }
         var missing: [DiffFile] = []
@@ -504,10 +544,17 @@ final class ReviewPaneModel {
             }
         }
         for file in missing {
-            let (lines, words) = await Task.detached(priority: .utility) {
-                (reviewHighlight(file, style: style), DiffWords.changes(in: file))
-            }.value
-            if Task.isCancelled { return }
+            guard !Task.isCancelled, session.filesVersion == version else { return }
+            let work = Task.detached(priority: .utility) {
+                (reviewHighlight(file, style: style, isCancelled: { Task.isCancelled }),
+                 DiffWords.changes(in: file, isCancelled: { Task.isCancelled }))
+            }
+            let (lines, words) = await withTaskCancellationHandler {
+                await work.value
+            } onCancel: {
+                work.cancel()
+            }
+            guard !Task.isCancelled, session.filesVersion == version else { return }
             highlights[file.id] = ReviewHighlight(file: file, version: version, lines: lines, words: words)
         }
     }

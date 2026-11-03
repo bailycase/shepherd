@@ -30,41 +30,70 @@ enum PaletteContentSearch {
         let snippet: String
     }
 
-    /// The session file pi is writing for `piSessionID` in `cwd`, resolved
-    /// the same way PiSessionFile names them (any timestamp prefix).
-    static func sessionFile(piSessionID: String, cwd: String, sessionsRoot: URL) -> URL? {
-        let directory = PiSessionFile.projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-            return nil
-        }
-        return names.first { $0.hasSuffix("_\(piSessionID).jsonl") }
-            .map { directory.appendingPathComponent($0) }
-    }
-
     /// Case-insensitive substring search across the given agents' sessions, under pi's
-    /// `sessionsRoot`.
+    /// `sessionsRoot`. Owns the off-main scan so cancellation reaches it from either caller.
     static func search(
         query: String,
         agents: [(id: AgentID, piSessionID: String, cwd: String)],
-        sessionsRoot: URL
-    ) -> [Match] {
-        guard query.count >= minQueryLength else { return [] }
-        return agents.compactMap { agent in
-            guard let url = sessionFile(piSessionID: agent.piSessionID, cwd: agent.cwd, sessionsRoot: sessionsRoot),
-                  let snippet = snippet(for: query, inSessionAt: url) else { return nil }
-            return Match(agentID: agent.id, snippet: snippet)
+        sessionsRoot: URL,
+        enumerate: @escaping @Sendable (URL) throws -> [String] = { try FileManager.default.contentsOfDirectory(atPath: $0.path) },
+        readSnippet: @escaping @Sendable (String, URL) -> String? = { snippet(for: $0, inSessionAt: $1) }
+    ) async -> [Match] {
+        guard query.count >= minQueryLength, !Task.isCancelled else { return [] }
+        let work = Task.detached(priority: .userInitiated) { () -> [Match] in
+            var directories: [URL] = []
+            var wanted: [URL: Set<String>] = [:]
+            for agent in agents {
+                guard !Task.isCancelled else { return [] }
+                let directory = PiSessionFile.projectDirectory(forCwd: agent.cwd, sessionsRoot: sessionsRoot)
+                directories.append(directory)
+                wanted[directory, default: []].insert(agent.piSessionID + ".jsonl")
+            }
+            var files: [URL: [String: URL]] = [:]
+            for directory in directories where files[directory] == nil {
+                guard !Task.isCancelled else { return [] }
+                let names = (try? enumerate(directory)) ?? []
+                var found: [String: URL] = [:]
+                // ponytail: IDs × names comparisons; index suffixes only if matching, not IO, becomes costly.
+                for suffix in wanted[directory] ?? [] {
+                    for name in names {
+                        guard !Task.isCancelled else { return [] }
+                        if name.hasSuffix("_" + suffix) {
+                            found[suffix] = directory.appendingPathComponent(name)
+                            break
+                        }
+                    }
+                }
+                files[directory] = found // Missing IDs are remembered only for this search.
+            }
+            var matches: [Match] = []
+            for (agent, directory) in zip(agents, directories) {
+                guard !Task.isCancelled else { return [] }
+                guard let url = files[directory]?[agent.piSessionID + ".jsonl"],
+                      let snippet = readSnippet(query, url) else { continue }
+                matches.append(Match(agentID: agent.id, snippet: snippet))
+            }
+            return matches
         }
+        let matches = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        return Task.isCancelled ? [] : matches
     }
 
     /// A snippet of the newest conversation text in the tail of the session file at `url` that
     /// contains `query`, or nil when nothing said there does.
-    static func snippet(for query: String, inSessionAt url: URL, tailBudget: Int = tailBudget) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    static func snippet(
+        for query: String, inSessionAt url: URL, tailBudget: Int = tailBudget,
+        read: (FileHandle, Int) throws -> Data? = { try $0.read(upToCount: $1) }
+    ) -> String? {
+        guard tailBudget > 0, !Task.isCancelled,
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
         let offset = size > UInt64(tailBudget) ? size - UInt64(tailBudget) : 0
         try? handle.seek(toOffset: offset)
-        guard var data = try? handle.readToEnd(), !data.isEmpty else { return nil }
+        // Stop at the observed end even if pi appends while we read.
+        guard !Task.isCancelled,
+              var data = try? read(handle, Int(size - offset)), !data.isEmpty else { return nil }
         // A tail that starts mid-line drops the partial line.
         if offset > 0 {
             guard let newline = data.firstIndex(of: UInt8(ascii: "\n")) else { return nil }
@@ -76,7 +105,7 @@ enum PaletteContentSearch {
     /// A snippet of the newest user or assistant text in `lines` (pi session JSONL) that
     /// contains `query`.
     static func snippet(for query: String, inSessionLines lines: Data) -> String? {
-        guard !query.isEmpty else { return nil }
+        guard !query.isEmpty, !Task.isCancelled else { return nil }
         // One scan over the whole tail finds the lines holding the query, newest first; only
         // those are decoded. pi writes JSON with only quotes, backslashes and control characters
         // escaped, so a query without them appears verbatim in any line whose text holds it. A
@@ -85,6 +114,7 @@ enum PaletteContentSearch {
         let verbatim = !query.unicodeScalars.contains { $0 == "\"" || $0 == "\\" || $0.value < 0x20 }
         var upper = text.length
         while upper > 0 {
+            guard !Task.isCancelled else { return nil }
             var location = upper - 1
             if verbatim {
                 let hit = text.range(of: query, options: [.caseInsensitive, .backwards], range: NSRange(location: 0, length: upper))

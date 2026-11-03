@@ -41,6 +41,87 @@ struct DesignReferenceIntegrationTests {
         return id
     }
 
+    @Test func keptPictureChunksReadAndHashTheWholeFileOnlyOncePerIdentity() async throws {
+        let root = try makeScratchDirectory("picture-pieces")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("picture.png")
+        let picture = ThreadImagesTests.png(bytes: DesignImport.maxFileBytes)
+        try picture.write(to: file)
+        let reads = Locked<[Int]>([])
+        let reader = ReferencePictureReader { handle, count in
+            reads.withValue { $0.append(count) }
+            return try handle.read(upToCount: count) ?? Data()
+        }
+        let sha = RemoteDesignService.sha256(picture)
+        var received = Data()
+        while received.count < picture.count {
+            let piece = try #require(try await reader.piece(file: file, root: root, offset: received.count))
+            #expect(piece.sha256 == sha && piece.total == picture.count && piece.offset == received.count)
+            received.append(piece.data)
+        }
+        #expect(received == picture && RemoteDesignService.sha256(received) == sha)
+        #expect(reads.current == [picture.count] + Array(repeating: RemoteProtocol.designChunkBytes, count: 63))
+        let eof = try #require(try await reader.piece(file: file, root: root, offset: picture.count))
+        #expect(eof.data.isEmpty && eof.sha256 == sha && reads.current.count == 64)
+        await #expect(throws: RemoteDesignRefusal.self) { _ = try await reader.piece(file: file, root: root, offset: -1) }
+        await #expect(throws: RemoteDesignRefusal.self) { _ = try await reader.piece(file: file, root: root, offset: picture.count + 1) }
+
+        let modified = try #require(try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date)
+        var replacement = picture
+        replacement[replacement.count - 1] = 1
+        try replacement.write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: file.path)
+        let changed = try #require(try await reader.piece(file: file, root: root, offset: 0))
+        #expect(changed.sha256 == RemoteDesignService.sha256(replacement) && changed.sha256 != sha)
+        #expect(reads.current.last == picture.count && reads.current.count == 65, "same-size, same-mtime replacement must rehash")
+        try Data().write(to: file)
+        let empty = try #require(try await reader.piece(file: file, root: root, offset: 0))
+        #expect(empty.data.isEmpty && empty.total == 0 && empty.sha256 == RemoteDesignService.sha256(Data()))
+        #expect(try await reader.piece(file: root.appendingPathComponent("missing"), root: root, offset: 0) == nil)
+        #expect(try await reader.piece(file: root, root: root, offset: 0) == nil)
+        let oversized = try FileHandle(forWritingTo: file)
+        try oversized.truncate(atOffset: UInt64(DesignImport.maxFileBytes + 1))
+        try oversized.close()
+        #expect(try await reader.piece(file: file, root: root, offset: 0) == nil)
+        let outside = try makeScratchDirectory("outside-picture")
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let other = outside.appendingPathComponent("other.png")
+        try picture.prefix(32).write(to: other)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createSymbolicLink(at: file, withDestinationURL: other)
+        #expect(try await reader.piece(file: file, root: root, offset: 0) == nil)
+    }
+
+    @Test func keptPictureDigestCacheIsBoundedAndRejectsChangesDuringReads() async throws {
+        let root = try makeScratchDirectory("picture-cache")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let reads = Locked(0)
+        let reader = ReferencePictureReader { handle, count in
+            reads.withValue { $0 += 1 }
+            return try handle.read(upToCount: count) ?? Data()
+        }
+        for number in 0..<65 {
+            let file = root.appendingPathComponent("\(number).png")
+            try Data([UInt8(number)]).write(to: file)
+            #expect(try await reader.piece(file: file, root: root, offset: 0)?.data == Data([UInt8(number)]))
+        }
+        _ = try await reader.piece(file: root.appendingPathComponent("64.png"), root: root, offset: 1)
+        #expect(reads.current == 65, "cached EOF needs no file read")
+        let first = root.appendingPathComponent("0.png")
+        _ = try await reader.piece(file: first, root: root, offset: 1)
+        #expect(reads.current == 66, "oldest digest is evicted")
+        let changing = ReferencePictureReader { handle, count in
+            let data = try handle.read(upToCount: count) ?? Data()
+            let writer = try FileHandle(forWritingTo: first)
+            defer { try? writer.close() }
+            try writer.truncate(atOffset: 2)
+            return data
+        }
+        #expect(try await changing.piece(file: first, root: root, offset: 0) == nil)
+        let failing = ReferencePictureReader { _, _ in throw CocoaError(.fileReadUnknown) }
+        #expect(try await failing.piece(file: first, root: root, offset: 0) == nil)
+    }
+
     @Test func pinEvictionCollectsOnlyObjectsUnreferencedByTheDurableIndex() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -690,6 +771,13 @@ struct DesignReferenceIntegrationTests {
         #expect(pieces == large)
         #expect(try await ask(30, .referencePicture(agentID: pi.agent.id, payloadID: payloadID, offset: large.count + 1)) == nil)
         #expect(try await ask(31, .referencePicture(agentID: AgentID(), payloadID: payloadID, offset: 0)) == nil)
+        let other = try await PiAgent.launch(on: r.host)
+        #expect(try await ask(32, .referencePicture(agentID: other.agent.id, payloadID: payloadID, offset: 0)) == nil,
+                "a cached digest never grants another existing thread access")
+        guard case .chunk(let eof)? = try await ask(33, .referencePicture(agentID: pi.agent.id, payloadID: payloadID, offset: large.count)) else {
+            Issue.record("expected EOF chunk"); return
+        }
+        #expect(eof.data.isEmpty && eof.sha256 == RemoteDesignService.sha256(pieces))
     }
 
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {

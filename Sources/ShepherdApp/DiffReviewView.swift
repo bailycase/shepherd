@@ -594,7 +594,7 @@ private struct ReviewDiffList: View, Equatable {
             .background { SplitDiffWheelReader(model: model) }
             .modifier(ReviewScrollFollower(model: model, session: session, proxy: proxy))
         }
-        .task(id: session.files) { await model.highlightFiles(style: .theme) }
+        .task(id: session.filesVersion) { await model.highlightFiles(style: .theme) }
         .onAppear { if model.currentFile == nil { model.currentFile = session.files.first?.id } }
     }
 }

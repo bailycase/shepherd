@@ -24,6 +24,13 @@ extension FixtureCatalog {
                 await model.toggle("Widgets")
                 await model.open("Widgets/NeedsYouWidget.swift")
             }),
+            FixtureScreen(name: "files-unavailable", hosts: FilesFixture.emptyHosts(), prepare: { app in
+                guard let host = app.hosts.host(FilesFixture.ref.host), host.phase.isConnected,
+                      host.agent(FilesFixture.ref.agent) == nil else {
+                    FixtureCheck.fail("Files unavailable fixture requires a connected host without the thread")
+                }
+                FilesFixture.presentScreen(app)
+            }),
             FixtureScreen(name: "files-old-host", hosts: FilesFixture.hosts(capable: false), routes: [thread], prepare: { app in
                 _ = FilesFixture.present(app)
             }),
@@ -84,8 +91,20 @@ enum FilesFixture {
         return hosts
     }
 
+    static func emptyHosts() -> [FixtureHostData] {
+        var hosts = hosts()
+        hosts[0].state = ShepherdState()
+        hosts[0].threads = [:]
+        return hosts
+    }
+
     /// Presents Files over the thread, full screen in its own navigation stack, and returns its tree.
     @MainActor static func present(_ app: MobileApp) -> ThreadFilesModel {
+        presentScreen(app)
+        return ThreadFilesStores.shared.model(for: ref, hosts: app.hosts)
+    }
+
+    @MainActor static func presentScreen(_ app: MobileApp) {
         let root = NavigationStack { ThreadFilesScreen(thread: ref) }.environment(app.hosts)
         let controller = UIHostingController(rootView: root)
         // Over, not instead of, the window's root: a removed root unregisters the window and the hosts disconnect.
@@ -94,6 +113,5 @@ enum FilesFixture {
         var top = window?.rootViewController
         while let presented = top?.presentedViewController { top = presented }
         top?.present(controller, animated: false)
-        return ThreadFilesStores.shared.model(for: ref, hosts: app.hosts)
     }
 }

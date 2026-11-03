@@ -96,11 +96,21 @@ public final class SessionServer: @unchecked Sendable {
     private var designRequestClients: [Int: ExtensionConnection] = [:]
     var activeDesignRequests: [Int: DesignID] = [:]
     private var nextDesignRequest = 0
+    let referencePictureReader = ReferencePictureReader()
+
+    // Server queue owns admission; a cancelled read keeps its slot until its syscall exits.
+    private var activeDirectoryReads = 0
+    static let directoryReadLimit = 2
+    static let directoryReadTimeout: TimeInterval = 5
+    var enumerateRemoteDirectory: @Sendable (String) throws -> [String] = {
+        try FileManager.default.contentsOfDirectory(atPath: $0)
+    }
 
     private final class ExtensionConnection {
         let fd: Int32
         let projectMCPOwner = UUID()
         var projectMCPRequests: [Int: Task<Void, Never>] = [:]
+        var directoryReads: [Int: (token: UUID, task: Task<Void, Never>)] = [:]
         /// True for a remote Shepherd client on the TCP listener; false for a
         /// pi extension on the Unix socket.
         let isRemote: Bool
@@ -3003,29 +3013,71 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// List a directory's subdirectories for the remote pickers. Hidden
-    /// directories are skipped. Empty path starts at the host user's home.
+    /// Complete directory listings, including hidden directories and links to directories.
+    /// Empty path starts at home. No filesystem work runs on the server queue.
     private func remoteListDir(id: Int, path: String, client: ExtensionConnection) {
-        let fm = FileManager.default
-        let resolved = path.isEmpty
-            ? fm.homeDirectoryForCurrentUser.path
-            : (path as NSString).expandingTildeInPath
-        var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: resolved, isDirectory: &isDirectory), isDirectory.boolValue else {
-            send(.error(id: id, code: "no_such_directory", message: "\(resolved) is not a directory on the host"), to: client)
+        client.directoryReads.removeValue(forKey: id)?.task.cancel()
+        guard activeDirectoryReads < Self.directoryReadLimit else {
+            send(.error(id: id, code: "busy", message: "Directory reads are busy; try again."), to: client)
             return
         }
-        // Hidden directories are included — ~/.pi is a legitimate space; the
-        // client picker decides whether to show them (off by default).
-        let names = ((try? fm.contentsOfDirectory(atPath: resolved)) ?? [])
-            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-            .filter { name in
-                var sub: ObjCBool = false
-                let full = (resolved as NSString).appendingPathComponent(name)
-                return fm.fileExists(atPath: full, isDirectory: &sub) && sub.boolValue
+        activeDirectoryReads += 1
+        let token = UUID()
+        let timeout = Self.directoryReadTimeout
+        let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
+        let enumerate = enumerateRemoteDirectory
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            let reply: RemoteReply
+            do {
+                reply = try Self.directoryListing(id: id, path: path, deadline: deadline, enumerate: enumerate)
+            } catch {
+                reply = .error(id: id, code: "timeout", message: "The directory read timed out; try again.")
             }
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.activeDirectoryReads -= 1
+                guard self.clients[client.fd] === client, client.directoryReads[id]?.token == token else { return }
+                client.directoryReads[id] = nil
+                self.send(reply, to: client)
+            }
+        }
+        client.directoryReads[id] = (token, task)
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            guard let self, self.clients[client.fd] === client, client.directoryReads[id]?.token == token else { return }
+            client.directoryReads.removeValue(forKey: id)?.task.cancel()
+            self.send(.error(id: id, code: "timeout", message: "The directory read timed out; try again."), to: client)
+        }
+    }
+
+    private static func directoryListing(id: Int, path: String, deadline: ContinuousClock.Instant,
+                                         enumerate: @Sendable (String) throws -> [String]) throws -> RemoteReply {
+        func check() throws {
+            try Task.checkCancellation()
+            if ContinuousClock.now >= deadline { throw CancellationError() }
+        }
+        try check()
+        let fm = FileManager.default
+        let resolved = path.isEmpty ? fm.homeDirectoryForCurrentUser.path : (path as NSString).expandingTildeInPath
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: resolved, isDirectory: &isDirectory), isDirectory.boolValue else {
+            try check()
+            return .error(id: id, code: "no_such_directory", message: "\(resolved) is not a directory on the host")
+        }
+        try check()
+        let entries = (try? enumerate(resolved)) ?? []
+        var names: [String] = []
+        for name in entries {
+            try check()
+            var sub: ObjCBool = false
+            if fm.fileExists(atPath: (resolved as NSString).appendingPathComponent(name), isDirectory: &sub), sub.boolValue {
+                names.append(name)
+            }
+        }
+        try check()
+        names.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        try check()
         let parent = resolved == "/" ? nil : (resolved as NSString).deletingLastPathComponent
-        send(.dirListing(id: id, path: resolved, parent: parent, dirs: names), to: client)
+        return .dirListing(id: id, path: resolved, parent: parent, dirs: names)
     }
 
     /// A remote client managing an automation. Everything but reading its runs goes through
@@ -3773,10 +3825,23 @@ public final class SessionServer: @unchecked Sendable {
         while offset < data.endIndex {
             let end = data.index(offset, offsetBy: Self.remoteOutputChunkBytes, limitedBy: data.endIndex) ?? data.endIndex
             let chunk = data.subdata(in: offset..<end)
-            for fd in fds {
-                if let client = clients[fd] {
-                    send(.output(sessionID: sessionID, data: chunk), to: client)
+            let payload: Data
+            do {
+                payload = try NDJSON.encode(RemoteReply.output(sessionID: sessionID, data: chunk))
+                guard payload.count - 1 <= NDJSON.maxPayloadBytes else {
+                    throw LineBufferError.payloadTooLarge(bytes: payload.count - 1, terminated: true)
                 }
+            } catch {
+                ShepherdLog.error("could not encode remote output: \(error)")
+                for fd in fds {
+                    if let client = clients[fd] { disconnect(client) }
+                }
+                return
+            }
+            // Share immutable encoded bytes, not queue accounting or write offsets. A stalled
+            // viewer still overruns its own bounded queue without disrupting the others.
+            for fd in fds {
+                if let client = clients[fd] { enqueuePayload(payload, to: client) }
             }
             offset = end
         }
@@ -3961,6 +4026,8 @@ public final class SessionServer: @unchecked Sendable {
         client.tunnels?.closeAll()
         for task in client.projectMCPRequests.values { task.cancel() }
         client.projectMCPRequests.removeAll()
+        for read in client.directoryReads.values { read.task.cancel() }
+        client.directoryReads.removeAll()
         Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
@@ -5671,8 +5738,12 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         syncServiceTiers(state)
-        broadcastRemoteState(state)
-        if before.missions != state.missions { pushMissionChanges(before: before.missions, after: state.missions) }
+        let missionsChanged = before.missions != state.missions
+        // Private mission progress has its own hints; the fleet would contain identical data.
+        if !missionsChanged || before.withoutMissions != state.withoutMissions {
+            broadcastRemoteState(state)
+        }
+        if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
         if !browserOwners.isEmpty { pruneBrowserOwners(state) }

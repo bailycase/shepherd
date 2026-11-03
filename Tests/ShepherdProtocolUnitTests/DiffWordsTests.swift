@@ -85,6 +85,36 @@ struct DiffWordsTests {
         #expect(changes[lines[0].id] == nil, "context lines never carry word diffs")
     }
 
+    @Test(arguments: [1, 3, 6])
+    func cancellationStopsBeforeRemainingPairsAndHunks(_ stopAt: Int) {
+        let hunks = [0, 20].map { base -> DiffHunk in
+            let lines = (0..<3).flatMap { index -> [DiffLine] in
+                let number = base + index + 1
+                let id = base + index * 2
+                return [DiffLine(kind: .removed, text: "let value = 1", oldLine: number, newLine: nil, id: id),
+                        DiffLine(kind: .added, text: "let value = 2", oldLine: nil, newLine: number, id: id + 1)]
+            }
+            return DiffHunk(header: "@@ -\(base + 1),3 +\(base + 1),3 @@", lines: lines)
+        }
+        let file = DiffFile(oldPath: "a.swift", newPath: "a.swift", displayPath: "a.swift", isNew: false, isDeleted: false,
+                            isRenamed: false, isBinary: false, hunks: hunks)
+        #expect(DiffWords.changes(in: file).count == 12, "every pair has changed words when not cancelled")
+        var checks = 0
+        let cancelled = DiffWords.changes(in: file) {
+            checks += 1
+            return checks >= stopAt
+        }
+        #expect(cancelled.isEmpty, "partial work is discarded")
+        #expect(checks == stopAt, "no later pair or hunk is visited after cancellation")
+
+        checks = 0
+        let cancelledHunk = DiffWords.changes(in: hunks[0]) {
+            checks += 1
+            return checks >= 3
+        }
+        #expect(cancelledHunk.isEmpty && checks == 3, "the single-hunk entry point also stops between pairs")
+    }
+
     @Test func editScriptMatchesTheLongestCommonRun() throws {
         let a: [Substring] = ["a", "b", "c", "a", "b", "b", "a"]
         let b: [Substring] = ["c", "b", "a", "b", "a", "c"]
