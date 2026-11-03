@@ -15,7 +15,7 @@ same path, not additional independent performance gains.
 
 | Lane | Audit IDs | Status | Required evidence |
 | --- | --- | --- | --- |
-| Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | In progress | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
+| Shared thread | IO-02, IO-03, UX-01, UX-02, UX-05 | First batch merged; four review blockers and UI consumers pending | Projection equivalence for historical changes/compaction/neighbors; bounded parser tasks; failed-send content recovery; epoch-correct revision reuse; tail-refresh benchmark |
 | Server | SV-01 through SV-06; server half UX-03 | Merged; parent 248-test integration run passed | Sidecar-aware transcript invalidation; ordering/failure-safe refresh; one image fetch/hash; recovery lookup scaling; durable ordered send and fair stderr including EOF |
 | Storage | ST-01, ST-03 through ST-07, UX-08; source half UX-07 | In progress | Byte-budget eviction; canceled actual Git work; ordered durable writes; batched checkout transitions; indexed/bounded queries; branch-local file updates; crash-safe image checkpoints |
 | Transport | SF-01, IO-06, UX-04; protocol half IO-05 | Merged; parent tests running, consumers pending | Bounded real parser/socket backlog without loss; nonterminal callback bounds; scoped rate-bounded hints; old/new client contracts and ownership |
@@ -82,8 +82,7 @@ require equipment that is not available; those limits must remain explicit.
   `c8df50ad` and merged into integration. Expanded safety checks passed 248 tests/19 suites and
   ten docs guards. A second independent review of the follow-up found no actionable regressions.
   Parent independently reran that selection on integration: all 248 tests/19 suites passed, exit 0.
-  The process-wide
-  64 MiB/256-entry cache and 128 MiB worker reservations bound payload/storage costs, not total RSS.
+  The process-wide 64 MiB/256-entry cache and 128 MiB worker reservations bound payload/storage costs, not total RSS.
   The earlier ~2.34 GiB 100-thread figure was capacity arithmetic, not measured retention.
 - Surfaces lane: 58 Swift tests and 24 pinned-runtime Node tests reported green; commit
   `c86e4eda`. Independent review found whole-row demand-key mismatch, missing New Thread picker
@@ -113,13 +112,40 @@ require equipment that is not available; those limits must remain explicit.
   Parent inspected the generation guard, invalidation union and cancellable request changes.
   Transport is merged after the prior build finished. Parent joined correctness tests are running;
   Mac/mobile digest/hint consumers remain pending.
+- Shared thread `e85914ee` merged: lane reports 254 focused tests and 20 image tests passed.
+  At 100/1k/10k-history sizes, 200 streaming tail updates rebuild 1,000 messages/rows; incoming
+  comparisons remain linear. This is a work-count result, not a timing/frame-rate claim. Independent
+  review found four blockers: `outcome_unknown` incorrectly restorable as a definite failure;
+  unbounded failed/uncertain submissions with no disposal path; parser slots freed before canceled
+  synchronous work actually finishes; and duplicate subagent ownership across preserved-prefix
+  boundaries. Follow-up `c3f131aa` addresses all four; 260 focused and 16 targeted tests passed
+  in the lane, with independent re-review and integration pending. Admission now caps captured
+  records at eight/16 MiB of accounted payload before clearing or sending; explicit disposal is
+  allowed only for settled failed/uncertain records and performs no remote action. Re-review cleared
+  the original four issues but requires overflow-safe payload accounting, now being added. Composer
+  image/persistence recovery and validated connection-epoch wiring remain pending.
+- Parent's first transport/surfaces run: 172 tests, one failing capability-enumeration test/two
+  issues. New capability constants were missing from its exhaustive expected list; corrected in
+  `c641bde80` with stable-string assertions. The joined four-lane run now includes all remote and
+  protocol unit tests, plus transport/design integration regressions. Its first build failed to link
+  stale dependent objects referencing the old three-argument `NativeThreadStore.run` signature.
+  Integration-local dependent target object caches were invalidated; the cached build plan also
+  needed regeneration to recreate missing output maps. The replanned four-lane run passed **1,985
+  tests/196 suites**, exit 0. Neither failed build reached tests. This result precedes `c3f131aa`
+  and the still-unmerged Mac/mobile/storage consumers; it is not final-branch validation.
 - Mobile first batch committed `ea0bf14a`; entire portable runner passed after moving the
   Foundation-only host presentation extension into the shared portable source list. Transport
   prerequisite merged cleanly into that lane. Simulator build and new portable checks reported
   successful. Independent review found payloads retained outside `diffCache`, a queued task able
   to capture its epoch after `shed()`, and launch completion emitted before diagnostics startup.
-  Actual-store retention, ensure/shed ordering, and fresh-install readiness regressions are required
-  before acceptance. Final renders and digest/hint consumer work are also pending.
+  Corrections and digest consumers checkpointed in `cceb03f4`; current integration prerequisites
+  merged cleanly into the mobile lane. Entire portable runner passes at that checkpoint, but the
+  actual-store simulator retention fixture is not yet run. Review fixes, fresh-install readiness,
+  multiwindow-close rerun, final renders and shared-store hint/connection/composer wiring remain
+  validation gates. Independent follow-up review found two additional byte-budget holes: legacy
+  whole-diff replies do not notify retention after growing offscreen, and old row caches keep text
+  payloads after backing-revision eviction. Both are assigned actual-store regression tests and
+  fixes before the mobile lane can satisfy its budget claim.
 
 Full run logs will be retained under `/tmp/shepherd-perf-fixes`. Lasting evidence and final
 results will be summarized here before opening the PR. Build concurrency and disk use are bounded;
