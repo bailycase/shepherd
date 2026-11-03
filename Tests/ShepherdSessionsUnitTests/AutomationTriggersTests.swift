@@ -204,6 +204,39 @@ struct AutomationTriggersTests {
         #expect(await engine.status(of: world.automations[0]).pending.isEmpty)
     }
 
+    @Test(arguments: [false, true])
+    func noDailyLimitKeepsConcurrencyAndThreadBatchBounds(existingThread: Bool) async {
+        let world = World()
+        var automation = Self.loop(AutomationLimits(maxConcurrent: 2, maxPerDay: 0))
+        if existingThread { automation.destination = .thread(AgentID(rawValue: "t")) }
+        world.automations = [automation]
+        let engine = await Self.engine(world)
+        await engine.tick()
+        // More than the largest finite daily cap, all in the same day.
+        for batch in 0..<21 {
+            world.advance(61)
+            world.items = (1...10).map { Self.labeled(batch * 10 + $0, at: world.now.addingTimeInterval(-1)) }
+            if existingThread { world.thread = .busy }
+            await engine.tick()
+            if existingThread {
+                #expect(await engine.status(of: automation).pending.count == 10)
+                world.thread = .idle
+            } else {
+                #expect(world.live[automation.id]?.count == 2)
+            }
+            for _ in 0..<5 {
+                world.live = [:]
+                await engine.tick()
+                if await engine.status(of: automation).pending.isEmpty { break }
+            }
+            #expect(await engine.status(of: automation).pending.isEmpty)
+            world.live = [:]
+        }
+        #expect(world.started.flatMap { $0 }.count == 210)
+        #expect(world.started.allSatisfy { $0.count <= (existingThread ? 20 : 1) })
+        #expect(world.notes.isEmpty)
+    }
+
     /// A lasting error pauses with its reason and one note; a passing one backs off and retries.
     @Test func failures() async {
         let world = World()

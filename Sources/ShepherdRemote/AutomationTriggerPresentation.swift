@@ -244,7 +244,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
             summary: summary, state: status.map { AutomationTriggerState($0, trigger: trigger) },
             next: day(status?.nextRunAt), checked: github ? day(status?.lastCheckedAt) : nil,
             retry: status?.state == .retrying ? day(status?.retryAt) : nil,
-            today: status.map { "\($0.runsToday) of \(limits.maxPerDay) runs" },
+            today: status.map { limits.maxPerDay == 0 ? "\($0.runsToday) runs · no daily limit" : "\($0.runsToday) of \(limits.maxPerDay) runs" },
             pending: (status?.pending ?? []).map { event in
                 AutomationPendingRow(id: event.id, summary: event.summary, url: event.url.flatMap(URL.init(string:)),
                                      when: AutomationsModel.stamp(Date(timeIntervalSince1970: event.occurredAt), timeZone: timeZone, locale: locale))
@@ -255,7 +255,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
                 ? AutomationTriggerText.workspace(settings.workspace ?? .worktree) : nil,
             gate: github ? AutomationTriggerText.gate(gate) : nil,
             gateWarning: github ? AutomationTriggerText.gateWarning(gate) : nil,
-            limits: "\(limits.maxConcurrent) at once · \(limits.maxPerDay) a day",
+            limits: "\(limits.maxConcurrent) at once · " + (limits.maxPerDay == 0 ? "no daily limit" : "\(limits.maxPerDay) a day"),
             model: AutomationTriggerText.model(settings))
     }
 }

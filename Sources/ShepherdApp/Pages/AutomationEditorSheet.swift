@@ -376,11 +376,16 @@ struct AutomationEditorSheet: View {
             }
         }
         SheetRow("Limits") {
-            HStack(spacing: SH.Space.l) {
-                SHStepper("Runs at once", value: $form.maxConcurrent, in: AutomationLimits.concurrentRange) { "\($0) at once" }
-                    .fixedSize()
-                SHStepper("Runs a day", value: $form.maxPerDay, in: AutomationLimits.perDayRange) { "\($0) a day" }
-                    .fixedSize()
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                HStack(spacing: SH.Space.l) {
+                    SHStepper("Runs at once", value: $form.maxConcurrent, in: AutomationLimits.concurrentRange) { "\($0) at once" }
+                        .fixedSize()
+                    SHStepper("Runs a day", value: $form.maxPerDay, in: AutomationLimits.perDayRange) { $0 == 0 ? "No limit" : "\($0) a day" }
+                        .fixedSize()
+                }
+                Text("No limit removes the daily cap, not the runs-at-once limit.")
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textSecondary)
             }
         }
         SheetRow("Model") {
