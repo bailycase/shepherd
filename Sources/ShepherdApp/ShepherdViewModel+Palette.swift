@@ -57,6 +57,8 @@ extension ShepherdViewModel {
                                  title: "Open Extensions", icon: "puzzlepiece.extension"))
         items.append(PaletteItem(id: "action.openAutomations", kind: .action("openAutomations"), section: .commands,
                                  title: "Open Automations", icon: "clock.arrow.2.circlepath"))
+        items.append(PaletteItem(id: "action.openForge", kind: .action("openForge"), section: .commands,
+                                 title: "Open Issues & PRs", icon: "arrow.triangle.pull"))
         if designToolEnabled {
             items.append(PaletteItem(id: "action.openDesigns", kind: .action("openDesigns"), section: .commands,
                                      title: "Open Designs", icon: "rectangle.on.rectangle"))
@@ -371,6 +373,7 @@ extension ShepherdViewModel {
             case "maximizeTerminal": toggleTerminalMaximized()
             case "stop": stopVisibleAgent()
             case "openAutomations": openDestination(.automations)
+            case "openForge": openForge()
             case "openDesigns": openDestination(.designs)
             default: runPrefixedPaletteAction(action)
             }

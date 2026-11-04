@@ -23,9 +23,9 @@ final class PreviewWorkspace {
 
     /// Settings ▸ Pi shows `yourPi` (a fixture: never this machine's pi, nor a read of the scratch one).
     init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
-         yourPi: YourPiSurvey = PreviewYourPi.imported) throws {
+         yourPi: YourPiSurvey = PreviewYourPi.imported, forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
         try PreviewEnvironment.install()
-        scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog)
+        scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog, forgeRunner: forgeRunner)
         settings = AppSettings(store: defaults)
         // Never ask a real model to write a PR description while rendering the finalize sheet.
         settings.worktreeGeneratePRDescription = false

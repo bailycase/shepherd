@@ -65,6 +65,8 @@ struct AgentStartFailure: Error, CustomStringConvertible {
 final class ShepherdViewModel {
     var state: ShepherdState
     @ObservationIgnored lazy var missions = MissionController(vm: self)
+    /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
+    @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [server] in await server.forge($0) })
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
     /// The host whose missions the Missions page shows; nil is This Mac.

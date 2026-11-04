@@ -59,12 +59,18 @@ struct FixtureHostData {
     var accepts: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
     /// The missions the host serves (`missions.v1`, its experiment on); nil: the experiment is off.
     var missions: FixtureMissions? = nil
+    /// Answers Issues & PRs' reads (`issuesAndPRs.v1`); nil: the host doesn't offer them. A read it
+    /// answers nil for is refused as unsupported.
+    var forge: (@Sendable (RemoteForgeRequest) -> RemoteForgeResult?)? = nil
+    /// Issues & PRs' page reads go unanswered, so a page stays loading.
+    var forgeHoldsPages = false
 
-    /// Everything this build knows, `designs.v1` only while the host has designs to serve and
-    /// `missions.v1` only while it has missions.
+    /// Everything this build knows, `designs.v1` only while the host has designs to serve,
+    /// `missions.v1` only while it has missions, and `issuesAndPRs.v1` only while it answers them.
     var defaultCapabilities: [String] {
         RemoteProtocol.capabilities.filter {
             (designs != nil || !RemoteProtocol.designCapabilities.contains($0)) && (missions != nil || $0 != RemoteProtocol.missionsCapability)
+                && (forge != nil || $0 != RemoteProtocol.forgeCapability)
         }
     }
 }
@@ -197,7 +203,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + automationFlow + windows + terminal + clientState + duo
-            + designs + designPad + designPadMarkup + designPages + browser + files + missions + ProjectFixtures.screens + hostConfig + freshness
+            + designs + designPad + designPadMarkup + designPages + browser + files + missions + ProjectFixtures.screens + hostConfig + freshness + forge
     }
 
     static func screen(named name: String) -> FixtureScreen? {

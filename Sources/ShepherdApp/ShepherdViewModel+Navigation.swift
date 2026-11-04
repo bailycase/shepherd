@@ -151,6 +151,7 @@ extension ShepherdViewModel {
     /// A destination row: its page (a remote thread on screen leaves it).
     func openSidebarDestination(_ target: SidebarDerivation.Destination.Target) {
         switch target {
+        case .page(.forge): openForge()
         case .page(let page): openDestination(page)
         }
     }

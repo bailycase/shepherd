@@ -56,6 +56,16 @@ struct PadSidebar: View {
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
                     navigator.open(.home(.automations))
                 }
+                // Issues & PRs, while a host offers it, with its pins (iPadIPReview).
+                if ForgeEntry.available(hosts) {
+                    let forge = ForgeStore.of(hosts)
+                    SidebarItem("Issues & PRs", leading: .symbol(ForgeGlyph.pullRequest), selected: pushed?.isForge == true,
+                                trailing: ForgeEntry.trailing(forge)) {
+                        navigator.open(.forge(.list))
+                    }
+                    .task(id: forge.sessionsKey) { await forge.loadRepos() }
+                    ForgePinnedSection()
+                }
                 if !groups.needsYou.isEmpty {
                     SidebarHeader(title: "Needs you", attention: true, count: groups.needsYou.count) {
                         navigator.open(.home(.needsYou))

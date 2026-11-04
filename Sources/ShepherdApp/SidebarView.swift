@@ -21,9 +21,14 @@ struct SidebarView: View {
         let keys = vm.keybindings
         SHSidebar(topBar: SHSidebarTopBar(searchShortcut: keys.display(.commandPalette), hideShortcut: keys.display(.toggleSidebar),
                                           search: { vm.showCommandPalette = true }, hide: { vm.toggleSidebar() })) {
-            VStack(spacing: 0) {
-                SidebarDestinations(vm: vm)
-                SidebarListsView(vm: vm)
+            // Issues & PRs lists its pull requests and issues here, in place of the destinations.
+            if vm.shownDestination == .forge {
+                ForgeSidebarPanel(vm: vm)
+            } else {
+                VStack(spacing: 0) {
+                    SidebarDestinations(vm: vm)
+                    SidebarListsView(vm: vm)
+                }
             }
         } footer: {
             let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
@@ -43,7 +48,8 @@ private struct SidebarDestinations: View {
                                                   designs: vm.designToolEnabled, missions: vm.settings.missionsEnabled,
                                                   automations: SidebarDerivation.automationsTrailing(
                                                     runs: vm.localAutomationRuns, statuses: vm.automationTriggerStatuses,
-                                                    allPaused: vm.automationTriggersAllPaused))
+                                                    allPaused: vm.automationTriggersAllPaused),
+                                                  forge: vm.forgeStore.sidebar?.needsYou ?? 0)
         VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
                 SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
@@ -57,6 +63,8 @@ private struct SidebarDestinations: View {
         }
         .padding(.vertical, SHSidebarMetrics.destinationsPadding)
         .padding(.horizontal, AppLayout.sidebarPadding)
+        // Issues & PRs' Needs you count and Pinned's pins, read once the sidebar shows.
+        .task { if vm.forgeStore.sidebar == nil { await vm.forgeStore.loadSidebar() } }
     }
 }
 
@@ -140,6 +148,8 @@ private struct SidebarItemView: View, Equatable {
                 LogicalProjectSidebarRow(vm: vm, project: project)
             case .mission(let mission):
                 SidebarMissionRow(vm: vm, mission: mission)
+            case .forgePin(let pin):
+                SidebarForgePinRow(vm: vm, pin: pin)
             case .automation(let automation, let expanded):
                 SidebarAutomationRow(vm: vm, automation: automation, expanded: expanded)
             case .row(let row):

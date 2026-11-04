@@ -292,18 +292,18 @@ struct SidebarNeedsYouTests {
 }
 
 /// The destinations never move: New thread, Missions, Designs (while the Design tool is on),
-/// Automations. There is no More: the command palette opens Hosts, Design systems and Extensions.
+/// Automations, Issues & PRs. There is no More: the command palette opens Hosts, Design systems and Extensions.
 @Suite("Sidebar destinations")
 struct SidebarDestinationTests {
     @Test func theBoardsDrawNewThreadAndAutomationsAndDesignsWhileTheToolIsOn() {
         let off = SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N", missions: true)
-        #expect(off.map(\.title) == ["New thread", "Missions", "Automations"])
+        #expect(off.map(\.title) == ["New thread", "Missions", "Automations", "Issues & PRs"])
         #expect(off[0].trailing == .keycaps("⌘N"))
         #expect(off[0].icon == .newThread)
         #expect(off.allSatisfy { !$0.selected })
         let on = SidebarDerivation.destinations(shown: .designs, newThreadChord: "⇧⌘N", designs: true, missions: true)
-        #expect(on.map(\.title) == ["New thread", "Missions", "Designs", "Automations"])
-        #expect(on.map(\.selected) == [false, false, true, false])
+        #expect(on.map(\.title) == ["New thread", "Missions", "Designs", "Automations", "Issues & PRs"])
+        #expect(on.map(\.selected) == [false, false, true, false, false])
         #expect(on[0].trailing == .keycaps("⇧⌘N"))
     }
 

@@ -337,6 +337,22 @@ final class FixtureHost: @unchecked Sendable {
             // Projects are not drawn by any fixture screen: a request is refused rather than served.
             mutation("projects")
             return [.error(id: id, code: "fixture", message: refused)]
+        case .forge(let id, let request):
+            // Issues & PRs' reads come from the screen's fixture (`IssuesPRsFixtures`); a change is
+            // refused and counted, and a host without the fixture answers as an older one.
+            if request.isChange {
+                mutation("forge." + String(describing: request).prefix { $0 != "(" })
+                return [.error(id: id, code: "fixture", message: refused)]
+            }
+            note("forge")
+            if data.forgeHoldsPages {
+                switch request {
+                case .pullRequest, .issue: return []
+                default: break
+                }
+            }
+            if let result = data.forge?(request) { return [.forgeResult(id: id, result: result)] }
+            return [.error(id: id, code: ForgeError.Code.unsupported.rawValue, message: refused)]
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
             return []

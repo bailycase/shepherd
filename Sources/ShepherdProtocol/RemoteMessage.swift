@@ -72,6 +72,9 @@ public enum RemoteProtocol {
     /// Automation triggers: schedules and GitHub events, settings on the draft, status, pause,
     /// pending events and unread runs (`RemoteAutomationRequest.status` and after).
     public static let automationTriggersCapability = "automationTriggers.v1"
+    /// The host serves `RemoteRequest.forge`: GitHub issues and pull requests through its `gh`
+    /// (lists, details, diffs, comments, reviews, merges, pins). Older hosts have no Issues & PRs.
+    public static let forgeCapability = "issuesAndPRs.v1"
     /// The host takes every level pi has (`ThinkingLevel`: minimal, xhigh, max too) in
     /// `createAgent`. An older host knows only `ThinkingLevel.legacy`, and refuses a request
     /// carrying another. A client lists it too: it decodes them in state and creation options.
@@ -180,7 +183,7 @@ public enum RemoteProtocol {
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
     public static let filesCapability = "files.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostConfigCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostConfigCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -600,6 +603,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Manage one automation (`RemoteProtocol.automationsCapability`). A `create` names the new
     /// automation's id.
     case automation(id: Int, automationID: AutomationID, request: RemoteAutomationRequest)
+    /// Read or change GitHub issues and pull requests through the host's gh
+    /// (`RemoteProtocol.forgeCapability`). Answered `forgeResult` or an error whose code is a
+    /// `ForgeError.Code`.
+    case forge(id: Int, request: RemoteForgeRequest)
     /// Read or save the host's root instructions (`RemoteProtocol.instructionsCapability`).
     case instructions(id: Int, request: RemoteInstructionsRequest)
     /// Read or act on the host's suggested instructions (`RemoteProtocol.suggestionsCapability`).
@@ -654,7 +661,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
-        case automation
+        case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case hostConfig
@@ -692,6 +699,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .automation(id: try c.decode(Int.self, forKey: .id),
                                automationID: try c.decode(AutomationID.self, forKey: .automationID),
                                request: try c.decode(RemoteAutomationRequest.self, forKey: .request))
+        case .forge:
+            self = .forge(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteForgeRequest.self, forKey: .request))
         case .instructions:
             self = .instructions(id: try c.decode(Int.self, forKey: .id),
                                  request: try c.decode(RemoteInstructionsRequest.self, forKey: .request))
@@ -879,6 +888,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(automationID, forKey: .automationID)
             try c.encode(request, forKey: .request)
+        case .forge(let id, let request):
+            try c.encode(Kind.forge, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .instructions(let id, let request):
             try c.encode(Kind.instructions, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1064,6 +1077,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case agentCreated(id: Int, agentID: AgentID)
     /// An automation request's answer (`RemoteRequest.automation`).
     case automationResult(id: Int, result: RemoteAutomationResult)
+    /// A forge request's answer (`RemoteRequest.forge`).
+    case forgeResult(id: Int, result: RemoteForgeResult)
     /// The host's root instructions after an instructions request (`RemoteRequest.instructions`).
     case instructions(id: Int, snapshot: InstructionsSnapshot)
     /// The host's suggested instructions after a suggestions request (`RemoteRequest.suggestions`).
@@ -1126,7 +1141,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadChanged, fleetDigest, projectExecution, projectExecutionChanged
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
-        case automationResult
+        case automationResult, forgeResult
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case hostConfig
         case design, designChanged, designSystemsChanged, capabilitiesChanged
@@ -1183,6 +1198,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .automationResult:
             self = .automationResult(id: try c.decode(Int.self, forKey: .id),
                                      result: try c.decode(RemoteAutomationResult.self, forKey: .result))
+        case .forgeResult:
+            self = .forgeResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteForgeResult.self, forKey: .result))
         case .instructions:
             self = .instructions(id: try c.decode(Int.self, forKey: .id),
                                  snapshot: try c.decode(InstructionsSnapshot.self, forKey: .snapshot))
@@ -1320,6 +1337,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(result, forKey: .result)
         case .automationResult(let id, let result):
             try c.encode(Kind.automationResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .forgeResult(let id, let result):
+            try c.encode(Kind.forgeResult, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
         case .instructions(let id, let snapshot):
