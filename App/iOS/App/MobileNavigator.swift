@@ -63,6 +63,11 @@ final class MobileNavigator {
     /// Portrait: the sidebar slides over the thread, so choosing a row hides it again; with no
     /// thread chosen it stays out.
     var padSidebarOverlays = false
+    /// iPhone Duo half open (`PadShell`): Issues & PRs then splits the window at the fold, its
+    /// list on one side and the item on the other, with the sidebar out (DuoBookPR).
+    var padFolded = false
+    /// Issues & PRs shows a pull request beside its diff (iPadPRChanges): the sidebar steps aside.
+    var padForgeDiff = false
     /// The side pane beside the thread on regular width, and the laptop arrangement.
     let sidePane = SidePaneState()
     /// iPhone Duo's hinge: true folded shut (the outer display), false open or half open (the
@@ -266,7 +271,7 @@ extension MobileNavigator.Tab {
         case .designs(.systems), .designs(.system): nil
         case .designs, .padDesign: .designs
         case .projects: .projects
-        case .thread, .subagents, .review, .terminal, .sidePane, .browser, .search, .newThread, .missions: nil
+        case .thread, .subagents, .review, .terminal, .sidePane, .browser, .search, .newThread, .missions, .forge: nil
         }
     }
 
