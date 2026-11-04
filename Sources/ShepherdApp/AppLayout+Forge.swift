@@ -8,6 +8,7 @@ extension AppLayout {
     static let forgeContentWidth: CGFloat = 680
     static let forgeRailWidth: CGFloat = 260
     static let forgeColumnGap: CGFloat = SH.Space.xxxl
+    static let forgeTwoColumnMinWidth = forgeContentWidth + forgeRailWidth + forgeColumnGap + 2 * SH.Space.xxl
     /// Above the state tag, and under the last row (clear of the floating field).
     static let forgeTopPadding: CGFloat = SH.Space.xxl + SH.Space.s
     static let forgeBottomPadding: CGFloat = 96
@@ -24,8 +25,7 @@ extension AppLayout {
     static let forgeRowVertical: CGFloat = SH.Space.s + SH.Space.xxs
     /// A section caption's room above its rows.
     static let forgeSectionTop: CGFloat = SH.Space.l + SH.Space.xs
-    /// The destination's title row and the Issues | Pull requests switch.
-    static let forgeSidebarHeaderHeight: CGFloat = 40
+    /// Each Issues | Pull requests segment, horizontal when both fit, otherwise stacked.
     static let forgeSwitchHeight: CGFloat = SH.Height.controlL
     /// A rail section's rows.
     static let forgeRailRow: CGFloat = 30

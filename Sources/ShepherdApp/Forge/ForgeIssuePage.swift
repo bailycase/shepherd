@@ -14,13 +14,14 @@ struct ForgeIssuePage: View {
     var body: some View {
         let issue = store.issue
         VStack(spacing: 0) {
-            ForgeHeaderBar(chrome: chrome) {
+            ForgeHeaderBar(chrome: chrome, back: vm.leaveForge) {
                 if let ref = store.selection {
                     Text("\(ref.repoName) #\(ref.number)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                 }
             } trailing: {
                 if let issue { actions(issue) }
             }
+            ForgeBanners(vm: vm, store: store)
             if let issue {
                 ForgeIssueContent(vm: vm, store: store, issue: issue)
                     .overlay(alignment: .bottom) {
@@ -37,7 +38,7 @@ struct ForgeIssuePage: View {
     }
 
     private func actions(_ issue: IssueDetail) -> some View {
-        HStack(spacing: SH.Space.m) {
+        SHFlowLayout(spacing: SH.Space.m) {
             ForgeItemButtons(store: store, ref: issue.ref)
             let open = issue.summary.state == .open
             Button(open ? "Close issue" : "Reopen issue") { Task { await store.perform(.setOpen(ref: issue.ref, open: !open)) } }
@@ -65,7 +66,7 @@ private struct ForgeIssueContent: View {
         let badge = ForgePresentation.badge(summary.state)
         let now = store.now()
         ForgeColumns {
-            HStack(spacing: SH.Space.s) {
+            SHFlowLayout(spacing: SH.Space.s) {
                 ForgeStateTag(label: badge.label, tone: badge.tone)
                 // A label's GitHub color is the repository's data; tags stay in the theme's.
                 ForEach(summary.labels, id: \.name) { label in SHTag(label.name) }

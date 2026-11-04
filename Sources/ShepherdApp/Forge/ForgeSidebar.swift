@@ -43,43 +43,51 @@ private struct ForgeSidebarHeader: View {
     let store: ForgeStore
 
     var body: some View {
-        HStack(spacing: SH.Space.xs) {
-            Button { vm.leaveForge() } label: { Image(systemName: "chevron.left") }
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Button { vm.leaveForge() } label: { Label("Back to threads", systemImage: "chevron.left") }
+                .buttonStyle(.sh(.ghost, size: .s))
+                .help("Return to your thread or New thread")
+                .accessibilityLabel("Back to threads")
+            HStack(spacing: SH.Space.xs) {
+                Text("Issues & PRs")
+                    .font(.sh(.title))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Menu {
+                    Button("Refresh") { Task { await store.refresh() } }
+                    if let repo = store.repo, let url = URL(string: "https://github.com/\(repo)") {
+                        Button("Open \(store.repoName) on GitHub") { NSWorkspace.shared.open(url) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.button)
                 .buttonStyle(.shIcon(size: SH.Height.controlS))
-                .help("Back")
-                .accessibilityLabel("Back")
-            Text("Issues & PRs")
-                .font(.sh(.title))
-                .foregroundStyle(Color.sh.textPrimary)
-                .lineLimit(1)
+                .menuIndicator(.hidden)
                 .fixedSize()
-                .layoutPriority(1)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
+                .help("More")
+                .accessibilityLabel("More")
+            }
             if !store.repos.isEmpty {
-                SHPopupMenu(store.repoName, mono: true, minWidth: 0) {
+                // SHPopupMenu sizes to its value; this sidebar needs a flexible label instead.
+                Menu {
                     ForEach(store.repos) { repo in
                         Button(repo.nameWithOwner) { Task { await store.selectRepo(repo.nameWithOwner) } }
                     }
+                } label: {
+                    SHPopupLabel(store.repoName, mono: true)
                 }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
                 .accessibilityLabel("Repository")
+                .accessibilityValue(store.repo ?? store.repoName)
+                .help(store.repo ?? store.repoName)
             }
-            Menu {
-                Button("Refresh") { Task { await store.refresh() } }
-                if let repo = store.repo, let url = URL(string: "https://github.com/\(repo)") {
-                    Button("Open \(store.repoName) on GitHub") { NSWorkspace.shared.open(url) }
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-            }
-            .menuStyle(.button)
-            .buttonStyle(.shIcon(size: SH.Height.controlS))
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More")
-            .accessibilityLabel("More")
         }
-        .frame(height: AppLayout.forgeSidebarHeaderHeight)
     }
 }
 
@@ -88,14 +96,19 @@ private struct ForgeKindSwitch: View {
     @Bindable var store: ForgeStore
 
     var body: some View {
-        HStack(spacing: SH.Space.xxs) {
-            segment(.issue, "Issues")
-            segment(.pullRequest, "Pull requests")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: SH.Space.xxs) {
+                segment(.issue, "Issues")
+                segment(.pullRequest, "Pull requests")
+            }
+            VStack(spacing: SH.Space.xxs) {
+                segment(.issue, "Issues")
+                segment(.pullRequest, "Pull requests")
+            }
         }
         .padding(SH.Space.xxs)
         .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
-        .frame(height: AppLayout.forgeSwitchHeight)
     }
 
     private func segment(_ kind: ForgeKind, _ title: String) -> some View {
@@ -107,7 +120,9 @@ private struct ForgeKindSwitch: View {
                     .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
                 if let count { Text("\(count)").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, SH.Space.s)
+            .frame(maxWidth: .infinity, minHeight: AppLayout.forgeSwitchHeight)
             .background(selected ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .contentShape(Rectangle())
             .shFocusRing(radius: SH.Radius.xs)
@@ -122,7 +137,9 @@ private struct ForgeSearchField: View {
     @Bindable var store: ForgeStore
 
     var body: some View {
-        SHSearchField("Search or paste a link", text: $store.query)
+        SHSearchField("Search", text: $store.query)
+            .accessibilityLabel("Search or paste a link")
+            .help("Search issues and pull requests, or paste a GitHub link")
             .onSubmit { Task { await store.submitSearch() } }
     }
 }
