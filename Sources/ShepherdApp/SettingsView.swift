@@ -190,6 +190,12 @@ struct SettingsView: View {
                 SettingsHostPicker(vm: vm)
                 localPage
             }
+        } else if section == .hooks, !vm.remoteHosts.connections.isEmpty {
+            // One page for every host: this Mac's catalog, or a remote host's over hooks.v1.
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                SettingsHostPicker(vm: vm)
+                HooksSettings(model: vm.hooks(for: vm.remoteSettingsHost?.id))
+            }
         } else if section.isHostLevel, !vm.remoteHosts.connections.isEmpty {
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 SettingsHostPicker(vm: vm)
@@ -221,6 +227,7 @@ struct SettingsView: View {
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
+        case .hooks: HooksSettings(model: vm.hooks)
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
@@ -302,7 +309,7 @@ private struct SettingsSearchHit: View {
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     // The nav's order, as every Settings board draws it.
-    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, mcp, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, hooks, mcp, remote, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -318,6 +325,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSignIn: return "Sign-in"
         case .extensions: return "Extensions"
         case .piSlashCommands: return "Slash commands"
+        case .hooks: return "Hooks"
         case .instructions: return "Instructions"
         case .skills: return "Skills"
         case .mcp: return "MCP servers"
@@ -346,6 +354,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "Custom providers"]
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
+        case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
@@ -400,6 +409,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                 "Prompt templates": ["prompts", "templates", "argument-hint"],
                                 "Skills": ["skill:", "SKILL.md"],
                                 "Disabled commands": ["off", "hidden", "disabled", "turned off", "switched off"]]
+        case .hooks: ["Add hook": ["PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "matcher", "command", "hooks.json"],
+                      "Read hooks from Claude Code": ["claude", "settings.json", ".claude"], "Read hooks from Codex": ["codex", "config.toml", ".codex"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
@@ -444,6 +455,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: .pi
         case .extensions: .extensions
         case .piSlashCommands: .slashCommands
+        case .hooks: .hooks
         case .instructions: .instructions
         case .skills: .skills
         case .mcp: .mcp
@@ -466,6 +478,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSignIn: return "lock"
         case .extensions: return "puzzlepiece.extension"
         case .piSlashCommands: return "chevron.left.forwardslash.chevron.right"
+        case .hooks: return SHGlyph.hook.symbolName
         case .instructions: return SHGlyph.document.symbolName
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"

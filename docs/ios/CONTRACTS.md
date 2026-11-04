@@ -102,6 +102,7 @@ Routes today:
 | `.settings(.mcp / .subagents / .subagent(String) / .signIn / .spaces / .space(String))` | a host's inventory (`hostInventory.v1`; Spaces over `projects.v2`): MCP servers, subagent profiles and one profile's Markdown (`subagent("+new")` a new one), provider sign-ins, spaces and one space's files and approval; editable on a host with `hostConfig.v1` (`ClientHostConfig`) |
 | `.settings(.instructions / .instructionsFile(InstructionFile))` | the root instructions on every host; one file in the editor (iPhone) |
 | `.settings(.skills / .skill(String) / .skillResult(DirectorySkill) / .skillsRepo(String?))` | every host's agent skills (and a search of skills.sh); one skill; a skills.sh result's preview with Install; Add from repo (looking up the repository given) |
+| `.settings(.hooks / .hookSources)` | one host's hooks by event, each with its switch (`hooks.v1`, a picker of the hosts that serve it; Add and Edit open the form as a sheet, `SettingsStore.hookEditor`); the files it reads and the Claude Code and Codex readers (iPhone; the iPad's page has Hooks \| Sources) |
 | `.settings(.experiments / .suggestion(UUID))` | Experiments; one suggested line to add or dismiss |
 | `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
 | `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |

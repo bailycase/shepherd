@@ -85,7 +85,9 @@ struct TokenTests {
         #expect(SHGlyph.Settings.advanced.systemSymbolName == "gearshape")
         #expect(SHGlyph.Settings.advanced.resourceURL == nil)
         #expect(NSImage(systemSymbolName: try #require(SHGlyph.Settings.advanced.systemSymbolName), accessibilityDescription: nil) != nil)
-        #expect(SHGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.advanced])
+        // Hooks has no board artwork: it draws the hook glyph's symbol.
+        #expect(SHGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.hooks, .advanced])
+        #expect(NSImage(systemSymbolName: SHGlyph.hook.symbolName, accessibilityDescription: nil) != nil)
     }
 
     @Test func theBundledFacesAreRegistered() {

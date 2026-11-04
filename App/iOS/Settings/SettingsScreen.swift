@@ -43,6 +43,9 @@ private struct SettingsList: View {
                         row(.defaults, trailing: value(store.defaultsValue(chosenHost: navigator.settingsSelection.chosenHost)))
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
+                        if store.showsHooks {
+                            row(.hooks, trailing: value(store.hooksValue(chosenHost: navigator.settingsSelection.hooksHost)))
+                        }
                         row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
                         row(.mcp, trailing: SHListRow.Trailing.none)
                         row(.subagents, trailing: SHListRow.Trailing.none)
@@ -107,7 +110,7 @@ private struct SettingsSplit: View {
         PadListDetail(listWidth: MobileLayout.settingsListWidth) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
-                    ForEach(SettingsPage.allCases, id: \.self) { page in
+                    ForEach(SettingsPage.allCases.filter { $0 != .hooks || store.showsHooks }, id: \.self) { page in
                         SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
                     }
                 }
@@ -176,6 +179,7 @@ struct SettingsPageView: View {
         case .signIn: ProvidersScreen()
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
+        case .hooks: HooksScreen()
         case .hosts: HostsScreen()
         case .spaces: SpacesScreen()
         case .notifications: NotificationsScreen()

@@ -201,6 +201,13 @@ final class FixtureHost: @unchecked Sendable {
         case .skills(let id, .fetch) where data.skills != nil:
             note("skills.fetch")
             return [.skills(id: id, result: .skills(data.skills!))]
+        case .hooks(let id, .fetch) where data.hooks != nil:
+            note("hooks.fetch")
+            return [.hooks(id: id, result: .hooks(data.hooks!))]
+        case .hooks(let id, .test):
+            // The fixture runs nothing: the board's answer to the edit form's sample event.
+            note("hooks.test")
+            return [.hooks(id: id, result: .tested(FixtureData.hookTest))]
         case .skills(let id, .lookUp) where data.repoSkills != nil:
             note("skills.lookUp")
             return [.skills(id: id, result: .repo(data.repoSkills!))]
@@ -224,7 +231,7 @@ final class FixtureHost: @unchecked Sendable {
             case .failure(let error): return [.error(id: id, code: error.code, message: error.description)]
             }
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
-             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
+             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .hooks(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
         default:
@@ -284,6 +291,14 @@ final class FixtureHost: @unchecked Sendable {
             case .fetch, .lookUp: return nil
             default:
                 mutation("skills." + String(describing: command).prefix { $0 != "(" })
+                return [.error(id: id, code: "fixture", message: refused)]
+            }
+        case .hooks(let id, let command):
+            // Reading the host's hooks, or a test the fixture answers itself, changes nothing.
+            switch command {
+            case .fetch, .test: return nil
+            default:
+                mutation("hooks." + String(describing: command).prefix { $0 != "(" })
                 return [.error(id: id, code: "fixture", message: refused)]
             }
         case .hostInventory:

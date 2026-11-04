@@ -945,6 +945,24 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Reads or changes the host's hooks (Settings › Hooks), and answers with its catalog as it is
+    /// afterwards, or runs one on the host against a sample event (waiting out its time limit). A
+    /// host without `hooksCapability` has none: this throws `update_required` before sending anything.
+    @discardableResult
+    public func hooks(_ request: RemoteHooksRequest = .fetch) async throws -> RemoteHooksResult {
+        guard capabilities.contains(RemoteProtocol.hooksCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage its hooks from here.")
+        }
+        var timeout = RemoteHostClient.requestTimeout
+        if case .test(_, let event, _, let limit, _) = request { timeout = max(timeout, min(limit ?? event.defaultTimeout, 600) + 30) }
+        let reply = try await self.request(timeout: timeout) { .hooks(id: $0, request: request) }
+        switch reply {
+        case .hooks(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected hooks reply")
+        }
+    }
+
     public func projectRuntime(_ request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
         guard !request.requiresResults || capabilities.contains(RemoteProtocol.projectResultCapability) else {
             throw RemoteHostClientError.rejected(code: "unsupported_result", message: "This owner cannot serve durable Project history/results.")
@@ -1357,7 +1375,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .forgeResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
+             .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .hooks(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
              .browserClaimed(let id, _), .mission(let id, _),
              .hostConfig(let id, _):
             resumePending(id: id, with: reply)

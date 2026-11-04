@@ -62,6 +62,8 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         id = dialog.id
         (question, details) = Self.split(dialog.title)
         message = dialog.message.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        // A hook's consent prompt, where no card draws it: a human title and everything trusted, unfolded.
+        if let hook = NativeHookPrompt(dialog)?.readable { question = hook.question; message = hook.message; details = nil }
         placeholder = dialog.placeholder ?? "Type your answer…"
         prefill = dialog.prefill ?? ""
         mayTimeOut = (dialog.timeout ?? 0) > 0
@@ -71,7 +73,8 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         switch dialog.kind {
         case .select:
             reply = .select
-            options = NativeQuestionOption.options(dialog)
+            // A proposal's "Added in Settings" is the Mac's answer after Edit…, never a choice.
+            options = NativeQuestionOption.options((dialog.options ?? []).filter { $0 != NativeHookProposal.addedInSettings })
             kind = Self.kind(options)
         case .confirm:
             reply = .confirm

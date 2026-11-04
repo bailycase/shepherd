@@ -126,6 +126,49 @@ struct ProjectChatAnswerTests {
         try Data().write(to: dir.appendingPathComponent("reply-done"))
     }
 
+    /// A hook's consent prompt in a worker (here a PreToolUse ask) is the person's alone: neither the
+    /// Project's answer path nor a coordinator relaying a human reply may answer it; the thread may.
+    @Test func aProjectNeverAnswersAHookPrompt() async throws {
+        let r = try Rig(); defer { r.stop() }
+        let p = try await r.create(), space = try #require(p.linkedSpaces.first?.spaceID)
+        let dir = r.host.dir.appendingPathComponent("logical-projects/\(p.id)")
+        try JSONSerialization.data(withJSONObject: ["prompts": ["hello": [], "Allow it please": [["wait": "reply-done"]]]])
+            .write(to: dir.appendingPathComponent("project-script.json"))
+        let title = "\(NativeHookAsk.title)\n\nbash rm -rf build\n\nIt deletes files.\n\n/Users/sam/.shepherd/hooks.json"
+        try JSONSerialization.data(withJSONObject: ["prompts": ["Choose": [["ask": ["title": title, "options": [NativeHookAsk.deny, NativeHookAsk.allow]]]]]])
+            .write(to: r.host.dir.appendingPathComponent("project-script.json"))
+        let sent = try await r.perform(p.id, .message(operationID: UUID(), text: "hello"))
+        let coordinator = try #require(sent.coordinatorAgentID)
+        _ = try await r.perform(p.id, .assign(operationID: UUID(), spaceID: space, title: "Worker", prompt: "Choose"))
+        try await eventually("hook prompt published") {
+            r.host.server.state.projects.first?.messages.contains { $0.source?.kind == .question && $0.phase == .delivered } == true
+        }
+        let task = try #require(r.host.server.state.projects.first?.tasks.first)
+        let event = try #require(r.host.server.state.projects.first?.messages.first { $0.source?.kind == .question })
+        let human = UUID()
+        _ = try await r.perform(p.id, .message(operationID: human, text: "Allow it please"))
+        try await eventually("human reply consumed") { r.host.server.state.projects.first?.messages.first { $0.id == human }?.phase == .delivered }
+        let worker = try #require(r.agents.current[task.workerAgentID])
+        let snapshot = try await worker.snapshot("hook prompt") { !$0.dialogs.isEmpty }
+        let dialog = try #require(event.source?.dialogID)
+        do {
+            _ = try await r.host.server.projectTool(agentID: coordinator, projectID: p.id, expectedRevision: r.host.server.state.projects.first!.revision,
+                request: .answer(operationID: UUID(), taskID: task.id, questionEventID: event.id, humanReplyID: human, answer: .select(value: NativeHookAsk.allow)))
+            Issue.record("A coordinator relayed an answer to a hook prompt")
+        } catch let error as LogicalProjectsError { #expect(error.code == "hook_prompt") }
+        let direct = NativeThreadRequest.answer(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+                                               operationID: UUID(), dialogID: dialog, answer: .select(value: NativeHookAsk.allow))
+        do {
+            _ = try await r.host.server.answerProjectQuestion(p.id, expectedRevision: r.host.server.state.projects.first!.revision, taskID: task.id, request: direct)
+            Issue.record("The Project answered a hook prompt")
+        } catch let error as LogicalProjectsError { #expect(error.code == "hook_prompt") }
+        #expect(worker.stdin("extension_ui_response").isEmpty, "no Project answer reached the worker")
+        // The person, in the worker's own thread, still can.
+        #expect(try await r.host.server.nativeThread(agentID: task.workerAgentID, request: direct).failureCode == nil)
+        _ = try await worker.waitForStdin("extension_ui_response")
+        try Data().write(to: dir.appendingPathComponent("reply-done"))
+    }
+
     @Test(arguments: [false, true])
     func aDefinitelyUnsentAnswerDoesNotBlockAFreshToolCallOrLaterHumanReply(laterHuman: Bool) async throws {
         let r = try Rig(); defer { r.stop() }

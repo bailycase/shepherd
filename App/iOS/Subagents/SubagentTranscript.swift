@@ -254,6 +254,9 @@ private struct SubagentTurnItem: View {
             EmptyView()
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .hook(_, let row):
+            // The phone and the iPad draw a hook's row as its line (the Mac draws HookEventRow).
+            Text(row.spoken).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
         case .images(_, let images):
             // The phone and the iPad do not draw a thread's images yet: how many, as the note it replaced said.
             Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.sh(.caption))

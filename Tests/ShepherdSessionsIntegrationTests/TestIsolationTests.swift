@@ -130,6 +130,16 @@ struct TestIsolationTests {
         #expect(result.status == 127)
     }
 
+    /// The app's hooks catalog reads a scratch home's `.shepherd`, `.claude` and `.codex`, never the
+    /// person's; a build that doesn't honour the override reads pi's user home.
+    @Test func theAppsHooksHomeIsScratch() {
+        let home = HookCatalog.home(fallback: NSHomeDirectory())
+        #expect(home == TestProcess.hooksHome.path && home != NSHomeDirectory())
+        #expect(FileManager.default.fileExists(atPath: home))
+        #expect(HookCatalog.home(fallback: "/Users/x", honoursOverride: false) == "/Users/x")
+        #expect(HookCatalog.home(fallback: "/Users/x", environment: [:]) == "/Users/x")
+    }
+
     /// A login shell carries the decoys, as a user's startup files might, and none of them points
     /// at the scratch pi the app reads.
     @Test func loginShellsCarryTheDecoys() throws {

@@ -268,10 +268,12 @@ keep the version for real breaks.
   skills every host keeps in ~/.agents/skills (`skills.v1`), the same on every host: each on or
   off, Update for a newer commit, a skill's detail (how the agent uses it, its version, its hosts,
   its files, Remove with Undo), a search of skills.sh with Install on every host, and Add from repo.
-  A host that is offline takes each change when it's back. Experiments: Suggested instructions
+  A host that is offline takes each change when it's back. Hooks: one host's hooks (`hooks.v1`;
+  hidden until a host serves it) by event with their switches, Add and Edit (Form or JSON, a test
+  run on the host), and Sources (the readers and each file's state). Experiments: Suggested instructions
   across every host (`suggestions.v1`), the lines agents drafted to add, edit first or dismiss. On
   iPad the list sits beside the page. The rules live in ShepherdRemote (`ClientHostSettings`,
-  `ClientInstructions`, `ClientSkills`, `ClientSuggestions`), held by `SettingsStore`.
+  `ClientInstructions`, `ClientSkills`, `ClientSuggestions`, `ClientHooks`), held by `SettingsStore`.
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
   for a model that takes a level: Off, Minimal, Low, Medium and High, with Extra high and Max where
   the host's catalog says the model has them, and Off to High on a host without

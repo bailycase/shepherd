@@ -51,6 +51,8 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         case images(id: String, images: [NativeImageRef])
         /// Goal set and completion checks divide stretches of automatic work.
         case goalRecord(id: String, text: String)
+        /// What a hook did, where it happened (`shepherd.hook` messages, HookThreadScene).
+        case hook(id: String, row: NativeHookRow)
         /// A failed request to the model, pi's automatic retries of it merged in. `final` when it
         /// ended the turn (it offers Retry); `folded` when it shows as one line: pi retried it
         /// and the turn went on, or the next turn failed the same way (the store folds those).
@@ -67,7 +69,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .hook(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
@@ -135,6 +137,7 @@ public func nativeTurnPresentation(
         case note(String)
         case images([NativeImageRef])
         case goalRecord(String)
+        case hook(NativeHookRow)
         /// Consecutive failed requests: pi's automatic retries of one.
         case error([NativeThreadMessage])
         case steer(String, Double?, Int)
@@ -163,6 +166,10 @@ public func nativeTurnPresentation(
         if message.role == "user" {
             let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             raw.append(.steer(text, message.timestamp, message.blocks.count { $0.kind == .unsupportedImage }))
+            continue
+        }
+        if message.role == "custom", message.customType == "shepherd.hook" {
+            raw.append(.hook(message.hook.map(NativeHookRow.init) ?? NativeHookRow(text: message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"))))
             continue
         }
         if message.role == "custom", ["shepherd.goal.set", "shepherd.goal.check"].contains(message.customType ?? "") {
@@ -316,6 +323,9 @@ public func nativeTurnPresentation(
         case .goalRecord(let text):
             flushStretch()
             items.append(.goalRecord(id: nextID("goal"), text: text))
+        case .hook(let row):
+            flushStretch()
+            items.append(.hook(id: nextID("hook"), row: row))
         case .note(let text):
             flushStretch()
             items.append(.note(id: nextID("note"), text: text))

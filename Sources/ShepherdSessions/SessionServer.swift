@@ -560,6 +560,11 @@ public final class SessionServer: @unchecked Sendable {
     /// A remote client changed this host's skills: the GUI's Skills page follows. Delivered on
     /// the main actor.
     public var onSkillsChanged: ((SkillsSnapshot) -> Void)?
+    /// The hooks on this host (Settings › Hooks): remote clients read and change them through the
+    /// server (`hooks.v1`), the Mac's page through its own catalog. Tests point it at a scratch home.
+    public var hooks: HookCatalog
+    /// A remote client changed this host's hooks: the GUI's Hooks page reloads. Delivered on the main actor.
+    public var onHooksChanged: (() -> Void)?
     /// The files of every design (the Design tool), in the support directory's `designs/`. Reads
     /// go to it directly; writes go through the server's design mutations, which commit and
     /// broadcast what they changed.
@@ -624,6 +629,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Skills requests fetch from git, so they run here, one at a time, never on the server's
     /// queue.
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
+    /// Hooks requests read and write files, one at a time, never on the server's queue; a test runs
+    /// concurrently (it may take its whole time limit).
+    private let hooksQueue = DispatchQueue(label: "shepherd.hooks", qos: .userInitiated)
 
     let queue = DispatchQueue(label: "shepherd.sessions")
     lazy var pushNotifications = PushNotifications(
@@ -1055,6 +1063,7 @@ public final class SessionServer: @unchecked Sendable {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL, readOnly: true)
         self.pi = pi
+        self.hooks = HookCatalog(home: HookCatalog.home(fallback: pi.userHome), support: pi.home.deletingLastPathComponent())
         self.projects = ProjectSettingsStore(historyURL: stateURL.deletingLastPathComponent().appendingPathComponent("projects.json"),
                                              home: URL(fileURLWithPath: pi.userHome, isDirectory: true), sessions: pi.sessionsRoot,
                                              systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
@@ -2570,6 +2579,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSuggestions(id: id, request: request, client: client)
         case .skills(let id, let request):
             remoteSkills(id: id, request: request, client: client)
+        case .hooks(let id, let request):
+            remoteHooks(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .mission(let id, let request):
@@ -3478,6 +3489,39 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// A remote client's Settings › Hooks request, on this host's files: the catalog reads the
+    /// spaces the app keeps (shown ones), as the Mac's page does.
+    private func remoteHooks(id: Int, request: RemoteHooksRequest, client: ExtensionConnection) {
+        let catalog = hooks
+        let spaces = store.state.spaces.filter { !$0.hidden }.map(\.path)
+        let work = { [weak self] in
+            let home = catalog.home
+            let roots = spaces.compactMap { path in
+                catalog.spaceRoot(forCwd: path == "~" ? home : path.hasPrefix("~/") ? home + path.dropFirst(1) : path)
+            }
+            let result: Result<RemoteHooksResult, HookCatalog.RequestError>
+            do {
+                result = .success(try catalog.perform(request, spaceRoots: roots))
+            } catch let error as HookCatalog.RequestError {
+                result = .failure(error)
+            } catch {
+                result = .failure(.init(code: "hook_write_failed", description: error.localizedDescription))
+            }
+            guard let self else { return }
+            self.queue.async {
+                if request.changesHooks, case .success = result, let handler = self.onHooksChanged {
+                    self.hopToMain { handler() }
+                }
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.hooks(id: id, result: answer), to: client)
+                case .failure(let error): self.send(.error(id: id, code: error.code, message: error.description), to: client)
+                }
+            }
+        }
+        if case .test = request { DispatchQueue.global(qos: .userInitiated).async(execute: work) } else { hooksQueue.async(execute: work) }
     }
 
     /// A remote draft as the host would save it: a name and a prompt that are not blank, and a
