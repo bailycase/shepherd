@@ -32,6 +32,21 @@ public struct NativeHookRecord: Codable, Hashable, Sendable {
         self.lines = lines; self.meta = meta; self.hash = hash; self.file = file
     }
 
+    private enum CodingKeys: String, CodingKey { case kind, event, name, detail, lines, meta, hash, file }
+
+    /// Every field decodes with a default, so a record from an older or newer host still reads.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        event = try c.decodeIfPresent(String.self, forKey: .event) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        detail = try c.decodeIfPresent(String.self, forKey: .detail)
+        lines = try c.decodeIfPresent([String].self, forKey: .lines) ?? []
+        meta = try c.decodeIfPresent(String.self, forKey: .meta)
+        hash = try c.decodeIfPresent(String.self, forKey: .hash)
+        file = try c.decodeIfPresent(String.self, forKey: .file)
+    }
+
     /// The record a message's `details` carry, clipped; nil when they aren't the contract's shape.
     public init?(details: JSONValue?) {
         guard let details, let kind = details["kind"]?.stringValue, !kind.isEmpty else { return nil }
