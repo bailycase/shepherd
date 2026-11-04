@@ -12,6 +12,8 @@ extension FixtureCatalog {
         let preview = FixtureData.ref(FixtureData.preview)
         let running = FixtureData.ref(FixtureData.extensions)
         let dock = FixtureData.ref(FixtureData.dock)
+        let wideTable = MarkdownFixtures.wideReply.components(separatedBy: "```")[0]
+            .split(separator: "\n").filter { $0.hasPrefix("|") }.joined(separator: "\n")
         return [
             // MobileThread, iPadThread: a finished turn, tokens in the header, the changes card.
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
@@ -23,6 +25,8 @@ extension FixtureCatalog {
                 preview: ThreadFixtures.reply(MarkdownFixtures.structureReply(image: "docs/thread-table.png"))), routes: [.thread(preview)]),
             FixtureScreen(name: "thread-wide", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.wideReply)),
                           routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-wide-table", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(wideTable)),
+                          routes: [.thread(preview)], prepare: { _ in await ThreadFixtures.checkWideTable() }),
             // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
             FixtureScreen(name: "stopped", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.stopped()), routes: [.thread(preview)]),
             // MobileThreadError, iPadThreadError: the earlier error folded, the last one's card,
@@ -205,6 +209,55 @@ enum ThreadFixtures {
             F.user("m1", "Which tools does Shepherd expose to its agents?"),
             F.assistant("m2", text, at: 9_000),
         ]))
+    }
+
+    /// Checks only this fixture's native table viewport; programmatic offsets do not test gestures.
+    @MainActor static func checkWideTable() async {
+        guard let window = FixtureWindows.shared.primary?.windows.first(where: { !$0.isHidden && $0.windowLevel == .normal }) else {
+            return FixtureCheck.report("FIXTURE CHECK FAILED: no primary window for the wide table")
+        }
+        func find(_ view: UIView) -> UIScrollView? {
+            guard !view.isHidden, view.alpha > 0 else { return nil }
+            if let scroll = view as? UIScrollView, !(scroll is UICollectionView), !(scroll is UITextView),
+               scroll.bounds.height > 80, scroll.contentSize.width > scroll.bounds.width + 1,
+               scroll.contentSize.height <= scroll.bounds.height + 1 {
+                var ancestor = scroll.superview
+                while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
+                if ancestor is UIScrollView { return scroll } // Inside the transcript, never the transcript itself.
+            }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        var table: UIScrollView?
+        await FixtureWindows.wait("the full wide table viewport", seconds: 5) {
+            window.layoutIfNeeded()
+            guard let scroll = find(window) else { return false }
+            let frame = scroll.convert(scroll.bounds, to: window)
+            var visible = window.bounds
+            var ancestor = scroll.superview
+            while let view = ancestor {
+                if view.clipsToBounds { visible = visible.intersection(view.convert(view.bounds, to: window)) }
+                ancestor = view.superview
+            }
+            guard frame.width > 0, frame.height > 80, frame.minY >= visible.minY - 1, frame.maxY <= visible.maxY + 1,
+                  frame.minX >= visible.minX - 1, frame.maxX <= visible.maxX + 1 else { return false }
+            table = scroll
+            return true
+        }
+        guard let table else { return FixtureCheck.report("FIXTURE CHECK FAILED: no drawn wide table") }
+        guard table.isScrollEnabled else { return FixtureCheck.report("FIXTURE CHECK FAILED: overflowing table scrolling is disabled") }
+        let initial = table.contentOffset
+        let maximum = table.contentSize.width - table.bounds.width + table.adjustedContentInset.right
+        table.setContentOffset(CGPoint(x: maximum, y: initial.y), animated: false)
+        await FixtureWindows.wait("the wide table's last columns", seconds: 5) {
+            window.layoutIfNeeded()
+            return table.window === window && abs(table.contentOffset.x - maximum) <= 1 && table.contentOffset.x > initial.x + 1
+        }
+        table.setContentOffset(initial, animated: false)
+        await FixtureWindows.wait("the wide table's initial screenshot offset", seconds: 5) {
+            window.layoutIfNeeded()
+            return table.window === window && abs(table.contentOffset.x - initial.x) <= 1 && abs(table.contentOffset.y - initial.y) <= 1
+        }
+        FixtureCheck.report("FIXTURE CHECK ok: full table visible; enabled horizontal overflow reaches its end and restores its initial offset")
     }
 
     /// OpenAI refusing the key, as the error boards draw it.
