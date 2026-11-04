@@ -214,11 +214,12 @@ struct ForgeFloatingField: View {
         }
         .padding(.leading, SH.Space.l)
         .padding(.trailing, SH.Space.s)
-        .frame(width: AppLayout.forgeComposerWidth)
+        .frame(maxWidth: AppLayout.forgeComposerWidth)
         .frame(minHeight: AppLayout.forgeComposerHeight)
         .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
         .shBorder(focused ? Color.sh.running : Color.sh.lineStrong, radius: SH.Radius.l)
         .shPopover(radius: SH.Radius.l)
+        .padding(.horizontal, SH.Space.l)
         .padding(.bottom, AppLayout.forgeComposerBottom)
     }
 
