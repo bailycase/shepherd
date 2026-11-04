@@ -35,6 +35,8 @@ final class MenuState {
         var spaces: [Item] = []
     }
 
+    static let unavailable = MenuState()
+
     private(set) var hasVisibleThread = false
     private(set) var hasSelection = false
     private(set) var canActOnSelection = false
@@ -116,209 +118,264 @@ private func later(_ action: @escaping @MainActor () -> Void) {
     Task { @MainActor in action() }
 }
 
+/// Register command groups before the asynchronous workspace launch. SwiftUI can update their
+/// items, but groups omitted at launch do not reliably join the main menu afterward.
+struct WorkspaceCommands: Commands {
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    let keys: KeybindingsStore
+    let themes: ThemeManager
+
+    var body: some Commands {
+        AppSettingsCommands(launch: launch)
+        FileCommands(launch: launch, keys: keys, bindings: keys.overrides)
+        ViewCommands(launch: launch, keys: keys, bindings: keys.overrides, themes: themes)
+        PaneCommands(launch: launch, keys: keys, bindings: keys.overrides)
+        SpaceCommands(launch: launch, keys: keys)
+        AgentCommands(launch: launch, keys: keys, bindings: keys.overrides)
+    }
+}
+
 /// Settings (⌘,) and Check for Updates, in the app menu.
 struct AppSettingsCommands: Commands {
-    let vm: ShepherdViewModel
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    private var vm: ShepherdViewModel? { launch.model }
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
-            SettingsCommandButton(vm: vm)
-            if AppUpdater.shared.available {
-                Button("Check for Updates…") { AppUpdater.shared.checkForUpdates() }
+            Group {
+                SettingsCommandButton(vm: vm)
+                if vm != nil && AppUpdater.shared.available {
+                    Button("Check for Updates…") { AppUpdater.shared.checkForUpdates() }
+                }
+            }
+            .disabled(vm == nil)
+        }
+    }
+}
+
+/// The File menu's creation actions also stay mounted while the workspace starts.
+struct FileCreationMenuItems: View {
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    let keys: KeybindingsStore
+    private var vm: ShepherdViewModel? { launch.model }
+
+    var body: some View {
+        Group {
+            Button("New Thread") { later { vm?.openNewThread() } }
+                .keyboardShortcut(keys.shortcut(.newAgent))
+            Button("New Agent with Options…") { later { vm?.showNewAgentSheet = true } }
+                .keyboardShortcut(keys.shortcut(.newAgentOptions))
+            Button("New Space…") { later { vm?.addSpaceFromPanel() } }
+                .keyboardShortcut(keys.shortcut(.newSpace))
+            if vm?.designToolEnabled == true {
+                Divider()
+                Button("Import Claude Design Project…") { later { vm?.chooseDesignProject() } }
+                    .keyboardShortcut(keys.shortcut(.importDesign))
             }
         }
+        .disabled(vm == nil)
     }
 }
 
 /// File ▸ New Thread, New Agent with Options…, New Space…, Import Claude Design Project… (⇧⌘I,
 /// with the Design tool on), and ⌘W as Close Terminal.
 struct FileCommands: Commands {
-    let vm: ShepherdViewModel
-    let menu: MenuState
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    private var vm: ShepherdViewModel? { launch.model }
+    private var menu: MenuState { vm?.menuState ?? .unavailable }
     let keys: KeybindingsStore
     /// The rebindings, so a changed chord rebuilds these items.
     let bindings: [ShortcutAction: KeyChord]
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Thread") { later { vm.openNewThread() } }
-                .keyboardShortcut(keys.shortcut(.newAgent))
-            Button("New Agent with Options…") { later { vm.showNewAgentSheet = true } }
-                .keyboardShortcut(keys.shortcut(.newAgentOptions))
-            Button("New Space…") { later { vm.addSpaceFromPanel() } }
-                .keyboardShortcut(keys.shortcut(.newSpace))
-            if vm.designToolEnabled {
-                Divider()
-                Button("Import Claude Design Project…") { later { vm.chooseDesignProject() } }
-                    .keyboardShortcut(keys.shortcut(.importDesign))
-            }
+            FileCreationMenuItems(launch: launch, keys: keys)
         }
         CommandGroup(replacing: .saveItem) {
-            // Save exists only in Settings ▸ Spaces and ▸ Subagents; elsewhere there is no item.
-            if let title = menu.saveTitle {
-                Button(title) { Task { await vm.saveSettingsFile() } }
-                    .keyboardShortcut(keys.shortcut(.saveProjectFile))
-                    .disabled(!menu.canSave)
+            Group {
+                // Save exists only in Settings ▸ Spaces and ▸ Subagents; elsewhere there is no item.
+                if let title = menu.saveTitle {
+                    Button(title) { Task { await vm?.saveSettingsFile() } }
+                        .keyboardShortcut(keys.shortcut(.saveProjectFile))
+                        .disabled(!menu.canSave)
+                }
+                // Disabled with nothing to close, so ⌘W is not a beep.
+                Button("Close Terminal") { later { vm?.closeFocusedTerminal() } }
+                    .keyboardShortcut(keys.shortcut(.closeTerminal))
+                    .disabled(!menu.canCloseTerminal)
             }
-            // Disabled with nothing to close, so ⌘W is not a beep.
-            Button("Close Terminal") { later { vm.closeFocusedTerminal() } }
-                .keyboardShortcut(keys.shortcut(.closeTerminal))
-                .disabled(!menu.canCloseTerminal)
+            .disabled(vm == nil)
         }
     }
 }
 
 /// View ▸ Command Palette, sidebar, right pane, Appearance (and the Debug component gallery).
 struct ViewCommands: Commands {
-    let vm: ShepherdViewModel
-    let menu: MenuState
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    private var vm: ShepherdViewModel? { launch.model }
+    private var menu: MenuState { vm?.menuState ?? .unavailable }
     let keys: KeybindingsStore
     let bindings: [ShortcutAction: KeyChord]
     let themes: ThemeManager
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
-            // Over a design it opens Jump to a board instead (JumpInContext).
-            Button("Command Palette") { later { vm.toggleCommandPaletteOrJump() } }
-                .keyboardShortcut(keys.shortcut(.commandPalette))
-            Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm.toggleSidebar() } }
-                .keyboardShortcut(keys.shortcut(.toggleSidebar))
-            // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects). A picker
-            // puts the check in the state column, where VoiceOver reads it.
-            Picker("Organize Sidebar By", selection: Binding(get: { menu.sidebarStyle }, set: { style in later { vm.setSidebarStyle(style) } })) {
-                ForEach(SHSidebarStyle.allCases) { style in Text(style.title).tag(style) }
-            }
-            .pickerStyle(.inline)
-            Picker("Appearance", selection: Binding(get: { themes.mode }, set: { option in
-                later { vm.selectAppearance(option, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
-            })) {
-                ForEach(AppearanceMode.allCases) { option in Text(option.title).tag(option) }
-            }
-            .pickerStyle(.inline)
-            Button(menu.rightPaneOpen ? "Hide Side Pane" : "Show Side Pane") { later { vm.toggleRightPane() } }
-                .keyboardShortcut(keys.shortcut(.toggleRightPane))
-                .disabled(!menu.hasVisibleThread)
-            // ⌃1–5 pick the side pane's tabs: fixed, like ⌃⇧1–9 (no ⌘, so never rebound).
-            ForEach(SidePaneTab.allCases, id: \.self) { tab in
-                Button(tab.title) { later { vm.selectSidePaneTab(tab) } }
-                    .keyboardShortcut(KeyEquivalent(Character("\(tab.digit)")), modifiers: .control)
+            Group {
+                // Over a design it opens Jump to a board instead (JumpInContext).
+                Button("Command Palette") { later { vm?.toggleCommandPaletteOrJump() } }
+                    .keyboardShortcut(keys.shortcut(.commandPalette))
+                Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm?.toggleSidebar() } }
+                    .keyboardShortcut(keys.shortcut(.toggleSidebar))
+                // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects). A picker
+                // puts the check in the state column, where VoiceOver reads it.
+                Picker("Organize Sidebar By", selection: Binding(get: { menu.sidebarStyle }, set: { style in later { vm?.setSidebarStyle(style) } })) {
+                    ForEach(SHSidebarStyle.allCases) { style in Text(style.title).tag(style) }
+                }
+                .pickerStyle(.inline)
+                Picker("Appearance", selection: Binding(get: { themes.mode }, set: { option in
+                    later { vm?.selectAppearance(option, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
+                })) {
+                    ForEach(AppearanceMode.allCases) { option in Text(option.title).tag(option) }
+                }
+                .pickerStyle(.inline)
+                Button(menu.rightPaneOpen ? "Hide Side Pane" : "Show Side Pane") { later { vm?.toggleRightPane() } }
+                    .keyboardShortcut(keys.shortcut(.toggleRightPane))
                     .disabled(!menu.hasVisibleThread)
+                // ⌃1–5 pick the side pane's tabs: fixed, like ⌃⇧1–9 (no ⌘, so never rebound).
+                ForEach(SidePaneTab.allCases, id: \.self) { tab in
+                    Button(tab.title) { later { vm?.selectSidePaneTab(tab) } }
+                        .keyboardShortcut(KeyEquivalent(Character("\(tab.digit)")), modifiers: .control)
+                        .disabled(!menu.hasVisibleThread)
+                }
+                #if DEBUG
+                Divider()
+                Button("Component Gallery") { later { vm?.showComponentGallery.toggle() } }
+                #endif
             }
-            #if DEBUG
-            Divider()
-            Button("Component Gallery") { later { vm.showComponentGallery.toggle() } }
-            #endif
+            .disabled(vm == nil)
         }
     }
 }
 
 /// The Terminal menu: New Terminal, show or hide the panel, maximize it, and the tab to go to.
 struct PaneCommands: Commands {
-    let vm: ShepherdViewModel
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    private var vm: ShepherdViewModel? { launch.model }
     let keys: KeybindingsStore
     let bindings: [ShortcutAction: KeyChord]
 
     var body: some Commands {
         CommandMenu("Terminal") {
-            Button("New Terminal") { later { vm.newTerminalTab() } }
-                .keyboardShortcut(keys.shortcut(.newTerminal))
-            Divider()
-            Button("Show or Hide Terminal") { later { vm.toggleTerminalPanel() } }
-                .keyboardShortcut(keys.shortcut(.toggleTerminal))
-            Button("Maximize or Restore Terminal") { later { vm.toggleTerminalMaximized() } }
-                .keyboardShortcut(keys.shortcut(.maximizeTerminal))
-            Divider()
-            Button("Next Terminal") { later { vm.selectAdjacentTerminal(1) } }
-                .keyboardShortcut(keys.shortcut(.nextTerminal))
-            Button("Previous Terminal") { later { vm.selectAdjacentTerminal(-1) } }
-                .keyboardShortcut(keys.shortcut(.previousTerminal))
+            Group {
+                Button("New Terminal") { later { vm?.newTerminalTab() } }
+                    .keyboardShortcut(keys.shortcut(.newTerminal))
+                Divider()
+                Button("Show or Hide Terminal") { later { vm?.toggleTerminalPanel() } }
+                    .keyboardShortcut(keys.shortcut(.toggleTerminal))
+                Button("Maximize or Restore Terminal") { later { vm?.toggleTerminalMaximized() } }
+                    .keyboardShortcut(keys.shortcut(.maximizeTerminal))
+                Divider()
+                Button("Next Terminal") { later { vm?.selectAdjacentTerminal(1) } }
+                    .keyboardShortcut(keys.shortcut(.nextTerminal))
+                Button("Previous Terminal") { later { vm?.selectAdjacentTerminal(-1) } }
+                    .keyboardShortcut(keys.shortcut(.previousTerminal))
+            }
+            .disabled(vm == nil)
         }
     }
 }
 
 struct SpaceCommands: Commands {
-    let vm: ShepherdViewModel
-    let menu: MenuState
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    private var vm: ShepherdViewModel? { launch.model }
+    private var menu: MenuState { vm?.menuState ?? .unavailable }
     let keys: KeybindingsStore
 
     var body: some Commands {
         CommandMenu("Space") {
-            if menu.spaces.isEmpty {
-                Button("No Spaces") {}.disabled(true)
-                Divider()
-            } else {
-                ForEach(menu.spaces) { space in
-                    Button(space.title) { later { vm.selectSpace(SpaceID(rawValue: space.id)) } }
+            Group {
+                if menu.spaces.isEmpty {
+                    Button("No Spaces") {}.disabled(true)
+                    Divider()
+                } else {
+                    ForEach(menu.spaces) { space in
+                        Button(space.title) { later { vm?.selectSpace(SpaceID(rawValue: space.id)) } }
+                    }
+                    Divider()
                 }
-                Divider()
+                // The empty state offers the next step.
+                Button("New Space…") { later { vm?.addSpaceFromPanel() } }
+                    .keyboardShortcut(keys.shortcut(.newSpace))
             }
-            // The empty state offers the next step.
-            Button("New Space…") { later { vm.addSpaceFromPanel() } }
-                .keyboardShortcut(keys.shortcut(.newSpace))
+            .disabled(vm == nil)
         }
     }
 }
 
 struct AgentCommands: Commands {
-    let vm: ShepherdViewModel
-    let menu: MenuState
+    let launch: ShepherdLaunch<ShepherdViewModel>
+    private var vm: ShepherdViewModel? { launch.model }
+    private var menu: MenuState { vm?.menuState ?? .unavailable }
     let keys: KeybindingsStore
     let bindings: [ShortcutAction: KeyChord]
 
     var body: some Commands {
         CommandMenu("Agent") {
-            Button("Focus") { later { vm.focusSelectedAgent() } }
-                .disabled(!menu.hasSelection)
-            Button("Rename…") { later { vm.renameSelectedAgent() } }
-                .keyboardShortcut(keys.shortcut(.renameAgent))
-                .disabled(!menu.canActOnSelection)
-            Divider()
-            Button("Stop") { later { vm.stopVisibleAgent() } }
-                .keyboardShortcut(keys.shortcut(.stopAgent))
-                .disabled(!menu.hasVisibleThread)
-            Button("Choose Model…") { later { vm.sendThreadCommand(.modelPicker) } }
-                .keyboardShortcut(keys.shortcut(.modelPicker))
-                .disabled(!menu.hasVisibleThread)
-            Button("Inspect Subagent") { later { vm.sendThreadCommand(.inspectSubagent) } }
-                .keyboardShortcut(keys.shortcut(.inspectSubagent))
-                .disabled(!menu.hasVisibleThread)
-            Button("Previous Turn") { later { vm.sendThreadCommand(.previousTurn) } }
-                .keyboardShortcut(keys.shortcut(.previousTurn))
-                .disabled(!menu.hasVisibleThread)
-            Button("Next Turn") { later { vm.sendThreadCommand(.nextTurn) } }
-                .keyboardShortcut(keys.shortcut(.nextTurn))
-                .disabled(!menu.hasVisibleThread)
-            Divider()
-            Button("Next Agent") { later { vm.selectAdjacentAgent(1) } }
-                .keyboardShortcut(keys.shortcut(.nextAgent))
-                .disabled(!menu.hasMachineAgents)
-            Button("Previous Agent") { later { vm.selectAdjacentAgent(-1) } }
-                .keyboardShortcut(keys.shortcut(.previousAgent))
-                .disabled(!menu.hasMachineAgents)
-            Divider()
-            // The sidebar row's commands, on the selected local thread (ThreadCommand).
-            if let agentID = menu.selectedLocalAgent {
-                PinMenuItem(vm: vm, target: .local(agentID), pinned: menu.selectedPinned)
-                ForEach(menu.threadCommands.filter { !$0.isDestructive }) { command in
-                    Button(command.title, systemImage: command.symbol) { later { vm.perform(command, on: agentID) } }
-                }
+            Group {
+                Button("Focus") { later { vm?.focusSelectedAgent() } }
+                    .disabled(!menu.hasSelection)
+                Button("Rename…") { later { vm?.renameSelectedAgent() } }
+                    .keyboardShortcut(keys.shortcut(.renameAgent))
+                    .disabled(!menu.canActOnSelection)
                 Divider()
-            }
-            Button("Delete Agent…", role: .destructive) { later { vm.deleteSelectedAgent() } }
-                .keyboardShortcut(keys.shortcut(.deleteAgent))
-                .disabled(!menu.canActOnSelection)
-            if !menu.agents.isEmpty {
+                Button("Stop") { later { vm?.stopVisibleAgent() } }
+                    .keyboardShortcut(keys.shortcut(.stopAgent))
+                    .disabled(!menu.hasVisibleThread)
+                Button("Choose Model…") { later { vm?.sendThreadCommand(.modelPicker) } }
+                    .keyboardShortcut(keys.shortcut(.modelPicker))
+                    .disabled(!menu.hasVisibleThread)
+                Button("Inspect Subagent") { later { vm?.sendThreadCommand(.inspectSubagent) } }
+                    .keyboardShortcut(keys.shortcut(.inspectSubagent))
+                    .disabled(!menu.hasVisibleThread)
+                Button("Previous Turn") { later { vm?.sendThreadCommand(.previousTurn) } }
+                    .keyboardShortcut(keys.shortcut(.previousTurn))
+                    .disabled(!menu.hasVisibleThread)
+                Button("Next Turn") { later { vm?.sendThreadCommand(.nextTurn) } }
+                    .keyboardShortcut(keys.shortcut(.nextTurn))
+                    .disabled(!menu.hasVisibleThread)
                 Divider()
-                ForEach(Array(menu.agents.enumerated()), id: \.element.id) { index, agent in
-                    Button(agent.title) {
-                        later {
-                            vm.showCommandPalette = false
-                            vm.selectAgentDigit(index + 1)
-                        }
+                Button("Next Agent") { later { vm?.selectAdjacentAgent(1) } }
+                    .keyboardShortcut(keys.shortcut(.nextAgent))
+                    .disabled(!menu.hasMachineAgents)
+                Button("Previous Agent") { later { vm?.selectAdjacentAgent(-1) } }
+                    .keyboardShortcut(keys.shortcut(.previousAgent))
+                    .disabled(!menu.hasMachineAgents)
+                Divider()
+                // The sidebar row's commands, on the selected local thread (ThreadCommand).
+                if let vm, let agentID = menu.selectedLocalAgent {
+                    PinMenuItem(vm: vm, target: .local(agentID), pinned: menu.selectedPinned)
+                    ForEach(menu.threadCommands.filter { !$0.isDestructive }) { command in
+                        Button(command.title, systemImage: command.symbol) { later { vm.perform(command, on: agentID) } }
                     }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                    Divider()
+                }
+                Button("Delete Agent…", role: .destructive) { later { vm?.deleteSelectedAgent() } }
+                    .keyboardShortcut(keys.shortcut(.deleteAgent))
+                    .disabled(!menu.canActOnSelection)
+                if !menu.agents.isEmpty {
+                    Divider()
+                    ForEach(Array(menu.agents.enumerated()), id: \.element.id) { index, agent in
+                        Button(agent.title) {
+                            later {
+                                vm?.showCommandPalette = false
+                                vm?.selectAgentDigit(index + 1)
+                            }
+                        }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                    }
                 }
             }
+            .disabled(vm == nil)
         }
     }
 }
