@@ -52,7 +52,7 @@ public indirect enum HookJSON: Equatable, Hashable, Sendable {
 
     // MARK: Text
 
-    /// Canonical JSON (docs/hooks.md › Identity and trust): keys sorted by UTF-16 code units, no
+    /// Canonical JSON (docs/hooks.md › Identity and the off switch): keys sorted by UTF-16 code units, no
     /// whitespace, `JSON.stringify` escaping and number format.
     public var canonical: String {
         var out = ""

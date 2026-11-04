@@ -19,23 +19,17 @@ extension AppLayout {
     static let hooksCountWidth: CGFloat = 64
     static let hooksStateWidth: CGFloat = 260
     static let hooksActionWidth: CGFloat = 92
-    /// A matcher chip and a badge: 20pt and 18pt tall.
+    /// A matcher chip: 20pt tall.
     static let hooksChipHeight: CGFloat = 20
-    static let hooksBadgeHeight: CGFloat = 18
-    /// The dimmed rows of hooks waiting for review and files not read.
-    static let hooksPendingOpacity: Double = 0.72
+    /// The dimmed rows of files not read.
     static let hooksOffOpacity: Double = 0.6
     /// The state dot in a file row.
     static let hooksDotSize: CGFloat = 6
-    /// The Edit and Review sheets: 640pt wide; Edit is 840pt tall.
+    /// The Edit sheet: 640pt wide, 840pt tall.
     static let hooksSheetWidth: CGFloat = 640
     static let hooksSheetHeight: CGFloat = 840
     /// The sheets' close button: a 26pt circle.
     static let hooksCloseSize: CGFloat = 26
-    /// Review's key column and its checkbox.
-    static let hooksKeyWidth: CGFloat = 96
-    static let hooksCheckSize: CGFloat = 16
-    static let hooksReviewHeadHeight: CGFloat = 44
     /// The command editor's height and the time limit field's width.
     static let hooksCommandHeight: CGFloat = 52
     static let hooksTimeoutWidth: CGFloat = 64
@@ -52,6 +46,4 @@ extension AppLayout {
     static let hookCardKeyWidth: CGFloat = 96
     /// The most a consent prompt's command takes before it scrolls (about ten code lines).
     static let hookCommandMaxHeight: CGFloat = 180
-    /// The composer's hook glyph and its review dot.
-    static let hookComposerDot: CGFloat = 6
 }

@@ -80,7 +80,7 @@ struct HookCanonicalTests {
     }
 }
 
-/// Finding, reading and reviewing hooks files, on scratch folders standing in for the home,
+/// Finding and reading hooks files and their off switches, on scratch folders standing in for the home,
 /// the support folder and spaces.
 @Suite("Hook catalog")
 struct HookCatalogTests {
@@ -99,15 +99,12 @@ struct HookCatalogTests {
             try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             try text.write(toFile: path, atomically: true, encoding: .utf8)
         }
-        func trustSpace(_ path: String, _ decision: Bool) throws {
-            try write(support.appendingPathComponent("pi/trust.json").path, "{\"\(path)\": \(decision)}")
-        }
         func remove() { try? FileManager.default.removeItem(at: dir) }
     }
 
     static let preToolUse = #"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./check.sh","x-note":"kept"}]}]}}"#
 
-    @Test func aMacFileLoadsAndEachHookStartsNew() throws {
+    @Test func aMacFileLoadsAndEachHookRunsAtOnce() throws {
         let f = try Fixture(); defer { f.remove() }
         try f.write(f.home + "/.shepherd/hooks.json", Self.preToolUse)
         let snapshot = f.catalog.load()
@@ -120,42 +117,35 @@ struct HookCatalogTests {
         #expect(entry.matcher == "Bash" && entry.handler.command == "./check.sh" && entry.handler.type == "command")
         #expect(entry.canonical == #"{"command":"./check.sh","type":"command","x-note":"kept"}"#)
         #expect(entry.hash == HookCanonical.hash(file: entry.file, event: "PreToolUse", matcher: "Bash", canonical: entry.canonical))
-        #expect(entry.review == .new && entry.editable && !entry.runs && entry.name == "./check.sh")
+        #expect(entry.on && entry.editable && entry.runs && entry.name == "./check.sh")
     }
 
-    @Test func trustOffAndChangedFollowTheTrustFile() throws {
+    @Test func theOffSwitchFollowsTheSettingsFileByHash() throws {
         let f = try Fixture(); defer { f.remove() }
         let path = f.home + "/.shepherd/hooks.json"
         try f.write(path, Self.preToolUse)
-        let store = f.catalog.trustStore
+        let store = f.catalog.settingsStore
         let entry = try #require(f.catalog.load().entries.first)
-        try store.trust([entry], by: .review)
-        #expect(f.catalog.load().entries.first?.review == .on)
-        #expect(f.catalog.load().summary(forSpaceRoot: nil) == HookSummary(running: 1, needingReview: 0))
+        #expect(f.catalog.load().summary(forSpaceRoot: nil) == HookSummary(running: 1))
         try store.setOn(entry.hash, false)
-        #expect(f.catalog.load().entries.first?.review == .off)
-        try store.setOn(entry.hash, true)
-
+        #expect(f.catalog.load().entries.first?.on == false)
+        #expect(f.catalog.load().summary(forSpaceRoot: nil) == HookSummary(running: 0))
+        // Changed in its file: another hash, so it is on again.
         try f.write(path, Self.preToolUse.replacingOccurrences(of: "./check.sh", with: "./other.sh"))
-        let changed = try #require(f.catalog.load().entries.first)
-        guard case .changed(let previous) = changed.review else { Issue.record("expected changed, got \(changed.review)"); return }
-        #expect(previous.entry == entry.canonical && previous.by == "review" && previous.slot == entry.slot)
-        #expect(f.catalog.load().summary(forSpaceRoot: nil) == HookSummary(running: 0, needingReview: 1))
-
-        try store.keepOff([changed])
-        #expect(f.catalog.load().entries.first?.review == .off)
-        try store.untrust([changed.hash])
-        guard case .changed = f.catalog.load().entries.first?.review else { Issue.record("expected changed again"); return }
+        #expect(f.catalog.load().entries.first?.runs == true)
+        try store.setOn(entry.hash, true)
+        #expect(store.read().off.isEmpty)
     }
 
-    @Test func aMissingOrInvalidTrustFileReadsAsEmpty() throws {
+    @Test func aMissingOrInvalidSettingsFileReadsAsEverythingOn() throws {
         let f = try Fixture(); defer { f.remove() }
-        #expect(f.catalog.trustStore.read() == HookTrust())
-        try f.write(f.catalog.trustStore.url.path, "not json")
-        #expect(f.catalog.trustStore.read() == HookTrust())
-        try f.write(f.catalog.trustStore.url.path, #"{"version":1,"trusted":{"h":{"slot":"s"}},"readers":{"codex":false}}"#)
-        let trust = f.catalog.trustStore.read()
-        #expect(trust.trusted["h"]?.slot == "s" && trust.readers == HookTrust.Readers(claude: true, codex: false))
+        #expect(f.catalog.settingsStore.url.lastPathComponent == "settings.json")
+        #expect(f.catalog.settingsStore.read() == HookSettings())
+        try f.write(f.catalog.settingsStore.url.path, "not json")
+        #expect(f.catalog.settingsStore.read() == HookSettings())
+        try f.write(f.catalog.settingsStore.url.path, #"{"version":1,"off":["h"],"readers":{"codex":false}}"#)
+        let settings = f.catalog.settingsStore.read()
+        #expect(settings.off == ["h"] && settings.readers == HookSettings.Readers(claude: true, codex: false))
     }
 
     @Test func readersOffSkipClaudeAndCodexFiles() throws {
@@ -163,48 +153,34 @@ struct HookCatalogTests {
         try f.write(f.home + "/.claude/settings.json", #"{"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}"#)
         try f.write(f.home + "/.codex/hooks.json", Self.preToolUse)
         #expect(f.catalog.load().entries.map(\.format) == [.claude, .codex])
-        try f.catalog.trustStore.setReader(.claude, false)
+        try f.catalog.settingsStore.setReader(.claude, false)
         let snapshot = f.catalog.load()
         #expect(snapshot.entries.map(\.format) == [.codex])
         #expect(snapshot.sources.first { $0.format == .claude }?.state == .readerOff)
     }
 
-    @Test func spaceFilesLoadOnlyWhenPiTrustsTheSpace() throws {
+    @Test func spaceFilesLoadForTheSpaceRootWithNoApproval() throws {
         let f = try Fixture(); defer { f.remove() }
         try f.write(f.space + "/.shepherd/hooks.json", Self.preToolUse)
         #expect(f.catalog.spaceRoot(forCwd: f.space + "/Sources/deep") == f.space)
         #expect(f.catalog.spaceRoot(forCwd: f.home) == nil)
         #expect(f.catalog.spaceRoot(forCwd: f.dir.path) == nil)
 
-        var snapshot = f.catalog.load(spaceRoots: [f.space, f.home])
+        let snapshot = f.catalog.load(spaceRoots: [f.space, f.home])
         #expect(snapshot.sources.count == 4 + 5)
-        #expect(snapshot.sources.first { $0.path == f.space + "/.shepherd/hooks.json" }?.state == .spaceNotTrusted)
-        #expect(snapshot.entries.isEmpty)
-
-        try f.trustSpace((f.space as NSString).deletingLastPathComponent, true) // a parent decision counts
-        snapshot = f.catalog.load(spaceRoots: [f.space])
-        #expect(snapshot.entries.map(\.scope) == [.space(root: f.space)])
         #expect(snapshot.sources.first { $0.path == f.space + "/.shepherd/hooks.json" }?.state == .loaded(count: 1))
-
-        try f.write(f.support.appendingPathComponent("pi/trust.json").path,
-                    "{\"\((f.space as NSString).deletingLastPathComponent)\": true, \"\(f.space)\": false}")
-        #expect(f.catalog.load(spaceRoots: [f.space]).entries.isEmpty)
+        #expect(snapshot.entries.map(\.scope) == [.space(root: f.space)])
     }
 
     @Test func theComposerSummaryCountsThisMacAndTheThreadsSpace() throws {
         let f = try Fixture(); defer { f.remove() }
-        try f.trustSpace(f.space, true)
         try f.write(f.home + "/.shepherd/hooks.json", Self.preToolUse)
         try f.write(f.space + "/.claude/settings.local.json", #"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"npm test"},{"type":"prompt","prompt":"x"}]}]}}"#)
-        let mac = try #require(f.catalog.load().entries.first)
-        try f.catalog.trustStore.trust([mac], by: .review)
-        #expect(f.catalog.summary(forCwd: f.space + "/Sources") == HookSummary(running: 1, needingReview: 2))
+        #expect(f.catalog.summary(forCwd: f.space + "/Sources") == HookSummary(running: 2)) // prompt never runs
         let snapshot = f.catalog.load(spaceRoots: [f.space])
-        try f.catalog.trustStore.trust(snapshot.entries.filter { $0.scope != .mac }, by: .review)
-        let trusted = f.catalog.load(spaceRoots: [f.space])
-        #expect(trusted.running(forSpaceRoot: f.space).map(\.handler.command) == ["./check.sh", "npm test"]) // prompt never runs
-        #expect(trusted.summary(forSpaceRoot: "/elsewhere") == HookSummary(running: 1, needingReview: 0))
-        #expect(HookSummary(running: 0, needingReview: 0).showsGlyph == false)
+        #expect(snapshot.running(forSpaceRoot: f.space).map(\.handler.command) == ["./check.sh", "npm test"])
+        #expect(snapshot.summary(forSpaceRoot: "/elsewhere") == HookSummary(running: 1))
+        #expect(HookSummary(running: 0).showsGlyph == false)
     }
 
     @Test func aFileThatDoesNotParseIsReportedWithItsLine() throws {
@@ -235,7 +211,7 @@ struct HookCatalogTests {
             if let pad = item["padTo"]?.numberValue { bytes.append(Data(repeating: 0x20, count: Int(pad) - bytes.count)) }
             let path = f.dir.appendingPathComponent(file).path
             try bytes.write(to: URL(fileURLWithPath: path))
-            let read = Result { try HookCatalog.entries(in: path, scope: .mac, format: .shepherd, isTOML: file.hasSuffix(".toml"), trust: HookTrust()) }
+            let read = Result { try HookCatalog.entries(in: path, scope: .mac, format: .shepherd, isTOML: file.hasSuffix(".toml"), settings: HookSettings()) }
             if let unreadable = item["unreadable"] {
                 let line: Int?? = switch read {
                 case .success: nil
@@ -296,11 +272,11 @@ struct HookCatalogTests {
 /// Writing one handler into a hooks file without disturbing the rest.
 @Suite("Hook file writer")
 struct HookFileWriterTests {
-    @Test func addUpdateAndDeleteKeepEveryOtherKeyAndTrustTheirWrites() throws {
+    @Test func addUpdateAndDeleteKeepEveryOtherKeyAndCarryTheOffSwitch() throws {
         let f = try HookCatalogTests.Fixture(); defer { f.remove() }
         let path = f.home + "/.claude/settings.json"
         try f.write(path, #"{"model":"opus","permissions":{"allow":["Bash(ls)"]},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done","x":1}]}]},"zeta":true}"#)
-        let writer = HookFileWriter(trust: f.catalog.trustStore)
+        let writer = HookFileWriter(settings: f.catalog.settingsStore)
 
         let added = try writer.add(HookDraft(event: "PreToolUse", matcher: "Edit|Write", handler: .command("./no-env.sh", timeout: 10)), to: path)
         var text = try String(contentsOfFile: path, encoding: .utf8)
@@ -308,9 +284,9 @@ struct HookFileWriterTests {
         #expect(text.hasSuffix("  \"zeta\": true\n}\n"))
         var entries = f.catalog.load().entries
         #expect(entries.map(\.event) == ["Stop", "PreToolUse"])
-        #expect(entries[0].canonical == #"{"command":"say done","type":"command","x":1}"# && entries[0].review == .new)
-        #expect(entries[1].hash == added && entries[1].review == .on)
-        #expect(f.catalog.trustStore.read().trusted[added]?.by == "edit")
+        #expect(entries[0].canonical == #"{"command":"say done","type":"command","x":1}"# && entries[0].on)
+        #expect(entries[1].hash == added && entries[1].runs)
+        #expect(!FileManager.default.fileExists(atPath: f.catalog.settingsStore.url.path), "writing a hook writes no settings")
 
         // A second hook with the same matcher joins the group.
         try writer.add(HookDraft(event: "PreToolUse", matcher: "Edit|Write", handler: .command("./lint.sh")), to: path)
@@ -318,13 +294,12 @@ struct HookFileWriterTests {
         #expect(entries.map { $0.slot.split(separator: "#").last.map(String.init) } == ["Stop/0/0", "PreToolUse/0/0", "PreToolUse/0/1"])
 
         // Off stays off across an edit; the old hash is forgotten.
-        try f.catalog.trustStore.setOn(entries[1].hash, false)
+        try f.catalog.settingsStore.setOn(entries[1].hash, false)
         let stale = entries[1]
         let updated = try writer.update(stale, to: HookDraft(event: "PreToolUse", matcher: "Edit|Write", handler: .command("./no-env.sh", timeout: 20)))
-        let trust = f.catalog.trustStore.read()
-        #expect(trust.trusted[added] == nil && trust.off == [updated])
+        #expect(f.catalog.settingsStore.read().off == [updated])
         entries = f.catalog.load().entries
-        #expect(entries[1].handler.timeout == 20 && entries[1].review == .off)
+        #expect(entries[1].handler.timeout == 20 && !entries[1].on)
 
         // Moving to another matcher makes a group; a stale entry is refused.
         #expect(throws: HookFileWriter.Failure.self) { try writer.update(stale, to: HookDraft(event: "Stop", handler: .command("x"))) }
@@ -335,12 +310,12 @@ struct HookFileWriterTests {
         for entry in entries.reversed() { try writer.delete(entry) }
         text = try String(contentsOfFile: path, encoding: .utf8)
         #expect(text == "{\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls)\"\n    ]\n  },\n  \"hooks\": {},\n  \"zeta\": true\n}\n")
-        #expect(f.catalog.trustStore.read().trusted.isEmpty)
+        #expect(f.catalog.settingsStore.read().off.isEmpty)
     }
 
     @Test func aNewFileAndItsFoldersAreCreatedAndTomlIsRefused() throws {
         let f = try HookCatalogTests.Fixture(); defer { f.remove() }
-        let writer = HookFileWriter(trust: f.catalog.trustStore)
+        let writer = HookFileWriter(settings: f.catalog.settingsStore)
         let path = f.space + "/.shepherd/hooks.json"
         try writer.add(HookDraft(event: "Stop", handler: .command("npm test")), to: path)
         #expect(try String(contentsOfFile: path, encoding: .utf8) == """

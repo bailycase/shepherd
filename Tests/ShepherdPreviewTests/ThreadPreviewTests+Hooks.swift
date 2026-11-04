@@ -63,7 +63,7 @@ extension ThreadPreviewTests {
                               size: CGSize(width: 1000, height: 620))
     }
 
-    /// No hooks configured: no glyph. Hooks that run, none waiting: the glyph without its dot.
+    /// No hooks configured: no glyph. Hooks that run: the glyph.
     @Test func threadHookComposerGlyph() async throws {
         let none = try HookFixture(empty: true)
         defer { none.remove() }
@@ -72,13 +72,11 @@ extension ThreadPreviewTests {
         try await renderHooks("thread-hook-composer-none", quiet, hooks: none, cwd: none.payments, size: CGSize(width: 1000, height: 420)) {
             noneModel.snapshot != nil && !noneModel.loading
         }
-        let trusted = try HookFixture()
-        defer { trusted.remove() }
-        let catalog = trusted.model.catalog
-        try catalog.trustStore.trust(catalog.load(spaceRoots: [trusted.payments]).entries, by: .review)
-        let model = trusted.model
-        try await renderHooks("thread-hook-composer-glyph", quiet, hooks: trusted, cwd: trusted.payments, size: CGSize(width: 1000, height: 420)) {
-            model.indicator(forCwd: trusted.payments).map { $0.needingReview == 0 } ?? false
+        let some = try HookFixture()
+        defer { some.remove() }
+        let model = some.model
+        try await renderHooks("thread-hook-composer-glyph", quiet, hooks: some, cwd: some.payments, size: CGSize(width: 1000, height: 420)) {
+            model.indicator(forCwd: some.payments) != nil
         }
     }
 }

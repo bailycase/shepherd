@@ -1,10 +1,10 @@
 import CryptoKit
 import Foundation
 
-/// A hook's identity (docs/hooks.md › Identity and trust). The runtime computes the same values;
+/// A hook's identity (docs/hooks.md › Identity and the off switch). The runtime computes the same values;
 /// `Tests/Fixtures/hooks/hash-vectors.json` keeps the two equal.
 public enum HookCanonical {
-    /// The handler object as canonical JSON: what a trust record stores and the hash covers.
+    /// The handler object as canonical JSON: what the hash covers.
     public static func canonical(_ handler: HookJSON) -> String { handler.canonical }
 
     /// `<file path>#<Event>/<group index>/<handler index>`.

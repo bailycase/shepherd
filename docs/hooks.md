@@ -1,21 +1,21 @@
 # Hooks
 
-> Read when you change how hooks are found, trusted, run or shown. Boards: the Hooks section of
+> Read when you change how hooks are found, switched off, run or shown. Boards: the Hooks section of
 > the "Not yet implemented" page in the "Shepherd chat UI" design (`Hooks*.dc.html`,
 > `HookThreadScene.dc.html`, `HooksStates.dc.html` is the reference).
 
 Hooks are commands that run at set points in a thread, in the format Claude Code and Codex use:
 an event, a matcher, and handlers that get the event as JSON on stdin. Shepherd reads its own
-hooks files and the Claude Code and Codex files it finds, runs a hook only once the person
-trusts its exact entry, and shows what each hook did in the thread.
+hooks files and the Claude Code and Codex files it finds, runs every hook there unless the person
+switched it off, and shows what each hook did in the thread.
 
 Three parts share this contract:
 
 | Part | Where |
 | --- | --- |
 | Runtime: runs hooks on the agent's events, proposes hooks | `Extensions/shepherd-hooks.ts`, installed by `HooksExtension.swift` |
-| Catalog: finds files, parses entries, hashes, trust, writes | `Sources/ShepherdSessions/Hooks/` |
-| UI: Settings › Hooks, Sources, Edit, Review, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hook*.swift`, `Thread/HookRows.swift`, `ShepherdRemote/NativeHookPresentation.swift` |
+| Catalog: finds files, parses entries, hashes, off switches, writes | `Sources/ShepherdSessions/Hooks/` |
+| UI: Settings › Hooks, Sources, Edit, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hook*.swift`, `Thread/HookRows.swift`, `ShepherdRemote/NativeHookPresentation.swift` |
 
 The runtime and the catalog each implement parsing and hashing; the shared vectors in
 `Tests/Fixtures/hooks/` keep them equal.
@@ -35,8 +35,7 @@ Hooks are read on the host where the agent runs.
 
 `<root>` is the nearest folder at or above the thread's cwd that holds `.git`, searched below the
 home folder without running git; else the cwd. The home folder and anything above it is never a
-space. Space files load only when pi's `trust.json` trusts `<root>`: the nearest decision at or
-above it wins. In the hash, This Mac paths are `$HOME` as given (never resolved) joined with the
+space. A space's files load with no approval step. In the hash, This Mac paths are `$HOME` as given (never resolved) joined with the
 relative path; space paths are the real path of `<root>` joined with it. `~/.claude/settings.local.json`
 is not read. Claude Code files and Codex files are
 read only while their reader is on (Settings › Hooks › Sources).
@@ -100,9 +99,9 @@ send-back count resets when the person sends a message. Hooks also run for neste
 
 Known limits: `mcp_tool` handlers report "A hook failed" until pi gives event handlers
 `executeTool`. `SubagentStart` context and `SubagentStop` send-backs reach the parent thread as
-rows, not the subagent. `trust.json` writes are atomic and re-read first, but not locked.
+rows, not the subagent. `settings.json` writes are atomic and re-read first, but not locked.
 
-## Identity and trust
+## Identity and the off switch
 
 A hook is one handler. Its **slot** is `<file path>#<Event>/<group index>/<handler index>`. Its
 **hash** is the lowercase hex SHA-256 of the UTF-8 bytes of
@@ -117,27 +116,19 @@ Canonical JSON: object keys sorted by UTF-16 code units, no whitespace, strings 
 `JSON.stringify` prints them, `true`/`false`/`null`. `Tests/Fixtures/hooks/hash-vectors.json` holds
 inputs and expected hashes; both implementations test against it.
 
-`<support>/hooks/trust.json` (support = Shepherd's Application Support folder; the runtime gets it
+`<support>/hooks/settings.json` (support = Shepherd's Application Support folder; the runtime gets it
 in `SHEPHERD_HOOKS_DIR`):
 
 ```json
-{ "version": 1,
-  "trusted": { "<hash>": { "slot": "…", "entry": "<canonical JSON of the handler>", "matcher": "…", "at": "<ISO date>", "by": "review" | "proposal" | "edit" } },
-  "off": ["<hash>"],
-  "readers": { "claude": true, "codex": true } }
+{ "version": 1, "off": ["<hash>"], "readers": { "claude": true, "codex": true } }
 ```
 
-- A hook runs only if its hash is in `trusted` and not in `off`.
-- **New**: no trusted entry has its slot. **Changed**: a trusted entry has its slot with another
-  hash; the UI diffs the stored `entry` against the current one.
-- Writing a hook from Settings (Add, Edit, a proposal) trusts the written hash at once. A file an
-  agent or editor changes outside Shepherd is new or changed until reviewed.
-- The file is written whole, atomically (temp file and rename), by the app and by the runtime's
-  proposal path; readers tolerate a missing or invalid file as empty.
-- `trust.json` is not protected from the agent's own bash: an agent that runs a command can write
-  it (or a hooks file) and trust its own hook. That is the same ceiling as every other file the agent
-  can write; trust guards against hooks files changing behind the person's back, not against the
-  agent itself.
+- Every configured hook runs unless its hash is in `off`. There is no approval or review step:
+  a hook an agent, an editor or Settings writes into a file runs from the next event.
+- The hash is only the off switch's identity. Editing a hook in Settings keeps it off if it was;
+  a hook changed outside Shepherd has a new hash, so it is on.
+- The file is written whole, atomically (temp file and rename), by the app; readers tolerate a
+  missing or invalid file as everything on.
 
 ## In the thread
 
@@ -174,15 +165,20 @@ hooks for `Bash` (`tool_name` `Bash`, `tool_input` `{ command }`): a deny, or an
 doesn't allow, skips it and the card says the test was blocked and why (`test.blocked`). Then it
 asks with `ctx.ui.select` whose title begins with the marker line `shepherd.hook.proposal` and a
 JSON object `{ name, event, matcher, command, statusMessage, timeout, scopes: { space: <path>, mac: <path> }, scope, test: { ok, summary, exit, ms, blocked? } }`.
-Options: `Add to this space`, `Add to this Mac`, `Not now` (`Edit…` opens Settings with the draft).
-The app draws that request as the proposal card instead of a question. On add, the runtime writes
-the entry to the chosen file, trusts its hash (`by: "proposal"`) and posts an `added` row.
+Options: `Add to this space`, `Add to this Mac`, `Not now`, `Added in Settings`. The app draws that
+request as the proposal card instead of a question, with no button for `Added in Settings` (nor a
+choice in the question dock). On add, the runtime writes the entry to the chosen file and posts an
+`added` row (with its `hash` and `file`).
+
+`Edit…` opens Settings › Hooks › Add hook with the draft; the proposal stays pending. Saving there
+writes the file and answers the proposal `Added in Settings`: the runtime writes nothing, posts an
+`added` row with detail `edited in Settings` (no `hash` or `file`), and tells the model the person
+added an edited version that may differ from the proposal. Cancel leaves the proposal pending.
 The tool tells the model to ask one question first (with the ask tool) when the request leaves the
 event open.
 
 ## Composer glyph
 
 The composer shows the hook glyph when at least one hook that would run in the thread's space is
-configured and on (This Mac files plus that space's, readers applied). A dot in the lantern color
-marks hooks waiting for review. Hover says how many; click opens Settings › Hooks filtered to the
-space. No hooks, no glyph.
+configured and on (This Mac files plus that space's, readers applied). Hover says how many; click
+opens Settings › Hooks filtered to the space. No hooks, no glyph.

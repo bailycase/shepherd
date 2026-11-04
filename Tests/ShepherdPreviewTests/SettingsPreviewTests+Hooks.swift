@@ -8,7 +8,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Settings › Hooks (HooksSettings, HooksSources, HooksEdit, HooksReview boards) in light and dark,
+/// Settings › Hooks (HooksSettings, HooksSources, HooksEdit boards) in light and dark,
 /// from hooks files in a scratch home read through the real catalog.
 extension SettingsPreviewTests {
     @Test func settingsHooks() async throws {
@@ -39,22 +39,6 @@ extension SettingsPreviewTests {
         try await hooks.load()
         workspace.vm.settingsSection = .hooks
         try await Preview.render("settings-hooks-empty", size: CGSize(width: 1440, height: 600)) { SettingsView(vm: workspace.vm) }
-    }
-
-    @Test func settingsHooksReview() async throws {
-        let hooks = try HookFixture()
-        defer { hooks.remove() }
-        try await hooks.load()
-        let review = HookReviewState(entries: hooks.model.pending(root: nil), label: hooks.model.fileLabel)
-        #expect(review.items.count { $0.changed } == 1 && review.items.count == 2, "one new, one changed")
-        try await Preview.render("settings-hooks-review", size: CGSize(width: 640, height: 640)) {
-            HookReviewSheet(review: review, model: hooks.model) {}
-        }
-        review.checked = [review.items[0].id]
-        review.open = review.items.last?.id
-        try await Preview.render("settings-hooks-review-selected", size: CGSize(width: 640, height: 640)) {
-            HookReviewSheet(review: review, model: hooks.model) {}
-        }
     }
 
     @Test func settingsHooksEdit() async throws {

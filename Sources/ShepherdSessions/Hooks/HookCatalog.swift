@@ -27,8 +27,6 @@ public enum HookFileState: Equatable, Sendable {
     case notFound
     /// Not read: its reader (Claude Code or Codex) is off.
     case readerOff
-    /// Not read: pi's `trust.json` doesn't trust the space.
-    case spaceNotTrusted
     /// Couldn't read: a 1-based line when the text didn't parse, and why.
     case unreadable(line: Int?, message: String)
 
@@ -38,7 +36,6 @@ public enum HookFileState: Equatable, Sendable {
         case .loaded(let count): count == 1 ? "1 hook" : "\(count) hooks"
         case .notFound: "Not found"
         case .readerOff: "Not read"
-        case .spaceNotTrusted: "Skipped: space not trusted"
         case .unreadable(let line?, let message): "Couldn't read: line \(line), \(message)"
         case .unreadable(nil, let message): "Couldn't read: \(message)"
         }
@@ -87,25 +84,6 @@ public struct HookHandler: Equatable, Hashable, Sendable {
     public var canRun: Bool { type == "command" || type == "mcp_tool" }
 }
 
-/// Where a hook stands with the person (docs/hooks.md › Identity and trust).
-public enum HookReview: Equatable, Sendable {
-    /// Trusted and on: it runs.
-    case on
-    /// Trusted, switched off.
-    case off
-    /// No trusted entry has its slot.
-    case new
-    /// A trusted entry has its slot with another hash; `previous` is it, for the diff.
-    case changed(previous: HookTrust.Record)
-
-    public var needsReview: Bool {
-        switch self {
-        case .new, .changed: true
-        case .on, .off: false
-        }
-    }
-}
-
 /// One hook: one handler in one file.
 public struct HookEntry: Equatable, Sendable, Identifiable {
     /// The slot: `<file>#<Event>/<group>/<handler>`.
@@ -125,11 +103,12 @@ public struct HookEntry: Equatable, Sendable, Identifiable {
     public var canonical: String
     /// False for Codex's `config.toml`, which Shepherd reads but never writes.
     public var editable: Bool
-    public var review: HookReview
+    /// Not switched off (docs/hooks.md › Identity and the off switch).
+    public var on: Bool
 
     public var hookEvent: HookEvent? { HookEvent(rawValue: event) }
-    /// Whether it runs: trusted, on, and a type that runs.
-    public var runs: Bool { review == .on && handler.canRun }
+    /// Whether it runs: on, and a type that runs.
+    public var runs: Bool { on && handler.canRun }
     /// The name a thread row shows: `statusMessage`, else the command's first word, else the tool.
     public var name: String {
         if let message = handler.statusMessage, !message.isEmpty { return message }
@@ -140,12 +119,10 @@ public struct HookEntry: Equatable, Sendable, Identifiable {
 
 /// The hooks that apply to one thread, for the composer glyph.
 public struct HookSummary: Equatable, Sendable {
-    /// Hooks that would run (trusted, on, a type that runs).
+    /// Hooks that would run (on, a type that runs).
     public var running: Int
-    /// Hooks that are new or changed.
-    public var needingReview: Int
-    /// Whether the composer shows the hook glyph; the dot is `needingReview > 0`.
-    public var showsGlyph: Bool { running > 0 || needingReview > 0 }
+    /// Whether the composer shows the hook glyph.
+    public var showsGlyph: Bool { running > 0 }
 }
 
 /// Everything the catalog found at one moment.
@@ -154,7 +131,7 @@ public struct HookCatalogSnapshot: Equatable, Sendable {
     public var sources: [HookSource]
     /// Every hook in every loaded file, in source and file order.
     public var entries: [HookEntry]
-    public var trust: HookTrust
+    public var settings: HookSettings
 
     /// This Mac's hooks plus those of `spaceRoot` (none for nil), as a thread there sees them.
     public func entries(forSpaceRoot spaceRoot: String?) -> [HookEntry] {
@@ -168,8 +145,7 @@ public struct HookCatalogSnapshot: Equatable, Sendable {
 
     /// Counts for the composer glyph, without reading anything.
     public func summary(forSpaceRoot spaceRoot: String?) -> HookSummary {
-        let entries = entries(forSpaceRoot: spaceRoot)
-        return HookSummary(running: entries.filter(\.runs).count, needingReview: entries.filter(\.review.needsReview).count)
+        HookSummary(running: running(forSpaceRoot: spaceRoot).count)
     }
 }
 
@@ -178,10 +154,8 @@ public struct HookCatalogSnapshot: Equatable, Sendable {
 public struct HookCatalog: Sendable {
     /// The user's home folder (`HOME`), where This Mac's files live. Never a space.
     public var home: String
-    /// pi's `trust.json`, which decides whether a space's files are read.
-    public var piTrust: URL
-    /// Shepherd's own `trust.json` for hooks.
-    public var trustStore: HookTrustStore
+    /// `<support>/hooks/settings.json`: the off switches and readers.
+    public var settingsStore: HookSettingsStore
 
     /// Files larger than this are reported, not read.
     public static let fileLimit = 1 << 20
@@ -197,15 +171,13 @@ public struct HookCatalog: Sendable {
         return value
     }
 
-    /// `support` is Shepherd's Application Support folder; pi's trust file defaults to the one in
-    /// Shepherd's pi home, `<support>/pi/trust.json`.
-    public init(home: String = PiHome.environmentHome, support: URL, piTrust: URL? = nil) {
+    /// `support` is Shepherd's Application Support folder.
+    public init(home: String = PiHome.environmentHome, support: URL) {
         // Kept as given (never standardized, which drops /private): file paths in hashes start with it.
         var home = home
         while home.count > 1 && home.hasSuffix("/") { home.removeLast() }
         self.home = home
-        self.piTrust = piTrust ?? support.appendingPathComponent("pi", isDirectory: true).appendingPathComponent("trust.json")
-        trustStore = HookTrustStore(support: support)
+        settingsStore = HookSettingsStore(support: support)
     }
 
     /// The space a thread in `cwd` belongs to: the git top level (the nearest folder with a
@@ -234,18 +206,17 @@ public struct HookCatalog: Sendable {
     /// Reads This Mac's files and those of each space in `spaceRoots` (canonical roots, as
     /// `spaceRoot(forCwd:)` gives them; the home folder and repeats are dropped).
     public func load(spaceRoots: [String] = []) -> HookCatalogSnapshot {
-        let trust = trustStore.read()
-        let piDecisions = readPiTrust()
+        let settings = settingsStore.read()
         let canonicalHome = PiHome.canonical(home)
         var sources: [HookSource] = [], entries: [HookEntry] = []
-        var scopes: [(HookScope, String, Bool)] = [(.mac, home, true)]
+        var scopes: [(HookScope, String)] = [(.mac, home)]
         var seen = Set<String>()
         for root in spaceRoots {
             let root = PiHome.canonical(root)
             guard !PiHome.isInside(canonicalHome, root), seen.insert(root).inserted else { continue }
-            scopes.append((.space(root: root), root, Self.trusts(piDecisions, root)))
+            scopes.append((.space(root: root), root))
         }
-        for (scope, folder, spaceTrusted) in scopes {
+        for (scope, folder) in scopes {
             for (relative, format) in Self.layout {
                 // The home's Claude Code local settings aren't in the contract's table.
                 if scope == .mac && relative == ".claude/settings.local.json" { continue }
@@ -254,13 +225,11 @@ public struct HookCatalog: Sendable {
                 var source = HookSource(path: path, scope: scope, format: format, isTOML: isTOML, state: .notFound)
                 if !FileManager.default.fileExists(atPath: path) {
                     source.state = .notFound
-                } else if !trust.readers.reads(format) {
+                } else if !settings.readers.reads(format) {
                     source.state = .readerOff
-                } else if !spaceTrusted {
-                    source.state = .spaceNotTrusted
                 } else {
                     do {
-                        let found = try Self.entries(in: path, scope: scope, format: format, isTOML: isTOML, trust: trust)
+                        let found = try Self.entries(in: path, scope: scope, format: format, isTOML: isTOML, settings: settings)
                         source.state = .loaded(count: found.count)
                         entries += found
                     } catch let error as HookJSON.ParseError {
@@ -272,7 +241,7 @@ public struct HookCatalog: Sendable {
                 sources.append(source)
             }
         }
-        return HookCatalogSnapshot(sources: sources, entries: entries, trust: trust)
+        return HookCatalogSnapshot(sources: sources, entries: entries, settings: settings)
     }
 
     /// The composer glyph's counts for a thread in `cwd`: reads This Mac's files and that space's.
@@ -286,9 +255,9 @@ public struct HookCatalog: Sendable {
     struct ReadFailure: Error, CustomStringConvertible { let description: String }
 
     /// The hooks in one file. Throws `HookJSON.ParseError` or `ReadFailure`.
-    static func entries(in path: String, scope: HookScope, format: HookFormat, isTOML: Bool, trust: HookTrust) throws -> [HookEntry] {
+    static func entries(in path: String, scope: HookScope, format: HookFormat, isTOML: Bool, settings: HookSettings) throws -> [HookEntry] {
         let root = try document(at: path, isTOML: isTOML)
-        return try entries(of: root, file: path, scope: scope, format: format, editable: !isTOML, trust: trust)
+        return try entries(of: root, file: path, scope: scope, format: format, editable: !isTOML, settings: settings)
     }
 
     /// The file parsed, `{}` when it is empty.
@@ -304,7 +273,7 @@ public struct HookCatalog: Sendable {
     }
 
     /// The hooks in a parsed file's `hooks` object, which must have the contract's shape.
-    static func entries(of root: HookJSON, file: String, scope: HookScope, format: HookFormat, editable: Bool, trust: HookTrust) throws -> [HookEntry] {
+    static func entries(of root: HookJSON, file: String, scope: HookScope, format: HookFormat, editable: Bool, settings: HookSettings = HookSettings()) throws -> [HookEntry] {
         guard root.objectValue != nil else { throw ReadFailure(description: "the file isn't a JSON object") }
         guard let hooks = root["hooks"] else { return [] }
         guard let events = hooks.objectValue else { throw ReadFailure(description: "“hooks” isn't an object") }
@@ -323,33 +292,10 @@ public struct HookCatalog: Sendable {
                     let slot = HookCanonical.slot(file: file, event: member.key, group: g, handler: h)
                     entries.append(HookEntry(slot: slot, scope: scope, file: file, format: format, event: member.key, matcher: matcher,
                                              groupIndex: g, handlerIndex: h, handler: HookHandler(raw: raw), hash: hash,
-                                             canonical: canonical, editable: editable, review: trust.review(hash: hash, slot: slot)))
+                                             canonical: canonical, editable: editable, on: settings.isOn(hash)))
                 }
             }
         }
         return entries
-    }
-
-    // MARK: Space trust
-
-    /// pi's decisions, `path: true|false`; empty when the file is missing or invalid.
-    func readPiTrust() -> [String: Bool] {
-        guard let data = try? Data(contentsOf: piTrust),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
-        return object.compactMapValues { value in
-            guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
-            return number.boolValue
-        }
-    }
-
-    /// pi's rule: the nearest decision at or above `root` wins.
-    static func trusts(_ decisions: [String: Bool], _ root: String) -> Bool {
-        var folder = root
-        while true {
-            if let decision = decisions[folder] { return decision }
-            let parent = (folder as NSString).deletingLastPathComponent
-            if parent == folder || parent.isEmpty { return false }
-            folder = parent
-        }
     }
 }

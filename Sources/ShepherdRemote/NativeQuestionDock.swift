@@ -73,7 +73,8 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         switch dialog.kind {
         case .select:
             reply = .select
-            options = NativeQuestionOption.options(dialog)
+            // A proposal's "Added in Settings" is the Mac's answer after Edit…, never a choice.
+            options = NativeQuestionOption.options((dialog.options ?? []).filter { $0 != NativeHookProposal.addedInSettings })
             kind = Self.kind(options)
         case .confirm:
             reply = .confirm

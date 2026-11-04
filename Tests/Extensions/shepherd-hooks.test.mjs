@@ -1,6 +1,6 @@
 // The hooks runtime (docs/hooks.md) against a stand-in for pi's extension API: shared hash vectors,
-// parsing (JSON and the Codex TOML subset), matchers, trust gating, exit codes, decision merging,
-// updatedInput, the Stop send-back cap, additionalContext, and a proposal's write and trust.
+// parsing (JSON and the Codex TOML subset), matchers, the off switch, exit codes, decision merging,
+// updatedInput, the Stop send-back cap, additionalContext, and a proposal's write.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/shepherd-hooks.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +17,6 @@ const { createJiti } = createRequire(path.join(pkg, "package.json"))("jiti");
 const sdk = fs.existsSync(path.join(pkg, "dist/index.js")) ? path.join(pkg, "dist/index.js") : path.join(pkg, "dist/bundle/index.js");
 const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": sdk, typebox: path.join(pkg, "node_modules/typebox/build/index.mjs") } });
 const hooks = await jiti.import(path.join(root, "Extensions/shepherd-hooks.ts"));
-const { ProjectTrustStore } = await jiti.import(sdk);
 
 // Every test runs with a scratch home and pi home: never the person's ~/.shepherd, ~/.claude or ~/.pi.
 const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sh-hooks-")));
@@ -36,19 +35,14 @@ function fixture() {
   return { dir, project, hooksDir, macFile: path.join(process.env.HOME, ".shepherd/hooks.json") };
 }
 const writeJSON = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); };
-/** Trusts every handler in `file` (or only those `pick` keeps). */
-function trust(hooksDir, file, { pick = () => true, off = false, readers } = {}) {
-  const parsed = hooks.parseHookFile(file, fs.readFileSync(file, "utf8"));
-  const entries = hooks.entriesOf(file, parsed.hooks).filter(pick);
-  const trustFile = path.join(hooksDir, "trust.json");
-  const doc = fs.existsSync(trustFile) ? JSON.parse(fs.readFileSync(trustFile, "utf8")) : { version: 1, trusted: {}, off: [] };
-  for (const e of entries) doc.trusted[e.hash] = { slot: e.slot, entry: hooks.canonical(e.handler), matcher: e.matcher, at: "2026-01-01T00:00:00Z", by: "review" };
-  if (off) doc.off.push(...entries.map((e) => e.hash));
-  if (readers) doc.readers = readers;
-  writeJSON(trustFile, doc);
+/** Writes settings.json: every handler of each `off` file switched off, and the readers. */
+function settings(hooksDir, { off = [], readers } = {}) {
+  const hashes = off.flatMap((file) => hooks.entriesOf(file, hooks.parseHookFile(file, fs.readFileSync(file, "utf8")).hooks).map((e) => e.hash));
+  const file = path.join(hooksDir, "settings.json");
+  writeJSON(file, { version: 1, off: hashes, ...(readers ? { readers } : {}) });
   // A distinct mtime so the runtime's mtime cache sees the change.
   const later = new Date(Date.now() + 1000 * ++counter);
-  fs.utimesSync(trustFile, later, later);
+  fs.utimesSync(file, later, later);
 }
 
 function load(hooksDir, env = {}) {
@@ -162,7 +156,7 @@ test("matchers are anchored regexes that also match Claude Code tool names", () 
   assert.ok(m("startup|resume", "resume") && !m("startup", "compact"));
 });
 
-test("only trusted, on, unchanged hooks run; trust edits apply on the next event; space files need pi's trust", async () => {
+test("every configured hook runs unless switched off; settings apply on the next event; space files need no approval", async () => {
   const { project, hooksDir, macFile } = fixture();
   const marker = path.join(project, "ran.txt");
   const ran = () => (fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim().split("\n") : []);
@@ -170,38 +164,31 @@ test("only trusted, on, unchanged hooks run; trust edits apply on the next event
   const pi = load(hooksDir);
   const ctx = context(project);
   await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), [], "untrusted: never runs");
-  trust(hooksDir, macFile);
-  await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), ["mac"], "trusting it in trust.json applies to the next event");
-  trust(hooksDir, macFile, { off: true });
+  assert.deepEqual(ran(), ["mac"], "no settings.json: it runs");
+  settings(hooksDir, { off: [macFile] });
   await pi.emit("tool_call", editCall(), ctx);
   assert.deepEqual(ran(), ["mac"], "off: doesn't run");
-  // Changed: a new command in the same slot has another hash.
-  fs.rmSync(path.join(hooksDir, "trust.json"));
-  trust(hooksDir, macFile);
+  // Edited outside Shepherd: another hash, so it runs again.
   writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo changed >> ran.txt" }] }] } });
   await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), ["mac"], "changed outside Shepherd: doesn't run until reviewed");
+  assert.deepEqual(ran(), ["mac", "changed"]);
+  fs.rmSync(marker);
+  writeJSON(macFile, { hooks: {} });
   // A reader that is off hides its files.
   const claude = path.join(process.env.HOME, ".claude/settings.json");
   writeJSON(claude, { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "echo claude >> ran.txt" }] }] } });
-  trust(hooksDir, claude, { readers: { claude: false, codex: true } });
+  settings(hooksDir, { readers: { claude: false, codex: true } });
   await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), ["mac"]);
-  trust(hooksDir, claude, { readers: { claude: true, codex: true } });
+  assert.deepEqual(ran(), []);
+  settings(hooksDir, { readers: { claude: true, codex: true } });
   await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), ["mac", "claude"]);
-  // Space: only once pi trusts the root.
+  assert.deepEqual(ran(), ["claude"]);
+  // Space: the thread's root, with no approval anywhere.
   const space = path.join(project, ".shepherd/hooks.json");
   writeJSON(space, { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "echo space >> ran.txt" }] }] } });
-  trust(hooksDir, space);
   fs.rmSync(claude);
   await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), ["mac", "claude"], "an untrusted space contributes nothing");
-  new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(project, true);
-  await pi.emit("tool_call", editCall(), ctx);
-  assert.deepEqual(ran(), ["mac", "claude", "space"]);
+  assert.deepEqual(ran(), ["claude", "space"]);
 });
 
 test("the home folder is never a space", async () => {
@@ -209,8 +196,6 @@ test("the home folder is never a space", async () => {
   const home = process.env.HOME;
   const file = path.join(home, ".claude/settings.local.json");
   writeJSON(file, { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "echo home >> ran.txt" }] }] } });
-  trust(hooksDir, file);
-  new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(home, true);
   await load(hooksDir).emit("tool_call", editCall(), context(home));
   assert.equal(fs.existsSync(path.join(home, "ran.txt")), false);
 });
@@ -223,7 +208,6 @@ test("a hook gets the event on stdin, runs in the root with its variables; exit 
     { matcher: "Read", hooks: [{ type: "command", command: "echo oops >&2; exit 1" }] },
     { matcher: "Grep", hooks: [{ type: "command", command: "sleep 5", timeout: 1, statusMessage: "Slow check" }] },
   ] } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const ctx = context(project);
   assert.equal(await pi.emit("tool_call", editCall("/tmp/a.txt"), ctx), undefined, "exit 0 goes ahead");
@@ -255,7 +239,6 @@ test("a hook gets the event on stdin, runs in the root with its variables; exit 
 test("a hook never inherits the agent's socket, identity, secrets or Shepherd's pi", async () => {
   const { project, hooksDir, macFile } = fixture();
   writeJSON(macFile, { hooks: { Stop: [{ hooks: [{ type: "command", command: 'printf "%s|%s|%s|%s|%s" "${SHEPHERD_SOCKET-unset}" "${SHEPHERD_AGENT_ID-unset}" "${SHEPHERD_MCP_SECRET_GITHUB-unset}" "${PI_CODING_AGENT_DIR-unset}" "$KEEP_ME" > env.txt' }] }] } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const secrets = { SHEPHERD_SOCKET: "/tmp/s.sock", SHEPHERD_AGENT_ID: "a1", SHEPHERD_MCP_SECRET_GITHUB: "ghp_x", KEEP_ME: "kept" };
   const saved = process.env.PI_CODING_AGENT_DIR;
@@ -268,7 +251,6 @@ test("a hook never inherits the agent's socket, identity, secrets or Shepherd's 
 test("an aborted turn kills the hooks it waits on", async () => {
   const { project, hooksDir, macFile } = fixture();
   writeJSON(macFile, { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "sleep 30 & echo $! > child.pid; wait" }] }] } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const controller = new AbortController();
   const ctx = { ...context(project), signal: controller.signal };
@@ -297,7 +279,6 @@ test("decisions merge: deny over ask over allow; ask asks the person; updatedInp
     { matcher: "Edit", hooks: [{ type: "command", command: out("allow") }, { type: "command", command: out("ask") }] },
     { matcher: "Write", hooks: [{ type: "command", command: out("allow", { updatedInput: { file_path: "/tmp/safe.txt" } }) }] },
   ] } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const bash = await pi.emit("tool_call", { type: "tool_call", toolName: "bash", toolCallId: "b", input: { command: "rm -rf /" } }, context(project));
   assert.deepEqual(bash, { block: true, reason: "said deny" });
@@ -327,7 +308,6 @@ test("decisions merge: deny over ask over allow; ask asks the person; updatedInp
 test("Stop sends the agent back at most three times in a row", async () => {
   const { project, hooksDir, macFile } = fixture();
   writeJSON(macFile, { hooks: { Stop: [{ hooks: [{ type: "command", command: "cat > stop.json; echo 'tests fail' >&2; exit 2" }] }] } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const ctx = context(project);
   const settle = () => pi.emit("agent_before_settle", { type: "agent_before_settle", entries: [], continue: false, outcome: "completed", context: { canContinue: true } }, ctx);
@@ -356,7 +336,6 @@ test("additionalContext and plain SessionStart output reach the agent; long cont
       { type: "command", command: `node -e 'process.stdout.write(JSON.stringify({additionalContext: "x".repeat(10001)}))'` },
     ] }],
   } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const ctx = context(project);
   await pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -386,7 +365,6 @@ test("UserPromptSubmit exit 2 blocks the message; silent runs collapse to one ra
     UserPromptSubmit: [{ hooks: [{ type: "command", command: "grep -q secret && { echo 'no secrets' >&2; exit 2; } || true" }] }],
     PostToolUse: [{ hooks: [{ type: "command", command: "true" }] }],
   } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const ctx = context(project);
   assert.deepEqual(await pi.emit("input", { type: "input", text: "the secret is 42", source: "rpc" }, ctx), { action: "handled" });
@@ -402,7 +380,7 @@ test("UserPromptSubmit exit 2 blocks the message; silent runs collapse to one ra
   assert.equal(pi.sent.length, before + 2, "the next run gets its own row");
 });
 
-test("hook_propose tests the command, asks with the proposal marker, then writes the file and trusts the hash", async () => {
+test("hook_propose tests the command, asks with the proposal marker, then writes the file", async () => {
   const { project, hooksDir } = fixture();
   const spaceFile = path.join(project, ".shepherd/hooks.json");
   writeJSON(spaceFile, { note: "keep me", hooks: { Stop: [{ hooks: [{ type: "command", command: "npm test" }] }] } });
@@ -420,7 +398,7 @@ test("hook_propose tests the command, asks with the proposal marker, then writes
   const [marker, json] = declined.prompts[0].title.split(/\n(.*)/s);
   assert.equal(marker, "shepherd.hook.proposal");
   const card = JSON.parse(json);
-  assert.deepEqual(declined.prompts[0].options, ["Add to this space", "Add to this Mac", "Not now"]);
+  assert.deepEqual(declined.prompts[0].options, ["Add to this space", "Add to this Mac", "Not now", "Added in Settings"]);
   assert.deepEqual({ ...card, test: undefined }, { name: "Format", event: "PostToolUse", matcher: "Edit|Write", command: params.command, statusMessage: "Formatting", timeout: null,
     scopes: { space: spaceFile, mac: path.join(process.env.HOME, ".shepherd/hooks.json") }, scope: "space", test: undefined });
   assert.equal(card.test.ok, true);
@@ -436,12 +414,16 @@ test("hook_propose tests the command, asks with the proposal marker, then writes
   const handler = { type: "command", command: params.command, statusMessage: "Formatting" };
   assert.deepEqual(doc.hooks.PostToolUse, [{ matcher: "Edit|Write", hooks: [handler] }]);
   const hash = hooks.hookHash(spaceFile, "PostToolUse", "Edit|Write", handler);
-  const trustDoc = JSON.parse(fs.readFileSync(path.join(hooksDir, "trust.json"), "utf8"));
-  assert.equal(trustDoc.trusted[hash].by, "proposal");
-  assert.equal(trustDoc.trusted[hash].slot, `${spaceFile}#PostToolUse/0/0`);
-  assert.equal(trustDoc.trusted[hash].entry, hooks.canonical(handler));
+  assert.equal(fs.existsSync(path.join(hooksDir, "settings.json")), false, "adding writes only the hooks file");
   assert.deepEqual(pi.sent.at(-1).details, { kind: "added", event: "PostToolUse", name: "Formatting", detail: "Edit|Write", meta: pi.sent.at(-1).details.meta, hash, file: spaceFile });
   assert.equal(fs.readdirSync(path.dirname(spaceFile)).filter((f) => f.endsWith(".tmp")).length, 0, "written by rename");
+
+  // Saved from Edit…: the app wrote it; the runtime writes nothing and says so.
+  const before = fs.readFileSync(spaceFile, "utf8");
+  const edited = await tool.execute("p2", params, undefined, undefined, context(project, async () => "Added in Settings"));
+  assert.match(edited.content[0].text, /edited version .* in Settings; it may differ/);
+  assert.equal(fs.readFileSync(spaceFile, "utf8"), before, "nothing written");
+  assert.deepEqual(pi.sent.at(-1).details, { kind: "added", event: "PostToolUse", name: "Formatting", detail: "edited in Settings", meta: pi.sent.at(-1).details.meta });
 });
 
 test("hook_propose's test run is the agent's bash call: the person's PreToolUse Bash hooks can deny or ask first", async () => {
@@ -450,7 +432,6 @@ test("hook_propose's test run is the agent's bash call: the person's PreToolUse 
     { matcher: "Bash", hooks: [{ type: "command", command: "grep -q 'touch denied' && { echo 'not that' >&2; exit 2; }; exit 0" }] },
     { matcher: "Bash", hooks: [{ type: "command", command: `grep -q 'touch asked' && echo '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"sure?"}}'; exit 0` }] },
   ] } });
-  trust(hooksDir, macFile);
   const tool = load(hooksDir).tools.get("hook_propose");
   const propose = async (command, answer) => {
     const ctx = context(project, async (title) => (title.startsWith("shepherd.hook.proposal") ? "Not now" : answer));
@@ -496,7 +477,6 @@ test("SubagentStart and SubagentStop fire once per native subagent run, matched 
     SubagentStart: [{ matcher: "worker", hooks: [{ type: "command", command: "cat > start.json" }] }],
     SubagentStop: [{ matcher: "worker", hooks: [{ type: "command", command: "cat > stop.json; echo 'check the diff' >&2; exit 2" }] }],
   } });
-  trust(hooksDir, macFile);
   const pi = load(hooksDir);
   const ctx = context(project);
   await pi.emit("session_start", { type: "session_start", reason: "reload" }, ctx);
@@ -521,8 +501,6 @@ test("the space root is the nearest .git folder below the home folder, else the 
   const file = path.join(project, ".shepherd/hooks.json");
   assert.equal(hooks.spaceFile(sub, ".x"), path.join(sub, ".x"));
   writeJSON(file, { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "echo root > ran.txt" }] }] } });
-  trust(hooksDir, file);
-  new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(project, true);
   await load(hooksDir).emit("tool_call", editCall(), context(sub));
   assert.equal(fs.readFileSync(path.join(project, "ran.txt"), "utf8").trim(), "root", "runs in the root with the root's file");
   // A repository at the home folder is not a space: a folder under it falls back to itself.

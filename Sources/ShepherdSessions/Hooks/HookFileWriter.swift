@@ -15,29 +15,28 @@ public struct HookDraft: Equatable, Sendable {
 /// Adds, changes and removes one handler in a Shepherd, Claude Code or Codex JSON hooks file
 /// (never Codex's `config.toml`). Every other key and entry stays as it was; the file is written
 /// whole, pretty-printed with a two-space indent, by temp file and rename (through a symbolic
-/// link to the file it names). A hook written here is trusted at once (`by: "edit"`); one edited
-/// while off stays off.
+/// link to the file it names). A hook written here runs at once; one edited while off stays off.
 public struct HookFileWriter: Sendable {
     public struct Failure: Error, Equatable, CustomStringConvertible, Sendable {
         public let description: String
     }
 
-    public let trust: HookTrustStore
-    public init(trust: HookTrustStore) { self.trust = trust }
+    public let settings: HookSettingsStore
+    public init(settings: HookSettingsStore) { self.settings = settings }
 
     /// Adds `draft` to `path` (creating the file and its folders): into the event's first group
     /// with the same matcher, else a new group at the end. Returns the new hook's hash.
     @discardableResult
-    public func add(_ draft: HookDraft, to path: String, now: Date = Date()) throws -> String {
+    public func add(_ draft: HookDraft, to path: String) throws -> String {
         var root = try document(path)
-        let (group, handler) = try Self.insert(draft, into: &root)
-        return try save(root, path: path, written: (draft, group, handler), replacing: nil, now: now)
+        try Self.insert(draft, into: &root)
+        return try save(root, path: path, written: draft, replacing: nil)
     }
 
     /// Replaces `entry` with `draft`: in place when the event and matcher are the same, else moved
     /// as `add` places it. Throws when the file no longer holds `entry` as it was read. Returns the new hash.
     @discardableResult
-    public func update(_ entry: HookEntry, to draft: HookDraft, now: Date = Date()) throws -> String {
+    public func update(_ entry: HookEntry, to draft: HookDraft) throws -> String {
         var root = try document(entry.file)
         try Self.verify(entry, in: root)
         if draft.event == entry.event && draft.matcher == entry.matcher {
@@ -46,19 +45,19 @@ public struct HookFileWriter: Sendable {
             handlers[entry.handlerIndex] = draft.handler.raw
             groups[entry.groupIndex]["hooks"] = .array(handlers)
             root["hooks"]![entry.event] = .array(groups)
-            return try save(root, path: entry.file, written: (draft, entry.groupIndex, entry.handlerIndex), replacing: entry, now: now)
+            return try save(root, path: entry.file, written: draft, replacing: entry)
         }
         Self.remove(entry, from: &root)
-        let (group, handler) = try Self.insert(draft, into: &root)
-        return try save(root, path: entry.file, written: (draft, group, handler), replacing: entry, now: now)
+        try Self.insert(draft, into: &root)
+        return try save(root, path: entry.file, written: draft, replacing: entry)
     }
 
-    /// Removes `entry` (and its group, when it was the last handler there) and forgets its trust.
+    /// Removes `entry` (and its group, when it was the last handler there) and forgets its off switch.
     public func delete(_ entry: HookEntry) throws {
         var root = try document(entry.file)
         try Self.verify(entry, in: root)
         Self.remove(entry, from: &root)
-        _ = try save(root, path: entry.file, written: nil, replacing: entry, now: Date())
+        _ = try save(root, path: entry.file, written: nil, replacing: entry)
     }
 
     // MARK: Editing the document
@@ -76,12 +75,13 @@ public struct HookFileWriter: Sendable {
     }
 
     private static func verify(_ entry: HookEntry, in root: HookJSON) throws {
-        let current = (try? HookCatalog.entries(of: root, file: entry.file, scope: entry.scope, format: entry.format, editable: true, trust: HookTrust())) ?? []
+        let current = (try? HookCatalog.entries(of: root, file: entry.file, scope: entry.scope, format: entry.format, editable: true)) ?? []
         guard current.contains(where: { $0.slot == entry.slot && $0.hash == entry.hash }) else {
             throw Failure(description: "This hook changed in its file since Shepherd read it. Reload and try again.")
         }
     }
 
+    @discardableResult
     private static func insert(_ draft: HookDraft, into root: inout HookJSON) throws -> (Int, Int) {
         guard draft.handler.raw.objectValue != nil else { throw Failure(description: "A hook handler must be a JSON object.") }
         var hooks = root["hooks"] ?? .object([HookJSON.Member]())
@@ -117,30 +117,20 @@ public struct HookFileWriter: Sendable {
 
     // MARK: Saving
 
-    private func save(_ root: HookJSON, path: String, written: (HookDraft, Int, Int)?, replacing old: HookEntry?, now: Date) throws -> String {
+    private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?) throws -> String {
         let target = PiHome.canonical(path)
         try FileManager.default.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         var info = stat()
         let mode = lstat(target, &info) == 0 ? info.st_mode & 0o7777 : 0o644
         try PiHome.write(Data(root.pretty.utf8), to: URL(fileURLWithPath: target), mode: mode)
 
-        let remaining = Set(((try? HookCatalog.entries(of: root, file: path, scope: .mac, format: .shepherd, editable: true, trust: HookTrust())) ?? []).map(\.hash))
-        var hash = ""
-        try trust.change { trust in
-            let wasOff = old.map { trust.off.contains($0.hash) } ?? false
-            if let old, !remaining.contains(old.hash) {
-                trust.trusted[old.hash] = nil
-                trust.off.removeAll { $0 == old.hash }
-            }
-            guard let (draft, group, handler) = written else { return }
-            let canonical = draft.handler.raw.canonical
-            hash = HookCanonical.hash(file: path, event: draft.event, matcher: draft.matcher, canonical: canonical)
-            trust.trusted[hash] = HookTrust.Record(slot: HookCanonical.slot(file: path, event: draft.event, group: group, handler: handler),
-                                                   entry: canonical, matcher: draft.matcher, at: HookTrustStore.timestamp(now),
-                                                   by: HookTrust.Source.edit.rawValue)
-            // An edit keeps a hook that was off, off.
-            trust.off.removeAll { $0 == hash }
-            if wasOff { trust.off.append(hash) }
+        let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
+        // Only an off switch carries over: an edit keeps a hook that was off, off; a removed one is forgotten.
+        guard let old, settings.read().off.contains(old.hash) else { return hash }
+        let remaining = Set(((try? HookCatalog.entries(of: root, file: path, scope: .mac, format: .shepherd, editable: true)) ?? []).map(\.hash))
+        try settings.change { settings in
+            if !remaining.contains(old.hash) { settings.off.removeAll { $0 == old.hash } }
+            if draft != nil, !settings.off.contains(hash) { settings.off.append(hash) }
         }
         return hash
     }

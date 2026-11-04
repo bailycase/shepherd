@@ -80,6 +80,8 @@ public struct NativeHookProposal: Equatable, Sendable {
     public static let addToSpace = "Add to this space"
     public static let addToMac = "Add to this Mac"
     public static let notNow = "Not now"
+    /// The app's answer when the person saved an edited version from Edit…; never a button.
+    public static let addedInSettings = "Added in Settings"
 
     public struct Test: Equatable, Sendable, Decodable {
         public var ok: Bool
@@ -139,7 +141,7 @@ public struct NativeHookProposal: Equatable, Sendable {
         if let statusMessage, !statusMessage.isEmpty { lines.append("While it runs: \(statusMessage)") }
         lines.append("Saved in: \(path(scope: scope))")
         if let test { lines.append(testLead + test.summary) }
-        lines += ["", "Adding it trusts this exact entry; if it changes later, it needs your review again."]
+        lines += ["", "It runs with your permissions until you turn it off in Settings › Hooks."]
         return ("Add the hook “\(name)”?", lines.joined(separator: "\n"))
     }
 

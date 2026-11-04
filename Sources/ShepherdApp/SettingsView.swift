@@ -348,7 +348,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "Custom providers"]
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
-        case .hooks: ["Add hook", "Review hooks", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
+        case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
@@ -404,7 +404,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                 "Skills": ["skill:", "SKILL.md"],
                                 "Disabled commands": ["off", "hidden", "disabled", "turned off", "switched off"]]
         case .hooks: ["Add hook": ["PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "matcher", "command", "hooks.json"],
-                      "Review hooks": ["trust", "new", "changed", "approve"],
                       "Read hooks from Claude Code": ["claude", "settings.json", ".claude"], "Read hooks from Codex": ["codex", "config.toml", ".codex"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]

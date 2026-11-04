@@ -23,15 +23,13 @@ struct HookPresenter: Equatable {
 
     /// Open hook: its editor, once the catalog has it.
     @MainActor func open(hash: String) { show { $0.open(hash: hash) } }
-    /// Review in Settings.
-    @MainActor func review() { show { $0.openReview(root: nil) } }
     /// The composer glyph: Settings › Hooks filtered to the thread's space.
     @MainActor func settings(spaceRoot: String?) { show { $0.spaceFilter = spaceRoot; $0.reload() } }
-    /// A proposal's Edit…: Add hook, prefilled.
-    @MainActor func edit(_ proposal: NativeHookProposal, scope: String) {
+    /// A proposal's Edit…: Add hook, prefilled. Saving it calls `saved` (which answers the proposal); Cancel leaves it pending.
+    @MainActor func edit(_ proposal: NativeHookProposal, scope: String, saved: @escaping @MainActor () -> Void) {
         let handler = HookHandler.command(proposal.command, timeout: proposal.timeout, statusMessage: proposal.statusMessage)
         let draft = HookDraft(event: proposal.event, matcher: proposal.matcher, handler: handler)
-        show { $0.add(draft: draft, target: proposal.path(scope: scope)) }
+        show { $0.add(draft: draft, target: proposal.path(scope: scope), saved: saved) }
     }
     /// A hook row arrived: the files may have changed.
     @MainActor func refresh() { model?.hooks.reload() }
@@ -202,14 +200,14 @@ struct HookProposalCard: View {
             .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
             SHHairline()
             HStack(spacing: SH.Space.m) {
-                Text("Adding it trusts this exact entry. If it changes later, here or in the file, it needs your review again.")
+                Text("It runs with your permissions until you turn it off in Settings › Hooks.")
                     .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let presenter {
-                    Button("Edit…") { presenter.edit(proposal, scope: scope) }.buttonStyle(.sh(.ghost, size: .m))
+                    Button("Edit…") { presenter.edit(proposal, scope: scope) { answer(NativeHookProposal.addedInSettings) } }.buttonStyle(.sh(.ghost, size: .m))
                 }
                 Button(NativeHookProposal.notNow) { answer(NativeHookProposal.notNow) }.buttonStyle(.sh(.secondary, size: .m))
-                // No default action: Return never trusts a hook.
+                // No default action: Return never adds a hook.
                 Button("Add and turn on") { answer(proposal.addOption(scope: scope)) }
                     .buttonStyle(.sh(.primary, size: .m))
             }
@@ -236,7 +234,7 @@ struct HookProposalCard: View {
     }
 }
 
-/// A command the person is asked to trust: whole and selectable, scrolling past a few lines, never cut.
+/// A command the person is asked about: whole and selectable, scrolling past a few lines, never cut.
 struct HookCommandText: View {
     let text: String
     @State private var height: CGFloat = 0
@@ -297,8 +295,7 @@ struct HookAskPanel: View {
     }
 }
 
-/// The composer's hook glyph: hooks run in this thread's space, and a lantern dot while some
-/// wait for review. Opens Settings › Hooks for the space.
+/// The composer's hook glyph: hooks run in this thread's space. Opens Settings › Hooks for the space.
 struct HookComposerGlyph: View {
     let indicator: HookIndicator
     let open: () -> Void
@@ -306,12 +303,6 @@ struct HookComposerGlyph: View {
     var body: some View {
         Button(action: open) {
             SHGlyph.hook.image
-                .overlay(alignment: .topTrailing) {
-                    if indicator.needingReview > 0 {
-                        Circle().fill(Color.sh.lantern).frame(width: AppLayout.hookComposerDot, height: AppLayout.hookComposerDot)
-                            .offset(x: SH.Space.xxs, y: -SH.Space.xxs)
-                    }
-                }
         }
         .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
         .help(indicator.help)

@@ -86,7 +86,7 @@ struct HookPresentationTests {
         let command = String(repeating: "long-command ", count: 40) + "&& rm -rf ./build"
         let card = #"{"name":"Clean","event":"Stop","matcher":"","command":""# + command + #"","scopes":{"space":"/r/.shepherd/hooks.json","mac":"/h/.shepherd/hooks.json"},"scope":"space","test":{"ok":true,"summary":"exit 0, no output"}}"#
         let proposal = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "d", kind: .select, title: NativeHookProposal.marker + "\n" + card,
-                                                                        options: [NativeHookProposal.addToSpace, NativeHookProposal.addToMac, NativeHookProposal.notNow]))
+                                                                        options: [NativeHookProposal.addToSpace, NativeHookProposal.addToMac, NativeHookProposal.notNow, NativeHookProposal.addedInSettings]))
         #expect(proposal.question == "Add the hook “Clean”?" && proposal.details == nil)
         let message = try #require(proposal.message)
         #expect(message.contains(command) && message.contains("When: Stop") && message.contains("Matcher: always")

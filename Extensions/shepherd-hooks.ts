@@ -1,7 +1,7 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
 // Shepherd's hooks runtime (docs/hooks.md is the contract): finds the Shepherd, Claude Code and
-// Codex hook files of this Mac and the thread's space, runs only the handlers whose exact entry the
-// person trusts (<SHEPHERD_HOOKS_DIR>/trust.json) on pi's events, shows what each did as a
+// Codex hook files of this Mac and the thread's space, runs every handler the person hasn't
+// switched off (<SHEPHERD_HOOKS_DIR>/settings.json) on pi's events, shows what each did as a
 // `shepherd.hook` row, and offers `hook_propose`. Inert unless SHEPHERD_HOOKS_DIR is set; never
 // throws into pi; every timer and child it leaves running is unref'd.
 import * as fs from "node:fs";
@@ -9,7 +9,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { spawn } from "node:child_process";
-import { getAgentDir, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export const EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact", "PostCompact",
@@ -23,10 +22,11 @@ const STOP_SEND_BACK_LIMIT = 3;
 const MAX_TIMEOUT_S = 600;
 const CHILDREN_EVENT = "shepherd:children:v1";
 const MARKER = "shepherd.hook.proposal";
+const EDITED = "Added in Settings";
 
 // MARK: Identity
 
-/** Canonical JSON (docs/hooks.md, Identity and trust): sorted keys by UTF-16 code units, no whitespace. */
+/** Canonical JSON (docs/hooks.md, Identity and the off switch): sorted keys by UTF-16 code units, no whitespace. */
 export function canonical(value) {
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
   if (value && typeof value === "object") {
@@ -190,7 +190,7 @@ export function matcherMatches(matcher, name) {
   }
 }
 
-// MARK: Files and trust
+// MARK: Files and settings
 
 const real = (dir) => { try { return fs.realpathSync(dir); } catch { return path.resolve(dir); } };
 /** `dir` is the home folder or one of its ancestors: never a space. */
@@ -213,23 +213,6 @@ export function spaceRoot(cwd) {
 }
 const isSpace = (root) => !!root && !atOrAboveHome(root);
 
-// pi's trust of a space: the nearest decision at or above the root; asked again when pi's trust.json changes.
-let piTrustMemo;
-function piTrusts(root) {
-  try {
-    const agentDir = getAgentDir();
-    let stamp = "";
-    try { stamp = String(fs.statSync(path.join(agentDir, "trust.json")).mtimeMs); } catch {}
-    const key = `${agentDir}\0${root}\0${stamp}`;
-    if (piTrustMemo?.key === key) return piTrustMemo.value;
-    const value = new ProjectTrustStore(agentDir).get(root) === true;
-    piTrustMemo = { key, value };
-    return value;
-  } catch {
-    return false;
-  }
-}
-
 // The path in a hook's slot and hash: $HOME as given (never resolved) for This Mac, the real root for a space.
 export const macFile = (relative) => `${os.homedir().replace(/\/+$/, "")}/${relative}`;
 export const spaceFile = (root, relative) => `${real(root).replace(/\/+$/, "")}/${relative}`;
@@ -241,7 +224,7 @@ export function hookFiles(root) {
     { path: macFile(".codex/hooks.json"), scope: "mac", reader: "codex" },
     { path: macFile(".codex/config.toml"), scope: "mac", reader: "codex" },
   ];
-  if (isSpace(root) && piTrusts(real(root))) {
+  if (isSpace(root)) {
     files.push(
       { path: spaceFile(root, ".shepherd/hooks.json"), scope: "space" },
       { path: spaceFile(root, ".claude/settings.json"), scope: "space", reader: "claude" },
@@ -267,31 +250,27 @@ function readCached(file, parse) {
   return value;
 }
 
-export function readTrust(hooksDir, { fresh = false } = {}) {
-  const file = path.join(hooksDir, "trust.json");
-  let raw;
-  if (fresh) { try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch {} } else raw = readCached(file, (bytes) => JSON.parse(bytes.toString("utf8")));
+/** `<hooksDir>/settings.json`: the hashes switched off and the readers; missing or invalid reads as all on. */
+export function readSettings(hooksDir) {
+  const raw = readCached(path.join(hooksDir, "settings.json"), (bytes) => JSON.parse(bytes.toString("utf8")));
   const valid = raw && typeof raw === "object" && !Array.isArray(raw);
   return {
-    version: 1,
-    trusted: valid && raw.trusted && typeof raw.trusted === "object" ? raw.trusted : {},
     off: valid && Array.isArray(raw.off) ? raw.off : [],
     readers: valid && raw.readers && typeof raw.readers === "object" ? raw.readers : {},
-    ...(valid ? Object.fromEntries(Object.entries(raw).filter(([k]) => !["trusted", "off", "readers", "version"].includes(k))) : {}),
   };
 }
 
-/** Every hook that would run for `root`: files found, readers on, trusted, not off. */
+/** Every hook that would run for `root`: files found, readers on, not switched off. */
 export function runnableHooks(root, hooksDir) {
-  const trust = readTrust(hooksDir);
-  const off = new Set(trust.off);
+  const settings = readSettings(hooksDir);
+  const off = new Set(settings.off);
   const out = [];
   for (const file of hookFiles(root)) {
-    if (file.reader && trust.readers[file.reader] === false) continue;
+    if (file.reader && settings.readers[file.reader] === false) continue;
     const parsed = readCached(file.path, (bytes) => parseHookBytes(file.path, bytes));
     if (!parsed || parsed.error) continue;
     for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
-      if (trust.trusted[entry.hash] && !off.has(entry.hash)) out.push(entry);
+      if (!off.has(entry.hash)) out.push(entry);
     }
   }
   return out;
@@ -480,7 +459,7 @@ export default function shepherdHooks(pi) {
   };
 
   /**
-   * Runs the trusted hooks of one event that match `name`, concurrently, and merges what they say.
+   * Runs the hooks of one event that match `name`, concurrently, and merges what they say.
    * Returns the merged outcome and the rows to show; the caller posts them.
    */
   async function fire(event, ctx, extra = {}, { name, detail } = {}) {
@@ -812,11 +791,16 @@ export default function shepherdHooks(pi) {
 
     const scope = params.scope === "space" && scopes.space ? "space" : "mac";
     const card = { name: String(params.name), event, matcher, command, statusMessage: statusMessage ?? null, timeout: timeout ?? null, scopes, scope, test };
-    const options = [...(scopes.space ? ["Add to this space"] : []), "Add to this Mac", "Not now"];
+    // "Added in Settings": the app saved an edited version from Edit… (written there); no button shows it.
+    const options = [...(scopes.space ? ["Add to this space"] : []), "Add to this Mac", "Not now", EDITED];
     const choice = await ctx.ui.select(`${MARKER}\n${JSON.stringify(card)}`, options, { signal });
+    const handler = { type: "command", command, ...(statusMessage ? { statusMessage } : {}), ...(timeout ? { timeout } : {}) };
+    if (choice === EDITED) {
+      post([message("added", event, { handler }, { content: `Hook added: ${hookName(handler)} (${event}), edited in Settings`, detail: "edited in Settings", meta: clip(command, 80) })]);
+      return reply("The person added an edited version of the hook in Settings; it may differ from your proposal (event, matcher or command).");
+    }
     if (choice !== "Add to this space" && choice !== "Add to this Mac") return reply(`The person didn't add the hook (test: ${test.summary}).`);
     const file = choice === "Add to this space" ? scopes.space : scopes.mac;
-    const handler = { type: "command", command, ...(statusMessage ? { statusMessage } : {}), ...(timeout ? { timeout } : {}) };
     let added;
     try {
       added = addHook(file, event, matcher, handler);
@@ -824,10 +808,10 @@ export default function shepherdHooks(pi) {
       return reply(`Couldn't add the hook to ${file}: ${error?.message ?? error}`, true);
     }
     post([message("added", event, { handler, hash: added.hash, file }, { content: `Hook added: ${hookName(handler)} (${event}) in ${file}`, detail: matcher || undefined, meta: clip(command, 80) })]);
-    return reply(`Added and trusted in ${file}; it runs on ${event}${matcher ? ` for ${matcher}` : ""} from now on.`);
+    return reply(`Added to ${file}; it runs on ${event}${matcher ? ` for ${matcher}` : ""} from now on.`);
   }
 
-  /** Appends one group to the file (other content kept, written whole and atomically) and trusts its hash. */
+  /** Appends one group to the file (other content kept, written whole and atomically); returns its hash. */
   function addHook(file, event, matcher, handler) {
     let doc = {};
     if (fs.existsSync(file)) {
@@ -836,17 +820,9 @@ export default function shepherdHooks(pi) {
     }
     if (!doc.hooks || typeof doc.hooks !== "object" || Array.isArray(doc.hooks)) doc.hooks = {};
     if (!Array.isArray(doc.hooks[event])) doc.hooks[event] = [];
-    const groupIndex = doc.hooks[event].length;
     doc.hooks[event].push({ ...(matcher ? { matcher } : {}), hooks: [handler] });
     writeAtomic(file, JSON.stringify(doc, null, 2) + "\n");
-    const hash = hookHash(file, event, matcher, handler);
-    // Re-read right before writing and merge into the latest content, so the app's edits survive.
-    const trust = readTrust(hooksDir, { fresh: true });
-    trust.trusted[hash] = { slot: `${file}#${event}/${groupIndex}/0`, entry: canonical(handler), matcher, at: new Date().toISOString(), by: "proposal" };
-    trust.off = trust.off.filter((h) => h !== hash);
-    // ponytail: no lock; an app write between this read and the rename could still lose one side.
-    writeAtomic(path.join(hooksDir, "trust.json"), JSON.stringify(trust, null, 2) + "\n");
-    return { hash };
+    return { hash: hookHash(file, event, matcher, handler) };
   }
 }
 

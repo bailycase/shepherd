@@ -1244,7 +1244,7 @@ struct ComposerControlsModel: Equatable {
     var contextOpen: Bool
     var actionEnabled: Bool
     var actionHelp: String
-    /// Hooks run in the thread's space (or wait for review): the hook glyph (docs/hooks.md › Composer glyph).
+    /// Hooks run in the thread's space: the hook glyph (docs/hooks.md › Composer glyph).
     var hooks: HookIndicator? = nil
 }
 

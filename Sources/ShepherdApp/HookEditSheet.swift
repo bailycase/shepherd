@@ -102,6 +102,8 @@ final class HookEditorModel: Identifiable {
     var problem: String?
     var saving = false
     var confirmingDelete = false
+    /// Runs after a save that wrote (a proposal's Edit…: answers the proposal). Cancel never runs it.
+    @ObservationIgnored var saved: (@MainActor () -> Void)?
 
     init(adding draft: HookDraft?, target: Target, targets: [Target], home: String) {
         mode = .add
@@ -191,7 +193,7 @@ final class HookEditorModel: Identifiable {
         return try handlers.map { HookDraft(event: event.rawValue, matcher: matcher, handler: HookHandler(raw: try $0.raw())) }
     }
 
-    /// Writes the hook (trusting what it wrote) off the main thread; true when it did.
+    /// Writes the hook off the main thread; true when it did.
     func save(with model: HooksModel) async -> Bool {
         let drafts: [HookDraft]
         do { drafts = try self.drafts() } catch { problem = String(describing: error); return false }
@@ -213,6 +215,7 @@ final class HookEditorModel: Identifiable {
             }
         }
         problem = ok ? nil : model.problem
+        if ok, let saved { self.saved = nil; saved() }
         return ok
     }
 
@@ -303,7 +306,7 @@ struct HookEditSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 HookField("Saved in", help: editor.targetRoot == nil ? "Hooks on this Mac run in every space."
-                                                    : "Space hooks travel with the repo and run once you trust the space.") {
+                                                    : "Space hooks travel with the repo and run in its threads.") {
                     Picker("Saved in", selection: $editor.target) {
                         ForEach(editor.targets, id: \.path) { Text($0.label).tag($0.path) }
                     }

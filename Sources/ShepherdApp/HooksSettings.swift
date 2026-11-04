@@ -3,7 +3,7 @@ import ShepherdSessions
 import ShepherdUI
 
 // Settings › Hooks (HooksSettings, HooksSources boards): Hooks lists every hook by event with the
-// rail of events; Sources lists the readers and every file read. Both open Edit and Review.
+// rail of events; Sources lists the readers and every file read. Both open Edit.
 
 struct HooksSettings: View {
     @Bindable var model: HooksModel
@@ -49,11 +49,6 @@ struct HooksSettings: View {
                 Button("Show every space") { model.spaceFilter = nil }.buttonStyle(.shLink)
             }
         }
-        if model.needingReview > 0 {
-            HookReviewBanner(text: model.needingReview == 1 ? "1 hook is new or changed since you trusted it. Shepherd skips it until you review it."
-                                                         : "\(model.needingReview) hooks are new or changed since you trusted them. Shepherd skips them until you review them.",
-                             count: model.needingReview) { model.openReview(root: model.spaceFilter) }
-        }
         if model.groups.isEmpty {
             HookEmptyState(text: "No hooks yet. Add one, or ask an agent to propose one; Shepherd also reads the hooks in Claude Code’s and Codex’s files.") {
                 model.add(spaceRoot: model.spaceFilter)
@@ -81,7 +76,7 @@ struct HooksSettings: View {
 }
 
 extension View {
-    /// The Edit and Review sheets a hooks page opens.
+    /// The Edit sheet a hooks page opens.
     func hookSheets(_ model: HooksModel) -> some View {
         modifier(HookSheets(model: model))
     }
@@ -94,9 +89,6 @@ private struct HookSheets: ViewModifier {
         content
             .sheet(item: $model.editor) { editor in
                 HookEditSheet(editor: editor, model: model) { model.editor = nil }
-            }
-            .sheet(item: $model.review) { review in
-                HookReviewSheet(review: review, model: model) { model.review = nil }
             }
     }
 }
@@ -121,23 +113,14 @@ struct HookTabButton: View {
     }
 }
 
-/// "2 hooks are new or changed…" with Review N.
-struct HookReviewBanner: View {
-    let text: String
-    let count: Int
-    let review: () -> Void
-
+/// The boards' fold chevron: down, turned over while open.
+struct HookChevron: View {
+    let open: Bool
     var body: some View {
-        HStack(spacing: SH.Space.l) {
-            Image(systemName: "exclamationmark.triangle").font(.sh(.ui)).foregroundStyle(Color.sh.lantern).accessibilityHidden(true)
-            Text(text).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Review \(count)", action: review).buttonStyle(.sh(.raised, size: .s))
-        }
-        .padding(.vertical, SH.Space.m).padding(.leading, SH.Space.l).padding(.trailing, SH.Space.m)
-        .background(Color.sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-        .shBorder(Color.sh.lantern, radius: SH.Radius.m)
-        .accessibilityElement(children: .contain)
+        Image(systemName: "chevron.down").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+            .rotationEffect(.degrees(open ? 180 : 0))
+            .shAnimation(.disclosure, value: open)
+            .accessibilityHidden(true)
     }
 }
 
@@ -200,7 +183,7 @@ struct HookGroupView: View {
     }
 }
 
-/// One hook: matcher chip, command (opens Edit), badge, where it's from, and its switch.
+/// One hook: matcher chip, command (opens Edit), where it's from, and its switch.
 struct HookRow: View, Equatable {
     let row: HookRowValue
     let sourceWidth: CGFloat
@@ -220,7 +203,6 @@ struct HookRow: View, Equatable {
             .buttonStyle(.plain)
             .help(row.command)
             .accessibilityLabel("Edit hook: \(row.command)")
-            if let badge = row.badge { HookBadge(text: badge.text, tone: .attention) }
             Text(row.source).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
                 .frame(width: sourceWidth, alignment: .trailing)
             Toggle(row.on ? "Turn off \(row.command)" : "Turn on \(row.command)", isOn: Binding(get: { row.on }, set: setOn))
@@ -228,7 +210,6 @@ struct HookRow: View, Equatable {
                 .disabled(row.locked)
                 .help(row.lockHelp ?? "")
         }
-        .opacity(row.badge != nil ? AppLayout.hooksPendingOpacity : 1)
         .padding(.leading, SH.Space.xl).padding(.trailing, SH.Space.l)
         .frame(minHeight: AppLayout.hooksRowHeight)
         .background(hovered ? Color.sh.bgHover : Color.clear)
@@ -342,7 +323,6 @@ struct HookFileRowView: View {
     @MainActor static func color(_ tone: HookFileRow.Tone) -> Color {
         switch tone {
         case .ok: Color.sh.done
-        case .attention: Color.sh.lanternText
         case .off: Color.sh.textTertiary
         case .failed: Color.sh.failed
         }
@@ -350,8 +330,6 @@ struct HookFileRowView: View {
 
     static func title(_ action: HookFileRow.Action) -> String {
         switch action {
-        case .review: "Review"
-        case .trustSpace: "Trust space"
         case .openFile: "Open file"
         }
     }
@@ -378,9 +356,9 @@ struct HooksSpacePage: View {
                     ForEach(space.files) { file in
                         VStack(alignment: .leading, spacing: SH.Space.xxs) {
                             Text(file.shownPath).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                            Text(file.format + " · " + (file.state == "Loaded" ? file.count : file.state.replacingOccurrences(of: "Loaded · ", with: file.count + ", ")))
+                            Text(file.format + " · " + (file.state == "Loaded" ? file.count : file.state))
                                 .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
-                            if let action = file.action, action != .review {
+                            if let action = file.action {
                                 Button(HookFileRowView.title(action)) { model.act(action, on: file, root: root) }.buttonStyle(.shLink)
                             }
                         }
@@ -391,11 +369,6 @@ struct HooksSpacePage: View {
                         .opacity(file.dimmed ? AppLayout.hooksOffOpacity : 1)
                     }
                 }
-            }
-            if space.waiting > 0 {
-                HookReviewBanner(text: space.waiting == 1 ? "1 hook in this space is new or changed. It’s skipped until you review it."
-                                                          : "\(space.waiting) hooks in this space are new or changed. They’re skipped until you review them.",
-                                 count: space.waiting) { model.openReview(root: PiHome.canonical(root)) }
             }
             if model.snapshot == nil {
                 Text("Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
