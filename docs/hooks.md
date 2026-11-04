@@ -134,6 +134,10 @@ in `SHEPHERD_HOOKS_DIR`):
   agent or editor changes outside Shepherd is new or changed until reviewed.
 - The file is written whole, atomically (temp file and rename), by the app and by the runtime's
   proposal path; readers tolerate a missing or invalid file as empty.
+- `trust.json` is not protected from the agent's own bash: an agent that runs a command can write
+  it (or a hooks file) and trust its own hook. That is the same ceiling as every other file the agent
+  can write; trust guards against hooks files changing behind the person's back, not against the
+  agent itself.
 
 ## In the thread
 
