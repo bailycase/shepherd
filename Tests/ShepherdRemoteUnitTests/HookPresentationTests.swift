@@ -80,6 +80,27 @@ struct HookPresentationTests {
         #expect(!NativeHookPrompt.isConsent(plain))
     }
 
+    /// A client that draws no card (iOS) shows a hook's prompt in the question dock: a human title and
+    /// everything trusted unfolded, never the card's JSON.
+    @Test func theQuestionDockShowsAHookPromptReadably() throws {
+        let command = String(repeating: "long-command ", count: 40) + "&& rm -rf ./build"
+        let card = #"{"name":"Clean","event":"Stop","matcher":"","command":""# + command + #"","scopes":{"space":"/r/.shepherd/hooks.json","mac":"/h/.shepherd/hooks.json"},"scope":"space","test":{"ok":true,"summary":"exit 0, no output"}}"#
+        let proposal = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "d", kind: .select, title: NativeHookProposal.marker + "\n" + card,
+                                                                        options: [NativeHookProposal.addToSpace, NativeHookProposal.addToMac, NativeHookProposal.notNow]))
+        #expect(proposal.question == "Add the hook “Clean”?" && proposal.details == nil)
+        let message = try #require(proposal.message)
+        #expect(message.contains(command) && message.contains("When: Stop") && message.contains("Matcher: always")
+                && message.contains("Saved in: /r/.shepherd/hooks.json") && message.contains("Tested: exit 0"))
+        #expect(!message.contains("{") && !proposal.question.contains(NativeHookProposal.marker))
+        #expect(proposal.options.map(\.value) == [NativeHookProposal.addToSpace, NativeHookProposal.addToMac, NativeHookProposal.notNow])
+
+        let ask = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "a", kind: .select,
+            title: "A hook asks before this runs\n\nbash \(command)\n\nNeeds a person.\n\n/h/.shepherd/hooks.json", options: ["Deny", "Allow once"]))
+        #expect(ask.question == NativeHookAsk.title && ask.details == nil)
+        #expect(ask.message?.contains("bash \(command)") == true && ask.message?.contains("Hook: /h/.shepherd/hooks.json") == true
+                && ask.message?.contains("Event: PreToolUse") == true)
+    }
+
     @Test func aProposalSaysWhenItsTestWasBlocked() throws {
         func lead(_ test: String) throws -> String {
             let card = #"{"name":"n","event":"Stop","command":"c","scopes":{"mac":"/h"},"test":"# + test + "}"
@@ -98,6 +119,10 @@ struct HookPresentationTests {
         let ask = try #require(NativeHookAsk(dialog: dialog))
         #expect(ask.call == "bash · rm -rf ./build" && ask.reason == "rm -rf needs a person." && ask.file == "/h/.shepherd/hooks.json")
         #expect(NativeHookPrompt(dialog) == .ask(ask))
+        let script = "cat <<EOF > notes\nfirst\n\nsecond\nEOF"
+        let whole = try #require(NativeHookAsk(dialog: NativeThreadDialog(id: "a3", kind: .select,
+            title: "A hook asks before this runs\n\nbash \(script)\n\nWhy.\n\n/h/hooks.json", options: ["Deny", "Allow once"])))
+        #expect(whole.call == "bash \(script)" && whole.reason == "Why." && whole.file == "/h/hooks.json", "a call with blank lines stays whole")
         let other = NativeThreadDialog(id: "a2", kind: .select, title: "A hook asks before this runs", options: ["Yes", "No"])
         #expect(NativeHookAsk(dialog: other) == nil, "only the contract's two options")
     }

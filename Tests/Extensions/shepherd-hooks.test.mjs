@@ -251,6 +251,10 @@ test("decisions merge: deny over ask over allow; ask asks the person; updatedInp
   assert.equal(await pi.emit("tool_call", editCall("/tmp/x.txt"), allow), undefined);
   assert.deepEqual(allow.prompts, [{ title: `A hook asks before this runs\n\nedit /tmp/x.txt\n\nsaid ask\n\n${macFile}`, options: ["Deny", "Allow once"] }]);
   assert.equal(pi.sent.at(-1).details.kind, "asked");
+  const long = `/tmp/${"deep/".repeat(30)}x.txt`;
+  const whole = context(project, async () => "Deny");
+  await pi.emit("tool_call", editCall(long), whole);
+  assert.equal(whole.prompts[0].title.split("\n\n")[1], `edit ${long}`, "the ask shows the whole call, never clipped");
   const deny = context(project, async () => "Deny");
   assert.equal((await pi.emit("tool_call", editCall(), deny)).block, true);
   const nobody = { ...context(project), hasUI: false };

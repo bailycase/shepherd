@@ -151,7 +151,12 @@ reach the model. Runs with no visible effect (exit 0, no output)
 collapse into one `ran` row per event and turn.
 
 `PreToolUse` `ask` uses `ctx.ui.select(title, ["Deny", "Allow once"])` with title
-`A hook asks before this runs\n\n<command or tool call>\n\n<reason>\n\n<hook file>`.
+`A hook asks before this runs\n\n<the whole tool call>\n\n<reason>\n\n<hook file>`: the call is never
+clipped (it may hold blank lines; the reason's are folded, so the last two parts are the reason and
+the file). No Project path answers a hook's prompt (a proposal or an ask): only the person in that
+thread may, and a project worker treats ask as deny and has no `hook_propose`. The Mac draws both
+with the whole command, selectable, and no default button; a client that draws neither (iOS) gets
+them in the question dock with a readable title and the command, event, matcher and file.
 
 ## Proposals
 

@@ -523,7 +523,7 @@ export default function shepherdHooks(pi) {
   }
 
   /** A PreToolUse outcome as one verdict: any deny blocks; an ask asks the person (no one to answer: deny). Posts the rows. */
-  async function permit(r, ctx, detail) {
+  async function permit(r, ctx, detail, call = detail) {
     const decision = mergePermission(r.permissions.map((p) => p.decision));
     if (decision === "deny") {
       const deny = r.permissions.find((p) => p.decision === "deny");
@@ -535,7 +535,9 @@ export default function shepherdHooks(pi) {
       const canAsk = ctx.hasUI && !unattended;
       let choice;
       if (canAsk) {
-        const title = `A hook asks before this runs\n\n${detail}\n\n${ask.reason || "No reason given."}\n\n${ask.hook.file}`;
+        // The whole call, never clipped: the person sees what they allow. The reason's blank lines fold so the parts stay apart.
+        const reason = (ask.reason || "No reason given.").replace(/\n\s*\n/g, "\n");
+        const title = `A hook asks before this runs\n\n${call}\n\n${reason}\n\n${ask.hook.file}`;
         choice = await ctx.ui.select(title, ["Deny", "Allow once"], { signal: ctx.signal });
       }
       const allowed = choice === "Allow once";
@@ -548,7 +550,8 @@ export default function shepherdHooks(pi) {
   }
 
   const safe = (fn) => async (event, ctx) => { try { return await fn(event, ctx); } catch { return undefined; } };
-  const toolDetail = (toolName, input) => clip(`${toolName} ${input?.path ?? input?.file_path ?? input?.command ?? input?.pattern ?? ""}`, 80);
+  const toolCall = (toolName, input) => `${toolName} ${input?.path ?? input?.file_path ?? input?.command ?? input?.pattern ?? ""}`.trim();
+  const toolDetail = (toolName, input) => clip(toolCall(toolName, input), 80);
   const claudeInput = (input) => (input && typeof input === "object" && typeof input.path === "string" && input.file_path === undefined ? { ...input, file_path: input.path } : input);
 
   // Shepherd's own rows reach the model only when they carry what the agent should read.
@@ -587,7 +590,7 @@ export default function shepherdHooks(pi) {
     const name = event.toolName;
     const detail = toolDetail(name, event.input);
     const r = await fire("PreToolUse", ctx, { tool_name: PI_TO_CLAUDE[name] ?? name, tool_input: claudeInput(event.input), tool_use_id: event.toolCallId }, { name, detail });
-    const verdict = await permit(r, ctx, detail);
+    const verdict = await permit(r, ctx, detail, toolCall(name, event.input));
     if (verdict.block) return { block: true, reason: verdict.reason };
     if (r.updatedInput && event.input && typeof event.input === "object") {
       // Merged over the call's input; a Claude Code `file_path` goes back to the agent's `path`.
@@ -740,7 +743,7 @@ export default function shepherdHooks(pi) {
       // The test is the agent's own bash call: the person's PreToolUse Bash hooks see it first.
       const bashDetail = clip(`bash ${command}`, 80);
       const gate = await fire("PreToolUse", ctx, { tool_name: "Bash", tool_input: { command }, tool_use_id: toolCallId ?? "" }, { name: "bash", detail: bashDetail });
-      const verdict = await permit(gate, ctx, bashDetail);
+      const verdict = await permit(gate, ctx, bashDetail, `bash ${command}`);
       if (verdict.block) {
         test = { ok: false, blocked: true, summary: `blocked by a PreToolUse hook: ${clip(verdict.reason)}`, exit: null, ms: 0 };
       } else {

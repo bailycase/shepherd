@@ -174,7 +174,7 @@ struct HookProposalCard: View {
                 Grid(alignment: .leading, horizontalSpacing: SH.Space.l, verticalSpacing: SH.Space.s) {
                     pair("When") { Text(HookEvent(rawValue: proposal.event)?.label ?? proposal.event).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary) }
                     pair("Matcher") { HookMatcherChip(text: proposal.matcher.isEmpty ? "always" : proposal.matcher, any: proposal.matcher.isEmpty) }
-                    pair("Runs") { Text(proposal.command).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled).lineLimit(4) }
+                    pair("Runs") { HookCommandText(text: proposal.command) }
                     if let status = proposal.statusMessage, !status.isEmpty {
                         pair("While it runs") { Text(status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
                     }
@@ -209,9 +209,9 @@ struct HookProposalCard: View {
                     Button("Edit…") { presenter.edit(proposal, scope: scope) }.buttonStyle(.sh(.ghost, size: .m))
                 }
                 Button(NativeHookProposal.notNow) { answer(NativeHookProposal.notNow) }.buttonStyle(.sh(.secondary, size: .m))
+                // No default action: Return never trusts a hook.
                 Button("Add and turn on") { answer(proposal.addOption(scope: scope)) }
                     .buttonStyle(.sh(.primary, size: .m))
-                    .keyboardShortcut(.defaultAction)
             }
             .disabled(!enabled)
             .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
@@ -236,6 +236,23 @@ struct HookProposalCard: View {
     }
 }
 
+/// A command the person is asked to trust: whole and selectable, scrolling past a few lines, never cut.
+struct HookCommandText: View {
+    let text: String
+    @State private var height: CGFloat = 0
+
+    var body: some View {
+        // Its own height up to the cap, scrolling past it (as iOS's fitted scroll does).
+        ScrollView {
+            Text(text).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: min(height, AppLayout.hookCommandMaxHeight))
+    }
+}
+
 // MARK: Ask panel
 
 /// A hook's `ask` in the composer's place: the call, the hook's reason, Deny or Allow once.
@@ -255,8 +272,7 @@ struct HookAskPanel: View {
                     .lineLimit(1).truncationMode(.middle).help(ask.file)
             }
             if !ask.call.isEmpty {
-                Text(ask.call).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
-                    .lineLimit(4)
+                HookCommandText(text: ask.call)
                     .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
@@ -269,8 +285,8 @@ struct HookAskPanel: View {
                 Text("The agent waits. Deny sends the hook’s reason to it.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 Spacer(minLength: SH.Space.m)
                 Button(NativeHookAsk.deny) { answer(NativeHookAsk.deny) }.buttonStyle(.sh(.secondary, size: .l))
+                // No default action: Return never allows the call.
                 Button(NativeHookAsk.allow) { answer(NativeHookAsk.allow) }.buttonStyle(.sh(.primary, size: .l))
-                    .keyboardShortcut(.defaultAction)
             }
             .disabled(!enabled)
         }

@@ -140,7 +140,7 @@ enum HookThreads {
     }
 
     static func propose(space: String, mac: String) -> NativeThreadSnapshot {
-        let card = #"{"name":"Format after edits","event":"PostToolUse","matcher":"Edit|Write","command":"jq -r .tool_input.file_path | xargs npx prettier --write","statusMessage":"Formatting edited files","timeout":null,"scopes":{"space":"\#(space)","mac":"\#(mac)"},"scope":"space","test":{"ok":true,"summary":"exit 0: reformatted 3 lines in a copy of round.ts","exit":0,"ms":412}}"#
+        let card = #"{"name":"Format after edits","event":"PostToolUse","matcher":"Edit|Write","command":"f=$(jq -r .tool_input.file_path)\n[ -n \"$f\" ] || exit 0\nnpx prettier --write \"$f\" --log-level warn --config \"$CLAUDE_PROJECT_DIR/.prettierrc\" --ignore-path \"$CLAUDE_PROJECT_DIR/.prettierignore\"","statusMessage":"Formatting edited files","timeout":null,"scopes":{"space":"\#(space)","mac":"\#(mac)"},"scope":"space","test":{"ok":true,"summary":"exit 0: reformatted 3 lines in a copy of round.ts","exit":0,"ms":412}}"#
         return snapshot([user("u1", "Run prettier on the files you change in this repo, from now on."), tool("t1", "read", #"{"path":"package.json"}"#),
                          say("a1", "Here’s the hook. I tested it on a copy of round.ts and it reformatted 3 lines. Add it, or tell me what to change.")],
                         running: true,
@@ -152,7 +152,7 @@ enum HookThreads {
         snapshot([user("u1", "The build is stale. Clear the caches and rebuild."), tool("t1", "read", #"{"path":"package.json"}"#)],
                  running: true,
                  dialogs: [NativeThreadDialog(id: "q1", kind: .select,
-                                              title: "A hook asks before this runs\n\nbash · rm -rf ./build ./node_modules/.cache\n\nrm -rf outside a temp folder needs a person to say yes.\n\n\(file)",
+                                              title: "A hook asks before this runs\n\nbash rm -rf ./build ./node_modules/.cache ./dist ./coverage ./.turbo ./packages/*/dist ./packages/*/node_modules/.cache && npm ci --prefer-offline && npm run build\n\nrm -rf outside a temp folder needs a person to say yes.\n\n\(file)",
                                               options: ["Deny", "Allow once"])])
     }
 }

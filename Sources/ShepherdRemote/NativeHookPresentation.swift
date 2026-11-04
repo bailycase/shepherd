@@ -132,6 +132,17 @@ public struct NativeHookProposal: Equatable, Sendable {
         options = dialog.options ?? []
     }
 
+    /// The question dock's words for a client that draws no card (iOS): a human title, and the
+    /// whole command, the event, the matcher, the file and the test, shown unfolded.
+    public var readable: (question: String, message: String) {
+        var lines = ["Runs:", command, "", "When: \(event)", "Matcher: \(matcher.isEmpty ? "always" : matcher)"]
+        if let statusMessage, !statusMessage.isEmpty { lines.append("While it runs: \(statusMessage)") }
+        lines.append("Saved in: \(path(scope: scope))")
+        if let test { lines.append(testLead + test.summary) }
+        lines += ["", "Adding it trusts this exact entry; if it changes later, it needs your review again."]
+        return ("Add the hook “\(name)”?", lines.joined(separator: "\n"))
+    }
+
     /// The option that adds the hook in `scope`.
     public func addOption(scope: String) -> String { scope == "space" ? Self.addToSpace : Self.addToMac }
     /// The file the hook is saved in for `scope`.
@@ -166,11 +177,25 @@ public struct NativeHookAsk: Equatable, Sendable {
     public init?(dialog: NativeThreadDialog) {
         guard dialog.kind == .select, dialog.title.hasPrefix(Self.title),
               Set(dialog.options ?? []) == [Self.deny, Self.allow] else { return nil }
+        // The call is whole and may hold blank lines; the reason (folded by the runtime) and the file are the last two parts.
         let parts = dialog.title.components(separatedBy: "\n\n")
         dialogID = dialog.id
-        call = parts.count > 1 ? parts[1] : ""
-        reason = parts.count > 2 ? parts[2] : ""
-        file = parts.count > 3 ? parts[3...].joined(separator: "\n\n") : ""
+        if parts.count >= 4 {
+            call = parts[1..<(parts.count - 2)].joined(separator: "\n\n")
+            reason = parts[parts.count - 2]
+            file = parts[parts.count - 1]
+        } else {
+            call = parts.count > 1 ? parts[1] : ""
+            reason = parts.count > 2 ? parts[2] : ""
+            file = ""
+        }
+    }
+}
+
+extension NativeHookAsk {
+    /// The question dock's words for a client that draws no panel (iOS): the whole call, unfolded.
+    public var readable: (question: String, message: String) {
+        (Self.title, ["Runs:", call, "", "Why: \(reason)", "Event: PreToolUse", "Hook: \(file)"].joined(separator: "\n"))
     }
 }
 
@@ -202,6 +227,13 @@ public enum NativeHookPrompt: Equatable, Sendable {
         switch self {
         case .proposal(let proposal): proposal.dialogID
         case .ask(let ask): ask.dialogID
+        }
+    }
+
+    public var readable: (question: String, message: String) {
+        switch self {
+        case .proposal(let proposal): proposal.readable
+        case .ask(let ask): ask.readable
         }
     }
 }

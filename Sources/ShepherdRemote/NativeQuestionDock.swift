@@ -62,6 +62,8 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         id = dialog.id
         (question, details) = Self.split(dialog.title)
         message = dialog.message.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        // A hook's consent prompt, where no card draws it: a human title and everything trusted, unfolded.
+        if let hook = NativeHookPrompt(dialog)?.readable { question = hook.question; message = hook.message; details = nil }
         placeholder = dialog.placeholder ?? "Type your answer…"
         prefill = dialog.prefill ?? ""
         mayTimeOut = (dialog.timeout ?? 0) > 0

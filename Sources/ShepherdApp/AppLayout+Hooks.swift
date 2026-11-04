@@ -50,6 +50,8 @@ extension AppLayout {
     static let hookBoxIndent: CGFloat = 13 + SH.Space.m
     /// The proposal card's key column.
     static let hookCardKeyWidth: CGFloat = 96
+    /// The most a consent prompt's command takes before it scrolls (about ten code lines).
+    static let hookCommandMaxHeight: CGFloat = 180
     /// The composer's hook glyph and its review dot.
     static let hookComposerDot: CGFloat = 6
 }
