@@ -522,6 +522,31 @@ export default function shepherdHooks(pi) {
     }
   }
 
+  /** A PreToolUse outcome as one verdict: any deny blocks; an ask asks the person (no one to answer: deny). Posts the rows. */
+  async function permit(r, ctx, detail) {
+    const decision = mergePermission(r.permissions.map((p) => p.decision));
+    if (decision === "deny") {
+      const deny = r.permissions.find((p) => p.decision === "deny");
+      post([...r.rows, message("denied", "PreToolUse", deny.hook, { content: `A hook denied ${detail}: ${deny.reason || "no reason given"}`, detail: deny.detail, meta: deny.meta, lines: deny.reason ? [deny.reason] : [] })]);
+      return { block: true, reason: deny.reason || "A PreToolUse hook denied this call." };
+    }
+    if (decision === "ask") {
+      const ask = r.permissions.find((p) => p.decision === "ask");
+      const canAsk = ctx.hasUI && !unattended;
+      let choice;
+      if (canAsk) {
+        const title = `A hook asks before this runs\n\n${detail}\n\n${ask.reason || "No reason given."}\n\n${ask.hook.file}`;
+        choice = await ctx.ui.select(title, ["Deny", "Allow once"], { signal: ctx.signal });
+      }
+      const allowed = choice === "Allow once";
+      post([...r.rows, message("asked", "PreToolUse", ask.hook, { content: `A hook asked before ${detail}: ${allowed ? "allowed once" : "denied"}`, detail: ask.detail, meta: ask.meta, lines: ask.reason ? [ask.reason] : [] })]);
+      if (!allowed) return { block: true, reason: canAsk ? "The person denied this call after a hook asked." : "A hook asked for the person's approval and no one can answer here." };
+      return { block: false };
+    }
+    post(r.rows);
+    return { block: false };
+  }
+
   const safe = (fn) => async (event, ctx) => { try { return await fn(event, ctx); } catch { return undefined; } };
   const toolDetail = (toolName, input) => clip(`${toolName} ${input?.path ?? input?.file_path ?? input?.command ?? input?.pattern ?? ""}`, 80);
   const claudeInput = (input) => (input && typeof input === "object" && typeof input.path === "string" && input.file_path === undefined ? { ...input, file_path: input.path } : input);
@@ -562,25 +587,8 @@ export default function shepherdHooks(pi) {
     const name = event.toolName;
     const detail = toolDetail(name, event.input);
     const r = await fire("PreToolUse", ctx, { tool_name: PI_TO_CLAUDE[name] ?? name, tool_input: claudeInput(event.input), tool_use_id: event.toolCallId }, { name, detail });
-    const decision = mergePermission(r.permissions.map((p) => p.decision));
-    const deny = r.permissions.find((p) => p.decision === "deny");
-    if (decision === "deny") {
-      post([...r.rows, message("denied", "PreToolUse", deny.hook, { content: `A hook denied ${detail}: ${deny.reason || "no reason given"}`, detail: deny.detail, meta: deny.meta, lines: deny.reason ? [deny.reason] : [] })]);
-      return { block: true, reason: deny.reason || "A PreToolUse hook denied this call." };
-    }
-    if (decision === "ask") {
-      const ask = r.permissions.find((p) => p.decision === "ask");
-      let choice;
-      if (ctx.hasUI && !unattended) {
-        const title = `A hook asks before this runs\n\n${detail}\n\n${ask.reason || "No reason given."}\n\n${ask.hook.file}`;
-        choice = await ctx.ui.select(title, ["Deny", "Allow once"], { signal: ctx.signal });
-      }
-      const allowed = choice === "Allow once";
-      post([...r.rows, message("asked", "PreToolUse", ask.hook, { content: `A hook asked before ${detail}: ${allowed ? "allowed once" : "denied"}`, detail: ask.detail, meta: ask.meta, lines: ask.reason ? [ask.reason] : [] })]);
-      if (!allowed) return { block: true, reason: choice === undefined && !(ctx.hasUI && !unattended) ? "A hook asked for the person's approval and no one can answer here." : "The person denied this call after a hook asked." };
-    } else {
-      post(r.rows);
-    }
+    const verdict = await permit(r, ctx, detail);
+    if (verdict.block) return { block: true, reason: verdict.reason };
     if (r.updatedInput && event.input && typeof event.input === "object") {
       // Merged over the call's input; a Claude Code `file_path` goes back to the agent's `path`.
       const next = { ...r.updatedInput };
@@ -706,12 +714,12 @@ export default function shepherdHooks(pi) {
       scope: Type.Union([Type.Literal("space"), Type.Literal("mac")]),
       sample: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Event JSON to test with" })),
     }),
-    async execute(_id, params, signal, _update, ctx) {
-      return proposeHook(params, ctx, signal);
+    async execute(id, params, signal, _update, ctx) {
+      return proposeHook(params, ctx, signal, id);
     },
   });
 
-  async function proposeHook(params, ctx, signal) {
+  async function proposeHook(params, ctx, signal, toolCallId) {
     const reply = (text, isError = false) => ({ content: [{ type: "text", text }], details: {}, ...(isError ? { isError: true } : {}) });
     const event = String(params?.event ?? "");
     const command = String(params?.command ?? "").trim();
@@ -729,12 +737,20 @@ export default function shepherdHooks(pi) {
     try {
       const sample = sampleEvent(event, matcher, params.sample, scratch);
       const input = { session_id: ctx.sessionManager?.getSessionId?.() ?? "", transcript_path: ctx.sessionManager?.getSessionFile?.() ?? "", cwd: ctx.cwd, hook_event_name: event, ...sample };
-      const result = await runCommand(command, { cwd: projectRoot, event, input, timeoutMs: Math.min(timeout ?? 60, 60) * 1000 });
-      const ok = !result.timedOut && (result.exit === 0 || result.exit === 2);
-      const said = (result.exit === 2 ? result.stderr : result.stdout || result.stderr).trim().split("\n")[0];
-      const summary = result.timedOut ? "timed out" : result.exit === null ? `didn't start: ${clip(result.stderr)}`
-        : `exit ${result.exit}${result.exit === 2 ? " (blocks)" : ""}${said ? `: ${clip(said)}` : ", no output"}`;
-      test = { ok, summary, exit: result.exit, ms: result.ms };
+      // The test is the agent's own bash call: the person's PreToolUse Bash hooks see it first.
+      const bashDetail = clip(`bash ${command}`, 80);
+      const gate = await fire("PreToolUse", ctx, { tool_name: "Bash", tool_input: { command }, tool_use_id: toolCallId ?? "" }, { name: "bash", detail: bashDetail });
+      const verdict = await permit(gate, ctx, bashDetail);
+      if (verdict.block) {
+        test = { ok: false, blocked: true, summary: `blocked by a PreToolUse hook: ${clip(verdict.reason)}`, exit: null, ms: 0 };
+      } else {
+        const result = await runCommand(command, { cwd: projectRoot, event, input, timeoutMs: Math.min(timeout ?? 60, 60) * 1000 });
+        const ok = !result.timedOut && (result.exit === 0 || result.exit === 2);
+        const said = (result.exit === 2 ? result.stderr : result.stdout || result.stderr).trim().split("\n")[0];
+        const summary = result.timedOut ? "timed out" : result.exit === null ? `didn't start: ${clip(result.stderr)}`
+          : `exit ${result.exit}${result.exit === 2 ? " (blocks)" : ""}${said ? `: ${clip(said)}` : ", no output"}`;
+        test = { ok, summary, exit: result.exit, ms: result.ms };
+      }
     } finally {
       try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
     }

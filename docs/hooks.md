@@ -157,9 +157,12 @@ collapse into one `ran` row per event and turn.
 
 The `hook_propose` tool (runtime) takes `{ name, event, matcher?, command, statusMessage?, timeout?, scope: "space" | "mac", sample? }`.
 It runs the command once against a sample event (the given one or a built-in one for the event)
-in a scratch copy where it can (`PostToolUse`/`PreToolUse` on a file: a temp copy of that file), then
+in a scratch copy where it can (`PostToolUse`/`PreToolUse` on a file: a temp copy of that file).
+That test runs like the agent's own bash call, in the space root, after the person's `PreToolUse`
+hooks for `Bash` (`tool_name` `Bash`, `tool_input` `{ command }`): a deny, or an ask the person
+doesn't allow, skips it and the card says the test was blocked and why (`test.blocked`). Then it
 asks with `ctx.ui.select` whose title begins with the marker line `shepherd.hook.proposal` and a
-JSON object `{ name, event, matcher, command, statusMessage, timeout, scopes: { space: <path>, mac: <path> }, scope, test: { ok, summary, exit, ms } }`.
+JSON object `{ name, event, matcher, command, statusMessage, timeout, scopes: { space: <path>, mac: <path> }, scope, test: { ok, summary, exit, ms, blocked? } }`.
 Options: `Add to this space`, `Add to this Mac`, `Not now` (`Edit…` opens Settings with the draft).
 The app draws that request as the proposal card instead of a question. On add, the runtime writes
 the entry to the chosen file, trusts its hash (`by: "proposal"`) and posts an `added` row.

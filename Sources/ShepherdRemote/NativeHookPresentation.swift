@@ -86,6 +86,8 @@ public struct NativeHookProposal: Equatable, Sendable {
         public var summary: String
         public var exit: Int?
         public var ms: Int?
+        /// The person's PreToolUse Bash hooks denied the test run, so it didn't run.
+        public var blocked: Bool?
     }
     public struct Scopes: Equatable, Sendable, Decodable {
         public var space: String?
@@ -134,6 +136,12 @@ public struct NativeHookProposal: Equatable, Sendable {
     public func addOption(scope: String) -> String { scope == "space" ? Self.addToSpace : Self.addToMac }
     /// The file the hook is saved in for `scope`.
     public func path(scope: String) -> String { scope == "space" ? (scopes.space ?? scopes.mac) : scopes.mac }
+    /// The test line's lead: what happened to the run.
+    public var testLead: String {
+        guard let test else { return "" }
+        return test.ok ? "Tested: " : test.blocked == true ? "Test didn’t run: " : "Test didn’t pass: "
+    }
+
     /// The test's meta ("exit 0 · 0.4 s").
     public var testMeta: String? {
         guard let test else { return nil }

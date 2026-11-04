@@ -189,7 +189,7 @@ struct HookProposalCard: View {
                     HStack(spacing: SH.Space.m) {
                         Image(systemName: test.ok ? "checkmark" : "exclamationmark.triangle").font(.sh(.caption))
                             .foregroundStyle(test.ok ? Color.sh.done : Color.sh.lanternText).accessibilityHidden(true)
-                        Text((test.ok ? "Tested: " : "Test didn’t pass: ") + test.summary).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
+                        Text(proposal.testLead + test.summary).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
                         Spacer(minLength: SH.Space.m)
                         if let meta = proposal.testMeta { Text(meta).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary) }
                     }

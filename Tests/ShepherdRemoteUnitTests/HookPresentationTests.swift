@@ -76,6 +76,19 @@ struct HookPresentationTests {
         #expect(NativeHookProposal(dialog: plain) == nil && NativeHookPrompt(plain) == nil)
         let broken = NativeThreadDialog(id: "d3", kind: .select, title: NativeHookProposal.marker + "\n{", options: ["Not now"])
         #expect(NativeHookPrompt(broken) == nil, "a card that doesn't parse stays an ordinary question")
+        #expect(NativeHookPrompt.isConsent(broken), "but no Project may answer it")
+        #expect(!NativeHookPrompt.isConsent(plain))
+    }
+
+    @Test func aProposalSaysWhenItsTestWasBlocked() throws {
+        func lead(_ test: String) throws -> String {
+            let card = #"{"name":"n","event":"Stop","command":"c","scopes":{"mac":"/h"},"test":"# + test + "}"
+            let dialog = NativeThreadDialog(id: "d", kind: .select, title: NativeHookProposal.marker + "\n" + card, options: [NativeHookProposal.notNow])
+            return try #require(NativeHookProposal(dialog: dialog)).testLead
+        }
+        #expect(try lead(#"{"ok":true,"summary":"s"}"#) == "Tested: ")
+        #expect(try lead(#"{"ok":false,"summary":"s","exit":1}"#) == "Test didn’t pass: ")
+        #expect(try lead(#"{"ok":false,"blocked":true,"summary":"blocked by a PreToolUse hook: no","exit":null}"#) == "Test didn’t run: ")
     }
 
     @Test func aHooksAskParsesItsCallReasonAndFile() throws {

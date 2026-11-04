@@ -385,6 +385,36 @@ test("hook_propose tests the command, asks with the proposal marker, then writes
   assert.equal(fs.readdirSync(path.dirname(spaceFile)).filter((f) => f.endsWith(".tmp")).length, 0, "written by rename");
 });
 
+test("hook_propose's test run is the agent's bash call: the person's PreToolUse Bash hooks can deny or ask first", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  writeJSON(macFile, { hooks: { PreToolUse: [
+    { matcher: "Bash", hooks: [{ type: "command", command: "grep -q 'touch denied' && { echo 'not that' >&2; exit 2; }; exit 0" }] },
+    { matcher: "Bash", hooks: [{ type: "command", command: `grep -q 'touch asked' && echo '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"sure?"}}'; exit 0` }] },
+  ] } });
+  trust(hooksDir, macFile);
+  const tool = load(hooksDir).tools.get("hook_propose");
+  const propose = async (command, answer) => {
+    const ctx = context(project, async (title) => (title.startsWith("shepherd.hook.proposal") ? "Not now" : answer));
+    await tool.execute("p", { name: "T", event: "Stop", command, scope: "mac" }, undefined, undefined, ctx);
+    return { ctx, card: JSON.parse(ctx.prompts.at(-1).title.split(/\n(.*)/s)[1]) };
+  };
+  const denied = await propose("touch denied");
+  assert.equal(fs.existsSync(path.join(project, "denied")), false, "a deny skips the test");
+  assert.equal(denied.card.test.ok, false);
+  assert.equal(denied.card.test.blocked, true);
+  assert.match(denied.card.test.summary, /PreToolUse hook: not that/);
+
+  const asked = await propose("touch asked", "Deny");
+  assert.match(asked.ctx.prompts[0].title, /^A hook asks before this runs\n\nbash touch asked\n\nsure\?/);
+  assert.equal(fs.existsSync(path.join(project, "asked")), false, "an ask the person denies skips the test");
+  assert.equal(asked.card.test.blocked, true);
+
+  await propose("touch asked", "Allow once");
+  assert.ok(fs.existsSync(path.join(project, "asked")), "allowed once: the test runs in the space root");
+  const plain = await propose("touch plain");
+  assert.ok(fs.existsSync(path.join(project, "plain")) && plain.card.test.ok);
+});
+
 test("inert without SHEPHERD_HOOKS_DIR; no proposals in automations; the tool is deferred when tools are", () => {
   const none = load(undefined);
   assert.equal(Object.keys(none.handlers).length + none.tools.size, 0);
