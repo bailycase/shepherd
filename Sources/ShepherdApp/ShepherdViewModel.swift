@@ -731,7 +731,7 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
-        self.hooks = hooks ?? HooksModel(home: server.pi.userHome, support: server.pi.home.deletingLastPathComponent(),
+        self.hooks = hooks ?? HooksModel(home: HookCatalog.home(fallback: server.pi.userHome), support: server.pi.home.deletingLastPathComponent(),
                                          piTrust: server.pi.home.appendingPathComponent("trust.json"))
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },

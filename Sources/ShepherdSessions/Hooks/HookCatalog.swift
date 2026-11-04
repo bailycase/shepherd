@@ -186,6 +186,17 @@ public struct HookCatalog: Sendable {
     /// Files larger than this are reported, not read.
     public static let fileLimit = 1 << 20
 
+    /// Debug builds only: the home folder whose This Mac files the app's catalog reads. The test
+    /// isolation sets it, so no test reads or writes the person's `~/.shepherd`, `~/.claude` or `~/.codex`.
+    public static let homeOverrideEnvKey = "SHEPHERD_HOOKS_HOME"
+
+    /// The app's hooks home: the override where honoured, else `fallback` (pi's user home).
+    public static func home(fallback: String, environment: [String: String] = ProcessInfo.processInfo.environment,
+                            honoursOverride: Bool = PiEngine.honoursOverride) -> String {
+        guard honoursOverride, let value = environment[homeOverrideEnvKey], !value.isEmpty else { return fallback }
+        return value
+    }
+
     /// `support` is Shepherd's Application Support folder; pi's trust file defaults to the one in
     /// Shepherd's pi home, `<support>/pi/trust.json`.
     public init(home: String = PiHome.environmentHome, support: URL, piTrust: URL? = nil) {

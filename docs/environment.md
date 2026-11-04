@@ -74,6 +74,9 @@
   executable that takes pi's arguments, which the launcher then starts instead of the engine the
   app ships (`PiEngine`). The tests point it at a stand-in. Release builds ignore it, and a set
   value is never looked up on PATH.
+- **`SHEPHERD_HOOKS_HOME`** (Debug builds only) names the home folder whose This Mac hooks files
+  (`.shepherd/hooks.json`, `.claude/settings.json`, `.codex/…`) Settings › Hooks reads and writes,
+  instead of `HOME`. The test isolation sets it.
 - **`SHEPHERD_YOUR_PI`** (Debug builds only) names "your pi", the user's own pi folder Shepherd
   reads (adoption, Settings ▸ Skills), instead of the one a login shell finds. The test isolation
   sets it; under `SHEPHERD_PI_ENGINE` without it there is no "your pi" at all.
