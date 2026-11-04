@@ -85,7 +85,8 @@ public enum HookTester {
             let stdout = String(decoding: result.output.prefix(outputCap), as: UTF8.self)
             let stderr = String(decoding: result.errors.prefix(outputCap), as: UTF8.self)
             return HookTestResult(exit: result.status, stdout: stdout, stderr: stderr, milliseconds: elapsed(),
-                                  outcome: HookOutcome.interpret(event: event.rawValue, exit: result.status, stdout: stdout, stderr: stderr))
+                                  outcome: HookOutcome.interpret(event: event.rawValue, exit: result.status, stdout: stdout, stderr: stderr),
+                                  stdoutCut: result.output.count > outputCap, stderrCut: result.errors.count > outputCap)
         } catch BoundedCommand.Failure.timedOut {
             return HookTestResult(exit: nil, stdout: "", stderr: "", milliseconds: elapsed(), outcome: .timedOut)
         } catch BoundedCommand.Failure.outputTooLarge {

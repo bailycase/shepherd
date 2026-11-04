@@ -168,5 +168,18 @@ struct ClientHooksTests {
         #expect(fake.requests.last == .test(command: "./no-env.sh", event: .preToolUse, matcher: "Edit|Write", timeout: 10, root: nil))
         let result = try! #require(editor.testResult)
         #expect(editor.testMeta(result, host: host.name) == "sample edit · exit 2 · 41 ms · on Studio")
+        #expect(HookTestOutput(result)?.streams == [.init(label: "stderr", text: "no", note: nil)])
+    }
+
+    /// Output lists only the streams the hook printed, says a stream was cut, and is gone when both are empty.
+    @Test func aTestsOutputLabelsEachPrintedStreamAndSaysWhenOneWasCut() {
+        func output(_ out: String, _ err: String, outCut: Bool = false, errCut: Bool = false) -> [HookTestOutput.Stream]? {
+            HookTestOutput(HookTestResult(exit: 0, stdout: out, stderr: err, milliseconds: 1, outcome: .allowed, stdoutCut: outCut, stderrCut: errCut))?.streams
+        }
+        #expect(output("", "") == nil)
+        #expect(output("\n", "\n\n") == nil)
+        #expect(output("ok\n\nmore\n\n", "") == [.init(label: "stdout", text: "ok\n\nmore", note: nil)])
+        #expect(output("a", "b", errCut: true) == [.init(label: "stdout", text: "a", note: nil), .init(label: "stderr", text: "b", note: "cut at 64 KiB")])
+        #expect(output("x", "", outCut: true)?.first?.note == "cut at 64 KiB")
     }
 }

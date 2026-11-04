@@ -135,6 +135,8 @@ extension MobileLayout {
     /// The edit form: its labels' column (When, Saved in, Matcher; also the time limit's), mono 14
     /// in its fields, the command at least 72pt.
     static let hookLabelWidth: CGFloat = 96
+    /// A test's Output stream scrolls past this height.
+    static let hookOutputHeight: CGFloat = 200
     static let hookFieldMonoSize: CGFloat = 14
     static let hookCommandMinHeight: CGFloat = 72
     /// The JSON pane: mono 12 at least 240pt.

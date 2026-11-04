@@ -604,7 +604,7 @@ struct HookEditScreen: View {
             .disabled(editor.testable == nil || editor.testing)
             .accessibilityHint(editor.testable == nil ? "Enter a command to test it" : "Runs the command once on \(host.name) against a sample \(editor.event.rawValue) event")
             if let result = editor.testResult {
-                HookTestResultCard(outcome: result.outcome, meta: editor.testMeta(result, host: host.name))
+                HookTestResultCard(outcome: result.outcome, meta: editor.testMeta(result, host: host.name), output: HookTestOutput(result))
             }
         }
         SettingsFootnote("Gets the event as JSON on stdin. Exit 2, or a block decision, stops the call; the reason goes to the agent.")
@@ -722,22 +722,55 @@ private struct HookToolChip: View {
     }
 }
 
-/// The test's result: the outcome in its color, the run's line under it, ending "on <host>".
+/// The test's result: the outcome in its color, the run's line under it, ending "on <host>", and
+/// what the hook printed in a collapsed Output.
 private struct HookTestResultCard: View {
     let outcome: HookOutcome
     let meta: String
+    var output: HookTestOutput? = nil
+    @State private var outputOpen = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xxs) {
-            Text(outcome.summary).font(.sh(.ui, weight: .medium)).foregroundStyle(Self.color(outcome)).lineLimit(4)
-            Text(meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(outcome.summary).font(.sh(.ui, weight: .medium)).foregroundStyle(Self.color(outcome)).lineLimit(4)
+                Text(meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+            }
+            .accessibilityElement(children: .combine)
+            if let output {
+                DisclosureGroup(isExpanded: $outputOpen) {
+                    VStack(alignment: .leading, spacing: SH.Space.m) {
+                        ForEach(output.streams) { stream in
+                            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                                HStack(spacing: SH.Space.s) {
+                                    Text(stream.label).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+                                    if let note = stream.note { Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                                }
+                                ScrollView {
+                                    Text(stream.text).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(SH.Space.m)
+                                }
+                                .frame(maxHeight: MobileLayout.hookOutputHeight)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+                                .accessibilityLabel(stream.label)
+                            }
+                        }
+                    }
+                    .padding(.top, SH.Space.s)
+                } label: {
+                    Text("Output").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).frame(minHeight: SH.Height.touch)
+                }
+                .tint(Color.sh.textSecondary)
+            }
         }
         .padding(.horizontal, SH.Space.l)
         .padding(.vertical, SH.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
         .shBorder(Color.sh.lineSubtle, radius: SHListMetrics.cardRadius)
-        .accessibilityElement(children: .combine)
     }
 
     @MainActor static func color(_ outcome: HookOutcome) -> Color {

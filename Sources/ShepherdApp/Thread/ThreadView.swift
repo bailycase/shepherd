@@ -81,6 +81,8 @@ struct ThreadView: View {
     }
     /// Only this Mac's agents may receive paths from this Mac.
     var allowsLocalFiles = false
+    /// A remote thread's folder on its host, for the composer's hook glyph only.
+    var hookDirectory: String? = nil
     var retainedInput: ThreadInput? = nil
     /// What watches the thread for a stranded scroll position; a test holds its own to read.
     var retainedTailGuard: ThreadTailGuard? = nil
@@ -305,6 +307,7 @@ struct ThreadView: View {
                 if !composerHidden {
                     Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
                              gutter: AppLayout.gutter, measuredInset: composerInset, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
+                             hookDirectory: allowsLocalFiles ? workingDirectory : hookDirectory,
                              showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()

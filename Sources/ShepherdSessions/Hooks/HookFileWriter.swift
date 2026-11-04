@@ -9,6 +9,8 @@ import ShepherdProtocol
 public struct HookFileWriter: Sendable {
     public struct Failure: Error, Equatable, CustomStringConvertible, Sendable {
         public let description: String
+        /// The hook is no longer in its file as it was read (Settings offers Reload).
+        public static let changed = Failure(description: "This hook changed in its file since Shepherd read it. Reload and try again.")
     }
 
     public let settings: HookSettingsStore
@@ -83,7 +85,7 @@ public struct HookFileWriter: Sendable {
     private static func verify(_ entry: HookEntry, in root: HookJSON) throws {
         let current = (try? HookCatalog.entries(of: root, file: entry.file, scope: entry.scope, format: entry.format, editable: true)) ?? []
         guard current.contains(where: { $0.slot == entry.slot && $0.hash == entry.hash }) else {
-            throw Failure(description: "This hook changed in its file since Shepherd read it. Reload and try again.")
+            throw Failure.changed
         }
     }
 

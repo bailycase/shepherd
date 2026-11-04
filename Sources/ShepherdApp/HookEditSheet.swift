@@ -37,7 +37,11 @@ final class HookEditorModel: Identifiable {
     var jsonError: String?
     var testing = false
     var testResult: HookTestResult?
+    /// The test's Output disclosure; collapsed until opened, kept across runs.
+    var outputOpen = false
     var problem: String?
+    /// The last save or delete failed because the hook changed in its file: Reload shows.
+    var conflict = false
     var saving = false
     var confirmingDelete = false
     /// Runs after a save that wrote (a proposal's Edit…: answers the proposal). Cancel never runs it.
@@ -113,47 +117,48 @@ final class HookEditorModel: Identifiable {
         return try HookForm.drafts(event: event, matcher: matcher, handlers: handlers)
     }
 
-    /// Writes the hook off the main thread; true when it did.
+    /// Writes the hook (on this Mac or the host); true when it did.
     func save(with model: HooksModel) async -> Bool {
         let drafts: [HookDraft]
         do { drafts = try self.drafts() } catch { problem = String(describing: error); return false }
-        let entry = self.entry, target = self.target, originals = handlers.map(\.original)
         saving = true
         defer { saving = false }
-        let ok = await model.change { _, writer in
-            try writer.save(drafts, to: target, replacing: entry, kept: originals.firstIndex(of: true))
-        }
-        problem = ok ? nil : model.problem
-        if ok, let saved { self.saved = nil; saved() }
-        return ok
+        let failure = await model.save(drafts, to: target, replacing: entry, kept: handlers.map(\.original).firstIndex(of: true))
+        settle(failure)
+        if failure == nil, let saved { self.saved = nil; saved() }
+        return failure == nil
     }
 
     func delete(with model: HooksModel) async -> Bool {
         guard let entry else { return false }
-        let ok = await model.change { _, writer in try writer.delete(entry) }
-        problem = ok ? nil : model.problem
-        return ok
+        let failure = await model.delete(entry)
+        settle(failure)
+        return failure == nil
     }
 
-    /// Runs the first command against a sample event, off the main thread.
-    func test() {
+    private func settle(_ failure: HooksModel.Failure?) {
+        problem = failure?.message
+        conflict = failure?.changed ?? false
+    }
+
+    /// Runs the first command against a sample event where the hook runs: this Mac or the host.
+    func test(with model: HooksModel) {
         guard let handler = testable, !testing else { return }
         testing = true
-        let command = handler.command, event = event, matcher = matcher
         let timeout = Double(handler.timeout.trimmingCharacters(in: .whitespaces))
-        let root = targetRoot ?? home
         Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                HookTester.run(command: command, event: event, matcher: matcher, timeout: timeout, root: root)
-            }.value
-            testResult = result
+            do {
+                testResult = try await model.test(command: handler.command, event: event, matcher: matcher, timeout: timeout, root: targetRoot)
+            } catch {
+                problem = settingsProblem(error)
+            }
             testing = false
         }
     }
 
-    /// The test's line under its outcome ("bash · exit 2 · 41 ms").
-    static func testMeta(_ result: HookTestResult, event: HookEvent, matcher: String) -> String {
-        HooksPresentation.testMeta(result, event: event, matcher: matcher)
+    /// The test's line under its outcome ("sample bash · exit 2 · 41 ms", "… · on Studio" on a host).
+    static func testMeta(_ result: HookTestResult, event: HookEvent, matcher: String, host: String? = nil) -> String {
+        HooksPresentation.testMeta(result, event: event, matcher: matcher) + (host.map { " · on \($0)" } ?? "")
     }
 }
 
@@ -201,7 +206,7 @@ struct HookEditSheet: View {
     private var form: some View {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
             if editor.readOnly {
-                HookReadOnlyNote(label: editor.sourceLabel) { model.open(editor.target) }
+                HookReadOnlyNote(label: editor.sourceLabel, open: model.isRemote ? nil : { model.open(editor.target) })
             }
             HStack(alignment: .top, spacing: SH.Space.l) {
                 HookField("When", help: editor.event.effect) {
@@ -213,7 +218,7 @@ struct HookEditSheet: View {
                     .labelsHidden()
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                HookField("Saved in", help: editor.targetRoot == nil ? "Hooks on this Mac run in every space."
+                HookField("Saved in", help: editor.targetRoot == nil ? "Hooks on \(model.hostName) run in every space."
                                                     : "Space hooks travel with the repo and run in its threads.") {
                     Picker("Saved in", selection: $editor.target) {
                         ForEach(editor.targets, id: \.path) { Text($0.label).tag($0.path) }
@@ -281,15 +286,19 @@ struct HookEditSheet: View {
             HStack {
                 Text("Test").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                 Spacer(minLength: 0)
-                Button { editor.test() } label: {
-                    Label(editor.testing ? "Running…" : "Run with a sample event", systemImage: "play.fill")
+                Button { editor.test(with: model) } label: {
+                    Label(editor.testing ? (model.isRemote ? "Running on \(model.hostName)…" : "Running…")
+                                         : (model.isRemote ? "Run on \(model.hostName)" : "Run with a sample event"), systemImage: "play.fill")
                 }
                 .buttonStyle(.sh(.secondary, size: .s))
                 .disabled(editor.testable == nil || editor.testing)
-                .help(editor.testable == nil ? "Enter a command to test it" : "Runs the command once against a sample \(editor.event.rawValue) event")
+                .help(editor.testable == nil ? "Enter a command to test it"
+                      : "Runs the command once on \(model.hostName) against a sample \(editor.event.rawValue) event")
             }
             if let result = editor.testResult {
-                HookTestResultCard(outcome: result.outcome, meta: HookEditorModel.testMeta(result, event: editor.event, matcher: editor.matcher))
+                HookTestResultCard(outcome: result.outcome,
+                                   meta: HookEditorModel.testMeta(result, event: editor.event, matcher: editor.matcher, host: model.isRemote ? model.hostName : nil),
+                                   output: HookTestOutput(result), outputOpen: $editor.outputOpen)
             }
         }
     }
@@ -329,13 +338,17 @@ struct HookEditSheet: View {
             }
             if let problem = editor.problem {
                 Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed).lineLimit(2).textSelection(.enabled)
+                if editor.conflict, let entry = editor.entry {
+                    Button("Reload") { model.reloadEditing(entry) }.buttonStyle(.sh(.secondary, size: .s))
+                        .help("Read the hooks again and open this hook as its file has it now")
+                }
             }
             Spacer(minLength: SH.Space.l)
             Button(editor.readOnly ? "Close" : "Cancel", action: close)
                 .buttonStyle(.sh(.secondary, size: .m))
                 .keyboardShortcut(.cancelAction)
             if editor.readOnly {
-                Button("Open file") { model.open(editor.target) }.buttonStyle(.sh(.primary, size: .m))
+                if !model.isRemote { Button("Open file") { model.open(editor.target) }.buttonStyle(.sh(.primary, size: .m)) }
             } else {
                 Button("Save") { Task { if await editor.save(with: model) { close() } } }
                     .buttonStyle(.sh(.primary, size: .m))
@@ -471,23 +484,33 @@ struct HookSubField<Control: View>: View {
     }
 }
 
-/// The test's result: the outcome in its color and glyph, the run's meta under it.
+/// The test's result: the outcome in its color and glyph, the run's meta under it, and what the
+/// hook printed in a collapsed Output.
 struct HookTestResultCard: View {
     let outcome: HookOutcome
     let meta: String
+    var output: HookTestOutput? = nil
+    @Binding var outputOpen: Bool
+
+    init(outcome: HookOutcome, meta: String, output: HookTestOutput? = nil, outputOpen: Binding<Bool> = .constant(false)) {
+        self.outcome = outcome; self.meta = meta; self.output = output; _outputOpen = outputOpen
+    }
 
     var body: some View {
         let (glyph, color) = Self.look(outcome)
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Label { Text(outcome.summary).lineLimit(3) } icon: { Image(systemName: glyph) }
-                .font(.sh(.ui)).foregroundStyle(color)
-            Text(meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Label { Text(outcome.summary).lineLimit(3) } icon: { Image(systemName: glyph) }
+                    .font(.sh(.ui)).foregroundStyle(color)
+                Text(meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+            }
+            .accessibilityElement(children: .combine)
+            if let output { HookTestOutputView(output: output, open: $outputOpen) }
         }
         .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-        .accessibilityElement(children: .combine)
     }
 
     @MainActor static func look(_ outcome: HookOutcome) -> (String, Color) {
@@ -501,10 +524,44 @@ struct HookTestResultCard: View {
     }
 }
 
-/// A file Shepherd reads but never writes (Codex's config.toml).
+/// A test's Output, collapsed: each stream the hook printed, labelled, mono and selectable.
+struct HookTestOutputView: View {
+    let output: HookTestOutput
+    @Binding var open: Bool
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $open) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                ForEach(output.streams) { stream in
+                    VStack(alignment: .leading, spacing: SH.Space.xs) {
+                        HStack(spacing: SH.Space.s) {
+                            Text(stream.label).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+                            if let note = stream.note { Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                        }
+                        ScrollView {
+                            Text(stream.text).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(SH.Space.m)
+                        }
+                        .frame(maxHeight: AppLayout.hooksOutputHeight)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(Color.sh.bgBase, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+                        .accessibilityLabel(stream.label)
+                    }
+                }
+            }
+            .padding(.top, SH.Space.s)
+        } label: {
+            Text("Output").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+        }
+    }
+}
+
+/// A file Shepherd reads but never writes (Codex's config.toml). No Open file on a remote host.
 struct HookReadOnlyNote: View {
     let label: String
-    let open: () -> Void
+    let open: (() -> Void)?
 
     var body: some View {
         HStack(spacing: SH.Space.m) {
@@ -512,7 +569,7 @@ struct HookReadOnlyNote: View {
             Text("This hook is in \(label). Shepherd reads that file but doesn’t write it; edit it in an editor.")
                 .font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            Button("Open file", action: open).buttonStyle(.sh(.secondary, size: .s))
+            if let open { Button("Open file", action: open).buttonStyle(.sh(.secondary, size: .s)) }
         }
         .padding(SH.Space.m)
         .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))

@@ -39,7 +39,7 @@ struct ProjectsControlTests {
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
                                    restoresAgentsAtLaunch: false, checkoutReader: nil)
-        #expect(vm.hooks.catalog.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
+        #expect(vm.hooks.catalog?.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
         var openedFile: String?
         vm.madeProjects = ProjectsModel { _, request in
             if case .open(_, let file) = request { openedFile = file; return .opened }

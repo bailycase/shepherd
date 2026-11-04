@@ -35,6 +35,8 @@ extension AppLayout {
     static let hooksTimeoutWidth: CGFloat = 64
     static let hooksTimeoutColumn: CGFloat = 120
     static let hooksJSONHeight: CGFloat = 520
+    /// A test's Output stream scrolls past this height.
+    static let hooksOutputHeight: CGFloat = 200
 
     // Thread rows (HookThreadScene)
     /// The row's glyph: 13pt in a 13pt column, 8pt before the verb.

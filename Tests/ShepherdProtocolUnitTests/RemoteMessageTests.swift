@@ -389,6 +389,7 @@ enum RemoteSamples {
         .tested(HookTestResult(exit: 2, stdout: "", stderr: "No edits to .env files.", milliseconds: 41, outcome: .blocked(reason: "No edits to .env files."))),
         .tested(HookTestResult(exit: nil, stdout: "", stderr: "", milliseconds: 5_000, outcome: .timedOut)),
         .tested(HookTestResult(exit: 0, stdout: "{}", stderr: "", milliseconds: 3, outcome: .context("Run make lint"))),
+        .tested(HookTestResult(exit: 0, stdout: "lint ok\n", stderr: "warn\n", milliseconds: 9, outcome: .allowed, stdoutCut: true, stderrCut: false)),
     ]
     static let skillsResults: [RemoteSkillsResult] = [
         .skills(skills), .skills(SkillsSnapshot(directory: "~/.agents/skills")),
@@ -727,6 +728,13 @@ struct RemoteReplyTests {
     @Test(arguments: RemoteSamples.hooksResults)
     func everyHooksResultRoundTrips(_ result: RemoteHooksResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.hooks(id: 1, result: result)) == .hooks(id: 1, result: result))
+    }
+
+    /// A test reply without output or cut marks decodes as empty and uncut.
+    @Test func aHookTestResultWithoutOutputDecodesEmpty() throws {
+        let json = #"{"exit":0,"milliseconds":4,"outcome":{"allowed":{}}}"#
+        let result = try JSONDecoder().decode(HookTestResult.self, from: Data(json.utf8))
+        #expect(result == HookTestResult(exit: 0, stdout: "", stderr: "", milliseconds: 4, outcome: .allowed))
     }
 
     /// A handler keeps its keys in file order on the wire, so a remote edit leaves unknown keys where they were.

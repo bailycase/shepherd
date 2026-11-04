@@ -190,6 +190,12 @@ struct SettingsView: View {
                 SettingsHostPicker(vm: vm)
                 localPage
             }
+        } else if section == .hooks, !vm.remoteHosts.connections.isEmpty {
+            // One page for every host: this Mac's catalog, or a remote host's over hooks.v1.
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                SettingsHostPicker(vm: vm)
+                HooksSettings(model: vm.hooks(for: vm.remoteSettingsHost?.id))
+            }
         } else if section.isHostLevel, !vm.remoteHosts.connections.isEmpty {
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 SettingsHostPicker(vm: vm)

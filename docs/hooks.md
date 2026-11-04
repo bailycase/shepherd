@@ -16,7 +16,7 @@ Three parts share this contract:
 | Runtime: runs hooks on the agent's events, proposes hooks | `Extensions/shepherd-hooks.ts`, installed by `HooksExtension.swift` |
 | Catalog: finds files, parses entries, hashes, off switches, writes | `Sources/ShepherdSessions/Hooks/` |
 | UI: Settings › Hooks, Sources, Edit, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hook*.swift`, `Thread/HookRows.swift`, `ShepherdRemote/NativeHookPresentation.swift` |
-| Remote: the iPhone and iPad manage a host's hooks over `hooks.v1` (docs/remote-protocol.md) | `ShepherdSessions/Hooks/HookRemote.swift`, `ShepherdRemote/ClientHooks.swift`, `App/iOS/Settings/HooksScreens.swift` |
+| Remote: the iPhone, the iPad and the Mac manage a host's hooks over `hooks.v1` (docs/remote-protocol.md) | `ShepherdSessions/Hooks/HookRemote.swift`, `ShepherdRemote/ClientHooks.swift`, `App/iOS/Settings/HooksScreens.swift`, `HooksModel` (one per host) |
 
 The values (`HookEntry`, `HookCatalogSnapshot`, `HookJSON`, `HookEvent`…) live in ShepherdProtocol,
 the shared rows and form in `ShepherdRemote/HooksPresentation.swift`. The runtime and the catalog each implement parsing and hashing; the shared vectors in
@@ -184,3 +184,20 @@ event open.
 The composer shows the hook glyph when at least one hook that would run in the thread's space is
 configured and on (This Mac files plus that space's, readers applied). Hover says how many; click
 opens Settings › Hooks filtered to the space. No hooks, no glyph.
+
+## On another host
+
+The Mac's Settings › Hooks has the host picker: a remote host's page is the same `HooksModel` with
+a `hooks.v1` backend instead of the catalog (one per host, `ShepherdViewModel.hooks(for:)`). It
+lists, switches, edits and deletes there, names the host's own scope for the host ("studio ·
+~/.shepherd/hooks.json"), opens no files, and Test runs there ("… · on studio"). A save or delete
+the host refuses as `hook_changed` says so in the sheet with Reload, which reads the hooks again
+and reopens the hook as its file has it. A host without `hooks.v1` says to update it. A remote
+thread's composer glyph, rows and proposal Edit… use that host's model: its catalog is read once
+and kept, read again on a change made here or a hook row arriving; the space is the deepest of the
+host's spaces at or above the thread's folder (a worktree outside it counts only host-wide hooks).
+A space's Hooks tab on a remote host uses the same model.
+
+Every test result keeps its one-line outcome and adds a collapsed Output with what the hook printed
+on stdout and stderr (each labelled, mono, selectable; "cut at 64 KiB" past the cap; none when both
+are empty). `HookTestResult` carries both streams and `stdoutCut`/`stderrCut` (decoded with defaults).

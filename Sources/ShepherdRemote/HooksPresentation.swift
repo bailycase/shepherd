@@ -189,6 +189,30 @@ public enum HooksPresentation {
     }
 }
 
+/// A test's collapsed Output: what the hook printed, each stream labelled, without its last line
+/// breaks. Nil when it printed nothing.
+public struct HookTestOutput: Equatable, Sendable {
+    public struct Stream: Equatable, Sendable, Identifiable {
+        public var label: String
+        public var text: String
+        /// "cut at 64 KiB" when the hook printed more than the cap.
+        public var note: String?
+        public var id: String { label }
+        public init(label: String, text: String, note: String?) { self.label = label; self.text = text; self.note = note }
+    }
+
+    public var streams: [Stream]
+
+    public init?(_ result: HookTestResult) {
+        func shown(_ text: String) -> String { String(text[..<(text.lastIndex { !$0.isNewline }.map(text.index(after:)) ?? text.startIndex)]) }
+        let streams = [Stream(label: "stdout", text: shown(result.stdout), note: result.stdoutCut ? "cut at 64 KiB" : nil),
+                       Stream(label: "stderr", text: shown(result.stderr), note: result.stderrCut ? "cut at 64 KiB" : nil)]
+            .filter { !$0.text.isEmpty }
+        guard !streams.isEmpty else { return nil }
+        self.streams = streams
+    }
+}
+
 // MARK: The editor's form
 
 /// Why the form can't be saved yet, said as how to fix it.

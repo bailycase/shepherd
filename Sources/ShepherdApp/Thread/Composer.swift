@@ -41,6 +41,8 @@ struct Composer: View {
     var listModels: (() async -> ModelCatalog)?
     var branch: AgentBranchLabel? = nil
     var directory: String? = nil
+    /// The thread's folder on its host, for the hook glyph (a remote thread has no `directory`).
+    var hookDirectory: String? = nil
     var showChanges: (() -> Void)? = nil
     /// A preview can open the same settings popover used by the app.
     var modelSettingsOpen = false
@@ -464,7 +466,7 @@ struct Composer: View {
             dismissal.watch(open != .none)
         }
         // The hook glyph's counts for this thread's space, loaded once per folder (docs/hooks.md).
-        .task(id: directory) { if let directory { hookPresenter?.ensure(cwd: directory) } }
+        .task(id: hookDirectory) { if let hookDirectory { hookPresenter?.ensure(cwd: hookDirectory) } }
         .onChange(of: store.goalID, initial: true) { _, id in
             if id != nil { queueStack.collapsed = true }
         }
@@ -897,7 +899,7 @@ struct Composer: View {
             sendRinged: menu == .send, contextOpen: menu == .context,
             actionEnabled: stops ? active && store.supports("abort") : canSend,
             actionHelp: stops ? stopHelp : sendHelp(working: working),
-            hooks: hookPresenter?.indicator(cwd: directory))
+            hooks: hookPresenter?.indicator(cwd: hookDirectory))
     }
 
     /// What the row's controls do. Each reads the store and the composer's own state as it runs,
@@ -915,7 +917,7 @@ struct Composer: View {
             },
             context: { menu = menu == .context ? nil : .context },
             meterInset: { meterInset = max(0, $0) },
-            hooks: { [hookPresenter, directory] in hookPresenter?.settings(spaceRoot: hookPresenter?.indicator(cwd: directory)?.spaceRoot) })
+            hooks: { [hookPresenter, hookDirectory] in hookPresenter?.settings(spaceRoot: hookPresenter?.indicator(cwd: hookDirectory)?.spaceRoot) })
     }
 
     private var stopHelp: String {

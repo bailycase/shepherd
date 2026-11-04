@@ -257,8 +257,10 @@
     name a hook by slot and the hash the client read; a hook changed since is refused
     (`hook_changed`). Save writes only one of the catalog's JSON files (`not_a_hooks_file`), Test
     runs only in the home folder or one of its spaces (`no_such_space`), bounded by the hook's
-    time limit. Files and tests run off the server queue; changes tell the Mac's Hooks page. The
-    iPhone and iPad hide the page on older hosts; the Mac's Settings › Hooks stays this Mac's
+    time limit, with its stdout, stderr and whether each was cut at 64 KiB (absent fields decode as
+    empty and uncut). Files and tests run off the server queue; changes tell the Mac's Hooks page.
+    The iPhone and iPad hide the page on older hosts; the Mac's Settings › Hooks shows a remote
+    host through the host picker and asks an older host to update
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the

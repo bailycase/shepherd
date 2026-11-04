@@ -7,18 +7,23 @@ import ShepherdUI
 // Hooks in a thread (HookThreadScene board): each hook's row, the proposal card an agent's
 // `hook_propose` asks with, and the panel a hook's `ask` puts in the composer's place.
 
-/// What a thread's hook pieces open in Settings › Hooks. Weak, so a row never keeps the model.
+/// What a thread's hook pieces open in Settings › Hooks, on the host the thread runs on (nil:
+/// this Mac). Weak, so a row never keeps the model.
 struct HookPresenter: Equatable {
     weak var model: ShepherdViewModel?
+    var host: UUID? = nil
 
-    static func == (a: Self, b: Self) -> Bool { a.model === b.model }
+    static func == (a: Self, b: Self) -> Bool { a.model === b.model && a.host == b.host }
+
+    @MainActor private var hooks: HooksModel? { model?.hooks(for: host) }
 
     @MainActor private func show(_ body: (HooksModel) -> Void) {
-        guard let model else { return }
+        guard let model, let hooks else { return }
+        model.adoptSettingsHost(host)
         model.settingsSection = .hooks
         model.showSettings = true
-        model.hooks.tab = .hooks
-        body(model.hooks)
+        hooks.tab = .hooks
+        body(hooks)
     }
 
     /// Open hook: its editor, once the catalog has it.
@@ -32,11 +37,11 @@ struct HookPresenter: Equatable {
         show { $0.add(draft: draft, target: proposal.path(scope: scope), saved: saved) }
     }
     /// A hook row arrived: the files may have changed.
-    @MainActor func refresh() { model?.hooks.reload() }
-    @MainActor func indicator(cwd: String?) -> HookIndicator? { model?.hooks.indicator(forCwd: cwd) }
-    @MainActor func ensure(cwd: String) { model?.hooks.ensure(cwd: cwd) }
+    @MainActor func refresh() { hooks?.reload() }
+    @MainActor func indicator(cwd: String?) -> HookIndicator? { hooks?.indicator(forCwd: cwd) }
+    @MainActor func ensure(cwd: String) { hooks?.ensure(cwd: cwd) }
     /// The home folder paths are shown from ("~/.shepherd/hooks.json").
-    @MainActor var home: String { model?.hooks.home ?? PiHome.environmentHome }
+    @MainActor var home: String { hooks.flatMap { $0.home.isEmpty ? nil : $0.home } ?? PiHome.environmentHome }
 }
 
 extension EnvironmentValues {

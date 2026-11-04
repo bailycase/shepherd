@@ -284,9 +284,28 @@ public struct HookTestResult: Hashable, Codable, Sendable {
     public var stderr: String
     public var milliseconds: Int
     public var outcome: HookOutcome
+    /// The stream was longer than the cap and is cut there.
+    public var stdoutCut: Bool
+    public var stderrCut: Bool
 
-    public init(exit: Int32?, stdout: String, stderr: String, milliseconds: Int, outcome: HookOutcome) {
+    public init(exit: Int32?, stdout: String, stderr: String, milliseconds: Int, outcome: HookOutcome,
+                stdoutCut: Bool = false, stderrCut: Bool = false) {
         self.exit = exit; self.stdout = stdout; self.stderr = stderr; self.milliseconds = milliseconds; self.outcome = outcome
+        self.stdoutCut = stdoutCut; self.stderrCut = stderrCut
+    }
+
+    private enum CodingKeys: String, CodingKey { case exit, stdout, stderr, milliseconds, outcome, stdoutCut, stderrCut }
+
+    /// The output and its cut marks decode as empty and uncut when a reply leaves them out.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        exit = try c.decodeIfPresent(Int32.self, forKey: .exit)
+        stdout = try c.decodeIfPresent(String.self, forKey: .stdout) ?? ""
+        stderr = try c.decodeIfPresent(String.self, forKey: .stderr) ?? ""
+        milliseconds = try c.decode(Int.self, forKey: .milliseconds)
+        outcome = try c.decode(HookOutcome.self, forKey: .outcome)
+        stdoutCut = try c.decodeIfPresent(Bool.self, forKey: .stdoutCut) ?? false
+        stderrCut = try c.decodeIfPresent(Bool.self, forKey: .stderrCut) ?? false
     }
 }
 

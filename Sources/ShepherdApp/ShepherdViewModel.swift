@@ -367,6 +367,8 @@ final class ShepherdViewModel {
     let slashCommands: SlashCommandsModel
     /// Settings › Hooks and the composer's hook glyph (docs/hooks.md).
     let hooks: HooksModel
+    /// Each remote host's hooks, made when first shown (`hooks(for:)`).
+    @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
