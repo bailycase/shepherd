@@ -53,6 +53,8 @@ function trust(hooksDir, file, { pick = () => true, off = false, readers } = {})
 
 function load(hooksDir, env = {}) {
   const saved = { ...process.env };
+  // The runner may itself be a Shepherd agent: start from none of the flags the extension reads.
+  for (const key of ["SHEPHERD_DEFER_TOOLS", "SHEPHERD_AUTOMATION"]) delete process.env[key];
   Object.assign(process.env, { SHEPHERD_HOOKS_DIR: hooksDir ?? "" }, env);
   if (hooksDir === undefined) delete process.env.SHEPHERD_HOOKS_DIR;
   const handlers = {}, tools = new Map(), sent = [], listeners = {};
