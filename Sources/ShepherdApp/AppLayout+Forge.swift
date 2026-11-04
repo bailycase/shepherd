@@ -25,8 +25,11 @@ extension AppLayout {
     static let forgeRowVertical: CGFloat = SH.Space.s + SH.Space.xxs
     /// A section caption's room above its rows.
     static let forgeSectionTop: CGFloat = SH.Space.l + SH.Space.xs
-    /// Each Issues | Pull requests segment, horizontal when both fit, otherwise stacked.
+    /// The destination's title row and the Issues | Pull requests switch.
+    static let forgeSidebarHeaderHeight: CGFloat = 40
     static let forgeSwitchHeight: CGFloat = SH.Height.controlL
+    /// The search field's glyph and padding on either side of its placeholder, as measured to pick it.
+    static let forgeSearchChrome: CGFloat = SH.Space.l + SH.Space.xs
     /// A rail section's rows.
     static let forgeRailRow: CGFloat = 30
     /// The merge menu (PRReviewMerge) and a pin's preview (PRSidebarPinned).
