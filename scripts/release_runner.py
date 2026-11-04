@@ -79,12 +79,23 @@ def artifact_name(parent, attempt):
 
 def validate_parent(client, parent, attempt, sha, build, plan, local=False, ref=None):
     run = client.request("GET", f"/actions/runs/{parent}")
-    if (run.get("path", "").split("@", 1)[0] != ".github/workflows/release.yml"
-            or run.get("event") not in ("push", "workflow_dispatch")
-            or run.get("status") != "in_progress"
-            or run.get("run_attempt") != attempt or run.get("head_sha") != sha
-            or run.get("run_number") != build):
-        raise RunnerError("parent Release attempt is not active or does not match the build")
+    checks = {
+        "path": run.get("path", "").split("@", 1)[0] == ".github/workflows/release.yml",
+        "event": run.get("event") in ("push", "workflow_dispatch"),
+        "status": run.get("status") == "in_progress",
+        "run_attempt": run.get("run_attempt") == attempt,
+        "head_sha": run.get("head_sha") == sha,
+        "run_number": run.get("run_number") == build,
+    }
+    mismatches = [field for field, matches in checks.items() if not matches]
+    if mismatches:
+        # Report field names, not API bodies or arbitrary values. Only known statuses are echoed.
+        status = run.get("status")
+        if status not in ("queued", "in_progress", "completed", "waiting", "requested", "pending"):
+            status = "unrecognized"
+        raise RunnerError("parent Release attempt is not active or does not match the build"
+                          f" (mismatched fields: {', '.join(mismatches)};"
+                          f" status: {status}, expected: in_progress)")
     if local:
         if run.get("head_branch") != "nightly" or plan.get("channel") != "nightly":
             raise RunnerError("Self-hosted builds only Nightly releases")
