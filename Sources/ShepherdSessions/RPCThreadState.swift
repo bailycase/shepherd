@@ -3031,13 +3031,18 @@ final class RPCThreadState {
                 if let time = message.timestamp { callTimes[id] = time }
             }
         }
-        return shownHistory(messages).flatMap { entryID, message -> [NativeThreadMessage] in
+        let shown = shownHistory(messages)
+        var rows: [NativeThreadMessage] = []
+        rows.reserveCapacity(shown.count)
+        for (entryID, message) in shown {
             let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
             var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID], images: images)
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
-            return [value] + nestedRows(message, parentEntryID: entryID, adjust: adjust)
+            rows.append(value)
+            rows.append(contentsOf: nestedRows(message, parentEntryID: entryID, adjust: adjust))
         }
+        return rows
     }
 
     /// The messages history shows, in order, each with the entry id history gives it. The one place that decides which messages
