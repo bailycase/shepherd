@@ -77,7 +77,9 @@ are the same. A matcher matches when it matches either name.
 stdin is one JSON object: `session_id`, `transcript_path`, `cwd`, `hook_event_name`, and per event
 `tool_name` (the Claude Code name when one exists), `tool_input` (with `file_path` mirrored from
 `path`), `tool_response`, `prompt`, `source`, `trigger`, `stop_hook_active`, `reason`. The command
-runs in `<root>` with `CLAUDE_PROJECT_DIR=<root>` and `SHEPHERD_HOOK_EVENT=<Event>`.
+runs in `<root>` with `CLAUDE_PROJECT_DIR=<root>` and `SHEPHERD_HOOK_EVENT=<Event>`, and without
+the agent's own variables (`PiHome.agentOnlyEnvironment`, the list terminals blank: its socket,
+identity, MCP secrets, Shepherd's pi), in the runtime and in Settings' Test alike.
 
 | Hook | Shepherd |
 | --- | --- |

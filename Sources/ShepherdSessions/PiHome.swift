@@ -74,6 +74,23 @@ public struct PiHome: Equatable, Sendable {
     public static let mcpSecretNamesKey = "SHEPHERD_MCP_SECRETS"
     public static let mcpSecretPrefix = "SHEPHERD_MCP_SECRET_"
 
+    /// What an agent's environment holds that nothing it starts on its own behalf may inherit (its
+    /// socket, identity, extension switches, MCP secrets, Shepherd's pi): blanked for terminals
+    /// (`ShellIntegration`), hooks (`HookTester`, and `AGENT_ONLY_ENV` in `shepherd-hooks.ts`,
+    /// which also drops every `SHEPHERD_MCP_SECRET_*`).
+    public static let agentOnlyEnvironment = [
+        "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_EXT_STATUS",
+        "SHEPHERD_EXT_PANES", "SHEPHERD_EXT_BROWSER", "SHEPHERD_NEEDS_NAME", "SHEPHERD_NAMER_MODELS", "SHEPHERD_AUTOMATION",
+        "SHEPHERD_MODEL", "SHEPHERD_INSTRUCTIONS_DIR", "SHEPHERD_SUGGEST_FILES",
+        "SHEPHERD_EXT_MCP_PROJECT", "SHEPHERD_PARENT_PROJECT", "SHEPHERD_MCP_SECRETS", "SHEPHERD_PI_EXECUTABLE", "SHEPHERD_DESIGN_REFS", "SHEPHERD_DESIGN_TOOLS", "SHEPHERD_EXT_SERVICE_TIER", "SHEPHERD_EXT_CONTEXT", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_HOOKS_DIR",
+        "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_PACKAGE_DIR", "PI_OFFLINE",
+    ]
+
+    /// `environment` without `agentOnlyEnvironment` and the MCP secret values.
+    public static func withoutAgentOnly(_ environment: [String: String]) -> [String: String] {
+        environment.filter { !agentOnlyEnvironment.contains($0.key) && !$0.key.hasPrefix(mcpSecretPrefix) }
+    }
+
     /// The variables the launcher pins, after setting aside every `PI_*`, `JITI_*`, `NODE_*` and
     /// `OPENSSL_CONF` it was started with.
     public var pins: [(String, String)] {

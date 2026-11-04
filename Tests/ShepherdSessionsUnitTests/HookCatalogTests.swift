@@ -56,6 +56,17 @@ struct HookCanonicalTests {
         #expect(HookEvent.allCases.count == 12 && HookEvent.preToolUse.label == "Before a tool runs")
     }
 
+    /// Hooks inherit none of the agent's own variables, in the app's tester and the runtime alike.
+    @Test func hooksDropTheAgentsOwnEnvironment() throws {
+        let kept = PiHome.withoutAgentOnly(["SHEPHERD_SOCKET": "/s", "SHEPHERD_AGENT_ID": "a", "SHEPHERD_MCP_SECRET_GITHUB": "x",
+                                            "SHEPHERD_HOOKS_DIR": "/h", "PI_CODING_AGENT_DIR": "/p", "PATH": "/bin"])
+        #expect(kept == ["PATH": "/bin"])
+        let runtime = try String(contentsOf: HookCanonicalTests.vectors.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Extensions/shepherd-hooks.ts"), encoding: .utf8)
+        let list = try #require(runtime.firstMatch(of: #/AGENT_ONLY_ENV = \[([^\]]*)\]/#)?.1)
+        #expect(Set(list.matches(of: #/"([A-Z_]+)"/#).map { String($0.1) }) == Set(PiHome.agentOnlyEnvironment), "the runtime blanks the same list")
+    }
+
     @Test func outcomesReadExitCodesAndJSON() {
         #expect(HookOutcome.interpret(event: "PreToolUse", exit: 2, stdout: "", stderr: "no .env\n") == .blocked(reason: "no .env"))
         #expect(HookOutcome.interpret(event: "PreToolUse", exit: 1, stdout: "", stderr: "boom") == .failed("exit 1: boom"))

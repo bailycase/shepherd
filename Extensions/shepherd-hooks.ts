@@ -306,6 +306,19 @@ function writeAtomic(file, text) {
 
 // MARK: Running
 
+/** What a hook never inherits from the agent: `PiHome.agentOnlyEnvironment`, plus every MCP secret value. */
+export const AGENT_ONLY_ENV = [
+  "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_EXT_STATUS",
+  "SHEPHERD_EXT_PANES", "SHEPHERD_EXT_BROWSER", "SHEPHERD_NEEDS_NAME", "SHEPHERD_NAMER_MODELS", "SHEPHERD_AUTOMATION",
+  "SHEPHERD_MODEL", "SHEPHERD_INSTRUCTIONS_DIR", "SHEPHERD_SUGGEST_FILES",
+  "SHEPHERD_EXT_MCP_PROJECT", "SHEPHERD_PARENT_PROJECT", "SHEPHERD_MCP_SECRETS", "SHEPHERD_PI_EXECUTABLE", "SHEPHERD_DESIGN_REFS", "SHEPHERD_DESIGN_TOOLS", "SHEPHERD_EXT_SERVICE_TIER", "SHEPHERD_EXT_CONTEXT", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_HOOKS_DIR",
+  "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_PACKAGE_DIR", "PI_OFFLINE",
+];
+export function hookEnv(env, extra) {
+  const out = Object.fromEntries(Object.entries(env).filter(([key]) => !AGENT_ONLY_ENV.includes(key) && !key.startsWith("SHEPHERD_MCP_SECRET_")));
+  return { ...out, ...extra };
+}
+
 function capped(stream) {
   const chunks = [];
   let size = 0;
@@ -325,7 +338,7 @@ export function runCommand(command, { cwd, event, input, timeoutMs, background =
     try {
       child = spawn("sh", ["-c", command], {
         cwd, detached: true, stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, SHEPHERD_HOOK_EVENT: event },
+        env: hookEnv(process.env, { CLAUDE_PROJECT_DIR: cwd, SHEPHERD_HOOK_EVENT: event }),
       });
     } catch (error) {
       resolve({ exit: null, stdout: "", stderr: String(error?.message ?? error), ms: Date.now() - started, error: true });

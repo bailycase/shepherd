@@ -133,7 +133,8 @@ public enum HookTester {
         }
         let input = sample ?? sampleEvent(event, cwd: root, matcher: matcher, file: copy)
 
-        var environment = ProcessInfo.processInfo.environment
+        // Never the agent's (or the app's inherited) socket, identity or secrets.
+        var environment = PiHome.withoutAgentOnly(ProcessInfo.processInfo.environment)
         environment["CLAUDE_PROJECT_DIR"] = root
         environment["SHEPHERD_HOOK_EVENT"] = event.rawValue
         let start = DispatchTime.now().uptimeNanoseconds
