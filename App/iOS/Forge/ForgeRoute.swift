@@ -82,6 +82,8 @@ extension MobileLayout {
     static let forgeItemTitle: CGFloat = 22
     /// A review or merge sheet's share of the screen, the page showing above it.
     static let forgeSheetFraction: CGFloat = 0.68
+    /// The merge sheet's, taller for its banner and three switches (MobilePRMerge).
+    static let forgeMergeSheetFraction: CGFloat = 0.78
     /// An Activity comment's author initial.
     static let forgeAvatar: CGFloat = 24
 }

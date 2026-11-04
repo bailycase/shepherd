@@ -109,7 +109,8 @@ struct ForgeMergeSheet: View {
     var body: some View {
         let detail = model.detail
         ForgeSheetFrame(title: "Merge #\(key.ref.number)", action: whenReady ? "Merge when ready" : ForgePresentation.title(method),
-                        ready: !sending && (model.blocked == nil || whenReady), problem: problem, submit: submit) {
+                        ready: !sending && (model.blocked == nil || whenReady), problem: problem,
+                        fraction: MobileLayout.forgeMergeSheetFraction, submit: submit) {
             if let blocked = model.blocked {
                 SHBanner(.failed, title: ForgePresentation.blockedTitle, message: blocked)
             }
@@ -191,6 +192,8 @@ struct ForgeSheetFrame<Content: View>: View {
     let action: String
     let ready: Bool
     let problem: String?
+    /// The sheet's share of the screen, the page showing above it.
+    var fraction: CGFloat = MobileLayout.forgeSheetFraction
     let submit: () -> Void
     @ViewBuilder let content: () -> Content
     @Environment(\.dismiss) private var dismiss
@@ -224,7 +227,7 @@ struct ForgeSheetFrame<Content: View>: View {
             }
         }
         // Over the page, which shows above it (MobilePRReview, MobilePRMerge).
-        .presentationDetents([.fraction(MobileLayout.forgeSheetFraction), .large])
+        .presentationDetents([.fraction(fraction), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color.sh.bgWindow)
     }
