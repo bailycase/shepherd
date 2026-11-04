@@ -178,6 +178,18 @@ public enum NativeHookPrompt: Equatable, Sendable {
         else { return nil }
     }
 
+    /// Whether a dialog is a hook's consent prompt, which only the person in that thread may answer
+    /// (never a Project coordinator or a relayed answer). Prefix checks, so a clipped title still counts.
+    public static func isConsent(kind: String, title: String, options: [String]) -> Bool {
+        guard kind == NativeThreadDialog.Kind.select.rawValue else { return false }
+        return title.hasPrefix(NativeHookProposal.marker + "\n")
+            || (title.hasPrefix(NativeHookAsk.title) && Set(options) == [NativeHookAsk.deny, NativeHookAsk.allow])
+    }
+
+    public static func isConsent(_ dialog: NativeThreadDialog) -> Bool {
+        isConsent(kind: dialog.kind.rawValue, title: dialog.title, options: dialog.options ?? [])
+    }
+
     public var dialogID: String {
         switch self {
         case .proposal(let proposal): proposal.dialogID

@@ -54,7 +54,7 @@ function trust(hooksDir, file, { pick = () => true, off = false, readers } = {})
 function load(hooksDir, env = {}) {
   const saved = { ...process.env };
   // The runner may itself be a Shepherd agent: start from none of the flags the extension reads.
-  for (const key of ["SHEPHERD_DEFER_TOOLS", "SHEPHERD_AUTOMATION"]) delete process.env[key];
+  for (const key of ["SHEPHERD_DEFER_TOOLS", "SHEPHERD_AUTOMATION", "SHEPHERD_PROJECT_CONTEXT", "SHEPHERD_PROJECT_COORDINATOR", "SHEPHERD_DESIGN_ID"]) delete process.env[key];
   Object.assign(process.env, { SHEPHERD_HOOKS_DIR: hooksDir ?? "" }, env);
   if (hooksDir === undefined) delete process.env.SHEPHERD_HOOKS_DIR;
   const handlers = {}, tools = new Map(), sent = [], listeners = {};
@@ -255,6 +255,10 @@ test("decisions merge: deny over ask over allow; ask asks the person; updatedInp
   assert.equal((await pi.emit("tool_call", editCall(), deny)).block, true);
   const nobody = { ...context(project), hasUI: false };
   assert.equal((await pi.emit("tool_call", editCall(), nobody)).block, true, "no one to ask: denied");
+  const worker = load(hooksDir, { SHEPHERD_PROJECT_CONTEXT: "{}" });
+  const relayed = context(project, async () => "Allow once");
+  assert.equal((await worker.emit("tool_call", editCall(), relayed)).block, true, "a project worker's ask is a deny");
+  assert.deepEqual(relayed.prompts, [], "never asked: the coordinator would answer it");
 
   const call = { type: "tool_call", toolName: "write", toolCallId: "w", input: { path: "/tmp/.env", content: "x" } };
   assert.equal(await pi.emit("tool_call", call, context(project)), undefined);
@@ -386,6 +390,8 @@ test("inert without SHEPHERD_HOOKS_DIR; no proposals in automations; the tool is
   assert.equal(Object.keys(none.handlers).length + none.tools.size, 0);
   const { hooksDir } = fixture();
   assert.equal(load(hooksDir, { SHEPHERD_AUTOMATION: "1" }).tools.size, 0);
+  assert.equal(load(hooksDir, { SHEPHERD_PROJECT_CONTEXT: "{}", SHEPHERD_PROJECT_COORDINATOR: "0" }).tools.size, 0, "no proposals in project workers");
+  assert.ok(load(hooksDir, { SHEPHERD_PROJECT_CONTEXT: "{}", SHEPHERD_PROJECT_COORDINATOR: "1" }).tools.has("hook_propose"), "the coordinator's thread is the person's");
   assert.equal(load(hooksDir, { SHEPHERD_DEFER_TOOLS: "1" }).tools.get("hook_propose").exposure, "deferred");
   assert.equal(load(hooksDir).tools.get("hook_propose").exposure, undefined);
 });

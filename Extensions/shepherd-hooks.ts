@@ -393,7 +393,9 @@ function contextText(name, event, context) {
 export default function shepherdHooks(pi) {
   const hooksDir = process.env.SHEPHERD_HOOKS_DIR;
   if (!hooksDir) return;
-  const unattended = process.env.SHEPHERD_AUTOMATION === "1";
+  // A project worker's dialogs reach its coordinator, not the person: no consent is asked there.
+  const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT && process.env.SHEPHERD_PROJECT_COORDINATOR !== "1";
+  const unattended = process.env.SHEPHERD_AUTOMATION === "1" || projectWorker;
 
   let root = undefined;
   let rootCwd = undefined;

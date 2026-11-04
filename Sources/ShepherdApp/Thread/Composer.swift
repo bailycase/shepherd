@@ -405,7 +405,7 @@ struct Composer: View {
                     let answer: (String) -> Void = { value in
                         Task { await store.answer(dialogID: dialog.id, sessionID: session.piSessionID, generation: session.generation, answer: .select(value: value)) }
                     }
-                    let enabled = active && store.supports("answer")
+                    let enabled = active && store.supports("answer") && workerStyle?.answerHeld != true
                     switch prompt {
                     case .proposal(let proposal):
                         VStack(spacing: SH.Space.l) {
