@@ -330,8 +330,8 @@ function capped(stream) {
   return () => Buffer.concat(chunks).toString("utf8");
 }
 
-/** Runs one command handler: `sh -c` in root, the event on stdin. Never rejects. */
-export function runCommand(command, { cwd, event, input, timeoutMs, background = false }) {
+/** Runs one command handler: `sh -c` in root, the event on stdin; `signal` aborting kills its process group. Never rejects. */
+export function runCommand(command, { cwd, event, input, timeoutMs, background = false, signal }) {
   const started = Date.now();
   return new Promise((resolve) => {
     let child;
@@ -346,15 +346,16 @@ export function runCommand(command, { cwd, event, input, timeoutMs, background =
     }
     const stdout = capped(child.stdout), stderr = capped(child.stderr);
     let timedOut = false, done = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} }
-    }, timeoutMs);
+    const kill = () => { try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} } };
+    const timer = setTimeout(() => { timedOut = true; kill(); }, timeoutMs);
     timer.unref?.();
+    signal?.addEventListener?.("abort", kill, { once: true });
+    if (signal?.aborted) kill();
     const finish = (exit, error) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      signal?.removeEventListener?.("abort", kill);
       resolve({ exit, stdout: stdout(), stderr: error ? String(error?.message ?? error) : stderr(), ms: Date.now() - started, timedOut, error: !!error });
     };
     child.on("error", (error) => finish(null, error));
@@ -500,7 +501,9 @@ export default function shepherdHooks(pi) {
       for (const hook of hooks) {
         const handler = hook.handler;
         if (handler.type === "command" && typeof handler.command === "string") {
-          const run = runCommand(handler.command, { cwd: workDir, event, input, timeoutMs: timeoutFor(event, handler), background: handler.async === true });
+          const background = handler.async === true;
+          // An aborted turn kills the hooks it waits on; a background hook outlives it.
+          const run = runCommand(handler.command, { cwd: workDir, event, input, timeoutMs: timeoutFor(event, handler), background, signal: background ? undefined : ctx?.signal });
           if (handler.async === true) continue; // runs in the background; nothing waits for it or reads it
           awaited.push(run.then((result) => ({ hook, result })));
         } else if (handler.type === "mcp_tool" && handler.server && handler.tool) {

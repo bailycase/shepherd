@@ -265,6 +265,26 @@ test("a hook never inherits the agent's socket, identity, secrets or Shepherd's 
   assert.equal(fs.readFileSync(path.join(project, "env.txt"), "utf8"), "unset|unset|unset|unset|kept");
 });
 
+test("an aborted turn kills the hooks it waits on", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  writeJSON(macFile, { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "sleep 30 & echo $! > child.pid; wait" }] }] } });
+  trust(hooksDir, macFile);
+  const pi = load(hooksDir);
+  const controller = new AbortController();
+  const ctx = { ...context(project), signal: controller.signal };
+  const started = Date.now();
+  const run = pi.emit("tool_call", editCall(), ctx);
+  const pidFile = path.join(project, "child.pid");
+  while (!fs.existsSync(pidFile) || !fs.readFileSync(pidFile, "utf8").trim()) await new Promise((r) => setTimeout(r, 20));
+  controller.abort();
+  await run;
+  assert.ok(Date.now() - started < 10_000, "the turn didn't wait out the hook");
+  const pid = Number(fs.readFileSync(pidFile, "utf8"));
+  let alive = true;
+  for (let i = 0; i < 50 && alive; i++) { try { process.kill(pid, 0); await new Promise((r) => setTimeout(r, 20)); } catch { alive = false; } }
+  assert.equal(alive, false, "its whole process group is gone");
+});
+
 test("decisions merge: deny over ask over allow; ask asks the person; updatedInput changes the call", async () => {
   assert.equal(hooks.mergePermission(["allow", "ask", "deny"]), "deny");
   assert.equal(hooks.mergePermission(["allow", "ask"]), "ask");
