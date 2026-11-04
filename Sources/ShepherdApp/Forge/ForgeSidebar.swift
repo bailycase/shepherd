@@ -38,59 +38,107 @@ struct ForgeSidebarPanel: View {
     }
 }
 
+/// The board's one row (back, title, repository, More) while it fits; in a narrower sidebar, or
+/// at a larger text size, the repository and More take their own row under the title.
 private struct ForgeSidebarHeader: View {
     var vm: ShepherdViewModel
     let store: ForgeStore
 
     var body: some View {
-        HStack(spacing: SH.Space.xs) {
-            Button { vm.leaveForge() } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(.shIcon(size: SH.Height.controlS))
-                .help("Back")
-                .accessibilityLabel("Back")
-            Text("Issues & PRs")
-                .font(.sh(.title))
-                .foregroundStyle(Color.sh.textPrimary)
-                .lineLimit(1)
-                .fixedSize()
-                .layoutPriority(1)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
-            if !store.repos.isEmpty {
-                SHPopupMenu(store.repoName, mono: true, minWidth: 0) {
-                    ForEach(store.repos) { repo in
-                        Button(repo.nameWithOwner) { Task { await store.selectRepo(repo.nameWithOwner) } }
-                    }
-                }
-                .accessibilityLabel("Repository")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: SH.Space.xs) {
+                back
+                title
+                Spacer(minLength: SH.Space.s)
+                repository.fixedSize()
+                more
             }
+            // More acts on the repository (Refresh, Open on GitHub), so it moves down beside it and
+            // the title keeps its whole width at the larger text size.
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                HStack(spacing: SH.Space.xs) {
+                    back
+                    title
+                }
+                HStack(spacing: SH.Space.xs) {
+                    repository
+                    more
+                }
+            }
+        }
+        .frame(minHeight: AppLayout.forgeSidebarHeaderHeight)
+    }
+
+    private var back: some View {
+        Button { vm.leaveForge() } label: { Image(systemName: "chevron.left") }
+            .buttonStyle(.shIcon(size: SH.Height.controlS))
+            .help("Back to threads")
+            .accessibilityLabel("Back to threads")
+    }
+
+    private var title: some View {
+        Text("Issues & PRs")
+            .font(.sh(.title))
+            .foregroundStyle(Color.sh.textPrimary)
+            .lineLimit(1)
+            .layoutPriority(1)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder private var repository: some View {
+        if !store.repos.isEmpty {
+            // SHPopupMenu always sizes to its value; the stacked row needs a label that fills it.
             Menu {
-                Button("Refresh") { Task { await store.refresh() } }
-                if let repo = store.repo, let url = URL(string: "https://github.com/\(repo)") {
-                    Button("Open \(store.repoName) on GitHub") { NSWorkspace.shared.open(url) }
+                ForEach(store.repos) { repo in
+                    Button(repo.nameWithOwner) { Task { await store.selectRepo(repo.nameWithOwner) } }
                 }
             } label: {
-                Image(systemName: "ellipsis")
+                SHPopupLabel(store.repoName, mono: true)
             }
             .menuStyle(.button)
-            .buttonStyle(.shIcon(size: SH.Height.controlS))
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More")
-            .accessibilityLabel("More")
+            // A native menu button names itself by its tooltip.
+            .help("Repository: \(store.repo ?? store.repoName)")
+            .accessibilityLabel("Repository")
+            .accessibilityValue(store.repo ?? store.repoName)
         }
-        .frame(height: AppLayout.forgeSidebarHeaderHeight)
+    }
+
+    private var more: some View {
+        Menu {
+            Button("Refresh") { Task { await store.refresh() } }
+            if let repo = store.repo, let url = URL(string: "https://github.com/\(repo)") {
+                Button("Open \(store.repoName) on GitHub") { NSWorkspace.shared.open(url) }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.shIcon(size: SH.Height.controlS))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
+        .accessibilityLabel("More")
     }
 }
 
-/// Issues | Pull requests, each with its count: the sidebar's own wide segmented track.
+/// Issues | Pull requests, each with its count: the sidebar's own wide segmented track. A narrow
+/// sidebar shortens "Pull requests" to "PRs" rather than wrapping or clipping it.
 private struct ForgeKindSwitch: View {
     @Bindable var store: ForgeStore
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            track(pullRequests: "Pull requests")
+            track(pullRequests: "PRs")
+        }
+    }
+
+    private func track(pullRequests: String) -> some View {
         HStack(spacing: SH.Space.xxs) {
-            segment(.issue, "Issues")
-            segment(.pullRequest, "Pull requests")
+            segment(.issue, "Issues", spoken: "Issues")
+            segment(.pullRequest, pullRequests, spoken: "Pull requests")
         }
         .padding(SH.Space.xxs)
         .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
@@ -98,7 +146,7 @@ private struct ForgeKindSwitch: View {
         .frame(height: AppLayout.forgeSwitchHeight)
     }
 
-    private func segment(_ kind: ForgeKind, _ title: String) -> some View {
+    private func segment(_ kind: ForgeKind, _ title: String, spoken: String) -> some View {
         let selected = store.kind == kind
         let count = store.counts[kind]
         return Button { store.kind = kind } label: {
@@ -107,13 +155,15 @@ private struct ForgeKindSwitch: View {
                     .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
                 if let count { Text("\(count)").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
             }
+            .fixedSize()
+            .padding(.horizontal, SH.Space.s)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(selected ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .contentShape(Rectangle())
             .shFocusRing(radius: SH.Radius.xs)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(count.map { "\(title), \($0)" } ?? title)
+        .accessibilityLabel(count.map { "\(spoken), \($0)" } ?? spoken)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -121,9 +171,24 @@ private struct ForgeKindSwitch: View {
 private struct ForgeSearchField: View {
     @Bindable var store: ForgeStore
 
+    private static let full = "Search or paste a link"
+
+    /// The board's placeholder while the field can show all of it; a narrower field (or a larger
+    /// text size) says "Search" rather than cutting the words off. The hidden copy is what's measured.
     var body: some View {
-        SHSearchField("Search or paste a link", text: $store.query)
-            .onSubmit { Task { await store.submitSearch() } }
+        ViewThatFits(in: .horizontal) {
+            ZStack {
+                Text(Self.full).font(.sh(.ui)).padding(.horizontal, AppLayout.forgeSearchChrome).fixedSize().hidden()
+                field(Self.full)
+            }
+            field("Search")
+        }
+        .help("Search issues and pull requests, or paste a GitHub link")
+        .onSubmit { Task { await store.submitSearch() } }
+    }
+
+    private func field(_ placeholder: String) -> some View {
+        SHSearchField(placeholder, text: $store.query).accessibilityLabel(Self.full)
     }
 }
 

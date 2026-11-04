@@ -51,14 +51,15 @@ extension PreviewTests {
     }
 
     /// The window as the boards draw it: the destination's list in the sidebar, the page beside it.
-    private func forgeWindow(_ vm: ShepherdViewModel, @ViewBuilder page: () -> some View) -> some View {
+    private func forgeWindow(_ vm: ShepherdViewModel, sidebarWidth: CGFloat = PreviewTests.forgeSidebar,
+                             @ViewBuilder page: () -> some View) -> some View {
         HStack(spacing: 0) {
             SHSidebar(topBar: SHSidebarTopBar(search: {}, hide: {})) {
                 ForgeSidebarPanel(vm: vm)
             } footer: {
                 SHSidebarFooter(name: "Baily", detail: "This Mac · build-01", settingsShortcut: "⌘,") {}
             }
-            .frame(width: Self.forgeSidebar)
+            .frame(width: sidebarWidth)
             SHHairline(.vertical)
             page().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -170,6 +171,46 @@ extension PreviewTests {
         await vm.forgeStore.start()
         try await Preview.render("forge-empty", size: Self.forgeWindow, ready: { vm.forgeStore.loadingKinds.isEmpty }) {
             forgeWindow(vm) { ForgeDestination(vm: vm) }
+        }
+    }
+
+    /// The minimum sidebar and main-column widths, including the empty state from #423.
+    @Test(arguments: [false, true])
+    func forgeNarrow(empty: Bool) async throws {
+        let runner = Self.forgeRunner { line, output in
+            empty && (line.hasPrefix("gh pr list") || line.hasPrefix("gh issue list")) ? "[]" : output
+        }
+        let workspace = try await forgeWorkspace(runner)
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        await vm.forgeStore.start()
+        for width: CGFloat in [AppLayout.sidebarMinWidth, AppLayout.sidebarDefaultWidth] {
+            try await Preview.renderMatrix("forge-narrow-\(Int(width))-\(empty ? "empty" : "populated")",
+                                           size: CGSize(width: width + AppLayout.mainColumnMinWidth + 1, height: 900),
+                                           ready: { vm.forgeStore.loadingKinds.isEmpty }) {
+                forgeWindow(vm, sidebarWidth: width) { ForgeDestination(vm: vm) }
+            }
+        }
+    }
+
+    @Test func forgeNarrowSidebarHidden() async throws {
+        let workspace = try await forgeWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        await openForge(vm, .pullRequest, 31)
+        try await Preview.renderMatrix("forge-narrow-sidebar-hidden",
+                                       size: CGSize(width: AppLayout.windowMinWidth, height: 900)) {
+            ForgeDestination(vm: vm, chrome: PageHeaderChrome(leadingInset: AppLayout.trafficLightInset, showSidebar: {}))
+        }
+    }
+
+    @Test func forgeNarrowIssue() async throws {
+        let workspace = try await forgeWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        await openForge(vm, .issue, 34)
+        try await Preview.renderMatrix("forge-narrow-issue", size: CGSize(width: 911, height: 900)) {
+            forgeWindow(vm, sidebarWidth: AppLayout.sidebarMinWidth) { ForgeDestination(vm: vm) }
         }
     }
 

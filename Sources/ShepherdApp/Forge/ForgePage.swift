@@ -22,43 +22,66 @@ struct ForgeDestination: View {
                     ForgeIssuePage(vm: vm, store: store, chrome: chrome)
                 }
             } else {
-                ForgeHeaderBar(chrome: chrome) { EmptyView() } trailing: { EmptyView() }
+                ForgeHeaderBar(chrome: chrome, back: vm.leaveForge) { EmptyView() } trailing: { EmptyView() }
+                ForgeBanners(vm: vm, store: store)
                 ForgeEmptyPage(store: store)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { ForgeBanners(vm: vm, store: store).padding(.top, SHPageMetrics.headerHeight + SH.Space.m) }
     }
 }
 
-/// The page's 52pt header: the tabs or the item's place leading, its actions trailing; a sidebar
-/// button while the sidebar is not docked.
+/// The page's header: the tabs or the item's place leading, its actions trailing. Narrow headers
+/// stack their controls; while the sidebar is not docked, show sidebar and return actions.
 struct ForgeHeaderBar<Leading: View, Trailing: View>: View {
     let chrome: PageHeaderChrome
+    var back: (() -> Void)? = nil
     @ViewBuilder let leading: () -> Leading
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: SH.Space.m) {
-            if let show = chrome.showSidebar {
-                Button(action: show) { Image(systemName: "sidebar.left") }
-                    .buttonStyle(.shIcon)
-                    .shHelp("Show sidebar", shortcut: KeybindingsStore.shared.display(.toggleSidebar))
-                    .accessibilityLabel("Show sidebar")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: SH.Space.m) {
+                sidebarButton
+                leading()
+                Spacer(minLength: SH.Space.m)
+                trailing()
             }
-            leading()
-            Spacer(minLength: SH.Space.m)
-            trailing()
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                HStack(spacing: SH.Space.m) {
+                    sidebarButton
+                    leading()
+                    Spacer(minLength: 0)
+                }
+                trailing()
+            }
+            .padding(.vertical, SH.Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.leading, SH.Space.l + chrome.leadingInset)
         .padding(.trailing, SH.Space.l)
-        .frame(height: SHPageMetrics.headerHeight)
+        .frame(minHeight: SHPageMetrics.headerHeight)
         .frame(maxWidth: .infinity)
         .background(Color.sh.bgWindow)
         .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
+    }
+
+    @ViewBuilder private var sidebarButton: some View {
+        if let show = chrome.showSidebar {
+            Button(action: show) { Image(systemName: "sidebar.left") }
+                .buttonStyle(.shIcon)
+                .shHelp("Show sidebar", shortcut: KeybindingsStore.shared.display(.toggleSidebar))
+                .accessibilityLabel("Show sidebar")
+            if let back {
+                Button(action: back) { Label("Back to threads", systemImage: "chevron.left") }
+                    .buttonStyle(.sh(.ghost, size: .s))
+                    .accessibilityLabel("Back to threads")
+            }
+        }
     }
 }
 
@@ -94,8 +117,7 @@ struct ForgeEmptyPage: View {
     let store: ForgeStore
 
     var body: some View {
-        VStack {
-            Spacer()
+        ForgeCentered {
             if let error = store.error {
                 SHEmptyState(Text(Self.title(error)), message: error.message, showsMark: false) {
                     if error.code == .ghMissing, let url = URL(string: "https://cli.github.com") {
@@ -115,9 +137,7 @@ struct ForgeEmptyPage: View {
                         ? "Paste a link to open one from another repository, or let a thread open one when its work is ready."
                         : "Paste a link to open one from another repository.", showClosed: true)
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
     }
 
     private func empty(_ title: Text, _ message: String, showClosed: Bool) -> some View {
@@ -144,9 +164,8 @@ struct ForgeEmptyPage: View {
     }
 }
 
-/// A refused change (with its words) or a brief that went to a thread (with Open thread), over
-/// the page's top.
-private struct ForgeBanners: View {
+/// A refused change or a brief that went to a thread, below even a wrapped page header.
+struct ForgeBanners: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
 
@@ -167,6 +186,8 @@ private struct ForgeBanners: View {
             }
         }
         .frame(maxWidth: AppLayout.forgeContentWidth)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.top, store.actionError == nil && store.notice == nil ? 0 : SH.Space.m)
         .shAnimation(.content, value: store.notice)
         .shAnimation(.content, value: store.actionError)
     }
@@ -177,7 +198,7 @@ struct ForgeLoadingPage: View {
     let number: Int
 
     var body: some View {
-        HStack(alignment: .top, spacing: AppLayout.forgeColumnGap) {
+        ForgeColumns {
             VStack(alignment: .leading, spacing: SH.Space.l) {
                 bar(0.18, AppLayout.forgeSkeletonBar + SH.Space.s)
                 bar(0.7, AppLayout.forgeSkeletonTitle)
@@ -187,15 +208,13 @@ struct ForgeLoadingPage: View {
                 bar(0.7, AppLayout.forgeSkeletonBar)
                 Text("Fetching #\(number) from GitHub…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(.top, SH.Space.l)
             }
-            .frame(width: AppLayout.forgeContentWidth)
+        } rail: {
             VStack(alignment: .leading, spacing: SH.Space.l) {
                 bar(0.3, AppLayout.forgeSkeletonBar)
                 bar(0.77, AppLayout.forgeSkeletonBar)
                 bar(0.62, AppLayout.forgeSkeletonBar)
             }
-            .frame(width: AppLayout.forgeRailWidth)
         }
-        .padding(.top, AppLayout.forgeTopPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .shShimmer()
         .accessibilityElement()
@@ -216,14 +235,29 @@ struct ForgeDetailError: View {
     let retry: () -> Void
 
     var body: some View {
-        VStack {
-            Spacer()
+        ForgeCentered {
             SHEmptyState(Text(ForgeEmptyPage.title(error)), message: error.message, showsMark: false) {
                 Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+    }
+}
+
+/// An empty, error or loading page's content, centred in the space left under the header. It
+/// scrolls when that space is shorter than the content, and it takes the space it is given:
+/// wrapped message text never sets the window's minimum size (a `Spacer` sandwich let it).
+private struct ForgeCentered<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.vertical) {
+                VStack(content: content)
+                    .padding(.horizontal, SH.Space.xl)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
     }
 }
 
@@ -233,17 +267,23 @@ struct ForgeColumns<Content: View, Rail: View>: View {
     @ViewBuilder let rail: () -> Rail
 
     var body: some View {
-        ScrollView(.vertical) {
-            HStack(alignment: .top, spacing: AppLayout.forgeColumnGap) {
-                VStack(alignment: .leading, spacing: 0, content: content)
-                    .frame(maxWidth: AppLayout.forgeContentWidth, alignment: .leading)
-                VStack(alignment: .leading, spacing: SH.Space.l, content: rail)
-                    .frame(width: AppLayout.forgeRailWidth, alignment: .leading)
+        GeometryReader { geometry in
+            let wide = geometry.size.width >= AppLayout.forgeTwoColumnMinWidth
+            let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: AppLayout.forgeColumnGap))
+                              : AnyLayout(VStackLayout(alignment: .leading, spacing: AppLayout.forgeColumnGap))
+            ScrollView(.vertical) {
+                layout {
+                    VStack(alignment: .leading, spacing: 0, content: content)
+                        .frame(maxWidth: AppLayout.forgeContentWidth, alignment: .leading)
+                    VStack(alignment: .leading, spacing: SH.Space.l, content: rail)
+                        .frame(width: wide ? AppLayout.forgeRailWidth : nil, alignment: .leading)
+                        .frame(maxWidth: wide ? nil : AppLayout.forgeContentWidth, alignment: .leading)
+                }
+                .padding(.top, AppLayout.forgeTopPadding)
+                .padding(.bottom, AppLayout.forgeBottomPadding)
+                .padding(.horizontal, SH.Space.xxl)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.top, AppLayout.forgeTopPadding)
-            .padding(.bottom, AppLayout.forgeBottomPadding)
-            .padding(.horizontal, SH.Space.xxl)
-            .frame(maxWidth: .infinity)
         }
     }
 }
