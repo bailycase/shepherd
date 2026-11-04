@@ -90,6 +90,8 @@ final class ProjectsModel {
     private(set) var files: [ProjectFile] = []
     var category: ProjectFile.Category = .instructions
     var showingBrowser = false
+    /// The space's Hooks tab (HooksSpace board): a view of Settings › Hooks, not a space file.
+    var showingHooks = false
     var selectedFile: ProjectFile?
     var savedNotice: String {
         if category == .mcp { return "Saved to the space folder. MCP changes apply to new threads." }
@@ -165,7 +167,7 @@ final class ProjectsModel {
     private(set) var saving = false
     var fileError: String?
     var notice: String?
-    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category), browser }
+    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category), browser, hooks }
     var pending: Pending?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadGeneration = 0
@@ -273,7 +275,7 @@ final class ProjectsModel {
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
-        showingBrowser = false
+        showingBrowser = false; showingHooks = false
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
         context = ProjectContext(); readRows = []; peers = []
@@ -303,13 +305,15 @@ final class ProjectsModel {
         closeMCPSignIn()
         switch action {
         case .close:
-            showingBrowser = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
-        case .file(let file): showingBrowser = false; await read(file)
+            showingBrowser = false; showingHooks = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
+        case .file(let file): showingBrowser = false; showingHooks = false; await read(file)
         case .category(let category):
-            showingBrowser = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
+            showingBrowser = false; showingHooks = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
             if let file = preferredFile { await read(file) }
         case .browser:
-            showingBrowser = true; draft = saved ?? ""
+            showingBrowser = true; showingHooks = false; draft = saved ?? ""
+        case .hooks:
+            showingBrowser = false; showingHooks = true; draft = saved ?? ""
         }
     }
 

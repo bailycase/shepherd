@@ -102,7 +102,7 @@ Settings", revision 1083) is the source of truth for every Settings page.
 
 - **Navigation** is one flat list on `bgBase`, in the boards' order: Appearance, Terminal,
   Agents, Subagents, Worktrees, Spaces, Sign-in, Pi, Instructions, Skills, Extensions, Slash
-  commands, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
+  commands, Hooks, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
   carries a lantern dot while a sign-in needs the user. The footer reads
   "Shepherd x.y.z · agent x.y.z", and "· pi x.y.z" on Pi.
 - **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one

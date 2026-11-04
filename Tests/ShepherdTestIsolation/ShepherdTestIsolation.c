@@ -31,6 +31,8 @@
 //             from a login shell can mistake them for it.
 //   mcp/      SHEPHERD_MCP_CONFIG points at mcp/mcp.json, so Settings ▸ MCP servers and the
 //             agents' MCP extension never read or write the user's ~/.config/mcp/mcp.json.
+//   hooks-home/ SHEPHERD_HOOKS_HOME: the home whose This Mac hooks files the app's hooks catalog
+//             reads and writes, never the user's ~/.shepherd, ~/.claude or ~/.codex.
 // The root is removed when the process exits. Variables a Shepherd sets for its agents (a run
 // started by an agent inherits them) are cleared, so nothing can reach the running Shepherd's
 // socket through the environment.
@@ -128,8 +130,9 @@ static void shepherd_test_isolation_install(void) {
     }
     atexit(remove_root);
 
-    char support[600], bin[600], zdotdir[600], mcp[600], mcpConfig[700];
+    char support[600], bin[600], zdotdir[600], mcp[600], mcpConfig[700], hooksHome[600];
     make("support", support, sizeof support);
+    make("hooks-home", hooksHome, sizeof hooksHome);
     make("bin", bin, sizeof bin);
     make("zdotdir", zdotdir, sizeof zdotdir);
     make("mcp", mcp, sizeof mcp);
@@ -143,7 +146,7 @@ static void shepherd_test_isolation_install(void) {
     snprintf(newPath, pathSize, "%s:%s", bin, path);
 
     if (setenv("SHEPHERD_SUPPORT_DIR", support, 1) != 0 || setenv("ZDOTDIR", zdotdir, 1) != 0
-        || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0
+        || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0 || setenv("SHEPHERD_HOOKS_HOME", hooksHome, 1) != 0
         || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
 

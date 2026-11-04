@@ -39,4 +39,7 @@ public enum TestProcess {
     /// The process's `PI_CODING_AGENT_DIR` names it too, as a decoy: Shepherd's home never comes
     /// from it. Unset for the opt-in live-model run.
     public static var piAgentDirectory: URL { root.appendingPathComponent("pi-agent", isDirectory: true) }
+
+    /// The home whose This Mac hooks files the app's hooks catalog reads (`SHEPHERD_HOOKS_HOME`).
+    public static var hooksHome: URL { root.appendingPathComponent("hooks-home", isDirectory: true) }
 }

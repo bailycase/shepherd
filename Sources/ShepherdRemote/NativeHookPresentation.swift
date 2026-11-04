@@ -1,0 +1,241 @@
+import Foundation
+import ShepherdProtocol
+
+/// A hook's row in the thread (HookThreadScene board): a glyph in its kind's color, the verb, the
+/// event and what the hook looked at in mono, and, when the hook said something, a box with its
+/// lines and the command's meta, then Open hook. Built from the message's `NativeHookRecord`, or
+/// from the message's text when an older host sent none.
+public struct NativeHookRow: Equatable, Hashable, Sendable {
+    public enum Kind: String, Equatable, Hashable, Sendable, CaseIterable {
+        case ran, denied, sentBack, added, failed, context, asked, systemMessage
+    }
+
+    public enum Link: Equatable, Hashable, Sendable {
+        /// Settings › Hooks with the hook's editor open.
+        case openHook(hash: String)
+    }
+
+    public var kind: Kind
+    public var verb: String
+    /// "PreToolUse · Edit|Write · edit .env".
+    public var detail: String
+    public var lines: [String]
+    public var meta: String?
+    public var link: Link?
+
+    /// Whether the row has a box to disclose.
+    public var hasBox: Bool { !lines.isEmpty || (meta != nil && kind != .ran) }
+
+    /// What the row says to VoiceOver and Copy.
+    public var spoken: String { [verb, detail].filter { !$0.isEmpty }.joined(separator: ", ") }
+
+    public init(kind: Kind, verb: String, detail: String, lines: [String] = [], meta: String? = nil, link: Link? = nil) {
+        self.kind = kind; self.verb = verb; self.detail = detail; self.lines = lines; self.meta = meta; self.link = link
+    }
+
+    /// The row a record draws.
+    public init(_ record: NativeHookRecord) {
+        let kind = Kind(rawValue: record.kind) ?? .ran
+        let parts = [record.event, record.detail ?? record.name].compactMap { $0 }.filter { !$0.isEmpty }
+        let link: Link? = switch kind {
+        case .denied, .failed, .added, .sentBack, .context: record.hash.map { .openHook(hash: $0) }
+        case .ran, .asked, .systemMessage: nil
+        }
+        self.init(kind: kind, verb: Self.verb(kind, event: record.event, meta: record.meta), detail: parts.joined(separator: " · "),
+                  lines: record.lines, meta: record.meta, link: link)
+    }
+
+    /// The row a message with no record draws: its text as the verb, as a remote client shows it.
+    public init(text: String) {
+        let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
+        let rest = text.split(separator: "\n", omittingEmptySubsequences: false).dropFirst().map(String.init)
+        self.init(kind: .ran, verb: first, detail: "", lines: Array(rest.prefix(NativeHookRecord.maxLines)))
+    }
+
+    /// The board's words for each kind ("A hook denied a tool call").
+    static func verb(_ kind: Kind, event: String, meta: String?) -> String {
+        switch kind {
+        case .ran: "Ran a hook"
+        case .denied:
+            switch event {
+            case "UserPromptSubmit": "A hook blocked your message"
+            case "PreToolUse": "A hook denied a tool call"
+            default: "A hook blocked this"
+            }
+        case .sentBack: event == "PostToolUse" ? "A hook sent feedback to the agent" : "A hook sent the agent back"
+        case .added: "Added a hook"
+        case .failed: (meta ?? "").contains("timed out") ? "A hook timed out; the agent went ahead" : "A hook failed"
+        case .context: "A hook added context"
+        case .asked: "A hook asked you first"
+        case .systemMessage: "A hook says"
+        }
+    }
+}
+
+/// A hook the agent proposes (`hook_propose`, docs/hooks.md › Proposals): the select request whose
+/// title is the marker line and the card's JSON. The app draws it as the proposal card.
+public struct NativeHookProposal: Equatable, Sendable {
+    public static let marker = "shepherd.hook.proposal"
+    /// The options the runtime offers, answered verbatim.
+    public static let addToSpace = "Add to this space"
+    public static let addToMac = "Add to this Mac"
+    public static let notNow = "Not now"
+    /// The app's answer when the person saved an edited version from Edit…; never a button.
+    public static let addedInSettings = "Added in Settings"
+
+    public struct Test: Equatable, Sendable, Decodable {
+        public var ok: Bool
+        public var summary: String
+        public var exit: Int?
+        public var ms: Int?
+        /// The person's PreToolUse Bash hooks denied the test run, so it didn't run.
+        public var blocked: Bool?
+    }
+    public struct Scopes: Equatable, Sendable, Decodable {
+        public var space: String?
+        public var mac: String
+    }
+
+    public var dialogID: String
+    public var name: String
+    public var event: String
+    public var matcher: String
+    public var command: String
+    public var statusMessage: String?
+    public var timeout: Double?
+    public var scopes: Scopes
+    /// "space" or "mac": the one the agent picked.
+    public var scope: String
+    public var test: Test?
+    /// The options the request offers (a space-less thread has no "Add to this space").
+    public var options: [String]
+
+    private struct Card: Decodable {
+        var name: String
+        var event: String
+        var matcher: String?
+        var command: String
+        var statusMessage: String?
+        var timeout: Double?
+        var scopes: Scopes
+        var scope: String?
+        var test: Test?
+    }
+
+    /// The proposal a dialog carries; nil for every other dialog.
+    public init?(dialog: NativeThreadDialog) {
+        guard dialog.kind == .select, dialog.title.hasPrefix(Self.marker + "\n"),
+              let card = try? JSONDecoder().decode(Card.self, from: Data(dialog.title.dropFirst(Self.marker.count + 1).utf8)) else { return nil }
+        dialogID = dialog.id
+        name = card.name; event = card.event; matcher = card.matcher ?? ""; command = card.command
+        statusMessage = card.statusMessage; timeout = card.timeout; scopes = card.scopes
+        scope = card.scope == "space" && card.scopes.space != nil ? "space" : "mac"
+        test = card.test
+        options = dialog.options ?? []
+    }
+
+    /// The question dock's words for a client that draws no card (iOS): a human title, and the
+    /// whole command, the event, the matcher, the file and the test, shown unfolded.
+    public var readable: (question: String, message: String) {
+        var lines = ["Runs:", command, "", "When: \(event)", "Matcher: \(matcher.isEmpty ? "always" : matcher)"]
+        if let statusMessage, !statusMessage.isEmpty { lines.append("While it runs: \(statusMessage)") }
+        lines.append("Saved in: \(path(scope: scope))")
+        if let test { lines.append(testLead + test.summary) }
+        lines += ["", "It runs with your permissions until you turn it off in Settings › Hooks."]
+        return ("Add the hook “\(name)”?", lines.joined(separator: "\n"))
+    }
+
+    /// The option that adds the hook in `scope`.
+    public func addOption(scope: String) -> String { scope == "space" ? Self.addToSpace : Self.addToMac }
+    /// The file the hook is saved in for `scope`.
+    public func path(scope: String) -> String { scope == "space" ? (scopes.space ?? scopes.mac) : scopes.mac }
+    /// The test line's lead: what happened to the run.
+    public var testLead: String {
+        guard let test else { return "" }
+        return test.ok ? "Tested: " : test.blocked == true ? "Test didn’t run: " : "Test didn’t pass: "
+    }
+
+    /// The test's meta ("exit 0 · 0.4 s").
+    public var testMeta: String? {
+        guard let test else { return nil }
+        let parts = [test.exit.map { "exit \($0)" }, test.ms.map { $0 < 1000 ? "\($0) ms" : String(format: "%.1f s", Double($0) / 1000) }]
+        let joined = parts.compactMap { $0 }.joined(separator: " · ")
+        return joined.isEmpty ? nil : joined
+    }
+}
+
+/// A `PreToolUse` hook's `ask` (docs/hooks.md › In the thread): the select request whose title is
+/// "A hook asks before this runs", the call, the reason and the hook's file, with Deny and Allow once.
+public struct NativeHookAsk: Equatable, Sendable {
+    public static let title = "A hook asks before this runs"
+    public static let deny = "Deny"
+    public static let allow = "Allow once"
+
+    public var dialogID: String
+    public var call: String
+    public var reason: String
+    public var file: String
+
+    public init?(dialog: NativeThreadDialog) {
+        guard dialog.kind == .select, dialog.title.hasPrefix(Self.title),
+              Set(dialog.options ?? []) == [Self.deny, Self.allow] else { return nil }
+        // The call is whole and may hold blank lines; the reason (folded by the runtime) and the file are the last two parts.
+        let parts = dialog.title.components(separatedBy: "\n\n")
+        dialogID = dialog.id
+        if parts.count >= 4 {
+            call = parts[1..<(parts.count - 2)].joined(separator: "\n\n")
+            reason = parts[parts.count - 2]
+            file = parts[parts.count - 1]
+        } else {
+            call = parts.count > 1 ? parts[1] : ""
+            reason = parts.count > 2 ? parts[2] : ""
+            file = ""
+        }
+    }
+}
+
+extension NativeHookAsk {
+    /// The question dock's words for a client that draws no panel (iOS): the whole call, unfolded.
+    public var readable: (question: String, message: String) {
+        (Self.title, ["Runs:", call, "", "Why: \(reason)", "Event: PreToolUse", "Hook: \(file)"].joined(separator: "\n"))
+    }
+}
+
+/// A dialog the thread draws as a hook's own piece instead of the question dock.
+public enum NativeHookPrompt: Equatable, Sendable {
+    case proposal(NativeHookProposal)
+    case ask(NativeHookAsk)
+
+    public init?(_ dialog: NativeThreadDialog?) {
+        guard let dialog else { return nil }
+        if let proposal = NativeHookProposal(dialog: dialog) { self = .proposal(proposal) }
+        else if let ask = NativeHookAsk(dialog: dialog) { self = .ask(ask) }
+        else { return nil }
+    }
+
+    /// Whether a dialog is a hook's consent prompt, which only the person in that thread may answer
+    /// (never a Project coordinator or a relayed answer). Prefix checks, so a clipped title still counts.
+    public static func isConsent(kind: String, title: String, options: [String]) -> Bool {
+        guard kind == NativeThreadDialog.Kind.select.rawValue else { return false }
+        return title.hasPrefix(NativeHookProposal.marker + "\n")
+            || (title.hasPrefix(NativeHookAsk.title) && Set(options) == [NativeHookAsk.deny, NativeHookAsk.allow])
+    }
+
+    public static func isConsent(_ dialog: NativeThreadDialog) -> Bool {
+        isConsent(kind: dialog.kind.rawValue, title: dialog.title, options: dialog.options ?? [])
+    }
+
+    public var dialogID: String {
+        switch self {
+        case .proposal(let proposal): proposal.dialogID
+        case .ask(let ask): ask.dialogID
+        }
+    }
+
+    public var readable: (question: String, message: String) {
+        switch self {
+        case .proposal(let proposal): proposal.readable
+        case .ask(let ask): ask.readable
+        }
+    }
+}

@@ -38,6 +38,9 @@ public enum SHGlyph: CaseIterable, Sendable {
     case pin
     /// Response visibility: the finished reply’s measured timing.
     case responseTiming
+    /// Hooks (HooksSettings, HookThreadScene): the composer's hook glyph and Settings › Hooks in
+    /// the nav. The boards draw no symbol of their own; a path with a point where it is caught.
+    case hook
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -54,6 +57,7 @@ public enum SHGlyph: CaseIterable, Sendable {
         case .gitBranch: "arrow.triangle.branch"
         case .pin: "pin"
         case .responseTiming: "stopwatch"
+        case .hook: "point.topright.arrow.triangle.backward.to.point.bottomleft.scurvepath"
         }
     }
 
@@ -70,7 +74,7 @@ public enum SHGlyph: CaseIterable, Sendable {
     /// retain their accessibility actions rather than mounting the board's HTML.
     public enum Settings: String, CaseIterable {
         case back, search, appearance, terminal, agents, subagents, worktrees, projects, pi
-        case instructions, skills, extensions, slashCommands, mcp, remoteConnection, keyboard, advanced, experiments
+        case instructions, skills, extensions, slashCommands, hooks, mcp, remoteConnection, keyboard, advanced, experiments
         case next, folder, computer, browserSearch, globe, lock
         case subagentPlus, subagentFile, subagentNext
 
@@ -91,7 +95,14 @@ public enum SHGlyph: CaseIterable, Sendable {
         }
 
         /// Advanced's gear is the system `gearshape` the boards draw: a hand-traced copy rendered as a lumpy polygon.
-        public var systemSymbolName: String? { self == .advanced ? "gearshape" : nil }
+        /// Hooks has no board artwork: it is the hook glyph's symbol.
+        public var systemSymbolName: String? {
+            switch self {
+            case .advanced: "gearshape"
+            case .hooks: SHGlyph.hook.symbolName
+            default: nil
+            }
+        }
 
         public var resourceURL: URL? {
             systemSymbolName == nil ? Bundle.module.url(forResource: rawValue, withExtension: "svg", subdirectory: "Glyphs") : nil
@@ -139,6 +150,7 @@ public enum SHGlyph: CaseIterable, Sendable {
             case .extensions: "puzzlepiece.extension"
             case .slashCommands: "chevron.left.forwardslash.chevron.right"
             case .mcp: "server.rack"
+            case .hooks: SHGlyph.hook.symbolName
             case .remoteConnection: SHGlyph.remoteConnection.symbolName
             case .keyboard: "keyboard"
             case .advanced: "gearshape"

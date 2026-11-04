@@ -150,29 +150,35 @@ public struct NativeLiveWait: Equatable, Sendable {
     /// When the request was sent (ms, the host's clock): the clock runs from it. nil when the host
     /// didn't see it (an older host, or before pi sent anything).
     public var since: Double?
+    /// A hook running now says this (its status message, `NativeThreadSnapshot.hookStatus`): the
+    /// line says it instead (HookThreadScene › context: "Checking the path…").
+    public var hookStatus: String?
 
-    public init(phase: Phase = .waiting, since: Double? = nil) {
+    public init(phase: Phase = .waiting, since: Double? = nil, hookStatus: String? = nil) {
         self.phase = phase
         self.since = since
+        self.hookStatus = hookStatus
     }
 
     /// The live line for the request in flight, as the host reported it.
-    public init(_ request: NativeResponseTiming?) {
-        self.init(phase: request?.firstEventAt == nil ? .waiting : .started, since: request?.sentAt)
+    public init(_ request: NativeResponseTiming?, hookStatus: String? = nil) {
+        self.init(phase: request?.firstEventAt == nil ? .waiting : .started, since: request?.sentAt, hookStatus: hookStatus)
     }
 
     public var title: String {
+        if let hookStatus { return hookStatus.hasSuffix("…") ? hookStatus : hookStatus + "…" }
         switch phase {
-        case .waiting: "Waiting for response"
-        case .started: "Response started"
+        case .waiting: return "Waiting for response"
+        case .started: return "Response started"
         }
     }
 
     /// The tooltip: what the words do and don't claim.
     public var help: String {
+        if hookStatus != nil { return "A hook is running. The agent goes on when it finishes." }
         switch phase {
-        case .waiting: since == nil ? "No model event observed yet. The model may already be processing input or thinking." : "Request sent. No model event observed yet. The model may already be processing input or thinking."
-        case .started: "The model’s response has begun. Nothing to show from it yet."
+        case .waiting: return since == nil ? "No model event observed yet. The model may already be processing input or thinking." : "Request sent. No model event observed yet. The model may already be processing input or thinking."
+        case .started: return "The model’s response has begun. Nothing to show from it yet."
         }
     }
 }

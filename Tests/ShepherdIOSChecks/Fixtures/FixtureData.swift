@@ -46,6 +46,8 @@ struct FixtureHostData {
     var suggestions: SuggestionsSnapshot? = SuggestionsSnapshot()
     /// Settings ▸ Skills: the host's skills, and what looking up a repository finds there.
     var skills: SkillsSnapshot? = FixtureData.skills()
+    /// Settings › Hooks (hooks.v1): the board's hooks and files.
+    var hooks: HookCatalogSnapshot? = FixtureData.hooks()
     var repoSkills: RepoSkills? = nil
     /// What the host says it understands; nil is everything this build knows (an older host
     /// leaves some out), less `designs.v1` unless the host serves designs.
@@ -202,7 +204,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + automationFlow + windows + terminal + clientState + duo
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo
             + designs + designPad + designPadMarkup + designPages + browser + files + missions + ProjectFixtures.screens + hostConfig + freshness + forge
     }
 

@@ -1,4 +1,5 @@
 import ShepherdProtocol
+import ShepherdSessions
 
 /// Shell panes keep the user's login command and configuration untouched.
 enum ShellIntegration {
@@ -7,13 +8,7 @@ enum ShellIntegration {
         // been launched from an agent. Empty values disable agent-only hooks, and
         // leave `pi` in a pane to the user's own pi: pi's home, package and
         // offline switches come from their startup files, never from an agent's.
-        let env = Dictionary(uniqueKeysWithValues: [
-            "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_EXT_STATUS",
-            "SHEPHERD_EXT_PANES", "SHEPHERD_EXT_BROWSER", "SHEPHERD_NEEDS_NAME", "SHEPHERD_NAMER_MODELS", "SHEPHERD_AUTOMATION",
-            "SHEPHERD_MODEL", "SHEPHERD_INSTRUCTIONS_DIR", "SHEPHERD_SUGGEST_FILES",
-            "SHEPHERD_EXT_MCP_PROJECT", "SHEPHERD_PARENT_PROJECT", "SHEPHERD_MCP_SECRETS", "SHEPHERD_PI_EXECUTABLE", "SHEPHERD_DESIGN_REFS", "SHEPHERD_DESIGN_TOOLS", "SHEPHERD_EXT_SERVICE_TIER", "SHEPHERD_EXT_CONTEXT", "SHEPHERD_DEFER_TOOLS",
-            "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_PACKAGE_DIR", "PI_OFFLINE",
-        ].map { ($0, "") })
+        let env = Dictionary(uniqueKeysWithValues: PiHome.agentOnlyEnvironment.map { ($0, "") })
         return SessionCommand(argv: shell, env: env)
     }
 }

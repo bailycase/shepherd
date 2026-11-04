@@ -63,6 +63,13 @@
       "reason": "The one way a thread reaches the person: its question goes through pi's native dialog to the question dock and Needs you on every device. Kept direct (about 150 tokens): a model that has to search for it asks in prose instead. An automation run has nobody watching and a native subagent asks its parent, so neither loads it."
     },
     {
+      "tools": ["hook_propose"],
+      "group": "other",
+      "extension": "shepherd-hooks.ts",
+      "verdicts": { "thread": "defer", "automation": "drop", "design": "drop" },
+      "reason": "Proposing a hook (docs/hooks.md) is rare: deferred with the rest. An automation run has no one to approve one and a design's agent draws boards, so neither registers it."
+    },
+    {
       "tools": [
         "terminal_list",
         "terminal_open",

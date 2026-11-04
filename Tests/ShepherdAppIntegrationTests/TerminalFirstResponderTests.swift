@@ -136,6 +136,21 @@ struct TerminalFirstResponderTests {
         #expect(selection.lineHeight > 0 && selection.origin.x >= 0 && selection.origin.y >= 0)
     }
 
+    @Test func newThreadShortcutReachesTheMenuFromAFocusedTerminal() async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        panes.show(leftFocused: true, rightFocused: false)
+        try await eventuallyOnMain("the left surface to take the keyboard") {
+            panes.firstResponder != nil && panes.firstResponder === panes.surface(of: panes.left)
+        }
+        let surface = try #require(panes.surface(of: panes.left))
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 1,
+            windowNumber: panes.window.window.windowNumber, context: nil,
+            characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
+        #expect(!surface.performKeyEquivalent(with: event), "Command+N must reach File > New Thread")
+    }
+
     @Test func plainAndShiftSpaceReachTheTerminal() async throws {
         let panes = Panes()
         defer { panes.window.close() }

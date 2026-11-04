@@ -625,6 +625,9 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// event (`NativeResponseTiming`), for the thread's "Waiting for response" clock. nil between
     /// requests, while idle, and from older hosts.
     public var liveRequest: NativeResponseTiming?
+    /// What a running hook says while it runs (its status message, `setStatus` with key
+    /// `shepherd.hook`), for the thread's live line. nil when none runs, and from older hosts.
+    public var hookStatus: String?
 
     /// Startup has asked a question before history is ready. Only answering is available;
     /// messages are not an authoritative history page yet. Absent from older hosts.
@@ -780,6 +783,9 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// expanded text no longer names. The thread shows the name and the words instead of the template
     /// (`NativeSentCommand`). Skills need none: pi's `<skill>` block names itself. Absent from older hosts.
     public var typedCommand: String?
+    /// Role "custom", `shepherd.hook`: the hook row's facts (`NativeHookRecord`). The text block
+    /// is its readable line, what a client without it draws. Absent from older hosts.
+    public var hook: NativeHookRecord?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
@@ -818,7 +824,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case entryID, role, customType, blocks, toolName, toolCallID, argumentsText, status, isError, truncated
         case timestamp, startedAt, thinkingSeconds, origin, operationID, compaction, question, provider, model
-        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand
+        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand, hook
     }
 
     public init(from decoder: Decoder) throws {
@@ -849,6 +855,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         timing = try? c.decodeIfPresent(NativeResponseTiming.self, forKey: .timing)
         argumentBytes = try? c.decodeIfPresent(Int.self, forKey: .argumentBytes)
         typedCommand = try? c.decodeIfPresent(String.self, forKey: .typedCommand)
+        hook = try? c.decodeIfPresent(NativeHookRecord.self, forKey: .hook)
     }
 }
 

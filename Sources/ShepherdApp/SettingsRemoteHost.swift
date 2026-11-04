@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings' host picker: a host-level page (Agents, Subagents, Worktrees, Extensions, Slash
-// commands, MCP servers, Sign-in, Experiments) shows This Mac, bound to `AppSettings` as ever, or
+// commands, MCP servers, Sign-in, Experiments, Hooks) shows This Mac, bound to `AppSettings` as ever, or
 // one of the remote hosts, read and changed over the remote protocol through the same shared
 // models the iPhone and the iPad use (`ClientHostSettings`, `ClientHostConfig`). A host whose
 // Shepherd predates a page's capability shows it read-only and says so.
@@ -15,7 +15,7 @@ extension SettingsSection {
     /// Pages that set something on a host: the picker heads them.
     var isHostLevel: Bool {
         switch self {
-        case .agents, .subagents, .worktrees, .extensions, .piSlashCommands, .mcp, .piSignIn, .experiments: true
+        case .agents, .subagents, .worktrees, .extensions, .piSlashCommands, .mcp, .piSignIn, .experiments, .hooks: true
         default: false
         }
     }
@@ -58,6 +58,16 @@ extension ShepherdViewModel {
     /// A page's own chooser moved: the Settings host follows it.
     func adoptSettingsHost(_ id: UUID?) {
         if settingsHostID != id { settingsHostID = id }
+    }
+
+    /// Settings › Hooks and the composer glyph for a host: this Mac's model (nil), or the remote
+    /// host's, made once and kept.
+    func hooks(for host: UUID?) -> HooksModel {
+        guard let host else { return hooks }
+        if let model = remoteHookModels[host] { return model }
+        let model = HooksModel(host: host) { [weak self] in self?.settingsHosts.first { $0.id == host } }
+        remoteHookModels[host] = model
+        return model
     }
 
     /// The remote host a host-level page shows; nil for this Mac (or a host since removed).

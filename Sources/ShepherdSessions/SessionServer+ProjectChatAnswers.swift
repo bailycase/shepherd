@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 extension SessionServer {
     /// Native consumption and the current coordinator turn, not source-nil prose, prove authorship.
@@ -24,7 +25,7 @@ extension SessionServer {
               task.workerAgentID == source.workerAgentID, task.operationID == source.operationID else {
             throw LogicalProjectsError("question_proof", "Answer requires this turn's consumed human reply after the original worker question.")
         }
-        let kind: String, options: [String]
+        let kind: String, options: [String], title: String
         if let assignment = task.executionAssignment, let receipt = task.executionReceipt {
             guard receipt.key == assignment.key, receipt.phase == .waiting, receipt.sessionID == session,
                   receipt.generation == generation, receipt.questionID == dialogID,
@@ -33,7 +34,7 @@ extension SessionServer {
                   }) else {
                 throw LogicalProjectsError("dialog_unavailable", "The original execution question changed or already has an answer.")
             }
-            kind = receipt.questionKind ?? ""; options = receipt.questionOptions ?? []
+            kind = receipt.questionKind ?? ""; options = receipt.questionOptions ?? []; title = receipt.question ?? ""
         } else {
             guard task.workerSessionID == session, projectPromptInFlight[task.workerAgentID] == task.operationID,
                   let thread = rpcThread(forAgent: task.workerAgentID), thread.piSessionID == session,
@@ -43,8 +44,9 @@ extension SessionServer {
                   task.pendingAnswer.map({ $0.dialogID != dialogID && [.delivered, .failed].contains($0.phase) }) ?? true else {
                 throw LogicalProjectsError("dialog_unavailable", "The original native question expired or already has an answer.")
             }
-            kind = dialog.kind.rawValue; options = dialog.options ?? []
+            kind = dialog.kind.rawValue; options = dialog.options ?? []; title = dialog.title
         }
+        try Self.refuseHookConsent(kind: kind, title: title, options: options)
         let valid: Bool
         switch answer {
         case .select(let value): valid = kind == "select" && options.contains(value)
@@ -57,6 +59,14 @@ extension SessionServer {
         let request = NativeThreadRequest.answer(expectedSessionID: session, generation: generation, operationID: operation, dialogID: dialogID, answer: answer)
         guard try NDJSON.encode(request).count <= 32 * 1024 else { throw LogicalProjectsError("invalid_answer", "Native answer exceeds 32 KiB.") }
         return request
+    }
+
+    /// A hook's consent prompt (a proposal, a PreToolUse ask) is the person's alone to answer in
+    /// the worker's own thread; no Project path answers it (docs/hooks.md › Proposals).
+    static func refuseHookConsent(kind: String, title: String, options: [String]) throws {
+        guard !NativeHookPrompt.isConsent(kind: kind, title: title, options: options) else {
+            throw LogicalProjectsError("hook_prompt", "A hook's prompt is answered only by the person in the worker's thread.")
+        }
     }
 
     func relayProjectAnswer(_ id: ProjectID, revision: UInt64, coordinator: AgentID, operation: UUID,

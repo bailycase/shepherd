@@ -18,6 +18,10 @@ final class SettingsStore {
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
     let hostConfig = ClientHostConfig()
+    /// Settings › Hooks: one host's hooks at a time, read when the page shows.
+    let hooks = ClientHooks()
+    /// Settings › Hooks' Add or Edit sheet while it is open.
+    var hookEditor: ClientHookEditor?
     /// Settings ▸ MCP's server editor while it is open: the server it edits and its JSON.
     var mcpEditor: MCPEditor?
 
@@ -62,6 +66,7 @@ final class SettingsStore {
         store.suggestions.forget(host: host)
         store.skills.forget(host: host)
         store.hostConfig.forget(host: host)
+        store.hooks.forget(host: host)
         store.inputs.removeAll { $0.id == host }
         store.hosts.removeAll { $0.id == host }
     }
@@ -127,6 +132,14 @@ final class SettingsStore {
         return skills.reference(in: hosts) == nil ? nil : SkillsPresentation.settingsValue(skills.rows(in: hosts))
     }
 
+    /// Whether any host has served hooks: older hosts hide Settings › Hooks.
+    var showsHooks: Bool { hosts.contains { $0.capabilities.contains(RemoteProtocol.hooksCapability) } }
+
+    /// Hooks' value: how many the page's host has, once read ("8").
+    func hooksValue(chosenHost: UUID?) -> String? {
+        ClientHooks.host(chosen: chosenHost, in: hosts).flatMap { hooks.state(of: $0).page }.map { String($0.hookCount) }
+    }
+
     /// About's agent: "agent 0.87.1", from the settings host.
     var agentVersion: String? { agentVersion(chosenHost: nil) }
     func agentVersion(chosenHost: UUID?) -> String? { HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost)) }
@@ -141,13 +154,16 @@ final class SettingsStore {
 
     // MARK: Refreshing
 
-    /// Reads every connected host's settings, instructions, suggestions and skills afresh.
+    /// Reads every connected host's settings, instructions, suggestions and skills afresh, and the
+    /// first hooks host's hooks.
     func refresh() async {
         let hosts = self.hosts
         await hostSettings.refresh(hosts)
         await instructions.refresh(hosts)
         await suggestions.refresh(hosts)
         await skills.refresh(hosts.map(SkillsHost.init))
+        // Hooks' value on the list: the first host that serves them (the page reads its own host).
+        if let host = ClientHooks.hosts(hosts).first { await hooks.refresh(host) }
     }
 
     /// While a Settings screen shows: reads every host now, and a host again when it connects.

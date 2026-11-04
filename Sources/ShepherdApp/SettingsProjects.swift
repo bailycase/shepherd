@@ -19,7 +19,14 @@ struct ProjectsSettings: View {
     var body: some View {
         Group {
             if let project = model.selected {
-                ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project))
+                ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project),
+                                      hooks: project.host.id == "local" ? vm.hooks : UUID(uuidString: project.host.id).map(vm.hooks(for:)),
+                                      openHooks: {
+                                          let host = UUID(uuidString: project.host.id)
+                                          vm.hooks(for: host).spaceFilter = nil
+                                          vm.adoptSettingsHost(host)
+                                          vm.settingsSection = .hooks
+                                      })
             } else {
                 ScrollView(.vertical) {
                     index

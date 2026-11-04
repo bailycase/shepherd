@@ -119,15 +119,8 @@ public struct ShepherdMacApp: App {
         .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
-            // The workspace's menus exist only once it is open: nothing acts on it before then.
-            if let vm = launch.model {
-                AppSettingsCommands(vm: vm)
-                FileCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
-                ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides, themes: themes)
-                PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
-                SpaceCommands(vm: vm, menu: vm.menuState, keys: keys)
-                AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
-            }
+            // Register menus immediately; their actions stay disabled until ownership is acquired.
+            WorkspaceCommands(launch: launch, keys: keys, themes: themes)
         }
     }
 }

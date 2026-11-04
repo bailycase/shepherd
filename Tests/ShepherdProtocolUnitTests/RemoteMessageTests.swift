@@ -356,6 +356,41 @@ enum RemoteSamples {
         .checkUpdates,
         .configure(autoUpdate: true),
     ]
+    static let hookHandler = HookHandler(raw: .object(["type": .string("command"), "command": .string("jq -r .tool_input.file_path\n| xargs prettier"),
+                                                       "timeout": .number(10), "zeta": .array([.bool(true), .null]), "alpha": .string("kept in file order")]))
+    static let hookEntry = HookEntry(slot: "/Users/sam/.shepherd/hooks.json#PreToolUse/0/0", scope: .mac, file: "/Users/sam/.shepherd/hooks.json",
+                                     format: .shepherd, event: "PreToolUse", matcher: "Edit|Write", groupIndex: 0, handlerIndex: 0,
+                                     handler: hookHandler, hash: "ab12", canonical: hookHandler.raw.canonical, editable: true, on: false)
+    static let hooks = HookCatalogSnapshot(
+        sources: [
+            HookSource(path: "/Users/sam/.shepherd/hooks.json", scope: .mac, format: .shepherd, isTOML: false, state: .loaded(count: 1)),
+            HookSource(path: "/Users/sam/.codex/config.toml", scope: .mac, format: .codex, isTOML: true, state: .readerOff),
+            HookSource(path: "/Users/sam/code/web/.claude/settings.json", scope: .space(root: "/Users/sam/code/web"), format: .claude,
+                       isTOML: false, state: .unreadable(line: 14, message: "expected “,”")),
+            HookSource(path: "/Users/sam/code/web/.codex/hooks.json", scope: .space(root: "/Users/sam/code/web"), format: .codex,
+                       isTOML: false, state: .unreadable(line: nil, message: "the file isn't UTF-8 text")),
+            HookSource(path: "/Users/sam/code/web/.shepherd/hooks.json", scope: .space(root: "/Users/sam/code/web"), format: .shepherd,
+                       isTOML: false, state: .notFound),
+        ],
+        entries: [hookEntry], settings: HookSettings(off: ["ab12"], readers: .init(claude: true, codex: false)), home: "/Users/sam")
+    static let hooksRequests: [RemoteHooksRequest] = [
+        .fetch,
+        .setOn(hash: "ab12", on: true),
+        .setReader(format: .codex, on: false),
+        .save(drafts: [HookDraft(event: "PreToolUse", matcher: "Edit|Write", handler: hookHandler), HookDraft(event: "PreToolUse", handler: .command("ls"))],
+              file: "/Users/sam/.shepherd/hooks.json", replacing: HookRef(hookEntry), kept: 0),
+        .save(drafts: [HookDraft(event: "Stop", handler: .command("npm test"))], file: "/Users/sam/code/web/.shepherd/hooks.json", replacing: nil, kept: nil),
+        .delete(HookRef(slot: "/Users/sam/.shepherd/hooks.json#Stop/1/0", hash: "cd34")),
+        .test(command: "exit 2", event: .preToolUse, matcher: "Bash", timeout: 5, root: "/Users/sam/code/web"),
+        .test(command: "true", event: .sessionEnd, matcher: "", timeout: nil, root: nil),
+    ]
+    static let hooksResults: [RemoteHooksResult] = [
+        .hooks(hooks), .hooks(HookCatalogSnapshot(sources: [], entries: [], settings: HookSettings())),
+        .tested(HookTestResult(exit: 2, stdout: "", stderr: "No edits to .env files.", milliseconds: 41, outcome: .blocked(reason: "No edits to .env files."))),
+        .tested(HookTestResult(exit: nil, stdout: "", stderr: "", milliseconds: 5_000, outcome: .timedOut)),
+        .tested(HookTestResult(exit: 0, stdout: "{}", stderr: "", milliseconds: 3, outcome: .context("Run make lint"))),
+        .tested(HookTestResult(exit: 0, stdout: "lint ok\n", stderr: "warn\n", milliseconds: 9, outcome: .allowed, stdoutCut: true, stderrCut: false)),
+    ]
     static let skillsResults: [RemoteSkillsResult] = [
         .skills(skills), .skills(SkillsSnapshot(directory: "~/.agents/skills")),
         .skills(SkillsSnapshot(directory: "~/.agents/skills", pi: PiSkills(agentDirectory: "~/.pi/agent", problem: "pi_not_found"))),
@@ -373,12 +408,12 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design, .mission,
+             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 43
+    static let caseCount = 44
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -423,6 +458,7 @@ struct RemoteRequestTests {
         .hostInventory(id: 28, request: .mcp),
         .hostConfig(id: 28, request: .mcpRefresh),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
+        .hooks(id: 29, request: .setOn(hash: "ab12", on: false)),
         .projects(id: 30, request: .list()),
         .logicalProjects(id: 31, request: .list),
         .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
@@ -529,6 +565,12 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
     }
 
+    @Test(arguments: RemoteSamples.hooksRequests)
+    func everyHooksRequestRoundTrips(_ request: RemoteHooksRequest) throws {
+        let message = RemoteRequest.hooks(id: 1, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
     @Test(arguments: RemoteSamples.skillsRequests)
     func everySkillsRequestRoundTrips(_ request: RemoteSkillsRequest) throws {
         let message = RemoteRequest.skills(id: 1, request: request)
@@ -596,13 +638,13 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
+             .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 43
+    static let caseCount = 44
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -642,6 +684,7 @@ struct RemoteReplyTests {
         .hostInventory(id: 29, result: .mcp(S.mcpInventory)),
         .hostConfig(id: 29, result: .mcp(S.mcpInventory)),
         .skills(id: 30, result: .skills(S.skills)),
+        .hooks(id: 30, result: .hooks(S.hooks)),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
         .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
@@ -682,6 +725,32 @@ struct RemoteReplyTests {
     @Test(arguments: RemoteSamples.automationResults)
     func everyAutomationResultRoundTrips(_ result: RemoteAutomationResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.automationResult(id: 1, result: result)) == .automationResult(id: 1, result: result))
+    }
+
+    @Test(arguments: RemoteSamples.hooksResults)
+    func everyHooksResultRoundTrips(_ result: RemoteHooksResult) throws {
+        #expect(try Wire.roundTrip(RemoteReply.hooks(id: 1, result: result)) == .hooks(id: 1, result: result))
+    }
+
+    /// A test reply without output or cut marks decodes as empty and uncut.
+    @Test func aHookTestResultWithoutOutputDecodesEmpty() throws {
+        let json = #"{"exit":0,"milliseconds":4,"outcome":{"allowed":{}}}"#
+        let result = try JSONDecoder().decode(HookTestResult.self, from: Data(json.utf8))
+        #expect(result == HookTestResult(exit: 0, stdout: "", stderr: "", milliseconds: 4, outcome: .allowed))
+    }
+
+    /// A handler keeps its keys in file order on the wire, so a remote edit leaves unknown keys where they were.
+    @Test func aHookHandlerKeepsItsKeyOrderOnTheWire() throws {
+        guard case .hooks(_, .hooks(let snapshot)) = try Wire.roundTrip(RemoteReply.hooks(id: 1, result: .hooks(S.hooks))) else {
+            Issue.record("expected hooks"); return
+        }
+        #expect(snapshot.entries[0].handler.raw.objectValue?.map(\.key) == ["type", "command", "timeout", "zeta", "alpha"])
+    }
+
+    /// An older host's snapshot lacks `home`: it decodes as empty, and labels keep full paths.
+    @Test func aHooksSnapshotWithoutHomeDecodes() throws {
+        let snapshot = try JSONDecoder().decode(HookCatalogSnapshot.self, from: Data(#"{"sources":[],"entries":[],"settings":{"off":[]}}"#.utf8))
+        #expect(snapshot.home == "" && snapshot.settings.readers.codex)
     }
 
     @Test(arguments: RemoteSamples.skillsResults)
@@ -1007,7 +1076,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
-            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability,
+            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
