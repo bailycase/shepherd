@@ -89,6 +89,45 @@ class Clock:
         self.now += duration
 
 
+class ParentValidationTests(unittest.TestCase):
+    def test_each_parent_mismatch_is_identified_and_still_fails_closed(self):
+        for field, value in (("path", ".github/workflows/other.yml"), ("event", "workflow_run"),
+                             ("status", "queued"), ("status", "completed"), ("run_attempt", 2),
+                             ("head_sha", "b" * 40), ("run_number", 43)):
+            with self.subTest(field=field, value=value):
+                api = API([])
+                api.parent[field] = value
+                with self.assertRaises(runner.RunnerError) as caught:
+                    runner.validate_parent(api, 10, 1, SHA, 42, PLAN)
+                self.assertIn(f"mismatched fields: {field};", str(caught.exception))
+                status = value if field == "status" else "in_progress"
+                self.assertIn(f"status: {status}, expected: in_progress", str(caught.exception))
+                self.assertEqual(api.calls, [("GET", "/actions/runs/10", None)])
+
+    def test_diagnostics_do_not_echo_arbitrary_api_values(self):
+        secret = "fixture-private-value\n::error::do-not-echo"
+        api = API([])
+        for field in ("path", "event", "status", "run_attempt", "head_sha", "run_number"):
+            api.parent[field] = secret
+        api.parent["credentials"] = secret
+        with self.assertRaises(runner.RunnerError) as caught:
+            runner.validate_parent(api, 10, 1, SHA, 42, PLAN)
+        self.assertEqual(str(caught.exception),
+                         "parent Release attempt is not active or does not match the build"
+                         " (mismatched fields: path, event, status, run_attempt, head_sha, run_number;"
+                         " status: unrecognized, expected: in_progress)")
+        self.assertNotIn(secret, str(caught.exception))
+        self.assertEqual(api.calls, [("GET", "/actions/runs/10", None)])
+
+    def test_active_parent_events_and_qualified_workflow_paths_remain_valid(self):
+        for event in ("push", "workflow_dispatch"):
+            for suffix in ("", "@refs/heads/nightly"):
+                with self.subTest(event=event, suffix=suffix):
+                    api = API([])
+                    api.parent.update(event=event, path=PARENT["path"] + suffix)
+                    self.assertEqual(runner.validate_parent(api, 10, 1, SHA, 42, PLAN), api.parent)
+
+
 class SelectionTests(unittest.TestCase):
     def select(self, api, **kwargs):
         self.clock = Clock()
