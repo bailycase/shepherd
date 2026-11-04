@@ -407,9 +407,10 @@ test("SubagentStart and SubagentStop fire once per native subagent run, matched 
   await pi.emit("session_start", { type: "session_start", reason: "reload" }, ctx);
   const publish = (state) => pi.events["shepherd:children:v1"].forEach((fn) => fn({ owner: "session-1", children: [{ runID: "r1", role: "worker", task: "t", state }] }));
   publish("running"); publish("running");
-  const waitFor = async (file) => { for (let i = 0; i < 200 && !fs.existsSync(file); i++) await new Promise((r) => setTimeout(r, 10)); };
-  await waitFor(path.join(project, "start.json"));
-  assert.equal(JSON.parse(fs.readFileSync(path.join(project, "start.json"), "utf8")).agent_type, "worker");
+  const readJSON = async (file) => {
+    for (let i = 0; i < 200; i++) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch {} await new Promise((r) => setTimeout(r, 10)); }
+  };
+  assert.equal((await readJSON(path.join(project, "start.json")))?.agent_type, "worker");
   publish("complete");
   for (let i = 0; i < 200 && !pi.sent.some((r) => r.details.kind === "sentBack"); i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(JSON.parse(fs.readFileSync(path.join(project, "stop.json"), "utf8")).state, "complete");
