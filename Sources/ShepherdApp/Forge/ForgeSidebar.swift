@@ -43,7 +43,7 @@ private struct ForgeSidebarHeader: View {
     let store: ForgeStore
 
     var body: some View {
-        HStack(spacing: SH.Space.s) {
+        HStack(spacing: SH.Space.xs) {
             Button { vm.leaveForge() } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.shIcon(size: SH.Height.controlS))
                 .help("Back")
@@ -52,8 +52,10 @@ private struct ForgeSidebarHeader: View {
                 .font(.sh(.title))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
                 .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: SH.Space.xs)
+            Spacer(minLength: 0)
             if !store.repos.isEmpty {
                 SHPopupMenu(store.repoName, mono: true, minWidth: 0) {
                     ForEach(store.repos) { repo in
@@ -212,7 +214,7 @@ private struct ForgeListRowView: View {
                         Text(row.byline).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                     }
                 }
-                Spacer(minLength: SH.Space.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 ForgeDot(tone: row.tone).padding(.top, SH.Space.s)
             }
             .padding(.horizontal, SH.Space.m)

@@ -88,8 +88,9 @@ final class ForgeStore {
 
     // MARK: Loading
 
-    /// The page opened: read the repositories once, then the picked one's lists.
-    func start() async {
+    /// The page opened: read the repositories once, then the picked one's lists. `opening` (a pin)
+    /// picks its repository and stands in for the list's first row.
+    func start(opening ref: ForgeItemRef? = nil) async {
         await loadSidebar()
         guard !reposLoaded else { return }
         switch await transport(.repos) {
@@ -97,7 +98,9 @@ final class ForgeStore {
             repos = found
             reposLoaded = true
             error = nil
-            if repo == nil, let first = found.first { await selectRepo(first.nameWithOwner) }
+            let known = ref.flatMap { ref in found.contains { $0.nameWithOwner == ref.repo } ? ref.repo : nil }
+            if let ref, selection == nil { selection = ref }
+            if repo == nil, let first = known ?? found.first?.nameWithOwner { await selectRepo(first) }
             rebuild()
         case .failure(let failure):
             error = failure
@@ -120,7 +123,7 @@ final class ForgeStore {
         async let pulls: Void = loadList(.pullRequest)
         async let issues: Void = loadList(.issue)
         _ = await (pulls, issues)
-        openFirstIfNothingIsOpen()
+        if selection == nil, let first = firstRow { await open(first) }
     }
 
     /// Reads the repositories, the lists and the page on screen again.
@@ -353,20 +356,20 @@ final class ForgeStore {
         results = nil
         query = ""
         rebuild()
-        if selection?.kind != kind { openFirstIfNothingIsOpen(force: true) }
+        // The other kind's page shows its first row, unless something picked one meanwhile.
+        guard selection?.kind != kind else { return }
+        let before = selection, kind = kind
+        Task {
+            guard selection == before, self.kind == kind else { return }
+            if let first = firstRow { await open(first) } else { clearSelection(); rebuild() }
+        }
     }
 
-    private func openFirstIfNothingIsOpen(force: Bool = false) {
-        guard selection == nil || force else { return }
-        let first = items.lazy.compactMap { item -> ForgeItemRef? in
+    private var firstRow: ForgeItemRef? {
+        items.lazy.compactMap { item -> ForgeItemRef? in
             if case .row(let row) = item { return row.ref }
             return nil
         }.first
-        guard let first else {
-            if force { clearSelection(); rebuild() }
-            return
-        }
-        Task { await open(first) }
     }
 
     private func rebuild() {

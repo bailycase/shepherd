@@ -18,7 +18,7 @@ extension ShepherdViewModel {
     func openForgeItem(_ ref: ForgeItemRef) {
         openDestination(.forge)
         Task {
-            await forgeStore.start()
+            await forgeStore.start(opening: ref)
             await forgeStore.open(ref)
         }
     }

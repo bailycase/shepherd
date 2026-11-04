@@ -119,10 +119,11 @@ private struct ForgePullRequestActions: View {
         case .open:
             HStack(spacing: SH.Space.xxs) {
                 Button { vm.forgeMerge() } label: {
-                    Label(store.mergeOptions.whenReady ? "Merge when ready" : "Merge", systemImage: ForgeSymbol.merge)
+                    Label("Merge", systemImage: ForgeSymbol.merge)
                 }
                 .buttonStyle(.sh(.strong))
-                .help(ForgePresentation.title(store.mergeOptions.method))
+                .help(store.mergeOptions.whenReady ? "\(ForgePresentation.title(store.mergeOptions.method)) when reviews and checks allow"
+                      : ForgePresentation.title(store.mergeOptions.method))
                 Button { mergeMenu = true } label: { Image(systemName: "chevron.down") }
                     .buttonStyle(.sh(.strong))
                     .accessibilityLabel("Merge options")
@@ -147,7 +148,7 @@ private struct ForgePullRequestActions: View {
 
 /// The merge menu (PRReviewMerge): why merging is blocked, the method, Merge when ready, Delete the
 /// branch, Remove the worktree, then Convert to draft and Close pull request.
-private struct ForgeMergeMenu: View {
+struct ForgeMergeMenu: View {
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail
     let close: () -> Void
@@ -287,7 +288,7 @@ private struct ForgePullRequestSummary: View {
                         branches: (summary.headRef, summary.baseRef))
                 .padding(.top, SH.Space.m)
             if let note = ForgePresentation.stateNote(detail) {
-                ForgeStateNote(title: note.title, text: note.body, tone: badge.tone, closed: detail.state == .closed,
+                ForgeStateNote(title: note.title, text: detail.state == .merged ? mergedNote : note.body, tone: badge.tone, closed: detail.state == .closed,
                                trailing: stateEvent(now: now))
                     .padding(.top, SH.Space.l)
             }
@@ -315,7 +316,7 @@ private struct ForgePullRequestSummary: View {
             if !detail.checks.isEmpty {
                 ForgeRailSection(title: ForgePresentation.checksTitle(detail.checks)) {
                     ForEach(detail.checks) { check in
-                        ForgeCheckLine(check: check, fix: check.state == .failing ? { vm.forgeFixCheck(check) } : nil)
+                        ForgeCheckLine(check: check, fix: check.state == .failing && detail.state != .merged ? { vm.forgeFixCheck(check) } : nil)
                             .frame(height: AppLayout.forgeRailRow)
                     }
                 }
@@ -326,6 +327,13 @@ private struct ForgePullRequestSummary: View {
                 }
             }
         }
+    }
+
+    /// "Merged as 7d41c0a. Closes #28." (the boards' line; the buttons beside it say the rest).
+    private var mergedNote: String {
+        var text = detail.mergeCommit.map { "Merged as \($0.prefix(7))." } ?? "Merged."
+        if !detail.closesIssues.isEmpty { text += " Closes " + detail.closesIssues.map { "#\($0)" }.joined(separator: ", ") + "." }
+        return text
     }
 
     private func isViewer(_ login: String) -> Bool { detail.viewer.map { $0.caseInsensitiveCompare(login) == .orderedSame } ?? false }
@@ -385,7 +393,7 @@ private struct ForgeStateNote: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
             ForgeDot(tone: tone)
-            Text("\(title). \(text)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
+            Text("\(Text(title + ".").fontWeight(.semibold)) \(text)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: SH.Space.m)
             if let trailing { Text(trailing).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
