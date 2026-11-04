@@ -17,6 +17,8 @@ struct SHProseTableView: View, Equatable {
     @State private var hovering = false
     @State private var copied = false
     @State private var copies = 0
+    @State private var availableWidth: CGFloat?
+    @State private var contentWidth: CGFloat?
     @FocusState private var copyFocused: Bool
 
     nonisolated static func == (lhs: SHProseTableView, rhs: SHProseTableView) -> Bool { lhs.table == rhs.table }
@@ -24,23 +26,29 @@ struct SHProseTableView: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("prose.table")
         let sh = Color.sh
-        // Drawn directly when its columns fit, and in a scroll view only when they do not.
-        ViewThatFits(in: .horizontal) {
-            grid(fitting: true)
-            ScrollView(.horizontal) { grid(fitting: false) }
+        HStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                grid
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: contentWidth)
+            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+            .overlay(alignment: .topTrailing) { copyButton }
+            .onHover { hovering = $0 }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Table, \(table.rows.count) \(table.rows.count == 1 ? "row" : "rows")")
+            Spacer(minLength: 0)
         }
-        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-        .overlay(alignment: .topTrailing) { copyButton }
-        .onHover { hovering = $0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Table, \(table.rows.count) \(table.rows.count == 1 ? "row" : "rows")")
+        // Measure the parent's offer, not the shrinking card, so sizing cannot feed back.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
     }
 
-    private func grid(fitting: Bool) -> some View {
+    private var grid: some View {
         let columns = table.columns
         let rows = table.rows.count
-        return SHTableLayout(columns: columns, fitting: fitting, table: table, size: size) {
+        return SHTableLayout(columns: columns, fitting: true, table: table, size: size, viewportWidth: availableWidth) {
             ForEach(0..<(columns * (rows + 1)), id: \.self) { index in
                 let row = index / columns - 1
                 let column = index % columns
@@ -135,20 +143,21 @@ extension SHProseTable.Alignment {
 /// Lays cells out row by row. A column's natural width is its widest cell, capped at
 /// `tableColumnMax`. `fitting` fits the table into the width it is offered: it hugs narrower
 /// content, lets capped columns grow into spare room, and shrinks columns toward
-/// `tableColumnMin` when it must (its ideal width is the sum of those minimums, so
-/// `ViewThatFits` picks it only when that fits). Otherwise columns keep their natural widths
-/// (inside a scroll view). Every row is as tall as its tallest cell.
+/// `tableColumnMin` when it must. If the viewport cannot fit the column floors, columns
+/// keep their natural widths and scroll. Every row is as tall as its tallest cell.
 struct SHTableLayout: Layout {
     let columns: Int
     let fitting: Bool
     private let words: [CGFloat]
+    private let viewportWidth: CGFloat?
 
     /// Prepare font measurements while the view builds on the main actor. SwiftUI can
     /// construct a Sendable layout's cache on a background thread.
     @MainActor
-    init(columns: Int, fitting: Bool, table: SHProseTable, size: SHProseSize) {
+    init(columns: Int, fitting: Bool, table: SHProseTable, size: SHProseSize, viewportWidth: CGFloat? = nil) {
         self.columns = columns
         self.fitting = fitting
+        self.viewportWidth = viewportWidth
         self.words = (0..<columns).map { column in
             var widest = SHTableWords.widest(table.header[column], header: true, size: size)
             for row in table.rows { widest = max(widest, SHTableWords.widest(row[column], header: false, size: size)) }
@@ -200,8 +209,11 @@ struct SHTableLayout: Layout {
 
     /// Column widths in `available` points (nil: unconstrained).
     func widths(for available: CGFloat?, cache: Cache) -> [CGFloat] {
-        Self.widths(for: available, ideal: cache.ideal, words: cache.words, fitting: fitting,
-                    minimum: SHThreadMetrics.tableColumnMin, maximum: SHThreadMetrics.tableColumnMax)
+        let floor = Self.widths(for: nil, ideal: cache.ideal, words: cache.words, fitting: true,
+                                minimum: SHThreadMetrics.tableColumnMin, maximum: SHThreadMetrics.tableColumnMax)
+        let fits = viewportWidth.map { floor.reduce(0, +) <= $0 } ?? true
+        return Self.widths(for: viewportWidth ?? available, ideal: cache.ideal, words: cache.words, fitting: fitting && fits,
+                           minimum: SHThreadMetrics.tableColumnMin, maximum: SHThreadMetrics.tableColumnMax)
     }
 
     /// `words` raises a column's minimum to its widest word (never past `maximum`).
