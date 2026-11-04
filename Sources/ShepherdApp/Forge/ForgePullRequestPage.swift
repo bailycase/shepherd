@@ -15,11 +15,12 @@ struct ForgePullRequestPage: View {
     var body: some View {
         let detail = store.pullRequest
         VStack(spacing: 0) {
-            ForgeHeaderBar(chrome: chrome) {
+            ForgeHeaderBar(chrome: chrome, back: vm.leaveForge) {
                 ForgeTabs(store: store, detail: detail)
             } trailing: {
                 if let detail { ForgePullRequestActions(vm: vm, store: store, detail: detail) }
             }
+            ForgeBanners(vm: vm, store: store)
             if let detail {
                 switch store.tab {
                 case .summary:
@@ -97,7 +98,7 @@ private struct ForgePullRequestActions: View {
     @State private var review = false
 
     var body: some View {
-        HStack(spacing: SH.Space.m) {
+        SHFlowLayout(spacing: SH.Space.m) {
             ForgeItemButtons(store: store, ref: detail.ref)
             Button("Review with agent") { vm.forgeReviewWithAgent() }
                 .buttonStyle(.sh(.secondary))
