@@ -133,6 +133,17 @@
     `setAllPaused` ([data-flow](data-flow.md#automation-triggers)). The Mac shows a host's
     automations under its sidebar section; the iOS client in Automations. A host without the
     capability shows them read-only
+  - `forge` (`issuesAndPRs.v1`, `RemoteForgeRequest`, answered `forgeResult` or an error whose
+    code is a `ForgeError.Code`): Issues & PRs through the host's own gh, the same answers the Mac
+    gets in process (`SessionServer.forge`). Reads: the repositories the host knows (its spaces' and
+    threads' checkouts with a GitHub `origin`), a repository's pull request or issue sections
+    (Needs my team's review and Closed only when asked), a search, a pull request (reviewers,
+    checks, activity, blockers, merge methods, the thread whose branch is its head), its diff
+    (`DiffFile`, cut to `ChangesLimits`), an issue, a failing job's log tail, and the sidebar
+    (pins and the Needs you count). Changes: comment, review, merge, delete a merged branch,
+    draft or ready, close or reopen, title, re-run failed jobs, pin. Reads are reused for 60 s and
+    nothing polls; every command is bounded to 15 s. Pins are the host's (`forge-pins.json`).
+    Everything from GitHub is untrusted text; `ForgeBriefs` fences it for the agent prompts
   - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
     restore a saved version), answered with the files and their history. The Mac's page syncs
     them to every host, or edits one host at a time

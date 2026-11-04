@@ -9,6 +9,7 @@ import SwiftUI
                 Button("Cancel") {}.buttonStyle(.sh(.ghost))
                 Button("Stop") {}.buttonStyle(.sh(.danger))
                 Button("Delete") {}.buttonStyle(.sh(.dangerFill))
+                Button("Merge") {}.buttonStyle(.sh(.strong))
             }
             HStack(spacing: 10) {
                 Button("Small") {}.buttonStyle(.sh(.primary, size: .s))

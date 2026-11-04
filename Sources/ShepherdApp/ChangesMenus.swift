@@ -64,8 +64,10 @@ private struct ChangesScopeMenu: View {
     var body: some View {
         SHChangesMenu(width: SHChangesMenuMetrics.scopeWidth) {
             if session.engine == nil {
-                SHChangesMenuRow("Uncommitted", subtitle: session.reference.map { "vs \($0)" }, systemImage: SHChangesScopeGlyph.uncommitted.systemImage,
-                                 checked: !session.isPRMode) { choose { model.actions.setPullRequest(false) } }
+                if !session.pullRequestOnly {
+                    SHChangesMenuRow("Uncommitted", subtitle: session.reference.map { "vs \($0)" }, systemImage: SHChangesScopeGlyph.uncommitted.systemImage,
+                                     checked: !session.isPRMode) { choose { model.actions.setPullRequest(false) } }
+                }
                 SHChangesMenuRow("Pull request", systemImage: SHChangesScopeGlyph.pullRequest.systemImage,
                                  checked: session.isPRMode) { choose { model.actions.setPullRequest(true) } }
             } else if let overview = session.overview {
