@@ -117,8 +117,7 @@ struct ForgeEmptyPage: View {
     let store: ForgeStore
 
     var body: some View {
-        VStack {
-            Spacer()
+        ForgeCentered {
             if let error = store.error {
                 SHEmptyState(Text(Self.title(error)), message: error.message, showsMark: false) {
                     if error.code == .ghMissing, let url = URL(string: "https://cli.github.com") {
@@ -138,9 +137,7 @@ struct ForgeEmptyPage: View {
                         ? "Paste a link to open one from another repository, or let a thread open one when its work is ready."
                         : "Paste a link to open one from another repository.", showClosed: true)
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
     }
 
     private func empty(_ title: Text, _ message: String, showClosed: Bool) -> some View {
@@ -189,6 +186,8 @@ struct ForgeBanners: View {
             }
         }
         .frame(maxWidth: AppLayout.forgeContentWidth)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.top, store.actionError == nil && store.notice == nil ? 0 : SH.Space.m)
         .shAnimation(.content, value: store.notice)
         .shAnimation(.content, value: store.actionError)
     }
@@ -236,14 +235,29 @@ struct ForgeDetailError: View {
     let retry: () -> Void
 
     var body: some View {
-        VStack {
-            Spacer()
+        ForgeCentered {
             SHEmptyState(Text(ForgeEmptyPage.title(error)), message: error.message, showsMark: false) {
                 Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+    }
+}
+
+/// An empty, error or loading page's content, centred in the space left under the header. It
+/// scrolls when that space is shorter than the content, and it takes the space it is given:
+/// wrapped message text never sets the window's minimum size (a `Spacer` sandwich let it).
+private struct ForgeCentered<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.vertical) {
+                VStack(content: content)
+                    .padding(.horizontal, SH.Space.xl)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
     }
 }
 
