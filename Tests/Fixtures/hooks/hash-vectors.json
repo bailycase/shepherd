@@ -88,5 +88,21 @@
     },
     "canonical": "{\"Zeta\":1,\"_\":3,\"alpha\":2,\"command\":\"python3 ~/.claude/hooks/session_notes.py\",\"type\":\"command\"}",
     "hash": "e9ed2a2a40bb5dfe57ed91e110dab3e5f55e5f27363fea3b89e66ab5529e7429"
+  },
+  {
+    "file": "/Users/sam/.shepherd/hooks.json",
+    "event": "PreToolUse",
+    "matcher": "",
+    "handler": {"type":"command","command":"n","timeout":1e21,"small":1e-7,"tenth":0.1,"negZero":-0,"hundred":100,"float100":100.0},
+    "canonical": "{\"command\":\"n\",\"float100\":100,\"hundred\":100,\"negZero\":0,\"small\":1e-7,\"tenth\":0.1,\"timeout\":1e+21,\"type\":\"command\"}",
+    "hash": "fa4218cd9015c9bb9706f859f24af12c4813867fba93221aeb295f215a7a7018"
+  },
+  {
+    "file": "/Users/sam/.shepherd/hooks.json",
+    "event": "Stop",
+    "matcher": "🪝|x",
+    "handler": {"type":"command","command":"echo 🎣 \ud83e\ude9d","\ufb00":"ligature key","🪝":"hook 🎣","a":1},
+    "canonical": "{\"a\":1,\"command\":\"echo 🎣 🪝\",\"type\":\"command\",\"🪝\":\"hook 🎣\",\"ﬀ\":\"ligature key\"}",
+    "hash": "16e44616af73d0ad7927d11e49bdc73dbd526b97ace1af62bddc11a851d681fb"
   }
 ]
