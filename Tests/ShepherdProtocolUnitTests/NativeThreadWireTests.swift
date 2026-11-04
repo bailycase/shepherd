@@ -306,6 +306,29 @@ struct NativeThreadWireTests {
         #expect(older.typedCommand == nil)
     }
 
+    /// A hook row's record rides on its custom message and round trips; one with only some fields
+    /// still reads, and an older host sends none.
+    @Test func aHookRecordRoundTripsAndDecodesWithDefaults() throws {
+        var sent = NativeThreadMessage(entryID: "h", role: "custom", blocks: [NativeThreadBlock(kind: .text, text: "A hook denied edit .env")], customType: "shepherd.hook")
+        sent.hook = NativeHookRecord(kind: "denied", event: "PreToolUse", name: "no-env.sh", detail: "Edit · edit .env", lines: ["No .env"],
+                                     meta: "./no-env.sh · exit 2 · 41 ms", hash: "abc", file: "/h/.shepherd/hooks.json")
+        #expect(try Wire.roundTrip(sent) == sent)
+        let sparse = try Wire.decode(NativeThreadMessage.self,
+            #"{"entryID":"h","role":"custom","blocks":[],"truncated":false,"customType":"shepherd.hook","hook":{"kind":"ran"}}"#)
+        #expect(sparse.hook == NativeHookRecord(kind: "ran", event: "", name: ""), "lines and every optional field default")
+        let older = try Wire.decode(NativeThreadMessage.self, #"{"entryID":"h","role":"custom","blocks":[],"truncated":false}"#)
+        #expect(older.hook == nil)
+    }
+
+    /// A running hook's status rides on the snapshot; an older host sends none.
+    @Test func aSnapshotsHookStatusRoundTripsAndAnOlderHostSendsNone() throws {
+        var snapshot = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(snapshot.hookStatus == nil)
+        snapshot.hookStatus = "Checking the path"
+        #expect(try Wire.roundTrip(NativeThreadResult.snapshot(value: snapshot)) == .snapshot(value: snapshot))
+        #expect(try Wire.object(snapshot)["hookStatus"] as? String == "Checking the path")
+    }
+
     /// What a snapshot shortened round trips, an older host's snapshot says nothing of it (the client
     /// then reads `clipped` alone), and a fact that is not set stays off the wire.
     @Test func whatASnapshotClippedRoundTripsAndStaysOffTheWireWhenNothingWas() throws {

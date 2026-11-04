@@ -134,6 +134,9 @@ public enum RemoteProtocol {
     /// (`SkillsSnapshot.pi`), which Settings lists read-only: none from a host whose pi reads only
     /// its own home. Older hosts send none.
     public static let piSkillsCapability = "skills.pi.v1"
+    /// The host serves `RemoteRequest.hooks`: Settings › Hooks on its files (the catalog, off
+    /// switches, readers, add, edit, delete, and a test run there). Older hosts hide the page.
+    public static let hooksCapability = "hooks.v1"
     /// The host takes the terminal panel's actions on an agent's terminal panes
     /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill
     /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`
@@ -183,7 +186,7 @@ public enum RemoteProtocol {
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
     public static let filesCapability = "files.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostConfigCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostConfigCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -620,6 +623,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case hostUpdate(id: Int, request: RemoteHostUpdateRequest)
     /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
     case skills(id: Int, request: RemoteSkillsRequest)
+    /// Read or change the host's hooks, or test one there (`RemoteProtocol.hooksCapability`).
+    case hooks(id: Int, request: RemoteHooksRequest)
     /// Project-only files, never the host's global settings (`projectsV2Capability`; older hosts use v1).
     case projects(id: Int, request: RemoteProjectsRequest)
     case logicalProjectRuntime(id: Int, request: ProjectRuntimeTransport)
@@ -664,7 +669,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
-        case hostConfig
+        case hostConfig, hooks
         case design, mission
         case tunnel
         case browserClaim, browserRelease, browserAnswer
@@ -729,6 +734,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .skills:
             self = .skills(id: try c.decode(Int.self, forKey: .id),
                            request: try c.decode(RemoteSkillsRequest.self, forKey: .request))
+        case .hooks:
+            self = .hooks(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteHooksRequest.self, forKey: .request))
         case .hello:
             self = .hello(
                 id: try c.decode(Int.self, forKey: .id),
@@ -943,6 +950,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.skills, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .hooks(let id, let request):
+            try c.encode(Kind.hooks, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .design(let id, let request):
             try c.encode(Kind.design, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1092,6 +1103,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case hostUpdate(id: Int, status: HostUpdateStatus)
     /// A skills request's answer (`RemoteRequest.skills`).
     case skills(id: Int, result: RemoteSkillsResult)
+    /// A hooks request's answer (`RemoteRequest.hooks`).
+    case hooks(id: Int, result: RemoteHooksResult)
     case projects(id: Int, result: RemoteProjectsResult)
     case logicalProjectRuntime(id: Int, result: ProjectRuntimeResult)
     case logicalProjects(id: Int, result: LogicalProjectsResult)
@@ -1143,7 +1156,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult, forgeResult
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
-        case hostConfig
+        case hostConfig, hooks
         case design, designChanged, designSystemsChanged, capabilitiesChanged
         case mission, missionChanged, missionLive
         case tunnel
@@ -1230,6 +1243,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .skills:
             self = .skills(id: try c.decode(Int.self, forKey: .id),
                            result: try c.decode(RemoteSkillsResult.self, forKey: .result))
+        case .hooks:
+            self = .hooks(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteHooksResult.self, forKey: .result))
         case .ok:
             self = .ok(id: try c.decode(Int.self, forKey: .id))
         case .paneOpened:
@@ -1388,6 +1403,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(result, forKey: .result)
         case .skills(let id, let result):
             try c.encode(Kind.skills, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .hooks(let id, let result):
+            try c.encode(Kind.hooks, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
         case .design(let id, let result):

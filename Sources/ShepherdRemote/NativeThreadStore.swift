@@ -248,7 +248,15 @@ public final class NativeThreadStore {
 
     /// The snapshot's pi session, nil before the first one.
     public private(set) var session: NativeThreadSession? { didSet { bothVersions() } }
-    public private(set) var dialogs: [NativeThreadDialog] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var dialogs: [NativeThreadDialog] = [] {
+        didSet {
+            chromeVersion &+= 1
+            let prompt = NativeHookPrompt(dialogs.first)
+            if prompt != hookPrompt { hookPrompt = prompt }
+        }
+    }
+    /// The first dialog when it is a hook's proposal or ask, parsed once per change (HookThreadScene).
+    public private(set) var hookPrompt: NativeHookPrompt?
     public private(set) var dialogsSupported = true { didSet { threadVersion &+= 1 } }
     /// Extension widgets of the kinds this client draws.
     public private(set) var widgets: [NativeThreadWidget] = [] { didSet { chromeVersion &+= 1 } }
@@ -947,7 +955,7 @@ public final class NativeThreadStore {
         }
         let thinking = showsThinking(running: running, dialogs: dialogs)
         if thinking != showsThinking { showsThinking = thinking }
-        let wait = NativeLiveWait(thinking ? value?.liveRequest : nil)
+        let wait = NativeLiveWait(thinking ? value?.liveRequest : nil, hookStatus: thinking ? value?.hookStatus : nil)
         if wait != liveWait { liveWait = wait }
         let userTurns = projection.userCount
         if userTurns != userTurnCount { userTurnCount = userTurns }

@@ -39,6 +39,10 @@ enum SettingsRoute: Hashable, Codable {
     case skillResult(DirectorySkill)
     /// Add skills from a repository, looking up the one given at once.
     case skillsRepo(String?)
+    /// One host's hooks by event, each with its switch; Add and Edit open as a sheet.
+    case hooks
+    /// The files that host reads hooks from, and the Claude Code and Codex readers.
+    case hookSources
     case experiments
     case notifications
     /// Whether this device sends crash and performance reports to Sentry.
@@ -71,6 +75,8 @@ struct SettingsDestination: View {
         case .skill(let name): SkillDetailScreen(name: name)
         case .skillResult(let skill): SkillResultScreen(skill: skill)
         case .skillsRepo(let repo): AddSkillsScreen(initialRepo: repo)
+        case .hooks: HooksScreen()
+        case .hookSources: HookSourcesScreen()
         case .experiments: ExperimentsScreen()
         case .notifications: NotificationsScreen()
         case .diagnostics: DiagnosticsScreen()
@@ -83,7 +89,7 @@ struct SettingsDestination: View {
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
 /// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, mcp, subagents, signIn, instructions, skills, hosts, spaces, notifications, experiments, diagnostics
+    case appearance, defaults, worktrees, pi, mcp, subagents, signIn, instructions, skills, hooks, hosts, spaces, notifications, experiments, diagnostics
 
     var title: String {
         switch self {
@@ -96,6 +102,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .signIn: "Sign-in"
         case .instructions: "Instructions"
         case .skills: "Skills"
+        case .hooks: "Hooks"
         case .hosts: "Hosts"
         case .spaces: "Spaces"
         case .notifications: "Notifications"
@@ -125,6 +132,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .spaces: "folder"
         case .instructions: "doc.text"
         case .skills: "graduationcap"
+        case .hooks: SHGlyph.hook.symbolName
         case .hosts: "desktopcomputer"
         case .notifications: "bell"
         case .experiments: "flask"
@@ -145,6 +153,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .spaces: .spaces
         case .instructions: .instructions
         case .skills: .skills
+        case .hooks: .hooks
         case .hosts: .hosts
         case .notifications: .notifications
         case .experiments: .experiments

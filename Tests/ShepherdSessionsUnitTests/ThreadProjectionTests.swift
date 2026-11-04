@@ -90,6 +90,17 @@ struct ThreadProjectionTests {
         #expect(RPCThreadState.project(entryID: "legacy", message: other).blocks.map(\.text) == other.content.compactMap { if case .text(let text) = $0 { text } else { nil } })
     }
 
+    /// A hook's row keeps its details as the row's facts; its text stays the readable line.
+    @Test func aHookMessageCarriesItsRecord() throws {
+        let raw = #"{"role":"custom","customType":"shepherd.hook","display":true,"content":"A hook denied edit .env: No","details":{"kind":"denied","event":"PreToolUse","name":"no-env.sh","detail":"Edit|Write · edit .env","lines":["No"],"meta":"./no-env.sh · exit 2 · 41 ms","hash":"h1","file":"/r/.shepherd/hooks.json"}}"#
+        let row = RPCThreadState.project(entryID: "hook", message: try decode(raw) as RPCMessage)
+        #expect(row.customType == "shepherd.hook" && row.blocks.map(\.text) == ["A hook denied edit .env: No"])
+        #expect(row.hook == NativeHookRecord(kind: "denied", event: "PreToolUse", name: "no-env.sh", detail: "Edit|Write · edit .env",
+                                             lines: ["No"], meta: "./no-env.sh · exit 2 · 41 ms", hash: "h1", file: "/r/.shepherd/hooks.json"))
+        let bare = RPCThreadState.project(entryID: "old", message: try decode(#"{"role":"custom","customType":"shepherd.hook","display":true,"content":"Hook ran"}"#) as RPCMessage)
+        #expect(bare.hook == nil)
+    }
+
     @Test func toolCallBlocksAreNotRenderedAsProse() throws {
         let message: RPCMessage = try decode(#"""
         {"role":"assistant","content":[{"type":"text","text":"Listing."},

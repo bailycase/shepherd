@@ -156,6 +156,8 @@ final class RPCThreadState {
     /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
     /// needs a streaming behavior.
     private(set) var running = false
+    /// What a running hook says (`setStatus` key `shepherd.hook`), until it clears or the turn settles.
+    private(set) var hookStatus: String?
     private(set) var model: String?
     private(set) var thinking: String?
     /// The levels pi offers `model` (`get_available_thinking_levels`); nil until pi answers, or
@@ -795,6 +797,7 @@ final class RPCThreadState {
             endDiagnostic("agent.turn")
             diagnosticTimings.removeAll(keepingCapacity: true)
             running = false
+            hookStatus = nil
             request = nil
             requestKey = nil
             requestSeq = nil
@@ -869,8 +872,9 @@ final class RPCThreadState {
             streamToolCall(delta, in: raw)
         case .messageEnd(let message) where message.role == "custom" && message.display == true && message.customType != "shepherd-child":
             // A message an extension displays (a command's report) is in pi's history already, and
-            // an idle pi has no turn whose end would refresh it.
-            if !running { refreshMessages() }
+            // an idle pi has no turn whose end would refresh it. A hook's row says what just
+            // happened to the step the agent is on, so it shows while pi works too.
+            if !running || message.customType == "shepherd.hook" { refreshMessages() }
         case .messageEnd(let message):
             guard message.role == "assistant" else { break }
             endDiagnostic("model.response")
@@ -2653,12 +2657,19 @@ final class RPCThreadState {
             // parking it above the composer. One the user's own command is answering is what that
             // command said back, and the thread keeps it.
             recordNotify(request)
+        case "setStatus" where request.statusKey == "shepherd.hook":
+            // A hook's status message while it runs: the thread's live line (docs/hooks.md).
+            let text = request.statusText.map(Self.stripANSI)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            hookStatus = text.flatMap { $0.isEmpty ? nil : String($0.prefix(Self.hookStatusLimit)) }
         default:
-            // setStatus is the TUI footer slot (ponytail, goal, codex-fast park persistent
+            // Other setStatus keys are the TUI footer slot (ponytail, goal, codex-fast park persistent
             // chrome there), not conversation content; setTitle / set_editor_text likewise.
             break
         }
     }
+
+    /// The most characters of a hook's status the live line carries.
+    static let hookStatusLimit = 200
 
     /// nil clears. Over-limit items are dropped with a log line, never fatal.
     /// `UPPER_SNAKE:` marker prefixes and bare JSON objects/arrays are machine widgets.
@@ -2740,6 +2751,7 @@ final class RPCThreadState {
         hasher.combine(turnChangesHash)
         hasher.combine(retry)
         hasher.combine(liveRequest)
+        hasher.combine(hookStatus)
         hasher.combine(queueHash())
         #if DEBUG
         bytesHashedByLastCommit = bytesHashedSinceCommit
@@ -2813,6 +2825,7 @@ final class RPCThreadState {
             clips: clips.isEmpty ? nil : clips, liveRequest: liveRequest,
             initializing: initializing ? true : nil, checkpointRecovery: initializing ? nil : checkpointRecovery
         )
+        base.hookStatus = running ? hookStatus : nil
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
         let baseBytes = measured(base) + Self.queueFieldBytes + queueBytes(queue)
@@ -3147,6 +3160,7 @@ final class RPCThreadState {
         }
         var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [], customType: message.customType)
         result.projectAction = message.projectAction
+        if message.role == "custom", message.customType == "shepherd.hook" { result.hook = NativeHookRecord(details: message.details) }
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
         if let args { result.argumentsText = clip(json(Self.fitting(args, within: remaining))) }

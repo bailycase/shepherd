@@ -957,7 +957,7 @@ private struct RemotePaneLeafView: View {
             if let agent {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
                                       isFocused: active && !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
-                                      active: active)
+                                      active: active, cwd: leaf.cwd)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1008,6 +1008,8 @@ struct RemoteAgentThreadPane: View {
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
     var active = true
+    /// The thread's folder on the host: the hook glyph counts that host's hooks there.
+    var cwd: String? = nil
 
     var body: some View {
         let inspecting = vm.subagentInspector.remoteRuns[ref]
@@ -1044,10 +1046,12 @@ struct RemoteAgentThreadPane: View {
                 let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
                 return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
             },
-            designChat: designChat, retainedInput: vm.remoteThreadStores.input(for: ref)
+            designChat: designChat, hookDirectory: cwd, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
         // References to the host's own designs, where it takes them (docs/designs.md › Isolation).
         .environment(\.designReferences, designChat ? nil : vm.remoteDesignReferenceChips(for: ref))
+        // Its hook rows, proposals and glyph open and count the host's hooks.
+        .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))
     }
 }
 

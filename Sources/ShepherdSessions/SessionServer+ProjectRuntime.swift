@@ -504,11 +504,15 @@ extension SessionServer {
 
     func answerProjectQuestion(_ id: ProjectID, expectedRevision: UInt64, taskID: ProjectTaskID, request: NativeThreadRequest,
                                admission: (@Sendable (Project) throws -> Void)?) async throws -> NativeThreadResult {
-        guard case .answer(let expectedSession, _, _, _, _) = request, try NDJSON.encode(request).count <= NDJSON.maxPayloadBytes else { throw LogicalProjectsError("invalid_project", "Expected a bounded native answer.") }
+        guard case .answer(let expectedSession, _, _, let dialogID, _) = request, try NDJSON.encode(request).count <= NDJSON.maxPayloadBytes else { throw LogicalProjectsError("invalid_project", "Expected a bounded native answer.") }
         let (remote, generation) = try await enqueue {
             let p = try self.runtimeProject(id)
             try admission?(p)
-            return (p.tasks.first { $0.id == taskID && $0.executionAssignment != nil }, self.projectsGeneration)
+            let remote = p.tasks.first { $0.id == taskID && $0.executionAssignment != nil }
+            if let receipt = remote?.executionReceipt, receipt.questionID == dialogID {
+                try Self.refuseHookConsent(kind: receipt.questionKind ?? "", title: receipt.question ?? "", options: receipt.questionOptions ?? [])
+            }
+            return (remote, self.projectsGeneration)
         }
         let admitted: @Sendable (Project) throws -> Void = { project in
             try self.requireProjectsEnabled()
@@ -525,6 +529,9 @@ extension SessionServer {
                           task.workerSessionID == expectedSession,
                           self.projectPromptInFlight[task.workerAgentID] == task.operationID,
                           let thread = self.rpcThread(forAgent: task.workerAgentID) else { throw LogicalProjectsError("stale_project", "Refresh the question.") }
+                    if let dialog = thread.dialogs.first(where: { $0.id == dialogID }) {
+                        try Self.refuseHookConsent(kind: dialog.kind.rawValue, title: dialog.title, options: dialog.options ?? [])
+                    }
                     if !self.queuePausedProjectAnswer(agentID: task.workerAgentID, request: request, completion: { continuation.resume(returning: $0) }) {
                         thread.handle(request) { continuation.resume(returning: $0) }
                     }

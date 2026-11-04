@@ -367,6 +367,10 @@ final class ShepherdViewModel {
     let suggestions: SuggestionsModel
     /// Settings ▸ Pi ▸ Slash commands: the commands pi lists on this Mac, and which the `/` menu hides.
     let slashCommands: SlashCommandsModel
+    /// Settings › Hooks and the composer's hook glyph (docs/hooks.md).
+    let hooks: HooksModel
+    /// Each remote host's hooks, made when first shown (`hooks(for:)`).
+    @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
@@ -701,7 +705,8 @@ final class ShepherdViewModel {
         welcomesYourPi: Bool = false,
         yourPi: YourPiModel? = nil,
         piAuth: PiAuthStore? = nil,
-        browserData: BrowserDataStores = .ephemeral
+        browserData: BrowserDataStores = .ephemeral,
+        hooks: HooksModel? = nil
     ) {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
@@ -730,6 +735,7 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
+        self.hooks = hooks ?? HooksModel(catalog: server.hooks)
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
@@ -787,6 +793,10 @@ final class ShepherdViewModel {
         // Settings ▸ Skills follows a remote client's change to This Mac's skills.
         server.onSkillsChanged = { [weak skills = self.skills] snapshot in
             MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        // Settings › Hooks follows a remote client's change to this Mac's hooks.
+        server.onHooksChanged = { [weak hooks = self.hooks] in
+            MainActor.assumeIsolated { hooks?.reload() }
         }
         server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
             MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }
@@ -1147,6 +1157,7 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installProjectRuntime()
         installProjectExecution()
+        self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes (docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing over your pi).
