@@ -200,6 +200,96 @@ struct ThreadCodeBlockTests {
         #expect(field.attributedStringValue.string == code)
     }
 
+    @Test func surroundingUpdatesDoNotCreateTemporaryNativeCodeFields() {
+        func content(_ update: Int) -> some View {
+            ScrollView {
+                VStack {
+                    ForEach(0..<8) { index in
+                        SHCodeBlock(index.isMultiple(of: 2) ? "let value\(index) = \(index)"
+                            : String(repeating: "longIdentifier", count: 40), language: "swift")
+                    }
+                    Text(String(repeating: "Streaming reply. ", count: update + 1))
+                }
+            }
+        }
+        SHRenderProbe.start()
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), content(0))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let initial = SHRenderProbe.stop()
+        #expect(initial["code.nativeCreated", default: 0] >= 8, "the native creation probe must be active")
+        #expect(codeFields(in: window.host, code: "let value0 = 0").count == 1)
+        let counts = ListPerf.counting {
+            for update in 1...5 {
+                window.show(content(update))
+                ListPerf.settle(window)
+            }
+        }
+        let created = counts["code.nativeCreated", default: 0]
+        #expect(created == 0,
+                "unchanged code must not construct fitting candidates while nearby prose streams")
+    }
+
+    @Test func codeGainsAndLosesHorizontalOverflowWhenResized() throws {
+        let code = "let value = \"" + String(repeating: "m", count: 48) + "\""
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 320), SHCodeBlock(code, language: "swift"))
+        defer { window.close() }
+        for width in [900.0, 240.0, 900.0] {
+            window.host.frame.size = CGSize(width: width, height: 320)
+            ListPerf.settle(window)
+            let field = try #require(codeField(in: window.host, code: code))
+            #expect(field.isSelectable && !field.isEditable)
+            #expect(field.attributedStringValue.string == code)
+            let scroller = sequence(first: field.superview, next: { $0?.superview })
+                .compactMap { $0 as? NSScrollView }.first
+            if width == 240 {
+                let scroll = try #require(scroller)
+                let document = try #require(scroll.documentView)
+                #expect(document.bounds.width > scroll.contentSize.width)
+                scroll.contentView.scroll(to: NSPoint(x: document.bounds.width - scroll.contentSize.width, y: 0))
+                scroll.reflectScrolledClipView(scroll.contentView)
+                #expect(scroll.contentView.bounds.maxX >= document.bounds.maxX - 1)
+            } else {
+                #expect(scroller == nil, "fitting code must return to direct selectable text")
+            }
+        }
+    }
+
+    @Test func contentAndFontChangesReevaluateHorizontalOverflow() throws {
+        let scale = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = scale }
+        let short = "let value = 1"
+        let long = String(repeating: "longIdentifier", count: 40)
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 320), SHCodeBlock(short, language: "swift"))
+        defer { window.close() }
+        for code in [short, long, short] {
+            window.show(SHCodeBlock(code, language: "swift"))
+            ListPerf.settle(window)
+            let field = try #require(codeField(in: window.host, code: code))
+            #expect(field.isSelectable && !field.isEditable)
+            let scroll = sequence(first: field.superview, next: { $0?.superview })
+                .compactMap { $0 as? NSScrollView }.first
+            #expect((scroll != nil) == (code == long))
+        }
+        let field = try #require(codeField(in: window.host, code: short))
+        let originalFont = try #require(field.font).pointSize
+        let narrowWidth = field.frame.width + 2 * SH.Space.l + 1
+        window.window.setContentSize(CGSize(width: narrowWidth, height: 320))
+        ListPerf.settle(window)
+        for multiplier in [1.5, 1.0] {
+            ThemeStore.shared.textScale = scale * multiplier
+            ListPerf.settle(window)
+            let current = try #require(codeField(in: window.host, code: short))
+            #expect(window.host.frame.width == narrowWidth)
+            #expect(try #require(current.font).pointSize == originalFont * multiplier)
+            let scroll = sequence(first: current.superview, next: { $0?.superview })
+                .compactMap { $0 as? NSScrollView }.first
+            #expect((scroll != nil) == (multiplier > 1),
+                    "scale=\(multiplier), field=\(current.frame), host=\(window.host.frame), scroll=\(String(describing: scroll?.frame))")
+            #expect(current.isSelectable && current.attributedStringValue.string == short)
+        }
+    }
+
     private func codeField(in view: NSView, code: String) -> NSTextField? {
         codeFields(in: view, code: code).first
     }

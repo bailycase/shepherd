@@ -177,6 +177,8 @@ public struct SHCodeBlock: View {
     let highlighted: AttributedString?
     #if os(macOS)
     @State private var nativeCode = SHNativeCodeText.Cache()
+    @State private var availableCodeWidth: CGFloat?
+    @State private var codeWidth: CGFloat = 0
     #endif
     @State private var hovering = false
     @State private var copied = false
@@ -222,15 +224,30 @@ public struct SHCodeBlock: View {
             .padding(.trailing, SH.Space.s)
             .frame(height: SHThreadMetrics.codeHeaderHeight)
             .overlay(alignment: .bottom) { SHHairline() }
-            // The code draws directly when its longest line fits the column, so the thread's
-            // wheel never meets a nested scroll view there, and scrolls sideways only when it does not.
+            // Short code stays out of nested scrolling; wide code keeps its natural line width.
+            #if os(macOS)
+            // ViewThatFits reconstructs native measuring fields during unrelated layout updates.
+            if let availableCodeWidth, codeWidth > availableCodeWidth {
+                ScrollView(.horizontal) { codeText }
+                    .scrollIndicators(.hidden)
+            } else {
+                codeText
+            }
+            #else
             ViewThatFits(in: .horizontal) {
                 codeText
                 ScrollView(.horizontal) { codeText }
                     .scrollIndicators(.hidden)
             }
+            #endif
         }
+        #if os(macOS)
+        // Accept the column's proposal even when the fixed-size code initially overflows it.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableCodeWidth = $0 }
+        #else
         .frame(maxWidth: .infinity, alignment: .leading)
+        #endif
         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .shBorder(sh.lineSubtle, radius: SH.Radius.m)
@@ -256,6 +273,9 @@ public struct SHCodeBlock: View {
         .fixedSize()
         .padding(.horizontal, SH.Space.l)
         .padding(.vertical, 10)
+        #if os(macOS)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { codeWidth = $0 }
+        #endif
     }
 }
 
