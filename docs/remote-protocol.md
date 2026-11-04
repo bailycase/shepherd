@@ -251,6 +251,14 @@
     the skills its pi loads from elsewhere (`SkillsSnapshot.pi`, `skills.pi.v1`, read-only). The
     server runs them on its own queue (they fetch with git) and tells the host's page about each
     change (docs/skills.md)
+  - `hooks` (`hooks.v1`): Settings › Hooks on the host (fetch, a hook's off switch by hash, a
+    reader, Save, Delete, Test), answered with the host's `HookCatalogSnapshot` (its sources with
+    state, entries, off switches, readers and home) or a test's `HookTestResult`. Save and Delete
+    name a hook by slot and the hash the client read; a hook changed since is refused
+    (`hook_changed`). Save writes only one of the catalog's JSON files (`not_a_hooks_file`), Test
+    runs only in the home folder or one of its spaces (`no_such_space`), bounded by the hook's
+    time limit. Files and tests run off the server queue; changes tell the Mac's Hooks page. The
+    iPhone and iPad hide the page on older hosts; the Mac's Settings › Hooks stays this Mac's
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the

@@ -16,8 +16,10 @@ Three parts share this contract:
 | Runtime: runs hooks on the agent's events, proposes hooks | `Extensions/shepherd-hooks.ts`, installed by `HooksExtension.swift` |
 | Catalog: finds files, parses entries, hashes, off switches, writes | `Sources/ShepherdSessions/Hooks/` |
 | UI: Settings › Hooks, Sources, Edit, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hook*.swift`, `Thread/HookRows.swift`, `ShepherdRemote/NativeHookPresentation.swift` |
+| Remote: the iPhone and iPad manage a host's hooks over `hooks.v1` (docs/remote-protocol.md) | `ShepherdSessions/Hooks/HookRemote.swift`, `ShepherdRemote/ClientHooks.swift`, `App/iOS/Settings/HooksScreens.swift` |
 
-The runtime and the catalog each implement parsing and hashing; the shared vectors in
+The values (`HookEntry`, `HookCatalogSnapshot`, `HookJSON`, `HookEvent`…) live in ShepherdProtocol,
+the shared rows and form in `ShepherdRemote/HooksPresentation.swift`. The runtime and the catalog each implement parsing and hashing; the shared vectors in
 `Tests/Fixtures/hooks/` keep them equal.
 
 ## Files
