@@ -8,6 +8,9 @@ struct ProjectSettingsDetail: View {
     let project: ProjectsRow
     @Bindable var cookies: ProjectCookiesModel
     let cookieScope: ProjectCookieScope?
+    /// This Mac's hooks, for a local space's Hooks tab; nil on a remote host's space (no Hooks tab).
+    var hooks: HooksModel? = nil
+    var openHooks: () -> Void = {}
     @State private var hoveredTab: String?
 
     private var categories: [(ProjectFile.Category, String)] {
@@ -18,7 +21,14 @@ struct ProjectSettingsDetail: View {
         GeometryReader { geometry in
             let narrow = geometry.size.width - AppLayout.settingsWideSides * 2 < AppLayout.projectColumnsMinimumWidth
             VStack(alignment: .leading, spacing: AppLayout.projectDetailGap) {
-                if model.showingBrowser {
+                if model.showingHooks, let hooks {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: SH.Space.xxl) {
+                            header
+                            HooksSpacePage(model: hooks, root: project.project.directory, openSettings: openHooks)
+                        }.padding(.bottom, AppLayout.settingsBottom)
+                    }
+                } else if model.showingBrowser {
                     ScrollView {
                         VStack(alignment: .leading, spacing: SH.Space.xxl) {
                             header.disabled(cookies.pending != nil || cookies.clearing).accessibilityHidden(cookies.pending != nil)
@@ -84,14 +94,14 @@ struct ProjectSettingsDetail: View {
                     ForEach(categories, id: \.0) { category, label in
                         Button { Task { await model.navigate(.category(category)) } } label: {
                             HStack(spacing: SH.Space.s) {
-                                Text(label).font(.shSans(AppLayout.projectTabSize, !model.showingBrowser && model.category == category ? .medium : .regular))
+                                Text(label).font(.shSans(AppLayout.projectTabSize, !model.showingBrowser && !model.showingHooks && model.category == category ? .medium : .regular))
                                 if category == .skills { tabCount(model.context.resources) }
                                 if category == .mcp { tabCount(model.context.mcpServers) }
                             }.offset(y: AppLayout.projectTabBaseline * ThemeStore.shared.textScale)
                                 .padding(.horizontal, SH.Space.l).frame(height: AppLayout.projectTabHeight)
-                                .foregroundStyle(!model.showingBrowser && model.category == category || hoveredTab == label ? Color.sh.textPrimary : Color.sh.textSecondary)
+                                .foregroundStyle(!model.showingBrowser && !model.showingHooks && model.category == category || hoveredTab == label ? Color.sh.textPrimary : Color.sh.textSecondary)
                                 .overlay(alignment: .bottom) {
-                                    if !model.showingBrowser && model.category == category { Color.sh.lantern.frame(height: AppLayout.projectTabUnderline) }
+                                    if !model.showingBrowser && !model.showingHooks && model.category == category { Color.sh.lantern.frame(height: AppLayout.projectTabUnderline) }
                                 }.contentShape(Rectangle())
                         }.buttonStyle(.shRow(radius: AppLayout.projectTabRadius, focusColor: .sh.running))
                             .onHover { hoveredTab = $0 ? label : nil }
@@ -109,6 +119,19 @@ struct ProjectSettingsDetail: View {
                     }.buttonStyle(.shRow(radius: AppLayout.projectTabRadius, focusColor: .sh.running))
                         .onHover { hoveredTab = $0 ? "Browser" : nil }
                         .accessibilityLabel("Space category Browser").disabled(model.saving || cookies.clearing)
+                    if hooks != nil {
+                        Button { Task { await model.navigate(.hooks) } } label: {
+                            Text("Hooks").font(.shSans(AppLayout.projectTabSize, model.showingHooks ? .medium : .regular))
+                                .offset(y: AppLayout.projectTabBaseline * ThemeStore.shared.textScale)
+                                .foregroundStyle(model.showingHooks || hoveredTab == "Hooks" ? Color.sh.textPrimary : Color.sh.textSecondary)
+                                .padding(.horizontal, SH.Space.l).frame(height: AppLayout.projectTabHeight)
+                                .overlay(alignment: .bottom) {
+                                    if model.showingHooks { Color.sh.lantern.frame(height: AppLayout.projectTabUnderline) }
+                                }.contentShape(Rectangle())
+                        }.buttonStyle(.shRow(radius: AppLayout.projectTabRadius, focusColor: .sh.running))
+                            .onHover { hoveredTab = $0 ? "Hooks" : nil }
+                            .accessibilityLabel("Space category Hooks").disabled(model.saving || cookies.clearing)
+                    }
                 }
             }.scrollIndicators(.hidden).frame(height: AppLayout.projectTabHeight)
                 .background(alignment: .bottom) { Color.sh.lineSubtle.frame(height: SHSettingsNavMetrics.borderWidth) }

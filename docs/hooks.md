@@ -15,7 +15,7 @@ Three parts share this contract:
 | --- | --- |
 | Runtime: runs hooks on the agent's events, proposes hooks | `Extensions/shepherd-hooks.ts`, installed by `HooksExtension.swift` |
 | Catalog: finds files, parses entries, hashes, trust, writes | `Sources/ShepherdSessions/Hooks/` |
-| UI: Settings › Hooks, Sources, Edit, Review, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hooks*.swift`, `Thread/` |
+| UI: Settings › Hooks, Sources, Edit, Review, the space's Hooks tab, thread rows, proposal card, composer glyph | `Sources/ShepherdApp/Hook*.swift`, `Thread/HookRows.swift`, `ShepherdRemote/NativeHookPresentation.swift` |
 
 The runtime and the catalog each implement parsing and hashing; the shared vectors in
 `Tests/Fixtures/hooks/` keep them equal.
@@ -145,8 +145,9 @@ The runtime posts `pi.sendMessage({ customType: "shepherd.hook", display: true, 
 ```
 
 `running` is shown only while the hook runs, as an extension status (`ctx.ui.setStatus` with key
-`shepherd.hook`, cleared with no text) that the thread draws as its working line, never as a
-stored row. Only `context` and `sentBack` rows reach the model. Runs with no visible effect (exit 0, no output)
+`shepherd.hook`, cleared with no text): the host keeps it as the snapshot's `hookStatus` while pi
+works and the thread's live line says it; never a stored row. Only `context` and `sentBack` rows
+reach the model. Runs with no visible effect (exit 0, no output)
 collapse into one `ran` row per event and turn.
 
 `PreToolUse` `ask` uses `ctx.ui.select(title, ["Deny", "Allow once"])` with title

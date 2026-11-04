@@ -1076,6 +1076,24 @@ struct ThreadEventTests {
         #expect(try await t.snapshot().widgets == [])
     }
 
+    /// A running hook's status message is the thread's live line (docs/hooks.md): keyed by
+    /// `shepherd.hook`, cleared by an empty status or the turn settling, and only while pi works.
+    @Test func aRunningHooksStatusShowsUntilItClearsOrTheTurnSettles() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"agent_start"}"#,
+                         #"{"type":"extension_ui_request","id":"1","method":"setStatus","statusKey":"shepherd.hook","statusText":"Checking the path"}"#)
+        #expect(try await t.snapshot().hookStatus == "Checking the path")
+        try await t.feed(#"{"type":"extension_ui_request","id":"2","method":"setStatus","statusKey":"shepherd.hook"}"#)
+        #expect(try await t.snapshot().hookStatus == nil)
+        try await t.feed(#"{"type":"extension_ui_request","id":"3","method":"setStatus","statusKey":"other","statusText":"ok"}"#,
+                         #"{"type":"extension_ui_request","id":"4","method":"setStatus","statusKey":"shepherd.hook","statusText":"Formatting"}"#)
+        #expect(try await t.snapshot().hookStatus == "Formatting")
+        try await t.feed(#"{"type":"agent_settled"}"#)
+        #expect(try await t.snapshot().hookStatus == nil)
+    }
+
     @Test func widgetsOverTheirLimitsAreDropped() async throws {
         let t = try Thread()
         defer { t.stop() }

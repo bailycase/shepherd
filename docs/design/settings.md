@@ -24,14 +24,15 @@ Save or Apply. Instructions and [Spaces](settings-projects.md) edit files with a
     (`arrow.branch`) · Spaces (`folder`) · Sign-in (`lock`; a 6pt `lantern` dot trailing while
     a provider an agent of this Mac needs isn't signed in or a sign-in expired) · Pi (`pi`) ·
     Instructions (`doc.text`) · Skills (`graduationcap`) · Extensions (the board's filled puzzle
-    outline) · Slash commands (the board's filled `</>` outline) · MCP servers (`server.rack`) ·
+    outline) · Slash commands (the board's filled `</>` outline) · Hooks (`SHGlyph.hook`; the board names
+    none) · MCP servers (`server.rack`) ·
     Remote (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
     Experiments (`flask`). No row is nested under another. A row is 32pt × density
     (`SH.Height.scaled(32)`), radius `s`, 10pt in: the glyph in a 15pt box in `textSecondary`
     (`textPrimary` when selected), then, 10pt after it, the name in Geist 13 `textPrimary`. The
     selected page sits on `bgSelected` with its name at medium (500); hover is `bgHover`
     (`SHSettingsNavMetrics`). `SHGlyph.Settings` draws the boards' vector outlines rather than
-    similar SF Symbols, except Advanced, which draws the system `gearshape` itself (a traced copy rendered lumpy); Extensions and Slash commands are the boards' filled outlines, cropped to
+    similar SF Symbols, except Advanced, which draws the system `gearshape` itself, and Hooks, which draws the hook glyph's symbol (a traced copy rendered lumpy); Extensions and Slash commands are the boards' filled outlines, cropped to
     their ink and drawn at the boards' 42.86pt scale.
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there. On Pi it names the

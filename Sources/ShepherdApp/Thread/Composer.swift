@@ -78,6 +78,7 @@ struct Composer: View {
     @Environment(\.projectComposerSend) private var projectSend
     @Environment(\.composerModelDefaults) private var modelDefaults
     @Environment(\.projectWorkerThread) private var workerStyle
+    @Environment(\.hookPresenter) private var hookPresenter
     /// A Project conversation's waiting messages, which its owner holds, not pi: Up next draws them instead of the native queue (a
     /// coordinator takes no native send, so it has none), read-only. nil for every ordinary thread.
     var projectUpNext: ProjectUpNext? = nil
@@ -399,7 +400,25 @@ struct Composer: View {
             // pi's own question takes the card's place (the question dock) while pi waits on it. A
             // subagent's never does: it asks its parent, which asks here only when it must.
             Group {
-                if let dialog = dialogs.first, let session = store.session, let questionKey {
+                if let dialog = dialogs.first, let session = store.session, let questionKey, let prompt = store.hookPrompt, prompt.dialogID == dialog.id {
+                    // A hook's own pieces (HookThreadScene): the proposal card sits over the card, an ask takes its place.
+                    let answer: (String) -> Void = { value in
+                        Task { await store.answer(dialogID: dialog.id, sessionID: session.piSessionID, generation: session.generation, answer: .select(value: value)) }
+                    }
+                    let enabled = active && store.supports("answer")
+                    switch prompt {
+                    case .proposal(let proposal):
+                        VStack(spacing: SH.Space.l) {
+                            HookProposalCard(proposal: proposal, enabled: enabled, answer: answer).id(questionKey)
+                            card
+                        }
+                        .shTransition(.content)
+                    case .ask(let ask):
+                        HookAskPanel(ask: ask, home: hookPresenter?.home ?? PiHome.environmentHome, enabled: enabled, answer: answer)
+                            .id(questionKey)
+                            .shTransition(.content)
+                    }
+                } else if let dialog = dialogs.first, let session = store.session, let questionKey {
                     QuestionDock(prompt: NativeQuestionPrompt(dialog: dialog), count: dialogs.count,
                                  enabled: active && store.supports("answer") && workerStyle?.answerHeld != true, hidden: questionHiding.isHidden(questionKey),
                                  focused: active && isFocused) { answer in
@@ -444,6 +463,8 @@ struct Composer: View {
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
+        // The hook glyph's counts for this thread's space, loaded once per folder (docs/hooks.md).
+        .task(id: directory) { if let directory { hookPresenter?.ensure(cwd: directory) } }
         .onChange(of: store.goalID, initial: true) { _, id in
             if id != nil { queueStack.collapsed = true }
         }
@@ -875,7 +896,8 @@ struct Composer: View {
             startingShown: startingShown, busy: store.busy, stops: stops, sendMenu: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context,
             actionEnabled: stops ? active && store.supports("abort") : canSend,
-            actionHelp: stops ? stopHelp : sendHelp(working: working))
+            actionHelp: stops ? stopHelp : sendHelp(working: working),
+            hooks: hookPresenter?.indicator(cwd: directory))
     }
 
     /// What the row's controls do. Each reads the store and the composer's own state as it runs,
@@ -892,7 +914,8 @@ struct Composer: View {
                 openSendMenu()
             },
             context: { menu = menu == .context ? nil : .context },
-            meterInset: { meterInset = max(0, $0) })
+            meterInset: { meterInset = max(0, $0) },
+            hooks: { [hookPresenter, directory] in hookPresenter?.settings(spaceRoot: hookPresenter?.indicator(cwd: directory)?.spaceRoot) })
     }
 
     private var stopHelp: String {
@@ -1221,6 +1244,8 @@ struct ComposerControlsModel: Equatable {
     var contextOpen: Bool
     var actionEnabled: Bool
     var actionHelp: String
+    /// Hooks run in the thread's space (or wait for review): the hook glyph (docs/hooks.md › Composer glyph).
+    var hooks: HookIndicator? = nil
 }
 
 /// What the control row's controls do, kept apart from the model so they never count as a change.
@@ -1233,6 +1258,7 @@ struct ComposerControlsActions {
     var holdSend: () -> Void
     var context: () -> Void
     var meterInset: (CGFloat) -> Void
+    var hooks: () -> Void = {}
 }
 
 /// The composer's control row: attach · model settings · worktree, then the context ring and
@@ -1297,6 +1323,7 @@ struct ComposerControls: View, Equatable {
             modelChip(compact: compact)
             Spacer(minLength: SH.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).shTransition(.content) }
+            if let hooks = model.hooks { HookComposerGlyph(indicator: hooks, open: actions.hooks) }
             if let branch = model.branch {
                 BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
             }
