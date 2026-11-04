@@ -129,6 +129,7 @@ struct SHNativeCodeText: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> Field {
+        SHRenderProbe.tick("code.nativeCreated")
         let field = Field(labelWithString: "")
         field.isSelectable = true
         // Preserve syntax/font/paragraph attributes when the shared field editor ends selection.
