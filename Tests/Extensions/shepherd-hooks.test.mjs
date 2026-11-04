@@ -129,6 +129,28 @@ test("files parse into one shape with slots; the Codex TOML subset maps to it; b
   assert.match(hooks.parseHookFile("/x/hooks.json", '{\n  "hooks": {\n    oops\n}').error, /^Couldn't read: line 3, /);
 });
 
+test("files read as the catalog reads them: the shared parse cases", () => {
+  const { cases } = JSON.parse(fs.readFileSync(path.join(root, "Tests/Fixtures/hooks/parse-cases.json"), "utf8"));
+  assert.ok(cases.length >= 20);
+  const dir = path.join(scratch, "parse-cases");
+  fs.mkdirSync(dir, { recursive: true });
+  for (const c of cases) {
+    let bytes = c.hex ? Buffer.from(c.hex, "hex") : Buffer.from(c.text, "utf8");
+    if (c.padTo) bytes = Buffer.concat([bytes, Buffer.alloc(c.padTo - bytes.length, " ")]);
+    const file = path.join(dir, c.file);
+    fs.writeFileSync(file, bytes);
+    const parsed = hooks.parseHookBytes(file, fs.readFileSync(file));
+    if (c.unreadable) {
+      assert.ok(parsed.error, `${c.name}: unreadable`);
+      assert.equal(Number(/^Couldn't read: line (\d+),/.exec(parsed.error)?.[1] ?? NaN) || null, c.unreadable.line, `${c.name}: ${parsed.error}`);
+      assert.equal(hooks.entriesOf(file, parsed.hooks).length, 0, `${c.name}: contributes nothing`);
+    } else {
+      assert.equal(parsed.error, undefined, `${c.name}: ${parsed.error}`);
+      assert.equal(hooks.entriesOf(file, parsed.hooks).length, c.entries, c.name);
+    }
+  }
+});
+
 test("matchers are anchored regexes that also match Claude Code tool names", () => {
   const m = hooks.matcherMatches;
   assert.ok(m("Edit|Write", "edit") && m("Edit|Write", "write") && !m("Edit|Write", "read"));

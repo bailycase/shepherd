@@ -105,27 +105,63 @@ function tomlValue(raw, fail) {
   return fail(`unsupported value ${raw.slice(0, 20)}`);
 }
 
-/** One file's hooks: `{ hooks }` in the shared shape, or `{ error }` when it doesn't parse. */
+/** Files larger than this are reported, not read (the catalog's `HookCatalog.fileLimit`). */
+export const FILE_LIMIT = 1 << 20;
+
+/**
+ * One file's hooks: `{ hooks }` in the shared shape, or `{ error }` (contributing nothing) in exactly
+ * the cases the catalog reports it unreadable: it doesn't parse, or any event list, group or handler
+ * isn't the contract's shape. A leading UTF-8 BOM is dropped; an empty file has no hooks.
+ */
 export function parseHookFile(file, text) {
   try {
-    if (file.endsWith(".toml")) return { hooks: parseTOML(text).hooks };
-    try {
-      const json = JSON.parse(text);
-      return { hooks: json && typeof json === "object" && json.hooks && typeof json.hooks === "object" ? json.hooks : {} };
-    } catch (error) {
-      const at = /position (\d+)/.exec(String(error?.message))?.[1];
-      throw new Error(`Couldn't read: line ${at ? lineOf(text, Number(at)) : 1}, ${String(error?.message ?? error).split("\n")[0]}`);
+    text = text.replace(/^\uFEFF/, "");
+    if (!text.trim()) return { hooks: {} };
+    let doc;
+    if (file.endsWith(".toml")) doc = parseTOML(text);
+    else {
+      try { doc = JSON.parse(text); } catch (error) {
+        const at = /position (\d+)/.exec(String(error?.message))?.[1];
+        throw new Error(`Couldn't read: line ${at ? lineOf(text, Number(at)) : 1}, ${String(error?.message ?? error).split("\n")[0]}`);
+      }
     }
+    return { hooks: hookShape(doc) };
   } catch (error) {
     return { hooks: {}, error: String(error?.message ?? error) };
   }
 }
 
+/** One file's bytes as the catalog reads them: over FILE_LIMIT or not UTF-8 is unreadable. */
+export function parseHookBytes(file, bytes) {
+  if (bytes.length > FILE_LIMIT) return { hooks: {}, error: "Couldn't read: the file is larger than 1 MiB" };
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return { hooks: {}, error: "Couldn't read: the file isn't UTF-8 text" }; }
+  return parseHookFile(file, text);
+}
+
+const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+/** The file's `hooks` object, checked whole as `HookCatalog.entries(of:)` checks it. */
+function hookShape(doc) {
+  const bad = (why) => { throw new Error(`Couldn't read: ${why}`); };
+  if (!isObject(doc)) bad("the file isn't a JSON object");
+  if (!Object.hasOwn(doc, "hooks")) return {};
+  const hooks = doc.hooks;
+  if (!isObject(hooks)) bad("“hooks” isn't an object");
+  for (const [event, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) bad(`“hooks.${event}” isn't a list`);
+    for (const group of groups) {
+      if (!isObject(group) || !(group.hooks === undefined || Array.isArray(group.hooks))) bad(`a group in “${event}” isn't an object with a “hooks” list`);
+      for (const handler of group.hooks ?? []) if (!isObject(handler)) bad(`a handler in “${event}” isn't an object`);
+    }
+  }
+  return hooks;
+}
+
 /** Every handler of one parsed file, with its slot and hash. */
 export function entriesOf(file, hooks, scope = "mac") {
   const out = [];
-  for (const event of EVENTS) {
-    const groups = hooks?.[event];
+  // Every event the file names, as the catalog lists them; only known events ever fire.
+  for (const [event, groups] of Object.entries(hooks ?? {})) {
     if (!Array.isArray(groups)) continue;
     groups.forEach((group, gi) => {
       if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) return;
@@ -226,7 +262,7 @@ function readCached(file, parse) {
   const hit = fileCache.get(file);
   if (hit?.key === key) return hit.value;
   let value;
-  try { value = parse(fs.readFileSync(file, "utf8")); } catch { value = undefined; }
+  try { value = parse(fs.readFileSync(file)); } catch { value = undefined; }
   fileCache.set(file, { key, value });
   return value;
 }
@@ -234,7 +270,7 @@ function readCached(file, parse) {
 export function readTrust(hooksDir, { fresh = false } = {}) {
   const file = path.join(hooksDir, "trust.json");
   let raw;
-  if (fresh) { try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch {} } else raw = readCached(file, JSON.parse);
+  if (fresh) { try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch {} } else raw = readCached(file, (bytes) => JSON.parse(bytes.toString("utf8")));
   const valid = raw && typeof raw === "object" && !Array.isArray(raw);
   return {
     version: 1,
@@ -252,7 +288,7 @@ export function runnableHooks(root, hooksDir) {
   const out = [];
   for (const file of hookFiles(root)) {
     if (file.reader && trust.readers[file.reader] === false) continue;
-    const parsed = readCached(file.path, (text) => parseHookFile(file.path, text));
+    const parsed = readCached(file.path, (bytes) => parseHookBytes(file.path, bytes));
     if (!parsed || parsed.error) continue;
     for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
       if (trust.trusted[entry.hash] && !off.has(entry.hash)) out.push(entry);

@@ -1,0 +1,185 @@
+{
+  "about": "Shared parse cases: the runtime (Tests/Extensions/shepherd-hooks.test.mjs) and the catalog (HookCatalogTests) read each file the same way. `text` (or `hex` bytes) is the file, padded with spaces to `padTo` bytes when given; `entries` is the handler count, `unreadable.line` the reported 1-based line or null.",
+  "cases": [
+    {
+      "name": "two events, three handlers",
+      "file": "hooks.json",
+      "text": "{\"model\":\"x\",\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"},{\"type\":\"command\",\"command\":\"echo hi\"}]}],\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}]}}",
+      "entries": 3
+    },
+    {
+      "name": "a UTF-8 BOM is dropped",
+      "file": "hooks.json",
+      "text": "﻿{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}]}}",
+      "entries": 1
+    },
+    {
+      "name": "empty",
+      "file": "hooks.json",
+      "text": "  \n",
+      "entries": 0
+    },
+    {
+      "name": "only a BOM",
+      "file": "hooks.json",
+      "text": "﻿\n",
+      "entries": 0
+    },
+    {
+      "name": "no hooks key",
+      "file": "settings.json",
+      "text": "{\"model\":\"x\"}",
+      "entries": 0
+    },
+    {
+      "name": "an event Shepherd doesn't know still lists",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Bogus\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}],\"Stop\":[]}}",
+      "entries": 1
+    },
+    {
+      "name": "a group without hooks",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"matcher\":\"x\"}]}}",
+      "entries": 0
+    },
+    {
+      "name": "the root isn't an object",
+      "file": "hooks.json",
+      "text": "[]",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "hooks isn't an object",
+      "file": "hooks.json",
+      "text": "{\"hooks\":[]}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "hooks is null",
+      "file": "hooks.json",
+      "text": "{\"hooks\":null}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "an event isn't a list",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":{}}}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "a group isn't an object",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[1]}}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "a group's hooks isn't a list",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"hooks\":{}}]}}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "a group's hooks is null",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"hooks\":null}]}}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "a handler isn't an object",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"hooks\":[\"echo hi\"]}]}}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "one bad handler rejects the whole file",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}],\"PreToolUse\":[{\"hooks\":[null]}]}}",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "a syntax error names its line",
+      "file": "hooks.json",
+      "text": "{\n  \"hooks\": {\n    oops\n}",
+      "unreadable": {
+        "line": 3
+      }
+    },
+    {
+      "name": "not UTF-8",
+      "file": "hooks.json",
+      "hex": "7b22686f6f6b73223a7b7d2c2278223a2280ff227d",
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "larger than the limit",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}]}}",
+      "padTo": 1048577,
+      "unreadable": {
+        "line": null
+      }
+    },
+    {
+      "name": "at the limit",
+      "file": "hooks.json",
+      "text": "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}]}}",
+      "padTo": 1048576,
+      "entries": 1
+    },
+    {
+      "name": "TOML: two handlers",
+      "file": "config.toml",
+      "text": "model = \"x\"\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype = \"command\"\ncommand = \"a\"\n[[hooks.Stop.hooks]]\ntype = \"command\"\ncommand = \"b\"\n",
+      "entries": 2
+    },
+    {
+      "name": "TOML: a UTF-8 BOM is dropped",
+      "file": "config.toml",
+      "text": "﻿[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype = \"command\"\ncommand = \"a\"\n",
+      "entries": 1
+    },
+    {
+      "name": "TOML: no hook tables",
+      "file": "config.toml",
+      "text": "model = \"x\"\n",
+      "entries": 0
+    },
+    {
+      "name": "TOML: an inline table names its line",
+      "file": "config.toml",
+      "text": "[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ninput = { a = 1 }\n",
+      "unreadable": {
+        "line": 3
+      }
+    },
+    {
+      "name": "TOML: not UTF-8",
+      "file": "config.toml",
+      "hex": "6d6f64656c203d2022ff220a",
+      "unreadable": {
+        "line": null
+      }
+    }
+  ]
+}

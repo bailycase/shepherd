@@ -207,6 +207,37 @@ struct HookCatalogTests {
         #expect(snapshot.entries.isEmpty)
     }
 
+    /// The runtime's node test reads the same cases: both take a file or leave it out alike.
+    @Test func filesReadAsTheRuntimeReadsThemTheSharedParseCases() throws {
+        let f = try Fixture(); defer { f.remove() }
+        let url = HookCanonicalTests.vectors.deletingLastPathComponent().appendingPathComponent("parse-cases.json")
+        let cases = try #require(HookJSON.parse(String(contentsOf: url, encoding: .utf8))["cases"]?.arrayValue)
+        #expect(cases.count >= 20)
+        for item in cases {
+            let name = item["name"]?.stringValue ?? "", file = try #require(item["file"]?.stringValue)
+            var bytes: Data
+            if let hex = item["hex"]?.stringValue {
+                bytes = Data(stride(from: 0, to: hex.count, by: 2).map { i in
+                    UInt8(hex[hex.index(hex.startIndex, offsetBy: i)..<hex.index(hex.startIndex, offsetBy: i + 2)], radix: 16)!
+                })
+            } else { bytes = Data(try #require(item["text"]?.stringValue).utf8) }
+            if let pad = item["padTo"]?.numberValue { bytes.append(Data(repeating: 0x20, count: Int(pad) - bytes.count)) }
+            let path = f.dir.appendingPathComponent(file).path
+            try bytes.write(to: URL(fileURLWithPath: path))
+            let read = Result { try HookCatalog.entries(in: path, scope: .mac, format: .shepherd, isTOML: file.hasSuffix(".toml"), trust: HookTrust()) }
+            if let unreadable = item["unreadable"] {
+                let line: Int?? = switch read {
+                case .success: nil
+                case .failure(let error as HookJSON.ParseError): .some(error.line)
+                case .failure: .some(nil)
+                }
+                #expect(line == .some(unreadable["line"]?.numberValue.map { Int($0) }), "\(name)")
+            } else {
+                #expect(try read.get().count == Int(item["entries"]?.numberValue ?? -1), "\(name)")
+            }
+        }
+    }
+
     @Test func codexConfigTomlHooksReadLikeJSON() throws {
         let f = try Fixture(); defer { f.remove() }
         let toml = """

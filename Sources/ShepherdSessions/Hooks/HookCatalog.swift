@@ -285,7 +285,9 @@ public struct HookCatalog: Sendable {
         let data: Data
         do { data = try Data(contentsOf: URL(fileURLWithPath: path)) } catch { throw ReadFailure(description: "the file can't be opened") }
         guard data.count <= fileLimit else { throw ReadFailure(description: "the file is larger than 1 MiB") }
-        guard let text = String(data: data, encoding: .utf8) else { throw ReadFailure(description: "the file isn't UTF-8 text") }
+        guard var text = String(data: data, encoding: .utf8) else { throw ReadFailure(description: "the file isn't UTF-8 text") }
+        // A leading BOM is dropped for JSON and TOML alike, as the runtime does.
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         if text.allSatisfy(\.isWhitespace) { return .object([HookJSON.Member]()) }
         return isTOML ? try HookTOML.parse(text) : try HookJSON.parse(text)
     }
