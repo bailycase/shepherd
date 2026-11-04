@@ -4,8 +4,8 @@ import ShepherdUI
 /// The app's start: the session server acquires the workspace (ownership, state, Changes
 /// records, design cleanup) off the main thread while the window is already up, and only once
 /// it holds that authority is the model made, on the main actor, that restores agents and
-/// writes the workspace. Nothing that acts on the workspace (the model, its menus, its views)
-/// exists before then. A start that fails ends the app as it always has (`failed`).
+/// writes the workspace. Menus are registered immediately but cannot act on the workspace
+/// before then. A start that fails ends the app as it always has (`failed`).
 @MainActor @Observable
 final class ShepherdLaunch<Model: AnyObject> {
     private(set) var model: Model?

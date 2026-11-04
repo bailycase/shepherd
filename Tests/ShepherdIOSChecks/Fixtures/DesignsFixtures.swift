@@ -122,6 +122,8 @@ extension FixtureCatalog {
                 await DesignsFixtures.listed(app)
                 try? await Task.sleep(for: .seconds(2))
             }),
+            FixtureScreen(name: "mention-image-retention", hosts: MentionImageRetentionFixture.hosts(),
+                          prepare: MentionImageRetentionFixture.run),
             // The @ picker in a host thread's composer: the host's designs at once.
             FixtureScreen(name: "thread-mention", hosts: DesignsFixtures.referenceHosts(),
                           routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: { app in

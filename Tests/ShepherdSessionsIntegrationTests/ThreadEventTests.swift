@@ -17,10 +17,11 @@ struct ThreadEventTests {
         let state: RPCThreadState
         let dir: URL
 
-        init(bootstrap: Bool = true, env: [String: String]? = nil, readCache: ThreadReadCache = .shared) throws {
+        init(bootstrap: Bool = true, env: [String: String]? = nil, readCache: ThreadReadCache = .shared,
+             originStore: ThreadOriginStore? = nil) throws {
             dir = try makeScratchDirectory("thread")
             session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, env: env, runtime: .rpc), queue: queue, workBudget: readCache)
-            state = RPCThreadState(session: session, queue: queue, readCache: readCache)
+            state = RPCThreadState(session: session, queue: queue, originStore: originStore, readCache: readCache)
             session.onEvent = { [weak state] event in state?.handle(event) }
             session.start()
             if bootstrap { queue.async { self.state.bootstrap() } }
@@ -74,6 +75,90 @@ struct ThreadEventTests {
                 return latest.map { !$0.piSessionID.isEmpty && $0.messages.count == 2 && $0.stats != nil && $0.commands != nil } ?? false
             }
             return try #require(latest)
+        }
+    }
+
+    @Test func combinedOriginsLoadKeepsLegacyAndUnreadableFileFallbacks() throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        let file = dir.appendingPathComponent("session.json")
+        let missing = store.loadSession(sessionID: "session")
+        #expect(missing.entries.isEmpty && missing.questions.isEmpty)
+
+        try Data("{broken".utf8).write(to: file)
+        let corrupt = store.loadSession(sessionID: "session")
+        #expect(corrupt.entries.isEmpty && corrupt.questions.isEmpty)
+
+        try Data(#"{"version":1,"entries":[{"id":"user:1","record":{"steered":true}}]}"#.utf8).write(to: file)
+        let legacy = store.loadSession(sessionID: "session")
+        #expect(legacy.entries.map(\.id) == ["user:1"])
+        #expect(legacy.entries.first?.record.origin(text: "message") == .steered)
+        #expect(legacy.questions.isEmpty)
+    }
+
+    @Test func startupQuestionsWinCollisionsWithinTheLimitAndDoNotLeakAcrossSessions() async throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        defer { store.flush() }
+        let older = ThreadOriginStore.Record(command: "/older")
+        let middle = ThreadOriginStore.Record(references: ["reference"], command: "/middle")
+        let winner = ThreadOriginStore.Record(command: "/winner")
+        let saved = (0..<ThreadOriginStore.questionLimit).map {
+            ThreadOriginStore.Question(id: "q-\($0)", record: NativeQuestionRecord(kind: .confirm, question: "Saved \($0)",
+                confirmed: false, outcome: .answered, askedAt: Double($0)), endedAt: Double($0 + 1))
+        }
+        store.save(sessionID: "stub-session", records: [("duplicate", older), ("middle", middle), ("duplicate", winner)], questions: saved)
+        let otherQuestion = ThreadOriginStore.Question(id: "q-128", record: NativeQuestionRecord(kind: .confirm,
+            question: "Other session", confirmed: false, outcome: .answered, askedAt: 1), endedAt: 2)
+        store.save(sessionID: "stub-session-2", records: [("other", middle)], questions: [otherQuestion])
+        store.flush()
+        let combined = store.loadSession(sessionID: "stub-session")
+        #expect(combined.entries.map(\.id) == ["duplicate", "middle", "duplicate"])
+        #expect(combined.entries.map(\.record) == [older, middle, winner])
+        #expect(combined.questions == saved)
+        #expect(store.load(sessionID: "stub-session").map(\.record) == combined.entries.map(\.record))
+        #expect(store.loadQuestions(sessionID: "stub-session") == combined.questions)
+
+        let t = try Thread(bootstrap: false, originStore: store)
+        defer { t.stop() }
+        // Both answers arrive before get_state reveals the session's persisted records.
+        for id in ["q-128", "startup-new"] {
+            try await t.feed("{\"type\":\"extension_ui_request\",\"id\":\"\(id)\",\"method\":\"confirm\",\"title\":\"Startup permission\"}")
+            let snapshot = try await t.snapshot()
+            let operation = UUID()
+            #expect(await t.request(.answer(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+                operationID: operation, dialogID: id, answer: .confirm(value: true))) == .accepted(operationID: operation))
+        }
+        let startup = t.queue.sync { t.state.questions }
+        #expect(startup.map(\.id) == ["q-128", "startup-new"])
+        let response: Result<RPCResponse, RPCError> = await withCheckedContinuation { continuation in
+            t.queue.async { t.state.refreshState { continuation.resume(returning: $0) } }
+        }
+        #expect(try response.get().success)
+        let expected = Array(saved.dropFirst().filter { $0.id != "q-128" }) + startup
+        t.queue.sync {
+            #expect(t.state.piSessionID == "stub-session")
+            #expect(t.state.originOrder == ["duplicate", "middle", "duplicate"])
+            #expect(t.state.origins == ["duplicate": winner, "middle": middle])
+            #expect(t.state.questions == expected)
+            #expect(t.state.questions.count == ThreadOriginStore.questionLimit)
+        }
+        store.flush()
+        #expect(store.loadSession(sessionID: "stub-session").questions == expected, "startup answers are persisted after the merge")
+
+        let switched: Result<RPCResponse, RPCError> = await withCheckedContinuation { continuation in
+            t.queue.async { t.session.request(.prompt(message: "newsession", streamingBehavior: .steer)) { continuation.resume(returning: $0) } }
+        }
+        #expect(try switched.get().success)
+        try await eventually("the next session's origins and questions to load") {
+            t.queue.sync { t.state.piSessionID == "stub-session-2" }
+        }
+        t.queue.sync {
+            #expect(t.state.originOrder == ["other"])
+            #expect(t.state.origins == ["other": middle])
+            #expect(t.state.questions == [otherQuestion], "a matching ID in the next session must not retain the startup answer")
         }
     }
 

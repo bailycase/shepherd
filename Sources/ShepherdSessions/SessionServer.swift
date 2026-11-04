@@ -737,6 +737,8 @@ public final class SessionServer: @unchecked Sendable {
     /// their Undo (docs/changes.md). The app calls it directly; remote clients through
     /// `RemoteAgentQuery.changes*`.
     public let changes: ChangesService
+    /// Issues & PRs: GitHub through the user's gh (`forge(_:)`, `RemoteRequest.forge`).
+    public let forge: ForgeService
     /// How queues go for agents with no choice of their own (Settings ▸ Agents).
     private var defaultQueueMode: NativeQueueMode = .all
     /// The names Settings ▸ Pi ▸ Slash commands turned off, left out of every thread's `/` menu.
@@ -1057,7 +1059,7 @@ public final class SessionServer: @unchecked Sendable {
     public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
                 skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash,
-                triggerSource: AutomationTriggers.Source? = nil) {
+                triggerSource: AutomationTriggers.Source? = nil, forgeRunner: ForgeService.Runner? = nil) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL, readOnly: true)
         self.pi = pi
@@ -1093,6 +1095,8 @@ public final class SessionServer: @unchecked Sendable {
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
+        self.forge = ForgeService(pinsURL: stateURL.deletingLastPathComponent().appendingPathComponent("forge-pins.json"),
+                                  runner: forgeRunner ?? ForgeService.gh)
         self.designReferencePayloads = DesignReferencePayloadStore(
             directory: stateURL.deletingLastPathComponent().appendingPathComponent("design-refs", isDirectory: true))
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
@@ -2581,6 +2585,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteDesign(id: id, request: request, client: client)
         case .mission(let id, let request):
             remoteMission(id: id, request: request, client: client)
+        case .forge(let id, let request):
+            remoteForge(id: id, request: request, client: client)
         case .logicalProjectRuntime(let id, let request):
             guard !request.requiresResults || offeredCapabilities.contains(RemoteProtocol.projectResultCapability) && client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) else {
                 send(.error(id: id, code: "unsupported_result", message: "Durable result reads require compatible owner and viewer."), to: client); return
@@ -3364,6 +3370,26 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: one Missions request (`missions.v1`). Reads come from the store; everything else
     /// goes to the GUI's mission owner. Replies are encoded off the queue (a record is up to 256 KiB)
     /// and refused `too_large` past the frame cap.
+    /// Issues & PRs for a remote client: the same `forge` answer the Mac gets in process, run off
+    /// the queue (gh can take seconds) and sent back on it.
+    private func remoteForge(id: Int, request: RemoteForgeRequest, client: ExtensionConnection) {
+        let connection = ChangesUnchecked(value: client)
+        let context = forgeContext()
+        let forge = forge
+        Task.detached { [weak self] in
+            let answer: RemoteReply = switch await forge.answer(request, context: context) {
+            case .success(let value): .forgeResult(id: id, result: value)
+            case .failure(let error): .error(id: id, code: error.code.rawValue, message: error.message)
+            }
+            guard let payload = (try? NDJSON.encode(answer)).flatMap({ $0.count - 1 <= NDJSON.maxPayloadBytes ? $0 : nil })
+                ?? (try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large", message: "The answer exceeds the remote payload limit."))) else { return }
+            self?.queue.async {
+                guard let self, self.clients[connection.value.fd] === connection.value else { return }
+                self.enqueuePayload(payload, to: connection.value)
+            }
+        }
+    }
+
     private func remoteMission(id: Int, request: RemoteMissionRequest, client: ExtensionConnection) {
         guard offeredCapabilities(to: client).contains(RemoteProtocol.missionsCapability), let handler = onRemoteMission else {
             send(.error(id: id, code: "unsupported", message: "Turn on Settings ▸ Experiments ▸ Missions on the host, or update Shepherd, to use its missions."), to: client)

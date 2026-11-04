@@ -2122,13 +2122,12 @@ final class RPCThreadState {
     /// The session's record of where delivered messages came from.
     private func loadOrigins(sessionID: String) {
         guard let originStore else { return }
-        let loaded = originStore.load(sessionID: sessionID)
-        origins = Dictionary(loaded.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
-        originOrder = loaded.map(\.id)
+        let loaded = originStore.loadSession(sessionID: sessionID)
+        origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
+        originOrder = loaded.entries.map(\.id)
         let startupQuestions = questions
-        let loadedQuestions = originStore.loadQuestions(sessionID: sessionID)
         let startupIDs = Set(startupQuestions.map(\.id))
-        questions = Array((loadedQuestions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
+        questions = Array((loaded.questions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
         if !startupQuestions.isEmpty { saveOrigins() }
     }
 
@@ -3045,13 +3044,18 @@ final class RPCThreadState {
                 if let time = message.timestamp { callTimes[id] = time }
             }
         }
-        return shownHistory(messages).flatMap { entryID, message -> [NativeThreadMessage] in
+        let shown = shownHistory(messages)
+        var rows: [NativeThreadMessage] = []
+        rows.reserveCapacity(shown.count)
+        for (entryID, message) in shown {
             let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
             var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID], images: images)
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
-            return [value] + nestedRows(message, parentEntryID: entryID, adjust: adjust)
+            rows.append(value)
+            rows.append(contentsOf: nestedRows(message, parentEntryID: entryID, adjust: adjust))
         }
+        return rows
     }
 
     /// The messages history shows, in order, each with the entry id history gives it. The one place that decides which messages

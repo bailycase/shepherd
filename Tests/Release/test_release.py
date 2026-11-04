@@ -1631,14 +1631,15 @@ class RetireCommandTests(unittest.TestCase):
 
 
 class ReleaseConcurrencyTests(unittest.TestCase):
-    """A release run is never cancelled: nightly pushes queue, and the newest waiting one ships next."""
+    """Nightly supersedes old runs; TestFlight and tagged releases keep their existing queues."""
 
-    def test_a_newer_push_waits_instead_of_cancelling_the_running_release(self):
+    def test_only_nightly_mac_runs_cancel_superseded_releases(self):
         with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
             release_yml = f.read()
         m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
         self.assertIsNotNone(m)
-        self.assertIn("cancel-in-progress: false", m.group(1))
+        self.assertIn("cancel-in-progress: ${{ github.ref == 'refs/heads/nightly' && !inputs.testflight }}\n",
+                      m.group(1))
 
     def test_a_testflight_run_queues_apart_from_the_pushes(self):
         # One group would let a TestFlight run replace a waiting push, or a push replace it.

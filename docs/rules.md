@@ -171,7 +171,13 @@ defaulted on the host) and its per-turn worktree snapshots (a private copy of th
 a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
 Undo and Redo of a turn (the turn's files only; refused when any changed since), Add child project
-(one empty directory), and an explicit project folder transfer. Nothing else, and Shepherd never
+(one empty directory), an explicit project folder transfer, and Issues & PRs' GitHub changes
+(`Forge/ForgeService.swift`, each on the person's click, through their gh with `--repo` from `/`, so
+no local checkout or branch is touched; bodies go on stdin): comment, review, merge (method, merge
+when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
+deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
+mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
+is the confirmed Delete Worktree. Nothing else, and Shepherd never
 prunes worktrees ([worktrees](worktrees.md), [changes](changes.md)).
 
 ## Reviews dock; they don't split

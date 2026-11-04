@@ -142,7 +142,7 @@ keep the version for real breaks.
   Mac's host screens already use) for terminals.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Projects/`, `Windows/` (the scene and its
+  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Forge/` (Issues & PRs), `Projects/`, `Windows/` (the scene and its
   windows), `Terminal/`, `Designs/` (a host's designs on iPhone), `DesignPad/` (on iPad), and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
   `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity

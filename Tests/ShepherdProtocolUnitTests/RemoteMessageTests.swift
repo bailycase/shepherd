@@ -408,7 +408,7 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
+             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig:
             return Wire.caseName(request)
         }
@@ -451,6 +451,7 @@ struct RemoteRequestTests {
         .agentQuery(id: 31, agentID: S.agent, query: .children),
         .agentAction(id: 20, agentID: S.agent, action: .rename(name: "new \"name\"")),
         .automation(id: 21, automationID: S.automation, request: .setEnabled(enabled: false)),
+        .forge(id: 22, request: .merge(ref: ForgeSamples.pull, method: .squash, whenReady: true, deleteBranch: true)),
         .instructions(id: 23, request: .save(file: .appendSystem, content: "Never force-push.\n", origin: "studio", sync: true)),
         .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
@@ -637,7 +638,7 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
+             .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig:
             return Wire.caseName(reply)
@@ -676,6 +677,7 @@ struct RemoteReplyTests {
         .spaceAdded(id: 6, spaceID: S.space),
         .agentCreated(id: 7, agentID: S.agent),
         .automationResult(id: 22, result: .runs(S.runs)),
+        .forgeResult(id: 23, result: .pullRequest(ForgeSamples.detail)),
         .instructions(id: 24, snapshot: S.instructions),
         .suggestions(id: 26, snapshot: S.suggestions),
         .hostSettings(id: 28, settings: S.hostSettings),
@@ -1075,7 +1077,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability,
-            RemoteProtocol.automationTriggersCapability,
+            RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,

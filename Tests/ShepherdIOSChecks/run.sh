@@ -58,6 +58,10 @@ DYLD_LIBRARY_PATH="$build" "$build/automations-check"
 echo 'AUTOMATIONS CHECK COMPLETE'
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Forge/ForgeRows.swift Tests/ShepherdIOSChecks/ForgeRowsCheck.swift -o "$build/forge-rows-check"
+DYLD_LIBRARY_PATH="$build" "$build/forge-rows-check"
+
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
     App/iOS/Thread/ThreadStores.swift App/iOS/Thread/ThreadRecovery.swift \
     Tests/ShepherdIOSChecks/MobileRecoveryCheck.swift -o "$build/recovery-check"

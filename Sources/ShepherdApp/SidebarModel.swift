@@ -23,6 +23,9 @@ enum MainDestination: Hashable, CaseIterable {
     case designSystem
     /// NavAutomations.
     case automations
+    /// Issues & PRs (PRReview, IssueReview, PRSidebarPinned): GitHub through the host's gh. The
+    /// sidebar shows its list in place of the destinations and groups.
+    case forge
     /// NavHosts (More ▸ Hosts).
     case hosts
     /// A Project (ProjectLead boards): its Overview and conversation page, in the main column. Which
@@ -658,12 +661,13 @@ enum SidebarDerivation {
         var id: Target { target }
     }
 
-    /// New thread (with its chord), Missions, Designs while the Design tool is on (selected on its page and on New design) and Automations,
+    /// New thread (with its chord), Missions, Designs while the Design tool is on (selected on its page and on New design), Automations
+    /// and Issues & PRs (with its Needs you count),
     /// as every ProjectLead board draws them. Hosts, Design systems and Extensions have no sidebar row: the command palette
     /// opens them ("Open Hosts", "Open Design systems", "Open Extensions"), Settings ▸ Remote and Settings ▸ Extensions hold the
     /// same settings, and a notification still opens Hosts. Archive is not built, so it is not shown.
     static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false, missions: Bool = false,
-                             automations: SHSidebarDestination.Trailing = .none) -> [Destination] {
+                             automations: SHSidebarDestination.Trailing = .none, forge: Int = 0) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
                         child: false, trailing: .keycaps(newThreadChord)),
@@ -679,6 +683,9 @@ enum SidebarDerivation {
         }
         rows.append(Destination(target: .page(.automations), title: "Automations", icon: .symbol("bolt"),
                                 selected: shown == .automations, child: false, trailing: automations))
+        // PRSidebarPinned: what needs you across the repositories this host knows.
+        rows.append(Destination(target: .page(.forge), title: "Issues & PRs", icon: .symbol(ForgeSymbol.pullRequest),
+                                selected: shown == .forge, child: false, trailing: forge > 0 ? .count(forge) : .none))
         return rows
     }
 
@@ -696,7 +703,7 @@ enum SidebarDerivation {
     /// What VoiceOver reads for a destination: its title and what its trailing says.
     static func accessibilityLabel(_ row: Destination) -> String {
         switch row.trailing {
-        case .count(let count): "\(row.title), \(count) unread"
+        case .count(let count): "\(row.title), \(count) \(row.target == .page(.forge) ? "need you" : "unread")"
         case .alert(let text): "\(row.title), \(text)"
         case .none, .keycaps: row.title
         }

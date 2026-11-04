@@ -13,8 +13,43 @@ import ShepherdTestSupport
 struct QuestionRecordTests {
     /// Sends "question" (or "question-timeout") and returns the snapshot once pi asks.
     private func ask(_ pi: PiAgent, _ prompt: String = "question") async throws -> NativeThreadSnapshot {
-        _ = try await pi.send(prompt, from: try await pi.ready())
-        return try await pi.snapshot("pi to ask") { !$0.dialogs.isEmpty }
+        let ready = try await pi.ready()
+        return try await captureSnapshot(pi, "pi to ask", matching: { !$0.dialogs.isEmpty }) {
+            _ = try await pi.send(prompt, from: ready)
+        }
+    }
+
+    /// Observe short-lived states on their owning queue. Main-actor snapshot delivery can resume
+    /// after a question expires when an unrelated UI test is occupying that actor.
+    private func captureSnapshot(_ pi: PiAgent, _ what: String,
+                                 matching predicate: @escaping (NativeThreadSnapshot) -> Bool,
+                                 action: () async throws -> Void) async throws -> NativeThreadSnapshot {
+        let captured = Locked<NativeThreadSnapshot?>(nil)
+        let previous = try await pi.server.enqueue {
+            let thread = try #require(pi.server.rpcThread(forAgent: pi.agent.id))
+            let previous = thread.onRevision
+            var reading = false
+            thread.onRevision = { [weak thread] in
+                previous?()
+                guard !reading, captured.withValue({ $0 == nil }), let thread else { return }
+                reading = true
+                defer { reading = false }
+                thread.handle(.snapshot()) { result in
+                    guard let snapshot = result.snapshotValue, predicate(snapshot) else { return }
+                    captured.withValue { if $0 == nil { $0 = snapshot } }
+                }
+            }
+            return previous
+        }
+        do {
+            try await action()
+            try await eventually(what, timeout: .seconds(15)) { captured.withValue { $0 != nil } }
+            try await pi.server.enqueue { pi.server.rpcThread(forAgent: pi.agent.id)?.onRevision = previous }
+            return try #require(captured.withValue { $0 })
+        } catch {
+            try? await pi.server.enqueue { pi.server.rpcThread(forAgent: pi.agent.id)?.onRevision = previous }
+            throw error
+        }
     }
 
     private func answer(_ pi: PiAgent, _ answer: NativeDialogAnswer, from s: NativeThreadSnapshot) async throws -> NativeThreadResult {
@@ -82,12 +117,13 @@ struct QuestionRecordTests {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
-        _ = try await ask(pi, "question-timeout-late-host")
         // The stub completes its turn before the host's dialog deadline. Observing its saved
         // final reply proves the refresh occurred while the dialog was still pending.
-        let before = try await pi.snapshot("pi to settle before the host deadline") {
+        let before = try await captureSnapshot(pi, "pi to settle before the host deadline", matching: {
             !$0.running && !$0.dialogs.isEmpty
                 && $0.messages.last?.blocks.first?.text == "Going with (no answer)"
+        }) {
+            _ = try await ask(pi, "question-timeout-late-host")
         }
         #expect(!before.messages.contains { $0.question != nil })
         let after = try await pi.snapshot("the late timeout record to enter history") {
