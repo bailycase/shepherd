@@ -55,13 +55,12 @@ on:
 permissions:
   contents: write
 
-# Runs queue and never cancel: a push waits for the running release to finish, and a newer push
-# replaces only the one still waiting, so every started run completes and the newest commit ships next.
-# A TestFlight run queues apart: sharing the pushes' group, it would replace a waiting push (whose
-# commit then never reaches Shepherd Nightly) or be replaced by one (and never upload).
+# New Nightly runs cancel superseded releases instead of waiting behind stale builds.
+# TestFlight queues separately without cancellation so uploads can finish and retire older builds.
+# Tagged releases also keep running; appcast publication retains its separate serialization lock.
 concurrency:
   group: release-${{ github.ref }}${{ inputs.testflight && '-testflight' || '' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref == 'refs/heads/nightly' && !inputs.testflight }}
 
 jobs:
   plan:
