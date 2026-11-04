@@ -97,4 +97,16 @@ struct HooksModelTests {
         #expect(try String(contentsOfFile: home + "/.shepherd/hooks.json", encoding: .utf8).contains("npm test --silent"))
         #expect(await editor.save(with: model) && answers == 1, "answered once")
     }
+
+    /// JSON that doesn't read keeps the pane open with the person's text and the line that failed.
+    @Test func jsonThatDoesNotReadStaysOpenWithItsError() {
+        let entry = Self.snapshot.entries[0]
+        let editor = HookEditorModel(editing: entry, targets: [], label: "This Mac", home: Self.home)
+        editor.pane = .json
+        editor.jsonText = "{\n  \"hooks\": {"
+        editor.pane = .form
+        #expect(editor.pane == .json)
+        #expect(editor.jsonText == "{\n  \"hooks\": {")
+        #expect(editor.jsonError?.hasPrefix("Line ") == true)
+    }
 }

@@ -96,9 +96,12 @@ final class HookEditorModel: Identifiable {
         return false
     }
 
+    /// Set while a JSON pane that doesn't read stays open: its text and error are kept.
+    @ObservationIgnored private var stayingOnJSON = false
+
     private func switched(from old: Pane) {
-        if pane == .json { jsonText = json(); jsonError = nil }
-        else if !readJSON() { pane = .json }
+        if pane == .json { if !stayingOnJSON { jsonText = json(); jsonError = nil } }
+        else if !readJSON() { stayingOnJSON = true; pane = .json; stayingOnJSON = false }
     }
 
     func addHandler() { handlers.append(Handler()) }
