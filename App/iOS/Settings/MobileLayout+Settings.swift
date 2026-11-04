@@ -104,4 +104,49 @@ extension MobileLayout {
     static let skillPreviewHeaderHeight: CGFloat = 36
     /// Add from repo's field.
     static let skillRepoFieldHeight: CGFloat = 44
+
+    // MARK: Hooks
+
+    /// A hook's row on the phone (MobileHooks): two lines of command over its matcher and source.
+    static let hookRowHeight: CGFloat = 64
+    /// A hook's row on the iPad and a file's row in Sources (iPadHooks, MobileHookSources).
+    static let hookCompactRowHeight: CGFloat = 56
+    /// Sources' row on the phone, and a field row of the edit form.
+    static let hookLinkRowHeight: CGFloat = 52
+    static let hookFieldRowHeight: CGFloat = 48
+    /// The matcher chip: mono 11, 20pt on the phone, 22 on the iPad and in Matches, its dashes
+    /// when it matches everything.
+    static let hookChipTextSize: CGFloat = 11
+    static let hookChipHeight: CGFloat = 20
+    static let hookPadChipHeight: CGFloat = 22
+    static let hookChipDash: [CGFloat] = [3, 2]
+    /// The event's name beside its label: mono 11.
+    static let hookEventSize: CGFloat = 11
+    /// A list head: 13 semibold.
+    static let hookHeadSize: CGFloat = 13
+    /// The host's hook count and the Sources row's file count.
+    static let hookCountSize: CGFloat = 13
+    /// The iPad row's source column, and Sources' format and state columns.
+    static let hookPadSourceWidth: CGFloat = 170
+    static let hookPadFormatWidth: CGFloat = 110
+    static let hookPadStateWidth: CGFloat = 220
+    /// The state column never narrower than "Loaded · 12 hooks"; a long reason wraps.
+    static let hookPadStateMinWidth: CGFloat = 140
+    /// The edit form: its labels' column (When, Saved in, Matcher; also the time limit's), mono 14
+    /// in its fields, the command at least 72pt.
+    static let hookLabelWidth: CGFloat = 96
+    static let hookFieldMonoSize: CGFloat = 14
+    static let hookCommandMinHeight: CGFloat = 72
+    /// The JSON pane: mono 12 at least 240pt.
+    static let hookJSONSize: CGFloat = 12
+    static let hookJSONMinHeight: CGFloat = 240
+    /// Form | JSON and Hooks | Sources: a 9pt track around 7pt segments, 32pt on the phone, 36 on the iPad.
+    static let hookSegmentTrackRadius: CGFloat = 9
+    static let hookSegmentRadius: CGFloat = 7
+    static let hookSegmentHeight: CGFloat = 32
+    static let hookPadSegmentHeight: CGFloat = 36
+    static let hookSegmentTextSize: CGFloat = 13
+    static let hookPadSegmentTextSize: CGFloat = 14
+    /// A file's state dot.
+    static let hookDot: CGFloat = 6
 }

@@ -13,6 +13,8 @@ public struct HookRowValue: Equatable, Identifiable, Sendable {
     public var matcherIsAny: Bool
     public var command: String
     public var source: String
+    /// The source by folder ("This Mac · ~/.claude", "payments · .shepherd"): the iPad's column.
+    public var shortSource: String
     public var on: Bool
     /// The switch can't change it: a type Shepherd doesn't run.
     public var locked: Bool
@@ -83,6 +85,7 @@ public enum HooksPresentation {
         return HookRowValue(id: entry.slot, hash: entry.hash, matcher: any ? anyLabel : entry.matcher, matcherIsAny: any,
                             command: command(entry.handler),
                             source: showScope ? sourceLabel(entry, home: home) : folderLabel(entry.file),
+                            shortSource: shortSourceLabel(entry, home: home),
                             on: entry.runs, locked: lockHelp != nil, lockHelp: lockHelp)
     }
 
@@ -98,6 +101,14 @@ public enum HooksPresentation {
         switch entry.scope {
         case .mac: "This Mac · " + tilde(entry.file, home: home)
         case .space(let root): (root as NSString).lastPathComponent + " · " + relative(entry.file, to: root)
+        }
+    }
+
+    /// "This Mac · ~/.claude", "payments · .shepherd".
+    public static func shortSourceLabel(_ entry: HookEntry, home: String) -> String {
+        switch entry.scope {
+        case .mac: "This Mac · " + tilde((entry.file as NSString).deletingLastPathComponent, home: home)
+        case .space(let root): (root as NSString).lastPathComponent + " · " + folderLabel(entry.file)
         }
     }
 
