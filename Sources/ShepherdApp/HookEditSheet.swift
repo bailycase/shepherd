@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
@@ -10,72 +12,8 @@ import ShepherdUI
 @MainActor
 @Observable
 final class HookEditorModel: Identifiable {
-    struct Target: Equatable, Hashable {
-        var path: String
-        var label: String
-        /// The space's folder; nil for This Mac.
-        var root: String?
-    }
-
-    /// One handler as the form edits it; `base` keeps the keys the form doesn't show.
-    struct Handler: Equatable, Identifiable {
-        var id = UUID()
-        /// The entry being edited's own handler.
-        var original = false
-        var base: HookJSON = .object([HookJSON.Member]())
-        var type = "command"
-        var command = ""
-        var server = ""
-        var tool = ""
-        var input = ""
-        var timeout = ""
-        var statusMessage = ""
-
-        init(original: Bool = false, _ handler: HookHandler? = nil) {
-            self.original = original
-            guard let handler else { return }
-            base = handler.raw
-            type = handler.type
-            command = handler.command ?? ""
-            server = handler.server ?? ""
-            tool = handler.tool ?? ""
-            input = handler.input.map { $0.pretty.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-            timeout = handler.timeout.map { $0 == $0.rounded() ? String(Int($0)) : String($0) } ?? ""
-            statusMessage = handler.statusMessage ?? ""
-        }
-
-        /// The handler object, or why it can't be one.
-        func raw() throws -> HookJSON {
-            var raw = base
-            raw["type"] = .string(type)
-            switch type {
-            case "command":
-                let text = command.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { throw HookEditError("Enter the command the hook runs.") }
-                raw["command"] = .string(text)
-                raw["server"] = nil; raw["tool"] = nil; raw["input"] = nil
-            case "mcp_tool":
-                guard !server.isEmpty, !tool.isEmpty else { throw HookEditError("Enter the MCP server and the tool the hook calls.") }
-                raw["server"] = .string(server); raw["tool"] = .string(tool); raw["command"] = nil
-                if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { raw["input"] = nil } else {
-                    guard let parsed = try? HookJSON.parse(input), parsed.objectValue != nil else {
-                        throw HookEditError("The tool's input must be a JSON object.")
-                    }
-                    raw["input"] = parsed
-                }
-            default: break
-            }
-            let limit = timeout.trimmingCharacters(in: .whitespaces)
-            if limit.isEmpty { raw["timeout"] = nil } else {
-                guard let seconds = Double(limit), seconds > 0, seconds <= 600 else {
-                    throw HookEditError("The time limit is a number of seconds, up to 600.")
-                }
-                raw["timeout"] = .number(seconds)
-            }
-            raw["statusMessage"] = statusMessage.isEmpty ? nil : .string(statusMessage)
-            return raw
-        }
-    }
+    typealias Target = HookSaveTarget
+    typealias Handler = HookFormHandler
 
     enum Mode: Equatable { case add, edit(HookEntry) }
     enum Pane: Hashable { case form, json }
@@ -137,41 +75,21 @@ final class HookEditorModel: Identifiable {
     var targetLabel: String { targets.first { $0.path == target }?.label ?? target }
     var matcherValid: Bool { HookMatcher.isValid(matcher) }
     /// The first command handler: what Test runs.
-    var testable: Handler? { handlers.first { $0.type == "command" && !$0.command.trimmingCharacters(in: .whitespaces).isEmpty } }
+    var testable: Handler? { handlers.first(where: \.testable) }
 
     /// The file's entry for this hook: the event, its group and the handlers.
-    func json() -> String {
-        var group = HookJSON.object([HookJSON.Member]())
-        if !matcher.isEmpty { group["matcher"] = .string(matcher) }
-        group["hooks"] = .array(handlers.map { (try? $0.raw()) ?? $0.base })
-        var hooks = HookJSON.object([HookJSON.Member]())
-        hooks[event.rawValue] = .array([group])
-        var root = HookJSON.object([HookJSON.Member]())
-        root["hooks"] = hooks
-        return root.pretty.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    func json() -> String { HookForm.json(event: event, matcher: matcher, handlers: handlers) }
 
     /// Reads the JSON pane back into the form; false (with why) when it isn't one hook entry.
     @discardableResult
     func readJSON() -> Bool {
         do {
-            let root = try HookJSON.parse(jsonText)
-            guard let events = root["hooks"]?.objectValue, events.count == 1, let member = events.first else {
-                throw HookEditError("Keep one event under “hooks”.")
-            }
-            guard let next = HookEvent(rawValue: member.key) else { throw HookEditError("“\(member.key)” isn't a hook event.") }
-            guard let groups = member.value.arrayValue, groups.count == 1, let handlers = groups[0]["hooks"]?.arrayValue, !handlers.isEmpty,
-                  handlers.allSatisfy({ $0.objectValue != nil }) else {
-                throw HookEditError("Keep one group with a “hooks” list of handler objects.")
-            }
-            event = next
-            matcher = groups[0]["matcher"]?.stringValue ?? ""
-            let originals = self.handlers.map(\.original)
-            self.handlers = handlers.enumerated().map { index, raw in Handler(original: originals.indices.contains(index) && originals[index], HookHandler(raw: raw)) }
+            let parsed = try HookForm.parse(jsonText, originals: handlers.map(\.original))
+            event = parsed.event
+            matcher = parsed.matcher
+            handlers = parsed.handlers
             jsonError = nil
             return true
-        } catch let error as HookJSON.ParseError {
-            jsonError = "Line \(error.line): \(error.message)"
         } catch {
             jsonError = String(describing: error)
         }
@@ -189,8 +107,7 @@ final class HookEditorModel: Identifiable {
     /// The drafts to write, or why not.
     func drafts() throws -> [HookDraft] {
         if pane == .json, !readJSON() { throw HookEditError(jsonError ?? "Fix the JSON first.") }
-        guard matcherValid else { throw HookEditError("The matcher isn't a regular expression Shepherd can read.") }
-        return try handlers.map { HookDraft(event: event.rawValue, matcher: matcher, handler: HookHandler(raw: try $0.raw())) }
+        return try HookForm.drafts(event: event, matcher: matcher, handlers: handlers)
     }
 
     /// Writes the hook off the main thread; true when it did.
@@ -201,18 +118,7 @@ final class HookEditorModel: Identifiable {
         saving = true
         defer { saving = false }
         let ok = await model.change { _, writer in
-            guard let entry else {
-                for draft in drafts { try writer.add(draft, to: target) }
-                return
-            }
-            let kept = originals.firstIndex(of: true)
-            if target == entry.file, let kept {
-                try writer.update(entry, to: drafts[kept])
-                for (index, draft) in drafts.enumerated() where index != kept { try writer.add(draft, to: target) }
-            } else {
-                for (index, draft) in drafts.enumerated() where index != kept || target != entry.file { try writer.add(draft, to: target) }
-                try writer.delete(entry)
-            }
+            try writer.save(drafts, to: target, replacing: entry, kept: originals.firstIndex(of: true))
         }
         problem = ok ? nil : model.problem
         if ok, let saved { self.saved = nil; saved() }
@@ -244,8 +150,7 @@ final class HookEditorModel: Identifiable {
 
     /// The test's line under its outcome ("bash · exit 2 · 41 ms").
     static func testMeta(_ result: HookTestResult, event: HookEvent, matcher: String) -> String {
-        let tool = [.preToolUse, .postToolUse, .permissionRequest].contains(event) ? HookMatcher.agentTools(matching: matcher).first.map { "sample \($0)" } : nil
-        return [tool ?? "sample \(event.rawValue)", result.exit.map { "exit \($0)" } ?? "no exit", "\(result.milliseconds) ms"].joined(separator: " · ")
+        HooksPresentation.testMeta(result, event: event, matcher: matcher)
     }
 }
 
@@ -610,10 +515,4 @@ struct HookReadOnlyNote: View {
         .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
     }
-}
-
-/// Why the form can't be saved yet, said as how to fix it.
-struct HookEditError: Error, CustomStringConvertible {
-    let description: String
-    init(_ description: String) { self.description = description }
 }

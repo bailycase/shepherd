@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ShepherdTestSupport
+import ShepherdProtocol
 @testable import ShepherdSessions
 
 /// Settings' Test button: one command handler run against a sample event.

@@ -1,48 +1,5 @@
 import Foundation
-
-/// `<support>/hooks/settings.json` (docs/hooks.md › Identity and the off switch): which hooks the
-/// person switched off, by hash, and whether the Claude Code and Codex readers are on. Every
-/// configured hook not in `off` runs.
-public struct HookSettings: Equatable, Sendable, Codable {
-    /// The Sources switches: whether Claude Code's and Codex's files are read. Both default on.
-    public struct Readers: Equatable, Sendable, Codable {
-        public var claude = true
-        public var codex = true
-        public init(claude: Bool = true, codex: Bool = true) { self.claude = claude; self.codex = codex }
-        public init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            claude = (try? c.decode(Bool.self, forKey: .claude)) ?? true
-            codex = (try? c.decode(Bool.self, forKey: .codex)) ?? true
-        }
-        /// Whether files of `format` are read.
-        public func reads(_ format: HookFormat) -> Bool {
-            switch format {
-            case .shepherd: true
-            case .claude: claude
-            case .codex: codex
-            }
-        }
-    }
-
-    public var version = 1
-    /// Hashes switched off.
-    public var off: [String] = []
-    public var readers = Readers()
-
-    public init(off: [String] = [], readers: Readers = Readers()) {
-        self.off = off; self.readers = readers
-    }
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        version = (try? c.decode(Int.self, forKey: .version)) ?? 1
-        off = (try? c.decode([String].self, forKey: .off)) ?? []
-        readers = (try? c.decode(Readers.self, forKey: .readers)) ?? Readers()
-    }
-
-    /// Whether the hook with this hash is on.
-    public func isOn(_ hash: String) -> Bool { !off.contains(hash) }
-}
+import ShepherdProtocol
 
 /// Reads and writes `settings.json`. Every change reads the file, applies itself and writes the
 /// whole file by temp file and rename; a missing or invalid file reads as everything on.

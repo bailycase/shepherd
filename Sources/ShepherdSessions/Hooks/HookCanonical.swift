@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ShepherdProtocol
 
 /// A hook's identity (docs/hooks.md › Identity and the off switch). The runtime computes the same values;
 /// `Tests/Fixtures/hooks/hash-vectors.json` keeps the two equal.

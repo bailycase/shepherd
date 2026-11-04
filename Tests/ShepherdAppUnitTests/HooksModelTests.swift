@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ShepherdProtocol
 @testable import ShepherdSessions
 @testable import ShepherdApp
 

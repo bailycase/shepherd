@@ -1,4 +1,6 @@
 import SwiftUI
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 

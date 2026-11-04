@@ -731,7 +731,7 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
-        self.hooks = hooks ?? HooksModel(home: HookCatalog.home(fallback: server.pi.userHome), support: server.pi.home.deletingLastPathComponent())
+        self.hooks = hooks ?? HooksModel(catalog: server.hooks)
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
@@ -789,6 +789,10 @@ final class ShepherdViewModel {
         // Settings ▸ Skills follows a remote client's change to This Mac's skills.
         server.onSkillsChanged = { [weak skills = self.skills] snapshot in
             MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        // Settings › Hooks follows a remote client's change to this Mac's hooks.
+        server.onHooksChanged = { [weak hooks = self.hooks] in
+            MainActor.assumeIsolated { hooks?.reload() }
         }
         server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
             MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }

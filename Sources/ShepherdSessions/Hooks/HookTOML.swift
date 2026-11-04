@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 
 /// The part of Codex's `config.toml` that holds hooks, read into the shape every hooks file has
 /// (`{"hooks": {"<Event>": [{"matcher": …, "hooks": [{…}]}]}}`):

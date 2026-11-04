@@ -266,7 +266,7 @@ struct HookAskPanel: View {
                 Image(systemName: "questionmark.circle").font(.sh(.ui)).foregroundStyle(Color.sh.lantern).accessibilityHidden(true)
                 Text(NativeHookAsk.title).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
                 Spacer(minLength: SH.Space.m)
-                Text(HooksModel.tilde(ask.file, home: home)).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary)
+                Text(HooksPresentation.tilde(ask.file, home: home)).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1).truncationMode(.middle).help(ask.file)
             }
             if !ask.call.isEmpty {

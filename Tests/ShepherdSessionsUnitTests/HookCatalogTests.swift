@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import ShepherdProtocol
 @testable import ShepherdSessions
 
 /// Hooks identity: canonical JSON and hashes shared with the runtime.

@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
@@ -23,57 +25,12 @@ struct HookIndicator: Equatable, Sendable {
     var help: String { running == 1 ? "1 hook runs in this space" : "\(running) hooks run in this space" }
 }
 
-/// One hook as Settings' rows draw it.
-struct HookRowValue: Equatable, Identifiable {
-    var id: String
-    var hash: String
-    /// The matcher, or "every tool" / "always" when it has none (`matcherIsAny`).
-    var matcher: String
-    var matcherIsAny: Bool
-    var command: String
-    var source: String
-    var on: Bool
-    /// The switch can't change it: a type Shepherd doesn't run.
-    var locked: Bool
-    var lockHelp: String?
-}
-
-struct HookEventGroup: Equatable, Identifiable {
-    var event: String
-    var label: String
-    var rows: [HookRowValue]
-    var id: String { event }
-}
-
 struct HookRailItem: Equatable, Identifiable {
     /// nil: All hooks.
     var event: String?
     var label: String
     var count: Int
     var id: String { event ?? "" }
-}
-
-/// A hooks file as Sources and a space's Hooks tab draw it.
-struct HookFileRow: Equatable, Identifiable {
-    enum Tone: Equatable { case ok, off, failed }
-    enum Action: Equatable { case openFile }
-    var id: String
-    var path: String
-    var shownPath: String
-    var format: String
-    var count: String
-    var state: String
-    var tone: Tone
-    var action: Action?
-    var dimmed: Bool
-}
-
-struct HookScopeSection: Equatable, Identifiable {
-    var id: String
-    var name: String
-    var note: String
-    var root: String?
-    var files: [HookFileRow]
 }
 
 @MainActor
@@ -185,83 +142,17 @@ final class HooksModel {
         rail = [HookRailItem(event: nil, label: "All hooks", count: entries.count)]
             + events.map { HookRailItem(event: $0, label: HookEvent(rawValue: $0)?.label ?? $0, count: byEvent[$0]?.count ?? 0) }
         emptyEvents = known.count - events.filter { known.contains($0) }.count
-        groups = events.filter { filter == nil || filter == $0 }.map { event in
-            HookEventGroup(event: event, label: HookEvent(rawValue: event)?.label ?? event,
-                           rows: (byEvent[event] ?? []).map { row($0, showScope: true) })
-        }
-        sections = Self.sections(snapshot, home: home)
-        fileCount = snapshot.sources.count { $0.state != .notFound }
+        groups = HooksPresentation.groups(entries, home: home).filter { filter == nil || filter == $0.event }
+        sections = HooksPresentation.sections(snapshot, home: home)
+        fileCount = HooksPresentation.fileCount(snapshot)
     }
 
-    func row(_ entry: HookEntry, showScope: Bool) -> HookRowValue {
-        let event = entry.hookEvent
-        let anyLabel = [.preToolUse, .postToolUse, .permissionRequest].contains(event) ? "every tool" : "always"
-        let lockHelp: String? = entry.handler.canRun ? nil : "Shepherd lists \(entry.handler.type) hooks but doesn't run them"
-        return HookRowValue(id: entry.slot, hash: entry.hash, matcher: entry.matcher.isEmpty || entry.matcher == "*" ? anyLabel : entry.matcher,
-                            matcherIsAny: entry.matcher.isEmpty || entry.matcher == "*", command: Self.command(entry.handler),
-                            source: showScope ? sourceLabel(entry) : Self.folderLabel(entry.file),
-                            on: entry.runs, locked: lockHelp != nil, lockHelp: lockHelp)
-    }
-
-    /// What a handler runs: its command, else "server › tool".
-    nonisolated static func command(_ handler: HookHandler) -> String {
-        if let command = handler.command { return command.replacingOccurrences(of: "\n", with: " ") }
-        if let server = handler.server, let tool = handler.tool { return "\(server) › \(tool)" }
-        return handler.type
-    }
+    func row(_ entry: HookEntry, showScope: Bool) -> HookRowValue { HooksPresentation.row(entry, home: home, showScope: showScope) }
 
     /// "This Mac · ~/.shepherd/hooks.json", "payments · .claude/settings.json".
-    func sourceLabel(_ entry: HookEntry) -> String {
-        switch entry.scope {
-        case .mac: "This Mac · " + Self.tilde(entry.file, home: home)
-        case .space(let root): (root as NSString).lastPathComponent + " · " + Self.relative(entry.file, to: root)
-        }
-    }
+    func sourceLabel(_ entry: HookEntry) -> String { HooksPresentation.sourceLabel(entry, home: home) }
 
-    /// ".shepherd", ".claude": a space row's short source.
-    nonisolated static func folderLabel(_ file: String) -> String {
-        ((file as NSString).deletingLastPathComponent as NSString).lastPathComponent
-    }
-
-    nonisolated static func tilde(_ path: String, home: String) -> String {
-        path == home ? "~" : path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
-    }
-
-    nonisolated static func relative(_ path: String, to root: String) -> String {
-        path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
-    }
-
-    static func sections(_ snapshot: HookCatalogSnapshot, home: String) -> [HookScopeSection] {
-        var order: [HookScope] = []
-        for source in snapshot.sources where !order.contains(source.scope) { order.append(source.scope) }
-        return order.compactMap { scope in
-            let sources = snapshot.sources.filter { $0.scope == scope && $0.state != .notFound }
-            let root = scope.root
-            if root != nil && sources.isEmpty { return nil }
-            let name = root.map { ($0 as NSString).lastPathComponent } ?? "This Mac"
-            let note = root.map { tilde($0, home: home) } ?? "Run in every space"
-            return HookScopeSection(id: root ?? "", name: name, note: note, root: root,
-                                    files: sources.map { fileRow($0, home: home) })
-        }
-    }
-
-    static func fileRow(_ source: HookSource, home: String) -> HookFileRow {
-        let shown = source.scope.root.map { relative(source.path, to: $0) } ?? tilde(source.path, home: home)
-        var row = HookFileRow(id: source.path, path: source.path, shownPath: shown, format: source.format.name, count: "–",
-                              state: "", tone: .ok, action: nil, dimmed: false)
-        switch source.state {
-        case .loaded(let count):
-            row.count = count == 1 ? "1 hook" : "\(count) hooks"
-            row.state = "Loaded"
-        case .notFound:
-            row.state = "Not found"; row.tone = .off; row.dimmed = true
-        case .readerOff:
-            row.state = "Not read: switched off above"; row.tone = .off; row.dimmed = true
-        case .unreadable:
-            row.state = source.state.label; row.tone = .failed; row.action = .openFile
-        }
-        return row
-    }
+    nonisolated static func relative(_ path: String, to root: String) -> String { HooksPresentation.relative(path, to: root) }
 
     func entry(hash: String) -> HookEntry? { snapshot?.entries.first { $0.hash == hash } }
     func entry(slot: String) -> HookEntry? { snapshot?.entries.first { $0.slot == slot } }
@@ -272,14 +163,11 @@ final class HooksModel {
         guard let snapshot else { return ([], [], 0, false) }
         let root = PiHome.canonical(root)
         let entries = snapshot.entries.filter { $0.scope.root == root }
-        let byEvent = Dictionary(grouping: entries, by: \.event)
-        let groups = HookEvent.allCases.map(\.rawValue).filter { byEvent[$0] != nil }.map { event in
-            HookEventGroup(event: event, label: HookEvent(rawValue: event)?.label ?? event, rows: (byEvent[event] ?? []).map { row($0, showScope: false) })
-        }
+        let groups = HooksPresentation.groups(entries, home: home, showScope: false).filter { HookEvent(rawValue: $0.event) != nil }
         let sources = snapshot.sources.filter { $0.scope.root == root }
         let main = [".shepherd/hooks.json", ".claude/settings.json", ".codex/hooks.json"]
         let files = sources.filter { main.contains(Self.relative($0.path, to: root)) || $0.state != .notFound }.map { source in
-            var row = Self.fileRow(source, home: home)
+            var row = HooksPresentation.fileRow(source, home: home)
             if source.state == .notFound { row.state = "not in this space" }
             return row
         }
@@ -326,11 +214,8 @@ final class HooksModel {
     // MARK: Editing
 
     /// Where Add and Edit can save: This Mac's Shepherd file, then each loaded space's.
-    var saveTargets: [HookEditorModel.Target] {
-        let mac = HookEditorModel.Target(path: home + "/.shepherd/hooks.json", label: "This Mac · ~/.shepherd/hooks.json", root: nil)
-        let roots = (snapshot?.sources.compactMap(\.scope.root) ?? []).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
-        return [mac] + roots.map { HookEditorModel.Target(path: $0 + "/.shepherd/hooks.json",
-                                                          label: ($0 as NSString).lastPathComponent + " · .shepherd/hooks.json", root: $0) }
+    var saveTargets: [HookSaveTarget] {
+        HooksPresentation.saveTargets(snapshot ?? HookCatalogSnapshot(sources: [], entries: [], settings: HookSettings()), home: home)
     }
 
     /// `saved` runs once the editor saves (a proposal's Edit… answers the proposal with it).
@@ -345,7 +230,7 @@ final class HooksModel {
     func edit(_ entry: HookEntry) {
         var targets = saveTargets
         if !targets.contains(where: { $0.path == entry.file }) {
-            targets.append(.init(path: entry.file, label: sourceLabel(entry), root: entry.scope.root))
+            targets.append(HookSaveTarget(path: entry.file, label: sourceLabel(entry), root: entry.scope.root))
         }
         editor = HookEditorModel(editing: entry, targets: targets, label: sourceLabel(entry), home: home)
     }

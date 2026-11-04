@@ -177,6 +177,7 @@ public indirect enum HookJSON: Equatable, Hashable, Sendable {
         public var line: Int
         public var message: String
         public var description: String { "line \(line), \(message)" }
+        public init(line: Int, message: String) { self.line = line; self.message = message }
     }
 
     /// Parses JSON text (a leading BOM is ignored), keeping key order.
@@ -335,5 +336,18 @@ public indirect enum HookJSON: Equatable, Hashable, Sendable {
             index += 4
             return value
         }
+    }
+}
+
+/// On the wire (`hooks.v1`) a value travels as its JSON text, so an object keeps its key order.
+extension HookJSON: Codable {
+    public init(from decoder: Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = try HookJSON.parse(text)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(pretty)
     }
 }

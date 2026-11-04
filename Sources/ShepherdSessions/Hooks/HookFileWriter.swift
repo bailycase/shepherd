@@ -1,16 +1,6 @@
 import Darwin
 import Foundation
-
-/// A hook as Settings' editor holds it before it is written.
-public struct HookDraft: Equatable, Sendable {
-    public var event: String
-    /// Empty for none.
-    public var matcher: String
-    public var handler: HookHandler
-    public init(event: String, matcher: String = "", handler: HookHandler) {
-        self.event = event; self.matcher = matcher; self.handler = handler
-    }
-}
+import ShepherdProtocol
 
 /// Adds, changes and removes one handler in a Shepherd, Claude Code or Codex JSON hooks file
 /// (never Codex's `config.toml`). Every other key and entry stays as it was; the file is written
@@ -50,6 +40,22 @@ public struct HookFileWriter: Sendable {
         Self.remove(entry, from: &root)
         try Self.insert(draft, into: &root)
         return try save(root, path: entry.file, written: draft, replacing: entry)
+    }
+
+    /// Settings' Save: writes `drafts` into `target`. Editing `entry`, the draft at `kept` takes its
+    /// place when `target` is its file; otherwise every draft is added and `entry` removed.
+    public func save(_ drafts: [HookDraft], to target: String, replacing entry: HookEntry?, kept: Int?) throws {
+        guard let entry else {
+            for draft in drafts { try add(draft, to: target) }
+            return
+        }
+        if target == entry.file, let kept, drafts.indices.contains(kept) {
+            try update(entry, to: drafts[kept])
+            for (index, draft) in drafts.enumerated() where index != kept { try add(draft, to: target) }
+        } else {
+            for draft in drafts { try add(draft, to: target) }
+            try delete(entry)
+        }
     }
 
     /// Removes `entry` (and its group, when it was the last handler there) and forgets its off switch.
