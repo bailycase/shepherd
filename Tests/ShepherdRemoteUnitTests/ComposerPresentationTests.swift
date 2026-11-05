@@ -106,6 +106,31 @@ struct ComposerPresentationTests {
         #expect(try #require(NativeSlashMatches(draft: "then /rev", commands: skills)).commands.map(\.name) == ["review"])
     }
 
+    @Test(arguments: [
+        ("fix the login bug /skill:debug and add a test", "/skill:debug fix the login bug and add a test"),
+        ("fix it /skill:debug ", "/skill:debug fix it"),
+        ("/skill:debug fix it", "/skill:debug fix it"),
+        ("/skill:debug ", "/skill:debug "),
+        ("  /skill:debug", "/skill:debug"),
+        ("one\n/skill:debug two", "/skill:debug one\ntwo"),
+        ("see /tmp and a/skill:x", "see /tmp and a/skill:x"),
+    ])
+    func anInlineSkillLeadsTheMessagePiGets(draft: String, message: String) {
+        #expect(ComposerSkillToken.message(draft) == message)
+    }
+
+    @Test func pickingASkillPutsItWhereTheDollarWasAndReplacesAnyOther() throws {
+        let commands = [NativeCommand(name: "skill:debug", source: "skill"), NativeCommand(name: "skill:deploy", source: "skill")]
+        let token = try #require(ComposerCommandToken.token(in: "fix the login bug $deb"))
+        #expect(ComposerSkillToken.draft(picking: "skill:debug", for: token) == "fix the login bug /skill:debug ")
+        let again = try #require(ComposerCommandToken.token(in: "fix /skill:debug the bug $dep"))
+        #expect(ComposerSkillToken.draft(picking: "skill:deploy", for: again) == "fix the bug /skill:deploy ")
+        #expect(ComposerSkillToken.name("/skill:debug") == "debug")
+        // A whole skill in the draft is a chip, not a command still being typed: no menu.
+        #expect(NativeSlashMatches(draft: "fix /skill:debug", commands: commands) == nil)
+        #expect(NativeSlashMatches(draft: "fix /skill:de", commands: commands) != nil)
+    }
+
     @Test func noCommandsMeansNoList() {
         #expect(NativeSlashMatches(draft: "/", commands: []) == nil)
     }

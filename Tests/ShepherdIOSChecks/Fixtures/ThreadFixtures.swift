@@ -87,6 +87,18 @@ extension FixtureCatalog {
             // iPadPortrait: "/re" lists the commands that match.
             FixtureScreen(name: "commands", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { app in app.threads.store(for: preview).draft = "/re" }),
+            // A skill picked from the $ menu, inline in the field where it was typed: at the start,
+            // mid-sentence, a long name, and the $ menu open over a draft that holds one.
+            FixtureScreen(name: "composer-skill-start", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.skills()), routes: [.thread(preview)],
+                          prepare: { app in app.threads.store(for: preview).draft = "/skill:debug fix the login bug" }),
+            FixtureScreen(name: "composer-skill-inline", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.skills()), routes: [.thread(preview)],
+                          prepare: { app in app.threads.store(for: preview).draft = "fix the login bug /skill:debug and add a test" }),
+            FixtureScreen(name: "composer-skill-long", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.skills()), routes: [.thread(preview)],
+                          prepare: { app in
+                              app.threads.store(for: preview).draft = "/skill:swiftui-specialist-performance-and-accessibility-audit on the thread list"
+                          }),
+            FixtureScreen(name: "composer-skill-menu", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.skills()), routes: [.thread(preview)],
+                          prepare: { app in app.threads.store(for: preview).draft = "fix the login bug /skill:debug then $dep" }),
             // The phone's chips (commands, model, thinking) over a draft with an image attached.
             FixtureScreen(name: "composer", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { app in
@@ -178,6 +190,18 @@ enum ThreadFixtures {
             NativeCommand(name: "release-notes", description: "Draft release notes from commits since the last tag", source: "prompt", arguments: "[tag]"),
             NativeCommand(name: "compact", description: "Summarize the conversation to free context"),
             NativeCommand(name: "model", description: "Switch the model"),
+        ]
+        return snapshot
+    }
+
+    /// The finished turn, where pi also lists skills (the composer's $ menu and inline chips).
+    static func skills() -> NativeThreadSnapshot {
+        var snapshot = thread()
+        snapshot.commands = (snapshot.commands ?? []) + [
+            NativeCommand(name: "skill:debug", description: "Find the root cause of a bug before changing code", source: "skill"),
+            NativeCommand(name: "skill:deploy", description: "Ship the current branch to staging", source: "skill"),
+            NativeCommand(name: "skill:swiftui-specialist-performance-and-accessibility-audit",
+                          description: "Audit SwiftUI views for performance and accessibility", source: "skill"),
         ]
         return snapshot
     }

@@ -1748,7 +1748,9 @@ public final class NativeThreadStore {
             notice = "This thread's host doesn't take page elements."
             return false
         }
-        let text = NativeAttachedFile.message(typed, files: files, references: references.count, elements: elements.count)
+        // An inline skill chip leads what pi gets; the draft (and any record of it) keeps it where it was typed.
+        let text = NativeAttachedFile.message(ComposerSkillToken.message(typed), files: files, references: references.count,
+                                              elements: elements.count)
         let delivery = resolvedDelivery(delivery, text: text)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images

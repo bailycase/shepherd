@@ -467,7 +467,15 @@ a docked pane it narrows to the card. They share one anatomy (SHComposer › Men
   mono 11 `running`. The whole command is its tooltip. Commands whose name starts with the query come first, then those whose
   name or description contains it. At most 8 rows show, fewer when the room above the card is
   shorter; with none, "No command matches “/re”" in caption tertiary. ⏎ or a click puts "/name" in
-  the field and sends it when it can; ⇥ completes "/name " to keep typing. Esc closes it for the
+  the field and sends it when it can; ⇥ completes "/name " to keep typing. A skill (from "$", or a
+  skill row of "/") instead takes the place of what was typed as "/skill:name " and nothing is
+  sent; one skill at a time (another replaces it). The field draws each "/skill:name" inline as
+  the **skill chip** (`SHSkillChipAttachment`, Mac and iPhone and iPad alike): the `book` glyph of
+  the sent "Used skill" line, the name without "skill:" in Geist Mono at code size (truncating past
+  200pt), on `bgSunken` with a `lineStrong` line at radius 4. It is one character to the editor:
+  ⌫ after it takes the whole skill and the caret never lands inside it. The draft stays plain
+  text, so saved and restored drafts keep it in place; on send pi gets the skill first,
+  "/skill:name words" (`ComposerSkillToken.message`). Esc closes it for the
   draft as typed; typing more reopens it. The list is pi's command registry, never hard-coded, so
   pi's interactive built-ins, which the boards draw (/resume, /reload), appear only if pi's
   `get_commands` starts returning them. A command no thread can run is not in it: the host leaves

@@ -816,6 +816,20 @@ struct NativeThreadStoreTests {
         #expect(!store.busy)
     }
 
+    /// An inline skill leads what pi gets; a refused send restores the draft as it was typed.
+    @Test func anInlineSkillSendsAsALeadingCommandAndRestoresInPlace() async throws {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.action = { _ in .failure(code: "busy", message: "not yet") }
+        store.draft = "fix the login bug /skill:debug and add a test"
+        await store.send()
+        guard case .send(_, _, _, let text, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        #expect(text == "/skill:debug fix the login bug and add a test")
+        let failed = try #require(store.submissions.first)
+        store.restoreSubmission(failed.id)
+        #expect(store.draft == "fix the login bug /skill:debug and add a test")
+    }
+
     /// A design chat's send carries what its design screen shows, where the host takes it.
     @Test(arguments: [(true, true), (false, false)])
     func aSendCarriesTheDesignRecordOnlyWhereTheHostTakesOne(_ hostTakesIt: Bool, _ carried: Bool) async throws {

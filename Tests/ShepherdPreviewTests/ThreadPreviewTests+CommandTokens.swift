@@ -9,7 +9,7 @@ import Testing
 extension ThreadPreviewTests {
     /// "/" and "$" anywhere in a draft, Mac and touch side by side, each menu derived from the
     /// draft by `NativeSlashMatches`: "/" at the start, "/" mid-draft, "$" mid-draft, and what
-    /// choosing leaves in the field.
+    /// choosing a command leaves in the field (a skill becomes a chip: `composerSkillChip`).
     @Test func composerCommandTokens() async throws {
         let commands = [
             NativeCommand(name: "review", description: "Open the review pane on working-tree changes"),
@@ -19,7 +19,7 @@ extension ThreadPreviewTests {
             NativeCommand(name: "skill:deploy", description: "Ship the current branch to staging", source: "skill"),
         ]
         let states: [(draft: String, chosen: String?)] = [
-            ("/re", nil), ("fix the login bug, then /rev", nil), ("fix the login bug $de", nil), ("fix the login bug $de", "skill:debug"),
+            ("/re", nil), ("fix the login bug, then /rev", nil), ("fix the login bug $de", nil), ("/rev", "review"),
         ]
         func text(_ s: String) -> some View {
             Text(s.isEmpty ? " " : s).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).frame(maxWidth: .infinity, alignment: .leading)

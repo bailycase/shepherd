@@ -41,6 +41,8 @@ public enum SHGlyph: CaseIterable, Sendable {
     /// Hooks (HooksSettings, HookThreadScene): the composer's hook glyph and Settings › Hooks in
     /// the nav. The boards draw no symbol of their own; a path with a point where it is caught.
     case hook
+    /// A skill (SentCommandsA's "Used skill" line; the composer's skill chip): the outline book.
+    case skill
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -58,6 +60,7 @@ public enum SHGlyph: CaseIterable, Sendable {
         case .pin: "pin"
         case .responseTiming: "stopwatch"
         case .hook: "point.topright.arrow.triangle.backward.to.point.bottomleft.scurvepath"
+        case .skill: "book"
         }
     }
 

@@ -148,6 +148,11 @@ public struct ComposerCommandToken: Equatable, Sendable {
         return ComposerCommandToken(before: String(draft[..<at]), sigil: draft[at], text: String(text))
     }
 
+    /// A whole skill ("/skill:debug", an inline chip) rather than a command still being typed.
+    public func isSkill(in commands: [NativeCommand]) -> Bool {
+        sigil == "/" && commands.contains { $0.source == "skill" && $0.name == text }
+    }
+
     /// The draft running `name`: pi only runs a command that starts the message, so the command
     /// moves to the front and the words typed before it become its arguments.
     public func draft(running name: String, then suffix: String) -> String {
@@ -174,7 +179,7 @@ public struct NativeSlashMatches: Equatable, Sendable {
         guard let token = ComposerCommandToken.token(in: draft) else { return nil }
         let skills = token.sigil == "$"
         let commands = skills ? commands.filter { $0.source == "skill" } : commands
-        guard !commands.isEmpty else { return nil }
+        guard !commands.isEmpty, !token.isSkill(in: commands) else { return nil }
         let query = ((skills ? "skill:" : "") + token.text).lowercased()
         let prefixed = commands.filter { query.isEmpty || $0.name.lowercased().hasPrefix(query) }
         let containing = query.isEmpty ? [] : commands.filter {
@@ -201,6 +206,52 @@ public struct NativeSlashMatches: Equatable, Sendable {
     public static func tag(_ command: NativeCommand) -> String? {
         guard let source = command.source, source != "extension", !source.isEmpty else { return nil }
         return source
+    }
+}
+
+/// A skill written into a draft as "/skill:<name>" (at the start or after whitespace, up to the
+/// next whitespace). The editors draw it as an inline chip; the draft stays plain text, so saving,
+/// restoring and recovering a draft keep the skill where it was typed.
+public enum ComposerSkillToken {
+    public static let prefix = "/skill:"
+
+    /// Each skill token in `draft`, in order.
+    public static func ranges(in draft: String) -> [Range<String.Index>] {
+        var found: [Range<String.Index>] = []
+        var from = draft.startIndex
+        while let hit = draft.range(of: prefix, range: from..<draft.endIndex) {
+            let end = draft[hit.upperBound...].firstIndex(where: \.isWhitespace) ?? draft.endIndex
+            let starts = hit.lowerBound == draft.startIndex || draft[draft.index(before: hit.lowerBound)].isWhitespace
+            if starts, end > hit.upperBound { found.append(hit.lowerBound..<end) }
+            from = max(end, hit.upperBound)
+        }
+        return found
+    }
+
+    /// The chip's name: "debug" for "/skill:debug".
+    public static func name(_ token: some StringProtocol) -> String { String(token.dropFirst(prefix.count)) }
+
+    /// The draft once the skill `command` ("skill:debug") is picked for the "$de" or "/skill:de"
+    /// being typed: the skill takes the token's place, followed by a space to keep typing. One
+    /// skill at a time: any other skill in the draft leaves it.
+    public static func draft(picking command: String, for token: ComposerCommandToken) -> String {
+        var before = token.before
+        for range in ranges(in: before).reversed() {
+            let end = before[range.upperBound...].first == " " ? before.index(after: range.upperBound) : range.upperBound
+            before.removeSubrange(range.lowerBound..<end)
+        }
+        return before + "/" + command + " "
+    }
+
+    /// What pi receives: pi runs only a leading command, so the first skill moves to the front
+    /// and the words close up where it was ("fix /skill:debug the bug" → "/skill:debug fix the bug").
+    public static func message(_ draft: String) -> String {
+        guard let range = ranges(in: draft).first, range.lowerBound != draft.startIndex else { return draft }
+        let left = draft[..<range.lowerBound]
+        var right = draft[range.upperBound...]
+        if left.last?.isWhitespace == true, right.first == " " { right = right.dropFirst() }
+        let rest = (left + right).trimmingCharacters(in: .whitespacesAndNewlines)
+        return rest.isEmpty ? String(draft[range]) : draft[range] + " " + rest
     }
 }
 

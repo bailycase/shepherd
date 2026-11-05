@@ -266,7 +266,7 @@ struct Composer: View {
     /// The query the menu matches; skills are named "skill:<name>", so "$" matches past that.
     /// Mid-draft, a token that matches nothing is prose ("see /tmp") and opens no menu.
     private var commandQuery: String? {
-        guard let token = commandToken, !menuCommands.isEmpty else { return nil }
+        guard let token = commandToken, !menuCommands.isEmpty, !token.isSkill(in: store.commands) else { return nil }
         let query = (token.sigil == "$" ? "skill:" + token.text : token.text).lowercased()
         guard token.before.isEmpty || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
         return query
@@ -1025,6 +1025,7 @@ struct Composer: View {
             openLogin(SlashLogin.Command(verb: verb, provider: nil))
             return
         }
+        if attachSkill(command) { return }
         let token = commandToken
         store.draft = token?.draft(running: command.name, then: "") ?? "/\(command.name)"
         dismissedQuery = nil
@@ -1041,7 +1042,18 @@ struct Composer: View {
         slashLogin?.open(command)
     }
 
+    /// A skill picked from either menu takes the place of its "$de" or "/skill:de" as an inline
+    /// chip (one at a time: it replaces any other). Nothing is sent: the person goes on typing.
+    private func attachSkill(_ command: NativeCommand) -> Bool {
+        guard command.source == "skill", let token = commandToken else { return false }
+        store.draft = ComposerSkillToken.draft(picking: command.name, for: token)
+        dismissedQuery = nil
+        composing = true
+        return true
+    }
+
     private func complete(_ command: NativeCommand) {
+        if attachSkill(command) { return }
         store.draft = commandToken?.draft(running: command.name, then: " ") ?? "/\(command.name) "
         dismissedQuery = nil
     }
@@ -1062,7 +1074,7 @@ struct Composer: View {
             // The Project's own send. No delivery choice: the project runtime queues, orders and (while paused) holds the message,
             // and reports it back through the Project record. The images on the card go with it, and only the ones submitted are
             // cleared once the runtime accepts; a refusal keeps the draft and every image.
-            let text = store.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = ComposerSkillToken.message(store.draft).trimmingCharacters(in: .whitespacesAndNewlines)
             let images = input.attachments.images
             let submitted = input.attachments.ids
             guard !text.isEmpty || !images.isEmpty else { return }

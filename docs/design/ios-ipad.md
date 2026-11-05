@@ -198,8 +198,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   from `bgWindow` at 0% to `bgWindow` at 30% of its height; as wide as the thread's column.
 - **Card:** `bgRaised`, a 1px `lineStrong` line, radius 16; the board's faint shadow (0 1 3, 18%) is
   dropped (Principles: one shadow). The field at 15/1.5 (14×16 inset, 4 under it), placeholder
-  "Follow up, or / for commands…" ("Follow up…" before the host lists commands, "Queue a follow-up…"
-  while pi runs), in `textTertiary`. While the field has focus its line turns `textTertiary` and the
+  "Follow up, or / for commands…" ("Follow up, / for commands, $ for skills…" when pi lists skills,
+  "Follow up…" before the host lists commands, "Queue a follow-up…" while pi runs), in `textTertiary`. While the field has focus its line turns `textTertiary` and the
   caret is `lantern` (iPadQueue); the app adds the Mac's focus ring.
 - **Control row** (4×6 inset, 6 under, 2pt apart): Attach (a 44pt circle, `paperclip` 18 in
   `textSecondary`), then 40pt chips at radius 10 with 13pt labels in `textSecondary`, 12pt
