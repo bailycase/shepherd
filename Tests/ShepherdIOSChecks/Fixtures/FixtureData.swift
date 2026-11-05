@@ -72,7 +72,7 @@ struct FixtureHostData {
     var defaultCapabilities: [String] {
         RemoteProtocol.capabilities.filter {
             (designs != nil || !RemoteProtocol.designCapabilities.contains($0)) && (missions != nil || $0 != RemoteProtocol.missionsCapability)
-                && (forge != nil || $0 != RemoteProtocol.forgeCapability)
+                && (forge != nil || ($0 != RemoteProtocol.forgeCapability && $0 != RemoteProtocol.forgeBrowseCapability))
         }
     }
 }

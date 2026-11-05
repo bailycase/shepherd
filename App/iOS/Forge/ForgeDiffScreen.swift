@@ -16,9 +16,11 @@ struct ForgeDiffScreen: View {
         let summary = model?.summaries.first { $0.path == path }
         let parts = reviewPathParts(path)
         ScrollView {
-            ForgeDiffRows(rows: rows, truncated: model?.file(path)?.truncated == true)
+            ForgeDiffRows(rows: rows, truncated: model?.file(path)?.truncated == true, key: key, path: path, store: store)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Color.sh.bgWindow)
+        .safeAreaInset(edge: .bottom, spacing: 0) { ForgeLineCommentBars(store: store, key: key, path: path) }
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle(parts.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -124,8 +126,10 @@ struct ForgeDiffPane: View {
                 .background(sh.bgSunken)
             }
             ScrollView {
-                ForgeDiffRows(rows: rows, truncated: model?.file(path)?.truncated == true)
+                ForgeDiffRows(rows: rows, truncated: model?.file(path)?.truncated == true, key: key, path: path, store: store)
             }
+            .scrollDismissesKeyboard(.interactively)
+            ForgeLineCommentBars(store: store, key: key, path: path)
         }
         .background(sh.bgWindow)
         .task(id: path) {
@@ -135,12 +139,19 @@ struct ForgeDiffPane: View {
     }
 }
 
-/// A file's lines as touch-diff rows (derived once per file, never in a body).
+/// A file's lines as touch-diff rows (derived once per file, never in a body). Tapping a line
+/// picks it for a comment; a line with a draft comment is marked.
 private struct ForgeDiffRows: View {
     let rows: [SHDiffRow]?
     let truncated: Bool
+    let key: ForgeItemKey
+    let path: String
+    let store: ForgeStore
 
     var body: some View {
+        let selected = store.lineSelection.flatMap { $0.key == key && $0.path == path ? $0.lineKey : nil }
+        let notes = Dictionary((store.drafts[key] ?? []).filter { $0.path == path }.map { ($0.lineKey, $0.comment.body) },
+                               uniquingKeysWith: { a, _ in a })
         LazyVStack(alignment: .leading, spacing: 0) {
             if let rows {
                 if rows.isEmpty {
@@ -151,7 +162,29 @@ private struct ForgeDiffRows: View {
                     VStack(spacing: 0) {
                         switch row {
                         case .hunk(_, let header): SHTouchHunkHeader(header)
-                        case .line(let line): SHTouchDiffLine(line).equatable()
+                        case .line(let line):
+                            SHTouchDiffLine(line, selected: line.key == selected, commented: notes[line.key] != nil) { tap(line) }
+                                .equatable()
+                            if let note = notes[line.key], line.key != selected {
+                                // A comment waiting to be posted, under its line; tapping it edits it.
+                                Button { tap(line) } label: {
+                                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                        Text("You · not posted").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                                        Text(note).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, SH.Space.l)
+                                    .padding(.vertical, SH.Space.m)
+                                    .shCard(radius: MobileLayout.cardRadius)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.leading, MobileLayout.gutter + SH.Space.m)
+                                .padding(.trailing, MobileLayout.gutter)
+                                .padding(.vertical, SH.Space.s)
+                                .accessibilityLabel("Your comment: \(note)")
+                                .accessibilityHint("Edits it")
+                            }
                         case .fold: EmptyView()
                         }
                     }
@@ -164,5 +197,52 @@ private struct ForgeDiffRows: View {
             }
         }
         .padding(.top, SH.Space.xs)
+    }
+
+    private func tap(_ line: SHDiffLineContent) {
+        let removed = line.kind == .removed
+        guard let number = removed ? line.oldNumber : line.newNumber ?? line.oldNumber else { return }
+        store.selectLine(key, path: path, lineKey: line.key, line: number, right: !removed)
+    }
+}
+
+/// Under a pull request's diff: the selected line's comment field, else (with drafts waiting)
+/// "2 comments, not posted" with Discard and Post on GitHub.
+struct ForgeLineCommentBars: View {
+    @Bindable var store: ForgeStore
+    let key: ForgeItemKey
+    let path: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let drafts = store.drafts[key] ?? []
+        VStack(spacing: 0) {
+            if let failure = store.failure, !drafts.isEmpty {
+                SHBanner(.failed, title: failure) {
+                    Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
+                }
+                .padding(.horizontal, SH.Space.l)
+                .padding(.top, SH.Space.m)
+            }
+            if let selection = store.lineSelection, selection.key == key, selection.path == path {
+                SHLineCommentBar(lineLabel: "line \(selection.line)", text: $store.lineDraft, isFocused: $focused,
+                                 canDelete: store.draft(selection) != nil,
+                                 onSend: { store.saveLineDraft(); focused = false },
+                                 onDelete: { store.deleteLineDraft(); focused = false },
+                                 onDone: { store.clearLineSelection(); focused = false })
+                    .padding(.horizontal, SH.Space.l)
+                    .padding(.top, SH.Space.m)
+                    .padding(.bottom, SH.Space.s)
+                    .onAppear { focused = true }
+            } else if !drafts.isEmpty {
+                let files = Set(drafts.map(\.path)).count
+                SHReviewSendBar(count: "\(drafts.count) comment\(drafts.count == 1 ? "" : "s")",
+                                detail: files == 1 ? "" : "on \(files) files",
+                                sending: store.posting.contains(key), size: .touch, sendTitle: "Post on GitHub",
+                                onDiscard: { store.discardDrafts(key) }, onSend: { Task { await store.postDrafts(key) } })
+            }
+        }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { if store.lineSelection?.key == key || !drafts.isEmpty { SHHairline() } }
     }
 }

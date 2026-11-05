@@ -159,6 +159,90 @@ public enum ForgeReviewVerdict: String, Codable, Hashable, Sendable, CaseIterabl
     case comment, approve, requestChanges
 }
 
+/// What a browse lists (`RemoteForgeRequest.browse`): GitHub search qualifiers, each optional.
+public struct ForgeFilter: Codable, Hashable, Sendable {
+    public enum State: String, Codable, Hashable, Sendable, CaseIterable { case open, closed, merged, all }
+    public enum Sort: String, Codable, Hashable, Sendable, CaseIterable { case updated, created, comments }
+
+    public var state: State
+    /// Only what involves the viewer. Across every repository it is implied unless a person is picked.
+    public var mine: Bool
+    /// Logins ("@me" for the viewer).
+    public var author: String?
+    public var assignee: String?
+    public var label: String?
+    public var sort: Sort
+    /// Free words, GitHub search syntax.
+    public var text: String
+
+    public init(state: State = .open, mine: Bool = false, author: String? = nil, assignee: String? = nil, label: String? = nil,
+                sort: Sort = .updated, text: String = "") {
+        self.state = state
+        self.mine = mine
+        self.author = author
+        self.assignee = assignee
+        self.label = label
+        self.sort = sort
+        self.text = text
+    }
+
+    /// The search string for `kind` in `repo` (`ForgeList.allRepos`: everywhere). Logins and
+    /// labels are quoted so a space or colon in them stays one value.
+    public func query(kind: ForgeKind, repo: String) -> String {
+        func quoted(_ value: String) -> String {
+            let clean = value.replacingOccurrences(of: "\"", with: "")
+            return clean.contains(where: { $0 == " " || $0 == ":" }) ? "\"\(clean)\"" : clean
+        }
+        var parts = [kind == .pullRequest ? "is:pr" : "is:issue"]
+        switch state {
+        case .open: parts.append("is:open")
+        case .closed: parts.append(kind == .pullRequest ? "is:unmerged is:closed" : "is:closed")
+        case .merged: parts.append(kind == .pullRequest ? "is:merged" : "is:closed")
+        case .all: break
+        }
+        if repo != ForgeList.allRepos { parts.append("repo:\(repo)") }
+        if mine || (repo == ForgeList.allRepos && author == nil && assignee == nil) { parts.append("involves:@me") }
+        if let author { parts.append("author:\(quoted(author))") }
+        if let assignee { parts.append("assignee:\(quoted(assignee))") }
+        if let label { parts.append("label:\(quoted(label))") }
+        parts.append("archived:false")
+        parts.append("sort:\(sort.rawValue)-desc")
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !words.isEmpty { parts.append(words) }
+        return parts.joined(separator: " ")
+    }
+}
+
+/// A repository's labels and the people who can be assigned or asked to review.
+public struct ForgeRepoPeople: Codable, Hashable, Sendable {
+    public var labels: [ForgeLabel]
+    public var assignable: [String]
+
+    public init(labels: [ForgeLabel] = [], assignable: [String] = []) {
+        self.labels = labels
+        self.assignable = assignable
+    }
+}
+
+/// A line comment on its way to GitHub with a review: `line` in the new file (`right`) or the
+/// old one (a removed line).
+public struct ForgeDraftComment: Codable, Hashable, Sendable {
+    public var path: String
+    public var line: Int
+    public var right: Bool
+    public var body: String
+
+    public init(path: String, line: Int, right: Bool = true, body: String) {
+        self.path = path
+        self.line = line
+        self.right = right
+        self.body = body
+    }
+}
+
+/// Which list a pull request's or issue's edit changes.
+public enum ForgeEditField: String, Codable, Hashable, Sendable { case labels, assignees, reviewers }
+
 public enum ForgeMergeMethod: String, Codable, Hashable, Sendable, CaseIterable {
     case squash, merge, rebase
 }
@@ -328,18 +412,24 @@ public struct ForgeSection: Codable, Hashable, Sendable, Identifiable {
 
 /// One repository's pull requests or issues, by section.
 public struct ForgeList: Codable, Hashable, Sendable {
+    /// The `repo` of a list across every repository: GitHub's search for what involves the viewer.
+    public static let allRepos = ""
+
     public var kind: ForgeKind
     public var repo: String
     /// The signed-in gh user's login, when the host read it.
     public var viewer: String?
     /// In `ForgeSectionID.all(for:)` order; only the sections asked for.
     public var sections: [ForgeSection]
+    /// A browse's next page (`RemoteForgeRequest.browse` `after`); nil at the end.
+    public var next: String?
 
-    public init(kind: ForgeKind, repo: String, viewer: String? = nil, sections: [ForgeSection]) {
+    public init(kind: ForgeKind, repo: String, viewer: String? = nil, sections: [ForgeSection], next: String? = nil) {
         self.kind = kind
         self.repo = repo
         self.viewer = viewer
         self.sections = sections
+        self.next = next
     }
 
     public func section(_ id: ForgeSectionID) -> ForgeSection? { sections.first { $0.id == id } }
@@ -490,12 +580,17 @@ public struct PullRequestDetail: Codable, Hashable, Sendable {
     public var closesIssues: [Int]
     /// The signed-in gh user's login, when the host read it.
     public var viewer: String?
+    /// Its labels and assignees' logins; nil from a host that doesn't read them.
+    public var labels: [ForgeLabel]?
+    public var assignees: [String]?
 
     public init(summary: PullRequestSummary, createdAt: Date, body: String, changedFiles: Int = 0, reviewers: [ForgeReviewer] = [],
                 checks: [ForgeCheck] = [], events: [ForgeEvent] = [], mergeable: ForgeMergeable = .unknown, behindBase: Bool = false,
                 mergeMethods: [ForgeMergeMethod] = ForgeMergeMethod.allCases, defaultMergeMethod: ForgeMergeMethod? = nil,
                 deletesBranchOnMerge: Bool = false, autoMerge: Bool = false, mergeCommit: String? = nil, headBranchDeleted: Bool = false, closesIssues: [Int] = [],
-                viewer: String? = nil) {
+                viewer: String? = nil, labels: [ForgeLabel]? = nil, assignees: [String]? = nil) {
+        self.labels = labels
+        self.assignees = assignees
         self.summary = summary
         self.createdAt = createdAt
         self.body = body
@@ -690,9 +785,10 @@ public struct ForgeError: Error, Codable, Hashable, Sendable {
 public enum RemoteForgeRequest: Codable, Hashable, Sendable {
     /// The repositories this host knows (`ForgeRepo`): the picker. Answered `repos`.
     case repos
-    /// A repository's sections (nil: `ForgeSectionID.defaults(for:)`). Answered `list`.
+    /// A repository's sections (nil: `ForgeSectionID.defaults(for:)`), or with `ForgeList.allRepos`
+    /// everything on GitHub that involves the viewer. Answered `list`.
     case list(kind: ForgeKind, repo: String, sections: [ForgeSectionID]?)
-    /// Matches for a search in a repository, as one `results` section. Answered `list`.
+    /// Matches for a search in a repository (or `ForgeList.allRepos`), as one `results` section. Answered `list`.
     case search(kind: ForgeKind, repo: String, query: String)
     /// Answered `pullRequest`.
     case pullRequest(ref: ForgeItemRef)
@@ -718,6 +814,17 @@ public enum RemoteForgeRequest: Codable, Hashable, Sendable {
     case editTitle(ref: ForgeItemRef, title: String)
     /// Re-run a run's failed jobs (`ForgeCheck.runID`).
     case rerunFailed(repo: String, runID: Int)
+    /// Every pull request or issue a filter matches, 30 at a time from `after` (`ForgeList.next`),
+    /// as one `results` section. Answered `list`.
+    case browse(kind: ForgeKind, repo: String, filter: ForgeFilter, after: String?)
+    /// A repository's labels and assignable people. Answered `people`.
+    case people(repo: String)
+    /// Open an issue. Answered `created`.
+    case createIssue(repo: String, title: String, body: String)
+    /// Add and remove labels, assignees or (pull requests only) reviewers.
+    case edit(ref: ForgeItemRef, field: ForgeEditField, add: [String], remove: [String])
+    /// A review with line comments, posted on GitHub as the viewer.
+    case postReview(ref: ForgeItemRef, verdict: ForgeReviewVerdict, body: String, comments: [ForgeDraftComment])
     /// Pins and the Needs you count. Answered `sidebar`.
     case sidebar
     /// Pin or unpin an item. Answered `sidebar` (pins as stored, without reading GitHub).
@@ -726,8 +833,9 @@ public enum RemoteForgeRequest: Codable, Hashable, Sendable {
     /// It changes something on GitHub or the host.
     public var isChange: Bool {
         switch self {
-        case .repos, .list, .search, .pullRequest, .pullRequestFiles, .issue, .checkLog, .sidebar: false
-        case .comment, .review, .merge, .deleteBranch, .setDraft, .setOpen, .editTitle, .rerunFailed, .setPinned: true
+        case .repos, .list, .search, .browse, .people, .pullRequest, .pullRequestFiles, .issue, .checkLog, .sidebar: false
+        case .comment, .review, .merge, .deleteBranch, .setDraft, .setOpen, .editTitle, .rerunFailed, .setPinned, .createIssue, .edit,
+             .postReview: true
         }
     }
 }
@@ -743,4 +851,7 @@ public enum RemoteForgeResult: Codable, Hashable, Sendable {
     case issue(IssueDetail)
     case checkLog(String)
     case sidebar(ForgeSidebar)
+    case people(ForgeRepoPeople)
+    /// The item a change made (`createIssue`).
+    case created(ForgeItemRef)
 }

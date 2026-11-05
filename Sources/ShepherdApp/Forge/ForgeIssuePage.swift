@@ -93,16 +93,22 @@ private struct ForgeIssueContent: View {
             } else if summary.state == .open {
                 ForgeHandOffCard(vm: vm, store: store, issue: issue)
             }
-            if !summary.assignees.isEmpty {
-                ForgeRailSection(title: summary.assignees.count == 1 ? "Assignee" : "Assignees") {
-                    ForEach(summary.assignees, id: \.self) { login in
-                        HStack(spacing: SH.Space.m) {
-                            ForgeAvatar(login: login, you: isViewer(login))
-                            Text(isViewer(login) ? "you" : login).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
-                        }
-                        .frame(height: AppLayout.forgeRailRow)
+            ForgeRailSection(title: "Assignees") {
+                if summary.assignees.isEmpty { Text("No one yet").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                ForEach(summary.assignees, id: \.self) { login in
+                    HStack(spacing: SH.Space.m) {
+                        ForgeAvatar(login: login, you: isViewer(login))
+                        Text(isViewer(login) ? "you" : login).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
                     }
+                    .frame(height: AppLayout.forgeRailRow)
                 }
+            } accessory: {
+                ForgeEditMenu(store: store, field: .assignees, repo: summary.ref.repo, current: summary.assignees)
+            }
+            ForgeRailSection(title: "Labels") {
+                ForgeLabelsLine(labels: summary.labels)
+            } accessory: {
+                ForgeEditMenu(store: store, field: .labels, repo: summary.ref.repo, current: summary.labels.map(\.name))
             }
             if !issue.linkedPullRequests.isEmpty {
                 ForgeRailSection(title: "Related", divider: false) {

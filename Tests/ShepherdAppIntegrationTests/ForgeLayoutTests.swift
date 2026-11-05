@@ -71,7 +71,7 @@ struct ForgeLayoutTests {
                     expectInside(window, place)
                     let nodes = AccessibilityNode.all(under: window.host)
                     // A native menu button names itself by its tooltip.
-                    let repository = nodes.first { $0.role == ControlRole.menuButton && help($0) == "Repository: \(longRepo)" }
+                    let repository = nodes.first { $0.role == ControlRole.menuButton && help($0) == "Repository: All repositories" }
                     #expect(repository?.isEnabled == true, "the repository picker is an enabled menu button at \(place)")
                     #expect(nodes.contains { $0.role == ControlRole.menuButton && help($0) == "More" }, "More at \(place)")
                     let kinds = ControlPress.controls(in: window.host).compactMap(\.label)

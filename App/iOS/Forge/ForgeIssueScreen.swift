@@ -55,6 +55,7 @@ struct ForgeIssueContent: View {
         .background(Color.sh.bgWindow)
         .safeAreaInset(edge: .bottom, spacing: 0) { bar(store, model) }
         .task(id: key) {
+            Task { await store.loadPeople(host: key.host, repo: key.ref.repo) }
             await store.loadIssue(key)
             if store.sidebars[key.host] == nil { await store.loadSidebars() }
         }
@@ -90,6 +91,13 @@ struct ForgeIssueContent: View {
                 .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
             Text(model.byline).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+            // The byline already says "assigned to you"; name the others.
+            let viewer = model.detail.viewer?.lowercased()
+            let others = model.detail.summary.assignees.filter { $0.lowercased() != viewer }
+            if !others.isEmpty {
+                Text("Assigned to \(((model.detail.summary.assignedToViewer ? ["you"] : []) + others).joined(separator: ", "))")
+                    .font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+            }
         }
         .padding(.top, SH.Space.s)
         if let failure = store.failure {
@@ -170,6 +178,8 @@ struct ForgeIssueContent: View {
             if let url = URL(string: key.ref.url) {
                 Link(destination: url) { Label("Open on GitHub", systemImage: "safari") }
             }
+            ForgeEditMenus(store: store, key: key, labels: model.detail.summary.labels.map(\.name),
+                           assignees: model.detail.summary.assignees, reviewers: nil)
             if model.detail.summary.state == .open {
                 Button("Close issue", systemImage: "minus.circle") { Task { await store.change(.setOpen(ref: key.ref, open: false), for: key) } }
             } else {

@@ -142,7 +142,13 @@
     (pins and the Needs you count). Changes: comment, review, merge, delete a merged branch,
     draft or ready, close or reopen, title, re-run failed jobs, pin. Reads are reused for 60 s and
     nothing polls; every command is bounded to 15 s. Pins are the host's (`forge-pins.json`).
-    Everything from GitHub is untrusted text; `ForgeBriefs` fences it for the agent prompts
+    Everything from GitHub is untrusted text; `ForgeBriefs` fences it for the agent prompts.
+    With `issuesAndPRs.browse.v1` a list's repository may be `ForgeList.allRepos` (`""`: GitHub's
+    search for what involves the viewer), and the host also serves `browse` (a `ForgeFilter` as
+    GitHub search qualifiers, 30 rows a page, `ForgeList.next` the cursor), `people` (a
+    repository's labels and assignable logins), `createIssue` (answered `created`), `edit`
+    (labels, assignees, reviewers) and `postReview` (a review with line comments). A client
+    sends none of them to a host without it
   - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
     restore a saved version), answered with the files and their history. The Mac's page syncs
     them to every host, or edits one host at a time

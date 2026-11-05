@@ -36,6 +36,11 @@ enum ForgeSamples {
         .merge(ref: pull, method: .rebase, whenReady: false, deleteBranch: false), .deleteBranch(ref: pull), .setDraft(ref: pull, draft: true),
         .setOpen(ref: issue, open: false), .editTitle(ref: pull, title: "New"), .rerunFailed(repo: "a/b", runID: 9), .sidebar,
         .setPinned(ref: issue, title: "Partial refunds", pinned: true),
+        .browse(kind: .pullRequest, repo: ForgeList.allRepos, filter: ForgeFilter(state: .merged, author: "mara", label: "bug fix", text: "x"),
+                after: "Y3Vy"),
+        .people(repo: "a/b"), .createIssue(repo: "a/b", title: "T", body: "b"),
+        .edit(ref: pull, field: .reviewers, add: ["mara"], remove: []),
+        .postReview(ref: pull, verdict: .comment, body: "", comments: [ForgeDraftComment(path: "x.go", line: 3, right: false, body: "why")]),
     ]
     static let results: [RemoteForgeResult] = [
         .ok, .repos([ForgeRepo(nameWithOwner: "acme/payments", path: "/r/payments")]),
@@ -49,6 +54,8 @@ enum ForgeSamples {
                            events: [ForgeEvent(id: "a", actor: "mara", at: at, kind: .assigned(login: "baily"))],
                            linkedPullRequests: [.init(number: 31, title: nil, url: "u")], viewer: nil)),
         .checkLog("--- FAIL"),
+        .people(ForgeRepoPeople(labels: [ForgeLabel(name: "bug", color: "d73a4a")], assignable: ["mara"])), .created(issue),
+        .list(ForgeList(kind: .issue, repo: "", sections: [ForgeSection(id: .results)], next: "Y3Vy")),
         .sidebar(ForgeSidebar(pins: [ForgePinnedItem(pin: ForgePin(ref: pull, title: "t", pinnedAt: at), pullRequest: summary)], needsYou: 3)),
     ]
 }
@@ -64,6 +71,26 @@ struct ForgeWireTests {
     @Test(arguments: ForgeSamples.results)
     func everyResultRoundTrips(_ result: RemoteForgeResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.forgeResult(id: 1, result: result)) == .forgeResult(id: 1, result: result))
+    }
+
+    /// What each filter asks GitHub's search; across every repository it stays to what involves you
+    /// unless a person is picked.
+    @Test func aFilterReadsAsGitHubSearch() {
+        #expect(ForgeFilter().query(kind: .pullRequest, repo: ForgeList.allRepos)
+            == "is:pr is:open involves:@me archived:false sort:updated-desc")
+        #expect(ForgeFilter(author: "mara").query(kind: .pullRequest, repo: ForgeList.allRepos)
+            == "is:pr is:open author:mara archived:false sort:updated-desc")
+        #expect(ForgeFilter(state: .closed, label: "good first issue", sort: .created).query(kind: .issue, repo: "acme/payments")
+            == "is:issue is:closed repo:acme/payments label:\"good first issue\" archived:false sort:created-desc")
+        #expect(ForgeFilter(state: .merged, mine: true, assignee: "@me", text: "refund").query(kind: .pullRequest, repo: "acme/payments")
+            == "is:pr is:merged repo:acme/payments involves:@me assignee:@me archived:false sort:updated-desc refund")
+        #expect(ForgeFilter(state: .all, label: "a\" b").query(kind: .issue, repo: "a/b") == "is:issue repo:a/b label:\"a b\" archived:false sort:updated-desc")
+    }
+
+    /// A list or pull request from a host before browsing decodes without its new fields.
+    @Test func olderListsAndPagesStillDecode() throws {
+        let list = try JSONDecoder().decode(ForgeList.self, from: Data(#"{"kind":"issue","repo":"a/b","sections":[]}"#.utf8))
+        #expect(list.next == nil)
     }
 
     @Test func theHostOffersIssuesAndPRs() {

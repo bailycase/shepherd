@@ -15,10 +15,17 @@ public struct SHReviewSendBar: View {
     let size: Size
     let onDiscard: () -> Void
     let onSend: () -> Void
+    /// Post the comments on GitHub as a review instead (a pull request's Changes tab).
+    let onPost: (() -> Void)?
+    /// The main button's words: "Send to agent", or "Post on GitHub" over a pull request's diff.
+    let sendTitle: String
     @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(count: String, detail: String, sending: Bool = false, size: Size = .regular,
-                onDiscard: @escaping () -> Void, onSend: @escaping () -> Void) {
+                sendTitle: String = "Send to agent", onDiscard: @escaping () -> Void, onSend: @escaping () -> Void,
+                onPost: (() -> Void)? = nil) {
+        self.onPost = onPost
+        self.sendTitle = sendTitle
         self.count = count
         self.detail = detail
         self.sending = sending
@@ -50,18 +57,24 @@ public struct SHReviewSendBar: View {
                     .buttonStyle(.sh(.ghost, size: buttons))
                     .disabled(sending)
                     .accessibilityHint("Deletes the comments you haven't sent")
+                if let onPost {
+                    Button("Comment on GitHub", action: onPost)
+                        .buttonStyle(.sh(.secondary, size: buttons))
+                        .disabled(sending)
+                        .help("Post your comments on the pull request as a review")
+                }
                 Button(action: onSend) {
                     HStack(spacing: SH.Space.s) {
                         if sending { ProgressView().progressViewStyle(.shSpinner(size: 10)) }
                         // The Mac's main action draws its chord; touch has no ⌘↩ to teach.
-                        if size == .regular { SHButtonTitle("Send to agent", chord: "⌘↩") } else { Text("Send to agent") }
+                        if size == .regular { SHButtonTitle(sendTitle, chord: "⌘↩") } else { Text(sendTitle) }
                     }
                 }
                 .buttonStyle(.sh(.primary, size: buttons))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(sending)
-                .help("Send your comments as the agent's next message (⌘↩)")
-                .accessibilityHint("Sends your comments as the agent's next message")
+                .help("\(sendTitle) (⌘↩)")
+                .accessibilityHint(sendTitle == "Send to agent" ? "Sends your comments as the agent's next message" : sendTitle)
             }
             .fixedSize()
         }
