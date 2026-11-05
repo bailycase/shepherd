@@ -113,7 +113,7 @@ struct EngineSmokeTests {
         try await EngineSmoke.runBuiltIns(engine: engine)
     }
 
-    /// pi's MCP the way Shepherd runs it (docs/mcp.md), through the real launcher: an agent's
+    /// pi's MCP the way Shepherd runs it, through the real launcher: an agent's
     /// `-e builtin:mcp -e builtin:tool-search` start the servers in the home's derived `mcp.json` over
     /// the home's own `-builtin:` switches, which keep a launch without them from starting any;
     /// `pi mcp list --json` is a subcommand through the launcher (no `-e` before it); and a stdio server

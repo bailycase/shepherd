@@ -160,8 +160,7 @@ public final class NativeThreadStore {
     /// replaces it in place (its entries carry the ids pi's will).
     public private(set) var previewing = false { didSet { bothVersions() } }
     /// The agent's pi stopped before it served (`NativeThreadSnapshot.startProblem`), and why: the
-    /// host keeps the agent, and the composer says so with Retry (docs/design/thread.md › Thread › Can't
-    /// start). Not ready, not starting, and not an error; the thread keeps what it drew.
+    /// host keeps the agent, and the composer says so with Retry. Not ready, not starting, and not an error; the thread keeps what it drew.
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
     public private(set) var loadError: String? { didSet { bothVersions() } }
@@ -227,6 +226,14 @@ public final class NativeThreadStore {
     public private(set) var displayedMessages: [NativeThreadMessage] = []
     public private(set) var turns: [NativeTurn] = []
     public private(set) var rows: [NativeThreadRow] = [] { didSet { threadVersion &+= 1 } }
+    /// `rows` with the streaming reply held as a shell (its id, prompt and start; no content):
+    /// the list a transcript iterates. A streamed chunk then writes `liveRow` alone, so the list,
+    /// the environment it carries and every other row stay as they were (a chunk used to
+    /// invalidate the whole transcript: docs/audit/2026-11-05). Set in the same `derive` as `rows`.
+    public private(set) var listRows: [NativeThreadRow] = []
+    /// The streaming reply with its content, replaced per chunk; nil while nothing streams. The
+    /// shell's view reads it (`ThreadView`), so only that row redraws.
+    public private(set) var liveRow: NativeThreadRow?
     /// Bumped by `derive` when the rows' IDs or order change, never when only a row's content
     /// or live state does (a streamed chunk): views rebuild ID indexes only then. Not observed.
     @ObservationIgnored public private(set) var rowStructureRevision = 0
@@ -797,6 +804,12 @@ public final class NativeThreadStore {
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
+        let live = rows.first(where: \.live)
+        if liveRow != live { liveRow = live }
+        let list = rows.map { $0.live ? Self.shell($0) : $0 }
+        if listRows.count - rowStart != list.count || listRows.dropFirst(rowStart) != list[...] {
+            listRows.replaceSubrange(rowStart..., with: list)
+        }
         deriveChrome()
     }
 
@@ -855,7 +868,7 @@ public final class NativeThreadStore {
     /// A comment's card holds the agent's answer to it, up to the first compaction in the reply:
     /// from there the agent works from its summary, so what it does next is its own work, not
     /// more of the answer. The rest of the reply becomes a reply of its own, `.../after-compaction`,
-    /// which no card holds (docs/designs.md › Comments). A reply that opens with its compaction
+    /// which no card holds. A reply that opens with its compaction
     /// has no answer before it (`opensWithCompaction`) and is left whole.
     static func endingCommentAnswers(_ turns: [NativeTurn]) -> [NativeTurn] {
         guard turns.contains(where: { $0.messages.contains { $0.compaction != nil } }) else { return turns }
@@ -879,6 +892,14 @@ public final class NativeThreadStore {
     }
 
     /// The comment a user turn carried: its one message's origin.
+    /// The streaming reply's place in `listRows`: equal from chunk to chunk, so the list is not.
+    static func shell(_ row: NativeThreadRow) -> NativeThreadRow {
+        var shell = NativeThreadRow(turn: NativeTurn(id: row.turn.id, isUser: false, messages: []), presentation: nil, live: true,
+                                    promptText: row.promptText, startedAt: row.startedAt)
+        shell.designComment = row.designComment
+        return shell
+    }
+
     static func designComment(_ turn: NativeTurn) -> UUID? {
         guard turn.messages.count == 1 else { return nil }
         return turn.messages[0].origin?.designComment

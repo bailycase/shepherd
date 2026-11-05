@@ -2,7 +2,7 @@ import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
 
-/// What a thread says when its snapshot shortened something (docs/native-thread.md › RPCThreadState › Clipped):
+/// What a thread says when its snapshot shortened something:
 /// one line per fact the host reported, gone with the fact, and never about older pages.
 @Suite("Clip notice")
 @MainActor

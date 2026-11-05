@@ -5,7 +5,7 @@ import ShepherdRemote
 
 /// pi's question in the composer's place (QuestionDockRadio, with the MobileQuestion and
 /// iPadQuestion geometry), so a blocked agent is always answerable. It follows the question dock's
-/// rules (docs/design/composer.md › Questions; `NativeQuestionPrompt`, as the Mac's dock does):
+/// rules (`NativeQuestionPrompt`, as the Mac's dock does):
 /// the question with its details folded, radio rows to pick, then Answer, or Skip to answer
 /// nothing; a yes or a no that answers on a tap; an open question's field. Hiding (the grabber,
 /// or iPad's Hide the question) folds it without answering.

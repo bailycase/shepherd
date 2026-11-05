@@ -36,8 +36,7 @@ const shortReason = (value) => typeof value === "string" && value.trim() ? clip(
 const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }], details: data });
 
 // A child never reaches the user. What it is told about questions (its prompt, and the guideline of its tool) and
-// what its parent is told when one arrives: the parent answers it or asks the user itself, then passes the answer down
-// (docs/native-subagents.md › Questions and results).
+// what its parent is told when one arrives: the parent answers it or asks the user itself, then passes the answer down.
 export const CHILD_ASK_RULE = "You never talk to the user: nothing you write reaches them. When you are blocked on a question, or on a decision that is not yours to make, ask your parent, never the user: call shepherd_parent_message with needsReply: true and your question (options: when it has a few possible answers), then finish your turn. Your parent answers it, or asks the user and passes the answer down, and your work continues with the answer. A question inside your final answer is read as a result, not as a question. Don't guess when the answer matters, and don't ask what you can find out yourself.";
 export const CHILD_UI_REFUSAL = "A child never reaches the user: ask your parent with shepherd_parent_message (needsReply: true) and finish your turn.";
 export const PARENT_QUESTION_GUIDE = "Each child above that needs a reply asked you, its parent, a question it cannot settle itself. It never reaches the user, so it is waiting on you.\n"
@@ -612,7 +611,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     relaying: run.relays?.size || undefined });
   // A result as the parent model reads it: a child that asked also says what to do about it.
   const forParent = (run, extra = {}) => ({ ...summary(run), ...extra, ...(run.needsReply && run.questionID ? { parentAction: parentAction(run) } : {}) });
-  // Card projection for the native thread (docs/design/subagents.md › Subagents). Every field
+  // Card projection for the native thread. Every field
   // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
   function card(run) {
     const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;

@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdUI
 import SwiftUI
 
-/// Every mounted agent layout, each in a hosting view of its own (docs/design/performance.md › Performance).
+/// Every mounted agent layout, each in a hosting view of its own.
 ///
 /// In one view graph, every update in the visible layout (a scroll step, a keystroke, a streamed
 /// reply) also walked the hidden ones, and a status report reran every layout's wrapper: each
@@ -63,6 +63,15 @@ struct AgentLayoutDeck: View, Equatable {
 
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        /// Hidden, a layout holds no focus and offers none. AppKit asks every hosting view under
+        /// the window whether it accepts first responder when it recomputes the hidden title
+        /// bar's drag regions and the key view loop, and SwiftUI answers by walking the layout's
+        /// focusable items (a transcript's every link and button): with the fleet's layouts
+        /// retained, that walk was a seventh of the main thread's hang time
+        /// (docs/audit/2026-11-05). A hidden layout answers at once.
+        override var acceptsFirstResponder: Bool { isHidden ? false : super.acceptsFirstResponder }
+        override var needsPanelToBecomeKey: Bool { isHidden ? false : super.needsPanelToBecomeKey }
 
         override func layout() {
             SHRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")

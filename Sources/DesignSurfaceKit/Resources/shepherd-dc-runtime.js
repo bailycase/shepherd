@@ -1,7 +1,7 @@
 /*
  * shepherd-dc-runtime.js: Shepherd's runtime for Design canvas boards (*.dc.html).
  *
- * Written for Shepherd from the documented board format alone (docs/designs.md): no Claude
+ * Written for Shepherd from the documented board format alone: no Claude
  * Design code is copied, fetched or imitated. A board's head line `<script src="./support.js">`
  * reaches this file through the shepherd-design:// scheme, served after React 18 (UMD).
  *

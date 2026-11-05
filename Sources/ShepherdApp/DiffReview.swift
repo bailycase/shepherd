@@ -7,7 +7,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
 
-/// What a review reads from the host's Changes engine (docs/changes.md): this Mac's
+/// What a review reads from the host's Changes engine: this Mac's
 /// `server.changes`, or a remote host's `changes*` queries. A review without one (an older
 /// remote host, or an agent's `review_diff` naming a git reference) loads its diff the old way.
 struct ChangesEngine {

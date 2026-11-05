@@ -494,7 +494,7 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// A design (the Design tool): a canvas of HTML boards drawn by its design agent. Its files live
-/// in the support directory's `designs/<id>/` (docs/designs.md); this record is what the
+/// in the support directory's `designs/<id>/`; this record is what the
 /// workspace keeps about it. A design belongs to no space: its agent lives in the reserved
 /// designs space (`Space.holdsDesigns`) and works in the design's own folder.
 public struct Design: Codable, Hashable, Sendable, Identifiable {
@@ -727,7 +727,7 @@ extension ShepherdState {
 
 extension ShepherdState {
     /// Whether an agent draws one of this workspace's designs. Its thread is that design's chat,
-    /// never an ordinary thread (docs/designs.md › Design agents and ordinary threads).
+    /// never an ordinary thread.
     public func isDesignAgent(_ agent: Agent) -> Bool {
         guard let design = agent.designID else { return false }
         return designs.contains { $0.id == design }

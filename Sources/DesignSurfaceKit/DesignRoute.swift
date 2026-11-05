@@ -68,7 +68,7 @@ enum DesignRoute: Equatable, Sendable {
     }
 }
 
-/// The rules every board runs under (docs/designs.md › Security): what it may load, from where.
+/// The rules every board runs under: what it may load, from where.
 public enum DesignSandbox {
     /// Where a board may reach beyond its own design.
     public enum Network: Sendable, Hashable {

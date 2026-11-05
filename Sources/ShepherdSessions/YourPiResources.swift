@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// A kind of file the user's pi reads that Shepherd copies into its own home: after the copy,
-/// Shepherd's pi reads each only there (docs/pi-home.md › Imports).
+/// Shepherd's pi reads each only there.
 public enum YourPiResourceKind: String, Codable, CaseIterable, Sendable {
     /// The global context file pi picks (`AGENTS.override.md`, `AGENTS.md`, … `CLAUDE.md`), and
     /// `SYSTEM.md` and `APPEND_SYSTEM.md`.

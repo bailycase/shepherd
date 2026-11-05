@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// An agent's browser tools reach only its own thread's page (docs/browser.md › Isolation): the
+/// An agent's browser tools reach only its own thread's page: the
 /// server serves a request only on the connection that registered as the agent it names, refuses
 /// a design's agent, answers a page that never answers with a timeout, and never writes to a
 /// connection that has gone.

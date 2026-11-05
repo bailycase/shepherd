@@ -4,7 +4,7 @@ import ShepherdCore
 // Importing a Claude Design project (File ▸ Import Claude Design Project…, New design's Import a
 // project, a drop on Designs): a ZIP or a folder exported from Claude Design becomes a new
 // design. Everything is checked before a design exists (canvas.json, sizes, paths, links), and
-// only a complete design moves into Designs. docs/designs.md › Import.
+// only a complete design moves into Designs.
 
 extension DesignImport {
     /// A project is at most this many bytes, unpacked (ImportFailed: "up to 1 GB").

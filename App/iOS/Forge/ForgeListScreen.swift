@@ -29,7 +29,8 @@ struct ForgeListScreen: View {
         }
         .background(Color.sh.bgWindow)
         .task(id: store.sessionsKey) { await store.loadRepos() }
-        .task(id: store.repo?.id) { await store.loadLists() }
+        .task(id: store.listKey(.issue)) { await store.loadLists() }
+        .task(id: store.browseID) { await store.loadBrowse() }
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Issues & PRs")
         .navigationBarTitleDisplayMode(.inline)
@@ -59,6 +60,7 @@ struct ForgeListColumn: View {
     /// item beside the list).
     var back: (() -> Void)? = nil
     @State private var query = ""
+    @State private var newIssue = false
     @FocusState private var searching: Bool
 
     var body: some View {
@@ -89,6 +91,18 @@ struct ForgeListColumn: View {
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: SH.Space.m)
                     ForgeRepoPicker(store: store)
+                    if store.browseHost != nil {
+                        Button { newIssue = true } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.sh(.headline))
+                                .foregroundStyle(Color.sh.textPrimary)
+                                .frame(width: SH.Height.touch, height: SH.Height.touch)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(store.repos.isEmpty)
+                        .accessibilityLabel("New issue")
+                    }
                 }
                 ForgeSegmented(selection: kind, options: [
                     .init(value: .issue, title: "Issues", count: store.list(.issue)?.value?.count),
@@ -98,6 +112,7 @@ struct ForgeListColumn: View {
                     Task { if let key = await store.submit(query) { query = ""; open(key) } }
                 }
                 .onChange(of: query) { _, text in if text.isEmpty { store.clearSearch() } }
+                if store.canBrowse { ForgeFilterBar(store: store) }
                 ForgeListBody(store: store, chosen: chosen, open: open)
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -107,7 +122,9 @@ struct ForgeListColumn: View {
         .refreshable {
             await store.loadRepos()
             await store.loadLists()
+            await store.loadBrowse()
         }
+        .sheet(isPresented: $newIssue) { ForgeNewIssueSheet(store: store, opened: open) }
     }
 }
 
@@ -137,7 +154,27 @@ private struct ForgeListBody: View {
             }
         } else if let results = store.results {
             if let model = results.value {
-                sections(model, emptyClosed: false)
+                if model.sections.allSatisfy(\.rows.isEmpty) {
+                    Text(store.filter.text.isEmpty && store.resultsQuery.isEmpty ? "Nothing matches these filters." : "No matches.")
+                        .shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
+                } else {
+                    sections(model, emptyClosed: false)
+                }
+                if store.resultsNext != nil {
+                    Button { Task { await store.loadBrowse(more: true) } } label: {
+                        HStack(spacing: SH.Space.s) {
+                            Text("Load more")
+                            if store.loadingMore { ProgressView() }
+                        }
+                        .font(.sh(.ui, weight: .medium))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(store.loadingMore)
+                    .onAppear { Task { await store.loadBrowse(more: true) } }
+                }
             } else if let error = results.error {
                 ForgeErrorState(error: error) {}
             } else {
@@ -146,7 +183,7 @@ private struct ForgeListBody: View {
         } else if let load = store.list(store.kind) {
             if let model = load.value {
                 if model.isEmpty, !model.sections.contains(where: { $0.id == .closed && $0.loaded && !$0.rows.isEmpty }) {
-                    ForgeNothingWaiting(kind: store.kind, repoName: store.repo?.repo.name ?? "") {
+                    ForgeNothingWaiting(kind: store.kind, repoName: store.allRepos ? "any repository" : store.repo?.repo.name ?? "") {
                         Task { await store.expand(.closed) }
                     }
                 } else {
@@ -297,7 +334,8 @@ private struct ForgeSplit: View {
     /// The chosen item, else the first row of the list on show.
     static func current(_ store: ForgeStore) -> ForgeItemKey? {
         if let chosen = store.chosen { return chosen }
-        return store.list(store.kind)?.value?.sections.lazy.flatMap(\.rows).first?.key
+        let model = store.browsing ? store.results?.value : store.list(store.kind)?.value
+        return model?.sections.lazy.flatMap(\.rows).first?.key
     }
 }
 

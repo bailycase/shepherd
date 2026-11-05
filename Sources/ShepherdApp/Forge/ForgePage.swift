@@ -125,30 +125,25 @@ struct ForgeEmptyPage: View {
                     }
                     Button("Try again") { Task { await store.refresh() } }.buttonStyle(.sh(.secondary))
                 }
-            } else if store.reposLoaded, store.repos.isEmpty {
-                empty(Text("No GitHub repositories here"),
-                      "Add a space whose origin is on GitHub, or paste a link to open a pull request or issue.", showClosed: false)
             } else if !store.loadingKinds.isEmpty || !store.reposLoaded {
                 ProgressView().progressViewStyle(.shSpinner())
             } else {
                 let noun = store.kind == .pullRequest ? "pull requests" : "issues"
-                empty(Text("No open \(noun) in \(store.repoName)"),
+                empty(Text(store.repo == nil ? "No open \(noun) waiting on you" : "No open \(noun) in \(store.repoName)"),
                       store.kind == .pullRequest
                         ? "Paste a link to open one from another repository, or let a thread open one when its work is ready."
-                        : "Paste a link to open one from another repository.", showClosed: true)
+                        : "Paste a link to open one from another repository.")
             }
         }
     }
 
-    private func empty(_ title: Text, _ message: String, showClosed: Bool) -> some View {
+    private func empty(_ title: Text, _ message: String) -> some View {
         VStack(spacing: SH.Space.m) {
             Image(systemName: ForgeSymbol.kind(store.kind)).font(.sh(.display)).foregroundStyle(Color.sh.textTertiary)
                 .accessibilityHidden(true)
             SHEmptyState(title, message: message, showsMark: false) {
                 Button("Paste a link") { Task { await store.pasteLink() } }.buttonStyle(.sh(.secondary))
-                if showClosed {
-                    Button("Show closed") { Task { await store.toggleSection(.closed) } }.buttonStyle(.sh(.secondary))
-                }
+                Button("Show closed") { Task { await store.toggleSection(.closed) } }.buttonStyle(.sh(.secondary))
             }
         }
     }
@@ -330,16 +325,44 @@ struct ForgeTitle: View {
 }
 
 /// A rail section: its caption (and an optional trailing word), its rows, a hairline under it.
-struct ForgeRailSection<Content: View>: View {
+struct ForgeRailSection<Content: View, Accessory: View>: View {
     let title: String
     var divider = true
     @ViewBuilder let content: () -> Content
+    /// Trailing the caption: an edit menu.
+    @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            ForgeCaption(title)
+            HStack {
+                ForgeCaption(title)
+                Spacer(minLength: SH.Space.s)
+                accessory()
+            }
             content()
             if divider { SHHairline().padding(.top, SH.Space.s) }
+        }
+    }
+}
+
+extension ForgeRailSection where Accessory == EmptyView {
+    init(title: String, divider: Bool = true, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title: title, divider: divider, content: content, accessory: { EmptyView() })
+    }
+}
+
+/// An item's labels: each a tag in its color's words.
+struct ForgeLabelsLine: View {
+    let labels: [ForgeLabel]
+
+    var body: some View {
+        if labels.isEmpty {
+            Text("None yet").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: SH.Space.xs) { ForEach(labels, id: \.name) { SHTag($0.name) } }
+                VStack(alignment: .leading, spacing: SH.Space.xs) { ForEach(labels, id: \.name) { SHTag($0.name) } }
+            }
         }
     }
 }

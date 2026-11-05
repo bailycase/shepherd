@@ -4,7 +4,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// The viewer's side of Browser tunnels (docs/browser.md › Remote): one hub per host connection,
+// The viewer's side of Browser tunnels: one hub per host connection,
 // opening a tunnel on demand for each connection the viewer's web view makes to a forwarded port,
 // and carrying its bytes over the connection as frames. It knows nothing of WebKit or of which
 // ports are forwarded (`BrowserPortForwarder` owns that): it is handed a connected socket and the

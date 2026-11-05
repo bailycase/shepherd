@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import ShepherdProtocol
 
-// The iPad Design tool's pure rules (docs/designs.md › iPad): which boards get the live web view
+// The iPad Design tool's pure rules: which boards get the live web view
 // the plan allows on iOS, and where designs sit among the threads in the sidebar's Recents.
 
 /// Which boards get a live web view on iOS, and which views make room. The plan caps iOS at two

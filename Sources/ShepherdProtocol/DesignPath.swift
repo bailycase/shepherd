@@ -2,8 +2,7 @@ import Foundation
 
 /// A board's path inside a design's `project/` folder, as canvas.json keys it
 /// ("Main.dc.html", "flows/Cart.dc.html"). Only a path that passes the grammar names a file, so
-/// nothing read from an index, an agent or a remote client can reach outside the folder
-/// (docs/designs.md › Paths).
+/// nothing read from an index, an agent or a remote client can reach outside the folder.
 public struct DesignPath: Hashable, Comparable, Sendable, CustomStringConvertible {
     public let rawValue: String
 

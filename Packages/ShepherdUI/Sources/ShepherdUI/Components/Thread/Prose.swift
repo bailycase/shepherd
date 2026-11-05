@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Agent prose (SHThread board, docs/design/thread.md › Thread › Rich content in prose): the parsed reply's
+// Agent prose (SHThread board): the parsed reply's
 // blocks with their inline runs already styled (`SHProseInline`). Value inputs only: the app
 // parses once per change and maps its blocks here.
 

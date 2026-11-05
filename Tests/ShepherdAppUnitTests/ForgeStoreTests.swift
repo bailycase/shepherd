@@ -23,7 +23,7 @@ struct ForgeStoreTests {
 
     static func items(_ list: ForgeList?, open: Set<ForgeSectionID> = [], results: ForgeList? = nil,
                       selection: ForgeItemRef? = nil) -> [ForgeListItem] {
-        ForgeStore.items(list: list, kind: .pullRequest, open: open, loading: [], results: results, query: "q", selection: selection,
+        ForgeStore.items(list: list, kind: .pullRequest, open: open, loading: [], results: results, browsing: results != nil, filter: ForgeFilter(text: "q"), selection: selection,
                          repoName: "payments", now: now)
     }
 
@@ -80,25 +80,56 @@ struct ForgeStoreTests {
             switch request {
             case .repos: return .success(.repos([ForgeRepo(nameWithOwner: Self.repo, path: "/tmp/payments")]))
             case .list(let kind, _, _): return .success(.list(ForgeList(kind: kind, repo: Self.repo, sections: [])))
-            case .search: return .success(.list(Self.list([ForgeSection(id: .results, pullRequests: [Self.pull(7)])])))
+            case .browse: return .success(.list(Self.list([ForgeSection(id: .results, pullRequests: [Self.pull(7)])])))
             case .sidebar: return .failure(.signedOut)
             case .issue: return .failure(ForgeError(.notFound, "No issue 34."))
             default: return .success(.ok)
             }
         }
         await store.start()
-        #expect(store.repo == Self.repo && store.path(of: Self.repo) == "/tmp/payments")
+        // Every repository until one is picked.
+        #expect(store.repo == nil && store.path(of: Self.repo) == "/tmp/payments")
+        #expect(seen.contains(.list(kind: .pullRequest, repo: ForgeList.allRepos, sections: ForgeSectionID.defaults(for: .pullRequest))))
 
         store.query = "refund"
         await store.submitSearch()
-        #expect(seen.last == .search(kind: .pullRequest, repo: Self.repo, query: "refund"))
+        await store.browseTask?.value
+        #expect(seen.last == .browse(kind: .pullRequest, repo: ForgeList.allRepos, filter: ForgeFilter(text: "refund"), after: nil))
         #expect(store.items.map(\.id) == ["header.results", "pullRequest:acme/payments#7"])
+
+        await store.selectRepo(Self.repo)
+        await store.browseTask?.value
+        #expect(seen.contains(.browse(kind: .pullRequest, repo: Self.repo, filter: ForgeFilter(text: "refund"), after: nil)))
+        store.query = ""
+        #expect(!store.browsing, "clearing the search goes back to what's waiting on you")
 
         store.query = "https://github.com/acme/payments/issues/34#issuecomment-1"
         await store.submitSearch()
         #expect(store.selection == ForgeItemRef(kind: .issue, repo: Self.repo, number: 34))
         #expect(store.kind == .issue && store.query.isEmpty)
         #expect(store.detailError?.code == .notFound)
+    }
+
+    @Test func aBrowseLoadsMoreUntilItsLastPage() async {
+        var seen: [RemoteForgeRequest] = []
+        let store = ForgeStore { request in
+            seen.append(request)
+            guard case .browse(_, _, _, let after) = request else { return .failure(.signedOut) }
+            var list = Self.list([ForgeSection(id: .results, pullRequests: after == nil ? [Self.pull(1)] : [Self.pull(1), Self.pull(2)])])
+            list.next = after == nil ? "page2" : nil
+            return .success(.list(list))
+        }
+        store.filter.author = "mara"
+        #expect(store.browsing)
+        await store.browseTask?.value
+        #expect(store.items.map(\.id) == ["header.results", "pullRequest:acme/payments#1", "loadMore"])
+        await store.loadBrowse(more: true)
+        #expect(store.items.map(\.id) == ["header.results", "pullRequest:acme/payments#1", "pullRequest:acme/payments#2"])
+        let count = seen.count
+        await store.loadBrowse(more: true)
+        #expect(seen.count == count, "no page after the last")
+        store.clearFilters()
+        #expect(!store.browsing && store.filter == ForgeFilter())
     }
 
     @Test func listFailuresReadAsTheirFix() async {

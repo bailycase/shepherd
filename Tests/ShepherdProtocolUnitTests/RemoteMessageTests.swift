@@ -1077,7 +1077,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability,
-            RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability,
+            RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,

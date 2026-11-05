@@ -252,7 +252,7 @@ struct DesignCommentIntegrationTests {
 /// The chat of a design whose agent works on a comment while pi compacts: through the real server,
 /// the stub pi's overflow recovery (the run ends, pi compacts and goes on) and the thread store a
 /// client draws from, the comment's card holds the answer up to the compaction, and the work pi
-/// goes on with is an ordinary reply under it (docs/designs.md › Comments).
+/// goes on with is an ordinary reply under it.
 @Suite("A design chat's comment card", .mainActorExclusive)
 @MainActor
 struct DesignCommentChatTests {

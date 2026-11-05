@@ -3,7 +3,7 @@ import ShepherdCore
 
 // The Design tool over the remote listener (`RemoteProtocol.designsCapability`): a client lists a
 // host's designs, fetches their files by hash and renders the boards itself, and changes a design
-// through the same server mutations the host's own canvas uses. docs/designs.md › Remote.
+// through the same server mutations the host's own canvas uses.
 
 extension RemoteProtocol {
     /// The host serves `RemoteRequest.design` while its Design tool experiment is on, and pushes

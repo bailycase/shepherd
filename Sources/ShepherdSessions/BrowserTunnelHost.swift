@@ -5,7 +5,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// The host's side of Browser tunnels (docs/browser.md › Remote): a remote client asks for a
+// The host's side of Browser tunnels: a remote client asks for a
 // connection to a port on this Mac, and the host connects to that port on its own loopback and
 // carries the bytes both ways over the client's authenticated connection.
 //

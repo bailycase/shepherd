@@ -1,7 +1,7 @@
 import Foundation
 
-/// What an agent's browser tools ask of its thread's Browser page (`Extensions/shepherd-browser.ts`,
-/// docs/browser.md). The agent is never named here: the server serves a request only on the
+/// What an agent's browser tools ask of its thread's Browser page
+/// (`Extensions/shepherd-browser.ts`). The agent is never named here: the server serves a request only on the
 /// connection that registered as that agent (`ExtensionMessage.helloBrowser`), so a tool can act
 /// only on its own thread's page.
 ///

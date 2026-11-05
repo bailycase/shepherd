@@ -3,7 +3,7 @@ import ShepherdProtocol
 import Testing
 @testable import ShepherdRemote
 
-/// Hook rows, proposals and asks as the thread draws them (docs/hooks.md › In the thread, Proposals).
+/// Hook rows, proposals and asks as the thread draws them (Proposals).
 struct HookPresentationTests {
     static func details(_ json: String) throws -> JSONValue {
         try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))

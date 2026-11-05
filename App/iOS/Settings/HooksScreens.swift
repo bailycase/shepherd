@@ -3,8 +3,8 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-// Settings › Hooks on iPhone and iPad (MobileHooks, MobileHookEdit, MobileHookSources, iPadHooks;
-// docs/hooks.md): one host's hooks at a time, over `hooks.v1`. Hooks run on the host where the
+// Settings › Hooks on iPhone and iPad (MobileHooks, MobileHookEdit, MobileHookSources,
+// iPadHooks): one host's hooks at a time, over `hooks.v1`. Hooks run on the host where the
 // agent runs, so every read, change and test goes to that host. `ClientHooks` keeps the rules
 // and derives the rows; these views only draw them.
 

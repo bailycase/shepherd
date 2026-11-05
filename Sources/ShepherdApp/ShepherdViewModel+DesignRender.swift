@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-// A design agent's `board_render` (docs/designs.md › Rendering for the agent): the server reads the
+// A design agent's `board_render`: the server reads the
 // board's files and hands the job here; the app draws it off screen, one at a time, and answers a
 // picture sized for pi's session.
 

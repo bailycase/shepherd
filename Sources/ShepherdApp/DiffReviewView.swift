@@ -11,6 +11,8 @@ struct ReviewActions {
     var setPullRequest: (Bool) -> Void
     /// Send the comments as the agent's next turn (queued if it is mid-turn).
     var requestChanges: () -> Void
+    /// A pull request's review: post the comments on GitHub instead.
+    var postToGitHub: (() -> Void)? = nil
     /// Ask the agent to commit what is under review.
     var commit: () -> Void
     var close: () -> Void
@@ -823,7 +825,7 @@ private struct ChangesSendBar: View {
         if !session.comments.isEmpty {
             let pending = reviewPendingText(session.comments)
             SHReviewSendBar(count: pending.count, detail: pending.detail, sending: session.isSubmitting,
-                            onDiscard: actions.discard, onSend: actions.requestChanges)
+                            onDiscard: actions.discard, onSend: actions.requestChanges, onPost: actions.postToGitHub)
                 .shTransition(.list, edge: .bottom)
         }
     }

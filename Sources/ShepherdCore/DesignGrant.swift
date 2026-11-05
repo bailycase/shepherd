@@ -1,7 +1,6 @@
 import Foundation
 
-/// What a design reference handed to an ordinary thread lets its agent read (docs/designs.md ›
-/// Design references): the copy of one piece (a whole design, one board, or one element of it)
+/// What a design reference handed to an ordinary thread lets its agent read: the copy of one piece (a whole design, one board, or one element of it)
 /// that Shepherd kept when the user sent it (`payload`). Read only, and only that copy: a grant
 /// never covers another piece, a later revision, the design agent's chat, comments, or any write.
 ///

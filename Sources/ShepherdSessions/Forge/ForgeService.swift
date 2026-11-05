@@ -162,9 +162,14 @@ public final class ForgeService: @unchecked Sendable {
 
     /// A change: never reused, and it forgets every read.
     private func change(_ arguments: [String], input: Data? = nil) async -> Result<RemoteForgeResult, ForgeError> {
+        await changed(arguments, input: input).map { _ in .ok }
+    }
+
+    /// A change's output (`gh issue create` prints the new issue's link).
+    private func changed(_ arguments: [String], input: Data? = nil) async -> Result<Data, ForgeError> {
         let output = await runner(ForgeCommand(arguments, input: input))
         cache.withValue { $0.removeAll() }
-        return Self.checked(output).map { _ in .ok }
+        return Self.checked(output)
     }
 
     /// gh's exit as data or a `ForgeError` in words.
@@ -231,6 +236,42 @@ public final class ForgeService: @unchecked Sendable {
                                  "--title=\(title.trimmingCharacters(in: .whitespacesAndNewlines))"])
         case .rerunFailed(let repo, let runID):
             return await change(["gh", "run", "rerun", String(runID), "--repo=\(repo)", "--failed"])
+        case .browse(let kind, let repo, let filter, let after):
+            async let viewerLogin = viewer()
+            async let linked = links(context)
+            let (viewer, links) = await (viewerLogin, linked)
+            return await searched(kind, filter.query(kind: kind, repo: repo), viewer: viewer, links: links, after: after).map {
+                .list(ForgeList(kind: kind, repo: repo, viewer: viewer,
+                                sections: [ForgeSection(id: .results, pullRequests: $0.pullRequests, issues: $0.issues)], next: $0.next))
+            }
+        case .people(let repo):
+            async let labels = read(["gh", "label", "list", "--repo=\(repo)", "--limit=200", "--json", "name,color"])
+            async let assignable = read(["gh", "api", "repos/\(repo)/assignees?per_page=100"])
+            let (labelData, peopleData) = await (labels, assignable)
+            if case .failure(let error) = labelData, case .failure = peopleData { return .failure(error) }
+            return .success(.people(ForgeParse.people(labels: try? labelData.get(), assignable: try? peopleData.get())))
+        case .createIssue(let repo, let title, let body):
+            return await changed(["gh", "issue", "create", "--repo=\(repo)", "--title=\(title.trimmingCharacters(in: .whitespacesAndNewlines))",
+                                  "--body-file", "-"], input: Data(body.utf8)).flatMap { data in
+                let link = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+                guard let ref = ForgeItemRef(link: link.trimmingCharacters(in: .whitespaces)) else { return .success(.ok) }
+                return .success(.created(ref))
+            }
+        case .edit(let ref, let field, let add, let remove):
+            let flag = switch field { case .labels: "label"; case .assignees: "assignee"; case .reviewers: "reviewer" }
+            var arguments = ["gh", ref.kind == .pullRequest ? "pr" : "issue", "edit", String(ref.number), "--repo=\(ref.repo)"]
+            if !add.isEmpty { arguments.append("--add-\(flag)=\(add.joined(separator: ","))") }
+            if !remove.isEmpty { arguments.append("--remove-\(flag)=\(remove.joined(separator: ","))") }
+            return await change(arguments)
+        case .postReview(let ref, let verdict, let body, let comments):
+            let event = switch verdict { case .approve: "APPROVE"; case .requestChanges: "REQUEST_CHANGES"; case .comment: "COMMENT" }
+            struct Line: Encodable { let path: String; let line: Int; let side: String; let body: String }
+            struct Review: Encodable { let event: String; let body: String; let comments: [Line] }
+            let review = Review(event: event, body: body, comments: comments.map {
+                Line(path: $0.path, line: $0.line, side: $0.right ? "RIGHT" : "LEFT", body: $0.body)
+            })
+            guard let input = try? JSONEncoder().encode(review) else { return .failure(Self.unreadable) }
+            return await change(["gh", "api", "--method=POST", "repos/\(ref.repo)/pulls/\(ref.number)/reviews", "--input", "-"], input: input)
         case .sidebar:
             return .success(.sidebar(await sidebar(context: context)))
         case .setPinned(let ref, let title, let pinned):
@@ -246,9 +287,37 @@ public final class ForgeService: @unchecked Sendable {
         let badRepo = "That isn't a GitHub repository (owner/name)."
         switch request {
         case .repos, .sidebar: return nil
-        case .list(_, let repo, _): return ForgeItemRef.isValidRepo(repo) ? nil : badRepo
-        case .search(_, let repo, let query):
+        case .browse(let kind, let repo, let filter, let after):
+            if repo != ForgeList.allRepos, !ForgeItemRef.isValidRepo(repo) { return badRepo }
+            if filter.text.count > 256 || (after?.count ?? 0) > 256 { return "Search for something shorter than 256 characters." }
+            let names = [filter.author, filter.assignee, filter.label].compactMap { $0 }
+            if names.contains(where: { $0.isEmpty || $0.count > 100 || $0.contains("\n") }) { return "That isn't a login or label." }
+            return kind == .issue && filter.state == .merged ? "Issues aren't merged." : nil
+        case .people(let repo): return ForgeItemRef.isValidRepo(repo) ? nil : badRepo
+        case .createIssue(let repo, let title, let body):
             if !ForgeItemRef.isValidRepo(repo) { return badRepo }
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed.count > 256 || trimmed.contains("\n") { return "Give the issue a title of one line." }
+            return badBody(body, required: false)
+        case .edit(let ref, let field, let add, let remove):
+            if bad(ref) { return badRepo }
+            if field == .reviewers, ref.kind != .pullRequest { return "Only pull requests have reviewers." }
+            let all = add + remove
+            if all.isEmpty || all.count > 50 { return "Pick something to change." }
+            // A comma or a leading dash would split or read as a flag.
+            return all.contains { $0.isEmpty || $0.count > 100 || $0.contains(",") || $0.hasPrefix("-") || $0.contains("\n") }
+                ? "That isn't a login or label." : nil
+        case .postReview(let ref, let verdict, let body, let comments):
+            if bad(ref) || ref.kind != .pullRequest { return badRepo }
+            if comments.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, verdict != .approve { return "Write a comment first." }
+            if comments.count > 100 { return "Post at most 100 comments at once." }
+            if comments.contains(where: { $0.line <= 0 || $0.path.isEmpty || $0.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                return "Every comment needs a line and some words."
+            }
+            return badBody(body, required: false) ?? comments.lazy.compactMap { badBody($0.body, required: true) }.first
+        case .list(_, let repo, _): return repo == ForgeList.allRepos || ForgeItemRef.isValidRepo(repo) ? nil : badRepo
+        case .search(_, let repo, let query):
+            if repo != ForgeList.allRepos, !ForgeItemRef.isValidRepo(repo) { return badRepo }
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty || trimmed.count > 256 ? "Search for something shorter than 256 characters." : nil
         case .checkLog(let repo, let id), .rerunFailed(let repo, let id):
@@ -409,10 +478,14 @@ public final class ForgeService: @unchecked Sendable {
         async let viewerLogin = viewer()
         async let linked = links(context)
         let (viewer, links) = await (viewerLogin, linked)
-        let watched = kind == .issue && order.contains(.fromAutomations) ? await watchedLabels(repo: repo, context: context) : [:]
+        let everywhere = repo == ForgeList.allRepos
+        let watched = !everywhere && kind == .issue && order.contains(.fromAutomations) ? await watchedLabels(repo: repo, context: context) : [:]
         let results = await withTaskGroup(of: (ForgeSectionID, Result<ForgeSection, ForgeError>).self) { group in
             for id in order {
-                group.addTask { (id, await self.section(id, kind: kind, repo: repo, viewer: viewer, links: links, watched: watched)) }
+                group.addTask {
+                    guard everywhere else { return (id, await self.section(id, kind: kind, repo: repo, viewer: viewer, links: links, watched: watched)) }
+                    return (id, await self.sectionEverywhere(id, kind: kind, viewer: viewer, links: links, context: context))
+                }
             }
             var results: [ForgeSectionID: Result<ForgeSection, ForgeError>] = [:]
             for await (id, result) in group { results[id] = result }
@@ -474,6 +547,70 @@ public final class ForgeService: @unchecked Sendable {
         return rows.map { ForgeSection(id: id, issues: $0) }
     }
 
+    /// A section across every repository: GitHub's search for what involves the viewer; agents'
+    /// and automations' sections, which only this host knows, from each of its repositories.
+    private func sectionEverywhere(_ id: ForgeSectionID, kind: ForgeKind, viewer: String?, links: Links,
+                                   context: ForgeContext) async -> Result<ForgeSection, ForgeError> {
+        let mine = "archived:false sort:updated-desc"
+        let query: String
+        switch (kind, id) {
+        case (.pullRequest, .authored): query = "is:pr is:open author:@me \(mine)"
+        case (.pullRequest, .reviewRequested): query = "is:pr is:open user-review-requested:@me \(mine)"
+        case (.pullRequest, .teamReview):
+            async let direct = searched(kind, "is:pr is:open user-review-requested:@me \(mine)", viewer: viewer, links: links)
+            async let all = searched(kind, "is:pr is:open review-requested:@me \(mine)", viewer: viewer, links: links)
+            let directIDs = Set(((try? await direct.get())?.pullRequests ?? []).map(\.id))
+            return await all.map { ForgeSection(id: id, pullRequests: $0.pullRequests.filter { !directIDs.contains($0.id) }) }
+        case (.issue, .assigned): query = "is:issue is:open assignee:@me \(mine)"
+        case (.issue, .mentioned): query = "is:issue is:open mentions:@me \(mine)"
+        case (_, .closed): query = "\(kind == .pullRequest ? "is:pr" : "is:issue") is:closed involves:@me sort:updated-desc"
+        case (_, .openedByAgents), (_, .fromAutomations):
+            // ponytail: one list per repository this host knows (at most 50, cached reads); a host with more needs a search.
+            var section = ForgeSection(id: id)
+            for repo in await repos(context.directories) {
+                let watched = id == .fromAutomations ? await watchedLabels(repo: repo.nameWithOwner, context: context) : [:]
+                if id == .fromAutomations, watched.isEmpty, !links.automationItems.keys.contains(where: { $0.hasPrefix(repo.nameWithOwner.lowercased() + "#") }) {
+                    continue
+                }
+                if id == .openedByAgents, links.branches[repo.nameWithOwner.lowercased()] == nil { continue }
+                guard case .success(let found) = await self.section(id, kind: kind, repo: repo.nameWithOwner, viewer: viewer, links: links,
+                                                                    watched: watched) else { continue }
+                section.pullRequests += found.pullRequests
+                section.issues += found.issues
+            }
+            section.pullRequests.sort { $0.updatedAt > $1.updatedAt }
+            section.issues.sort { $0.updatedAt > $1.updatedAt }
+            return .success(section)
+        default: return .success(ForgeSection(id: id))
+        }
+        return await searched(kind, query, viewer: viewer, links: links).map { ForgeSection(id: id, pullRequests: $0.pullRequests, issues: $0.issues) }
+    }
+
+    /// One GitHub search (`gh api graphql`), its rows tied to this host's threads.
+    private func searched(_ kind: ForgeKind, _ query: String, viewer: String?, links: Links, after: String? = nil, limit: Int = 30) async
+        -> Result<(pullRequests: [PullRequestSummary], issues: [IssueSummary], next: String?), ForgeError> {
+        let graphQL = "query($q: String!, $after: String) { search(query: $q, type: ISSUE, first: \(limit), after: $after) "
+            + "{ pageInfo { hasNextPage endCursor } nodes { \(ForgeParse.searchNode) } } }"
+        var arguments = ["gh", "api", "graphql", "-f", "query=\(graphQL)"]
+        if let after { arguments += ["-f", "after=\(after)"] }
+        return await read(arguments + ["-f", "q=\(query)"]).flatMap { data in
+            Result {
+                let next = try ForgeParse.searchNext(data)
+                return kind == .pullRequest
+                    ? (try ForgeParse.searchedPullRequests(data).map { pull in
+                        var pull = pull
+                        pull.thread = links.pullRequest(repo: pull.ref.repo, head: pull.headRef)
+                        return pull
+                    }, [], next)
+                    : ([], try ForgeParse.searchedIssues(data, viewer: viewer).map { issue in
+                        var issue = issue
+                        Self.link(&issue, links)
+                        return issue
+                    }, next)
+            }.mapError { _ in Self.unreadable }
+        }
+    }
+
     /// Label (lowercased) → the automation whose GitHub trigger on `repo` waits for it.
     func watchedLabels(repo: String, context: ForgeContext) async -> [String: String] {
         var labels: [String: String] = [:]
@@ -490,6 +627,12 @@ public final class ForgeService: @unchecked Sendable {
         async let viewerLogin = viewer()
         async let linked = links(context)
         let (viewer, links) = await (viewerLogin, linked)
+        if repo == ForgeList.allRepos {
+            let query = "\(kind == .pullRequest ? "is:pr" : "is:issue") involves:@me \(query.trimmingCharacters(in: .whitespacesAndNewlines))"
+            return await searched(kind, query, viewer: viewer, links: links).map {
+                ForgeList(kind: kind, repo: repo, viewer: viewer, sections: [ForgeSection(id: .results, pullRequests: $0.pullRequests, issues: $0.issues)])
+            }
+        }
         let section: Result<ForgeSection, ForgeError> = kind == .pullRequest
             ? await pulls(pullList(repo, filters), repo: repo, links: links).map { ForgeSection(id: .results, pullRequests: $0) }
             : await issues(issueList(repo, filters), repo: repo, viewer: viewer, links: links).map { ForgeSection(id: .results, issues: $0) }

@@ -8,7 +8,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// Design references end to end (docs/designs.md › Design references): a real server, a stub pi,
+/// Design references end to end: a real server, a stub pi,
 /// and boards drawn off screen by the renderer. A send keeps the piece's copy under the support
 /// directory (the board's or the element's PNG, the standalone page, the element's markup and
 /// styles, the tokens with their sources), drawn at the version the reference pinned; pi reads
@@ -728,7 +728,7 @@ struct DesignReferenceFlowTests {
         #expect(try await w.app.server.designThreadNotes(w.design.id).isEmpty)
     }
 
-    /// Isolation (docs/designs.md): a thread's chips, "Looked at…" lines and @ picker exist only
+    /// Isolation: a thread's chips, "Looked at…" lines and @ picker exist only
     /// while the Design tool is on, and never in a design's own chat.
     @Test func onlyAnOrdinaryThreadWithTheDesignToolOnGetsReferences() async throws {
         let w = try await workspace()

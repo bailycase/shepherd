@@ -7,7 +7,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// What a host does and refuses with Browser tunnels (docs/browser.md › Remote): only loopback
+/// What a host does and refuses with Browser tunnels: only loopback
 /// ports, only for an agent the client sees, capped, closed when idle, gone with the connection,
 /// and offered only to a client that reads them and while it can serve them.
 @Suite("Browser tunnel host", .integrationTimeLimit)

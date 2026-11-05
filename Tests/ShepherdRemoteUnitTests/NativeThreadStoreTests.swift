@@ -218,7 +218,7 @@ struct NativeThreadStoreTests {
 
     /// A comment's card holds the agent's answer up to the first compaction. Afterwards the agent
     /// works from its summary, so what it does next is its own work: an ordinary reply under the
-    /// card, with its own footer, never more of the card (docs/designs.md › Comments).
+    /// card, with its own footer, never more of the card.
     @Test func aDesignCommentsCardEndsAtTheFirstCompactionInItsReply() async {
         let id = UUID()
         var comment = F.user("Show the counts", id: "u1")
@@ -1034,7 +1034,7 @@ struct NativeThreadStoreTests {
     }
 
     /// Only a send that goes into the thread now brings the reader to the tail; a follow-up sent
-    /// while pi works waits in Up next (docs/design/thread.md › Thread › Following).
+    /// while pi works waits in Up next.
     @Test(arguments: [
         (running: false, delivery: NativeThreadDelivery.followUp, queued: false),
         (running: false, delivery: .steer, queued: false),
@@ -1789,6 +1789,33 @@ struct NativeThreadStoreTests {
                                                         provisional: [F.assistant("streaming", id: "live")]))
         defer { task.cancel() }
         #expect(store.rows.map(\.live) == [false, false, false, true])
+    }
+
+    /// A streamed chunk changes `liveRow` and leaves `listRows` as it was: the streaming reply
+    /// sits in the list as a content-less shell, so the transcript that iterates the list is not
+    /// invalidated per chunk. The turn ending puts the full row into the list.
+    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async {
+        let prompt = F.user("go", id: "u")
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt],
+                                                           provisional: [F.assistant("Wri", status: "streaming", id: "p")]))
+        defer { task.cancel() }
+        let list = store.listRows
+        #expect(list.map(\.id) == store.rows.map(\.id))
+        #expect(list.last?.live == true && list.last?.presentation == nil && list.last?.turn.messages.isEmpty == true)
+        #expect(store.liveRow?.id == list.last?.id && store.liveRow?.presentation != nil)
+        #expect(store.rows.last?.presentation != nil, "`rows` keeps the content for the lookups and iOS")
+        host.snapshot = F.snapshot(revision: 2, running: true, messages: [prompt],
+                                   provisional: [F.assistant("Writing more", status: "streaming", id: "p")])
+        await store.refresh()
+        #expect(store.listRows == list, "the chunk is the live row's alone")
+        #expect(store.liveRow != nil && store.liveRow?.presentation != store.rows.first?.presentation)
+        host.snapshot = F.snapshot(revision: 3, messages: [prompt, F.assistant("Writing more.", id: "p")])
+        await store.refresh()
+        // The end of a run settles after a short hold (`settleRunning`).
+        for _ in 0..<50 where store.liveRow != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        #expect(store.liveRow == nil)
+        #expect(store.listRows == store.rows, "settled, the list holds every row's content")
+        #expect(store.listRows.last?.live == false && store.listRows.last?.presentation != nil)
     }
 
     /// LiveText: the thread ends in "Thinking…" only while nothing else moves.

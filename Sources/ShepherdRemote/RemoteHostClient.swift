@@ -478,8 +478,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Why a host without `createAgentImagesCapability` cannot start a thread with images.
     public static let createAgentImagesRefusal = "Update Shepherd on the host to start a thread with images."
     static let imagesTooLarge = "Images exceed the remote payload limit. Send fewer or smaller images."
-    /// Design references go only into a thread on the Mac that runs it (docs/designs.md › Design
-    /// references), never over the remote listener.
+    /// Design references go only into a thread on the Mac that runs it, never over the remote listener.
     public static let designReferencesRefusal = "A reference to another Mac's design goes only to that Mac's own threads, where it takes them: update Shepherd there, or send it from that Mac."
 
     /// Whether a host takes `references` in its threads: it serves references to its own designs
@@ -1355,8 +1354,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A host's workspace as this client shows it. Designs and the agents that draw them stay
     /// only while the host serves designs (`designs.v1`), where a design's screen shows them.
     /// Elsewhere a design's agent would show as a thread, so a host that sends designs without
-    /// serving them (one from before the rule) loses them here (docs/designs.md › Design agents
-    /// and ordinary threads).
+    /// serving them (one from before the rule) loses them here.
     static func shown(_ state: ShepherdState, capabilities: Set<String>) -> ShepherdState {
         capabilities.contains(RemoteProtocol.designsCapability) ? state : state.withoutDesigns
     }

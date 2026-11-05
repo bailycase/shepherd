@@ -10,7 +10,7 @@ struct MCPCLIResult: Equatable, Sendable {
     var timedOut = false
 }
 
-/// Runs pi's own `mcp` subcommands in Shepherd's pi home (docs/mcp.md): `list --json` for each
+/// Runs pi's own `mcp` subcommands in Shepherd's pi home: `list --json` for each
 /// server's state and tools, `login` and `logout` for OAuth. Injected, so unit tests don't need pi.
 protocol MCPCLI: Sendable {
     /// `onLine` hears each line of stdout as it comes. Cancelling the task ends the process.
@@ -175,7 +175,7 @@ struct MCPPiReport: Equatable, Sendable {
 
     func server(_ name: String) -> Server? { servers.first { $0.name == name } }
 
-    /// Read defensively: pi's output is not Shepherd's contract (docs/mcp.md). Nil when it isn't the JSON object.
+    /// Read defensively: pi's output is not Shepherd's contract. Nil when it isn't the JSON object.
     static func parse(_ text: String) -> MCPPiReport? {
         guard let data = text.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let servers = (root["servers"] as? [[String: Any]] ?? []).compactMap { item -> Server? in

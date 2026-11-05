@@ -7,7 +7,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Which ports of a remote thread's host are forwarded on this Mac (docs/browser.md › Remote): a
+/// Which ports of a remote thread's host are forwarded on this Mac: a
 /// listener on the loopback at the port a page's URL names, bridged to a tunnel, with one owner per
 /// port and a refusal that says why. The host here is this very Mac, so a test's forward listens
 /// on a free port of its own and reaches the dev server's different one (`hostPort`).

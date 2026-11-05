@@ -6,7 +6,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads): it
+/// A design's agent is no thread: it
 /// launches without the peer tools, agent_list leaves it out, the palette never searches its
 /// chat, it posts no thread's banners, the Hosts page counts no thread for it, and a host's
 /// design agents make no rows here, whether the Design tool is on or off.

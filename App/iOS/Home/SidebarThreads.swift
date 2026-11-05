@@ -3,7 +3,7 @@ import Observation
 import ShepherdCore
 import ShepherdRemote
 
-/// The Mac sidebar's thread groups on this device (docs/design/sidebar.md): Needs you, Working, Done, Pinned and Recents,
+/// The Mac sidebar's thread groups on this device: Needs you, Working, Done, Pinned and Recents,
 /// derived from Home's model by `FleetSidebarState`. Pins are this device's view state, as each Mac's are its own: kept in
 /// its preferences (`shepherd.ios.sidebar.pinned`), never sent to a host, gone with their thread or host.
 @MainActor

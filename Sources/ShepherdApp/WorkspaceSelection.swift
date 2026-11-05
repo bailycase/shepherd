@@ -14,8 +14,8 @@ import ShepherdCore
 /// space or across spaces — is only ever a visibility flip, never a remount.
 ///
 /// The exception is cold parking: a hidden pane still parses every byte in
-/// Ghostty and holds its surface (~9 MB and up to 0.6 cores under flood,
-/// see docs/benchmarks). Layouts holding a terminal pane, hidden longer than
+/// Ghostty and holds its surface (~9 MB and up to 0.6 cores under flood).
+/// Layouts holding a terminal pane, hidden longer than
 /// `parkDelay` and outside the `hotRetainLimit` most recently visible ones,
 /// unmount; their processes and the host-side screen keep running, so
 /// returning re-mounts from a snapshot (single-digit ms) instead of a blank

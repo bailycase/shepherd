@@ -9,8 +9,8 @@ is enough to start; no separate issue or plan is required.
 
 Start with [AGENTS.md](AGENTS.md), the affected code and only the relevant reference sections.
 Read [ARCHITECTURE.md](ARCHITECTURE.md) when changing ownership or data flow. For UI, follow
-[DESIGN.md](DESIGN.md) and the affected surface's spec, fetched with
-`python3 scripts/design_section.py "<board or heading>"`. No repository-wide reading pass is needed.
+[DESIGN.md](DESIGN.md) and the surface's board in `docs/design/boards/`. No repository-wide
+reading pass is needed.
 
 ## Branches
 

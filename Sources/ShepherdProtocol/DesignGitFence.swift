@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Git merge's brief as pi reads it (docs/designs.md › Sharing with Git): Shepherd's words
+/// The Git merge's brief as pi reads it: Shepherd's words
 /// about the merge copy between `design-git` markers carrying a nonce new to each message, after
 /// a line saying what they are, then the request the thread shows ("Resolve this Git merge…",
 /// GitDesignMerge's bubble). Commit subjects and authors inside it are someone else's words:

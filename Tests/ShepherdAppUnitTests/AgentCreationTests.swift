@@ -270,7 +270,7 @@ struct AgentLaunchCommandTests {
         ])
     }
 
-    /// Hooks (docs/hooks.md): every agent's pi loads the runtime with `<support>/hooks`; a project
+    /// Hooks: every agent's pi loads the runtime with `<support>/hooks`; a project
     /// coordinator loads neither, and a terminal pane blanks the variable.
     @Test func everyAgentButACoordinatorLoadsTheHooksRuntimeWithTheSupportHooksFolder() throws {
         for launch in [command(), command(isAutomation: true)] {
@@ -397,7 +397,7 @@ struct AgentLaunchCommandTests {
         #expect(plain.env["SHEPHERD_DESIGN_ID"] == nil && plain.env["SHEPHERD_DESIGN_SKILL_DIR"] == nil)
     }
 
-    /// A design agent's helpers use its design tools through it (docs/designs.md › Helpers): the
+    /// A design agent's helpers use its design tools through it: the
     /// children extension reads them from the design extension's registry, so both load into the
     /// agent's one pi, the children with their variables and the design with its own.
     @Test(arguments: [true, false])

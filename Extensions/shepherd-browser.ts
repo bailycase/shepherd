@@ -1,5 +1,5 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-// Shepherd browser extension (docs/browser.md): the agent's hands on its thread's own Browser page,
+// Shepherd browser extension: the agent's hands on its thread's own Browser page,
 // which the user sees and shares. Thirteen tools (open, read, click, type, press, scroll, wait,
 // screenshot, console, eval, back, forward, reload), each one request over the extension socket.
 // The agent is never a parameter: the extension registers as this agent once (helloBrowser) and

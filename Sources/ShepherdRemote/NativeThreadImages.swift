@@ -3,7 +3,7 @@ import ImageIO
 import ShepherdProtocol
 import UniformTypeIdentifiers
 
-/// The images of one thread, fetched from the host that saved them and kept briefly (docs/native-thread.md › Images).
+/// The images of one thread, fetched from the host that saved them and kept briefly.
 /// A snapshot names an image (`NativeImageRef`) and this asks for its bytes in `NativeImage.chunkBytes` pieces
 /// until it holds `totalBytes`, then reads the finished bytes' own raster header and checks it against the type, byte and pixel
 /// limits and against whatever the snapshot said of the image. Nothing is cached or returned before that check, and nothing the

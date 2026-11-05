@@ -9,7 +9,7 @@ import ShepherdUI
 // Components as cards of read-only tables. A part the system has nothing for is left out. A contents button
 // opens a menu of the parts and the designs using the system. Dark | Light switches the page's own
 // appearance; each color's dark and light values sit side by side. Not drawn, on purpose: Edit, Add and a
-// component's open icon (docs/design/boards/DesignSystem-checklist.md).
+// component's open icon.
 
 struct DesignSystemReferencePage: View {
     var vm: ShepherdViewModel

@@ -31,6 +31,25 @@ struct ForgeSheet: Identifiable, Equatable {
     var id: String { "\(key.ref.id)|\(kind)" }
 }
 
+/// A line comment written on this device, waiting to be posted with a review.
+struct ForgeLineDraft: Identifiable, Equatable {
+    let path: String
+    /// The diff line's key in its file (`SHDiffLineContent.key`).
+    let lineKey: Int
+    var comment: ForgeDraftComment
+    var id: String { "\(path)#\(lineKey)" }
+}
+
+/// The diff line a comment is being written on.
+struct ForgeLineSelection: Equatable {
+    let key: ForgeItemKey
+    let path: String
+    let lineKey: Int
+    let line: Int
+    /// The new file's line; false for a removed one.
+    let right: Bool
+}
+
 /// Every host's Issues & PRs (`issuesAndPRs.v1`): the repositories, each list, each item's page,
 /// and the changes sent from here. Rows and pages are derived once per read (`ForgeRows`), never
 /// in a view's body. Nothing polls: a screen reads when it appears and after a change.
@@ -47,8 +66,10 @@ final class ForgeStore {
     var kind: ForgeKind = .pullRequest
     private(set) var repos: [ForgeRepoChoice] = []
     private(set) var reposLoading = false
-    /// The repository the list shows; the first one when nil or gone.
+    /// The repository the list shows: `allID` (or nil) for every repository when a host can list
+    /// across them, else the first one when nil or gone.
     var repoID: String?
+    static let allID = "all"
     /// Connected hosts that don't serve Issues & PRs (an older Shepherd): the "update the Mac" state.
     private(set) var olderHosts: [String] = []
     /// Why reading the repositories failed on every host that serves them (gh missing, signed out).
@@ -56,9 +77,18 @@ final class ForgeStore {
     private(set) var lists: [ListKey: ForgeLoad<ForgeListModel>] = [:]
     /// On-demand sections opened (Needs my team's review, Closed).
     var expanded: Set<ForgeSectionID> = []
-    /// A search's matches, while the field holds the query it ran.
+    /// A search's matches, while the field holds the query it ran, or a browse's rows so far.
     private(set) var results: ForgeLoad<ForgeListModel>?
     private(set) var resultsQuery = ""
+    /// Waiting on me (the sections) or Everything (a browse of `filter`), on a host that browses.
+    var everything = false
+    var filter = ForgeFilter()
+    /// The browse's next page, and whether it is being read.
+    private(set) var resultsNext: String?
+    private(set) var loadingMore = false
+    @ObservationIgnored private var browsed: ForgeList?
+    /// Each repository's labels and assignable people, by `peopleKey`.
+    private(set) var people: [String: ForgeRepoPeople] = [:]
     private(set) var pullRequests: [ForgeItemKey: ForgeLoad<ForgePullRequestModel>] = [:]
     private(set) var issues: [ForgeItemKey: ForgeLoad<ForgeIssueModel>] = [:]
     private(set) var files: [ForgeItemKey: ForgeLoad<ForgeFilesModel>] = [:]
@@ -82,6 +112,11 @@ final class ForgeStore {
     /// An item opened from elsewhere (a pin, a link) on iPad: a list too narrow for its detail
     /// pushes it (`ForgeSplit`), a wide one shows it beside the list.
     var reveal: ForgeItemKey?
+    /// Line comments not yet posted, per pull request, and the line being written on.
+    private(set) var drafts: [ForgeItemKey: [ForgeLineDraft]] = [:]
+    private(set) var lineSelection: ForgeLineSelection?
+    var lineDraft = ""
+    private(set) var posting: Set<ForgeItemKey> = []
     /// Files marked viewed in a pull request's Changes, on this device.
     private(set) var viewed: [ForgeItemKey: Set<String>] = [:]
 
@@ -101,8 +136,26 @@ final class ForgeStore {
 
     // MARK: Derived
 
-    var repo: ForgeRepoChoice? { repos.first { $0.id == repoID } ?? repos.first }
-    func listKey(_ kind: ForgeKind) -> ListKey? { repo.map { ListKey(host: $0.host, repo: $0.repo.nameWithOwner, kind: kind) } }
+    /// A connected host that lists across repositories and browses (`issuesAndPRs.browse.v1`).
+    var browseHost: MobileHost? { servingHosts.first { $0.supports(RemoteProtocol.forgeBrowseCapability) } }
+    /// Every repository: GitHub's search for what involves you, through `browseHost`.
+    var allRepos: Bool { browseHost != nil && (repoID == nil || repoID == Self.allID) }
+    var repo: ForgeRepoChoice? { allRepos ? nil : repos.first { $0.id == repoID } ?? repos.first }
+    func listKey(_ kind: ForgeKind) -> ListKey? {
+        if allRepos, let host = browseHost { return ListKey(host: host.id, repo: ForgeList.allRepos, kind: kind) }
+        return repo.map { ListKey(host: $0.host, repo: $0.repo.nameWithOwner, kind: kind) }
+    }
+    /// The list's host browses and filters.
+    var canBrowse: Bool { listKey(kind).flatMap { hosts.host($0.host) }?.supports(RemoteProtocol.forgeBrowseCapability) == true }
+    var browsing: Bool { canBrowse && (everything || filter != ForgeFilter()) }
+    func hostBrowses(_ host: UUID) -> Bool { hosts.host(host)?.supports(RemoteProtocol.forgeBrowseCapability) == true }
+
+    /// What a browse reads; nil while the list shows the sections. A change reads it again.
+    struct BrowseID: Hashable {
+        var key: ListKey
+        var filter: ForgeFilter
+    }
+    var browseID: BrowseID? { browsing ? listKey(kind).map { BrowseID(key: $0, filter: filter) } : nil }
     func list(_ kind: ForgeKind) -> ForgeLoad<ForgeListModel>? { listKey(kind).flatMap { lists[$0] } }
 
     /// Connected hosts that serve Issues & PRs.
@@ -213,6 +266,10 @@ final class ForgeStore {
             clearSearch()
             return nil
         }
+        if canBrowse {
+            filter.text = query
+            return nil
+        }
         resultsQuery = query
         results = ForgeLoad(value: results?.value, loading: true)
         let answer = await send(.search(kind: kind, repo: key.repo, query: query), to: key.host)
@@ -226,15 +283,122 @@ final class ForgeStore {
     }
 
     func clearSearch() {
-        results = nil
         resultsQuery = ""
+        if !filter.text.isEmpty { filter.text = "" }
+        if !browsing { results = nil }
+    }
+
+    // MARK: Browsing
+
+    /// The browse from its first page, or (`more`) its next one; with nothing to browse, the
+    /// sections again.
+    func loadBrowse(more: Bool = false) async {
+        guard let id = browseID else {
+            if !resultsQuery.isEmpty { return }
+            results = nil
+            resultsNext = nil
+            browsed = nil
+            return
+        }
+        if more {
+            guard let next = resultsNext, !loadingMore else { return }
+            loadingMore = true
+            defer { loadingMore = false }
+            await readBrowse(id, after: next)
+        } else {
+            results = ForgeLoad(value: results?.value, loading: true)
+            await readBrowse(id, after: nil)
+        }
+    }
+
+    private func readBrowse(_ id: BrowseID, after: String?) async {
+        let answer = await send(.browse(kind: id.key.kind, repo: id.key.repo, filter: id.filter, after: after), to: id.key.host)
+        // A newer filter, kind or repository asked meanwhile: its own read answers.
+        guard browseID == id else { return }
+        switch answer {
+        case .success(.list(var list)):
+            if let viewer = list.viewer, viewers[id.key.host] != viewer { viewers[id.key.host] = viewer }
+            if after != nil, let previous = browsed?.section(.results) {
+                let found = list.section(.results) ?? ForgeSection(id: .results)
+                // An item updated between pages comes again on the next one: keep its first place.
+                let pulls = Set(previous.pullRequests.map(\.id)), issues = Set(previous.issues.map(\.id))
+                list.sections = [ForgeSection(id: .results, pullRequests: previous.pullRequests + found.pullRequests.filter { !pulls.contains($0.id) },
+                                              issues: previous.issues + found.issues.filter { !issues.contains($0.id) })]
+            }
+            browsed = list
+            resultsNext = list.next
+            results = ForgeLoad(value: ForgeRows.list(list, host: id.key.host, hostName: hostName(id.key.host),
+                                                      title: id.filter.text.isEmpty ? ForgePresentation.browseTitle(id.filter.state, kind: id.key.kind) : nil))
+        case .failure(let error):
+            if after == nil { results = ForgeLoad(error: error) } else { failure = error.message }
+        default: break
+        }
+    }
+
+    /// Back to Waiting on me with nothing filtered.
+    func clearFilters() {
+        everything = false
+        filter = ForgeFilter()
+        resultsQuery = ""
+    }
+
+    // MARK: People and labels
+
+    static func peopleKey(host: UUID, repo: String) -> String { "\(host.uuidString)|\(repo)" }
+
+    func loadPeople(host: UUID, repo: String) async {
+        let key = Self.peopleKey(host: host, repo: repo)
+        guard people[key] == nil, hosts.host(host)?.supports(RemoteProtocol.forgeBrowseCapability) == true,
+              case .success(.people(let found)) = await send(.people(repo: repo), to: host) else { return }
+        people[key] = found
+    }
+
+    /// Who the person filters offer: the picked repository's people, then everyone on the rows.
+    var knownPeople: [String] {
+        var seen = Set<String>()
+        let picked = repo.flatMap { people[Self.peopleKey(host: $0.host, repo: $0.repo.nameWithOwner)]?.assignable } ?? []
+        var rows: [String] = []
+        for list in [browsed].compactMap({ $0 }) {
+            for section in list.sections { rows += section.pullRequests.map(\.author) + section.issues.flatMap { [$0.author] + $0.assignees } }
+        }
+        return (picked + rows).filter { seen.insert($0.lowercased()).inserted }.sorted { $0.lowercased() < $1.lowercased() }
+    }
+
+    /// The labels the label filter offers: the picked repository's, else those on the browse.
+    var knownLabels: [String] {
+        if let repo, let labels = people[Self.peopleKey(host: repo.host, repo: repo.repo.nameWithOwner)]?.labels, !labels.isEmpty {
+            return labels.map(\.name)
+        }
+        var seen = Set<String>()
+        return (browsed?.sections ?? []).flatMap { $0.issues.flatMap(\.labels) }.map(\.name).filter { seen.insert($0.lowercased()).inserted }.sorted()
+    }
+
+    /// Opens an issue on `repo` through `host`; the new issue's key, or nil (`failure` says why).
+    func createIssue(host: UUID, repo: String, title: String, body: String) async -> ForgeItemKey? {
+        switch await send(.createIssue(repo: repo, title: title, body: body), to: host) {
+        case .success(.created(let ref)):
+            await loadList(.issue)
+            return ForgeItemKey(host: host, ref: ref)
+        case .success:
+            await loadList(.issue)
+            return nil
+        case .failure(let error):
+            failure = error.message
+            return nil
+        }
+    }
+
+    /// Adds or removes one label, assignee or reviewer.
+    func toggle(_ field: ForgeEditField, _ value: String, on: Bool, for key: ForgeItemKey) async {
+        await change(.edit(ref: key.ref, field: field, add: on ? [value] : [], remove: on ? [] : [value]), for: key)
     }
 
     func choose(_ key: ForgeItemKey) {
         if chosen != key { padFile = nil }
         chosen = key
         kind = key.ref.kind
-        if let repo = repos.first(where: { $0.host == key.host && $0.repo.nameWithOwner == key.ref.repo }) { repoID = repo.id }
+        // Across every repository the list stays as it is; a picked one follows the item.
+        if !allRepos, let repo = repos.first(where: { $0.host == key.host && $0.repo.nameWithOwner == key.ref.repo }) { repoID = repo.id }
     }
 
     func loadPullRequest(_ key: ForgeItemKey) async {
@@ -319,12 +483,66 @@ final class ForgeStore {
             failure = nil
             if key.ref.kind == .pullRequest { await loadPullRequest(key) } else { await loadIssue(key) }
             await loadList(key.ref.kind)
+            if browsing { await loadBrowse() }
             return true
         }
     }
 
     func setPinned(_ key: ForgeItemKey, title: String, pinned: Bool) async {
         await change(.setPinned(ref: key.ref, title: title, pinned: pinned), for: key)
+    }
+
+    // MARK: Line comments
+
+    /// Picks a diff line to comment on, its saved words in the field; tapping it again lets go.
+    func selectLine(_ key: ForgeItemKey, path: String, lineKey: Int, line: Int, right: Bool) {
+        let next = ForgeLineSelection(key: key, path: path, lineKey: lineKey, line: line, right: right)
+        if lineSelection == next { clearLineSelection(); return }
+        lineSelection = next
+        lineDraft = draft(next)?.comment.body ?? ""
+    }
+
+    func clearLineSelection() {
+        lineSelection = nil
+        lineDraft = ""
+    }
+
+    func draft(_ selection: ForgeLineSelection) -> ForgeLineDraft? {
+        drafts[selection.key]?.first { $0.path == selection.path && $0.lineKey == selection.lineKey }
+    }
+
+    /// Keeps the field's words as the selected line's comment.
+    func saveLineDraft() {
+        guard let selection = lineSelection else { return }
+        let body = lineDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        var list = drafts[selection.key] ?? []
+        list.removeAll { $0.path == selection.path && $0.lineKey == selection.lineKey }
+        if !body.isEmpty {
+            list.append(ForgeLineDraft(path: selection.path, lineKey: selection.lineKey,
+                                       comment: ForgeDraftComment(path: selection.path, line: selection.line, right: selection.right, body: body)))
+        }
+        drafts[selection.key] = list.isEmpty ? nil : list
+        clearLineSelection()
+    }
+
+    func deleteLineDraft() {
+        lineDraft = ""
+        saveLineDraft()
+    }
+
+    func discardDrafts(_ key: ForgeItemKey) {
+        drafts[key] = nil
+        if lineSelection?.key == key { clearLineSelection() }
+    }
+
+    /// Posts the pull request's line comments on GitHub as one review; they stay on failure.
+    func postDrafts(_ key: ForgeItemKey) async {
+        guard let list = drafts[key], !list.isEmpty, !posting.contains(key) else { return }
+        posting.insert(key)
+        defer { posting.remove(key) }
+        if await change(.postReview(ref: key.ref, verdict: .comment, body: "", comments: list.map(\.comment)), for: key) {
+            drafts[key] = nil
+        }
     }
 
     func toggleViewed(_ key: ForgeItemKey, path: String) {
