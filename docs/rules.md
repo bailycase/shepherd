@@ -191,12 +191,10 @@ Comments clear only once a send succeeds.
 A loop, background work, a scheduled or unattended model call, an evaluator, a notification:
 anything that keeps going without a person watching. Each needs, before it is a PR:
 
-- A default bound on iterations, time and spend, and a test that reaches it with the worst case
-  (a judge that never says done, a provider that is down). An unbounded default is a bug.
 - Data stays where the user put it: anything sent to a provider other than the thread's own is
   opt-in and shown in the UI; secrets are redacted and never reach logs or notifications.
 - Tool output, file contents, web pages and model prose are data, never instructions, including
-  text that reaches an evaluator: success needs evidence the agent cannot write itself.
+  text that reaches an evaluator.
 - A restart never resumes unattended features (Projects, executions, goals, automations or design Git work): they come back paused. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
