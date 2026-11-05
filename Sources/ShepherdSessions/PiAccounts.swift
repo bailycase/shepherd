@@ -6,12 +6,30 @@ public struct PiAccount: Equatable, Sendable, Identifiable {
     public var name: String
     /// Rotation skips it until then (it hit the provider's limit).
     public var limitedUntil: Date?
+    /// The account's email: from its token (OpenAI Codex) or saved when Sign-in read it (Anthropic).
+    public var email: String?
+    /// The account's usage when Sign-in last read it (`usageAt`), for every account, active or not.
+    public var usage: [PiUsageWindow]
+    public var usageAt: Date?
 
-    public init(id: String, name: String, limitedUntil: Date? = nil) {
+    public init(id: String, name: String, limitedUntil: Date? = nil, email: String? = nil,
+                usage: [PiUsageWindow] = [], usageAt: Date? = nil) {
         self.id = id
         self.name = name
         self.limitedUntil = limitedUntil
+        self.email = email
+        self.usage = usage
+        self.usageAt = usageAt
     }
+
+    /// The email in place of a name Shepherd gave ("Account 2"); a name the user chose stays.
+    public var title: String {
+        guard let email, name.wholeMatch(of: #/Account \d+/#) != nil else { return name }
+        return email
+    }
+
+    /// The email beside a name the user chose; nil when the title already is it.
+    public var detail: String? { title == email ? nil : email }
 }
 
 /// A provider's saved accounts, in rotation order, and which one is in auth.json.
@@ -61,7 +79,14 @@ public struct PiAccounts: Sendable {
             let accounts = (entry["accounts"] as? [[String: Any]] ?? []).compactMap { account -> PiAccount? in
                 guard let id = account["id"] as? String else { return nil }
                 return PiAccount(id: id, name: account["name"] as? String ?? "Account",
-                                 limitedUntil: (account["limitedUntil"] as? Double).map { Date(timeIntervalSince1970: $0) })
+                                 limitedUntil: (account["limitedUntil"] as? Double).map { Date(timeIntervalSince1970: $0) },
+                                 email: account["email"] as? String ?? Self.tokenEmail(account["credential"]),
+                                 usage: (account["usage"] as? [[String: Any]] ?? []).compactMap { window in
+                                     guard let name = window["name"] as? String, let used = window["used"] as? Double else { return nil }
+                                     return PiUsageWindow(name: name, usedPercent: used,
+                                                          resetsAt: (window["resets"] as? Double).map { Date(timeIntervalSince1970: $0) })
+                                 },
+                                 usageAt: (account["usageAt"] as? Double).map { Date(timeIntervalSince1970: $0) })
             }
             return PiAccountList(accounts: accounts, active: entry["active"] as? String, rotate: entry["rotate"] as? Bool ?? false)
         }
@@ -134,6 +159,52 @@ public struct PiAccounts: Sendable {
             guard let index = (entry["accounts"] as? [[String: Any]])?.firstIndex(where: { $0["id"] as? String == id }) else { return }
             Self.setAccount(&entry, index, "name", String(name.prefix(60)))
         }
+    }
+
+    /// Each saved account's credential but the active one's (that one is auth.json's).
+    public func inactiveCredentials(_ provider: String) -> [(id: String, credential: [String: Any])] {
+        guard let data = try? Data(contentsOf: file.url),
+              let entry = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?[provider] as? [String: Any] else { return [] }
+        return (entry["accounts"] as? [[String: Any]] ?? []).compactMap { account in
+            guard let id = account["id"] as? String, id != entry["active"] as? String,
+                  let credential = account["credential"] as? [String: Any] else { return nil }
+            return (id, credential)
+        }
+    }
+
+    /// Saves what the provider said about an account (`id`, or the active one when nil): its usage
+    /// and, when read, its email.
+    public func saveUsage(_ provider: String, _ id: String?, _ windows: [PiUsageWindow], email: String?, at: Date = Date()) throws {
+        try Self.lock.withLock {
+            _ = try file.update { root in
+                guard var entry = root[provider] as? [String: Any],
+                      let target = id ?? entry["active"] as? String,
+                      let index = (entry["accounts"] as? [[String: Any]])?.firstIndex(where: { $0["id"] as? String == target })
+                else { return [] }
+                Self.setAccount(&entry, index, "usage", windows.map { window -> [String: Any] in
+                    var saved: [String: Any] = ["name": window.name, "used": window.usedPercent]
+                    saved["resets"] = window.resetsAt?.timeIntervalSince1970
+                    return saved
+                })
+                Self.setAccount(&entry, index, "usageAt", at.timeIntervalSince1970)
+                if let email { Self.setAccount(&entry, index, "email", email) }
+                root[provider] = entry
+                return []
+            }
+        }
+    }
+
+    /// The email in an OAuth access token that is a JWT (OpenAI's); nil for any other.
+    static func tokenEmail(_ credential: Any?) -> String? {
+        guard let access = (credential as? [String: Any])?["access"] as? String else { return nil }
+        let parts = access.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var base64 = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        guard let data = Data(base64Encoded: base64),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let profile = claims["https://api.openai.com/profile"] as? [String: Any]
+        return profile?["email"] as? String ?? claims["email"] as? String
     }
 
     public func setRotate(_ provider: String, _ on: Bool) throws {

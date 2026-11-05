@@ -138,3 +138,23 @@ private let rowStates: [(String, String, SHProviderStatus, Bool, String)] = [
         .frame(width: 640)
     }
 }
+
+#Preview("Saved accounts with usage") {
+    SHPreviewBoth {
+        VStack(spacing: 0) {
+            SHProviderAccountRow("Work", detail: "bailey@northwind.dev", state: SHAccountState(active: true),
+                                 usage: [.init(name: "5-hour", fraction: 0.23, resets: "resets 3:40 PM"),
+                                         .init(name: "Week", fraction: 0.84, resets: "resets Thu 9:00 AM")]) {
+                SHProviderMenuButton(for: "Work") { Button("Rename…") {} }
+            }
+            SHProviderAccountRow("bailey.case@gmail.com", state: SHAccountState(active: false, limitedUntil: "3:42 PM"),
+                                 usage: [.init(name: "5-hour", fraction: 1, resets: "resets 3:42 PM"),
+                                         .init(name: "Week", fraction: 0.4, resets: nil)], asOf: "as of 2 hr. ago") {
+                Button("Use") {}.buttonStyle(.sh(.secondary, size: .s))
+                SHProviderMenuButton(for: "Personal") { Button("Rename…") {} }
+            }
+            SHAccountRotationRow(provider: "Anthropic", isOn: .constant(true))
+        }
+        .frame(width: 720)
+    }
+}

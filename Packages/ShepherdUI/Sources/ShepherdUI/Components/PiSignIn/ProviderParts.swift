@@ -17,6 +17,8 @@ public enum SHPiSignInMetrics {
     public static let statusSmallMonoSize: CGFloat = 11.5
     public static let noteSize: CGFloat = 11.5
     public static let lineGap: CGFloat = 3
+    /// A usage window's bar.
+    public static let usageBar: CGFloat = 56
     public static let dot: CGFloat = 7
     public static let dotStroke: CGFloat = 1.5
     public static let menuButton: CGFloat = 26
@@ -282,6 +284,91 @@ public struct SHSharedLoginNote: View {
     }
 }
 
+/// One window of a subscription's usage, as the provider reports it.
+public struct SHUsageWindow: Equatable, Identifiable, Sendable {
+    public var name: String
+    /// 0–1.
+    public var fraction: Double
+    /// "resets Thu 3:40 PM", or nil.
+    public var resets: String?
+    public var id: String { name }
+
+    public init(name: String, fraction: Double, resets: String?) {
+        self.name = name
+        self.fraction = fraction
+        self.resets = resets
+    }
+}
+
+/// A subscription's usage on one quiet line: "5-hour ▬▬── 23% resets 3:40 PM   Week ▬▬▬─ 84% …",
+/// then "as of 2 hr. ago" when the reading is old. When the windows don't fit side by side they
+/// stack, their names in one column. The bar turns lantern from 80% and failed at the limit.
+public struct SHUsageStrip: View {
+    let windows: [SHUsageWindow]
+    let asOf: String?
+
+    public init(_ windows: [SHUsageWindow], asOf: String? = nil) {
+        self.windows = windows
+        self.asOf = asOf
+    }
+
+    public var body: some View {
+        let sh = Color.sh
+        let stamp = asOf.map { Text($0).foregroundStyle(sh.textTertiary).lineLimit(1) }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: SH.Space.xl) {
+                ForEach(windows) { window in
+                    HStack(spacing: SH.Space.s) {
+                        Text(window.name).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
+                        SHUsageMeter(window)
+                    }
+                    .fixedSize()
+                    .accessibilityElement(children: .combine)
+                }
+                stamp?.fixedSize()
+            }
+            Grid(alignment: .leading, horizontalSpacing: SH.Space.s, verticalSpacing: SH.Space.xxs) {
+                ForEach(windows) { window in
+                    GridRow {
+                        Text(window.name).foregroundStyle(sh.textSecondary).lineLimit(1)
+                        SHUsageMeter(window)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if let stamp { stamp }
+            }
+        }
+        .font(.shSans(SHPiSignInMetrics.noteSize))
+    }
+}
+
+/// A window's bar, its percent in a column as wide as "100%", and when it resets.
+struct SHUsageMeter: View {
+    let window: SHUsageWindow
+
+    init(_ window: SHUsageWindow) { self.window = window }
+
+    var body: some View {
+        let M = SHPiSignInMetrics.self
+        let sh = Color.sh
+        let tint = window.fraction >= 1 ? sh.failed : window.fraction >= 0.8 ? sh.lantern : sh.running
+        HStack(spacing: SH.Space.s) {
+            ProgressView(value: min(1, max(0, window.fraction)))
+                .progressViewStyle(.shBar(tint: tint))
+                .frame(width: M.usageBar)
+            ZStack(alignment: .trailing) {
+                Text("100%").hidden()
+                Text("\(Int((window.fraction * 100).rounded()))%").foregroundStyle(sh.textPrimary)
+            }
+            .font(.shMono(M.statusSmallMonoSize))
+            .accessibilityHidden(true) // the bar reads its percent
+            if let resets = window.resets {
+                Text(resets).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize()
+            }
+        }
+    }
+}
+
 /// The ⋯ button that opens a provider's menu: a 26pt circle, "More for Anthropic".
 public struct SHProviderMenuButton<Items: View>: View {
     let name: String
@@ -325,11 +412,13 @@ public struct SHProviderRow<Trailing: View>: View {
     let status: SHProviderStatus
     let sharedLoginNote: Bool
     let problem: String?
+    let usage: [SHUsageWindow]
     let trailing: Trailing
 
     /// `mono` sets a custom provider's id as its title.
     public init(_ name: String, badge: String, mono: Bool = false, status: SHProviderStatus, sharedLoginNote: Bool = false,
-                problem: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+                problem: String? = nil, usage: [SHUsageWindow] = [], @ViewBuilder trailing: () -> Trailing) {
+        self.usage = usage
         self.name = name
         self.badge = badge
         self.mono = mono
@@ -349,6 +438,7 @@ public struct SHProviderRow<Trailing: View>: View {
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                 SHProviderStatusLine(status)
+                if !usage.isEmpty { SHUsageStrip(usage) }
                 if sharedLoginNote { SHSharedLoginNote() }
                 if let problem {
                     SHInlineProblem(problem).shTransition(.disclosure)
