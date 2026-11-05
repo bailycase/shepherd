@@ -91,7 +91,6 @@ final class AppSettings {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
-        static let goalCrossProviderEvaluation = "shepherd.agent.goalCrossProviderEvaluation"
         static let namingModel = "shepherd.agent.namingModel"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
@@ -145,7 +144,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
+            defaultThinking, defaultServiceTier, namingModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -217,11 +216,6 @@ final class AppSettings {
         didSet { store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier) }
     }
 
-    /// Explicit consent to send goal-check context to another provider. Applied at the next
-    /// agent start, including a restart; running agents keep their launch policy.
-    var goalCrossProviderEvaluation: Bool {
-        didSet { store.set(goalCrossProviderEvaluation, forKey: Key.goalCrossProviderEvaluation) }
-    }
 
     /// Settings ▸ Agents ▸ Session naming model: "provider/id" the namer tries first, or "" for
     /// Automatic (its own cheapest-first list). Either way it falls back to the agent's own model.
@@ -599,7 +593,6 @@ final class AppSettings {
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
-        goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         namingModel = store.string(forKey: Key.namingModel) ?? ""
@@ -723,7 +716,6 @@ final class AppSettings {
         defaultServiceTier = Defaults.serviceTier
         goalsEnabled = false
         projectsEnabled = false
-        goalCrossProviderEvaluation = false
         shareDiagnostics = false
         namingModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu

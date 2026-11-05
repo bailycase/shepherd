@@ -187,7 +187,6 @@ struct AgentLaunchCommandTests {
         enabled: Set<Int> = [],
         needsName: Bool = false,
         isAutomation: Bool = false,
-        goalCrossProviderEvaluation: Bool = false,
         goalsEnabled: Bool = false,
         worktreeOwningSpace: String? = nil,
         model: String? = nil,
@@ -200,7 +199,7 @@ struct AgentLaunchCommandTests {
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: path(0), reviewExtensionPath: path(1), subagentsExtensionPath: path(2),
             childrenExtensionPath: path(4), childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7"],
-            goalCrossProviderEvaluation: goalCrossProviderEvaluation, goalsEnabled: goalsEnabled,
+            goalsEnabled: goalsEnabled,
             namerExtensionPath: path(3), needsName: needsName, isAutomation: isAutomation,
             worktreeOwningSpace: worktreeOwningSpace,
             model: model, thinking: thinking
@@ -263,7 +262,7 @@ struct AgentLaunchCommandTests {
         #expect(bare.env == [
             "SHEPHERD_AGENT_ID": "agent-id", "SHEPHERD_SOCKET": "/tmp/shepherd.sock", "SHEPHERD_EXT_STATUS": "/tmp/status.ts",
             "SHEPHERD_EXT_SERVICE_TIER": "/tmp/support/pi/service-tier/agent-id.json",
-            "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOALS_ENABLED": "0", "SHEPHERD_GOAL_MODELS": "", "SHEPHERD_EXT_ASK": "1",
+            "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOALS_ENABLED": "0", "SHEPHERD_EXT_ASK": "1",
             "SHEPHERD_HOOKS_DIR": "/tmp/support/hooks",
         ])
     }
@@ -295,16 +294,6 @@ struct AgentLaunchCommandTests {
         #expect(command(goalsEnabled: true).env["SHEPHERD_GOALS_ENABLED"] == "1")
         let inherited = ["SHEPHERD_GOALS_ENABLED": "1"]
         #expect(inherited.merging(command().env) { _, new in new }["SHEPHERD_GOALS_ENABLED"] == "0")
-    }
-
-    @Test func crossProviderModelsAreOptInAndOptOutOverridesInheritedConsent() {
-        let inherited = ["SHEPHERD_GOAL_MODELS": "other-provider/private-model"]
-        let off = command().env
-        #expect(off["SHEPHERD_GOAL_MODELS"] == "", "omitting the key would inherit consent")
-        #expect(inherited.merging(off) { _, new in new }["SHEPHERD_GOAL_MODELS"] == "")
-        #expect(command(goalCrossProviderEvaluation: true).env["SHEPHERD_GOAL_MODELS"]
-                == "anthropic/claude-haiku-4-5,openai/gpt-5.1-codex-mini,google/gemini-2.5-flash")
-        #expect(command(goalCrossProviderEvaluation: false).env["SHEPHERD_GOAL_MODELS"] == "")
     }
 
     /// An agent in the user's home folder never trusts it as a project (`~/.pi` is their own pi);

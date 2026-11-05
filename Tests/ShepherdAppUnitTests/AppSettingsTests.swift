@@ -44,7 +44,6 @@ struct AppSettingsTests {
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.namingModel.isEmpty, "session naming starts on Automatic")
-        #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
         #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(!settings.projectsEnabled, "Projects is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
@@ -133,19 +132,6 @@ struct AppSettingsTests {
         #expect(store.object(forKey: AppSettings.Key.projectsEnabled) == nil)
     }
 
-    @Test func crossProviderConsentPersistsOptOutAndReset() {
-        let store = Fixture.defaults()
-        let settings = AppSettings(store: store)
-        settings.goalCrossProviderEvaluation = true
-        #expect(AppSettings(store: store).goalCrossProviderEvaluation)
-        settings.goalCrossProviderEvaluation = false
-        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
-        settings.goalCrossProviderEvaluation = true
-        settings.resetToDefaults()
-        #expect(!settings.goalCrossProviderEvaluation)
-        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
-        #expect(store.object(forKey: AppSettings.Key.goalCrossProviderEvaluation) == nil)
-    }
 
     @Test func theEditorPersistsAndResetsToTheSystemDefault() {
         let store = Fixture.defaults()

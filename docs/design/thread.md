@@ -581,6 +581,8 @@ The [second safety review](goal-safety-review.md) amends its controls and model 
 Working, Checking, Met, Paused, and Needs you. All headers use the reference's two-ring goal
 glyph. Working has a pulsing blue dot, Checking a blue spinner, Met a green checkmark,
 Paused a gray pause mark, and Needs you an amber dot. Reduced motion disables animation.
+Current hosts have no checker model and never send Checking, `Checked by` or Confirm; those
+render only for older hosts ([goals](../goals.md)).
 Text, glyphs and fills use AgentState's matching roles. Paused uses idle text and the neutral
 `bgSelected` fill because idle has no tint.
 
@@ -591,16 +593,16 @@ header 40pt, radius 12pt, with 44pt action hit targets. The condition stays visi
 edited without changing its goal state or reason. The thread-header goal pill appears only in
 Working and Checking. On iPhone it sits beside the ordinary status dot and word, never replacing
 them. Sidebar rows keep their question/reason chip or elapsed time and add the card's two-ring
-glyph. Queue copy says "after the goal check" while a goal is active.
+glyph. Queue copy says "before the goal continues" while a goal is active.
 
 The per-state meta is one line of mono text from the runtime, not preview-only copy:
 
 - Working shows the token count, such as "71k tokens".
 - Checking names the commands of the tool results being read, such as "checking go test, go vet".
-- Met shows tokens and the evaluator's short human summary, such as "104k tokens · 41 tests passed".
+- Met shows tokens and the worker's short `goal_finish` summary, such as "104k tokens · 41 tests passed".
 - Paused always says "paused by you · the clock stops", including after an edit.
 - Needs you gives a short lowercase reason, such as "the same test failed 3 times in a row", "waiting
-  for your answer", or "hit the 25-check limit". It never cuts a word in half.
+  for your answer", or "no progress in 3 turns". It never cuts a word in half.
 
 Phone cards omit header meta and put it in the long-press menu. The header shows Pause or Resume
 and Clear; Edit stays in that menu. iPad's wide layout draws the full desktop card. All iOS targets

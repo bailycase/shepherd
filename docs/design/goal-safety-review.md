@@ -1,5 +1,8 @@
 # Goal safety review amendment
 
+> Superseded for the checker: goals no longer use a separate checker model, so `Checked by`,
+> cross-provider consent and Confirm no longer appear. See [goals](../goals.md).
+
 > Read when changing goal controls, evidence confirmation, model disclosure or experiment enablement.
 
 PR #189's second user review amends the Goal card, MobileGoal and iPadGoal boards. The supplied

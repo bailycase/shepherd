@@ -39,11 +39,7 @@
     so it can switch live. `SHEPHERD_GOALS_ENABLED` is explicitly `0` by default, `1` only while
     Settings > Experiments > Goals is on. The host's internal configure command updates running
     controllers without restarting pi; off pauses/cancels goal work without aborting tools.
-    `SHEPHERD_GOAL_MODELS` is explicitly empty by default, so checks use the thread's exact
-    provider/model. Settings > Agents > Allow cross-provider goal checks supplies the
-    Haiku/Codex Mini/Gemini Flash preference list only after opt-in. Shepherd overrides an
-    inherited value even when consent is off. Policy is captured when an agent starts or
-    restarts; changing Settings does not revoke a running process's policy. See [goals](goals.md)
+    There is no checker model; the worker finishes a goal itself. See [goals](goals.md)
     for evaluator disclosure and redaction. `SHEPHERD_HOOKS_DIR` (every agent but a project
     coordinator) is `<support>/hooks`, where the hooks runtime reads `settings.json` ([hooks](hooks.md)).
     For Settings ▸ Pi ▸ MCP servers, pi's own MCP

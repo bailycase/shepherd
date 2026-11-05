@@ -164,7 +164,7 @@ struct NativeGoalTests {
         #expect(goal.notificationLabel == "3k tokens · confirmed by you")
         #expect(goal.metaLabel == "3k tokens", "the separate attestation line avoids repeating confirmation in metadata")
         goal.confirmedByUser = false
-        #expect(goal.notificationLabel == "3k tokens · recorded evidence accepted")
+        #expect(goal.notificationLabel == "3k tokens · goal met")
         goal.checkedBy = "model\nSECRET tool quote"
         #expect(!goal.isValid)
         goal.checkedBy = "model\u{7f}"
