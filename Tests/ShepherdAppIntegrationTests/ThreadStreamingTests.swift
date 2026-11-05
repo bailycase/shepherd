@@ -14,7 +14,8 @@ import Testing
 @MainActor
 struct ThreadStreamingTests {
     /// A real pi's turn streaming between its two pauses (stub pi `slow`): each revision the
-    /// thread adopts redraws the thread once, and the composer not at all.
+    /// thread adopts redraws the live row once, the thread (its list) at most once, and the
+    /// composer not at all.
     @Test func eachAdoptedRevisionRedrawsTheThreadOnceAndTheComposerNever() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -39,7 +40,8 @@ struct ThreadStreamingTests {
         adoptions.stop()
 
         #expect(adoptions.count >= 1)
-        #expect(counts["thread.view", default: 0] == adoptions.count, "\(adoptions.count) adopted: \(counts)")
+        #expect(counts["thread.liveRow", default: 0] == adoptions.count, "\(adoptions.count) adopted: \(counts)")
+        #expect(counts["thread.view", default: 0] <= adoptions.count, "\(adoptions.count) adopted: \(counts)")
         // See ListPerformanceTests.aStreamedChunkRedrawsNoComposerOrToolbar: CI's VM redraws the
         // composer once here; a Mac never does.
         withKnownIssue("CI's VM redraws the composer for each adopted revision", isIntermittent: true) {

@@ -128,6 +128,7 @@ Animation Hitches templates. Same Mac; window 1600×1000. Three runs of the same
 | baseline | 1.40 M | 9,895 | 83 (78, max 1.1 s) |
 | `Equatable` (identity) on the class-typed environment values | 1.12 M | 11,093 | 118 (107) |
 | `ThreadView.eagerRows` 30 → 5 | 2.79 M | (not parsed, 15 GB export) | 339 (53, max 468 ms) |
+| **live row split** (`listRows` + `liveRow`, shipped) | 1.01 M | **4,595** | **44 (3, max 264 ms)** |
 
 Run-to-run noise is about ±30% on these counts, so the first change did nothing measurable and
 the second made it clearly worse (fewer eager rows means more `LazyVStack` churn per chunk).
@@ -146,12 +147,17 @@ Both were reverted. Baseline hot nodes (ms per 20 s, count):
 not the cost. `External: UInt32`, the top root cause in both traces, is SwiftUI's own
 per-transaction `ForEachState.Evictor` seed and is not actionable.
 
-**Conclusion.** Every streamed chunk replaces `NativeThreadStore.rows`, which re-runs
-`ThreadView.body`, re-flows the environment into every row, and relayouts the transcript frame
-with its 30 eager turns. Cheap knobs do not help. The fix is the November audit's work package 1:
-keep `rows` stable while a turn streams and give the live row its own observable text, so a chunk
-invalidates one row. Validate it with `stress.sh` before/after (expect the `_FrameLayout` and
-`EnvironmentWriter` lines to fall by an order of magnitude).
+**Conclusion and fix.** Every streamed chunk replaced `NativeThreadStore.rows`, which re-ran
+`ThreadView.body`, re-flowed the environment into every row, and relayouted the transcript frame
+with its 30 eager turns. Cheap knobs did not help. The fix (the November audit's work package 1)
+is in this branch: the store keeps `rows` (iOS and the lookups read it) and adds `listRows`, the
+same list with the streaming reply as a content-less shell, plus `liveRow`, the reply's content.
+The Mac transcript iterates `listRows`; the shell's view (`ThreadView.LiveRow`) reads `liveRow`
+itself, so a chunk invalidates one row. On the stress workload that halves SwiftUI's main-thread
+time, removes the environment fan-out from the profile, and cuts potential hangs over 100 ms
+from 78 to 3 per 30 s. `ThreadStreamingTests` now asserts the live row redraws once per adopted
+revision and the thread body at most once. What remains is the transcript stack's own relayout
+(`_FrameLayout`, 1.9 s per 20 s at 1.2 ms a pass), which is the live row growing.
 
 ## Next
 
