@@ -157,6 +157,32 @@ struct ForgeServiceTests {
         #expect(list.sections[0].pullRequests[0].checks == .running)
     }
 
+    @Test func everyRepositorySearchesGitHubForWhatInvolvesYou() async throws {
+        let seen = Locked<[ForgeCommand]>([])
+        let search = """
+            {"data":{"search":{"nodes":[
+              {"number":31,"title":"Add refund events","state":"OPEN","isDraft":false,"headRefName":"agent/refund-events","baseRefName":"main",
+               "updatedAt":"2026-01-02T00:00:00Z","author":{"login":"baily"},"repository":{"nameWithOwner":"acme/payments"},
+               "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}},
+              {"number":5,"title":"Elsewhere","state":"OPEN","isDraft":true,"updatedAt":"2026-01-01T00:00:00Z","author":{"login":"baily"},
+               "repository":{"nameWithOwner":"acme/other"},"commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}},
+              {}
+            ]}}}
+            """
+        let service = try Self.service(seen, answer: { arguments in
+            arguments.starts(with: ["gh", "api", "graphql"]) ? (search, 0, "") : ForgeFixtures.answer(arguments)
+        })
+        let result = try Self.value(await service.answer(.list(kind: .pullRequest, repo: ForgeList.allRepos, sections: [.authored]),
+                                                         context: Self.context))
+        guard case .list(let list) = result else { Issue.record("not a list"); return }
+        let pulls = try #require(list.section(.authored)).pullRequests
+        #expect(pulls.map(\.ref.key) == ["acme/payments#31", "acme/other#5"])
+        #expect(pulls[0].checks == .failing && pulls[0].thread?.agentID == Self.agent)
+        #expect(pulls[1].state == .draft && pulls[1].checks == .none)
+        #expect(seen.current.contains { $0.arguments.last == "q=is:pr is:open author:@me archived:false sort:updated-desc" })
+        #expect(!seen.current.contains { $0.arguments.contains("list") }, "no per-repository list for your own sections")
+    }
+
     @Test func issuesFallIntoSectionsWithTheirThreadsAndAutomations() async throws {
         let result = try Self.value(await Self.service().answer(.list(kind: .issue, repo: Self.repo, sections: nil), context: Self.context))
         guard case .list(let list) = result else { Issue.record("not a list"); return }
@@ -218,11 +244,53 @@ struct ForgeServiceTests {
         (.setOpen(ref: ForgeServiceTests.pr31, open: true), ["gh", "pr", "reopen", "31", "--repo=acme/payments"]),
         (.rerunFailed(repo: ForgeServiceTests.repo, runID: 900), ["gh", "run", "rerun", "900", "--repo=acme/payments", "--failed"]),
         (.review(ref: ForgeServiceTests.pr31, verdict: .approve, body: ""), ["gh", "pr", "review", "31", "--repo=acme/payments", "--approve"]),
+        (.edit(ref: ForgeServiceTests.pr31, field: .reviewers, add: ["mara", "devon"], remove: ["kim"]),
+         ["gh", "pr", "edit", "31", "--repo=acme/payments", "--add-reviewer=mara,devon", "--remove-reviewer=kim"]),
+        (.edit(ref: ForgeItemRef(kind: .issue, repo: ForgeServiceTests.repo, number: 34), field: .labels, add: [], remove: ["bug"]),
+         ["gh", "issue", "edit", "34", "--repo=acme/payments", "--remove-label=bug"]),
     ])
     func eachChangeRunsItsCommand(_ request: RemoteForgeRequest, _ expected: [String]) async throws {
         let seen = Locked<[ForgeCommand]>([])
         #expect(try Self.value(await Self.service(seen).answer(request, context: ForgeContext())) == .ok)
         #expect(seen.current.map(\.arguments) == [expected])
+    }
+
+    @Test func anIssueOpensAndAReviewPostsItsLines() async throws {
+        let seen = Locked<[ForgeCommand]>([])
+        let service = try Self.service(seen, answer: { arguments in
+            arguments.starts(with: ["gh", "issue", "create"]) ? ("Creating issue in acme/payments\n\nhttps://github.com/acme/payments/issues/52\n", 0, "")
+                : ("", 0, "")
+        })
+        let created = try Self.value(await service.answer(.createIssue(repo: Self.repo, title: " Refunds round ", body: "--body"), context: ForgeContext()))
+        #expect(created == .created(ForgeItemRef(kind: .issue, repo: Self.repo, number: 52)))
+        #expect(seen.current[0].arguments == ["gh", "issue", "create", "--repo=acme/payments", "--title=Refunds round", "--body-file", "-"])
+        #expect(seen.current[0].input == Data("--body".utf8))
+
+        let comments = [ForgeDraftComment(path: "ledger/outbox.go", line: 103, body: "Wrap it"),
+                        ForgeDraftComment(path: "ledger/old.go", line: 7, right: false, body: "Why gone?")]
+        _ = try Self.value(await service.answer(.postReview(ref: Self.pr31, verdict: .comment, body: "", comments: comments), context: ForgeContext()))
+        #expect(seen.current[1].arguments == ["gh", "api", "--method=POST", "repos/acme/payments/pulls/31/reviews", "--input", "-"])
+        let posted = try JSONSerialization.jsonObject(with: seen.current[1].input ?? Data()) as? [String: Any]
+        let lines = posted?["comments"] as? [[String: Any]]
+        #expect(posted?["event"] as? String == "COMMENT")
+        #expect(lines?.map { $0["side"] as? String } == ["RIGHT", "LEFT"] && lines?.first?["line"] as? Int == 103)
+    }
+
+    @Test func aBrowseReadsPageByPage() async throws {
+        let seen = Locked<[ForgeCommand]>([])
+        let page = #"{"data":{"search":{"pageInfo":{"hasNextPage":true,"endCursor":"Y3Vy"},"nodes":[{"number":9,"title":"t","state":"OPEN","#
+            + #""author":{"login":"mara"},"repository":{"nameWithOwner":"acme/payments"}}]}}}"#
+        let service = try Self.service(seen, answer: { arguments in
+            arguments.starts(with: ["gh", "api", "graphql"]) ? (page, 0, "") : ForgeFixtures.answer(arguments)
+        })
+        let filter = ForgeFilter(author: "mara")
+        let first = try Self.value(await service.answer(.browse(kind: .issue, repo: Self.repo, filter: filter, after: nil), context: ForgeContext()))
+        guard case .list(let list) = first else { Issue.record("not a list"); return }
+        #expect(list.next == "Y3Vy" && list.section(.results)?.issues.map(\.ref.number) == [9])
+        _ = await service.answer(.browse(kind: .issue, repo: Self.repo, filter: filter, after: "Y3Vy"), context: ForgeContext())
+        let searches = seen.current.filter { $0.arguments.starts(with: ["gh", "api", "graphql"]) }.map(\.arguments)
+        #expect(searches.first?.last == "q=" + filter.query(kind: .issue, repo: Self.repo))
+        #expect(searches.last?.contains("after=Y3Vy") == true && searches.first?.contains("after=Y3Vy") == false)
     }
 
     @Test func onlyAMergedBranchIsDeleted() async throws {
@@ -244,6 +312,12 @@ struct ForgeServiceTests {
         .editTitle(ref: ForgeServiceTests.pr31, title: "two\nlines"),
         .merge(ref: ForgeItemRef(kind: .issue, repo: "acme/payments", number: 1), method: .merge, whenReady: false, deleteBranch: false),
         .pullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: "acme/payments", number: 0)),
+        .edit(ref: ForgeServiceTests.pr31, field: .labels, add: ["a,b"], remove: []),
+        .edit(ref: ForgeServiceTests.pr31, field: .assignees, add: ["--repo=evil/x"], remove: []),
+        .edit(ref: ForgeItemRef(kind: .issue, repo: "acme/payments", number: 1), field: .reviewers, add: ["mara"], remove: []),
+        .createIssue(repo: "acme/payments", title: "  ", body: ""),
+        .browse(kind: .issue, repo: "acme/payments", filter: ForgeFilter(state: .merged), after: nil),
+        .postReview(ref: ForgeServiceTests.pr31, verdict: .comment, body: "", comments: [ForgeDraftComment(path: "x", line: 0, body: "y")]),
     ])
     func whatGhCouldMisreadNeverRuns(_ request: RemoteForgeRequest) async throws {
         let seen = Locked<[ForgeCommand]>([])

@@ -1,8 +1,7 @@
 import Foundation
 import ShepherdCore
 
-// The requests and results of the design agent's batch tools (docs/designs.md › The design
-// agent): `boards_edit`, `checkpoint_create`/`list`/`restore` and `board_render`. They travel
+// The requests and results of the design agent's batch tools: `boards_edit`, `checkpoint_create`/`list`/`restore` and `board_render`. They travel
 // as one nested object in their extension message, so a field a build doesn't know is ignored
 // and a missing one has its default.
 

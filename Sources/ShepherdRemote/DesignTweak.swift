@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-// The Tweak tab's controls (DZTweak; docs/designs.md › Tweak), worked out from the selected
+// The Tweak tab's controls (DZTweak), worked out from the selected
 // element's inline style, the board's data-props and the design's tokens. Pure, so the rules
 // are tested without a board.
 

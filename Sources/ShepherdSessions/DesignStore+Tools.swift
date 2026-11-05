@@ -3,7 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// The design agent's batch tools on the design store (docs/designs.md › The design agent):
+// The design agent's batch tools on the design store:
 // reported writes with token enforcement, `boards_edit`, `board_search`, the usage index, and
 // checkpoints. Everything here runs on the store's queue, as one step of it where a read and a
 // write must not be parted, and writes through the same path every board write takes.

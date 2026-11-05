@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// `board_extract` on the host (docs/designs.md › Shared pieces): a piece, its import, exact copies
+/// `board_extract` on the host: a piece, its import, exact copies
 /// in other boards and the piece's frame, written as one revision.
 @Suite("Design extraction on the host", .integrationTimeLimit)
 struct DesignExtractStoreTests {

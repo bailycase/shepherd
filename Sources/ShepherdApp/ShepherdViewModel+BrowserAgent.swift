@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-/// The agent's browser tools on the thread's own page (docs/browser.md): the server hands each
+/// The agent's browser tools on the thread's own page: the server hands each
 /// request here, only for the agent whose connection asked, and the page answers.
 extension ShepherdViewModel {
     func installBrowserAgentControl() {

@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import ShepherdProtocol
 
-/// A remote thread's Files (`files.v1`; docs/design/side-pane-files.md): a lazy tree of the thread's folder on its host,
+/// A remote thread's Files (`files.v1`): a lazy tree of the thread's folder on its host,
 /// a filter over the expanded folders, and one file open read-only. Rows are derived once per change; views draw them.
 @MainActor
 @Observable

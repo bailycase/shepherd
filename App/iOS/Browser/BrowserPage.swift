@@ -5,7 +5,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A remote thread's Browser page on the phone and iPad (docs/browser.md › Remote): the page renders in
+// A remote thread's Browser page on the phone and iPad: the page renders in
 // this device's own web view and its URL stays `localhost:5173`; its traffic to the host's loopback
 // ports goes to the host over the authenticated connection, through a listener on this device's
 // loopback at the same port (`BrowserPagePorts`, `BrowserPortForwarder`, `BrowserTunnelHub`, all

@@ -32,6 +32,7 @@ final class ForgeStore {
 
     private(set) var repos: [ForgeRepo] = []
     private(set) var reposLoaded = false
+    /// The repository the lists are narrowed to; nil lists everything that involves you.
     private(set) var repo: String?
     var kind: ForgeKind = .pullRequest { didSet { if kind != oldValue { kindChanged() } } }
     private(set) var lists: [ForgeKind: ForgeList] = [:]
@@ -40,9 +41,20 @@ final class ForgeStore {
     private(set) var error: ForgeError?
     private(set) var openSections: [ForgeKind: Set<ForgeSectionID>] = [:]
     private(set) var loadingSections: [ForgeKind: Set<ForgeSectionID>] = [:]
-    var query = "" { didSet { if query.isEmpty, results != nil { results = nil; rebuild() } } }
+    /// The search field. Return searches (a browse); clearing it drops the words from the filter.
+    var query = "" { didSet { if query.isEmpty, !filter.text.isEmpty { filter.text = "" } } }
+    /// Waiting on me (the sections) or Everything (a browse of `filter`).
+    var everything = false { didSet { if everything != oldValue { filterChanged() } } }
+    /// What a browse lists; anything but the default browses.
+    var filter = ForgeFilter() { didSet { if filter != oldValue { filterChanged() } } }
+    /// The browse's rows so far and its next page; nil until read.
     private(set) var results: ForgeList?
     private(set) var searching = false
+    private(set) var loadingMore = false
+    /// The browse's first-page read; a newer filter cancels it.
+    @ObservationIgnored private(set) var browseTask: Task<Void, Never>?
+    /// Each repository's labels and assignable people, once read.
+    private(set) var people: [String: ForgeRepoPeople] = [:]
     /// The list's elements and the switch's counts, derived once per change.
     private(set) var items: [ForgeListItem] = []
     private(set) var counts: [ForgeKind: Int] = [:]
@@ -82,14 +94,18 @@ final class ForgeStore {
     }
 
     var repoName: String { repo.map(ForgeItemRef.name(of:)) ?? "" }
+    /// The list is a browse rather than the sections.
+    var browsing: Bool { everything || filter != ForgeFilter() }
+    /// What the lists ask the host for: the repository, or `ForgeList.allRepos`.
+    private var scope: String { repo ?? ForgeList.allRepos }
     /// The checkout on this host for `repo` (a thread starts there).
     func path(of repo: String) -> String? { repos.first { $0.nameWithOwner == repo }?.path }
     func isPinned(_ ref: ForgeItemRef) -> Bool { sidebar?.pins.contains { $0.pin.ref == ref } == true }
 
     // MARK: Loading
 
-    /// The page opened: read the repositories once, then the picked one's lists. `opening` (a pin)
-    /// picks its repository and stands in for the list's first row.
+    /// The page opened: read the repositories (the picker) once, then every repository's lists.
+    /// `opening` (a pin) stands in for the list's first row.
     func start(opening ref: ForgeItemRef? = nil) async {
         await loadSidebar()
         guard !reposLoaded else { return }
@@ -98,9 +114,8 @@ final class ForgeStore {
             repos = found
             reposLoaded = true
             error = nil
-            let known = ref.flatMap { ref in found.contains { $0.nameWithOwner == ref.repo } ? ref.repo : nil }
             if let ref, selection == nil { selection = ref }
-            if repo == nil, let first = known ?? found.first?.nameWithOwner { await selectRepo(first) }
+            if lists.isEmpty { await selectRepo(repo) }
             rebuild()
         case .failure(let failure):
             error = failure
@@ -109,19 +124,20 @@ final class ForgeStore {
         }
     }
 
-    /// Picks a repository: its pull requests and issues, from the top.
-    func selectRepo(_ name: String) async {
+    /// Picks a repository (nil: all of them): its pull requests and issues, from the top.
+    func selectRepo(_ name: String?) async {
         guard name != repo || lists.isEmpty else { return }
         repo = name
         lists = [:]
         results = nil
-        query = ""
         openSections = [:]
         loadingSections = [:]
-        if selection.map({ $0.repo != name }) == true { clearSelection() }
+        if let name, selection.map({ $0.repo != name }) == true { clearSelection() }
         rebuild()
+        if let name { Task { await loadPeople(name) } }
         async let pulls: Void = loadList(.pullRequest)
         async let issues: Void = loadList(.issue)
+        reloadBrowse()
         _ = await (pulls, issues)
         if selection == nil, let first = firstRow { await open(first) }
     }
@@ -137,22 +153,22 @@ final class ForgeStore {
         case .failure(let failure): error = failure
         default: break
         }
-        if repo == nil, let first = repos.first?.nameWithOwner { repo = first }
         async let pulls: Void = loadList(.pullRequest)
         async let issues: Void = loadList(.issue)
         _ = await (pulls, issues)
+        reloadBrowse()
         if selection != nil { await loadDetail() }
         await loadSidebar()
     }
 
     private func loadList(_ kind: ForgeKind) async {
-        guard let repo else { return }
+        let repo = scope
         loadingKinds.insert(kind)
         rebuild()
         let open = Array(openSections[kind] ?? [])
         let sections = ForgeSectionID.defaults(for: kind) + open
         let result = await transport(.list(kind: kind, repo: repo, sections: ForgeSectionID.all(for: kind).filter(sections.contains)))
-        guard repo == self.repo else { return }
+        guard repo == scope else { return }
         loadingKinds.remove(kind)
         switch result {
         case .success(.list(let list)):
@@ -173,12 +189,13 @@ final class ForgeStore {
             return
         }
         openSections[kind, default: []].insert(id)
-        guard let repo, lists[kind]?.section(id) == nil else { rebuild(); return }
+        let repo = scope
+        guard lists[kind]?.section(id) == nil else { rebuild(); return }
         loadingSections[kind, default: []].insert(id)
         rebuild()
         let result = await transport(.list(kind: kind, repo: repo, sections: [id]))
         loadingSections[kind, default: []].remove(id)
-        guard repo == self.repo else { return }
+        guard repo == scope else { return }
         switch result {
         case .success(.list(let list)):
             if let section = list.section(id) { lists[kind] = Self.merging(section, into: lists[kind], kind: kind, repo: repo) }
@@ -207,18 +224,108 @@ final class ForgeStore {
             await open(ref)
             return
         }
-        guard !text.isEmpty, let repo else { return }
-        searching = true
+        filter.text = text
+    }
+
+    // MARK: Browsing
+
+    private func filterChanged() {
+        results = nil
         rebuild()
-        let result = await transport(.search(kind: kind, repo: repo, query: text))
-        searching = false
-        guard query.trimmingCharacters(in: .whitespacesAndNewlines) == text else { rebuild(); return }
+        reloadBrowse()
+    }
+
+    /// Reads the browse from its first page, replacing any read on its way.
+    private func reloadBrowse() {
+        browseTask?.cancel()
+        browseTask = browsing ? Task { await loadBrowse() } : nil
+    }
+
+    /// The browse from its first page, or (`more`) its next one.
+    func loadBrowse(more: Bool = false) async {
+        let request = RemoteForgeRequest.browse(kind: kind, repo: scope, filter: filter, after: more ? results?.next : nil)
+        guard browsing, !more || results?.next != nil, !(more && loadingMore) else { return }
+        if more { loadingMore = true } else { searching = true }
+        rebuild()
+        let result = await transport(request)
+        // A newer filter, kind or repository asked meanwhile: its own read answers.
+        guard !Task.isCancelled, case .browse(kind, scope, filter, _) = request else { return }
+        if more { loadingMore = false } else { searching = false }
         switch result {
-        case .success(.list(let list)): results = list
+        case .success(.list(var list)):
+            if more, let previous = results?.section(.results) {
+                let found = list.section(.results) ?? ForgeSection(id: .results)
+                // An item updated between pages comes again on the next one: keep its first place.
+                let pulls = Set(previous.pullRequests.map(\.id)), issues = Set(previous.issues.map(\.id))
+                list.sections = [ForgeSection(id: .results, pullRequests: previous.pullRequests + found.pullRequests.filter { !pulls.contains($0.id) },
+                                              issues: previous.issues + found.issues.filter { !issues.contains($0.id) })]
+            }
+            results = list
         case .failure(let failure): actionError = failure
         default: break
         }
         rebuild()
+    }
+
+    /// Back to Waiting on me with nothing filtered.
+    func clearFilters() {
+        query = ""
+        everything = false
+        filter = ForgeFilter()
+    }
+
+    func loadPeople(_ repo: String) async {
+        guard people[repo] == nil, case .success(.people(let found)) = await transport(.people(repo: repo)) else { return }
+        people[repo] = found
+    }
+
+    /// Who the person filters offer: you, the picked repository's people, then everyone on the rows.
+    var knownPeople: [String] {
+        var seen = Set<String>()
+        var rows: [String] = []
+        for list in Array(lists.values) + [results].compactMap({ $0 }) {
+            for section in list.sections { rows += section.pullRequests.map(\.author) + section.issues.flatMap { [$0.author] + $0.assignees } }
+        }
+        let viewer = lists.values.lazy.compactMap(\.viewer).first
+        return ((repo.flatMap { people[$0]?.assignable } ?? []) + rows)
+            .filter { $0.caseInsensitiveCompare(viewer ?? "") != .orderedSame && seen.insert($0.lowercased()).inserted }
+            .sorted { $0.lowercased() < $1.lowercased() }
+    }
+
+    /// The labels the label filter offers: the picked repository's, else those on the rows.
+    var knownLabels: [String] {
+        if let repo, let labels = people[repo]?.labels, !labels.isEmpty { return labels.map(\.name) }
+        var seen = Set<String>()
+        return (Array(lists.values) + [results].compactMap { $0 }).flatMap { $0.sections.flatMap { $0.issues.flatMap(\.labels) } }
+            .map(\.name).filter { seen.insert($0.lowercased()).inserted }.sorted()
+    }
+
+    // MARK: Writing
+
+    /// Opens an issue and shows it. False when GitHub refused (`actionError` says why).
+    func createIssue(repo: String, title: String, body: String) async -> Bool {
+        working = true
+        actionError = nil
+        let result = await transport(.createIssue(repo: repo, title: title, body: body))
+        working = false
+        switch result {
+        case .success(.created(let ref)):
+            await loadList(.issue)
+            await open(ref)
+            return true
+        case .success:
+            await loadList(.issue)
+            return true
+        case .failure(let failure):
+            actionError = failure
+            return false
+        }
+    }
+
+    /// Adds or removes one label, assignee or reviewer on the item on screen.
+    func toggle(_ field: ForgeEditField, _ value: String, on: Bool) async {
+        guard let ref = selection else { return }
+        await perform(.edit(ref: ref, field: field, add: on ? [value] : [], remove: on ? [] : [value]))
     }
 
     /// Paste a link (PRReviewEmpty): opens the GitHub link on the clipboard.
@@ -239,7 +346,7 @@ final class ForgeStore {
         // Picked first, so switching the kind or the repository doesn't open their first row.
         selection = ref
         if ref.kind != kind { kind = ref.kind }
-        if ref.repo != repo, repos.contains(where: { $0.nameWithOwner == ref.repo }) { await selectRepo(ref.repo) }
+        if repo != nil, ref.repo != repo, repos.contains(where: { $0.nameWithOwner == ref.repo }) { await selectRepo(ref.repo) }
         guard !shown else { rebuild(); return }
         tab = .summary
         pullRequest = nil
@@ -332,6 +439,7 @@ final class ForgeStore {
         case .success:
             await loadDetail()
             await loadList(kind)
+            reloadBrowse()
             return true
         case .failure(let failure):
             actionError = failure
@@ -354,8 +462,9 @@ final class ForgeStore {
 
     private func kindChanged() {
         results = nil
-        query = ""
+        if filter.state == .merged, kind == .issue { filter.state = .closed }
         rebuild()
+        reloadBrowse()
         // The other kind's page shows its first row, unless something picked one meanwhile.
         guard selection?.kind != kind else { return }
         let before = selection, kind = kind
@@ -375,7 +484,8 @@ final class ForgeStore {
     private func rebuild() {
         let now = now()
         let next = Self.items(list: lists[kind], kind: kind, open: openSections[kind] ?? [], loading: loadingSections[kind] ?? [],
-                              results: results, query: query, selection: selection, repoName: repoName, now: now)
+                              results: browsing ? results : nil, browsing: browsing, loadingMore: loadingMore, filter: filter,
+                              selection: selection, repoName: repoName, now: now)
         if next != items { items = next }
         var nextCounts: [ForgeKind: Int] = [:]
         for (kind, list) in lists { nextCounts[kind] = Self.count(list) }
@@ -393,22 +503,29 @@ final class ForgeStore {
     /// a section that loads on demand is one "Needs my team's review ›" row until opened; an empty
     /// list says so above them. A search shows its results instead.
     static func items(list: ForgeList?, kind: ForgeKind, open: Set<ForgeSectionID>, loading: Set<ForgeSectionID>, results: ForgeList?,
-                      query: String, selection: ForgeItemRef?, repoName: String, now: Date) -> [ForgeListItem] {
+                      browsing: Bool = false, loadingMore: Bool = false, filter: ForgeFilter = ForgeFilter(), selection: ForgeItemRef?,
+                      repoName: String, now: Date) -> [ForgeListItem] {
         var seen = Set<ForgeItemRef>()
         func rows(_ section: ForgeSection) -> [ForgeListItem] {
-            let rows = section.pullRequests.map { ForgeRow($0, viewer: list?.viewer, now: now) }
-                + section.issues.map { ForgeRow($0, viewer: list?.viewer, now: now) }
+            // Across every repository a row names its own: "payments · baily · 2h".
+            let place = repoName.isEmpty
+            let rows = section.pullRequests.map { ForgeRow($0, viewer: list?.viewer, now: now, showsRepo: place) }
+                + section.issues.map { ForgeRow($0, viewer: list?.viewer, now: now, showsRepo: place) }
             return rows.filter { seen.insert($0.ref).inserted }.map { row in
                 var row = row
                 row.selected = row.ref == selection
                 return .row(row)
             }
         }
-        if let results {
+        if browsing {
+            guard let results else { return [] }
             let section = results.section(.results) ?? ForgeSection(id: .results)
             let found = rows(section)
-            if found.isEmpty { return [.message("No matches for “\(query)”")] }
-            return [.header(id: "results", title: ForgePresentation.title(.results, kind: kind), count: found.count)] + found
+            if found.isEmpty { return [.message(filter.text.isEmpty ? "Nothing matches these filters." : "No matches for “\(filter.text)”")] }
+            let title = filter.text.isEmpty ? ForgePresentation.browseTitle(filter.state, kind: kind) : ForgePresentation.title(.results, kind: kind)
+            var items: [ForgeListItem] = [.header(id: "results", title: title, count: found.count)] + found
+            if results.next != nil { items.append(.loadMore(loading: loadingMore)) }
+            return items
         }
         guard let list else { return [] }
         var items: [ForgeListItem] = []
@@ -433,7 +550,7 @@ final class ForgeStore {
             items += sectionRows
         }
         if !anyDefault {
-            items.insert(.empty(title: ForgePresentation.emptyTitle(kind), detail: ForgePresentation.emptyDetail(kind, repoName: repoName)),
+            items.insert(.empty(title: ForgePresentation.emptyTitle(kind), detail: ForgePresentation.emptyDetail(kind, repoName: repoName.isEmpty ? "any repository" : repoName)),
                          at: emptyAt ?? items.count)
         }
         return items
@@ -453,6 +570,8 @@ enum ForgeListItem: Identifiable, Equatable {
     case row(ForgeRow)
     /// A section that loads on demand, folded: "Needs my team's review ›".
     case more(ForgeSectionID, title: String, loading: Bool)
+    /// A browse's next page.
+    case loadMore(loading: Bool)
     /// Nothing waiting, and why.
     case empty(title: String, detail: String)
     case message(String)
@@ -462,6 +581,7 @@ enum ForgeListItem: Identifiable, Equatable {
         case .header(let id, _, _, _): "header.\(id)"
         case .row(let row): row.ref.id
         case .more(let id, _, _): "more.\(id.rawValue)"
+        case .loadMore: "loadMore"
         case .empty: "empty"
         case .message: "message"
         }
@@ -483,22 +603,23 @@ struct ForgeRow: Equatable, Identifiable {
 
     var id: String { ref.id }
 
-    init(_ pull: PullRequestSummary, viewer: String?, now: Date) {
+    init(_ pull: PullRequestSummary, viewer: String?, now: Date, showsRepo: Bool = false) {
         let state = PullRequestRowState(pull)
         ref = pull.ref
         title = pull.title
         author = pull.author
-        byline = ForgePresentation.byline(author: pull.author, updatedAt: pull.updatedAt, now: now)
+        byline = (showsRepo ? "\(pull.ref.repoName) · " : "") + ForgePresentation.byline(author: pull.author, updatedAt: pull.updatedAt, now: now)
         tone = state.tone
         word = state.label
         viewerIsAuthor = viewer.map { $0.caseInsensitiveCompare(pull.author) == .orderedSame } ?? false
     }
 
-    init(_ issue: IssueSummary, viewer: String?, now: Date) {
+    init(_ issue: IssueSummary, viewer: String?, now: Date, showsRepo: Bool = false) {
         ref = issue.ref
         title = issue.title
         author = issue.author
-        byline = ForgePresentation.byline(author: issue.author, updatedAt: issue.updatedAt, automation: issue.automationName, now: now)
+        byline = (showsRepo ? "\(issue.ref.repoName) · " : "")
+            + ForgePresentation.byline(author: issue.author, updatedAt: issue.updatedAt, automation: issue.automationName, now: now)
         tone = ForgePresentation.tone(issue.progress)
         word = ForgePresentation.label(issue.progress)
         viewerIsAuthor = viewer.map { $0.caseInsensitiveCompare(issue.author) == .orderedSame } ?? false

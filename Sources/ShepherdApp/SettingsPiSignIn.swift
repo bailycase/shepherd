@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdSessions
 
-/// Settings ▸ Pi ▸ Sign-in (SettingsPiSignIn, SettingsPiSignInKeys; docs/design/settings-pi.md › Pi ▸ Sign-in):
+/// Settings ▸ Pi ▸ Sign-in (SettingsPiSignIn, SettingsPiSignInKeys):
 /// Subscriptions, API keys and Custom providers, each provider with its state and what to do
 /// about it. Everything here is Shepherd's pi's alone.
 struct PiSignInSettings: View {
@@ -252,7 +252,7 @@ private struct AddKeyRow: View {
     }
 }
 
-/// How a provider's sign-in reads (docs/design/settings-pi.md › Pi ▸ Sign-in's table): its dot, word and details.
+/// How a provider's sign-in reads: its dot, word and details.
 enum PiSignInWords {
     /// "resets 3:40 PM" today, "resets Thu 3:40 PM" later. A window whose reset has passed (an
     /// old reading) is back to 0%.

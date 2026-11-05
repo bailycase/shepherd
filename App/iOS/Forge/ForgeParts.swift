@@ -128,6 +128,15 @@ struct ForgeRepoPicker: View {
         let sh = Color.sh
         let hostIDs = store.repos.reduce(into: [UUID]()) { if !$0.contains($1.host) { $0.append($1.host) } }
         Menu {
+            if store.browseHost != nil {
+                Button {
+                    store.repoID = ForgeStore.allID
+                    store.clearSearch()
+                } label: {
+                    if store.allRepos { Label("All repositories", systemImage: "checkmark") } else { Text("All repositories") }
+                }
+                Divider()
+            }
             if hostIDs.count > 1 {
                 ForEach(hostIDs, id: \.self) { host in
                     Section(store.hostName(host)) { choices(store.repos.filter { $0.host == host }) }
@@ -137,7 +146,7 @@ struct ForgeRepoPicker: View {
             }
         } label: {
             HStack(spacing: SH.Space.xs) {
-                Text(store.repo?.repo.name ?? "Repository")
+                Text(store.allRepos ? "All" : store.repo?.repo.name ?? "Repository")
                     .font(.sh(.ui, weight: .medium))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
@@ -154,7 +163,7 @@ struct ForgeRepoPicker: View {
         }
         .disabled(store.repos.isEmpty)
         .accessibilityLabel("Repository")
-        .accessibilityValue(store.repo?.repo.nameWithOwner ?? "none")
+        .accessibilityValue(store.allRepos ? "All repositories" : store.repo?.repo.nameWithOwner ?? "none")
     }
 
     private func choices(_ repos: [ForgeRepoChoice]) -> some View {

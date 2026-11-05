@@ -1,8 +1,8 @@
 import Foundation
 import ShepherdProtocol
 
-/// pi's `mcp.json` for Shepherd's pi home, derived from Settings ▸ MCP servers' file
-/// (docs/mcp.md › How Shepherd maps onto it). pi's MCP is the runtime: it connects the servers,
+/// pi's `mcp.json` for Shepherd's pi home, derived from Settings ▸ MCP servers' file.
+/// pi's MCP is the runtime: it connects the servers,
 /// lists and calls their tools, and signs in. This only says which servers, how their tools reach
 /// the model, and where each secret comes from. The user's file is read, never written; no secret
 /// value is in the result: a `${keychain:…}` reference becomes `${SHEPHERD_MCP_SECRET_…}`, a

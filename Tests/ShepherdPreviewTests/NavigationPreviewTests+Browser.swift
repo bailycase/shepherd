@@ -129,8 +129,7 @@ extension PreviewTests {
         }
     }
 
-    /// The agent on the host driving a remote thread's page (docs/browser.md › Remote › The agent drives
-    /// the page you see): the same ring, pointer and card with Take over over the viewer's own page,
+    /// The agent on the host driving a remote thread's page: the same ring, pointer and card with Take over over the viewer's own page,
     /// with the host's name in the address field. The page is a web view a capture can't draw.
     @Test func browserRemoteAgentIsUsingIt() async throws {
         let workspace = try PreviewWorkspace()

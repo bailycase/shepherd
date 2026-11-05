@@ -3,7 +3,7 @@
 > Read when your change touches a contract, an extension, the server's queue, terminals, the browser, layouts or repository mutation, or builds a feature that acts on its own.
 
 Each rule says what to do and what silently breaks it. The mechanism behind a rule is in the
-feature's own doc or in ARCHITECTURE.md.
+code; ARCHITECTURE.md says where each feature lives.
 
 ## Contracts
 
@@ -59,7 +59,7 @@ iOS client (TerminalSurfaceKit's `TerminalSurfaceModel` is the one exception, be
 - A list that can outgrow a screen is a lazy stack whose `ForEach` makes exactly one view per
   element (wrap an `if` or `switch` in a container); highlight and selection arrive as a `Bool`,
   hover stays in the row, closures stay out of `==`. Add a `ListPerformanceTests` budget with any
-  new long list ([performance](design/performance.md)).
+  new long list.
 
 ## Keybindings resolve through the store
 
@@ -130,7 +130,7 @@ new message before that check, and never widen the rule for a process that is no
 `helloBrowser` binds the connection to its agent; `routeBrowserRequest` serves a request only on that
 connection. Page text is untrusted data (every result says so). The agent's clicks are DOM events;
 the user's own click takes the page over until their next message. `browser_open` takes `http`,
-`https` and `about:blank` only. Native subagents load no browser tools ([browser](browser.md)).
+`https` and `about:blank` only. Native subagents load no browser tools.
 
 ## Peer tools and subagents
 
@@ -138,8 +138,7 @@ Peer tools have no approval UI or permission setting; the server checks process 
 validates requests, and the tool descriptions require an explicit user request before an agent acts
 on another thread. Agent deletion claims the server token first, needs no confirmation, and keeps
 worktree checkouts and branches. Shepherd does not nest agents: subagents are display state, never
-persisted, with no sidebar rows; a subagent's question goes to its parent, never to the user
-([native-subagents](native-subagents.md)).
+persisted, with no sidebar rows; a subagent's question goes to its parent, never to the user.
 
 ## Switching is a visibility flip, never a remount
 
@@ -177,8 +176,8 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. Nothing else, and Shepherd never
-prunes worktrees ([worktrees](worktrees.md), [changes](changes.md)).
+is the confirmed Delete Worktree. Nothing else.
+Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split
 
@@ -205,3 +204,72 @@ Traps the first such feature hit: a limit stop must end the feature, not the thr
 turns; a waiting state names what ends it; transient provider errors retry inside the bound; a
 check names the model that made it; a banner shows only while the feature is acting; nothing moves
 a transcript to a cheaper provider silently.
+
+## Invariants kept from the retired feature docs
+
+Each was checked against the code when the feature docs were deleted. The code and its tests are
+the detail; these are the lines whose violation is a security, privacy, data-loss or
+compatibility bug.
+
+**Agents and sockets**
+- Check each peer-agent action on the server queue with `agentActionAllowed`: the sender is the
+  connection's own agent and the target is not the sender (only a read may target itself).
+- Wrap every peer message as `[from: <sender>, an agent, not the user…]` (`AgentMessageFraming`)
+  so a model never reads another agent's text as the user's consent.
+- Check the peer pid before replacing a browser registration; a refused `helloBrowser` never
+  replaces or disconnects the agent's real browser connection.
+- Strip `SHEPHERD_EXT_*` variables from terminals and subagents. Give children and terminals the
+  user's own `NODE_EXTRA_CA_CERTS` back unchanged.
+
+**Browser**
+- `browser_read` never returns a secret field's value (password, `cc-*`, `one-time-code`,
+  `current-password`, `new-password`, `-webkit-text-security`): it shows `value=[hidden]`.
+- A page navigates its own main frame only to `http`, `https`, `about` or `blob`; any other scheme
+  it starts (`file:`, `javascript:`, `data:`), history steps included, is cancelled.
+
+**Designs**
+- Serve a design socket message only to the agent whose `designID` is that design
+  (`not_your_design`), and validate the board path before any read.
+- Never relay `comment_reply`, `markup_propose` or `checkpoint_restore` from a helper; only the
+  design's own agent may call them.
+- Viewer comments reach the design agent behind `DesignCommentFence`, as their own message, never
+  inside a running turn and never as a pi command.
+- Never follow a symlink in `design-systems/` or design files. Only the owning design writes a
+  system (`not_your_system`); built-ins are read-only (`read_only_system`).
+- Restore and undo only while each board still has the hash `ifCurrent` names (`stale_revision`).
+
+**Repositories**
+- Every client-sent revision or base passes `ChangesService.isSafeName`, so it never reaches git
+  as an option. Remote clients may not set a review `cwd`.
+- Worktree branches are created `--no-track`, never force-reset, with full `refs/heads/` refs
+  passed as arguments to `/usr/bin/git` by absolute path.
+- Finalize does nothing destructive before `GitWorktree.unreconciledWork` reports clean.
+
+**Projects**
+- Refuse Project or Space file requests from a client that has not acknowledged `projects.v2`,
+  before any file access; keep serving `projects.v1` hosts.
+- Refuse to publish an artifact that contains secret-bearing text. Publication opens each path
+  component `O_NOFOLLOW`, refuses links and special files, and creates `O_EXCL`.
+- Address a remote executor only when host ID and persisted `bindingID` both match; never fall
+  back to a local path or agent. An owner without placement support refuses a host argument.
+
+**Secrets and diagnostics**
+- MCP secrets live in Shepherd's Keychain; config files hold only `${keychain:<server>/<NAME>}`.
+  Import moves plaintext secrets into the Keychain and never writes them back.
+- Never write a secret into the private home's `mcp.json`; `bin/pi` keeps refusing
+  `pi mcp add` and `pi mcp remove`.
+- iOS stores each host token as a `WhenUnlockedThisDeviceOnly` Keychain item, never in
+  UserDefaults.
+- Diagnostics start only after explicit opt-in in a configured build and never restart in the
+  same process after opt-out. Each consent has its own cache directory, so a report from before
+  opt-out is never sent after a later opt-in.
+- Diagnostics never collect prompts, replies, tool output, terminal or file contents, command
+  lines, process names, paths or argv, and accept no third-party transaction.
+
+**Wire compatibility**
+- Strip designs, design agents and their layouts from remote state unless the host serves
+  `designs.v1` and the client reads designs.
+- Always encode agent `runtime: "rpc"`, so older clients never attach a terminal bridge.
+- Send `initialImages` only to hosts with `agent.create.images.v1`, in one 1 MiB frame.
+- Keep decoding the legacy goal `checking` state, `checkedBy`, confirmation fields and
+  `goalCrossProviderEvaluation`; never emit them. Remote goal controls need `native.goal.v1`.

@@ -25,6 +25,13 @@ extension FixtureCatalog {
                 await IssuesPRsFixture.showList(app, kind: .pullRequest)
                 await ForgeStore.of(app.hosts).expand(.teamReview)
             }),
+            // Everything in every repository, filtered to one author, with more to load.
+            FixtureScreen(name: "forge-filtered", hosts: IssuesPRsFixture.hosts(), routes: [.forge(.list)], prepare: { app in
+                let store = ForgeStore.of(app.hosts)
+                await IssuesPRsFixture.showList(app, kind: .pullRequest)
+                store.filter.author = "baily"
+                await FixtureCheck.wait("the browse", seconds: 15) { store.results?.value != nil }
+            }),
             FixtureScreen(name: "forge-empty", hosts: IssuesPRsFixture.hosts(.open, empty: true), routes: [.forge(.list)], prepare: list(.pullRequest)),
             FixtureScreen(name: "forge-older", hosts: IssuesPRsFixture.olderHosts(), routes: [.forge(.list)], prepare: { app in
                 let store = ForgeStore.of(app.hosts)
@@ -51,6 +58,25 @@ extension FixtureCatalog {
                     store.padFile = "ledger/outbox.go"
                 } else {
                     app.navigator.open(.forge(.file(host: pr.host, ref: pr.ref, path: "ledger/outbox.go")))
+                }
+            }),
+            // Two line comments waiting to be posted, under the pull request's diff.
+            FixtureScreen(name: "forge-pr-line-comments", hosts: IssuesPRsFixture.hosts(), routes: [.forge(.list)], prepare: { app in
+                await IssuesPRsFixture.open(app, pr, tab: .changes, sheet: nil)
+                let store = ForgeStore.of(app.hosts)
+                await FixtureCheck.wait("the diff", seconds: 10) { store.files[pr]?.value != nil }
+                let path = "ledger/outbox.go"
+                if app.navigator.layout == .pad { store.padFile = path } else { app.navigator.open(.forge(.file(host: pr.host, ref: pr.ref, path: path))) }
+                let lines = store.files[pr]?.value?.file(path)?.file.hunks.flatMap(\.lines).filter { $0.kind == .added } ?? []
+                if let first = lines.first, let number = first.newLine {
+                    store.selectLine(pr, path: path, lineKey: first.id, line: number, right: true)
+                    store.lineDraft = "Wrap this with the event ID too."
+                    store.saveLineDraft()
+                }
+                if lines.count > 2, let number = lines[2].newLine {
+                    store.selectLine(pr, path: path, lineKey: lines[2].id, line: number, right: true)
+                    store.lineDraft = "Does this need a retry?"
+                    store.saveLineDraft()
                 }
             }),
             FixtureScreen(name: "forge-issue", hosts: IssuesPRsFixture.hosts(), routes: [.forge(.list)], prepare: open(issue, .summary, nil)),
@@ -123,6 +149,20 @@ enum IssuesPRsFixture {
             let pulls = rows.flatMap(\.pullRequests).filter { $0.title.localizedCaseInsensitiveContains(query) }
             let issues = rows.flatMap(\.issues).filter { $0.title.localizedCaseInsensitiveContains(query) }
             return .list(ForgeList(kind: kind, repo: repo, viewer: "baily", sections: [ForgeSection(id: .results, pullRequests: pulls, issues: issues)]))
+        case .browse(let kind, let scope, let filter, let after):
+            let rows = ForgeSectionID.all(for: kind).map(section)
+            var seen = Set<String>()
+            let pulls = rows.flatMap(\.pullRequests).filter { pull in
+                seen.insert(pull.id).inserted && (filter.author.map { $0 == "@me" ? pull.author == "baily" : pull.author == $0 } ?? true)
+                    && (filter.text.isEmpty || pull.title.localizedCaseInsensitiveContains(filter.text))
+            }
+            let issues = rows.flatMap(\.issues).filter { issue in
+                seen.insert(issue.id).inserted && (filter.label.map { label in issue.labels.contains { $0.name == label } } ?? true)
+                    && (filter.text.isEmpty || issue.title.localizedCaseInsensitiveContains(filter.text))
+            }
+            return .list(ForgeList(kind: kind, repo: scope, viewer: "baily",
+                                   sections: [ForgeSection(id: .results, pullRequests: pulls, issues: issues)], next: after == nil ? "page-2" : nil))
+        case .people: return .people(ForgeRepoPeople(labels: [ForgeLabel(name: "bug", color: "d73a4a")], assignable: ["baily", "devon", "mara"]))
         case .pullRequest(let ref) where ref.number == 31: return .pullRequest(pull31(state))
         case .pullRequestFiles(let ref) where ref.number == 31:
             return .files(PullRequestFiles(ref: ref, files: DiffFile.parse(diff31).map { ChangesFileDiff(file: $0) }))

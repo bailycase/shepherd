@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// `board_edit` (docs/designs.md › The design agent): edits applied to the board's text as the
+/// `board_edit`: edits applied to the board's text as the
 /// store holds it now, on the store's queue, then written as any board write is.
 @Suite("Design board edits on the host", .integrationTimeLimit)
 struct DesignBoardEditStoreTests {

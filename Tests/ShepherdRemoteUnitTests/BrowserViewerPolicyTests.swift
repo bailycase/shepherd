@@ -4,8 +4,7 @@ import ShepherdProtocol
 import ShepherdTestKit
 @testable import ShepherdRemote
 
-/// Where an agent on another Mac may take a viewer's web view (docs/browser.md › Remote › What a
-/// host's agent can make this Mac do): the host's own loopback ports and public addresses, and
+/// Where an agent on another Mac may take a viewer's web view: the host's own loopback ports and public addresses, and
 /// nothing on the viewer's own network. The resolver is injected, so no name is ever looked up.
 @Suite("Browser viewer policy")
 struct BrowserViewerPolicyTests {

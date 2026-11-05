@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Duplicate (docs/designs.md › Writing): a board copied beside itself is one new file and one
+/// Duplicate: a board copied beside itself is one new file and one
 /// new canvas entry, written as one change.
 @Suite("Design duplicate", .integrationTimeLimit)
 struct DesignDuplicateTests {

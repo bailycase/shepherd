@@ -5,7 +5,7 @@ import ShepherdRemote
 import Testing
 @testable import ShepherdApp
 
-/// Design pieces on the New thread page (docs/designs.md › Design references): where they can go,
+/// Design pieces on the New thread page: where they can go,
 /// what a thread started from them is called, how a draft keeps them, and what the @ picker says
 /// for a project on another host.
 @Suite("New thread references")

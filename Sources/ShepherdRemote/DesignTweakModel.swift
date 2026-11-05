@@ -65,7 +65,7 @@ public struct DesignTweakIO {
     }
 }
 
-/// The Tweak tab (DZTweak; docs/designs.md › Tweak): the selected element's inline-style controls
+/// The Tweak tab (DZTweak): the selected element's inline-style controls
 /// and its board's data-props, snapped to the design's tokens.
 ///
 /// While a slider drags, the change shows in the board's live view (`DesignTweakPreviews`)

@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 
 /// A short note an ordinary thread left on a design piece it was sent ("Implemented in #142 on
-/// agent/checkout-funnel."): docs/designs.md › Notes back. The canvas draws it as a thread pin
+/// agent/checkout-funnel."): The canvas draws it as a thread pin
 /// (blue, a code glyph) naming the thread, never as a comment or the design agent's, and the user
 /// can remove it. Kept beside the design's project (`thread-notes.json`), never inside the
 /// `project/` its agent edits, and never shown to the design agent.

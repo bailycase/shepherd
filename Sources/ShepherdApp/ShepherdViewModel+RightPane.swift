@@ -5,7 +5,7 @@ import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
 
-/// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane, FileOpenSplit board for Files).
+/// A tab of the side pane beside a thread (FileOpenSplit board for Files).
 /// Subagents takes ⌃4 and Files ⌃5; ⌃3 was the removed Artifacts tab. The digit is fixed per tab (not derived
 /// from CaseIterable index) so adding or removing a tab never shifts existing chords.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
@@ -79,7 +79,7 @@ enum SidePaneOwner: Hashable {
     }
 }
 
-/// The side pane beside a thread (docs/design/side-pane-changes.md › Side pane): one pane per window, docked right,
+/// The side pane beside a thread: one pane per window, docked right,
 /// with a tab per surface (Changes today). The subagent inspector takes the pane over while a run
 /// is inspected; closing it goes back to the tab underneath, if the pane was open. Nothing opens
 /// the pane by itself: when pi opens something for it (`review_diff`), the tab takes a dot, and

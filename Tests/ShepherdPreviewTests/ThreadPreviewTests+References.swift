@@ -352,7 +352,7 @@ extension ThreadPreviewTests {
     }
 
     /// The designs are still being read: "@" opens the picker at once with its one quiet line, and
-    /// nothing to choose. (No board draws it: docs/design/design-tool-references.md › The @ picker.)
+    /// nothing to choose. (No board draws it)
     @Test func referenceAtLoading() async throws {
         let chips = Self.referenceChipsReading(timeout: .seconds(60))
         try await renderReferences("thread-reference-at-loading", Self.referenceSnapshot(sent: false), chips: chips,

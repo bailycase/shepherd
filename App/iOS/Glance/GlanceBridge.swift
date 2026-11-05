@@ -7,7 +7,7 @@ import ShepherdRemote
 import ShepherdUI
 import WidgetKit
 
-/// Publishes every host's work to the glance surfaces (docs/design/notifications.md › Glance):
+/// Publishes every host's work to the glance surfaces:
 /// the widgets' snapshot, the Watch Live Activity and any thread being followed. It reads Home's
 /// feed while the app is in front and stops when it leaves; what it published last then goes
 /// stale on its own (`SHGlance.staleAfter`), so no surface shows a frozen spinner as live.

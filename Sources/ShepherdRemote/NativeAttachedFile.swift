@@ -33,8 +33,8 @@ public struct NativeAttachedFile: Identifiable, Hashable, Sendable {
     }
 }
 
-/// An element picked in the thread's Browser, waiting in the composer beside the draft
-/// (docs/design/side-pane-changes.md › Side pane › Browser): its chip, and the element the host fences for pi.
+/// An element picked in the thread's Browser, waiting in the composer beside the draft:
+/// its chip, and the element the host fences for pi.
 public struct NativeAttachedElement: Identifiable, Hashable, Sendable {
     public let id: UUID
     public let element: BrowserElement
@@ -45,8 +45,7 @@ public struct NativeAttachedElement: Identifiable, Hashable, Sendable {
     }
 }
 
-/// A design reference waiting in a composer beside the draft (docs/designs.md › Design
-/// references): the piece, pinned at the revision it was picked at, its chip's label, and what
+/// A design reference waiting in a composer beside the draft: the piece, pinned at the revision it was picked at, its chip's label, and what
 /// it will send (`outline`, the Implement sheet's footer). Sent, the host resolves the piece at
 /// that revision, keeps the copy with the message, fences it for pi, and lets the thread's agent
 /// read that copy (design_get).

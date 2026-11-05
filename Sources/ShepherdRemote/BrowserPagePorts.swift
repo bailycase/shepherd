@@ -3,7 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// One remote thread's page and the host ports it forwards (docs/browser.md › Remote), for a viewer
+/// One remote thread's page and the host ports it forwards, for a viewer
 /// that holds them only while it can use them: the iOS client lets every port go when its connection
 /// to the host drops (which the app's going to the background does) and takes them again when it is
 /// back, so nothing listens on the device's loopback while the app can't serve it. A page holds at

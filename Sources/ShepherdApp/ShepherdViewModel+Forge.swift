@@ -100,6 +100,24 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Comment on GitHub: the line comments as one review from the viewer. A removed line is
+    /// commented on the old side.
+    func forgePostLineComments(_ session: ReviewSession) {
+        guard let ref = forgeStore.pullRequest?.ref, !session.comments.isEmpty else { return }
+        let comments = session.comments.map {
+            ForgeDraftComment(path: $0.filePath, line: $0.lineNumber, right: $0.marker != "-", body: $0.text)
+        }
+        session.isSubmitting = true
+        Task {
+            let posted = await forgeStore.perform(.postReview(ref: ref, verdict: .comment, body: "", comments: comments))
+            session.isSubmitting = false
+            if posted {
+                session.comments = []
+                forgeStore.notice = ForgeNotice(text: "Posted \(comments.count) comment\(comments.count == 1 ? "" : "s") on GitHub", agentID: nil)
+            }
+        }
+    }
+
     /// Merge (PRReviewMerge's options); Remove the worktree goes through the confirmed Delete
     /// Worktree path once the merge went through now.
     func forgeMerge() {

@@ -3,7 +3,7 @@ import Dispatch
 import Foundation
 import ShepherdProtocol
 
-/// One end of a Browser tunnel (docs/browser.md › Remote): a nonblocking stream socket, and the
+/// One end of a Browser tunnel: a nonblocking stream socket, and the
 /// flow control of both directions of the tunnel that runs to it. The host has one for the
 /// loopback connection to a dev server; a viewer has one for each connection its web view makes
 /// to a forwarded port. It knows nothing of frames: its owner sends what it reads

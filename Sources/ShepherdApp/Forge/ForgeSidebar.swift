@@ -19,6 +19,7 @@ struct ForgeSidebarPanel: View {
             ForgeSidebarHeader(vm: vm, store: store)
             ForgeKindSwitch(store: store)
             ForgeSearchField(store: store)
+            ForgeFilterBar(store: store)
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if store.items.isEmpty, !store.loadingKinds.isEmpty || store.searching {
@@ -26,7 +27,8 @@ struct ForgeSidebarPanel: View {
                     }
                     ForEach(store.items) { item in
                         ForgeListItemView(item: item, open: { ref in Task { await store.open(ref) } },
-                                          toggle: { id in Task { await store.toggleSection(id) } })
+                                          toggle: { id in Task { await store.toggleSection(id) } },
+                                          more: { Task { await store.loadBrowse(more: true) } })
                             .equatable()
                     }
                 }
@@ -43,6 +45,7 @@ struct ForgeSidebarPanel: View {
 private struct ForgeSidebarHeader: View {
     var vm: ShepherdViewModel
     let store: ForgeStore
+    @State private var newIssue = false
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -67,6 +70,7 @@ private struct ForgeSidebarHeader: View {
             }
         }
         .frame(minHeight: AppLayout.forgeSidebarHeaderHeight)
+        .sheet(isPresented: $newIssue) { ForgeNewIssueSheet(store: store) { newIssue = false } }
     }
 
     private var back: some View {
@@ -89,24 +93,27 @@ private struct ForgeSidebarHeader: View {
         if !store.repos.isEmpty {
             // SHPopupMenu always sizes to its value; the stacked row needs a label that fills it.
             Menu {
+                Button("All repositories") { Task { await store.selectRepo(nil) } }
+                Divider()
                 ForEach(store.repos) { repo in
                     Button(repo.nameWithOwner) { Task { await store.selectRepo(repo.nameWithOwner) } }
                 }
             } label: {
-                SHPopupLabel(store.repoName, mono: true)
+                SHPopupLabel(store.repo == nil ? "All" : store.repoName, mono: store.repo != nil)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             // A native menu button names itself by its tooltip.
-            .help("Repository: \(store.repo ?? store.repoName)")
+            .help("Repository: \(store.repo ?? "All repositories")")
             .accessibilityLabel("Repository")
-            .accessibilityValue(store.repo ?? store.repoName)
+            .accessibilityValue(store.repo ?? "All repositories")
         }
     }
 
     private var more: some View {
         Menu {
+            Button("New Issue…") { newIssue = true }.disabled(store.repos.isEmpty)
             Button("Refresh") { Task { await store.refresh() } }
             if let repo = store.repo, let url = URL(string: "https://github.com/\(repo)") {
                 Button("Open \(store.repoName) on GitHub") { NSWorkspace.shared.open(url) }
@@ -197,6 +204,7 @@ private struct ForgeListItemView: View, Equatable {
     let item: ForgeListItem
     let open: (ForgeItemRef) -> Void
     let toggle: (ForgeSectionID) -> Void
+    let more: () -> Void
 
     static func == (a: Self, b: Self) -> Bool { a.item == b.item }
 
@@ -241,6 +249,21 @@ private struct ForgeListItemView: View, Equatable {
                 .padding(.top, AppLayout.forgeSectionTop)
                 .padding(.bottom, SH.Space.s)
                 .accessibilityLabel("\(title), \(loading ? "loading" : "show")")
+            case .loadMore(let loading):
+                Button(action: more) {
+                    HStack(spacing: SH.Space.s) {
+                        Text("Load more")
+                        if loading { ProgressView().progressViewStyle(.shSpinner(size: SH.Space.l)) }
+                    }
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(loading)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.m)
+                .onAppear { if !loading { more() } }
             case .empty(let title, let detail):
                 VStack(alignment: .leading, spacing: SH.Space.s) {
                     Text(title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)

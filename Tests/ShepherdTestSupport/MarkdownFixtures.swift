@@ -1,7 +1,6 @@
 import Foundation
 
-/// Agent replies that exercise the thread's rich content (docs/design/thread.md › Thread › Rich content in
-/// prose), shared by the preview renders and the performance budgets.
+/// Agent replies that exercise the thread's rich content, shared by the preview renders and the performance budgets.
 public enum MarkdownFixtures {
     /// The reply that showed its table as raw pipes (a user's report), verbatim.
     public static let toolsReply = """

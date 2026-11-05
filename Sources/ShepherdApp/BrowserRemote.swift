@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A remote thread's Browser page (docs/browser.md › Remote): the page renders in this Mac's own web
+// A remote thread's Browser page: the page renders in this Mac's own web
 // view, its URL stays `localhost:5173/checkout`, and its traffic to the host's loopback ports is
 // carried to the host over the authenticated connection (ShepherdRemote's tunnels). This is what
 // such a page asks of its host, apart from the web view itself (`BrowserHost.swift`, the only file
@@ -30,7 +30,7 @@ final class BrowserRemote {
     /// The page this claim drives, set as the session is made.
     weak var session: BrowserSession?
 
-    // The agent on the host drives this page (docs/browser.md › Remote).
+    // The agent on the host drives this page.
     private(set) var claimant: BrowserDriveClaimant
     /// The connection the claim was made on: a claim dies with its connection.
     private var claimClient: RemoteHostClient?

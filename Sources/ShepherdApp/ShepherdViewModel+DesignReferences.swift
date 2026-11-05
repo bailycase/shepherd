@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-// Design references (docs/designs.md › Design references): a whole design, a board, or one
+// Design references: a whole design, a board, or one
 // element of it handed to an ordinary thread on purpose. The only way anything of a design
 // reaches a thread: the host keeps a copy of the piece with the message, fences its record for
 // pi, and the thread's agent may read that copy (design_get) from then on. Nothing here opens UI;

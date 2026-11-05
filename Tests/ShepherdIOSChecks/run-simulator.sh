@@ -1,6 +1,6 @@
 #!/bin/bash
 # Renders iOS screens from fixture data on a simulator, headless, and saves a screenshot of each.
-# See docs/ios/VALIDATION.md.
+#
 #
 #   run-simulator.sh -d <udid> -o <dir> [options] <screen>...
 #

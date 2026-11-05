@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// The copies design references keep (docs/designs.md › Design references › The copy): one
+/// The copies design references keep: one
 /// folder per sent reference under the support directory's `design-refs/<agent>/<payload>/`,
 /// holding `payload.json` (`DesignReferencePayload`) and its files. Never the drop folder, which
 /// is pruned after a day. Everything runs on the store's own queue, never the server's.

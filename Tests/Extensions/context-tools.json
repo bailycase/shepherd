@@ -67,7 +67,7 @@
       "group": "other",
       "extension": "shepherd-hooks.ts",
       "verdicts": { "thread": "defer", "automation": "drop", "design": "drop" },
-      "reason": "Proposing a hook (docs/hooks.md) is rare: deferred with the rest. An automation run has no one to approve one and a design's agent draws boards, so neither registers it."
+      "reason": "Proposing a hook is rare: deferred with the rest. An automation run has no one to approve one and a design's agent draws boards, so neither registers it."
     },
     {
       "tools": [
@@ -266,7 +266,7 @@
         "automation": "keep",
         "design": "keep"
       },
-      "reason": "pi 1.0's own tool search: it loads the tools of the MCP servers left on Search (docs/mcp.md) and Shepherd's deferred tools (docs/context-budget.md, Deferred tools). 159 tokens, and the server list adds a few more while a server is on Search. Active in a thread and an automation while Defer rarely used tools is on, or an MCP server is on Search. A server set to Direct declares its own mcp__<server>__<tool> tools instead: the user's, not listed here."
+      "reason": "pi 1.0's own tool search: it loads the tools of the MCP servers left on Search and Shepherd's deferred tools (docs/context-budget.md, Deferred tools). 159 tokens, and the server list adds a few more while a server is on Search. Active in a thread and an automation while Defer rarely used tools is on, or an MCP server is on Search. A server set to Direct declares its own mcp__<server>__<tool> tools instead: the user's, not listed here."
     },
     {
       "tools": [

@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdSessions
 
-/// What the thread says about what a snapshot shortened (docs/native-thread.md › RPCThreadState › Clipped), through
+/// What the thread says about what a snapshot shortened, through
 /// the real workspace over a real server and the stub pi: older pages to scroll up to and a long
 /// reply say nothing, a turn's hidden output says so while the turn runs and stops when it ends.
 @Suite("Thread clip notice over a real server", .serialized, .mainActorExclusive)

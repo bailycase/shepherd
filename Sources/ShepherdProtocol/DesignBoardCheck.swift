@@ -1,6 +1,6 @@
 import Foundation
 
-/// The checks a board's source passes before it is written (docs/designs.md › Writing a board).
+/// The checks a board's source passes before it is written.
 /// A refusal names what to fix; a warning is passed back with the write.
 public enum DesignBoardCheck {
     /// A board written through the extension socket travels in one frame, capped at 1 MiB.

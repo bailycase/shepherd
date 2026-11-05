@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ShepherdProtocol
 
-/// The batch tools' requests and checkpoint names (docs/designs.md › The design agent).
+/// The batch tools' requests and checkpoint names.
 @Suite("Design agent tools")
 struct DesignAgentToolsTests {
     @Test(arguments: [

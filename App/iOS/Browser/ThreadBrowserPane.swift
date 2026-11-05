@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A thread's Browser on iOS (DuoSidePaneTabs › Browser; docs/browser.md › Remote): the address bar
+// A thread's Browser on iOS (DuoSidePaneTabs › Browser): the address bar
 // ("localhost:5173", "from macbook", the host's dev servers, Reload), the page in a card, and the
 // line under it. The page is the thread's `BrowserPage` (one web view a thread, kept by
 // `MobileBrowsers`), so the side pane and the pushed screen show the same page without reloading.

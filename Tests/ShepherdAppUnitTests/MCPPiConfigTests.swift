@@ -3,7 +3,7 @@ import Testing
 import ShepherdProtocol
 @testable import ShepherdApp
 
-/// pi's mcp.json, derived from the user's file (docs/mcp.md › How Shepherd maps onto it): the
+/// pi's mcp.json, derived from the user's file: the
 /// servers pi can run, how their tools reach the model, and where each secret comes from.
 @Suite("MCP config for pi")
 struct MCPPiConfigTests {

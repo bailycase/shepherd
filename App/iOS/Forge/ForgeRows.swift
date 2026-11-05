@@ -182,7 +182,10 @@ enum ForgeRows {
 
     // MARK: Lists
 
-    static func list(_ list: ForgeList, host: UUID, hostName: String, now: Date = Date()) -> ForgeListModel {
+    /// `title` names a browse's one section ("Open pull requests"). Across every repository each
+    /// row names its own ("payments #31 · baily · 2h").
+    static func list(_ list: ForgeList, host: UUID, hostName: String, title: String? = nil, now: Date = Date()) -> ForgeListModel {
+        let everywhere = list.repo == ForgeList.allRepos
         let read = Dictionary(list.sections.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let ids: [ForgeSectionID] = list.sections.contains { $0.id == .results } ? [.results] : ForgeSectionID.all(for: list.kind)
         var count = 0
@@ -190,10 +193,12 @@ enum ForgeRows {
             guard let section = read[id] else {
                 return ForgeSectionRows(id: id, title: ForgePresentation.title(id, kind: list.kind), rows: [], loaded: false)
             }
-            let rows = section.pullRequests.map { pullRow($0, section: id, host: host, hostName: hostName, now: now) }
-                + section.issues.map { issueRow($0, host: host, now: now) }
+            let rows = (section.pullRequests.map { pullRow($0, section: id, host: host, hostName: hostName, now: now) }
+                + section.issues.map { issueRow($0, host: host, now: now) })
+                .map { everywhere ? ForgeRow(key: $0.key, title: $0.title, byline: "\($0.key.ref.repoName) \($0.byline)", word: $0.word, tone: $0.tone) : $0 }
             if id != .closed { count += rows.count }
-            return ForgeSectionRows(id: id, title: ForgePresentation.title(section, kind: list.kind), rows: rows, loaded: true)
+            return ForgeSectionRows(id: id, title: id == .results ? title ?? ForgePresentation.title(section, kind: list.kind)
+                                        : ForgePresentation.title(section, kind: list.kind), rows: rows, loaded: true)
         }
         return ForgeListModel(kind: list.kind, sections: sections, count: count)
     }

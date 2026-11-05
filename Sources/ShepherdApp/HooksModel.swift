@@ -5,7 +5,7 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-// Settings › Hooks (docs/hooks.md; HooksSettings, HooksSources, HooksSpace boards):
+// Settings › Hooks (HooksSettings, HooksSources, HooksSpace boards):
 // the hooks Shepherd and the agent's runtime read on one host, their off switches, and the composer's
 // hook glyph. One model per host: this Mac's reads its catalog off the main thread; a remote host's
 // reads and changes it over `hooks.v1`. The page's rows are derived once per load or filter change,

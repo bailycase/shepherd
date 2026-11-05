@@ -1,7 +1,7 @@
 import Foundation
 
 /// A design's `project/canvas.json` (version 3): the boards laid out on the canvas, their order,
-/// pages, notes and design systems (docs/designs.md › The index).
+/// pages, notes and design systems.
 ///
 /// Every key this build doesn't name is kept verbatim, at every level (`attachments`,
 /// `createdOnFiles`, `frameless`, `guides`, drawing notes), so a canvas from claude.ai

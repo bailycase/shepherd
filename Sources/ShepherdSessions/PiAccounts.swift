@@ -48,7 +48,7 @@ public struct PiAccountList: Equatable, Sendable {
     public var activeAccount: PiAccount? { accounts.first { $0.id == active } }
 }
 
-/// Several accounts per provider (docs/pi-home.md › Accounts). pi reads one credential per
+/// Several accounts per provider. pi reads one credential per
 /// provider from the home's `auth.json`; the others wait in `shepherd-accounts.json` (0600) beside
 /// it. Switching saves the active credential back first (refresh tokens rotate), then writes the
 /// chosen one, under pi's lock; pi re-reads auth.json when it changes, so running agents use the

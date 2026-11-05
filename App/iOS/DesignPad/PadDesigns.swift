@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Every host's designs on this device (docs/designs.md › Remote): each host's
+/// Every host's designs on this device: each host's
 /// `RemoteDesignLibrary` (shared with the iPhone's designs, `HostDesignLibraries`), connected
 /// while its host is and offers `designs.v1` (the host's Design tool experiment on), and each
 /// design's canvas, kept for the app's run so coming back to a design finds it as it was left.

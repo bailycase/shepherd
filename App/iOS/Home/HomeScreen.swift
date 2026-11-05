@@ -84,7 +84,7 @@ private struct HomeSections: View {
         }
         HomeMissionsSection()
         HomeForgeSection()
-        // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
+        // The Mac's Working, Done and Pinned, in its order.
         // A card draws every row it holds, so each group shows its first few and lists the rest on
         // its own screen.
         if !groups.working.isEmpty {

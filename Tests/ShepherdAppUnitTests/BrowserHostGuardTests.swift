@@ -4,8 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdApp
 
-/// What a host's agent may ask of a page on the viewer's Mac (docs/browser.md › Remote › What a
-/// host's agent can make this Mac do), decided without a web view: the address it may open, and the
+/// What a host's agent may ask of a page on the viewer's Mac, decided without a web view: the address it may open, and the
 /// page it may read or act on. The resolver is injected, so nothing is looked up.
 @Suite("Browser host guard")
 struct BrowserHostGuardTests {

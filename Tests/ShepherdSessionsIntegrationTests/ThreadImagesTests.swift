@@ -7,7 +7,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// The images of a thread, from pi's saved history to a client (docs/native-thread.md › Images): a send's images come back
+/// The images of a thread, from pi's saved history to a client: a send's images come back
 /// named in the snapshot and fetched in pieces, after a restart too; an agent's and a tool's images are named the same way;
 /// a stale, foreign, malformed or oversized request is refused; and nothing but metadata is in a snapshot.
 // Serialized: several tests watch `ThreadImages.onHeavyWork`, one process-wide hook, which parallel tests would overwrite.

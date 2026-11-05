@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// Git sharing for designs (docs/designs.md › Sharing with Git; boards GitDesignPublish … GitDesignMergeReview).
+// Git sharing for designs (boards GitDesignPublish … GitDesignMergeReview).
 // A shared design is a Git working tree whose repository lives outside it, beside the designs:
 // `<designs>/.git/<id>` holds it, so nothing in the design's folder (the design agent's working
 // folder) leads to the repository, its remote or its config. Only `project/`, `assets/` and

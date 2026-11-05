@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdCore
 
-/// What a design reference handed a thread (docs/designs.md › Design references › The copy): the
+/// What a design reference handed a thread: the
 /// piece as it was when the message went, resolved once by the host and kept with the message
 /// under the support directory's `design-refs/<agent>/<id>/` (never the drop folder, which is
 /// pruned). The chip and design_get read it, so both keep showing what was sent after the design

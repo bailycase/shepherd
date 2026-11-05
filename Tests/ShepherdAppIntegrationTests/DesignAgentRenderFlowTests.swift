@@ -7,7 +7,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// `board_render` end to end (docs/designs.md › Rendering for the agent): a real server hands the
+/// `board_render` end to end: a real server hands the
 /// board's files to the app, which draws them off screen with the real renderer and answers a picture
 /// whose pixels are the board's. The design is never opened: no canvas, no live view.
 @Suite("Design agent renders", .mainActorExclusive)

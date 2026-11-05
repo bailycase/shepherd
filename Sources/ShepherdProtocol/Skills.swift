@@ -11,7 +11,7 @@ import Foundation
 // Beside them, a host reports the skills its pi loads from elsewhere (`PiSkills`), which
 // Settings lists read-only: none from a host whose pi reads only its home; an older host's pi
 // read the user's own pi setup and packages too. A skill copied from the user's own pi says where
-// from (`InstalledSkill.copiedFrom`). docs/skills.md has the whole design.
+// from (`InstalledSkill.copiedFrom`).
 
 /// How the agent may use a skill.
 public enum SkillInvocation: String, Codable, Hashable, Sendable, CaseIterable {
@@ -111,7 +111,7 @@ public struct InstalledSkill: Codable, Hashable, Sendable, Identifiable {
 
 /// A skill pi loads from outside Shepherd's skills folder: pi's own agent directory, a `skills`
 /// path in pi's settings, or a pi package. Settings ▸ Skills lists it read-only; Shepherd never
-/// changes it (docs/skills.md › Outside skills).
+/// changes it.
 public struct PiSkill: Codable, Hashable, Sendable, Identifiable {
     public enum Origin: String, Codable, Hashable, Sendable {
         /// pi's agent directory's `skills/` (~/.pi/agent/skills).

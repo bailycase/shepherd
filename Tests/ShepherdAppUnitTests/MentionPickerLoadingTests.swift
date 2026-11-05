@@ -4,7 +4,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The @ picker before it has rows (docs/design/design-tool-references.md › The @ picker): it opens
+/// The @ picker before it has rows: it opens
 /// at once, says "Loading designs…" while this Mac's designs are read, says "Couldn't load
 /// designs." when the read failed, lists nothing to choose in either, and once the rows arrive
 /// shows them for the draft as it stands then.

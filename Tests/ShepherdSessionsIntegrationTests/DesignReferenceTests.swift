@@ -6,7 +6,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Design references against a real server and a stub pi (docs/designs.md › Design references):
+/// Design references against a real server and a stub pi:
 /// a send resolves each reference at the version it pins, keeps its copy with the message under
 /// the support directory, fences what the host read ahead of the words, and grants the thread
 /// that copy; design_get answers only from the copies the thread was sent; the copies outlive the

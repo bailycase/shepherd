@@ -10,7 +10,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// The design canvas's budgets (docs/designs.md › Performance), as counts over a synthesized
+/// The design canvas's budgets, as counts over a synthesized
 /// 172-board canvas in an off-screen window: opening it holds at most six web views, panning
 /// recycles them within that, and one board changing redraws that board's frame once with one
 /// snapshot. Counts hold on a slow machine; timings would not.

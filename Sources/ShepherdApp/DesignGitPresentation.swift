@@ -4,8 +4,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-// What the Git chip, panel, merge dialog and merge card draw for a design (docs/designs.md ›
-// Sharing with Git; boards GitDesignChanges and DesignGitStatus). Pure: the model passes the
+// What the Git chip, panel, merge dialog and merge card draw for a design. Pure: the model passes the
 // engine's state in, the views draw what comes out.
 enum DesignGitPresentation {
     struct Chip: Equatable {

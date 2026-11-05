@@ -218,7 +218,7 @@ struct NativeThreadStoreTests {
 
     /// A comment's card holds the agent's answer up to the first compaction. Afterwards the agent
     /// works from its summary, so what it does next is its own work: an ordinary reply under the
-    /// card, with its own footer, never more of the card (docs/designs.md › Comments).
+    /// card, with its own footer, never more of the card.
     @Test func aDesignCommentsCardEndsAtTheFirstCompactionInItsReply() async {
         let id = UUID()
         var comment = F.user("Show the counts", id: "u1")
@@ -1048,7 +1048,7 @@ struct NativeThreadStoreTests {
     }
 
     /// Only a send that goes into the thread now brings the reader to the tail; a follow-up sent
-    /// while pi works waits in Up next (docs/design/thread.md › Thread › Following).
+    /// while pi works waits in Up next.
     @Test(arguments: [
         (running: false, delivery: NativeThreadDelivery.followUp, queued: false),
         (running: false, delivery: .steer, queued: false),
