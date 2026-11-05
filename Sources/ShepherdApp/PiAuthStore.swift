@@ -24,6 +24,8 @@ final class PiAuthStore {
     private(set) var signingOut: Set<String> = []
     /// Saved accounts by provider (`PiAccounts`): only providers with any.
     private(set) var accounts: [String: PiAccountList] = [:]
+    /// Subscription usage by provider (`PiUsage`), read when Sign-in opens.
+    private(set) var usage: [String: [PiUsageWindow]] = [:]
     /// The provider whose sign-in under way adds an account instead of replacing the active one.
     @ObservationIgnored private var adding: String?
     /// The last sign-in's account bookkeeping, still being saved: a remote client's answer waits on it.
@@ -173,6 +175,17 @@ final class PiAuthStore {
     func refreshAccounts() async {
         let store = accountStore
         accounts = await Task.detached { store.lists() }.value
+    }
+
+    /// Asks each signed-in subscription that reports usage how much is used.
+    /// Each saved account's usage is saved with it, so the account list reads again after.
+    func refreshUsage() async {
+        usage = await readUsage(pi.files)
+        await refreshAccounts()
+    }
+
+    @ObservationIgnored var readUsage: (PiHome) async -> [String: [PiUsageWindow]] = { home in
+        await Task.detached { await PiUsage.read(home: home) }.value
     }
 
     /// Signs another account in beside the one there: the current one is saved first.

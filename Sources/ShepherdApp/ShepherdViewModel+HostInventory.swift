@@ -123,9 +123,9 @@ enum HostInventoryMapping {
         let several = (accounts?.accounts.count ?? 0) > 1
         return HostProviderStatus(id: row.id, name: row.name, badge: row.badge, auth: auth, detail: detail, problem: row.problem,
                                   accounts: accounts?.accounts.count ?? 0,
-                                  activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.name : nil },
+                                  activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.title : nil },
                                   accountList: several ? accounts?.accounts.map { account in
-                                      HostProviderAccount(id: account.id, name: account.name, active: account.id == accounts?.active,
+                                      HostProviderAccount(id: account.id, name: account.title, active: account.id == accounts?.active,
                                                           limitedUntil: account.limitedUntil?.timeIntervalSince1970)
                                   } : nil,
                                   rotate: several ? accounts?.rotate : nil)

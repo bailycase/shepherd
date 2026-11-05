@@ -75,6 +75,16 @@ struct PiAuthRowsTests {
         #expect(Self.row(page, "openai-codex")?.freshness == .newerInYourPi && Self.row(page, "xai")?.freshness == nil)
     }
 
+    @Test func anOldReadingShowsItsAgeAndAPassedResetAsZero() {
+        let now = Date()
+        let windows = PiSignInWords.usage([PiUsageWindow(name: "5-hour", usedPercent: 97, resetsAt: now.addingTimeInterval(-60)),
+                                           PiUsageWindow(name: "Week", usedPercent: 40, resetsAt: nil)], now: now)
+        #expect(windows.map(\.fraction) == [0, 0.4] && windows[0].resets == nil)
+        #expect(PiSignInWords.asOf(now.addingTimeInterval(-60), now: now) == nil)
+        #expect(PiSignInWords.asOf(now.addingTimeInterval(-2 * 3600), now: now)?.hasPrefix("as of ") == true)
+        #expect(PiSignInWords.sharedLoginNote([]) == nil)
+    }
+
     @Test func aKeyBeingAddedShowsAsSigningInUntilItLands() {
         let page = PiSignInPage.make(survey: Self.survey, signingIn: "groq")
         #expect(Self.row(page, "groq")?.auth == .signingIn(plan: nil) && !page.addable.contains("groq"))

@@ -351,6 +351,22 @@ says which. A limit within `PiAccounts.grace` of a switch is the old account's r
 switch again, and when every account is sitting out nothing switches, so a burst of limits stops.
 Rotation only changes which credential is in `auth.json`: pi's own retry or the next turn uses it.
 
+### Usage
+
+When Sign-in opens, and again after a sign-in, sign-out or account switch, `PiUsage` asks Anthropic
+(`api.anthropic.com/api/oauth/usage`, what Claude Code's `/usage` calls) and OpenAI Codex
+(`chatgpt.com/backend-api/wham/usage`, what Codex's `/status` calls) how much of each limit
+window the active account has used, with the OAuth token in `auth.json`. Nothing goes anywhere
+but the provider that issued the token. Both endpoints are undocumented and can change; a failed
+request or unknown shape shows no usage. An expired token is skipped, never refreshed: pi owns
+refreshing, and its refresh tokens rotate. Other providers publish no usage endpoint.
+
+A saved account shows its email in place of a name Shepherd gave ("Account 2"), and beside a name
+the user chose. OpenAI Codex's comes from the account's token (a JWT). Anthropic's token carries
+none, so the same read asks `/api/oauth/profile` for the active account's email and saves it with
+that account (`PiAccounts.setActiveEmail`); an Anthropic account gets its email the first time
+Sign-in is open while it is active.
+
 Sign-in's rows (`PiSignInPage`) read both sides as plain files: Shepherd's `auth.json` and
 `models.json`, and the user's pi for Re-import. A key shows only masked (`PiKeyMask`: its prefix
 and last four), a variable by name, a command as its text. How a copy stands against the user's pi
