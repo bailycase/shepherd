@@ -82,7 +82,9 @@ def validate_parent(client, parent, attempt, sha, build, plan, local=False, ref=
     checks = {
         "path": run.get("path", "").split("@", 1)[0] == ".github/workflows/release.yml",
         "event": run.get("event") in ("push", "workflow_dispatch"),
-        "status": run.get("status") == "in_progress",
+        # GitHub reports a running parent as "queued" while a reusable workflow's jobs wait for a
+        # runner (run 42128817862), so both mean active; "completed" still fails closed.
+        "status": run.get("status") in ("queued", "in_progress"),
         "run_attempt": run.get("run_attempt") == attempt,
         "head_sha": run.get("head_sha") == sha,
         "run_number": run.get("run_number") == build,
@@ -95,7 +97,7 @@ def validate_parent(client, parent, attempt, sha, build, plan, local=False, ref=
             status = "unrecognized"
         raise RunnerError("parent Release attempt is not active or does not match the build"
                           f" (mismatched fields: {', '.join(mismatches)};"
-                          f" status: {status}, expected: in_progress)")
+                          f" status: {status}, expected: queued or in_progress)")
     if local:
         if run.get("head_branch") != "nightly" or plan.get("channel") != "nightly":
             raise RunnerError("Self-hosted builds only Nightly releases")

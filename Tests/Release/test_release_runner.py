@@ -92,7 +92,7 @@ class Clock:
 class ParentValidationTests(unittest.TestCase):
     def test_each_parent_mismatch_is_identified_and_still_fails_closed(self):
         for field, value in (("path", ".github/workflows/other.yml"), ("event", "workflow_run"),
-                             ("status", "queued"), ("status", "completed"), ("run_attempt", 2),
+                             ("status", "completed"), ("status", "waiting"), ("run_attempt", 2),
                              ("head_sha", "b" * 40), ("run_number", 43)):
             with self.subTest(field=field, value=value):
                 api = API([])
@@ -101,8 +101,13 @@ class ParentValidationTests(unittest.TestCase):
                     runner.validate_parent(api, 10, 1, SHA, 42, PLAN)
                 self.assertIn(f"mismatched fields: {field};", str(caught.exception))
                 status = value if field == "status" else "in_progress"
-                self.assertIn(f"status: {status}, expected: in_progress", str(caught.exception))
+                self.assertIn(f"status: {status}, expected: queued or in_progress", str(caught.exception))
                 self.assertEqual(api.calls, [("GET", "/actions/runs/10", None)])
+
+    def test_a_queued_parent_is_still_active(self):
+        api = API([])
+        api.parent["status"] = "queued"
+        runner.validate_parent(api, 10, 1, SHA, 42, PLAN)
 
     def test_diagnostics_do_not_echo_arbitrary_api_values(self):
         secret = "fixture-private-value\n::error::do-not-echo"
@@ -115,7 +120,7 @@ class ParentValidationTests(unittest.TestCase):
         self.assertEqual(str(caught.exception),
                          "parent Release attempt is not active or does not match the build"
                          " (mismatched fields: path, event, status, run_attempt, head_sha, run_number;"
-                         " status: unrecognized, expected: in_progress)")
+                         " status: unrecognized, expected: queued or in_progress)")
         self.assertNotIn(secret, str(caught.exception))
         self.assertEqual(api.calls, [("GET", "/actions/runs/10", None)])
 
