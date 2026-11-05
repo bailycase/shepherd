@@ -10,3 +10,6 @@ dist/
 __pycache__/
 # Generated review captures belong in PR attachments, not source control.
 docs/design/evidence/
+
+# Per-machine MCP servers (may hold credentials)
+.shepherd/mcp.json
