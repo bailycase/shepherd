@@ -231,13 +231,6 @@ private struct RemoteSettingsSectionPage: View {
                         }
                     }
                 }
-                SettingsGroup(title: "Goal checks") {
-                    SettingsRow(title: "Allow cross-provider goal checks",
-                                subtitle: "On may send conversation, tool output and written code to another provider.") {
-                        SettingsSwitch(label: "Allow cross-provider goal checks",
-                                       isOn: bind(s.goalCrossProviderEvaluation) { .goalCrossProviderEvaluation($0) })
-                    }
-                }
                 SettingsNote(text: "Notify when a turn finishes is this Mac's own: switch to This Mac to change it.")
             }
         case .worktrees:

@@ -68,7 +68,7 @@ public struct NativeGoal: Codable, Hashable, Sendable, Identifiable {
     }
     /// Notifications never include the user condition, evaluator feedback, or tool quotes.
     public var notificationLabel: String {
-        state == .met ? tokenLabel + (confirmedByUser == true ? " · confirmed by you" : " · recorded evidence accepted") : "The goal stopped and needs your input."
+        state == .met ? tokenLabel + (confirmedByUser == true ? " · confirmed by you" : " · goal met") : "The goal stopped and needs your input."
     }
     private var tokenLabel: String {
         tokensUsed >= 1000 ? "\(tokensUsed / 1000)k tokens" : "\(tokensUsed) tokens"

@@ -65,19 +65,6 @@ struct SettingsPreviewTests {
         }
     }
 
-    @Test(arguments: [false, true])
-    func settingsAgentsGoalChecks(enabled: Bool) async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        workspace.settings.goalCrossProviderEvaluation = enabled
-        try await Preview.render("settings-agents-goal-checks-\(enabled ? "on" : "off")", size: CGSize(width: 1020, height: 950)) {
-            AgentSettings(pi: workspace.server.pi, settings: workspace.settings)
-                .padding(AppLayout.settingsWideSides)
-                .frame(width: 1020, height: 950, alignment: .topLeading)
-                .background(Color.sh.bgWindow)
-        }
-    }
-
     /// Extensions with the Design tool on, without the removed peer-permission row.
     @Test func settingsExtensionsWithoutAgentPermissions() async throws {
         let workspace = try PreviewWorkspace()

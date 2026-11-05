@@ -56,7 +56,7 @@
     clients update only the pill clock locally. Set/Edit carry only condition text; goals have no
     time/token caps and legacy budget fields are ignored. Confirm is user attestation, not independent verification. A host without
     the capability hides these controls but keeps ordinary chat. Stop and Steer now pause the
-    goal and cancel Checking before aborting pi, never resuming the goal for the replacement turn
+    goal before aborting pi, never resuming the goal for the replacement turn
   - `experiments.goals.v1` supports `HostSettings.goalsEnabled` and its change, default false.
     Settings > Experiments switches each host live; off pauses/cancels goal work and hides its
     controls without restarting agents, clearing saved goals or aborting in-flight tools.
@@ -200,8 +200,8 @@
     in the host's browser; the host's own Sign in still opens it. At most four run at once and
     each is gone 330 seconds after it starts. A reply never carries a secret; a client that lacks
     the capability refuses before sending. The additive
-    `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
-    newly started or restarted agents, not a live process. Both clients disclose that scope
+    `goalCrossProviderEvaluation` is legacy: false when missing/null, always false from current
+    hosts, and its change is ignored. Both clients disclose that scope
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and
     cancellation to space requests. The host resolves the allowlisted space entry and
     owns the bounded OAuth bridge. A run UUID is scoped to the connection, directory and file;

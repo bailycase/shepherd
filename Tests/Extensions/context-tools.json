@@ -337,6 +337,20 @@
         "child": "keep"
       },
       "reason": "A native subagent's only way to ask its parent; registered in a child's own pi."
+    },
+    {
+      "tools": [
+        "goal_finish"
+      ],
+      "group": "agent",
+      "extension": "shepherd-goal.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer",
+        "design": "defer",
+        "child": "defer"
+      },
+      "reason": "Registered inactive; the goal controller activates it only while a goal is Working, so no other request carries it."
     }
   ]
 }

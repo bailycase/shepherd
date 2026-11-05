@@ -108,7 +108,7 @@ private struct SHTouchQueueHeader<Options: View>: View {
                 .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: SH.Space.m)
                 if afterGoalCheck {
-                    Text("after the goal check").font(.shMono(SHGoalMetrics.metaFont)).foregroundStyle(sh.textTertiary)
+                    Text("before the goal continues").font(.shMono(SHGoalMetrics.metaFont)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).minimumScaleFactor(0.75)
                 }
                 if !stacked { sendNow }

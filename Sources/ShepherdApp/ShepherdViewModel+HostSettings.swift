@@ -73,7 +73,6 @@ enum HostSettingsMapping {
             namingModel: app.namingModel.isEmpty ? nil : app.namingModel,
             compactAtPercent: app.compactAtPercent,
             queueDelivery: app.queueDelivery,
-            goalCrossProviderEvaluation: app.goalCrossProviderEvaluation,
             goalsEnabled: app.goalsEnabled,
             projectsEnabled: app.projectsEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
@@ -116,7 +115,7 @@ enum HostSettingsMapping {
             guard percent == nil || PiCompactionThreshold.choices.contains(percent!) else { return nil }
             app.compactAtPercent = percent
         case .queueDelivery(let mode): app.queueDelivery = mode
-        case .goalCrossProviderEvaluation(let on): app.goalCrossProviderEvaluation = on
+        case .goalCrossProviderEvaluation: break // Legacy: goals no longer use a checker model.
         case .goalsEnabled(let on): app.goalsEnabled = on
         case .projectsEnabled(let on): app.projectsEnabled = on
         case .worktreeBase(let base): app.worktreeBaseMode = base == .head ? .head : .fresh

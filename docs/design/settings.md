@@ -245,12 +245,6 @@ shell they run."
     Context group has no footnote, as the board draws none. A host's Bundled extensions lists the same `codemode` switch.
     Space overrides and the user's requirement are in [codemode-settings.md](codemode-settings.md).
 
-- **Goal checks:**
-  - Allow cross-provider goal checks, off by default. Off uses the thread's exact model and
-    provider. On may send conversation, tool output and written code to another provider,
-    preferring Haiku, Codex Mini or Gemini Flash when available. The footnote says this applies
-    when agents start or restart; running agents keep their policy until restarted. The iOS
-    host-settings page exposes the same consent and scope.
 
 ## Worktrees (SettingsWorktrees)
 

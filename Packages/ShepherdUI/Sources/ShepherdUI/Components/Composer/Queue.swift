@@ -293,7 +293,7 @@ private struct SHQueueHeader<Options: View>: View {
             }
             Spacer(minLength: SH.Space.m)
             if afterGoalCheck {
-                Text("after the goal check").font(.shMono(SHGoalMetrics.metaFont)).foregroundStyle(sh.textTertiary)
+                Text("before the goal continues").font(.shMono(SHGoalMetrics.metaFont)).foregroundStyle(sh.textTertiary)
             }
             if showsOptions { SHOptionsMenu("Queue options", size: SHQueueMetrics.headerButton, content: options) }
             Button(action: onToggle) {

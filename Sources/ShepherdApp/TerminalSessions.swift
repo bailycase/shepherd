@@ -1221,7 +1221,6 @@ final class TerminalSessionStore {
             childrenExtensionPath: agent.coordinatorFor == nil ? try ChildrenExtension.installedPath() : nil,
             nativeChildren: settings.piNativeSubagents,
             childEnvironment: settings.childEnvironment,
-            goalCrossProviderEvaluation: settings.goalCrossProviderEvaluation,
             goalsEnabled: settings.goalsEnabled,
             namerExtensionPath: try NamerExtension.installedPath(),
             needsName: !agent.nameIsFinal,

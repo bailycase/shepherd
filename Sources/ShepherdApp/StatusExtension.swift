@@ -110,7 +110,6 @@ enum StatusExtension {
         childrenExtensionPath: String? = nil,
         nativeChildren: Bool = true,
         childEnvironment: [String: String] = [:],
-        goalCrossProviderEvaluation: Bool = false,
         goalsEnabled: Bool = false,
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
@@ -213,9 +212,6 @@ enum StatusExtension {
         // Hooks (docs/hooks.md): the runtime reads trust.json from here; a coordinator runs none.
         env[HooksExtension.environmentKey] = HooksExtension.directory(in: home).path
         env["SHEPHERD_GOALS_ENABLED"] = goalsEnabled ? "1" : "0"
-        // Always override an inherited opt-in; absence would leak the app's launch environment.
-        env["SHEPHERD_GOAL_MODELS"] = goalCrossProviderEvaluation
-            ? "anthropic/claude-haiku-4-5,openai/gpt-5.1-codex-mini,google/gemini-2.5-flash" : ""
         if let projectContext {
             env["SHEPHERD_PROJECT_CONTEXT"] = projectContext.json
             env["SHEPHERD_PROJECT_COORDINATOR"] = projectContext.coordinator ? "1" : "0"
