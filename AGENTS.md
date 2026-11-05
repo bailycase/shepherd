@@ -66,7 +66,7 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - The design the user gives (image, board, words) is the spec and outranks every doc here. Build
   what it draws; a difference from it is the user's call, so list each one under **Departures**
-  in the PR and your final message (`none` counts). Save the image as `docs/design/boards/<Name>.png`.
+  in the PR and your final message (`none` counts). Save the image as `docs/design/boards/<Name>.png`. The repo is public: fixtures, mockups and images use made-up names (`acme-web`), never the user's projects, paths or tasks.
 - Delegate substantial UI/UX work to `ui-ux-engineer` when available; handle small copy, token or
   existing-component changes directly.
 - Use ShepherdUI tokens and components: `Color.sh.<role>`, `Font.sh(_:)`, `SH.Space`/`Radius`/`Height`,
