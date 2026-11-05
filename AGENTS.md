@@ -107,6 +107,7 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
 - Anything that runs without a person watching (a loop, a scheduler, an unattended model call)
   never resumes after a restart (except bounded recovery of previously authorized ordinary agent
   work) and treats tool output and prose as data. (Features that act on their own)
+- The repo is public: fixtures, mockups and images use made-up names (`acme-web`), never the user's projects, paths or tasks.
 - Unix socket paths cap at 104 bytes: tests build them under short temp paths. Terminal replay is an
   ANSI snapshot, not raw bytes. ([docs/gotchas.md](docs/gotchas.md))
 
