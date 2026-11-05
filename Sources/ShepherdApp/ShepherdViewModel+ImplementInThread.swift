@@ -154,8 +154,9 @@ extension ShepherdViewModel {
             let repo = space.path
             let mode = settings.worktreeBaseMode
             let fetch = settings.worktreeFetchBeforeCreate
+            let projectBase = space.worktreeBase
             let (path, branch, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String, String) in
-                let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
+                let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
                 var lastError: Error?
                 for attempt in 1...5 {
                     let branch = ImplementBranch.name(for: piece, attempt: attempt)

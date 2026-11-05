@@ -1,4 +1,5 @@
 import AppKit
+import ShepherdCore
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
@@ -29,7 +30,7 @@ extension ListPerformanceTests {
         let onScreen = Int(ChangesMenuLayout.listMaxHeight / SHChangesMenuMetrics.rowHeight) + 1
         // Counted from before the window opens until the branches are in and drawn.
         SHRenderProbe.start()
-        window = OffscreenWindow(size: size, dark: true, WorktreeBasePicker(vm: vm, repo: repo.path, selected: nil, choose: { _ in }, close: {}))
+        window = OffscreenWindow(size: size, dark: true, WorktreeBasePicker(vm: vm, space: SpaceID(), repo: repo.path, selected: nil, choose: { _ in }, close: {}))
         defer { window.close() }
         try await eventuallyOnMain("the branches to load") {
             ListPerf.settle(window)

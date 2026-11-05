@@ -22,6 +22,11 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var parentID: SpaceID?
     /// True with nil parentID means explicitly top-level, regardless of folder location.
     public var parentIsExplicit: Bool
+    /// The branch every new worktree of this project starts from ("origin/nightly"), set from the
+    /// base picker's "Default for this project". It outranks Settings ▸ Worktrees, and a new
+    /// thread here starts with its worktree switch on. Decodes nil from older files, and is
+    /// written only when set.
+    public var worktreeBase: String?
 
     public init(
         id: SpaceID = SpaceID(),
@@ -33,7 +38,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         holdsThreads: Bool = false,
         sidebarHidden: Bool = false,
         parentID: SpaceID? = nil,
-        parentIsExplicit: Bool = false
+        parentIsExplicit: Bool = false,
+        worktreeBase: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -45,6 +51,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         self.sidebarHidden = sidebarHidden
         self.parentID = parentID
         self.parentIsExplicit = parentIsExplicit
+        self.worktreeBase = worktreeBase
     }
 
     /// The reserved space for design agents: hidden, never a project.
@@ -59,7 +66,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var holdsAutomations: Bool { hidden && !holdsDesigns && !holdsProjects && !holdsThreads }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden, holdsDesigns, holdsProjects, holdsThreads, sidebarHidden, parentID, parentIsExplicit
+        case id, name, path, hidden, holdsDesigns, holdsProjects, holdsThreads, sidebarHidden, parentID, parentIsExplicit, worktreeBase
     }
 
     public init(from decoder: Decoder) throws {
@@ -75,6 +82,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         sidebarHidden = try c.decodeIfPresent(Bool.self, forKey: .sidebarHidden) ?? false
         parentID = try c.decodeIfPresent(SpaceID.self, forKey: .parentID)
         parentIsExplicit = try c.decodeIfPresent(Bool.self, forKey: .parentIsExplicit) ?? false
+        worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -91,6 +99,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         if sidebarHidden { try c.encode(sidebarHidden, forKey: .sidebarHidden) }
         try c.encodeIfPresent(parentID, forKey: .parentID)
         if parentIsExplicit { try c.encode(parentIsExplicit, forKey: .parentIsExplicit) }
+        try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
     }
 }
 

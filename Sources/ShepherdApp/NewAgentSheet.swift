@@ -541,7 +541,8 @@ struct NewAgentSheet: View {
             } else {
                 let mode = vm.settings.worktreeBaseMode
                 resolvedFetch = fetch ?? vm.settings.worktreeFetchBeforeCreate
-                let result = await Task.detached { GitWorktree.resolveBase(repo: cwd, mode: mode, fetchFirst: resolvedFetch) }.value
+                let projectBase = selectedSpace?.worktreeBase
+                let result = await Task.detached { GitWorktree.resolveBase(repo: cwd, mode: mode, fetchFirst: resolvedFetch, projectBase: projectBase) }.value
                 base = result.display; note = result.note
             }
             guard baseRequestID == requestID, targetHostID == hostID, workingDirectory == cwd, self.spaceID == spaceID else { return }
@@ -575,10 +576,11 @@ struct NewAgentSheet: View {
             let mode = AppSettings.shared.worktreeBaseMode
             let fetchFirst = fetchFirst
             let explicitBase = worktreeBase.trimmingCharacters(in: .whitespacesAndNewlines)
+            let projectBase = selectedSpace?.worktreeBase
             Task {
                 do {
                     let (path, baseUsed) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
-                        let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
+                        let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst, projectBase: projectBase)
                         let path = try GitWorktree.add(repo: repo, branch: branchName, from: explicitBase.isEmpty ? resolution.startPoint : explicitBase)
                         return (path, explicitBase.isEmpty ? resolution.display : explicitBase)
                     }.value

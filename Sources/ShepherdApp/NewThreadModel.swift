@@ -188,7 +188,10 @@ final class NewThreadState {
             }
         }
         let next = NewThreadPlaces.fallback(Self.hosts(vm), chosen: place, recent: recent)
-        if next != place { place = next }
+        if next != place {
+            place = next
+            useProjectDefaults(vm)
+        }
         // The Design tool turned off since: its pieces don't go, and its picker isn't made.
         if vm.designToolEnabled {
             if referenceChips == nil { referenceChips = vm.makeNewThreadReferenceChips() }
@@ -240,8 +243,20 @@ final class NewThreadState {
         guard next != place else { return }
         place = next
         error = nil
-        if space == nil || (host != nil && vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsWorktreeCreation != true) { worktree = false }
+        useProjectDefaults(vm)
         loadDefaults(vm)
+    }
+
+    /// The chosen project's default base (`Space.worktreeBase`), on this Mac or its host.
+    func projectBase(_ vm: ShepherdViewModel) -> String? {
+        guard let place, let id = place.space else { return nil }
+        let spaces = place.host.map { host in vm.remoteHosts.connections.first { $0.id == host }?.state.spaces ?? [] } ?? vm.state.spaces
+        return spaces.first { $0.id == id }?.worktreeBase
+    }
+
+    /// A project with a default base starts its threads in a worktree; one without, in the checkout.
+    func useProjectDefaults(_ vm: ShepherdViewModel) {
+        worktree = projectBase(vm) != nil && offersWorktree(vm)
     }
 
     /// Dropped or pasted images, resized on the way in as the thread's composer does.
@@ -458,12 +473,14 @@ final class NewThreadState {
                     let standaloneID = place.space == nil ? AgentID() : nil
                     let spaceID: SpaceID
                     let directory: String
+                    var projectBase: String?
                     if let standaloneID {
                         (spaceID, directory) = try await vm.server.standaloneThreadFolder(for: standaloneID)
                         vm.adopt(vm.server.state)
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {
                         spaceID = space.id
                         directory = space.path
+                        projectBase = space.worktreeBase
                     } else {
                         throw AgentStartFailure(message: "That space is gone.")
                     }
@@ -493,7 +510,7 @@ final class NewThreadState {
                                 GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetch)
                                 return (try GitWorktree.add(repo: repo, branch: branch, from: chosen), chosen)
                             }
-                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
+                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
                             return (try GitWorktree.add(repo: repo, branch: branch, from: resolution.startPoint), resolution.display)
                         }.value
                         config.workingDirectory = path
@@ -508,7 +525,7 @@ final class NewThreadState {
                 for id in submittedImages { attachments.remove(id) }
                 let sent = Set(submittedReferences.map(\.id))
                 references.removeAll { sent.contains($0.id) }
-                if worktree == submittedWorktree { worktree = false }
+                if worktree == submittedWorktree { useProjectDefaults(vm) }
                 if worktreeBase == submittedBase { worktreeBase = nil }
             } catch RemoteHostClientError.rejected(_, let message) {
                 self.error = message

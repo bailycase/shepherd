@@ -219,7 +219,7 @@ struct GitWorktreeTests {
         try git(["commit", "-q", "--allow-empty", "-m", "unrelated"], in: sandbox.repo)
         #expect(GitWorktree.defaultBranch(repo: sandbox.repo.path) == "main")
 
-        let fresh = GitWorktree.resolveBase(repo: sandbox.repo.path, mode: .fresh, fetchFirst: false)
+        let fresh = GitWorktree.resolveBase(repo: sandbox.repo.path, mode: .fresh, fetchFirst: false, projectBase: nil)
         let path = try GitWorktree.add(repo: sandbox.repo.path, branch: "wt/clean", from: fresh.startPoint)
 
         #expect(fresh.startPoint == "origin/main" && fresh.note == "cached — fetch disabled in settings")
@@ -228,7 +228,7 @@ struct GitWorktreeTests {
             try git(["config", "--get", "branch.wt/clean.merge"], in: sandbox.repo)
         }
         #expect(GitWorktree.isRepo(path))
-        let head = GitWorktree.resolveBase(repo: sandbox.repo.path, mode: .head, fetchFirst: false)
+        let head = GitWorktree.resolveBase(repo: sandbox.repo.path, mode: .head, fetchFirst: false, projectBase: nil)
         #expect(head.startPoint == nil && head.display == "feat/other")
     }
 

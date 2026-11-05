@@ -59,8 +59,10 @@ struct ThreadControlsPreviewTests {
 
     /// The real picker over a scratch repository (the engine's own branch list: checked-out branch,
     /// long names, a worktree-tagged one, many rows), then a search nothing matches, then a folder
-    /// that is no repository (the engine's own refusal).
-    @Test(arguments: [("worktree-base-picker", "", true), ("worktree-base-picker-empty", "zzz", true), ("worktree-base-picker-failed", "", false)])
+    /// that is no repository (the engine's own refusal). `-default` picks the project's default base,
+    /// so its last row is on.
+    @Test(arguments: [("worktree-base-picker", "", true), ("worktree-base-picker-empty", "zzz", true), ("worktree-base-picker-failed", "", false),
+                      ("worktree-base-picker-default", "", true)])
     func theRealBasePicker(surface: String, query: String, repo: Bool) async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -79,6 +81,9 @@ struct ThreadControlsPreviewTests {
             dir = try makeScratchDirectory("not-a-repo")
         }
         defer { try? FileManager.default.removeItem(at: dir) }
+        let pinned = surface.hasSuffix("-default")
+        let space = Space(name: "shepherd", path: dir.path, worktreeBase: pinned ? "release/2.4" : nil)
+        try await workspace.seed(ShepherdState(spaces: [space]))
         // `render` waits for "Reading branches…" to leave and for the settled text to show (a blank
         // or spinner capture is no evidence), at text scale 1 and 1.3.
         let settled = repo ? (query.isEmpty ? "feat/ledger" : "No branch matches") : "repository"
@@ -89,7 +94,8 @@ struct ThreadControlsPreviewTests {
             store.textScale = scale
             try await Preview.render(scale == 1 ? surface : "\(surface)-x1.3", size: CGSize(width: 380, height: 460),
                                      untilGone: "Reading branches", showing: settled) {
-                WorktreeBasePicker(vm: workspace.vm, repo: dir.path, selected: repo ? "agent/in-a-worktree" : nil, query: query, choose: { _ in }, close: {})
+                WorktreeBasePicker(vm: workspace.vm, space: space.id, repo: dir.path,
+                                   selected: pinned ? "release/2.4" : repo ? "agent/in-a-worktree" : nil, query: query, choose: { _ in }, close: {})
                     .padding(SH.Space.l)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .background(Color.sh.bgWindow)
@@ -97,22 +103,26 @@ struct ThreadControlsPreviewTests {
         }
     }
 
-    @Test(arguments: [("worktree-place-default", "Default"), ("worktree-place-picked", "agent/calm-stone-3831-with-a-very-long-branch-name")])
+    /// `-project` has no pick of its own: the Base row names the project's default base.
+    @Test(arguments: [("worktree-place-default", "Default"), ("worktree-place-picked", "agent/calm-stone-3831-with-a-very-long-branch-name"),
+                      ("worktree-place-project", "origin/nightly")])
     func theWorkplaceMenuWithABaseRow(surface: String, base: String) async throws {
+        let project = surface.hasSuffix("-project")
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         let repo = try makeScratchRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: repo.path)]))
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: repo.path, worktreeBase: project ? base : nil)]))
         workspace.vm.openNewThread()
         let draft = workspace.vm.newThread
         draft.worktree = true
-        draft.worktreeBase = base == "Default" ? nil : base
+        draft.worktreeBase = base == "Default" || project ? nil : base
+        let shown = draft.worktreeBase ?? draft.projectBase(workspace.vm)
         try await Preview.renderMatrix(surface, size: CGSize(width: 360, height: 260)) {
             SHPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(workspace.vm), chosen: draft.place),
                         worktree: SHPlaceWorktree(isOn: draft.worktree,
-                                                 caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
-                                                 base: draft.worktreeBase ?? "Default"),
+                                                 caption: NewThreadRules.worktreeCaption(base: shown ?? ""),
+                                                 base: shown ?? "Default"),
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { draft.worktree = $0 }, onChooseBase: {}, onClose: {}) { _ in EmptyView() }
                 .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
