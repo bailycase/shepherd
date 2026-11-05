@@ -112,8 +112,7 @@
     even with a persisted session ID (it may predate a host restart); repeated demand is idempotent.
     Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
     polls never demand processes; clients of older hosts keep the existing attach-only path.
-  - **Terminal compatibility** (no wire or capability change; docs/agent-coordination.md ›
-    Terminals and compatibility): a current client's +, ⌘D and ⌘J send the same `openPane` they
+  - **Terminal compatibility** (no wire or capability change): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
     A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or
     the request's `cwd`), answering `paneOpened`; there is no split request anywhere. So an older
@@ -130,7 +129,7 @@
     workspace, author gate, limits, pins; a nil field keeps the host's value, so an older client's
     edit never clears a trigger), runs carry their trigger, PR link, unread dot and failure, and
     the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead` and
-    `setAllPaused` ([data-flow](data-flow.md#automation-triggers)). The Mac shows a host's
+    `setAllPaused`. The Mac shows a host's
     automations under its sidebar section; the iOS client in Automations. A host without the
     capability shows them read-only
   - `forge` (`issuesAndPRs.v1`, `RemoteForgeRequest`, answered `forgeResult` or an error whose
@@ -228,8 +227,7 @@
     coordinators remain absent from ordinary fleet snapshots.
     The capability promises persisted configuration, not dispatch, host transfer or remote-host
     Space validation. Delete retains the project directory and all ordinary threads and worktrees.
-    See [Projects slice 1](project-lead.md#slice-1-persisted-owner-service-implemented-no-ui-or-dispatch)
-    for method cases, limits, lifecycle and conflict/error semantics. Existing `projects.v1` and
+    Existing `projects.v1` and
     `Project*` directory configuration remain wire-compatible.
   - `logicalProjects.conversationThinking.v1`: the owner keeps `settings.conversationThinking`, the
     coordinator's reasoning level, applies it with the conversation model at launch and before each
@@ -244,7 +242,7 @@
     it only when an owner launcher and controller callback are installed. Legacy native requests
     cannot discover a private coordinator; capable clients can read it explicitly. Raw native
     sends/retry/queue/compaction still cannot bypass Project admission. This is remote VIEWER
-    routing, not worker placement on a different executor. See [Project runtime](project-lead.md).
+    routing, not worker placement on a different executor.
   - `projects` (`projects.v2`; older hosts use `projects.v1`): host-owned space history,
     inventory, reads and conflict-checked saves. V1 inventories native `.pi` configuration;
     v2 inventories `.shepherd`. Current hosts advertise only v2 and require v2 in the client's
@@ -255,13 +253,13 @@
     Only allowlisted space files are writable, never host-global configuration. The Mac
     Spaces page checks the host capability and connected identity before requests. Mac and
     iOS share negotiation/codecs through `ShepherdRemote`; only the Mac exposes a Spaces
-    editor. Request/result shapes and protocol version 1 are unchanged. See [Spaces](projects.md).
+    editor. Request/result shapes and protocol version 1 are unchanged.
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them
     the skills its pi loads from elsewhere (`SkillsSnapshot.pi`, `skills.pi.v1`, read-only). The
     server runs them on its own queue (they fetch with git) and tells the host's page about each
-    change (docs/skills.md)
+    change
   - `hooks` (`hooks.v1`): Settings › Hooks on the host (fetch, a hook's off switch by hash, a
     reader, Save, Delete, Test), answered with the host's `HookCatalogSnapshot` (its sources with
     state, entries, off switches, readers and home) or a test's `HookTestResult`. Save and Delete
@@ -284,7 +282,7 @@
     (`design.import.v1`), and a
     pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
     experiment turns on or off).
-    Answered by the server itself; boards render on the client (docs/designs.md › Remote)
+    Answered by the server itself; boards render on the client
   - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
     drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists
     summaries (each names the agents the mission owns, so clients keep those threads out of their
@@ -317,7 +315,7 @@
     a keepalive), all closed with the connection. Each direction is credit-paced (256 KiB window),
     and reads stop while a connection's write queue is backed up. The same capability covers
     `RemoteAgentQuery.devServers` (the thread's folder on the host) and `RemoteAgentAction.openTerminal`
-    (Start on the host). docs/browser.md › Remote
+    (Start on the host).
   - `browserClaim`, `browserRelease`, `browserAnswer`, `browserClaimed` and `browserDrive`
     (`browser.drive.v1`, offered with the tunnel, and only to a client that lists it in `hello`): the
     agent on the host drives the page the viewer shows. A viewer with the thread's Browser tab on
@@ -333,8 +331,7 @@
     host also pushes `abandoned` (Stop), `ended` (superseded, unresponsive, agent gone), `handBack`
     (the user's next message, from any client) and `opened` (the agent opened a page in the host's
     own browser: the viewer's tab takes the dot). The viewer runs a request with the local driver,
-    bound by `BrowserViewerPolicy`: only the host's own loopback ports and public addresses (docs/
-    browser.md › Remote › What a host's agent can make this Mac do; SECURITY.md). A claim ends with
+    bound by `BrowserViewerPolicy`: only the host's own loopback ports and public addresses (SECURITY.md). A claim ends with
     the viewer's tab out of sight for 30 s, its connection, or a newer claim. A client or host without
     the capability keeps PR 3a's two pages.
   - `browser.tabs.v1` extends those browser-drive requests with `tabs`, `newTab`, `selectTab`,

@@ -3,7 +3,7 @@ import Testing
 @testable import ShepherdProtocol
 
 /// `board_extract`: an element becomes a piece, an import takes its place, and exact copies in other
-/// boards follow (docs/designs.md › Shared pieces).
+/// boards follow.
 @Suite("Design extraction")
 struct DesignExtractTests {
     static let a = DesignPath("A.dc.html")!

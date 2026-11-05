@@ -7,7 +7,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The canvas's own changes and asks (docs/designs.md › Board actions): the actions over a board
+/// The canvas's own changes and asks: the actions over a board
 /// picked whole, a board dragged (written once, where it lands), Duplicate, Variations and
 /// another direction as messages carrying a view record, Present and its Play links (in-project
 /// only), and pages with their notes.

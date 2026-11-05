@@ -454,8 +454,7 @@ public struct FleetModel: Equatable, Sendable {
                 let digest = digests[ref]
                 // Its own turn ended while its subagents still run: Working, as on the Mac.
                 if agent.status == .idle || agent.status == .done, digest?.subagentsWorking == true { agent.status = .working }
-                // A design's agent is no thread (docs/designs.md › Design agents and ordinary
-                // threads): never running, needing you, finished or counted. Its design is its
+                // A design's agent is no thread: never running, needing you, finished or counted. Its design is its
                 // Recents row where the host serves designs; a system build's has none. It lives in
                 // the host's reserved (hidden) designs space, which is no project to name.
                 if host.state.isDesignAgent(agent) {

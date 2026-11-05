@@ -3,7 +3,7 @@ import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs an ordinary thread's design references tools (`shepherd-design-refs.ts`: design_get, design_note)
-/// from its embedded literal into the support directory (docs/designs.md › Design references).
+/// from its embedded literal into the support directory.
 /// A design's agent never loads it. The tools register themselves only once the thread holds a
 /// reference (`SHEPHERD_DESIGN_REFS`), so a thread without one carries nothing of them.
 enum DesignReferencesExtension {

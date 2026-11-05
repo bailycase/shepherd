@@ -254,7 +254,7 @@ final class ShepherdViewModel {
     /// agent restored idle with `Agent.lastFailure` reads failed too, until a turn starts.
     var failedTurns: Set<AgentID> = []
     /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
-    /// start" (docs/design/thread.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
+    /// start". Ephemeral: a relaunch starts every pi again.
     var cannotStart: Set<AgentID> = []
     /// This Mac's agents whose pi can't start because nothing signs in for their model: the
     /// provider it needs (nil when pi names none), and when it stopped.
@@ -367,7 +367,7 @@ final class ShepherdViewModel {
     let suggestions: SuggestionsModel
     /// Settings ▸ Pi ▸ Slash commands: the commands pi lists on this Mac, and which the `/` menu hides.
     let slashCommands: SlashCommandsModel
-    /// Settings › Hooks and the composer's hook glyph (docs/hooks.md).
+    /// Settings › Hooks and the composer's hook glyph.
     let hooks: HooksModel
     /// Each remote host's hooks, made when first shown (`hooks(for:)`).
     @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
@@ -1160,7 +1160,7 @@ final class ShepherdViewModel {
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
-        // until the welcome step closes (docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing over your pi).
+        // until the welcome step closes.
         if welcomesYourPi {
             holdsForWelcome = true
             sessions.holdStarts()

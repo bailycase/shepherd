@@ -1,6 +1,6 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
 // Shepherd design extension: the design agent's tools. A design is a canvas of HTML boards that
-// Shepherd keeps in its support directory (docs/designs.md); this agent reads and writes them only
+// Shepherd keeps in its support directory; this agent reads and writes them only
 // through Shepherd's socket, which checks every write (the path grammar, the board's shape, the
 // revision it was based on) and shows it on the canvas.
 //
@@ -56,7 +56,7 @@ const RENDER_TIMEOUT_MS = 70_000;
 const BATCH_TIMEOUT_MS = 60_000;
 
 /**
- * The design tools a native helper may call through its parent (docs/designs.md › Helpers). Never
+ * The design tools a native helper may call through its parent. Never
  * comment_reply and markup_propose (the agent's voice toward the viewer), nor checkpoint_restore: it
  * puts every board back, siblings' work included, so it is the agent's call.
  */

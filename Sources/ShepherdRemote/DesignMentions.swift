@@ -13,7 +13,7 @@ public enum DesignMentionHost: Hashable, Sendable {
 }
 
 /// One row the composer's @ picker can pick: a design, a page, a board, or an element of a
-/// board, with its breadcrumb (docs/designs.md › Design references › The @ picker).
+/// board, with its breadcrumb.
 public struct DesignMentionItem: Identifiable, Hashable, Sendable {
     public enum Kind: String, Hashable, Sendable {
         case design, page, board, element
@@ -74,7 +74,7 @@ public struct DesignMentionItem: Identifiable, Hashable, Sendable {
 }
 
 /// Where the @ picker's read of this Mac's designs stands, so it can say what it is doing before
-/// there are rows to list (docs/design/design-tool-references.md › The @ picker): reading, read,
+/// there are rows to list: reading, read,
 /// or failed. Reading is asked once per opening, and an answer belongs to the opening that asked:
 /// one that comes after a newer opening began is dropped, so a slow first read never overwrites
 /// the second's. A catalog already read keeps its rows through a later read and through its failure

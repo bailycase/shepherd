@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-// Git sharing for designs, in the app (docs/designs.md › Sharing with Git): each design's Git
+// Git sharing for designs, in the app: each design's Git
 // state as the server answers it, the sheet or dialog that is up, and the presses. Every git step
 // is a press: nothing here runs on a timer, and nothing pushes unless a button says push.
 

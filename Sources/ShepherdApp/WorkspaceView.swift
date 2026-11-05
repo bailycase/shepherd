@@ -566,7 +566,7 @@ struct PaneLeafView: View, Equatable {
                         models: { [vm] in await ModelCatalog.loadLocal(from: vm.server.pi.catalog).models.map(\.id) }),
                     slashLogin: vm.slashLoginActions
                 )
-                // Design references reach an ordinary thread only (docs/designs.md › Isolation).
+                // Design references reach an ordinary thread only.
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
                 .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
@@ -1048,7 +1048,7 @@ struct RemoteAgentThreadPane: View {
             },
             designChat: designChat, hookDirectory: cwd, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
-        // References to the host's own designs, where it takes them (docs/designs.md › Isolation).
+        // References to the host's own designs, where it takes them.
         .environment(\.designReferences, designChat ? nil : vm.remoteDesignReferenceChips(for: ref))
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))

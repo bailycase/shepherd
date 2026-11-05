@@ -1,6 +1,6 @@
 import Foundation
 
-// The report after a write (docs/designs.md › Write reports): what the design agent can't see
+// The report after a write: what the design agent can't see
 // from a green "Updated A.dc.html" — a dropped `</span>`, a second root, a root that no longer
 // matches its frame, how much changed, an import of a board that isn't there, and the
 // off-system values the write introduced. Pure over the board's text; the store builds one per

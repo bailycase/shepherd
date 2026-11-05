@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Every host's designs as this device reaches them (docs/designs.md › Remote): one
+/// Every host's designs as this device reaches them: one
 /// `RemoteDesignLibrary` per host over one file cache, shared by the iPhone's designs
 /// (`MobileDesigns`) and the iPad's (`PadDesigns`). A host keeps one set of watched designs per
 /// connection, so the stores say which designs each has on screen and the host is told them

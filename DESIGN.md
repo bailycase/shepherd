@@ -1,9 +1,8 @@
 # Shepherd design: the rules
 
-Every UI change on the Mac, iPhone and iPad follows these rules. Each surface's spec, and every
-board with how much of it is built, lives in [docs/design/](docs/design/README.md). Print only the
-part you need with `python3 scripts/design_section.py "<board or heading>"` (find a board with
-`--boards | grep -i <word>`).
+Every UI change on the Mac, iPhone and iPad follows these rules. The design boards are PNGs in
+`docs/design/boards/`, named after the board ([how to save one](docs/design/boards/README.md)).
+The code is the spec for everything a board doesn't draw.
 
 ## Precedence
 
@@ -11,16 +10,12 @@ The first of these that speaks wins:
 
 1. **The design the user gives you in this thread**: an image, a board, a design reference, or
    words describing the change.
-2. The design canvas's board, saved in `docs/design/boards/` and listed in the board index.
-3. The surface's spec in `docs/design/`.
-4. The rules in this file.
+2. The design canvas's board, saved in `docs/design/boards/`.
+3. The rules in this file.
 
-- This file and the specs never override a design the user just gave. If they disagree, build
-  the design and fix the spec.
+- These rules never override a design the user just gave. If they disagree, build the design.
 - A departure from a design is the user's call, never yours. Name each one in your final
-  message with the reason. Departures the user accepted live in
-  [docs/design/departures.md](docs/design/departures.md).
-- A spec marked **Not built yet.** is a design for later. Build it when asked.
+  message and the PR with the reason.
 - Every value lives in code. Tokens and shared components are in `Packages/ShepherdUI`. The
   Mac's own surface dimensions are in `Sources/ShepherdApp/AppLayout+<Domain>.swift`.
 
@@ -32,19 +27,18 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells. Browser
-  pages are tabs in the thread's Browser pane ([browser](docs/browser.md)).
+  pages are tabs in the thread's Browser pane.
 - A Space is the folder a thread runs in. A Project is the feature above Spaces and owns the
-  word; copy never calls a folder a project ([projects](docs/project-lead.md)).
+  word; copy never calls a folder a project.
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
   (Settings ▸ Pi, Sign-in).
 - Experiments (Projects, Goals) are off by default and turning one off never discards its data;
-  turning it back on never resumes work by itself. The feature's doc in `docs/` has the detail.
-- Mac Missions have a sidebar destination with planning, worktree execution, validation and explicit PR publication. Mobile Missions and the remaining advanced boards are not built; see docs/design/departures.md. The Files tab is built for local threads (FileOpenSplit board); remote file browsing is not yet supported. The Artifacts tab was removed; Files covers it.
+  turning it back on never resumes work by itself.
 
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
-   The [image viewer](docs/design/thread-images.md) floats over the thread, its actions in a pill
+   The image viewer floats over the thread, its actions in a pill
    under the picture. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
@@ -112,14 +106,11 @@ Settings", revision 1083) is the source of truth for every Settings page.
   once with no Save, except Instructions and Spaces, which edit files with an explicit Save.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
-Each page's contents: [settings.md](docs/design/settings.md) and its `settings-*` files.
-
 ## Shepherd Design
 
 Never hardcode a color, font size, dimension, duration or curve in a view. Use a shared
 ShepherdUI component before hand-rolling chrome. A reusable part goes in `Packages/ShepherdUI`
-with a `#Preview` in both appearances. Full detail: [theme](docs/design/theme.md),
-[foundations](docs/design/foundations.md), [motion](docs/design/motion.md).
+with a `#Preview` in both appearances.
 
 **Color** is `Color.sh.<role>`, dynamic per appearance (values in `ShepherdDesign.swift`):
 
@@ -201,8 +192,8 @@ status color, a raw color, or a raw glyph name.
 - Every control is a real `Button`, `Toggle` or field, or carries button traits and an action.
   Icon-only buttons have an `accessibilityLabel`. A hover-only affordance is also reachable as
   a button or a named action. Rows read as one element ("title, running").
-- Color always comes with a word or a glyph shape. Contrast rules are in
-  [theme](docs/design/theme.md#contrast-rules) and hold in both appearances.
+- Color always comes with a word or a glyph shape. Text roles keep
+  their contrast in both appearances.
 - A value the design draws without its unit still reads with it ("100 percent").
 - Mac type scales with Text size. iOS follows Dynamic Type and keeps 44pt touch targets.
 
@@ -220,8 +211,7 @@ each rule. Add a budget with any new long list.
 - A cached visible bottom marker never overrides a following thread's measured gap from its tail.
   Cached current-row IDs require a live, nonhidden native row probe intersecting the Mac viewport;
   physical placement is not proof of compositor paint.
-- Motion no one sees costs nothing (`shMotionPaused`). Detail:
-  [performance](docs/design/performance.md).
+- Motion no one sees costs nothing (`shMotionPaused`).
 
 ## Verifying visuals
 
@@ -231,26 +221,3 @@ Use real data and inspect the light and dark PNGs beside the design; unrelated p
 Appearance-only changes do not also require launching the app. For interactions, focus, menus or
 app lifecycle, use integration tests; add a manual Dev-app check only where the isolated harness
 cannot establish the behavior. Tests use `ControlPress`, never posted input or the installed app.
-Detail: [docs/design/verifying.md](docs/design/verifying.md).
-
-## Where the detail is
-
-| You are changing | Read (`design_section.py "<name>"`) |
-| --- | --- |
-| Any surface | the board in [docs/design/README.md](docs/design/README.md) |
-| Color, theme, AgentState, ShepherdUI tokens | [theme.md](docs/design/theme.md) |
-| Type, space, radius, elevation, icons, density | [foundations.md](docs/design/foundations.md) |
-| Animation, a transition, Reduce Motion | [motion.md](docs/design/motion.md) |
-| A list, scroll or hot path | [performance.md](docs/design/performance.md) |
-| Window, toolbar, sidebar, pages | [window-and-toolbar.md](docs/design/window-and-toolbar.md), [sidebar.md](docs/design/sidebar.md), [pages.md](docs/design/pages.md) |
-| Conversation goals | [thread.md](docs/design/thread.md#goal-card), [goals.md](docs/goals.md) |
-| Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
-| Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
-| Settings | [settings.md](docs/design/settings.md), [settings-pi.md](docs/design/settings-pi.md), [settings-projects.md](docs/design/settings-projects.md), [settings-subagents.md](docs/design/settings-subagents.md), [codemode-settings.md](docs/design/codemode-settings.md) |
-| Spaces in Settings | [project-browser.md](docs/design/project-browser.md), [project-mcp.md](docs/design/project-mcp.md), [project-instructions.md](docs/design/project-instructions.md) |
-| Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
-| iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
-| A platform's rules (Mac, iPhone, iPad, iPhone Duo): HIG, geometry, bars, the fold | [platforms.md](docs/design/platforms.md), then `platform-*.md` |
-| Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |
-| The Design tool | `design-tool*.md` in [docs/design/](docs/design/README.md) |
-| Where the app departs from a board, or falls short | [departures.md](docs/design/departures.md), [known-gaps.md](docs/design/known-gaps.md) |

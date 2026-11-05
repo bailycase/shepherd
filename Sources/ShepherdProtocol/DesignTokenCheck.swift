@@ -1,6 +1,6 @@
 import Foundation
 
-// Token enforcement on a board write (docs/designs.md › Token enforcement): the colors and px
+// Token enforcement on a board write: the colors and px
 // sizes a board writes that the design's installed systems don't hold, found the way the design
 // agent's `design_check` finds them, narrowed to what one write introduced, and snapped to the
 // nearest token on request.

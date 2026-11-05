@@ -32,7 +32,7 @@ NO_SWIFT = (
     "App/iOS/*", "Tests/ShepherdIOSChecks/*", "App/Info.plist", "App/*.icon/*", "App/*.entitlements",
     "App/ShepherdLauncher.swift",
     "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
-    "scripts/release*.py", "scripts/sign-*.sh", "scripts/design_section.py", "scripts/docsplit.py",
+    "scripts/release*.py", "scripts/sign-*.sh",
     "scripts/context-budget.json", "scripts/test-browser-persistence.py",
     "scripts/upload-sentry-symbols.py", "scripts/context_budget.py",
     # The Xcode project and its own resolved packages: the Mac app's build, which `swift test`

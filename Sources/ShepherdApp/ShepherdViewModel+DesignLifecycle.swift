@@ -6,8 +6,8 @@ import ShepherdRemote
 import ShepherdSessions
 import UniformTypeIdentifiers
 
-// Deleting, renaming, duplicating and importing designs and design systems (DesignLifecycleStates,
-// docs/designs.md › Deleting and importing). Delete asks first, then the design leaves every
+// Deleting, renaming, duplicating and importing designs and design systems
+// (DesignLifecycleStates). Delete asks first, then the design leaves every
 // surface at once and the toast offers Undo while its host holds it; import checks a ZIP or folder
 // before anything lands and asks when it must.
 

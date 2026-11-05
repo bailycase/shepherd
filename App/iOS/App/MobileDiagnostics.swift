@@ -4,7 +4,7 @@ import ShepherdRemote
 import Sentry
 #endif
 
-/// Sentry on the iOS client (docs/diagnostics.md): crashes, hangs, watchdog kills, MetricKit,
+/// Sentry on the iOS client: crashes, hangs, watchdog kills, MetricKit,
 /// performance traces, profiles, and a masked replay around each error. On unless Settings ▸
 /// Diagnostics turns it off. Only a build given a DSN reports (TestFlight, from the
 /// `SHEPHERD_IOS_SENTRY_DSN` repository variable); local and simulator builds have none. The

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The twelve hook events (docs/hooks.md › Events), in Settings order, with what Settings says
+/// The twelve hook events, in Settings order, with what Settings says
 /// about each.
 public enum HookEvent: String, CaseIterable, Codable, Sendable {
     case sessionStart = "SessionStart"
@@ -69,7 +69,7 @@ public enum HookEvent: String, CaseIterable, Codable, Sendable {
     public var maximumTimeout: Double? { self == .sessionEnd ? 3 : nil }
 }
 
-/// Matchers and tool names (docs/hooks.md › Events).
+/// Matchers and tool names.
 public enum HookMatcher {
     /// Claude Code tool name → the agent's tool. `mcp__…` names are the same on both sides.
     public static let claudeToAgent: KeyValuePairs<String, String> = [

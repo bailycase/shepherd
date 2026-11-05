@@ -1,7 +1,6 @@
 import Foundation
 
-/// How an agent's `browser_*` tool calls read as activity lines (docs/design/side-pane-browser.md › Side pane: Browser ›
-/// In the thread): "Opened localhost:5173/checkout in Browser", "Read the page", "Clicked “Pay
+/// How an agent's `browser_*` tool calls read as activity lines: "Opened localhost:5173/checkout in Browser", "Read the page", "Clicked “Pay
 /// $148.00”", "Typed in “Email”", "Took a screenshot", "Ran a script in the page". A line names
 /// what was acted on when the tool's result says it (`Clicked button "Pay $148.00".`); what was
 /// typed is never in a line. Shared with the iOS client, which draws the same lines.

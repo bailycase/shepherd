@@ -1,6 +1,6 @@
 import Foundation
 
-/// A design system's `tokens.json` (docs/designs.md › Design systems): its colors, type styles,
+/// A design system's `tokens.json`: its colors, type styles,
 /// spacing and radius steps, fonts and components, each token saying where it came from
 /// (`tokens.css:8`).
 ///

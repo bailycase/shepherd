@@ -4,7 +4,7 @@ import ShepherdProtocol
 /// What a snapshot carries of the lists beside the messages (the subagents' cards, the recorded
 /// turns, the extensions' widgets). Each is bounded on its own, so a long, edit-heavy thread, whose
 /// twenty finished cards each name thirty files and whose turns each name twenty, cannot fill the
-/// snapshot and leave its history no room (docs/native-thread.md › Snapshots).
+/// snapshot and leave its history no room.
 extension RPCThreadState {
     /// The encoded size of a JSON array of elements of these sizes.
     private static func listBytes(_ sizes: [Int]) -> Int {

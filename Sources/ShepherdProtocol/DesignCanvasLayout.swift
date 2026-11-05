@@ -1,6 +1,6 @@
 import Foundation
 
-// A canvas's pages, notes and a duplicated board's place (docs/designs.md › The index): what a
+// A canvas's pages, notes and a duplicated board's place: what a
 // canvas shows on each page, and where a copy of a board goes.
 
 extension DesignIndex {

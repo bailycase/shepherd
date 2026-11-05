@@ -3,7 +3,7 @@ import ShepherdTestKit
 import Testing
 @testable import ShepherdProtocol
 
-/// The shared resolver behind the Mac's Files pane and a host's `files.v1` (docs/design/side-pane-files.md).
+/// The shared resolver behind the Mac's Files pane and a host's `files.v1`.
 @Suite("Thread files")
 struct ThreadFilesTests {
     /// `root/a/b.txt`, `root/up -> ..` (inside `a`), `root/out -> <outside>`.

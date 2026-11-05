@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-/// Finds and reads the hooks files on this host (docs/hooks.md › Files). A value: every call reads
+/// Finds and reads the hooks files on this host. A value: every call reads
 /// the files afresh, so call it off the main thread and off the server queue.
 public struct HookCatalog: Sendable {
     /// The user's home folder (`HOME`), where This Mac's files live. Never a space.

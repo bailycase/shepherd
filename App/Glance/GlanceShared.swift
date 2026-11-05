@@ -2,7 +2,7 @@ import ActivityKit
 import Foundation
 import ShepherdUI
 
-// What the app and its widget extension share (docs/design/notifications.md › Glance): the
+// What the app and its widget extension share: the
 // Live Activities' attributes, the snapshot the widgets read, and the links back into the app.
 // The app is the only writer: it reads its hosts and publishes `SHGlance`; the extension draws it.
 

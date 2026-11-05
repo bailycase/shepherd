@@ -27,7 +27,7 @@ public enum DesignReferenceHost: Hashable, Sendable {
     }
 }
 
-/// A piece of a design handed to an ordinary thread (docs/designs.md › Design references): the
+/// A piece of a design handed to an ordinary thread: the
 /// whole design, a canvas page, a board, or one element of a board, pinned at a revision. Its string form
 /// (`string`) is what Copy reference puts on the pasteboard:
 ///

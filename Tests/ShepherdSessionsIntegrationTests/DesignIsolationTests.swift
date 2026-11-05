@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads). The
+/// A design's agent is no thread. The
 /// server refuses every peer request from or to one, even over a panes connection an older
 /// installed extension opened, and sends remote clients neither designs nor their agents unless
 /// they read designs (`designs.v1`) while the host serves them.

@@ -1,6 +1,6 @@
 import Foundation
 
-// A thread's folder, read-only (docs/design/side-pane-files.md): the Mac's Files pane reads a local
+// A thread's folder, read-only: the Mac's Files pane reads a local
 // thread's folder with it, and a host's server answers a remote viewer's `RemoteAgentQuery.files`
 // and `.fileRead` (`files.v1`) with it, for the thread's folder on its own disk.
 

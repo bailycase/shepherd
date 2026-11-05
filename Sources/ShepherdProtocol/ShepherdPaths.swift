@@ -70,7 +70,7 @@ public enum ShepherdPaths {
 
     /// The MCP servers every agent on this host can use: `~/.config/mcp/mcp.json`, the file other
     /// MCP clients share (`{"mcpServers": …}`). Only the app writes it; pi's own MCP reads the
-    /// copy the app derives from it into Shepherd's pi home (docs/mcp.md).
+    /// copy the app derives from it into Shepherd's pi home.
     public static func mcpConfigURL(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {

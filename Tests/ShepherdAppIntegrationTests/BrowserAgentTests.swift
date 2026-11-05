@@ -9,7 +9,7 @@ import Testing
 import WebKit
 @testable import ShepherdApp
 
-/// An agent's browser tools against real pages (docs/browser.md): a real web view, hosted off
+/// An agent's browser tools against real pages: a real web view, hosted off
 /// screen with no pane showing it, on fixture pages a local server serves. Nothing here touches
 /// the user's focus, mouse or keyboard: the tools dispatch DOM events, and the window sits far off
 /// every screen.
@@ -517,8 +517,7 @@ struct BrowserAgentTests {
     /// key; the pane takes the page and gives it back without a reload. The app's window hangs off a
     /// screen's corner by one pixel (`BrowserParkPlacement`, tested on its own): a test's stays far
     /// off every screen, as every test window does, and a test process is no GUI app anyway (every
-    /// window counts as occluded in it), so whether frames run parked was measured in a real app
-    /// (docs/browser.md).
+    /// window counts as occluded in it), so whether frames run parked was measured in a real app.
     @Test func aPageWithNoPaneSitsInAnUnfocusedWindowAndMovesToThePaneAndBackWithoutReloading() async throws {
         let (session, server) = try await start()
         defer { server.stop(); session.close() }
@@ -576,7 +575,7 @@ struct BrowserAgentTests {
     /// The parked window is never seen or offered: it cannot become key or main, whatever a page
     /// or an agent's action does; it is not in the Window menu, Mission Control or the ⌘` cycle;
     /// and accessibility clients see neither it nor the page inside it. (The AX tree itself was
-    /// read in a real accessory app: docs/browser.md › The window a page waits in. A test process
+    /// read in a real accessory app: A test process
     /// is no GUI app, so this pins the properties that produce those results.)
     @Test func theParkedWindowNeverTakesFocusAndIsNotOfferedToTheUserOrAccessibility() async throws {
         let (session, server) = try await start()

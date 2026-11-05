@@ -2,7 +2,7 @@ import Foundation
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings ▸ Skills on this host (docs/skills.md): the agent skills every pi session here can
+/// Settings ▸ Skills on this host: the agent skills every pi session here can
 /// use. A skill is a folder with a SKILL.md in `directory` (the `skills/` of Shepherd's pi home, the
 /// only folder its pi reads skills from). Beside it, in `stateDirectory` (the support directory's `skills/`), Shepherd keeps
 /// the skills that are off (`off/`, out of pi's sight), the ones just removed (`removed/`, for

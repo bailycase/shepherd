@@ -8,7 +8,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// What crosses a Browser tunnel (docs/browser.md › Remote): a real host on a real listener, a real
+/// What crosses a Browser tunnel: a real host on a real listener, a real
 /// `RemoteHostClient` and its hub, and a local server on an ephemeral port standing in for the
 /// host's dev server. The far end of each tunnel is a socket pair, as WebKit's connection to a
 /// forwarded port is a socket the hub owns.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// A hook's row in a thread (docs/hooks.md › In the thread): the `details` of a `shepherd.hook`
+/// A hook's row in a thread: the `details` of a `shepherd.hook`
 /// custom message, bounded. Absent from older hosts and from rows whose details didn't read;
 /// clients then draw the message's text.
 public struct NativeHookRecord: Codable, Hashable, Sendable {

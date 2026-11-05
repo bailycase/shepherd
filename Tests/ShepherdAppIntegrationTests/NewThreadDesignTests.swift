@@ -7,8 +7,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// Starting a thread from the New thread page with a design attached (docs/designs.md › Design
-/// references): the @ picker's pick (`DesignReferenceChips.io.attach`) pins the piece, the chip
+/// Starting a thread from the New thread page with a design attached: the @ picker's pick (`DesignReferenceChips.io.attach`) pins the piece, the chip
 /// waits beside the prompt, and Send starts the agent and sends its opening message through the
 /// host, the way a send in an existing thread does: the record fenced for pi, the copy kept, the
 /// chip in the thread, the name settling as usual. A design alone is enough to send. A real server,

@@ -283,7 +283,7 @@ final class BrowserSessions {
 /// opening a dialog takes no focus and never activates the app); it is not in the Window menu; it
 /// is `.transient` (hidden from Mission Control) and `.ignoresCycle` (not in ⌘`); and it is not an
 /// accessibility window (VoiceOver and other clients do not list it or read the agent's page
-/// through it). Measured in a real accessory app, docs/browser.md › The window a page waits in.
+/// through it). Measured in a real accessory app.
 final class BrowserParkWindow: NSWindow {
     /// `.stationary` would show it in Mission Control ("unaffected by exposé"), and AppKit allows
     /// at most one of transient, stationary and managed.

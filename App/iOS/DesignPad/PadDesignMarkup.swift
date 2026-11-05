@@ -15,7 +15,7 @@ import ShepherdUI
 // agent's proposals from it are kept as comments at once and come back in the chat
 // (`SHMarkupProposals`), where Apply sends each to it as a comment and Keep as comments leaves them
 // on the canvas as they are.
-// docs/designs.md › Pencil markup.
+//
 
 /// The markup on one design's canvas: the ink drawn since the last Done and the ink already sent,
 /// both in canvas points so they stay on their boards as the canvas pans and zooms, and the

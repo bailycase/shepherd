@@ -35,8 +35,7 @@ struct PaletteItem: Identifiable, Equatable {
         }
     }
 
-    /// Grouping header in the results list, in display order (docs/design/dialogs-and-palette.md › Command palette:
-    /// Commands, This thread, Subagents, and Agents when searching).
+    /// Grouping header in the results list, in display order.
     enum Section: Int, CaseIterable {
         case commands, thisThread, subagents, agents, spaces, conversations
 

@@ -4,11 +4,11 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// Which ports of a remote thread's host are forwarded on this Mac (docs/browser.md › Remote).
+// Which ports of a remote thread's host are forwarded on this Mac.
 //
 // A remote thread's page renders in this Mac's own web view, and its URL stays `localhost:5173`.
-// WebKit sends `localhost`, `127.0.0.1` and `[::1]` straight to the loopback, never to a proxy (measured:
-// docs/browser.md › The spike), so the only way for that page to reach the host's dev server is a
+// WebKit sends `localhost`, `127.0.0.1` and `[::1]` straight to the loopback, never to a proxy
+// (measured), so the only way for that page to reach the host's dev server is a
 // listener on this Mac's loopback at the same port number. This is that listener. Each accepted
 // connection is bridged to a tunnel (`BrowserTunnelHub`) for the owning thread's host.
 //

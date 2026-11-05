@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ShepherdCore
 
-/// What a design reference lets a thread's agent read (docs/designs.md › Design references): the
+/// What a design reference lets a thread's agent read: the
 /// copy of exactly the piece it was sent (a whole design, a board, or an element), at each
 /// revision it was sent.
 @Suite("Design grants")

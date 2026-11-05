@@ -87,7 +87,7 @@ struct ProjectAutomationAppTests {
         #expect(try String(contentsOf: artifact, encoding: .utf8) == "keep")
         try await eventuallyAsync("runtime Pause terminates its watcher") { await server.sessionInfo(sessionID: session)?.isAlive != true }
         #expect(await server.automationRuns(automation).last?.result == .stopped)
-        // Admission is the Project runtime's own assign (docs/project-automations.md); Pause still stops the watcher.
+        // Admission is the Project runtime's own assign; Pause still stops the watcher.
         #expect(server.state.projects.first?.paused == true)
     }
 

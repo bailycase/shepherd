@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-/// One agent pi's start, as the server sees it (docs/design/thread.md › Thread › Can't start): its last lines
+/// One agent pi's start, as the server sees it: its last lines
 /// on stderr until it serves its thread, and whether Shepherd stopped it. An exit before it
 /// served, or one Shepherd asked for, keeps the agent, with the problem `problem(exitCode:)`
 /// names; an exit after it served is a lost connection, as before.
@@ -146,7 +146,7 @@ public struct SessionExit: Equatable, Sendable {
     /// nil: a signal.
     public var code: Int32?
     /// An agent's pi that stopped before it served its thread, or that Shepherd stopped: its agent
-    /// stays and waits (docs/design/thread.md › Thread › Can't start). False for every other exit, which
+    /// stays and waits. False for every other exit, which
     /// retires what ran in the pane.
     public var keepsAgent: Bool
     /// Why a kept pi stopped; nil for a stop Shepherd asked for, and for every other exit.

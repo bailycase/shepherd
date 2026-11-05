@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// The Mac sidebar's thread groups for the iPhone and iPad (docs/design/sidebar.md): Needs you, Working, Done, Pinned and
+// The Mac sidebar's thread groups for the iPhone and iPad: Needs you, Working, Done, Pinned and
 // Recents, from `FleetModel`'s rows. Pins and what has been seen are this device's own view state, as they are each Mac's:
 // never sent to a host.
 

@@ -96,7 +96,7 @@ struct PadSidebar: View {
                     }
                     ForEach(groups.runs) { group in RunGroupSection(group: group, selected: selected, compact: true) }
                 }
-                // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
+                // The Mac's Working, Done and Pinned, in its order.
                 if !groups.working.isEmpty {
                     SidebarHeader(title: "Working", count: groups.working.count)
                     ForEach(groups.working) { row in threadRow(row, selected: selected) }

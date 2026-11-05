@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdApp
 
 /// An agent's browser tools end to end: the extension socket, the server's routing, the view
-/// model, and each thread's own page (docs/browser.md). The tools are driven as the pi extension
+/// model, and each thread's own page. The tools are driven as the pi extension
 /// drives them; the stub pi stands in for the model.
 @Suite("Browser agent flow", .mainActorExclusive)
 @MainActor
