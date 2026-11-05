@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdCore
 
-/// The space context menu's "New Worktree…": create a git worktree beside
+/// The space context menu's "New Worktree…": create a git worktree of
 /// the checkout on a fresh branch and immediately open an agent on it. The
 /// agent starts wearing the branch's leaf name; pi's namer retitles it from
 /// the first prompt (the ⎇ treatment and tooltip keep the branch identity).
@@ -36,7 +36,7 @@ struct NewWorktreeSheet: View {
 
     var body: some View {
         SHDialog("New worktree",
-                 message: "Creates a git worktree beside \(space.name) on a new branch and starts an agent in it.",
+                 message: "Creates a git worktree of \(space.name) on a new branch and starts an agent in it.",
                  width: AppLayout.newWorktreeSheetWidth) {
             SheetRow("Branch") {
                 TextField("Branch", text: $branch, prompt: Text("branch name").foregroundStyle(Color.sh.textTertiary))

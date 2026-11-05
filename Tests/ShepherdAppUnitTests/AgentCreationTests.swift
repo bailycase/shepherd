@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdSessions
+import ShepherdProtocol
 import Testing
 import ShepherdTestKit
 @testable import ShepherdApp
@@ -157,13 +158,15 @@ struct AgentCreationTests {
 
     // MARK: Worktree paths
 
-    /// A worktree is a sibling of the checkout; branch slashes never become directories.
-    @Test(arguments: [
-        ("/Users/me/code/app", "worktree/calm-otter-1234", "/Users/me/code/app-worktree-calm-otter-1234"),
-        ("/Users/me/code/app", "fix", "/Users/me/code/app-fix"),
-    ])
-    func worktreesLiveBesideTheirRepository(repo: String, branch: String, destination: String) {
-        #expect(GitWorktree.destination(repo: repo, branch: branch) == destination)
+    /// A worktree lives in Shepherd's support folder, never beside the project; branch slashes never become directories.
+    @Test(arguments: ["worktree/calm-otter-1234", "fix"])
+    func worktreesLiveInShepherdsSupportFolder(branch: String) {
+        let path = GitWorktree.destination(repo: "/Users/me/code/app", branch: branch)
+        let root = ShepherdPaths.supportDirectory().appendingPathComponent("worktrees").path + "/"
+        #expect(path.hasPrefix(root))
+        #expect(path.dropFirst(root.count).split(separator: "/").count == 2)
+        #expect(path.hasSuffix("/" + branch.replacingOccurrences(of: "/", with: "-")))
+        #expect(path != GitWorktree.destination(repo: "/Users/me/other/app", branch: branch))
     }
 
     @Test func generatedBranchesAreReadableAndDisposable() {

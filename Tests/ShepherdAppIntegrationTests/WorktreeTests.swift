@@ -1,12 +1,13 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
 /// A repository at `<root>/proj` with one commit on `main`. Worktrees `GitWorktree.add`
-/// creates land beside it, inside `root`, so one removal cleans everything. With `origin`, a
+/// creates land in the scratch support folder. With `origin`, a
 /// local bare repository stands in for the remote (no network).
 struct WorktreeSandbox {
     let root: URL
@@ -42,13 +43,14 @@ struct WorktreeSandbox {
 /// Creating, inspecting, and removing git worktrees on real scratch repositories.
 @Suite("Git worktrees", .integrationTimeLimit)
 struct GitWorktreeTests {
-    @Test func addingAWorktreeChecksOutANewBranchBesideTheRepo() throws {
+    @Test func addingAWorktreeChecksOutANewBranchInShepherdsSupportFolder() throws {
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }
 
         let path = try GitWorktree.add(repo: sandbox.repo.path, branch: "agent/fix-thing")
 
-        #expect(path == sandbox.root.appendingPathComponent("proj-agent-fix-thing").path)
+        #expect(path.hasPrefix(ShepherdPaths.supportDirectory().appendingPathComponent("worktrees").path + "/"))
+        #expect(!FileManager.default.fileExists(atPath: sandbox.root.appendingPathComponent("proj-agent-fix-thing").path))
         #expect(GitWorktree.isRepo(path))
         #expect(GitWorktree.currentBranch(repo: path) == "agent/fix-thing")
         #expect(throws: GitWorktree.Failure.self, "the branch already exists") {

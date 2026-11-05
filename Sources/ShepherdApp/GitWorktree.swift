@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import ShepherdProtocol
 import ShepherdSessions
 
 /// The New Agent sheet's "worktree" option and the space context menu's
@@ -23,15 +24,27 @@ enum GitWorktree {
         )
     }
 
-    /// Where `add` will put the worktree: `<repo>-<branch>`, a sibling of the
-    /// checkout, so repo tooling that scans the repo itself never sees it.
+    /// Where `add` will put the worktree: Shepherd's own
+    /// `<support>/worktrees/<repo>-<hash>/<branch>`, so projects' parent folders
+    /// stay clean. The hash of the repo path keeps same-named repos apart.
     static func destination(repo: String, branch: String) -> String {
         let repoPath = (repo as NSString).expandingTildeInPath
-        // Branch names may contain '/'; the directory name must not.
-        let directoryName = ((repoPath as NSString).lastPathComponent)
-            + "-" + branch.replacingOccurrences(of: "/", with: "-")
-        return ((repoPath as NSString).deletingLastPathComponent as NSString)
-            .appendingPathComponent(directoryName)
+        let hash = SHA256.hash(data: Data(repoPath.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
+        return ShepherdPaths.supportDirectory()
+            .appendingPathComponent("worktrees", isDirectory: true)
+            .appendingPathComponent("\((repoPath as NSString).lastPathComponent)-\(hash)", isDirectory: true)
+            // Branch names may contain '/'; the directory name must not.
+            .appendingPathComponent(branch.replacingOccurrences(of: "/", with: "-")).path
+    }
+
+    /// The pre-support-folder sibling `<repo>-<branch>`, for agents created before
+    /// worktrees moved that never recorded `worktreePath`.
+    static func existingDestination(repo: String, branch: String) -> String {
+        let repoPath = (repo as NSString).expandingTildeInPath
+        let legacy = ((repoPath as NSString).deletingLastPathComponent as NSString)
+            .appendingPathComponent((repoPath as NSString).lastPathComponent + "-" + branch.replacingOccurrences(of: "/", with: "-"))
+        let current = destination(repo: repo, branch: branch)
+        return !FileManager.default.fileExists(atPath: current) && FileManager.default.fileExists(atPath: legacy) ? legacy : current
     }
 
     /// A disposable, readable branch for the New Worktree sheet:
@@ -323,7 +336,7 @@ enum GitWorktree {
     /// Remove the confirmed checkout and its original branch, if it still exists.
     /// A checkout switched after merging keeps its new branch.
     static func remove(repo: String, branch: String, worktree: String? = nil, fingerprint: String? = nil, checkoutBranch: String? = nil) throws {
-        let path = worktree ?? destination(repo: repo, branch: branch)
+        let path = worktree ?? existingDestination(repo: repo, branch: branch)
         try verifyIdentity(worktree: path, repo: repo, branch: checkoutBranch ?? branch)
         if let fingerprint, try deletionFingerprint(worktree: path) != fingerprint {
             throw Failure(message: "Checkout contents changed. Checkout was kept.")
@@ -331,7 +344,7 @@ enum GitWorktree {
         let repoPath = (repo as NSString).expandingTildeInPath
         try run([
             "-C", repoPath, "worktree", "remove", "--force",
-            worktree ?? destination(repo: repo, branch: branch),
+            path,
         ])
         let branches = try run(["-C", repoPath, "for-each-ref", "--format=%(refname)", "refs/heads/"])
         if branches.split(separator: "\n").contains(Substring("refs/heads/\(branch)")) {
