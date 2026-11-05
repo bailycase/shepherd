@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// Git sharing for designs (docs/designs.md › Sharing with Git): the server's mutations. Git runs
+// Git sharing for designs: the server's mutations. Git runs
 // on `designGitQueue`, never the server's; the design's own files change only through the design
 // store's queue (`DesignStore.replaceFromGit`), and every change is announced the way a board
 // write is. Nothing here runs on its own: every step is a user's press, and the one model call
@@ -38,7 +38,7 @@ public enum DesignGitMergeLimits {
 }
 
 /// The merge turn's brief: what the design agent is asked, and the copy it works in. The agent's
-/// own rules (docs/designs.md › The design agent) still hold; its design tools act on the live
+/// own rules still hold; its design tools act on the live
 /// design, so the brief has it edit the merge copy's files directly and only those.
 public enum DesignGitMergeBrief {
     public static let request = "Resolve this Git merge. Keep both changes and check the design. Don't commit or push."

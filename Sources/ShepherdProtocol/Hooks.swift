@@ -1,6 +1,6 @@
 import Foundation
 
-// Hooks' values (docs/hooks.md): what the host's catalog finds, the off switches, a draft and a
+// Hooks' values: what the host's catalog finds, the off switches, a draft and a
 // test's result. ShepherdSessions reads and writes the files; the Mac and the remote clients
 // (`hooks.v1`) draw these.
 
@@ -111,7 +111,7 @@ public struct HookEntry: Hashable, Codable, Sendable, Identifiable {
     public var canonical: String
     /// False for Codex's `config.toml`, which Shepherd reads but never writes.
     public var editable: Bool
-    /// Not switched off (docs/hooks.md › Identity and the off switch).
+    /// Not switched off.
     public var on: Bool
 
     public init(slot: String, scope: HookScope, file: String, format: HookFormat, event: String, matcher: String,
@@ -143,7 +143,7 @@ public struct HookSummary: Equatable, Sendable {
 
 /// Everything the catalog found at one moment.
 public struct HookCatalogSnapshot: Hashable, Codable, Sendable {
-    /// Every file looked for: This Mac's first, then each space's, in docs/hooks.md's table order.
+    /// Every file looked for: This Mac's first, then each space's.
     public var sources: [HookSource]
     /// Every hook in every loaded file, in source and file order.
     public var entries: [HookEntry]
@@ -179,7 +179,7 @@ public struct HookCatalogSnapshot: Hashable, Codable, Sendable {
     }
 }
 
-/// `<support>/hooks/settings.json` (docs/hooks.md › Identity and the off switch): which hooks the
+/// `<support>/hooks/settings.json`: which hooks the
 /// person switched off, by hash, and whether the Claude Code and Codex readers are on. Every
 /// configured hook not in `off` runs.
 public struct HookSettings: Hashable, Sendable, Codable {
@@ -223,7 +223,7 @@ public struct HookSettings: Hashable, Sendable, Codable {
     public func isOn(_ hash: String) -> Bool { !off.contains(hash) }
 }
 
-/// What a hook's run means for the agent (docs/hooks.md › What a hook gets and gives back).
+/// What a hook's run means for the agent.
 public enum HookOutcome: Hashable, Codable, Sendable {
     /// Exit 0 with nothing that changes the step.
     case allowed

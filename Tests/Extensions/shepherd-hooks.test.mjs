@@ -1,4 +1,4 @@
-// The hooks runtime (docs/hooks.md) against a stand-in for pi's extension API: shared hash vectors,
+// The hooks runtime against a stand-in for pi's extension API: shared hash vectors,
 // parsing (JSON and the Codex TOML subset), matchers, the off switch, exit codes, decision merging,
 // updatedInput, the Stop send-back cap, additionalContext, and a proposal's write.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/shepherd-hooks.test.mjs

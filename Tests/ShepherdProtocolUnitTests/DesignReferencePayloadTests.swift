@@ -3,7 +3,7 @@ import Testing
 import ShepherdCore
 @testable import ShepherdProtocol
 
-/// A reference's kept copy (docs/designs.md › Design references › The copy): its manifest, what
+/// A reference's kept copy: its manifest, what
 /// it counts, the record pi reads, what a "Looked at…" line says of it, and a chip's short lines
 /// of what changed since.
 @Suite("Design reference copies")
@@ -211,7 +211,7 @@ struct DesignReferencePayloadTests {
     }
 }
 
-/// Notes a thread leaves on a piece it was sent (docs/designs.md › Notes back).
+/// Notes a thread leaves on a piece it was sent.
 @Suite("Design thread notes")
 struct DesignThreadNoteTests {
     @Test(arguments: [

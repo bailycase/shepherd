@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-/// Settings ▸ MCP servers' one store (docs/mcp.md). pi's own MCP runs the servers; the app owns
+/// Settings ▸ MCP servers' one store. pi's own MCP runs the servers; the app owns
 /// the file the user edits, the Keychain, pi's derived `mcp.json` (`MCPPiConfig`) and what each row
 /// says. A row's state comes from `pi mcp list --json`, run in pi's home with the environment an
 /// agent's pi would have, once when the page opens and after an edit, a sign-in or Reconnect;
@@ -134,7 +134,7 @@ final class MCPStore {
 
     // MARK: pi's MCP
 
-    /// What pi's MCP is told, derived from `document` (docs/mcp.md).
+    /// What pi's MCP is told, derived from `document`.
     var piConfig: MCPPiConfig.Derived {
         if let cached = derivedConfig, cached.document == document { return cached.derived }
         let derived = MCPPiConfig.derive(document, home: dependencies.userHome)

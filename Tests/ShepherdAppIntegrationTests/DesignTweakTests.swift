@@ -9,7 +9,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdRemote
 
-/// The Tweak tab against a real server (docs/designs.md › Tweak): a drag writes once, on
+/// The Tweak tab against a real server: a drag writes once, on
 /// release, as a splice of the board's source; a stale revision is read again and the change made
 /// once more; Every <name> writes every board it reaches as one change; data-props values land in
 /// canvas.json; Reset and Undo put back exactly what was there.

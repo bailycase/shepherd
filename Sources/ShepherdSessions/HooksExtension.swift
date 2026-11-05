@@ -1,6 +1,6 @@
 import Foundation
 
-/// The hooks runtime (docs/hooks.md): installed beside the pi home's files, outside extensions/ so
+/// The hooks runtime: installed beside the pi home's files, outside extensions/ so
 /// it is never discovered twice, and loaded by an agent's own pi with `-e` and
 /// `SHEPHERD_HOOKS_DIR`, the folder holding `settings.json` (`<support>/hooks`; the pi home is
 /// `<support>/pi`). A native subagent's pi gets no `SHEPHERD_` variable, so it runs no hooks.

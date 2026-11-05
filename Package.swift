@@ -65,7 +65,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // The Design tool's board renderer: a sandboxed WKWebView per board, the
-        // shepherd-design:// scheme, and Shepherd's own board runtime (docs/designs.md).
+        // shepherd-design:// scheme, and Shepherd's own board runtime.
         .target(
             name: "DesignSurfaceKit",
             dependencies: ["ShepherdCore", "ShepherdProtocol"],

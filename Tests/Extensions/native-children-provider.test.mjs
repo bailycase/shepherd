@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { children, childrenSource, harness, providerServer, scratchHome, tempDir, withEnv } from "./fixtures/children-harness.mjs";
-process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set (docs/native-subagents.md › Missions).
+process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set.
 
 const PARENT = (dir, home) => ({
   HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_CLIPROXYAPI_CONFIG: undefined,

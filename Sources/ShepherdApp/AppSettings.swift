@@ -343,7 +343,7 @@ final class AppSettings {
     }
 
     /// Settings ▸ Pi ▸ Bundled extensions ▸ Browser tools: agents get the `browser_*` tools on
-    /// their thread's own Browser page (docs/browser.md). A design's agent never does.
+    /// their thread's own Browser page. A design's agent never does.
     var piBrowserExtension: Bool {
         didSet { store.set(piBrowserExtension, forKey: Key.piBrowserExtension) }
     }

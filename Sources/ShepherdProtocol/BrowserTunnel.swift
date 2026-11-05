@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdCore
 
-// Browser tunnels (docs/browser.md › Remote): a thread hosted on another Mac has a Browser tab whose
+// Browser tunnels: a thread hosted on another Mac has a Browser tab whose
 // page renders in the viewing Mac's own web view. Its traffic to `localhost:<port>` is carried to
 // `127.0.0.1:<port>` (or `::1`) on the thread's host over the one authenticated remote connection.
 // This file is the wire and the flow-control arithmetic, shared by the host's server, the Mac app and

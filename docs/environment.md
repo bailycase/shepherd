@@ -6,8 +6,7 @@
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
   extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
-  (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`;
-  docs/designs.md), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
+  (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
@@ -39,13 +38,11 @@
     so it can switch live. `SHEPHERD_GOALS_ENABLED` is explicitly `0` by default, `1` only while
     Settings > Experiments > Goals is on. The host's internal configure command updates running
     controllers without restarting pi; off pauses/cancels goal work without aborting tools.
-    There is no checker model; the worker finishes a goal itself. See [goals](goals.md)
-    for evaluator disclosure and redaction. `SHEPHERD_HOOKS_DIR` (every agent but a project
-    coordinator) is `<support>/hooks`, where the hooks runtime reads `settings.json` ([hooks](hooks.md)).
+    There is no checker model; the worker finishes a goal itself. `SHEPHERD_HOOKS_DIR` (every agent but a project
+    coordinator) is `<support>/hooks`, where the hooks runtime reads `settings.json`.
     For Settings ▸ Pi ▸ MCP servers, pi's own MCP
     (`-e builtin:mcp`, no variable) and `SHEPHERD_MCP_SECRET_<SERVER>_<NAME>`, one per Keychain
-    secret the derived `mcp.json` refers to, with `SHEPHERD_MCP_SECRETS` naming them (docs/mcp.md;
-    the launcher keeps them from the model's shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
+    secret the derived `mcp.json` refers to, with `SHEPHERD_MCP_SECRETS` naming them (the launcher keeps them from the model's shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
     `shepherd-mcp-project.ts`) while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
   - For Settings ▸ Agents ▸ Context: `SHEPHERD_EXT_CONTEXT` (the installed `shepherd-context.ts`) while Trim old tool
     output is on, and `SHEPHERD_DEFER_TOOLS=1` while Defer rarely used tools is on, for a thread's and an automation's
@@ -55,13 +52,12 @@
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
-    skill the app writes to the support directory's `design-skill/`; docs/designs.md).
+    skill the app writes to the support directory's `design-skill/`).
     Ordinary interactive threads get `SHEPHERD_DESIGN_TOOLS=1` and the skill directory while the
     Design tool experiment is on. Their design tools require an explicit design ID on each call.
     `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
     reference) loads design_get and design_note in a thread that draws no design, while Settings ▸
-    Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on (docs/designs.md ›
-    Design references).
+    Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on.
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it

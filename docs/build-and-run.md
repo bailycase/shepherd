@@ -33,8 +33,7 @@ Sparkle's installer are keyed by bundle id: on a shipped id, every Dev launch wo
 installed app's collapsed spaces and clear its notifications, and a setting changed in Dev
 would change it there. `ShepherdEdition` reads the Dev id as Shepherd, and Debug builds have no
 updater. `Tests/Release` holds the Debug id apart from both shipped apps'. `Shepherd iOS` builds
-the iPhone and iPad client ([docs/ios](ios/README.md); who owns which folder, the routes and
-the hooks are in [docs/ios/CONTRACTS.md](ios/CONTRACTS.md)).
+the iPhone and iPad client from `App/iOS`.
 
 **Shepherd Nightly** is the same code built as a second app, so it installs and runs beside
 Shepherd. The `Nightly` configuration is Release plus its identity: bundle id
@@ -47,8 +46,7 @@ Info.plist takes the executable, the names, and the feed file (`SHEPHERD_APPCAST
 settings, and each configuration compiles only its own icon.
 
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
-Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md),
-[docs/pi-home.md](pi-home.md)). Stage it
+Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it
 once, and again whenever the pin changes, before any Mac build: every configuration's "Embed pi
 engine" phase copies it from `.build/pi-engine` and fails, saying so, when it is missing or stale.
 

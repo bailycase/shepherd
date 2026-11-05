@@ -11,7 +11,7 @@ import ShepherdTestSupport
 ///     SHEPHERD_BENCHMARK=1 swift test -c release -Xswiftc -enable-testing \
 ///         --filter TerminalBenchmarks 2>&1 | grep BENCH
 ///
-/// Results are recorded in docs/benchmarks/. Ghostty surface cost is measured in-app.
+/// Ghostty surface cost is measured in-app.
 @Suite("Terminal benchmarks", .serialized, .timeLimit(.minutes(10)), .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_BENCHMARK"] != nil))
 struct TerminalBenchmarks {
     private func report(_ name: String, _ value: Double, _ unit: String) {

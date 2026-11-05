@@ -7,7 +7,7 @@ import ShepherdProtocol
 /// whose arguments are one long JSON string, failures that name long paths, a compaction, a question,
 /// a steer, a user message with an unbroken word. Layout tests and the previews draw them through
 /// the same store and formatters as a live thread, at every width a thread meets, so a row that
-/// cannot shrink to its column shows in all of them (docs/design/thread.md › Activity lines).
+/// cannot shrink to its column shows in all of them.
 public enum LongThreads {
     public static let longPath = "Sources/ShepherdApp/Designs/withdrawals/mobile/approve/withdrawals-mobile-approve-with-a-long-name.dc.html"
     public static let childID = "native-48c1466f-3255-4d0a-9c1e-5b7f1e2a6b10"

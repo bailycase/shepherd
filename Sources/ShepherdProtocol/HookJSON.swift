@@ -1,7 +1,7 @@
 import Foundation
 
 /// A JSON value that keeps object keys in file order, so a hooks file can be read, changed and
-/// written back with every unknown key where it was (docs/hooks.md › Files). Numbers are
+/// written back with every unknown key where it was. Numbers are
 /// `Double`s, as `JSON.parse` holds them, so hashes match the runtime's.
 public indirect enum HookJSON: Equatable, Hashable, Sendable {
     case null
@@ -52,7 +52,7 @@ public indirect enum HookJSON: Equatable, Hashable, Sendable {
 
     // MARK: Text
 
-    /// Canonical JSON (docs/hooks.md › Identity and the off switch): keys sorted by UTF-16 code units, no
+    /// Canonical JSON: keys sorted by UTF-16 code units, no
     /// whitespace, `JSON.stringify` escaping and number format.
     public var canonical: String {
         var out = ""

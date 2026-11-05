@@ -8,7 +8,7 @@ import ShepherdRemote
 /// `automation-triggers.json`, and starts runs through the host (the app) under each
 /// automation's limits. No model is involved until a run starts.
 ///
-/// Bounds (docs/data-flow.md "Automation triggers"): runs at once and per day per automation,
+/// Bounds: runs at once and per day per automation,
 /// a 5-minute minimum schedule gap, 60 s between GitHub checks of a repository, pending events
 /// expire after 7 days, dedupe keys after 30, and catch-up after downtime reaches back 24 hours.
 /// A lasting error pauses the automation instead of retrying; passing errors back off to 30 min.

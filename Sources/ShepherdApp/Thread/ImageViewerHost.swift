@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// An image open full size (ThreadImageOpen, docs/design/thread-images.md): the images of one
+// An image open full size (ThreadImageOpen): the images of one
 // message or composer, shown one at a time over the window. The state is values only; the host
 // view draws `SHImageViewer` and carries out Copy, Add to message and Show in Finder.
 

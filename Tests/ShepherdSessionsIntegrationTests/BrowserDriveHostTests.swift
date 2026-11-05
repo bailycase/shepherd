@@ -6,8 +6,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// An agent on this host drives the page a remote viewer shows (docs/browser.md › Remote › The agent
-/// drives the page you see), from the host's side: which viewer owns an agent's browser, how its
+/// An agent on this host drives the page a remote viewer shows, from the host's side: which viewer owns an agent's browser, how its
 /// requests reach the owner and its answers come back, and what ends an ownership. Viewers here are
 /// raw clients, so every frame is seen; the agent's extension is a raw extension client.
 @Suite("Browser drive on the host", .integrationTimeLimit)

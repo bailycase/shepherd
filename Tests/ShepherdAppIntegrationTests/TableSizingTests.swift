@@ -5,7 +5,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdUI
 
-/// The rendered sizing contract in docs/design/thread.md, not the choice of SwiftUI containers.
+/// The rendered sizing contract, not the choice of SwiftUI containers.
 /// Accessibility supplies the card's actual frame; AppKit supplies its scrollable extent.
 @Suite("Table sizing", .mainActorExclusive)
 @MainActor

@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdSessions
 
 /// A remote thread's Files (`files.v1`): the host lists and reads the thread's own folder, read-only, only for a
-/// client that listed the capability, and never outside the folder (docs/design/side-pane-files.md).
+/// client that listed the capability, and never outside the folder.
 @Suite("Remote files", .timeLimit(.minutes(1)))
 struct RemoteFilesTests {
     /// A host whose agent runs in a scratch folder: `Sources/App.swift`, `README.md`, `.env`, a secret beside the

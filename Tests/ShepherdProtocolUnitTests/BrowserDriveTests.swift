@@ -3,7 +3,7 @@ import Testing
 import ShepherdCore
 @testable import ShepherdProtocol
 
-/// An agent on another Mac drives the page a viewer shows (docs/browser.md › Remote): the wire, what
+/// An agent on another Mac drives the page a viewer shows: the wire, what
 /// a viewer's answer may carry to the agent, and the rules a host keeps of which viewer owns which
 /// agent's browser.
 @Suite("Browser drive")

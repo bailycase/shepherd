@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import UniformTypeIdentifiers
 
-// The rules of an agent's browser tools (docs/browser.md), pure so they are tested without
+// The rules of an agent's browser tools, pure so they are tested without
 // WebKit: which URLs open, what the agent may do while the user has taken over, how a tool's
 // result is worded, what the pane says the agent is doing, and how a screenshot is clamped.
 // `BrowserDriver.swift` runs them against the thread's page; `BrowserHost.swift` holds the web view.
@@ -82,7 +82,7 @@ enum BrowserURLPolicy {
 
 /// Where the window of a page with no pane goes. WebKit hides a page whose window is occluded, and
 /// macOS calls a window that touches no screen occluded: its animation frames pause and its timers
-/// slow to once a second (measured with a real app, docs/browser.md). So the window sits with one
+/// slow to once a second (measured with a real app). So the window sits with one
 /// pixel, its corner, on a screen's corner and everything else off every screen; it is nearly
 /// transparent, ignores the mouse, and never becomes key.
 enum BrowserParkPlacement {

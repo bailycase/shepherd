@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdTestSupport
 
 /// Deleting a design with Undo, duplicating one, Remove from Recents, and deleting a design
-/// system (docs/designs.md › Deleting and importing): each a `SessionServer` mutation that
+/// system: each a `SessionServer` mutation that
 /// commits and broadcasts once, and leaves the files it promises to leave.
 @Suite("Design lifecycle", .integrationTimeLimit)
 struct DesignLifecycleTests {

@@ -23,7 +23,7 @@ const extension = (name) => path.join(root, "Extensions", name);
 
 // The agent's extensions in the order the app loads them (PiLaunch.agent),
 // each with the settings switch that turns it off. "mcp" is no file: an agent's launch
-// passes `-e builtin:mcp -e builtin:tool-search` (docs/mcp.md), which switches pi's own MCP on.
+// passes `-e builtin:mcp -e builtin:tool-search`, which switches pi's own MCP on.
 export const THREAD_EXTENSIONS = [
   ["status", "shepherd-status.ts"], ["service-tier", "shepherd-service-tier.ts"],
   ["instructions", "shepherd-instructions.ts"], ["panes", "shepherd-panes.ts"], ["review", "shepherd-review.ts"],

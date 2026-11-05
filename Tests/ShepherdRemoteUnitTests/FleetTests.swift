@@ -432,8 +432,8 @@ struct FleetTests {
     // MARK: Designs
 
     /// Where a host serves designs, the agent drawing one is the design's row (the nib, "design ·
-    /// 4 boards", ordered by when the design last changed). A design's agent is never a thread
-    /// (docs/designs.md › Design agents and ordinary threads): not running, not needing you, not
+    /// 4 boards", ordered by when the design last changed). A design's agent is never a thread:
+    /// not running, not needing you, not
     /// counted; a system build's agent, and every design agent of a host not serving designs, has
     /// no row at all.
     @Test func aDesignsAgentIsItsDesignsRowAndNeverAThread() {

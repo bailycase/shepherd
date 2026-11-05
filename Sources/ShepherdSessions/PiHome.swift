@@ -5,7 +5,7 @@ import Security
 /// Shepherd's own pi home, `<support directory>/pi`: the `PI_CODING_AGENT_DIR` of every pi
 /// Shepherd starts, holding its settings, sign-ins, models, sessions, and `bin/pi`, the launcher
 /// every launch goes through. Nothing in it is the user's own pi, and nothing Shepherd writes
-/// goes anywhere else (docs/pi-home.md).
+/// goes anywhere else.
 ///
 /// `install()` writes Shepherd's files whenever they differ, the way the embedded extensions are
 /// installed: the launcher, `restore-env.sh` (which gives an agent's shell commands back the
@@ -66,7 +66,7 @@ public struct PiHome: Equatable, Sendable {
     /// `list`, `login` and `logout` are what Settings runs (`PiLaunch.mcp`).
     public static let refusedMCPSubcommands = ["add", "remove"]
 
-    /// pi's own MCP servers, derived from the user's file: `<home>/mcp.json` (docs/mcp.md).
+    /// pi's own MCP servers, derived from the user's file: `<home>/mcp.json`.
     public var mcpConfig: URL { directory.appendingPathComponent("mcp.json") }
 
     /// The variable listing the names of the secret variables in an agent's pi environment
@@ -255,7 +255,7 @@ public struct PiHome: Equatable, Sendable {
         }
     }
 
-    /// Writes pi's `mcp.json` (docs/mcp.md): by temp file and rename, so pi never reads half of it
+    /// Writes pi's `mcp.json`: by temp file and rename, so pi never reads half of it
     /// and a link left in its place is replaced, not followed; 0600, and only when it differs.
     public func installMCPConfig(_ data: Data) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

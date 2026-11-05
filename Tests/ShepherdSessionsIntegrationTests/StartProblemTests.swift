@@ -6,8 +6,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// A pi that stops before it serves its thread keeps its agent (docs/design/thread.md › Thread › Can't
-/// start): the server says so with the exit, and the thread's snapshot says why, locally and to
+/// A pi that stops before it serves its thread keeps its agent: the server says so with the exit, and the thread's snapshot says why, locally and to
 /// a remote viewer, until Retry binds a new pi. A pi that served and then exited does not.
 @Suite("pi start problems", .integrationTimeLimit)
 struct StartProblemTests {

@@ -44,8 +44,7 @@ struct ProviderRowModel: Equatable, Identifiable {
     var accounts: PiAccountList?
 }
 
-/// Settings ▸ Pi ▸ Sign-in's rows, derived once per change from the survey (docs/design/settings-pi.md › Pi ▸
-/// Sign-in). Pure, so the state table has a unit test.
+/// Settings ▸ Pi ▸ Sign-in's rows, derived once per change from the survey. Pure, so the state table has a unit test.
 struct PiSignInPage: Equatable {
     var subscriptions: [ProviderRowModel] = []
     var apiKeys: [ProviderRowModel] = []

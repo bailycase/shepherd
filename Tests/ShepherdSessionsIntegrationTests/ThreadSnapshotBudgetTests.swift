@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// A long, edit-heavy thread, served by a real server over the stub pi: its recorded turns and its
 /// finished subagent cards grow past what a snapshot may weigh, and its newest messages still
-/// reach the client (docs/native-thread.md › Snapshots). They once did not: the history got what
+/// reach the client. They once did not: the history got what
 /// the other lists left of 240 KiB, and with the newest reply bigger than that, it got nothing.
 @Suite("Thread snapshot of a long, edit-heavy thread", .integrationTimeLimit)
 struct ThreadSnapshotBudgetTests {

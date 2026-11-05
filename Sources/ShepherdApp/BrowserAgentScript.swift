@@ -1,6 +1,6 @@
 import Foundation
 
-/// The script an agent's browser tools run in the thread's page (docs/browser.md). It lives in
+/// The script an agent's browser tools run in the thread's page. It lives in
 /// Shepherd's own content world (`BrowserSession.world`), which the page can't see or call, and
 /// answers every call with a JSON string. Refs (`e1`, `e2`, …) are made by `read` and kept in a map
 /// inside the script: a later read, or a new document, ends them.

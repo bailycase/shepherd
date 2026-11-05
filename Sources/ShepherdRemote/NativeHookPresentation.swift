@@ -72,7 +72,7 @@ public struct NativeHookRow: Equatable, Hashable, Sendable {
     }
 }
 
-/// A hook the agent proposes (`hook_propose`, docs/hooks.md › Proposals): the select request whose
+/// A hook the agent proposes (`hook_propose`): the select request whose
 /// title is the marker line and the card's JSON. The app draws it as the proposal card.
 public struct NativeHookProposal: Equatable, Sendable {
     public static let marker = "shepherd.hook.proposal"
@@ -164,7 +164,7 @@ public struct NativeHookProposal: Equatable, Sendable {
     }
 }
 
-/// A `PreToolUse` hook's `ask` (docs/hooks.md › In the thread): the select request whose title is
+/// A `PreToolUse` hook's `ask`: the select request whose title is
 /// "A hook asks before this runs", the call, the reason and the hook's file, with Deny and Allow once.
 public struct NativeHookAsk: Equatable, Sendable {
     public static let title = "A hook asks before this runs"

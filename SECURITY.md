@@ -25,8 +25,7 @@ coordinate disclosure through the private advisory.
 Shepherd runs coding agents with your permissions. Each agent is a `pi` process started by the
 app as your macOS user. The agent's tools, its extensions, and any native subagents it starts can
 read and write whatever you can. Shepherd adds no sandbox. The workflow runner in the native
-subagent extension is restricted JavaScript execution, not an OS sandbox
-([native-subagents.md](docs/native-subagents.md)). Run untrusted work in an OS-contained
+subagent extension is restricted JavaScript execution, not an OS sandbox. Run untrusted work in an OS-contained
 environment.
 
 The boundaries below are deliberate. A report about one of them should show behavior outside
@@ -84,7 +83,7 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
 
 ### The Browser over the remote connection
 
-A thread's Browser tab works across Macs ([browser.md](docs/browser.md#remote)), in two directions.
+A thread's Browser tab works across Macs, in two directions.
 Both ride the authenticated connection (no TLS, so the same VPN or trusted network as everything
 above) and neither has a switch yet.
 
@@ -135,7 +134,7 @@ above) and neither has a switch yet.
 - **macOS client:** host configurations, *including their tokens*, are stored as JSON in
   UserDefaults (`shepherd.remote.hosts`), not in the Keychain. Treat Shepherd's preferences as
   secrets.
-- **iOS client (internal TestFlight; see [docs/ios](docs/ios/README.md)):** the host's name, address, and
+- **iOS client (internal TestFlight):** the host's name, address, and
   port go in UserDefaults. The token goes in the Keychain, device-only, available when unlocked.
 
 ### MCP server secrets
@@ -155,21 +154,19 @@ above) and neither has a switch yet.
   Shepherd still keeps the app's values from it: its servers start with every Keychain value
   blanked, and its `env`, `headers` and `command` cannot refer to a `SHEPHERD_*` variable
   (`Tests/Extensions/mcp-project.test.mjs`). pi's trust prompt for a project's `.pi/mcp.json` is
-  pi's own ([docs/mcp.md](docs/mcp.md)).
+  pi's own.
 
 ### Everything else Shepherd writes
 
 - **Repository changes:** worktree creation, confirmed deletion and Finalize can change
-  checkouts, commits and branches ([worktrees.md](docs/worktrees.md)). The Changes pane also
+  checkouts, commits and branches. The Changes pane also
   supports confirmed per-file Revert, selected-file Commit with optional push/PR, and Undo/Redo
   of a recorded agent turn. Undo requires no extra confirmation and refuses when the turn's
   files changed afterward. Reading changes creates unreachable loose git objects through a
   private index; it does not write the user's index, working tree, HEAD, refs, stash or config.
-  See [changes.md](docs/changes.md) for these separate mutation and refusal rules. Finalize
-  never deletes a remote branch, and Shepherd never prunes worktrees.
+  Finalize never deletes a remote branch, and Shepherd removes or prunes only worktrees it created.
 - **pi configuration:** Shepherd runs its own pi, shipped inside the app, in its own home
-  (`<support directory>/pi`: its settings, sign-ins, models and conversations;
-  [pi-home.md](docs/pi-home.md)). It never runs your `pi` or `npm`, and never writes your pi's
+  (`<support directory>/pi`: its settings, sign-ins, models and conversations). It never runs your `pi` or `npm`, and never writes your pi's
   folder (`~/.pi/agent`, or wherever your `PI_CODING_AGENT_DIR` points), lock folders included.
   It reads it only as plain files: to copy an agent's earlier conversation into its own home once;
   at its first launch, to copy your logins (API keys and subscription sign-ins, as stored),

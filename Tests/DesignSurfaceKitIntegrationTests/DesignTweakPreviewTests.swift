@@ -7,7 +7,7 @@ import Testing
 import WebKit
 @testable import DesignSurfaceKit
 
-/// Tweak in a live board (docs/designs.md › Tweak): the props canvas.json's `tweaks` holds reach
+/// Tweak in a live board: the props canvas.json's `tweaks` holds reach
 /// the board at boot and with a reload, and a preview changes what is drawn in place, without a
 /// navigation, until it is kept or put back.
 @MainActor

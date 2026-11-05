@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import ShepherdProtocol
 
-/// Tweak's edits to a board's source (docs/designs.md › Tweak): inline-style splices at the
+/// Tweak's edits to a board's source: inline-style splices at the
 /// parser's offsets, token snapping, and data-props values in canvas.json.
 @Suite("Design style edits")
 struct DesignStyleEditTests {

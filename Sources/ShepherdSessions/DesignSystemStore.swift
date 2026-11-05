@@ -77,7 +77,7 @@ public enum DesignSystemError: Error, Hashable, Sendable, CustomStringConvertibl
 
 /// Every design system this host keeps, under the support directory's `design-systems/<ns>/`:
 /// `tokens.json`, `tokens.css`, `README.md`, components, and Shepherd's own `system.json`
-/// beside them (docs/designs.md › Design systems). Built-in systems (Shepherd Design) live in
+/// beside them. Built-in systems (Shepherd Design) live in
 /// memory, handed over by the app.
 ///
 /// Every read and write runs on the store's own serial queue, never the server's. A system is

@@ -1,8 +1,10 @@
 # The pi engine
 
+> Read when you change, stage or debug the bundled pi engine or how Shepherd launches it.
+
 Shepherd ships its own pi: the official Node binary, Pi's CLI bundle and modular SDK, inside the Mac app. Every
 pi Shepherd starts runs it (agents, the model catalog, PR descriptions, children), through the
-launcher in Shepherd's own pi home ([pi-home.md](pi-home.md)); the sign-in bridge (pi's own login,
+launcher in Shepherd's own pi home; the sign-in bridge (pi's own login,
 imported from the bundle's `index.js`) runs on its node. Nothing runs the `pi` on the user's PATH.
 
 ## What ships
@@ -114,7 +116,6 @@ Checkpoint seals validate the configured prompt separately from the extension-ad
 prompt. Unchanged guidelines can be restored for a manual retry without treating their cleanup
 after a failed run as a user configuration change. Real prompt, model, thinking, tool and
 session changes, plus uncertain tool execution, still reject recovery.
-See [Retry](native-thread.md#retry) for safety gates and limits.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. The Linux extension-test job applies the same verified patches to its isolated npm
@@ -133,8 +134,7 @@ The patch supplies `refresh_skills`, native file observation and the `skills_cha
 `skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not
 reload extensions, tools, providers or settings. The same watcher also reloads the built-in MCP extension's
-`mcp.json` servers in a running session ([mcp.md](mcp.md#what-pis-mcp-does)). See [live skills](skills.md#live-threads) for
-bounds, discovery scope and busy behavior. Host launches go through `PiLaunch` and
+`mcp.json` servers in a running session. Host launches go through `PiLaunch` and
 `BundledPiEngine.entryPath`, upstream's `dist/cli.js`: agents, catalog and print launches use the
 patched modular runtime. No dependency was added; the modular SDK and its locked dependencies
 already ship. The checkpoint-recovery helper also exposes `get_restart_recovery` / `resume_session` for
@@ -238,7 +238,7 @@ The initial bundle-only engine was 135 MB. The SDK dependency tree is now shippe
 above. QuickJS's `extensions/*.so` side modules and Pi TUI's optional native addons remain excluded.
 
 **MCP, tool search and codemode use Pi's implementations.** Agents use pi's own MCP, with Settings ▸
-MCP servers on top of it ([mcp.md](mcp.md) has the evidence, measured on this engine, and the layering).
+MCP servers on top of it.
 The home's `settings.json` still carries `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search`
 (`PiHome.install`, under pi's lock, never replacing an entry that already names one in any form), so
 anything that starts pi without saying otherwise loads none of them: the model catalog, drafts, native
@@ -259,15 +259,14 @@ and 32,768 per script. These excerpts do not enter model context. Missing and cl
 The bare `builtin:codemode` stays excluded because it has no default deadline and exposes direct
 classifier/image provider calls. Auxiliary launches and native children do not load the hosted tool.
 Changes apply at the next start or restart, never by restarting an existing agent. The project
-picker edits the existing JSON draft and requires Save. See [codemode settings](design/codemode-settings.md).
+picker edits the existing JSON draft and requires Save.
 
 pi 1.0's tool exposure (`deferred`, a namespace) and `tool_search` also carry Shepherd's own rarely used tools: the
 extensions register the browser, other-thread, automation and review tools `deferred` while `SHEPHERD_DEFER_TOOLS=1`, and
 the launch passes `-e builtin:tool-search` even with MCP off ([context-budget.md](context-budget.md) › Deferred tools has
 what pi does with them, measured).
 
-What pi's MCP does with the files and the environment it is given is in [mcp.md](mcp.md); what it adds
-to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
+What pi's MCP adds to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
 sign-ins. A trusted project's `.shepherd/mcp.json` and `.pi/mcp.json` are read too, as pi's trust model says. `llama.cpp`, the
 fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and

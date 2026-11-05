@@ -437,7 +437,7 @@ jobs:
       - name: Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain
 
-      # The public DSN (docs/diagnostics.md); unset, the build reports nothing.
+      # The public DSN; unset, the build reports nothing.
       - name: Archive ${{ env.SCHEME }} (unsigned)
         env:
           SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_IOS_SENTRY_DSN }}

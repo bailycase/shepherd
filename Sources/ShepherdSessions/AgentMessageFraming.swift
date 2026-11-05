@@ -3,7 +3,7 @@ import Foundation
 /// What a thread reads when another agent messages or steers it (`agent_send`, `agent_steer`):
 /// the text arrives as a user message, so the first words say it is an agent's and not the
 /// user's, and that a reply is for when it asks for one. The panes extension's prompt rules say
-/// the same once for the whole session (docs/agent-coordination.md › What the other thread reads).
+/// the same once for the whole session.
 public enum AgentMessageFraming {
     /// The longest sender name the header carries.
     static let nameLimit = 80
