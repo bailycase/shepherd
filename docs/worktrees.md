@@ -5,7 +5,8 @@ Shepherd can create a git worktree for it, then later finalize it (commit, push,
 up) or delete it. These flows, plus the review pane's per-file Revert, commit from review
 (`ReviewCommit.swift`), and the Changes engine's snapshots and its Undo of an agent's last turn
 (docs/rules.md › Only these paths mutate repositories, [changes.md](changes.md)), are the only places
-Shepherd changes a repository. It never prunes worktrees and never deletes a remote branch.
+Shepherd changes a repository. It may remove or prune worktrees it created. The only remote branch it
+deletes is a merged pull request's head branch on GitHub, through Clean up or a ticked merge.
 
 The Changes engine's snapshots write only loose objects into `.git/objects` (through an index
 file of Shepherd's own in the support directory; the user's index is only ever copied), and its

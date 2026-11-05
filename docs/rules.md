@@ -177,8 +177,8 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. Nothing else, and Shepherd never
-prunes worktrees ([worktrees](worktrees.md), [changes](changes.md)).
+is the confirmed Delete Worktree. Nothing else ([worktrees](worktrees.md), [changes](changes.md)).
+Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split
 
