@@ -169,12 +169,16 @@ extension AppLayout {
     static let skillsOptionTitleSize: CGFloat = 13
 
     // Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch,
-    // SettingsSkillsRepo): a 1060 × 812 sheet, its list 560pt wide beside the preview.
-    static let skillsSheetWidth: CGFloat = 1060
-    static let skillsSheetHeight: CGFloat = 812
+    // SettingsSkillsRepo): a 1200 × 860 sheet (860 × 600 at least); Add from repo's picker is
+    // 560pt wide beside the preview.
+    static let skillsSheetWidth: CGFloat = 1200
+    static let skillsSheetHeight: CGFloat = 860
     static let skillsSheetMinWidth: CGFloat = 860
     static let skillsSheetMinHeight: CGFloat = 600
     static let skillsSheetListWidth: CGFloat = 560
+    // Browse's results stay narrower than Add from repo's picker so the selected skill keeps
+    // the larger share: about 440pt of the 860pt minimum, 780pt of the 1200pt ideal.
+    static let skillsBrowseListWidth: CGFloat = 420
     static let skillsSheetSides: CGFloat = 22
     static let skillsSheetTitleSize: CGFloat = 17
     static let skillsSheetCloseSize: CGFloat = 28

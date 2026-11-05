@@ -55,7 +55,7 @@ struct SkillsDirectorySheet: View {
                     .padding(.bottom, SH.Space.l)
                 HStack(spacing: 0) {
                     list(hosts)
-                        .frame(width: AppLayout.skillsSheetListWidth)
+                        .frame(width: AppLayout.skillsBrowseListWidth)
                     SHHairline(.vertical)
                     detail(hosts)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -220,7 +220,9 @@ struct SkillsDirectorySheet: View {
 
     private func actions(_ skill: DirectorySkill, hosts: [SkillsHost]) -> some View {
         let state = SkillResultState(skill, model: model, hosts: hosts)
-        return HStack(spacing: SH.Space.m) {
+        // A flow, not an HStack: a narrow detail pane wraps whole controls onto a second line
+        // instead of squeezing their labels into fragments.
+        return SHFlowLayout(spacing: SH.Space.m) {
             switch state {
             case .installed:
                 Label("Installed", systemImage: "checkmark")
