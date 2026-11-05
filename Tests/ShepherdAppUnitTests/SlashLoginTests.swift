@@ -80,3 +80,27 @@ struct SlashLoginTests {
         #expect(SlashLogin.title(.login) == "Sign in to · opens Settings")
     }
 }
+
+@Suite("Composer / and $ anywhere")
+struct ComposerCommandTokenTests {
+    @Test(arguments: [
+        ("/rev", "", "/", "rev"),
+        ("fix the bug /", "fix the bug ", "/", ""),
+        ("fix the bug $deb", "fix the bug ", "$", "deb"),
+    ])
+    func aSigilAtAWordStartIsAToken(draft: String, before: String, sigil: Character, text: String) throws {
+        let token = try #require(ComposerCommandToken.token(in: draft))
+        #expect(token.before == before && token.sigil == sigil && token.text == text)
+    }
+
+    @Test(arguments: ["and/or", "costs 5$", "/review now", "path /tmp/x y", "plain"])
+    func otherSlashesAndDollarsAreProse(draft: String) {
+        #expect(ComposerCommandToken.token(in: draft) == nil)
+    }
+
+    @Test func aCommandPickedMidDraftRunsWithTheWordsAsArguments() throws {
+        let token = try #require(ComposerCommandToken.token(in: "fix the login bug $deb"))
+        #expect(token.draft(running: "skill:debug", then: "") == "/skill:debug fix the login bug")
+        #expect(try #require(ComposerCommandToken.token(in: "/rev")).draft(running: "review", then: " ") == "/review ")
+    }
+}

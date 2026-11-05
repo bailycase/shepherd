@@ -255,10 +255,21 @@ struct Composer: View {
         guard let loginQuery, let slashLogin else { return [] }
         return SlashLogin.matches(loginQuery.partial, in: slashLogin.choices())
     }
+    /// The "/" (commands) or "$" (skills) being typed at the end of the draft.
+    private var commandToken: ComposerCommandToken? {
+        store.draft == dismissedQuery ? nil : ComposerCommandToken.token(in: store.draft)
+    }
+    /// What the open menu lists: pi's commands for "/", its skills for "$".
+    private var menuCommands: [NativeCommand] {
+        commandToken?.sigil == "$" ? store.commands.filter { $0.source == "skill" } : commands
+    }
+    /// The query the menu matches; skills are named "skill:<name>", so "$" matches past that.
+    /// Mid-draft, a token that matches nothing is prose ("see /tmp") and opens no menu.
     private var commandQuery: String? {
-        guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
-              store.draft != dismissedQuery else { return nil }
-        return String(store.draft.dropFirst()).lowercased()
+        guard let token = commandToken, !menuCommands.isEmpty else { return nil }
+        let query = (token.sigil == "$" ? "skill:" + token.text : token.text).lowercased()
+        guard token.before.isEmpty || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
+        return query
     }
     /// The commands the slash menu lists for the draft, as `body` last derived them: every key
     /// press comes after the render that saw the draft change.
@@ -323,7 +334,7 @@ struct Composer: View {
         let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
         let widgets = store.widgets
         let query = commandQuery
-        let _ = slash.update(query: query, commands: commands)
+        let _ = slash.update(query: query, commands: menuCommands)
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
                 VStack(alignment: .leading, spacing: SH.Space.xs) {
@@ -611,7 +622,7 @@ struct Composer: View {
         return ZStack(alignment: .bottomLeading) {
             if let query {
                 let slash = slash
-                SHSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
+                SHSlashMenu(commands: slash.rows, total: menuCommands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
                 .shTransition(.overlay, anchor: .bottomLeading)
@@ -1013,10 +1024,12 @@ struct Composer: View {
             openLogin(SlashLogin.Command(verb: verb, provider: nil))
             return
         }
-        store.draft = "/\(command.name)"
+        let token = commandToken
+        store.draft = token?.draft(running: command.name, then: "") ?? "/\(command.name)"
         dismissedQuery = nil
         composing = true
-        guard canSend else { return }
+        // Picked mid-draft: the words already typed become its arguments; the person sends.
+        guard canSend, token?.before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true else { return }
         sendDraft(.primary)
     }
 
@@ -1028,7 +1041,7 @@ struct Composer: View {
     }
 
     private func complete(_ command: NativeCommand) {
-        store.draft = "/\(command.name) "
+        store.draft = commandToken?.draft(running: command.name, then: " ") ?? "/\(command.name) "
         dismissedQuery = nil
     }
 
@@ -1436,6 +1449,31 @@ struct ComposerControlsMinimum: Layout {
 
     func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
                            cache: inout ()) -> CGFloat? { nil }
+}
+
+/// A "/" (pi's commands and prompts) or "$" (its skills) at the start of the draft or after
+/// whitespace, with no whitespace after it: the menu's trigger anywhere in a draft.
+struct ComposerCommandToken: Equatable {
+    /// The draft before the sigil.
+    var before: String
+    var sigil: Character
+    /// What follows the sigil.
+    var text: String
+
+    static func token(in draft: String) -> ComposerCommandToken? {
+        guard let at = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
+        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+        let text = draft[draft.index(after: at)...]
+        guard !text.contains(where: \.isWhitespace) else { return nil }
+        return ComposerCommandToken(before: String(draft[..<at]), sigil: draft[at], text: String(text))
+    }
+
+    /// The draft running `name`: pi only runs a command that starts the message, so the command
+    /// moves to the front and the words typed before it become its arguments.
+    func draft(running name: String, then suffix: String) -> String {
+        let words = before.trimmingCharacters(in: .whitespacesAndNewlines)
+        return words.isEmpty ? "/" + name + suffix : "/" + name + " " + words + suffix
+    }
 }
 
 /// The slash menu's rows for the draft, derived once per draft and command list (a keystroke,

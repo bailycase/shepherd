@@ -94,7 +94,7 @@ struct DesignReferenceThreadTests {
         #expect(mention.before == before && mention.text == text)
     }
 
-    @Test(arguments: ["mail me at baily@example.com", "@funnel\nand more", "plain words", "@ spaced"])
+    @Test(arguments: ["mail me at baily@example.com", "@funnel\nand more", "plain words", "@ spaced", "@ ", "see @\u{00A0}", "@\tx"])
     func anAddressALineBreakOrNoAtIsNoMention(draft: String) {
         #expect(ComposerMention.token(in: draft) == nil)
     }
