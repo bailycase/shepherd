@@ -122,7 +122,9 @@ struct ThreadView: View {
         let _ = SHRenderProbe.tick("thread.view")
         // A turn made only of the owner's wake-ups has no row. A mixed turn keeps its row (and identity); `turn` draws it per message.
         let origins = userOrigins
-        let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
+        // The list, not `rows`: the streaming reply is a shell here, and its content (`liveRow`) is
+        // read by its own row view, so a streamed chunk redraws that row and not this body.
+        let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
@@ -449,7 +451,13 @@ struct ThreadView: View {
                                       historyRowID: String?) -> some View {
         let _ = SHRenderProbe.tick("thread.rowBuilder")
         ThreadRowLayer {
-            turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id), settled: settled)
+            if row.live, row.presentation == nil {
+                LiveRow(store: store) { live in
+                    turn(live, running: running, thinking: thinking, arriving: arrived.contains(live.id), settled: settled)
+                }
+            } else {
+                turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id), settled: settled)
+            }
         }
         .id(row.id)
         .background {
@@ -463,6 +471,18 @@ struct ThreadView: View {
                         historyAnchor.moved()
                     }
             }
+        }
+    }
+
+    /// The streaming reply's row: it reads the store's `liveRow` itself, so each streamed chunk
+    /// invalidates this one view and not the transcript that holds its shell (`listRows`).
+    private struct LiveRow<Content: View>: View {
+        let store: NativeThreadStore
+        @ViewBuilder let content: (NativeThreadRow) -> Content
+
+        var body: some View {
+            let _ = SHRenderProbe.tick("thread.liveRow")
+            if let row = store.liveRow { content(row) }
         }
     }
 

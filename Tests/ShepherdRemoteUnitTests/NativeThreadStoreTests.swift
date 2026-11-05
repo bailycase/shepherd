@@ -1791,6 +1791,33 @@ struct NativeThreadStoreTests {
         #expect(store.rows.map(\.live) == [false, false, false, true])
     }
 
+    /// A streamed chunk changes `liveRow` and leaves `listRows` as it was: the streaming reply
+    /// sits in the list as a content-less shell, so the transcript that iterates the list is not
+    /// invalidated per chunk. The turn ending puts the full row into the list.
+    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async {
+        let prompt = F.user("go", id: "u")
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt],
+                                                           provisional: [F.assistant("Wri", status: "streaming", id: "p")]))
+        defer { task.cancel() }
+        let list = store.listRows
+        #expect(list.map(\.id) == store.rows.map(\.id))
+        #expect(list.last?.live == true && list.last?.presentation == nil && list.last?.turn.messages.isEmpty == true)
+        #expect(store.liveRow?.id == list.last?.id && store.liveRow?.presentation != nil)
+        #expect(store.rows.last?.presentation != nil, "`rows` keeps the content for the lookups and iOS")
+        host.snapshot = F.snapshot(revision: 2, running: true, messages: [prompt],
+                                   provisional: [F.assistant("Writing more", status: "streaming", id: "p")])
+        await store.refresh()
+        #expect(store.listRows == list, "the chunk is the live row's alone")
+        #expect(store.liveRow != nil && store.liveRow?.presentation != store.rows.first?.presentation)
+        host.snapshot = F.snapshot(revision: 3, messages: [prompt, F.assistant("Writing more.", id: "p")])
+        await store.refresh()
+        // The end of a run settles after a short hold (`settleRunning`).
+        for _ in 0..<50 where store.liveRow != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        #expect(store.liveRow == nil)
+        #expect(store.listRows == store.rows, "settled, the list holds every row's content")
+        #expect(store.listRows.last?.live == false && store.listRows.last?.presentation != nil)
+    }
+
     /// LiveText: the thread ends in "Thinking…" only while nothing else moves.
     @Test func theThreadShowsThinkingOnlyWhileNothingElseMoves() async {
         let prompt = F.user(id: "u")

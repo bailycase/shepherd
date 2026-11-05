@@ -21,7 +21,7 @@ struct SubagentListTab: View {
         var turns: [String]
     }
 
-    private var key: Key { Key(runs: store.subagents, placements: store.placements, turns: store.rows.map(\.id)) }
+    private var key: Key { Key(runs: store.subagents, placements: store.placements, turns: store.listRows.map(\.id)) }
 
     var body: some View {
         ZStack {
