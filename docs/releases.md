@@ -166,8 +166,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   - The iOS client is archived unsigned and signed only at export, with the team's
     cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
     (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.
-  - Developer ID items get the hardened runtime and a secure timestamp, and both the app and the
-    DMG are notarized and stapled. Ad-hoc builds skip the runtime, because library validation
+  - Developer ID items get the hardened runtime and a secure timestamp. The app is notarized and
+    stapled; beta and stable DMGs are too, while a nightly DMG is only signed (Gatekeeper checks
+    it online on first open), saving one notarization wait. Ad-hoc builds skip the runtime, because library validation
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
     `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
@@ -189,7 +190,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   unrelated package pins and plist fields do not.
   There is no archive or private-key cache. Snapshot selection, downloads and per-feed
   generation/delta upload durations are logged separately; hosted measurements must establish
-  any speed improvement. Each changed directory is written to a fixed name (`-o`; left alone it names the file after the app's
+  any speed improvement. `--maximum-deltas 1` builds only the previous-to-newest delta; older
+  installs download the full archive. Each changed directory is written to a fixed name (`-o`; left alone it names the file after the app's
   `SUFeedURL`). Deltas go to the feed's newest release, renamed without spaces
   (`Shepherd Nightly63-61.delta` → `Shepherd-Nightly63-61.delta`), because GitHub rewrites
   spaces in asset names. Only after the feed push succeeds (or nothing changed) does that job
@@ -245,9 +247,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     ignored build outputs but no Git credentials. The build marker combines Xcode, Swift, SDK,
     shared library source and package/project/engine inputs. Changing any of those discards
     products but keeps package downloads, preventing reuse across a transitive model/ABI change.
-    Changes confined to ShepherdApp can build incrementally. Hosted cache restores use the same
-    marker inputs. Both the app and DMG still wait for notarization acceptance and receive
-    stapled tickets before package provenance is recorded.
+    Changes confined to ShepherdApp can build incrementally. Hosted builds keep no DerivedData
+    cache (the marker inputs change on nearly every commit). The app, and a non-nightly DMG,
+    still wait for notarization acceptance and receive stapled tickets before package
+    provenance is recorded.
   - Self-hosted uses a temporary signing keychain with a random password, preserves/restores the
     exact existing user keychain search list and removes imported certificate/notary files in
     an `always()` cleanup step, including after failure/cancellation. Forced runner termination

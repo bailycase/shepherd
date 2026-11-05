@@ -346,7 +346,9 @@ jobs:
           # inside the loops read /dev/null, never the list being looped over.
           while read -r dir channel; do
             phase=$SECONDS
-            args=(--ed-key-file "$RUNNER_TEMP/sparkle_key" \
+            # One delta (previous build → newest): older builds take the full DMG. Sparkle's
+            # default of 5 spent minutes diffing every kept nightly's bundled engine.
+            args=(--ed-key-file "$RUNNER_TEMP/sparkle_key" --maximum-deltas 1 \
               --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
               --link "https://github.com/${{ github.repository }}" \
               -o "casts/$dir/appcast.xml")
