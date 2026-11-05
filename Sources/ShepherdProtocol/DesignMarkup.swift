@@ -4,7 +4,7 @@ import Foundation
 // beside the marks; "Done" reads each mark on the iPad (its kind, the board and element under
 // it, the note beside it) and sends the design agent one record of them, fenced as data, as a
 // turn of its own. The agent answers with comments it proposes from them (`markup_propose`), which
-// the viewer applies or keeps. docs/designs.md › Pencil markup.
+// the viewer applies or keeps.
 
 /// What a mark is, as the iPad reads its ink: a loop around something, a line under it, an arrow
 /// at it, or any other mark (a cross, a scribble).

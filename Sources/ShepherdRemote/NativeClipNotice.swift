@@ -2,7 +2,7 @@ import Foundation
 import ShepherdProtocol
 
 /// What a thread says when its snapshot shortened something or could not read it, in the words the
-/// Mac and the iPhone and iPad share (docs/native-thread.md › RPCThreadState › Clipped). Each line is one fact the
+/// Mac and the iPhone and iPad share. Each line is one fact the
 /// host reported (`NativeThreadClips`), says what is missing and when it returns, and goes away
 /// with the fact. Nothing here is an action: none of them has a way to see more than the thread
 /// already shows.

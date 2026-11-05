@@ -10,7 +10,7 @@ import Testing
 import WebKit
 @testable import ShepherdApp
 
-/// A remote thread's Browser (docs/browser.md › Remote): the page renders in this Mac's own web view
+/// A remote thread's Browser: the page renders in this Mac's own web view
 /// and reaches the host's dev server through a forwarded port and a tunnel over the real remote
 /// connection. The host here is a second in-process Shepherd, and its dev server a local server; both
 /// are this very Mac, so the port the page names on this side reaches the dev server's different one

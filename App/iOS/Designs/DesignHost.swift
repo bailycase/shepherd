@@ -8,7 +8,7 @@ import ShepherdRemote
 // The one file of the iOS app that imports DesignSurfaceKit (as DesignHost.swift is on the Mac):
 // boards render here, on the phone, from the files each host served by hash; never on the host.
 //
-// At most two web views live at once (docs/designs.md › Performance): the board on screen
+// At most two web views live at once: the board on screen
 // (`DesignLiveBoard`), and one off-screen renderer that draws thumbnails and exports one board at
 // a time (`DesignRendering`).
 

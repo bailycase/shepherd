@@ -11,7 +11,7 @@ import Testing
 /// Whatever a thread holds fits its column. A row that cannot shrink to it (a label set to its
 /// ideal width, a line that never truncates) widens the one stack every row shares: each paragraph
 /// then wraps at the wider width, and the thread runs off the edge of its pane under a scroll view
-/// that clips what no longer fits (docs/design/thread.md › Activity lines).
+/// that clips what no longer fits.
 ///
 /// Each kind of row in `LongThreads` is drawn through the real store and formatters in a thread
 /// of each width a thread meets: a design's chat (`AppLayout.designChatWidth`), the thread

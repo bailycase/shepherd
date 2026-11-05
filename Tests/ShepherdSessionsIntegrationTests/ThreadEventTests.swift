@@ -1161,7 +1161,7 @@ struct ThreadEventTests {
         #expect(try await t.snapshot().widgets == [])
     }
 
-    /// A running hook's status message is the thread's live line (docs/hooks.md): keyed by
+    /// A running hook's status message is the thread's live line: keyed by
     /// `shepherd.hook`, cleared by an empty status or the turn settling, and only while pi works.
     @Test func aRunningHooksStatusShowsUntilItClearsOrTheTurnSettles() async throws {
         let t = try Thread()

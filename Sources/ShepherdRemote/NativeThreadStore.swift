@@ -160,8 +160,7 @@ public final class NativeThreadStore {
     /// replaces it in place (its entries carry the ids pi's will).
     public private(set) var previewing = false { didSet { bothVersions() } }
     /// The agent's pi stopped before it served (`NativeThreadSnapshot.startProblem`), and why: the
-    /// host keeps the agent, and the composer says so with Retry (docs/design/thread.md › Thread › Can't
-    /// start). Not ready, not starting, and not an error; the thread keeps what it drew.
+    /// host keeps the agent, and the composer says so with Retry. Not ready, not starting, and not an error; the thread keeps what it drew.
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
     public private(set) var loadError: String? { didSet { bothVersions() } }
@@ -855,7 +854,7 @@ public final class NativeThreadStore {
     /// A comment's card holds the agent's answer to it, up to the first compaction in the reply:
     /// from there the agent works from its summary, so what it does next is its own work, not
     /// more of the answer. The rest of the reply becomes a reply of its own, `.../after-compaction`,
-    /// which no card holds (docs/designs.md › Comments). A reply that opens with its compaction
+    /// which no card holds. A reply that opens with its compaction
     /// has no answer before it (`opensWithCompaction`) and is left whole.
     static func endingCommentAnswers(_ turns: [NativeTurn]) -> [NativeTurn] {
         guard turns.contains(where: { $0.messages.contains { $0.compaction != nil } }) else { return turns }

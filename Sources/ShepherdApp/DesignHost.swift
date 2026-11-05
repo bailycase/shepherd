@@ -1388,7 +1388,7 @@ extension DesignRendering {
     }
 }
 
-/// A design reference's copy (docs/designs.md › Design references › The copy), drawn off screen
+/// A design reference's copy, drawn off screen
 /// when the message goes, each board by a view of its own at zoom 1 from the version pinned: the
 /// board (or the element cut from it) as a PNG at twice its size, the board's standalone page,
 /// and the element's markup and computed styles, written into the copy's folder.
@@ -1424,7 +1424,7 @@ extension DesignRendering {
     }
 }
 
-/// A design agent's `board_render` (docs/designs.md › Rendering for the agent): the board drawn off
+/// A design agent's `board_render`: the board drawn off
 /// screen from the files the host read for it, at its frame's size (or the size asked), by a view of
 /// its own that is let go after, one at a time. Never a live canvas view, and nothing of the design
 /// on screen is needed: the design need not be open.

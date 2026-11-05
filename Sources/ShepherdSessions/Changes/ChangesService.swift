@@ -3,7 +3,7 @@ import CryptoKit
 import ShepherdCore
 import ShepherdProtocol
 
-/// The Changes pane's engine, owned by the host's `SessionServer` (docs/changes.md): every scope
+/// The Changes pane's engine, owned by the host's `SessionServer`: every scope
 /// resolves to two git objects — a tree or commit on each side — and a diff runs between them.
 /// The working tree becomes a tree through a snapshot: `git add -A` and `git write-tree` on an
 /// index file of Shepherd's own, in the support directory, never the user's. Its only effect on

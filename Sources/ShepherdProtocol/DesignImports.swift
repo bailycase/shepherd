@@ -1,6 +1,6 @@
 import Foundation
 
-// Shared pieces (docs/designs.md › Shared pieces): `<dc-import name="Card">` mounts the board
+// Shared pieces: `<dc-import name="Card">` mounts the board
 // `Card.dc.html` in place, so a piece drawn once serves every board that imports it. These are
 // the static reads of that: which boards a board imports, which boards import a piece, and which
 // imports name a board that isn't there.

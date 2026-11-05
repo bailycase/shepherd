@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// The agent's browser tools against the thread's own page (docs/browser.md). Every tool is one
+// The agent's browser tools against the thread's own page. Every tool is one
 // `BrowserRequest`; `perform` runs them one at a time per page, refuses the ones that act while the
 // user has taken over, shows the agent's use of the page (the ring, pointer and card), and answers
 // text that starts with the untrusted-content notice and the page line. The web view itself is

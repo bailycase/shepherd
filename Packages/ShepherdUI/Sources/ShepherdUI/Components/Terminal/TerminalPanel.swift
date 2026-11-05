@@ -375,7 +375,7 @@ private struct SHKeycapPressStyle: ButtonStyle {
 }
 
 /// A terminal's quiet state line in place of its screen ("attaching…", "session exited (1)"):
-/// mono, tertiary, at the top left, as docs/design/terminal.md › Terminal panes has it.
+/// mono, tertiary, at the top left.
 public struct SHTerminalNotice: View {
     let text: String
 

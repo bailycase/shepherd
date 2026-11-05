@@ -327,14 +327,13 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
-    /// A send is keeping a design reference's copy (docs/designs.md › Design references › The
-    /// copy): the app draws the pinned board (or boards) off screen (`DesignHost`) into the copy's
+    /// A send is keeping a design reference's copy: the app draws the pinned board (or boards) off screen (`DesignHost`) into the copy's
     /// folder under the support directory. Delivered on the main actor; the completion may be
     /// called from any thread. With no handler a send with references is refused
     /// (`render_unavailable`).
     public var onDesignReferenceCapture: ((DesignReferenceCaptureRequest,
                                            @escaping (Result<DesignReferenceCaptured, DesignReferenceError>) -> Void) -> Void)?
-    /// A design agent's `board_render` (docs/designs.md › Rendering for the agent): the app draws
+    /// A design agent's `board_render`: the app draws
     /// the board off screen, one at a time, from the files in the job (`DesignRenderJob`), and
     /// answers its picture, or why it couldn't. Delivered on the main actor; the completion may
     /// be called from any thread. With no handler the answer is `render_unavailable`; one that
@@ -344,7 +343,7 @@ public final class SessionServer: @unchecked Sendable {
     /// A thread left or the user removed a note on a design (`DesignThreadNote`): the canvas reads
     /// the design's notes again. Delivered on the main actor; a hint, not state.
     public var onDesignThreadNotesChanged: ((DesignID) -> Void)?
-    /// An agent's browser extension asked for its thread's Browser page (docs/browser.md). The
+    /// An agent's browser extension asked for its thread's Browser page. The
     /// request is served only on the connection registered as that agent (`helloBrowser`) and only
     /// for a thread, never a design's agent. The app owns the page; delivered on the main actor,
     /// and the completion may be called from any thread. The server answers `timeout` itself if
@@ -734,7 +733,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Fires triggered automations (schedules, GitHub). The app installs its host and starts it.
     public let automationTriggers: AutomationTriggers
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
-    /// their Undo (docs/changes.md). The app calls it directly; remote clients through
+    /// their Undo. The app calls it directly; remote clients through
     /// `RemoteAgentQuery.changes*`.
     public let changes: ChangesService
     /// Issues & PRs: GitHub through the user's gh (`forge(_:)`, `RemoteRequest.forge`).
@@ -793,7 +792,7 @@ public final class SessionServer: @unchecked Sendable {
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
     /// Each RPC session's start (`PiStartRecord`), from its spawn until it exits.
     private var startRecords: [SessionID: PiStartRecord] = [:]
-    /// RPC sessions whose exit kept their agent (docs/design/thread.md › Thread › Can't start), until another
+    /// RPC sessions whose exit kept their agent, until another
     /// session is bound to their pane: their thread answers with why, instead of pi.
     private var keptStarts: [SessionID: KeptStart] = [:]
     private struct KeptStart {
@@ -825,8 +824,7 @@ public final class SessionServer: @unchecked Sendable {
     /// How long the app has to answer a browser request (server queue).
     private var browserDeadline: TimeInterval = SessionServer.defaultBrowserDeadline
     public static let defaultBrowserDeadline: TimeInterval = 120
-    /// Which remote viewer (by connection) owns each agent's browser (docs/browser.md › Remote ›
-    /// The agent drives the page you see). Server queue.
+    /// Which remote viewer (by connection) owns each agent's browser. Server queue.
     private var browserOwners = BrowserDriveOwners<Int32>()
     /// Browser requests handed to an owning viewer and not answered yet, by token. The viewer's
     /// answer, the deadline, the viewer leaving and the asking connection closing each take the
@@ -951,7 +949,7 @@ public final class SessionServer: @unchecked Sendable {
     private var missionsServed = false
     /// What each running mission's agents say now, as the owner last published it (`setMissionLive`). Server queue.
     private var missionLive: [MissionID: RemoteMissionLive] = [:]
-    /// Browser tunnels (docs/browser.md › Remote): the limits and the count across every client.
+    /// Browser tunnels: the limits and the count across every client.
     private let tunnelHost = BrowserTunnelHost()
     /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
     private var tunnelsServed = true
@@ -1004,7 +1002,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
     /// clients that read it are told what the host offers now, and every tunnel is closed when it
-    /// goes off. On unless something turns it off (nothing does yet: docs/browser.md › Remote).
+    /// goes off. On unless something turns it off (nothing does yet).
     public func setBrowserTunnelsServed(_ served: Bool) {
         queue.async {
             guard self.tunnelsServed != served else { return }
@@ -1697,7 +1695,7 @@ public final class SessionServer: @unchecked Sendable {
         guard let sent = request.designReferences, !sent.isEmpty else { return try await dispatchNativeThread(agentID: agentID, request: request) }
         // Design references: resolved at the version each pins and kept with the message, fenced
         // from what the host read, never from what was sent; the agent may read those copies once
-        // they go (docs/designs.md › Design references).
+        // they go.
         let references = try sent.map { record -> DesignReference in
             guard let reference = record.reference else {
                 throw RemoteHostClientError.rejected(code: "invalid_reference", message: DesignReferenceError.invalid(record.ref).message)
@@ -2370,7 +2368,7 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
             }
             guard !line.contains(13) else { disconnect(client); return }
-            // Design references (docs/designs.md › Design references): a client's are refused rather
+            // Design references: a client's are refused rather
             // than dropped, unless this host serves references to its own designs
             // (`design.references.v1`); then the host resolves and fences each one itself, as for
             // its own sends, and refuses one naming any other Mac's design.
@@ -3993,8 +3991,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Whether a remote client is sent the host's designs and the agents that draw them: only
     /// while the host serves designs (`designs.v1`, its experiment on) and the client reads them.
-    /// Any other client has no design screen, so a design's agent would show there as a thread
-    /// (docs/designs.md › Design agents and ordinary threads).
+    /// Any other client has no design screen, so a design's agent would show there as a thread.
     private func seesDesigns(_ client: ExtensionConnection) -> Bool {
         client.knowsDesigns && offeredCapabilities.contains(RemoteProtocol.designsCapability)
     }
@@ -4658,8 +4655,8 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Design references
 
-    /// Pins a reference for a composer chip, the @ picker, Copy reference or the Implement sheet
-    /// (docs/designs.md › Design references): the design is here, the board on its canvas and the
+    /// Pins a reference for a composer chip, the @ picker, Copy reference or the Implement sheet:
+    /// the design is here, the board on its canvas and the
     /// element in its source, at the reference's revision when a pin kept that version, else as
     /// they are now, pinned now. Answers the pinned reference, what the host read of it, and what
     /// a send of it would carry (the sheet's footer). Reads on the design store's queue; changes
@@ -7918,7 +7915,7 @@ public final class SessionServer: @unchecked Sendable {
                 if let thread = server.rpcThread(forAgent: agentID) { server.executionQuestion(agentID: agentID, thread: thread) }
             }
             // A queued message carrying design references was taken back before pi read it: its
-            // grants and copies go (docs/designs.md › Design references).
+            // grants and copies go.
             thread.onDesignPayloadsWithdrawn = { [weak serverWeak] payloads in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 Task { await server.withdrawDesignReferences(payloads, from: agentID) }

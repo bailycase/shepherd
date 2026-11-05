@@ -3,7 +3,7 @@ import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
 
-/// Calls on pi's MCP as activity lines (docs/mcp.md › In the thread): a server's tool with its
+/// Calls on pi's MCP as activity lines: a server's tool with its
 /// server and what it was asked, and the search that loads deferred tools as a quiet line.
 @Suite("MCP activity lines")
 struct MCPActivityTests {

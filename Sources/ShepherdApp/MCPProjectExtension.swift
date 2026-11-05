@@ -3,8 +3,8 @@ import ShepherdSessions
 import ShepherdProtocol
 
 /// The one piece of MCP that runs in an agent's pi: registers the servers of a repo's `.mcp.json`
-/// with pi's own MCP while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on
-/// (docs/mcp.md). pi reads `.shepherd/mcp.json` and `.pi/mcp.json` only in a project it trusts.
+/// with pi's own MCP while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
+/// pi reads `.shepherd/mcp.json` and `.pi/mcp.json` only in a project it trusts.
 enum MCPProjectExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()

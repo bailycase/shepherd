@@ -5,7 +5,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads): the
+/// A design's agent is no thread: the
 /// palette lists no subagent of it, and a banner's Review never opens a thread's Changes pane for
 /// it, whether the Design tool is on or off.
 @Suite("Design isolation in the app", .mainActorExclusive)

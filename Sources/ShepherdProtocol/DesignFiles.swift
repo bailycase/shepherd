@@ -119,7 +119,7 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
 }
 
 /// A board's earlier content, kept when a write replaced it: the last `DesignBoardVersion.kept`
-/// per board (docs/designs.md › Versions).
+/// per board.
 public struct DesignBoardVersion: Hashable, Sendable, Codable {
     /// Counts up per board from 1; a restore saves what it replaced as the next one.
     public var number: Int

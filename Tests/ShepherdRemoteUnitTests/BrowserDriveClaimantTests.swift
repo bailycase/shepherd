@@ -3,7 +3,7 @@ import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
 
-/// A viewer's claim on one remote thread's browser (docs/browser.md › Remote): when it claims and
+/// A viewer's claim on one remote thread's browser: when it claims and
 /// when it lets go, from what the tab and the connection do, with the clock handed in.
 @Suite("Browser drive claimant")
 struct BrowserDriveClaimantTests {

@@ -1,6 +1,6 @@
 import Foundation
 
-// What a Browser's address field takes and shows (docs/design/side-pane-browser.md › Address field),
+// What a Browser's address field takes and shows,
 // pure so it is tested without WebKit. Shared by the Mac's pane and the iOS client's page.
 
 public enum BrowserAddress {

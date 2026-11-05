@@ -44,10 +44,9 @@ coherent over covering every use case.
   agent can ready it on its own checkout or another repository or worktree; only you open the pane.
 - **Agents working together.** An agent can list, message, and start other agents, read another
   agent's thread, steer or interrupt it, and wait for it to settle. Deleting another agent always
-  asks you first. See [docs/agent-coordination.md](docs/agent-coordination.md).
+  asks you first.
 - **Worktrees.** Give an agent its own git worktree, branched from a fresh `origin/<default>`.
-  When the work is done, finalize it: commit, push, open a PR, and clean up. See
-  [docs/worktrees.md](docs/worktrees.md).
+  When the work is done, finalize it: commit, push, open a PR, and clean up.
 - **Automations.** Saved monitoring prompts run as dedicated agents and notify you when
   something happens.
 - **Remote.** Run your projects on one Mac and drive them from another. The host serves its
@@ -64,7 +63,7 @@ and the workspace comes back, with each agent resumed in its pi session.
 
 - A Mac with Apple silicon, on macOS 26 or later. Intel Macs are not supported.
 - Nothing else: Shepherd ships its own [pi](https://github.com/earendil-works/pi-coding-agent) and
-  runs it in its own folder, with its own sign-ins ([docs/pi-home.md](docs/pi-home.md)). A pi you
+  runs it in its own folder, with its own sign-ins. A pi you
   installed yourself stays yours: Shepherd never runs it or changes its files. At its first launch
   Shepherd copies that pi's logins and settings into its own once; otherwise, sign in once in
   Settings ▸ Pi.
@@ -148,7 +147,6 @@ itself is unencrypted. Use a VPN or trusted network, and never expose the listen
 internet. See [SECURITY.md](SECURITY.md).
 
 The iPhone and iPad client in `App/iOS` is distributed through internal TestFlight builds.
-See [docs/ios](docs/ios/README.md) for its current scope and validation.
 
 ## pi in terminals
 
@@ -161,26 +159,13 @@ Shepherd agent when you want those.
 
 ## Documentation
 
-- [AGENTS.md](AGENTS.md): the short working guide for coding agents and contributors. It links to
-  build and test, the source map, and the rules that are easy to break in `docs/`.
-- [ARCHITECTURE.md](ARCHITECTURE.md): modules, runtime ownership, data flow, remote, and
-  persistence.
-- [DESIGN.md](DESIGN.md): the rules for UI changes. [docs/design/](docs/design/README.md) has the
-  spec of every surface built on Shepherd Design, Shepherd's design system.
-- [docs/native-thread.md](docs/native-thread.md): how an agent's `pi --mode rpc` process
-  becomes its thread.
-- [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.
-- [docs/service-tier.md](docs/service-tier.md): the Speed control (Fast mode): which models offer
-  a service tier, and how a thread's choice reaches its next model call.
-- [docs/worktrees.md](docs/worktrees.md): worktree creation, finalize, and delete.
-- [docs/browser.md](docs/browser.md): the tools an agent uses on its thread's Browser, and how
-  each thread's page stays its own.
-- [docs/agent-coordination.md](docs/agent-coordination.md): the tools agents use on each other
-  and on the review pane.
-- [docs/clean-mac-simulation.md](docs/clean-mac-simulation.md): testing the finalize setup
-  checks.
-- [docs/ios](docs/ios/README.md): the iPhone and iPad client and its TestFlight distribution.
+- [AGENTS.md](AGENTS.md): the short working guide for coding agents and contributors, with links
+  to build, test, release and the rules that are easy to break.
+- [ARCHITECTURE.md](ARCHITECTURE.md): modules, ownership, and where each feature lives in code.
+- [DESIGN.md](DESIGN.md): the rules for UI changes.
 - [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+The code and its tests are the detail; there are no per-feature docs.
 
 ## License
 

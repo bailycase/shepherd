@@ -1,6 +1,6 @@
 import Foundation
 
-/// How much of a subscription's limits are used (docs/pi-home.md › Usage): one entry per window
+/// How much of a subscription's limits are used: one entry per window
 /// the provider reports ("5-hour", "Week").
 public struct PiUsageWindow: Equatable, Sendable {
     public var name: String

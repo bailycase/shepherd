@@ -1,4 +1,4 @@
-// pi 1.0's built-in MCP, as Shepherd depends on it (docs/mcp.md): real pi in RPC mode, in a temporary home, against
+// pi 1.0's built-in MCP, as Shepherd depends on it: real pi in RPC mode, in a temporary home, against
 // stand-in MCP servers on stdio and loopback HTTP (fixtures/fake-mcp-*.mjs) and a fake provider. Each test pins one thing
 // the layering relies on, so a pi that changes it fails here before a release: what each exposure puts in a prompt,
 // the flow of a deferred tool, where `${VAR}` expands, what a stdio server inherits, the explicit -e that turns the

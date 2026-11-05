@@ -238,7 +238,7 @@ struct ThreadTranscript: View {
     @Environment(\.designMarkupCanvas) private var markupCanvas
     /// A Project's coordinator or worker: its key is no agent's, so no ordinary-thread action is offered.
     @Environment(\.projectTranscript) private var projectTranscript
-    /// Follows the tail until the reader drags away from it (docs/design/thread.md › Thread › Following).
+    /// Follows the tail until the reader drags away from it.
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
     private var follower: NativeScrollFollower { presentation.scrollFollower }
     @State private var historyPaging = NativeHistoryPaging()

@@ -1,8 +1,7 @@
 import Foundation
 import ShepherdCore
 
-// An agent on another Mac drives the page the viewer sees (docs/browser.md › Remote › The agent
-// drives the page you see). A viewer that has a remote thread's Browser tab on screen claims that
+// An agent on another Mac drives the page the viewer sees. A viewer that has a remote thread's Browser tab on screen claims that
 // agent's browser on the host; while it owns it, the host hands the agent's `BrowserRequest`s to the
 // viewer instead of its own page, and the viewer answers them with the driver the host's own app
 // uses. This file is the wire and the host's claim rules, shared by the host's server, the Mac app and
@@ -16,7 +15,7 @@ extension RemoteProtocol {
     /// pushes drive frames only to a client that says it reads them. A host that offers it also
     /// offers `browserTunnelCapability` (the page the viewer runs loads through a tunnel), and a
     /// viewer claims only where both are offered. An older host lists nothing: its agent drives the
-    /// host's own page, and a viewer's tab is a page of its own (docs/browser.md › Remote).
+    /// host's own page, and a viewer's tab is a page of its own.
     public static let browserDriveCapability = "browser.drive.v1"
 }
 

@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-/// Triggered automations (docs/data-flow.md "Automation triggers"): the server's
+/// Triggered automations: the server's
 /// `AutomationTriggers` decides when a run starts; this is the host it starts runs through.
 /// A new-thread run is an ordinary thread in the automation's space, on its own worktree by
 /// default, marked with `Agent.automationOrigin`. A thread destination gets each firing as a

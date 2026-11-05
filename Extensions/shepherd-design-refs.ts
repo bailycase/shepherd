@@ -1,5 +1,5 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-// Shepherd design references extension (docs/designs.md › Design references):
+// Shepherd design references extension:
 // - design_get(ref, what) reads the copy of a design piece (a whole design, a board, or one
 //   element of it) that Shepherd kept when the user sent it to this thread. It answers only from
 //   those copies, never the design as it is now: a newer version reaches the thread only when the

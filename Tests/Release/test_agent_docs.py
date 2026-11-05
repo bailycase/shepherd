@@ -1,9 +1,9 @@
 """Guards that keep AGENTS.md and DESIGN.md short, and the docs they point at in one piece.
 
 AGENTS.md is loaded into every agent thread and DESIGN.md is read before every UI change, so
-both are a short sheet of rules and pointers; the long reference sections live in docs/ and
-the per-surface design specs in docs/design/. These tests fail when either file regrows, when
-a link or an anchor in them breaks, or when a file in docs/design/ is not in its index.
+both are a short sheet of rules and pointers. The few reference docs live in docs/; there are no
+per-feature or per-surface docs, since the code is the spec. These tests fail when either file
+regrows, or when a link or an anchor in the kept docs breaks.
 
 Run: python3 -m unittest discover -s Tests/Release -v
 """
@@ -18,8 +18,8 @@ AGENTS_MAX_LINES = 130
 DESIGN_MAX_LINES = 280
 
 # Reference docs AGENTS.md points at, each with a one-line "Read when" header.
-REFERENCE_DOCS = ["overview", "build-and-run", "environment", "testing", "data-flow",
-                  "remote-protocol", "rules", "releases", "gotchas"]
+REFERENCE_DOCS = ["build-and-run", "environment", "testing", "remote-protocol", "rules",
+                  "releases", "gotchas", "pi-engine", "context-budget"]
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -61,6 +61,8 @@ def broken_links(path):
                 continue
             file_part, _, frag = target.partition("#")
             dest = (path.parent / file_part).resolve()
+            if not dest.is_relative_to(ROOT):
+                continue  # A GitHub page such as ../../releases, not a file.
             if not dest.exists():
                 problems.append(f"{path.relative_to(ROOT)}:{n}: {target} (no such file)")
             elif frag and dest.suffix == ".md" and slug(frag) not in anchors(dest):
@@ -77,7 +79,7 @@ class SizeTests(unittest.TestCase):
     def test_design_md_stays_a_small_set_of_rules(self):
         n = len(read_lines(ROOT / "DESIGN.md"))
         self.assertLessEqual(n, DESIGN_MAX_LINES,
-                             f"DESIGN.md is {n} lines (max {DESIGN_MAX_LINES}). Per-surface specs go in docs/design/.")
+                             f"DESIGN.md is {n} lines (max {DESIGN_MAX_LINES}). Keep it to rules; the code is the spec.")
 
 
 class ContentTests(unittest.TestCase):
@@ -88,7 +90,7 @@ class ContentTests(unittest.TestCase):
         self.assertIn("the user's call", text)
 
     def test_nothing_in_the_repo_claims_that_design_md_wins_over_the_users_design(self):
-        for rel in ("AGENTS.md", "DESIGN.md", "docs/design/README.md"):
+        for rel in ("AGENTS.md", "DESIGN.md"):
             text = (ROOT / rel).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"(?i)this document wins")
             self.assertNotRegex(text, r"(?i)is the authority on")
@@ -101,41 +103,21 @@ class ContentTests(unittest.TestCase):
 
 
 class LinkTests(unittest.TestCase):
-    def test_links_in_agents_md_design_md_and_the_design_index_resolve(self):
-        problems = []
-        for rel in ("AGENTS.md", "DESIGN.md", "docs/design/README.md"):
-            problems += broken_links(ROOT / rel)
-        self.assertEqual(problems, [])
-
-    def test_links_in_every_reference_doc_and_design_spec_resolve(self):
-        files = [ROOT / "docs" / f"{n}.md" for n in REFERENCE_DOCS]
-        files += sorted((ROOT / "docs" / "design").glob("*.md"))
+    def test_links_in_every_kept_doc_resolve(self):
+        files = [ROOT / n for n in ("AGENTS.md", "DESIGN.md", "ARCHITECTURE.md", "README.md", "CONTRIBUTING.md", "SECURITY.md")]
+        files += [ROOT / "docs" / f"{n}.md" for n in REFERENCE_DOCS]
         files.append(ROOT / "docs" / "design" / "boards" / "README.md")
         problems = []
         for f in files:
             problems += broken_links(f)
         self.assertEqual(problems, [])
 
-
-class DesignIndexTests(unittest.TestCase):
-    def test_the_design_index_lists_every_file_in_docs_design(self):
-        folder = ROOT / "docs" / "design"
-        index = (folder / "README.md").read_text(encoding="utf-8")
-        listed = set(re.findall(r"\]\(([\w-]+\.md)\)", index))
-        on_disk = {p.name for p in folder.glob("*.md") if p.name != "README.md"}
-        self.assertEqual(sorted(on_disk - listed), [], "files missing from docs/design/README.md")
-        self.assertEqual(sorted(listed - on_disk), [], "README.md links files that do not exist")
-
-    def test_every_design_spec_opens_with_a_title_and_a_one_line_read_when_header(self):
-        for p in sorted((ROOT / "docs" / "design").glob("*.md")):
-            lines = read_lines(p)
-            self.assertTrue(lines[0].startswith("# "), p.name)
-            self.assertTrue(any(l.startswith("> ") and "Read" in l for l in lines[:6]), f"{p.name} has no Read when line")
-
-    def test_design_md_points_every_section_of_the_rules_at_a_real_file(self):
-        text = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
-        for rel in sorted(set(re.findall(r"\]\((docs/design/[\w-]+\.md)", text))):
-            self.assertTrue((ROOT / rel).is_file(), rel)
+    def test_docs_holds_only_the_reference_docs_and_the_saved_boards(self):
+        docs = ROOT / "docs"
+        extra = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md")
+                       if p.parent == docs and p.stem not in REFERENCE_DOCS
+                       or p.parent != docs and p != docs / "design" / "boards" / "README.md")
+        self.assertEqual(extra, [], "docs/ is only the reference docs: put the detail in code and tests")
 
 
 if __name__ == "__main__":

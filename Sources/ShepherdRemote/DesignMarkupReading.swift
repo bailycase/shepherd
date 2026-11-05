@@ -6,7 +6,7 @@ import ShepherdProtocol
 // around something, a line under it, an arrow at it) and which are handwriting, which note goes
 // with which mark, and which element of which board each mark is on. Pure geometry, so it is
 // tested on fixed strokes; the iPad adds the handwriting (Vision, on the device) and the boards'
-// hit tests. docs/designs.md › Pencil markup.
+// hit tests.
 
 /// One stroke of ink, in canvas points (the boards' own CSS pixels, where the canvas lays them
 /// out), in the order it was drawn.

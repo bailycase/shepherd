@@ -4,7 +4,7 @@ import ShepherdProtocol
 import Testing
 @testable import DesignSurfaceKit
 
-/// What a `<dc-import>` carries into a shared piece (docs/designs.md › Shared pieces): attributes
+/// What a `<dc-import>` carries into a shared piece: attributes
 /// become the piece's props (text, numbers, lists by a whole-value hole), markup written inside the
 /// import is not passed down, the piece is the same wherever it is imported, imports nest only so
 /// far, and a board that imports itself draws a placeholder.

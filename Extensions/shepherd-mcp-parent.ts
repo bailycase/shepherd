@@ -1,5 +1,5 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-// Shepherd's subproject MCP extension (Settings ▸ Projects, parents and subprojects; docs/mcp.md): a project inside another
+// Shepherd's subproject MCP extension (Settings ▸ Projects, parents and subprojects): a project inside another
 // project's folder shares the parent's MCP servers. pi reads project MCP files only in the folder it runs in, so this reads the
 // parent's files, the folder Shepherd names in SHEPHERD_PARENT_PROJECT, and registers their servers for the session with
 // pi.registerMcpServer. The subproject's own MCP files and the user's `mcp.json` are pi's own configuration, which wins

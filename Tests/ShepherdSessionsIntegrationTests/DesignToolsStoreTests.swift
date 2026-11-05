@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// The design agent's batch tools on the host (docs/designs.md › The design agent): reports after
+/// The design agent's batch tools on the host: reports after
 /// every write, token enforcement, `boards_edit`, `board_search`, the usage index, and
 /// checkpoints, against a real server and design store.
 @Suite("Design agent tools on the host", .integrationTimeLimit)

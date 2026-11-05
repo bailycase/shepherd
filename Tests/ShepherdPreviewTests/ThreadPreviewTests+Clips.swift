@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdSessions
 
-/// What a thread says when its snapshot shortened something (docs/native-thread.md › RPCThreadState › Clipped), in the
+/// What a thread says when its snapshot shortened something, in the
 /// banner's own style, from snapshots a host served: its live rows, questions and history through the
 /// host's budget, over the wire's JSON, into the store the thread reads. Older pages to scroll up to
 /// and a long message draw no banner at all.

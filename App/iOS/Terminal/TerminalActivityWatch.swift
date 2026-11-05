@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdRemote
 
 extension View {
-    /// Hook (docs/ios/CONTRACTS.md): what the thread's terminals run, from its host, while the
+    /// Hook: what the thread's terminals run, from its host, while the
     /// thread is on screen: the side pane's Terminal tab dot and the thread menu's "1 running".
     /// `ThreadScreen` applies it to its content.
     func watchesTerminals(_ ref: AgentRef) -> some View {

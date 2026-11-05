@@ -98,7 +98,7 @@ enum NewThreadPlaces {
     }
 
     /// Why design references cannot go with a new thread there, or nil: they are this Mac's
-    /// designs, and reach this Mac's threads only (docs/designs.md › Design references). `host` is
+    /// designs, and reach this Mac's threads only. `host` is
     /// nil for This Mac.
     static func referencesRefusal(count: Int, host: UUID?) -> String? {
         count > 0 && host != nil ? referencesNote + " Remove them, or choose a space on this Mac." : nil

@@ -3,7 +3,7 @@ import Testing
 import ShepherdCore
 @testable import ShepherdProtocol
 
-/// Browser tunnels on the wire (docs/browser.md › Remote): the frames, the credit arithmetic that
+/// Browser tunnels on the wire: the frames, the credit arithmetic that
 /// keeps a slow end from making the other buffer without bound, chunking, and which URLs a tunnel serves.
 @Suite("Browser tunnel")
 struct BrowserTunnelTests {

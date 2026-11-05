@@ -4,7 +4,7 @@ import SwiftUI
 import ShepherdUI
 import WidgetKit
 
-// The widget extension (docs/design/notifications.md › Glance): the Watch and Follow Live
+// The widget extension: the Watch and Follow Live
 // Activities with their Dynamic Island, the Home and Lock Screen widget, and two Control Center
 // controls. It draws what the app published and runs nothing itself: buttons are the app's
 // intents or links into it.

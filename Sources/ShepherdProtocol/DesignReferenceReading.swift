@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdCore
 
-/// What design_get reads of a reference's kept copy (docs/designs.md › design_get).
+/// What design_get reads of a reference's kept copy.
 public enum DesignReferenceAspect: String, Codable, Hashable, Sendable, CaseIterable {
     /// The label, size, the revision it was sent at, and the other versions this thread was sent.
     case summary

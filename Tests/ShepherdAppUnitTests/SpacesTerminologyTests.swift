@@ -5,7 +5,7 @@ import Testing
 @testable import ShepherdApp
 
 /// The old folder concept reads "Space" everywhere a person sees it, so the new Projects feature
-/// can own "Project" (docs/design/boards/SpacesTerminology.md). Stored values, protocol names and
+/// can own "Project". Stored values, protocol names and
 /// the tool ids an agent calls keep their old spelling.
 @Suite("Spaces terminology")
 @MainActor

@@ -1,5 +1,5 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-// Shepherd's hooks runtime (docs/hooks.md is the contract): finds the Shepherd, Claude Code and
+// Shepherd's hooks runtime: finds the Shepherd, Claude Code and
 // Codex hook files of this Mac and the thread's space, runs every handler the person hasn't
 // switched off (<SHEPHERD_HOOKS_DIR>/settings.json) on pi's events, shows what each did as a
 // `shepherd.hook` row, and offers `hook_propose`. Inert unless SHEPHERD_HOOKS_DIR is set; never
@@ -26,7 +26,7 @@ const EDITED = "Added in Settings";
 
 // MARK: Identity
 
-/** Canonical JSON (docs/hooks.md, Identity and the off switch): sorted keys by UTF-16 code units, no whitespace. */
+/** Canonical JSON (Identity and the off switch): sorted keys by UTF-16 code units, no whitespace. */
 export function canonical(value) {
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
   if (value && typeof value === "object") {
@@ -374,7 +374,7 @@ function timeoutFor(event, handler) {
 
 const clip = (text, n = 120) => { const s = String(text ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
-/** One handler's raw result as the outcome docs/hooks.md defines. */
+/** One handler's raw result as an outcome. */
 export function interpret(event, result) {
   const out = { failed: false, block: false, reason: "", permission: undefined, updatedInput: undefined, contexts: [], systemMessage: undefined, stop: false, stopReason: "" };
   if (result.exit === 2) {

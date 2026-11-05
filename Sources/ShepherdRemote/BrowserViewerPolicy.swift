@@ -2,8 +2,7 @@ import Darwin
 import Foundation
 import ShepherdProtocol
 
-// Where an agent on another Mac may take a viewer's web view (docs/browser.md › Remote › What a
-// host's agent can make this Mac do). A host's agent drives a page that renders on the *viewer's* Mac,
+// Where an agent on another Mac may take a viewer's web view. A host's agent drives a page that renders on the *viewer's* Mac,
 // so a `browser_open` there must not become a way into the viewer's own network: an address is served
 // only when it is this thread's host (`localhost`, `127.0.0.1` and `::1`, which the viewer's forwarded
 // ports carry to the host) or a public one. Everything else is refused: private ranges (RFC 1918,

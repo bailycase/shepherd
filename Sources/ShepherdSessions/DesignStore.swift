@@ -123,7 +123,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
 
 /// The files of every design, under the support directory's `designs/<id>/`: `project/canvas.json`,
 /// one `project/<path>.dc.html` per board, and Shepherd's `revision` and `comments.json` beside
-/// `project/` (docs/designs.md › Storage).
+/// `project/`.
 ///
 /// Every read and write runs on the store's own serial queue, never the server's, so a compare
 /// and the write it guards are one step. Only `SessionServer` writes: it commits and broadcasts
@@ -780,7 +780,7 @@ public final class DesignStore: @unchecked Sendable {
         return try render.sha256
     }
 
-    // MARK: Notes back (docs/designs.md › Notes back)
+    // MARK: Notes back
 
     /// The notes threads left on the design's pieces, oldest first: `thread-notes.json` beside
     /// `project/`, never inside it. Empty when there are none or the file is unreadable.

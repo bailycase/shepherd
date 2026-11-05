@@ -1,4 +1,4 @@
-// The design agent's batch tools (docs/designs.md › The design agent): boards_edit, board_search,
+// The design agent's batch tools: boards_edit, board_search,
 // board_render, board_extract, the checkpoint tools, the reports every write answers, and design_check's
 // snap, against a stand-in Shepherd socket. No model provider, only temporary files.
 import test from "node:test";
