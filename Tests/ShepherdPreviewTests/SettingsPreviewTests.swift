@@ -46,6 +46,25 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Subscription rows with usage: under, near and at the limit.
+    @Test func signInUsage() async throws {
+        let now = Date()
+        let anthropic = PiSignInWords.usage([PiUsageWindow(name: "5-hour", usedPercent: 23, resetsAt: now.addingTimeInterval(3600)),
+                                             PiUsageWindow(name: "Week", usedPercent: 84, resetsAt: now.addingTimeInterval(4 * 86400))], now: now)
+        let codex = PiSignInWords.usage([PiUsageWindow(name: "5-hour", usedPercent: 100, resetsAt: now.addingTimeInterval(1800)),
+                                         PiUsageWindow(name: "Week", usedPercent: 40, resetsAt: nil)], now: now)
+        try await Preview.render("settings-sign-in-usage", size: CGSize(width: 720, height: 260)) {
+            VStack(spacing: 0) {
+                SHProviderRow("Anthropic", badge: "An", status: PiSignInWords.status(.signedIn(plan: "Claude Pro or Max")),
+                              usage: anthropic) {}
+                SHProviderRow("OpenAI Codex", badge: "Cx", status: PiSignInWords.status(.signedIn(plan: "ChatGPT Plus or Pro")),
+                              usage: codex) {}
+            }
+            .frame(width: 720, height: 260, alignment: .top)
+            .background(Color.sh.bgWindow)
+        }
+    }
+
     @Test(arguments: [false, true])
     func settingsAgentsGoalChecks(enabled: Bool) async throws {
         let workspace = try PreviewWorkspace()
@@ -700,20 +719,29 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// Settings ▸ Pi ▸ Sign-in with saved accounts: Anthropic's two (one limited) rotating, OpenAI
-    /// Codex's three not, and Kimi's one, which looks as it does with none.
+    /// Settings ▸ Pi ▸ Sign-in with saved accounts, each with its own usage: Anthropic's two (one
+    /// at its limit) rotating, OpenAI Codex's three not (one read 2 hours ago, its 5-hour window
+    /// since reset; one never read), and Kimi's one, which looks as it does with none.
     @Test func settingsPiSignInAccounts() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
-        let limited = Date().addingTimeInterval(40 * 60).timeIntervalSince1970
+        let now = Date().timeIntervalSince1970
+        let limited = now + 40 * 60
+        let day: Double = 86400
         let file: [String: Any] = [
             "anthropic": ["active": "a1", "rotate": true, "accounts": [
-                ["id": "a1", "name": "Work", "credential": [String: Any]()],
-                ["id": "a2", "name": "Personal", "credential": [String: Any](), "limitedUntil": limited],
+                ["id": "a1", "name": "Work", "email": "bailey@northwind.dev", "credential": [String: Any](), "usageAt": now,
+                 "usage": [["name": "5-hour", "used": 23, "resets": now + 3600], ["name": "Week", "used": 84, "resets": now + 4 * day],
+                           ["name": "Week, Opus", "used": 12, "resets": now + 4 * day]]],
+                ["id": "a2", "name": "Account 2", "email": "bailey.case@gmail.com", "credential": [String: Any](), "limitedUntil": limited,
+                 "usageAt": now, "usage": [["name": "5-hour", "used": 100, "resets": limited], ["name": "Week", "used": 61, "resets": now + 2 * day],
+                                           ["name": "Week, Opus", "used": 4, "resets": now + 2 * day]]],
             ]],
             "openai-codex": ["active": "c2", "rotate": false, "accounts": [
-                ["id": "c1", "name": "Account 1", "credential": [String: Any]()],
-                ["id": "c2", "name": "Team Plus", "credential": [String: Any]()],
+                ["id": "c1", "name": "Account 1", "email": "bailey@contoso.io", "credential": [String: Any](), "usageAt": now - 2 * 3600,
+                 "usage": [["name": "5-hour", "used": 97, "resets": now - 3600], ["name": "Week", "used": 40, "resets": now + 5 * day]]],
+                ["id": "c2", "name": "Team Plus", "email": "bailey@team.example", "credential": [String: Any](), "usageAt": now,
+                 "usage": [["name": "5-hour", "used": 88, "resets": now + 1800], ["name": "Week", "used": 9]]],
                 ["id": "c3", "name": "A very long account name somebody typed in to see exactly where it starts to truncate on this page, and then some more words",
                  "credential": [String: Any]()],
             ]],
@@ -725,6 +753,9 @@ struct SettingsPreviewTests {
             .write(to: auth.pi.files.directory.appendingPathComponent(PiAccounts.fileName))
         await auth.refreshAccounts()
         #expect(auth.accounts.count == 3)
+        #expect(auth.accounts["anthropic"]?.accounts.first?.usage.count == 3)
+        // The fixture's readings stand in for the read: the page shows what each account saved.
+        auth.readUsage = { _ in [:] }
         workspace.vm.settingsSection = .piSignIn
         try await Preview.renderMatrix("settings-pi-sign-in-accounts", size: CGSize(width: 1280, height: 2200)) {
             SettingsView(vm: workspace.vm)

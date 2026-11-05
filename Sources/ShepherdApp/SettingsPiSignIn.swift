@@ -30,7 +30,7 @@ struct PiSignInSettings: View {
                 .disabled(yourPi.survey?.folder == nil || yourPi.busy.contains(YourPiModel.rowID(.logins)))
                 .help(yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.")
             } content: {
-                SettingsGroup(title: "Subscriptions") {
+                SettingsGroup(title: "Subscriptions", footnote: PiSignInWords.sharedLoginNote(page.subscriptions.filter(\.sharedLoginNote).map(\.name))) {
                     ForEach(page.subscriptions) { row in
                         providerRow(row).id(row.id)
                     }
@@ -62,6 +62,10 @@ struct PiSignInSettings: View {
         }
         .task { await yourPi.refresh() }
         .task { await auth.refreshAccounts() }
+        // Again after a sign-in, sign-out, account switch or new account. Keyed on ids alone: the
+        // read saves usage into the accounts, which must not start another read.
+        .task(id: UsageInputs(subscriptions: page.subscriptions.map(\.auth),
+                              accounts: auth.accounts.mapValues { [$0.active ?? ""] + $0.accounts.map(\.id) })) { await auth.refreshUsage() }
         .alert("Rename account", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
                presenting: renaming) { target in
             TextField("Name", text: $newName)
@@ -76,27 +80,34 @@ struct PiSignInSettings: View {
         }
     }
 
+    private struct UsageInputs: Equatable {
+        let subscriptions: [ProviderAuth]
+        let accounts: [String: [String]]
+    }
+
     private var signingIn: String? {
         guard let session = auth.session, session.phase.isLive else { return nil }
         return session.provider
     }
 
     private func providerRow(_ row: ProviderRowModel) -> some View {
-        VStack(spacing: 0) {
-            SHProviderRow(row.name, badge: row.badge, mono: row.custom, status: PiSignInWords.status(row.auth),
-                          sharedLoginNote: row.sharedLoginNote, problem: row.problem) {
+        let list = row.accounts.flatMap { $0.accounts.count > 1 ? $0 : nil }
+        return VStack(spacing: 0) {
+            // With two accounts or more, usage is each account's, under it.
+            SHProviderRow(row.name, badge: row.badge, mono: row.custom, status: PiSignInWords.status(row.auth), problem: row.problem,
+                          usage: row.auth.isSignedIn && list == nil ? PiSignInWords.usage(auth.usage[row.id] ?? []) : []) {
                 trailing(row)
                 if hasMenu(row) {
                     SHProviderMenuButton(for: row.name) { menu(row) }
                 }
             }
-            if let list = row.accounts, list.accounts.count > 1 {
+            if let list {
                 accounts(row, list)
             }
         }
     }
 
-    /// A provider's saved accounts, once there are two: each with Use and its menu, then rotation.
+    /// A provider's saved accounts, once there are two: each with its usage, Use and its menu, then rotation.
     @ViewBuilder private func accounts(_ row: ProviderRowModel, _ list: PiAccountList) -> some View {
         let now = Date()
         SHHairline().padding(.leading, SHPiAccountMetrics.inset)
@@ -104,13 +115,15 @@ struct PiSignInSettings: View {
             ForEach(list.accounts) { account in
                 let active = account.id == list.active
                 let limited = account.limitedUntil.flatMap { $0 > now ? $0.formatted(date: .omitted, time: .shortened) : nil }
-                SHProviderAccountRow(account.name, state: SHAccountState(active: active, limitedUntil: limited)) {
+                SHProviderAccountRow(account.title, detail: account.detail, state: SHAccountState(active: active, limitedUntil: limited),
+                                     usage: PiSignInWords.usage(account.usage, now: now),
+                                     asOf: PiSignInWords.asOf(account.usage.isEmpty ? nil : account.usageAt, now: now)) {
                     if !active {
                         Button("Use") { Task { await auth.switchAccount(row.id, to: account.id) } }
                             .buttonStyle(.sh(.secondary, size: .s))
-                            .accessibilityLabel("Use \(account.name) for \(row.name)")
+                            .accessibilityLabel("Use \(account.title) for \(row.name)")
                     }
-                    SHProviderMenuButton(for: account.name) {
+                    SHProviderMenuButton(for: account.title) {
                         Button("Rename…") {
                             newName = account.name
                             renaming = Renaming(provider: row.id, providerName: row.name, account: account)
@@ -121,7 +134,8 @@ struct PiSignInSettings: View {
                 }
             }
         }
-        .padding(.top, SH.Space.s)
+        .padding(.vertical, SH.Space.s)
+        SHHairline().padding(.leading, SHPiAccountMetrics.inset)
         SHAccountRotationRow(provider: row.name, isOn: Binding(get: { list.rotate },
                                                                set: { on in Task { await auth.setRotate(row.id, on) } }))
     }
@@ -240,6 +254,37 @@ private struct AddKeyRow: View {
 
 /// How a provider's sign-in reads (docs/design/settings-pi.md › Pi ▸ Sign-in's table): its dot, word and details.
 enum PiSignInWords {
+    /// "resets 3:40 PM" today, "resets Thu 3:40 PM" later. A window whose reset has passed (an
+    /// old reading) is back to 0%.
+    static func usage(_ windows: [PiUsageWindow], now: Date = Date()) -> [SHUsageWindow] {
+        windows.map { window in
+            if let date = window.resetsAt, date <= now { return SHUsageWindow(name: window.name, fraction: 0, resets: nil) }
+            let resets = window.resetsAt.map { date in
+                Calendar.current.isDate(date, inSameDayAs: now)
+                    ? "resets " + date.formatted(date: .omitted, time: .shortened)
+                    : "resets " + date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+            }
+            return SHUsageWindow(name: window.name, fraction: window.usedPercent / 100, resets: resets)
+        }
+    }
+
+    /// "as of 2 hr. ago" for a reading older than 15 minutes; nil for a fresh one.
+    static func asOf(_ readAt: Date?, now: Date = Date()) -> String? {
+        guard let readAt, now.timeIntervalSince(readAt) > staleAfter else { return nil }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return "as of " + formatter.localizedString(for: readAt, relativeTo: now)
+    }
+
+    static let staleAfter: TimeInterval = 15 * 60
+
+    /// Once under Subscriptions: "Signing in to Anthropic, OpenAI Codex, Kimi or Radius here and in
+    /// your terminal pi can sign one of them out."
+    static func sharedLoginNote(_ providers: [String]) -> String? {
+        guard !providers.isEmpty else { return nil }
+        return "Signing in to \(providers.formatted(.list(type: .or))) here and in your terminal pi can sign one of them out."
+    }
+
     static func status(_ auth: ProviderAuth) -> SHProviderStatus {
         switch auth {
         case .signedIn(let plan):

@@ -20,49 +20,66 @@ public struct SHAccountState: Equatable, Sendable {
     }
 }
 
-/// One saved account under its provider: a dot, its name, "Active", "Limited until 3:42 PM",
-/// then its actions (Use, ⋯). Compact: 6pt above and below, inset to the provider's name.
+/// One saved account under its provider: its name (and email), "Active" or "Limited until 3:42 PM"
+/// as a pill, its actions (Use, ⋯), and under them its own usage on one line. The active account
+/// sits on `bgSunken`. Inset to the provider's name.
 public struct SHProviderAccountRow<Trailing: View>: View {
     let name: String
+    let detail: String?
     let state: SHAccountState
+    let usage: [SHUsageWindow]
+    let asOf: String?
     let trailing: Trailing
 
-    public init(_ name: String, state: SHAccountState, @ViewBuilder trailing: () -> Trailing) {
+    /// `detail` (the account's email beside a name the user chose) trails the name in `textTertiary`;
+    /// `asOf` ("as of 2 hr. ago") follows an old reading of `usage`.
+    public init(_ name: String, detail: String? = nil, state: SHAccountState, usage: [SHUsageWindow] = [], asOf: String? = nil,
+                @ViewBuilder trailing: () -> Trailing) {
         self.name = name
+        self.detail = detail
         self.state = state
+        self.usage = usage
+        self.asOf = asOf
         self.trailing = trailing()
     }
 
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        HStack(spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: M.lineGap) {
             HStack(spacing: SH.Space.m) {
-                SHProviderDot(state.limitedUntil != nil ? .attention : state.active ? .on : .off)
-                Text(name)
-                    .font(.shSans(SHPiAccountMetrics.nameSize, state.active ? .medium : .regular))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(name)
-                if state.active { SHTag("Active", foreground: sh.textPrimary) }
-                if let until = state.limitedUntil {
-                    Text("Limited until \(until)")
-                        .font(.shSans(M.statusSize))
-                        .foregroundStyle(sh.lanternText)
+                HStack(spacing: SH.Space.m) {
+                    Text(name)
+                        .font(.shSans(SHPiAccountMetrics.nameSize, state.active ? .medium : .regular))
+                        .foregroundStyle(sh.textPrimary)
                         .lineLimit(1)
-                        .fixedSize()
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                        .help(name)
+                    if let detail {
+                        Text(detail)
+                            .font(.shSans(M.statusSize))
+                            .foregroundStyle(sh.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    if state.active { SHStatusPill(.done, label: "Active").fixedSize() }
+                    if let until = state.limitedUntil { SHStatusPill(.attention, label: "Limited until \(until)").fixedSize() }
                 }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: SH.Space.l)
+                HStack(spacing: SH.Space.xs) { trailing }
+                    .shControlScale(.standard)
+                    .fixedSize()
             }
-            .accessibilityElement(children: .combine)
-            Spacer(minLength: SH.Space.l)
-            HStack(spacing: SH.Space.xs) { trailing }
-                .shControlScale(.standard)
-                .fixedSize()
+            .frame(minHeight: M.menuButton)
+            if !usage.isEmpty { SHUsageStrip(usage, asOf: asOf) }
         }
         .padding(.vertical, SH.Space.s)
-        .padding(.leading, SHPiAccountMetrics.inset)
-        .padding(.trailing, M.rowSides)
+        .padding(.horizontal, SH.Space.m)
+        .background(state.active ? sh.bgSunken : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .padding(.leading, SHPiAccountMetrics.inset - SH.Space.m)
+        .padding(.trailing, M.rowSides - SH.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .shAnimation(.content, value: state)
     }
@@ -79,7 +96,7 @@ public struct SHAccountRotationRow: View {
     }
 
     static let title = "Switch accounts when one hits its limit"
-    static let note = "Shepherd moves to the next account when a request is rate limited, skipping any account for an hour after it hits a limit. Check that your provider’s terms allow using several accounts."
+    static let note = "An account that hits a limit sits out for an hour. Check that your provider’s terms allow several accounts."
 
     public var body: some View {
         let sh = Color.sh
@@ -101,8 +118,7 @@ public struct SHAccountRotationRow: View {
                 .toggleStyle(.shSwitch)
                 .accessibilityHint(Self.note)
         }
-        .padding(.top, SH.Space.m)
-        .padding(.bottom, M.rowVertical)
+        .padding(.vertical, M.rowVertical)
         .padding(.leading, SHPiAccountMetrics.inset)
         .padding(.trailing, M.rowSides)
         .frame(maxWidth: .infinity, alignment: .leading)

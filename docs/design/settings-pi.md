@@ -136,6 +136,24 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   | from your environment | `done`, filled | "From your environment" · `$NAME` in mono 11.5 `textSecondary` · "in your login shell" in `textTertiary` | Change key |
   | no key needed | hollow ring | "No key needed" · the base URL in mono 11.5, all `textTertiary` | none |
 
+  Usage (`SHUsageStrip`, docs/pi-home.md › Usage; no board draws it) is one line of windows side
+  by side in 11.5: each window's name ("5-hour", "Week") in `textSecondary`, a 56pt `shBar`
+  (`running`, `lantern` from 80%, `failed` at 100%), the percent in mono in a column as wide as
+  "100%", then "resets Thu 3:40 PM" in `textTertiary`. When they don't fit (Text size) the windows
+  stack, names in one column. A window whose reset has passed shows 0%, and a reading older than
+  15 minutes ends with "as of 2 hr. ago" in `textTertiary`. A signed-in Anthropic or OpenAI Codex
+  row with no more than one saved account shows its usage under its status line.
+
+  With two saved accounts or more, the provider row shows no usage; each account does, under a
+  hairline inset to the provider's name (`SHProviderAccountRow`): its title (the email in place
+  of an automatic "Account N") in 13, a chosen name's email after it in `textTertiary`, an
+  "Active" (`done`) or "Limited until 3:42 PM" (`attention`) `SHStatusPill`, then Use (secondary,
+  small; not on the active one) and ⋯ (Rename…, Remove); under that its own usage strip. The
+  active account's title is 500 and it sits on `bgSunken` (radius 6). After another inset
+  hairline, `SHAccountRotationRow`: "Switch accounts when one hits its limit" and "An account that
+  hits a limit sits out for an hour. Check that your provider’s terms allow several accounts."
+  with its switch.
+
   The plan is what the provider sells ("Claude Pro or Max"): pi keeps no account name or plan
   with a sign-in, so the row never shows an address (departures). Then the ⋯ button
   (`SHProviderMenuButton`: 26pt circle, `ellipsis` 13pt `textSecondary`, "More for Anthropic";
@@ -151,10 +169,9 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   when an agent starts), "command not supported" for an imported `!command` reference
   (`textTertiary`, no command text or tooltip, including custom providers). Shepherd never
   executes command values; replace them with a variable or pasted key. A key pasted into Shepherd has no label.
-- **`SHSharedLoginNote`**: under Anthropic, OpenAI Codex, Kimi and Radius (the providers whose
-  refresh tokens rotate), whatever the row's state: an `arrow.triangle.2.circlepath` 11pt and
-  "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
-  `textTertiary`, 3pt under the status line.
+- **The shared-login note**: once, as the Subscriptions footnote, naming the providers whose
+  refresh tokens rotate: "Signing in to Anthropic, OpenAI Codex, Kimi, or Radius here and in your
+  terminal pi can sign one of them out."
 - **The provider menu** (the native menu, `SHOptionsMenu`'s anatomy):
   - a subscription: Sign in again · Re-import from pi (with its freshness as the item's
     second line; disabled when your pi has no sign-in for it) · a divider · Sign out, in
