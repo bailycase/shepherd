@@ -84,8 +84,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public static let compactAtChoices = [60, 70, 80, 90]
     /// When a turn ends, the queue goes one message per turn or all at once.
     public var queueDelivery: NativeQueueMode
-    /// Explicit consent for goal checks to use another provider, for agents started afterwards.
-    /// Older hosts omit this field, which reads as false.
+    /// Legacy: goals no longer use a checker model. Kept so older peers still decode; hosts send false.
     public var goalCrossProviderEvaluation: Bool
     /// Settings ▸ Experiments ▸ Goals, default off, applied to running agents too.
     public var goalsEnabled: Bool

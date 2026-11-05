@@ -97,13 +97,6 @@ struct AgentSettings: View {
                     SettingsSwitch(label: "Codemode", isOn: $settings.codemode)
                 }
             }
-            SettingsGroup(title: "Goal checks",
-                          footnote: "Applies when agents start or restart. Running agents keep their current policy until restarted.") {
-                SettingsRow(title: "Allow cross-provider goal checks",
-                            subtitle: "Off uses the thread's exact model and provider. On may send conversation, tool output and written code to another provider, preferring Haiku, Codex Mini or Gemini Flash when available.") {
-                    SettingsSwitch(label: "Allow cross-provider goal checks", isOn: $settings.goalCrossProviderEvaluation)
-                }
-            }
         }
         .task {
             let pi = pi

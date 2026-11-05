@@ -261,20 +261,17 @@ unavailable while an actual user question remains open. Confirm attests to missi
 it does not claim independent verification. Edit remains a condition-only sheet. Goals have
 no time/token limits or budgets; token and elapsed-time fields report usage only.
 Settings > Experiments offers a default-off Goals switch per connected host with
-`experiments.goals.v1`. Turning it off applies live, pauses active goals, cancels Checking and
+`experiments.goals.v1`. Turning it off applies live, pauses active goals and
 hides goal controls. Turning it back on preserves Paused goals and never resumes work.
 
 `NativeThreadStore.hasGoal`/`goalID` are narrow dock dependencies. `runningSince` is epoch
 milliseconds for the current active interval; clients derive elapsed time locally inside the
-pill only. No per-second server publication redraws the composer or transcript. The card and
-records disclose `Checked by <model>` and user-confirmed outcomes explicitly.
+pill only. No per-second server publication redraws the composer or transcript. Current hosts
+never send Checking, `Checked by` or confirmation fields; clients still render them for older hosts.
 
-The host Settings consent `goalCrossProviderEvaluation` defaults false and applies when an
-agent starts/restarts. Goal checks use the thread's exact provider/model unless that host
-opted in. Evaluators receive goal-start transcript text, tool output and written code with
-best-effort obvious-secret redaction. Connected, observing iPhones may post local notifications
-with permission. Payloads use short safe metadata, never conditions, tool quotes or raw checker
-feedback. There is no APNs/background delivery guarantee. Stop and Steer now pause/cancel the
+`goalCrossProviderEvaluation` is a legacy host setting: hosts always report false and ignore
+changes, and clients show no switch for it. Connected, observing iPhones may post local
+notifications with permission. Payloads use short safe metadata, never conditions. There is no APNs/background delivery guarantee. Stop and Steer now pause/cancel the
 controller before the host interrupts work.
 
 ## Hooks

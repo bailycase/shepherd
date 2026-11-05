@@ -15,19 +15,15 @@ export async function until(what, fn, timeout = 15000) {
     await new Promise((r) => setTimeout(r, 10));
   }
 }
-const flat = (content) => typeof content === "string" ? content : (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
 export const acceptance = "All 12 acceptance tests passed.";
-export const verdictCall = (payload, verdict = "met", extra = {}) => ({ name: "goal_verdict", arguments: {
-  verdict, reason: "Acceptance result observed", summary: "12 acceptance tests passed", blocker: "",
-  evidence: payload?.transcript.filter((e) => e.role === "toolResult").slice(-1).map((e) => ({ requirementId: "r1", entryId: e.entryId, quote: acceptance })) ?? [], ...extra,
-} });
-const defaultScript = (_body, { evaluator, evaluationNumber, workerNumber, payload }) => evaluator
-  ? { gate: evaluationNumber === 1 ? "evaluation" : undefined, call: verdictCall(payload, evaluationNumber < 3 ? "not_met" : "met") }
-  : workerNumber % 2 === 1 ? { call: { name: "read", arguments: { path: "acceptance.txt" } } } : { text: "Worker finished its check." };
+export const finish = (outcome = "met", summary = "12 acceptance tests passed") => ({ name: "goal_finish", arguments: { outcome, summary } });
+// Read the file, then finish the goal, then a closing summary.
+const defaultScript = (_body, { workerNumber }) => workerNumber === 1 ? { call: { name: "read", arguments: { path: "acceptance.txt" } } }
+  : workerNumber === 2 ? { call: finish() } : { text: "Done: all 12 acceptance tests passed." };
 
 export async function realPi(dir, { script = defaultScript, settings = {}, env = {}, extensions = [], contextWindow = 64000 } = {}) {
   const requests = [], gates = new Map(), disconnected = new Set();
-  let evaluationNumber = 0, workerNumber = 0;
+  let workerNumber = 0;
   const gate = (name) => {
     if (!gates.has(name)) { let open; const promise = new Promise((r) => { open = r; }); gates.set(name, { promise, open }); }
     return gates.get(name);
@@ -36,10 +32,9 @@ export async function realPi(dir, { script = defaultScript, settings = {}, env =
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); requests.push(body);
     const requestNumber = requests.length;
-    const evaluator = body.tools?.some((t) => t.function?.name === "goal_verdict");
-    const payload = evaluator ? JSON.parse(flat(body.messages.filter((m) => m.role === "user").at(-1).content)) : undefined;
-    if (evaluator) evaluationNumber++; else if (body.tools) workerNumber++;
-    const reply = await script(body, { evaluator, payload, evaluationNumber, workerNumber, requestNumber });
+    if (body.tools) workerNumber++;
+    const tools = (body.tools ?? []).map((t) => t.function?.name);
+    const reply = await script(body, { workerNumber, requestNumber, tools });
     if (reply.status) { res.writeHead(reply.status, { "content-type": "application/json" }); res.end(JSON.stringify({ error: { message: reply.error ?? "Overloaded 529", type: "overloaded_error" } })); return; }
     let gone;
     const closed = new Promise((r) => { gone = r; });
@@ -86,7 +81,7 @@ export async function realPi(dir, { script = defaultScript, settings = {}, env =
     async request(command) { return pi.response(pi.send(command), command.type); },
     async action(value) { return pi.request({ type: "prompt", message: `/shepherd-goal ${JSON.stringify(value)}` }); },
     settled: () => events.filter((e) => e.type === "agent_settled").length,
-    release: (name = "evaluation") => gate(name).open(),
+    release: (name) => gate(name).open(),
     async stop() {
       for (const g of gates.values()) g.open();
       if (child.exitCode === null && child.signalCode === null) {

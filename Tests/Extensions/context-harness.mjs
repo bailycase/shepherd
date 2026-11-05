@@ -208,7 +208,7 @@ export async function startThread(options = {}) {
     if (wants("children")) Object.assign(env, { SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_EXT_CHILDREN: extension("shepherd-children.ts"), SHEPHERD_CHILD_CONCURRENCY: "4",
       SHEPHERD_CHILD_MODEL: "", SHEPHERD_CHILD_THINKING: "", SHEPHERD_CHILD_CONTEXT: "fresh", SHEPHERD_CHILD_SCOPE: "both" });
     // The goal controller is loaded in every agent and does nothing until a goal is set (the experiment is off here).
-    if (wants("goal")) Object.assign(env, { SHEPHERD_EXT_GOAL: "1", SHEPHERD_GOALS_ENABLED: "0", SHEPHERD_GOAL_MODELS: "" });
+    if (wants("goal")) Object.assign(env, { SHEPHERD_EXT_GOAL: "1", SHEPHERD_GOALS_ENABLED: "0" });
     // ask_user: a thread's or a design's pi, never an automation run's (nobody watches one).
     if (wants("ask") && !options.automation) env.SHEPHERD_EXT_ASK = "1";
     // Hooks: every agent but a coordinator, with an empty trust folder, so nothing runs.

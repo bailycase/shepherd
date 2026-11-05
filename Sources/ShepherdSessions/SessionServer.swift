@@ -5559,7 +5559,7 @@ public final class SessionServer: @unchecked Sendable {
         let status: AgentStatus = if goal?.state == .needsYou && status != .working {
             .blocked
         } else if goal?.isActive == true && (status == .idle || status == .done) {
-            // pi can settle between goal turns and while the goal checks its evidence.
+            // pi can settle between goal turns.
             RPCThreadState.question(in: thread?.dialogs ?? []) == nil ? .working : .blocked
         } else {
             status
