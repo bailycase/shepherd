@@ -100,6 +100,7 @@ jobs:
       PRODUCTS: build/Build/Products/${{ fromJSON(inputs.plan).configuration }}
       PRODUCT: ${{ fromJSON(inputs.plan).product }}
       DMG: ${{ fromJSON(inputs.plan).dmg }}
+      CHANNEL: ${{ fromJSON(inputs.plan).channel }}
       DSYMS: ${{ fromJSON(inputs.plan).dsyms }}
       VOLUME: ${{ fromJSON(inputs.plan).volume }}
       PARENT_RUN: ${{ inputs.parent_run }}
@@ -127,15 +128,8 @@ jobs:
           # Reuse products only while shared library inputs match, not across model/ABI changes.
           shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
           echo "shared=$shared" >> "$GITHUB_OUTPUT"
-      # Hosted caches and persistent local products share the same invalidation rule.
-      - name: Cache DerivedData
-        if: runner.environment == 'github-hosted'
-        uses: actions/cache@v4
-        with:
-          path: build
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}-${{ inputs.source_sha }}
-          restore-keys: |
-            xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}-
+      # No hosted DerivedData cache: the shared-input key changed on nearly every commit, so
+      # it never restored and only spent time saving. Persistent self-hosted products use this marker.
       - name: Start over when shared build inputs changed
         env:
           VERSION: ${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}
@@ -290,9 +284,13 @@ jobs:
           cp -R "$PRODUCTS/$PRODUCT" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
           hdiutil create -volname "$VOLUME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-          # Both app and DMG carry accepted tickets, including offline at mount time.
           if [[ '${{ steps.cert.outputs.identity }}' != '-' ]]; then
             codesign --force --timestamp --sign '${{ steps.cert.outputs.identity }}' "$DMG"
+          fi
+          # Beta and stable DMGs carry their own accepted ticket, including offline at mount time.
+          # Nightly skips that second notarization wait (~3 min): its stapled app is enough, and
+          # Gatekeeper checks the signed DMG online on first open.
+          if [[ '${{ steps.cert.outputs.identity }}' != '-' && "$CHANNEL" != nightly ]]; then
             # notary.p8 was written by the Notarize step.
             xcrun notarytool submit "$DMG" \
               --key "$RUNNER_TEMP/notary.p8" \

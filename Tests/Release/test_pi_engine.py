@@ -943,11 +943,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("path: .build/pi-engine-cache", cache)
         self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
 
-    def test_derived_data_persists_locally_and_is_cached_only_on_hosted_runners(self):
-        cache = self.step("Cache DerivedData")
-        self.assertIn("if: runner.environment == 'github-hosted'", cache)
-        self.assertIn("${{ inputs.source_sha }}", cache)
-        self.assertIn("${{ steps.xcode.outputs.shared }}", cache)
+    def test_derived_data_persists_locally_and_hosted_builds_start_clean(self):
+        names = [title for title, _ in self.steps()]
+        self.assertNotIn("Cache DerivedData", names)
         workflow = read(".github", "workflows", "release-build.yml")
         self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", workflow)
         version = self.step("Xcode version")
@@ -987,6 +985,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
             self.assertIn("--wait", body)
             self.assertIn(f'xcrun stapler staple "{target}"', body)
             self.assertLess(names.index(title), names.index("Record package provenance"))
+        # Only Nightly skips the DMG's own ticket; its app is still notarized and stapled.
+        self.assertIn('"$CHANNEL" != nightly', self.step("Package DMG"))
+        self.assertNotIn("CHANNEL", self.step("Notarize"))
 
     def test_the_verified_app_is_the_one_signed_and_node_is_never_stripped(self):
         names = [title for title, _ in self.steps()]
