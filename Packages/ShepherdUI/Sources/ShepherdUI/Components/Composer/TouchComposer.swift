@@ -84,10 +84,13 @@ public struct SHTouchCommandList: View {
     let commands: [SHTouchCommand]
     let total: Int
     let query: String
+    let title: String
     let wide: Bool
     let onChoose: (SHTouchCommand) -> Void
 
-    public init(commands: [SHTouchCommand], total: Int, query: String, wide: Bool, onChoose: @escaping (SHTouchCommand) -> Void) {
+    public init(commands: [SHTouchCommand], total: Int, query: String, title: String = "Commands", wide: Bool,
+                onChoose: @escaping (SHTouchCommand) -> Void) {
+        self.title = title
         self.commands = commands
         self.total = total
         self.query = query
@@ -100,7 +103,7 @@ public struct SHTouchCommandList: View {
         let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Commands").shSectionLabel().foregroundStyle(sh.textTertiary)
+                Text(title).shSectionLabel().foregroundStyle(sh.textTertiary)
                 Spacer(minLength: SH.Space.m)
                 Text("\(commands.count) of \(total)").font(.sh(.mono)).foregroundStyle(sh.textTertiary).monospacedDigit()
             }

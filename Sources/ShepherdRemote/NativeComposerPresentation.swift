@@ -131,38 +131,127 @@ public enum NativeQueueStack {
 
 // MARK: Slash commands
 
-/// The commands a draft of "/…" matches, and what was typed after the slash.
+/// A "/" (pi's commands and prompts) or "$" (its skills) at the start of the draft or after
+/// whitespace, with no whitespace after it: the menu's trigger anywhere in a draft.
+public struct ComposerCommandToken: Equatable, Sendable {
+    /// The draft before the sigil.
+    public var before: String
+    public var sigil: Character
+    /// What follows the sigil.
+    public var text: String
+
+    public static func token(in draft: String) -> ComposerCommandToken? {
+        guard let at = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
+        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+        let text = draft[draft.index(after: at)...]
+        guard !text.contains(where: \.isWhitespace) else { return nil }
+        return ComposerCommandToken(before: String(draft[..<at]), sigil: draft[at], text: String(text))
+    }
+
+    /// A whole skill ("/skill:debug", an inline chip) rather than a command still being typed.
+    public func isSkill(in commands: [NativeCommand]) -> Bool {
+        sigil == "/" && commands.contains { $0.source == "skill" && $0.name == text }
+    }
+
+    /// The draft running `name`: pi only runs a command that starts the message, so the command
+    /// moves to the front and the words typed before it become its arguments.
+    public func draft(running name: String, then suffix: String) -> String {
+        let words = before.trimmingCharacters(in: .whitespacesAndNewlines)
+        return words.isEmpty ? "/" + name + suffix : "/" + name + " " + words + suffix
+    }
+}
+
+/// The commands a draft's "/…" or "$…" matches, and what was typed after it.
 public struct NativeSlashMatches: Equatable, Sendable {
     public var query: String
     public var commands: [NativeCommand]
     /// Every command pi reports ("4 of 23").
     public var total: Int
 
-    /// nil unless the draft is a single "/word" still being typed (no space or newline yet), or
-    /// pi reports no commands. Commands whose name starts with the query come first, then those
-    /// that contain it, each in pi's order.
+    /// The "/" or "$" the draft ends in.
+    public var token: ComposerCommandToken
+
+    /// nil unless the draft ends in a `ComposerCommandToken` ("/" lists every command, "$" pi's
+    /// skills), or there is nothing to list. Mid-draft, a token matching nothing is prose ("see
+    /// /tmp"). Commands whose name starts with the query come first, then those that contain it,
+    /// each in pi's order.
     public init?(draft: String, commands: [NativeCommand]) {
-        guard !commands.isEmpty, draft.hasPrefix("/"), !draft.contains(where: \.isWhitespace) else { return nil }
-        let query = String(draft.dropFirst()).lowercased()
+        guard let token = ComposerCommandToken.token(in: draft) else { return nil }
+        let skills = token.sigil == "$"
+        let commands = skills ? commands.filter { $0.source == "skill" } : commands
+        guard !commands.isEmpty, !token.isSkill(in: commands) else { return nil }
+        let query = ((skills ? "skill:" : "") + token.text).lowercased()
         let prefixed = commands.filter { query.isEmpty || $0.name.lowercased().hasPrefix(query) }
         let containing = query.isEmpty ? [] : commands.filter {
             let name = $0.name.lowercased()
             return !name.hasPrefix(query) && name.contains(query)
         }
+        guard token.before.isEmpty || !(prefixed + containing).isEmpty else { return nil }
+        self.token = token
         self.query = query
         self.commands = prefixed + containing
         total = commands.count
     }
 
-    /// The draft a chosen command leaves: its name and a space, ready for arguments.
-    public static func completion(_ command: NativeCommand) -> String {
-        "/" + command.name + " "
+    /// The menu's heading: "Skills" for "$".
+    public var title: String { token.sigil == "$" ? "Skills" : "Commands" }
+
+    /// The draft a chosen command leaves: the command first (pi runs only a leading one), the
+    /// words typed before it as its arguments, and a space.
+    public func completion(_ command: NativeCommand) -> String {
+        token.draft(running: command.name, then: " ")
     }
 
     /// A command's tag: its source for prompt templates and skills, none for extension commands.
     public static func tag(_ command: NativeCommand) -> String? {
         guard let source = command.source, source != "extension", !source.isEmpty else { return nil }
         return source
+    }
+}
+
+/// A skill written into a draft as "/skill:<name>" (at the start or after whitespace, up to the
+/// next whitespace). The editors draw it as an inline chip; the draft stays plain text, so saving,
+/// restoring and recovering a draft keep the skill where it was typed.
+public enum ComposerSkillToken {
+    public static let prefix = "/skill:"
+
+    /// Each skill token in `draft`, in order.
+    public static func ranges(in draft: String) -> [Range<String.Index>] {
+        var found: [Range<String.Index>] = []
+        var from = draft.startIndex
+        while let hit = draft.range(of: prefix, range: from..<draft.endIndex) {
+            let end = draft[hit.upperBound...].firstIndex(where: \.isWhitespace) ?? draft.endIndex
+            let starts = hit.lowerBound == draft.startIndex || draft[draft.index(before: hit.lowerBound)].isWhitespace
+            if starts, end > hit.upperBound { found.append(hit.lowerBound..<end) }
+            from = max(end, hit.upperBound)
+        }
+        return found
+    }
+
+    /// The chip's name: "debug" for "/skill:debug".
+    public static func name(_ token: some StringProtocol) -> String { String(token.dropFirst(prefix.count)) }
+
+    /// The draft once the skill `command` ("skill:debug") is picked for the "$de" or "/skill:de"
+    /// being typed: the skill takes the token's place, followed by a space to keep typing. One
+    /// skill at a time: any other skill in the draft leaves it.
+    public static func draft(picking command: String, for token: ComposerCommandToken) -> String {
+        var before = token.before
+        for range in ranges(in: before).reversed() {
+            let end = before[range.upperBound...].first == " " ? before.index(after: range.upperBound) : range.upperBound
+            before.removeSubrange(range.lowerBound..<end)
+        }
+        return before + "/" + command + " "
+    }
+
+    /// What pi receives: pi runs only a leading command, so the first skill moves to the front
+    /// and the words close up where it was ("fix /skill:debug the bug" → "/skill:debug fix the bug").
+    public static func message(_ draft: String) -> String {
+        guard let range = ranges(in: draft).first, range.lowerBound != draft.startIndex else { return draft }
+        let left = draft[..<range.lowerBound]
+        var right = draft[range.upperBound...]
+        if left.last?.isWhitespace == true, right.first == " " { right = right.dropFirst() }
+        let rest = (left + right).trimmingCharacters(in: .whitespacesAndNewlines)
+        return rest.isEmpty ? String(draft[range]) : draft[range] + " " + rest
     }
 }
 

@@ -255,10 +255,21 @@ struct Composer: View {
         guard let loginQuery, let slashLogin else { return [] }
         return SlashLogin.matches(loginQuery.partial, in: slashLogin.choices())
     }
+    /// The "/" (commands) or "$" (skills) being typed at the end of the draft.
+    private var commandToken: ComposerCommandToken? {
+        store.draft == dismissedQuery ? nil : ComposerCommandToken.token(in: store.draft)
+    }
+    /// What the open menu lists: pi's commands for "/", its skills for "$".
+    private var menuCommands: [NativeCommand] {
+        commandToken?.sigil == "$" ? store.commands.filter { $0.source == "skill" } : commands
+    }
+    /// The query the menu matches; skills are named "skill:<name>", so "$" matches past that.
+    /// Mid-draft, a token that matches nothing is prose ("see /tmp") and opens no menu.
     private var commandQuery: String? {
-        guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
-              store.draft != dismissedQuery else { return nil }
-        return String(store.draft.dropFirst()).lowercased()
+        guard let token = commandToken, !menuCommands.isEmpty, !token.isSkill(in: store.commands) else { return nil }
+        let query = (token.sigil == "$" ? "skill:" + token.text : token.text).lowercased()
+        guard token.before.isEmpty || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
+        return query
     }
     /// The commands the slash menu lists for the draft, as `body` last derived them: every key
     /// press comes after the render that saw the draft change.
@@ -323,7 +334,7 @@ struct Composer: View {
         let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
         let widgets = store.widgets
         let query = commandQuery
-        let _ = slash.update(query: query, commands: commands)
+        let _ = slash.update(query: query, commands: menuCommands)
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
                 VStack(alignment: .leading, spacing: SH.Space.xs) {
@@ -611,7 +622,8 @@ struct Composer: View {
         return ZStack(alignment: .bottomLeading) {
             if let query {
                 let slash = slash
-                SHSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
+                SHSlashMenu(commands: slash.rows, total: menuCommands.count, query: query,
+                            title: commandToken?.sigil == "$" ? "Skills" : "Commands", selection: $commandIndex, maxHeight: room) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
                 .shTransition(.overlay, anchor: .bottomLeading)
@@ -1013,10 +1025,13 @@ struct Composer: View {
             openLogin(SlashLogin.Command(verb: verb, provider: nil))
             return
         }
-        store.draft = "/\(command.name)"
+        if attachSkill(command) { return }
+        let token = commandToken
+        store.draft = token?.draft(running: command.name, then: "") ?? "/\(command.name)"
         dismissedQuery = nil
         composing = true
-        guard canSend else { return }
+        // Picked mid-draft: the words already typed become its arguments; the person sends.
+        guard canSend, token?.before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true else { return }
         sendDraft(.primary)
     }
 
@@ -1027,8 +1042,19 @@ struct Composer: View {
         slashLogin?.open(command)
     }
 
+    /// A skill picked from either menu takes the place of its "$de" or "/skill:de" as an inline
+    /// chip (one at a time: it replaces any other). Nothing is sent: the person goes on typing.
+    private func attachSkill(_ command: NativeCommand) -> Bool {
+        guard command.source == "skill", let token = commandToken else { return false }
+        store.draft = ComposerSkillToken.draft(picking: command.name, for: token)
+        dismissedQuery = nil
+        composing = true
+        return true
+    }
+
     private func complete(_ command: NativeCommand) {
-        store.draft = "/\(command.name) "
+        if attachSkill(command) { return }
+        store.draft = commandToken?.draft(running: command.name, then: " ") ?? "/\(command.name) "
         dismissedQuery = nil
     }
 
@@ -1048,7 +1074,7 @@ struct Composer: View {
             // The Project's own send. No delivery choice: the project runtime queues, orders and (while paused) holds the message,
             // and reports it back through the Project record. The images on the card go with it, and only the ones submitted are
             // cleared once the runtime accepts; a refusal keeps the draft and every image.
-            let text = store.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = ComposerSkillToken.message(store.draft).trimmingCharacters(in: .whitespacesAndNewlines)
             let images = input.attachments.images
             let submitted = input.attachments.ids
             guard !text.isEmpty || !images.isEmpty else { return }

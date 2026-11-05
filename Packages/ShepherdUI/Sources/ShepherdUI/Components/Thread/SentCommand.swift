@@ -58,7 +58,7 @@ public struct SHSentCommand: View {
     private var header: some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            Image(systemName: kind == .skill ? "book" : SHGlyph.document.symbolName)
+            Image(systemName: kind == .skill ? SHGlyph.skill.symbolName : SHGlyph.document.symbolName)
                 .font(.sh(.caption, weight: .medium))
                 .foregroundStyle(sh.textTertiary)
                 .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)

@@ -30,7 +30,8 @@ struct ThreadComposer: View {
     @Environment(\.threadDetailActive) private var detailActive
     /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
-    @FocusState private var focused: Bool
+    /// Whether the field has the keyboard (`ComposerTextView` follows and reports it).
+    @State private var focused = false
     /// The @ picker for the host's designs (`design.references.v1`), the Mac's picker rules.
     @State private var mentions = MentionPickerState()
 
@@ -138,8 +139,16 @@ struct ThreadComposer: View {
                 }
                 if let matches = state.matches {
                     SHTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
+                                       title: matches.title,
                                        wide: wide) { chosen in
-                        store.draft = "/" + chosen.name + " "
+                        if let command = matches.commands.first(where: { $0.name == chosen.name }) {
+                            // A skill takes the place of its "$de" (replacing any other skill in the draft).
+                            if command.source == "skill" {
+                                store.draft = ComposerSkillToken.draft(picking: command.name, for: matches.token)
+                            } else {
+                                store.draft = matches.completion(command)
+                            }
+                        }
                         focused = true
                     }
                     .shTransition(.content)
@@ -253,7 +262,9 @@ struct ThreadComposer: View {
         } field: {
             // A command draft shows in mono while its list is open (iPadPortrait).
             field(store: store, placeholder: designChat ? MobileLayout.padDesignComposerPlaceholder : store.running ? "Queue a follow-up…"
-                  : store.commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…", command: state.matches != nil)
+                  : store.commands.isEmpty ? "Follow up…"
+                  : store.commands.contains(where: { $0.source == "skill" }) ? "Follow up, / for commands, $ for skills…"
+                  : "Follow up, or / for commands…", command: state.matches != nil)
         } controls: {
             // Where the row outgrows the card (a narrow column, as beside iPhone Duo's fold, or
             // the accessibility sizes) it scrolls rather than truncating every chip, and Send
@@ -284,12 +295,8 @@ struct ThreadComposer: View {
 
     private func field(store: NativeThreadStore, placeholder: String, command: Bool = false, style: SHTextStyle = .body) -> some View {
         @Bindable var bindable = store
-        return TextField(placeholder, text: $bindable.draft, axis: .vertical)
-            .font(command ? .sh(.code) : .sh(style))
-            .foregroundStyle(Color.sh.textPrimary)
-            .lineLimit(1...SHComposerMetrics.fieldMaxLines)
-            .focused($focused)
-            .accessibilityLabel("Message to agent")
+        return ComposerTextView(text: $bindable.draft, placeholder: placeholder, focused: $focused, style: command ? .code : style,
+                                label: "Message to agent")
     }
 
     @ViewBuilder private func chips(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {

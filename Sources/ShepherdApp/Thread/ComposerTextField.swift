@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ShepherdRemote
 import ShepherdUI
 
 /// The three image-capable composers own their field editor. SwiftUI's plain field editor
@@ -107,18 +108,23 @@ struct ComposerTextField: NSViewRepresentable {
         if field.accessibilityLabel() != label { field.setAccessibilityLabel(label) }
         field.editor.attach = attach
         field.editor.keys = keys
-        let replaced = field.stringValue != text
+        let replaced = field.draftText != text
         if replaced {
-            field.stringValue = text
+            field.setDraft(text)
             field.invalidateIntrinsicContentSize()
             if field.currentEditor() != nil {
-                field.editor.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+                field.editor.setSelectedRange(NSRange(location: field.editor.textStorage?.length ?? 0, length: 0))
                 context.coordinator.readSelection(field)
             }
+        } else if field.chipsStyle != field.styleVersion, text.contains(ComposerSkillToken.prefix) {
+            // A new appearance or text size redraws the chips, keeping the caret where it is.
+            let caret = field.editor.selectedRange()
+            field.setDraft(text)
+            if field.currentEditor() != nil { field.editor.setSelectedRange(caret) }
         }
         if !replaced, let range = selection.wrappedValue, case .selection(let indices) = range.indices,
            indices.upperBound <= text.endIndex {
-            let native = NSRange(indices, in: text)
+            let native = field.editorRange(NSRange(indices, in: text))
             if field.currentEditor() != nil, field.editor.selectedRange() != native { field.editor.setSelectedRange(native) }
         }
         if field.wantsFocus != focus.wrappedValue {
@@ -142,12 +148,12 @@ struct ComposerTextField: NSViewRepresentable {
             field.publishingEdit = true
             defer { field.publishingEdit = false }
             // Not editing (an assistive client set AXValue): the cell holds the text, not the editor.
-            parent.text = field.currentEditor() != nil ? field.editor.string : field.stringValue
+            parent.text = field.draftText
             field.invalidateIntrinsicContentSize()
             readSelection(field)
         }
         func readSelection(_ field: Field) {
-            guard let range = Range(field.editor.selectedRange(), in: parent.text) else { return }
+            guard let range = Range(field.draftRange(field.editor.selectedRange()), in: parent.text) else { return }
             parent.selection.wrappedValue = TextSelection(range: range)
         }
     }
@@ -187,7 +193,35 @@ struct ComposerTextField: NSViewRepresentable {
             paragraph.lineSpacing = style.lineSpacing
             editor.defaultParagraphStyle = paragraph
             appliedStyle = style
+            styleVersion &+= 1
             invalidateIntrinsicContentSize()
+        }
+
+        /// Bumped with each style applied; `chipsStyle` is the one the chips were drawn in.
+        private(set) var styleVersion = 0
+        private(set) var chipsStyle = 0
+        /// What the field holds, as the draft spells it: each skill chip as its "/skill:name".
+        var draftText: String {
+            if currentEditor() != nil, let storage = editor.textStorage { return SHSkillChips.text(of: storage) }
+            return SHSkillChips.text(of: attributedStringValue)
+        }
+        private var shown: NSAttributedString { currentEditor() != nil ? editor.textStorage ?? attributedStringValue : attributedStringValue }
+        func draftRange(_ range: NSRange) -> NSRange { SHSkillChips.draftRange(range, in: shown) }
+        func editorRange(_ range: NSRange) -> NSRange { SHSkillChips.fieldRange(range, in: shown) }
+
+        /// Shows `text`, its skills as inline chips.
+        func setDraft(_ text: String) {
+            chipsStyle = styleVersion
+            var attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: SHTextStyle.body.size)]
+            if let textColor { attributes[.foregroundColor] = textColor }
+            if let paragraph = editor.defaultParagraphStyle { attributes[.paragraphStyle] = paragraph }
+            guard let chips = SHSkillChips.attributed(text, tokens: ComposerSkillToken.ranges(in: text), name: ComposerSkillToken.name,
+                                                      attributes: attributes) else {
+                stringValue = text
+                return
+            }
+            attributedStringValue = chips
+            if currentEditor() != nil { editor.textStorage?.setAttributedString(chips) }
         }
 
         override func viewDidUnhide() { super.viewDidUnhide(); applyStyle() }

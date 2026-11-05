@@ -27,7 +27,8 @@ struct ComposerMention: Equatable {
         guard let at = draft.lastIndex(of: "@") else { return nil }
         if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
         let text = draft[draft.index(after: at)...]
-        guard !text.contains(where: \.isNewline), text.count <= maxLength, !text.hasPrefix(" ") else { return nil }
+        guard !text.contains(where: \.isNewline), text.count <= maxLength,
+              text.first?.isWhitespace != true else { return nil }
         return ComposerMention(before: String(draft[..<at]), text: String(text))
     }
 
