@@ -24,6 +24,16 @@ extension ShepherdViewModel {
         }
     }
 
+    /// The base picker's "Default for this project": the branch every new worktree here starts
+    /// from (nil clears it, back to Settings ▸ Worktrees).
+    func setWorktreeBase(_ base: String?, for id: SpaceID) {
+        guard let index = state.spaces.firstIndex(where: { $0.id == id }), state.spaces[index].worktreeBase != base else { return }
+        state.spaces[index].worktreeBase = base
+        sessions.stateDidChange(state)
+        let space = state.spaces[index]
+        enqueuePersistence("set worktree base", failureTitle: "Couldn’t save the project’s default base") { try await $0.updateSpace(space) }
+    }
+
     /// Delete a space and everything in it (agents, layouts, sessions). Spaces nested under it by path are independent
     /// entities and survive — they re-root in the sidebar's derived forest.
     /// Remove Space… from the user: the dialog, or at once after its "Don't ask again".

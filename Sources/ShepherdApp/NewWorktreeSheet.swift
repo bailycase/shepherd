@@ -52,7 +52,7 @@ struct NewWorktreeSheet: View {
                     SheetLinkButton(label: "Choose…") { choosing = true }
                         .disabled(creating)
                         .popover(isPresented: $choosing, arrowEdge: .bottom) {
-                            WorktreeBasePicker(vm: vm, repo: space.path, selected: base.isEmpty ? nil : base) { branch in
+                            WorktreeBasePicker(vm: vm, space: space.id, repo: space.path, selected: base.isEmpty ? nil : base) { branch in
                                 base = branch
                                 self.picked = true
                                 baseNote = "chosen"
@@ -106,8 +106,9 @@ struct NewWorktreeSheet: View {
         let repo = space.path
         let mode = vm.settings.worktreeBaseMode
         let fetchFirst = vm.settings.worktreeFetchBeforeCreate
+        let projectBase = vm.state.spaces.first { $0.id == space.id }?.worktreeBase
         let resolution = await Task.detached(priority: .userInitiated) {
-            GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
+            GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst, projectBase: projectBase)
         }.value
         // A branch the user chose (or typed) while this resolved keeps its own note.
         if base.isEmpty {

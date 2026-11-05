@@ -329,11 +329,13 @@ struct NewThreadPage: View {
                 placeMenu.shTransition(.overlay, anchor: .topLeading)
             case .base:
                 if let space = draft.place.flatMap({ place in vm.state.spaces.first { $0.id == place.space } }) {
-                    WorktreeBasePicker(vm: vm, repo: space.path, selected: draft.worktreeBase) { base in
+                    WorktreeBasePicker(vm: vm, space: space.id, repo: space.path, selected: draft.worktreeBase ?? space.worktreeBase) { base in
                         draft.worktreeBase = base
                         menu = nil
                         composing = true
-                    } close: { menu = .place }
+                    } close: { menu = .place } defaultChanged: { base in
+                        if base != nil { draft.worktree = true }
+                    }
                     .shTransition(.overlay, anchor: .topLeading)
                 }
             case .models:
@@ -382,10 +384,11 @@ struct NewThreadPage: View {
     private var placeMenu: some View {
         let hosts = NewThreadState.hosts(vm)
         let offers = draft.offersWorktree(vm)
+        let base = draft.worktreeBase ?? draft.projectBase(vm)
         return SHPlaceMenu(
             sections: NewThreadPlaces.sections(hosts, chosen: draft.place),
-            worktree: offers ? SHPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
-                                               base: draft.place?.host == nil ? draft.worktreeBase ?? "Default" : nil) : nil,
+            worktree: offers ? SHPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: base ?? ""),
+                                               base: draft.place?.host == nil ? base ?? "Default" : nil) : nil,
             maxHeight: SHComposerMetrics.modelPickerMaxHeight,
             onChoose: { option in
                 if let place = NewThreadPlaces.place(option) { draft.choose(host: place.host, space: place.space, vm: vm) }

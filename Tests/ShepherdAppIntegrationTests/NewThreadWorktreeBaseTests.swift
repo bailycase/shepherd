@@ -96,20 +96,29 @@ struct NewThreadWorktreeBaseTests {
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space("proj", path: repo.path)]))
         var chosen: [String] = []
         let window = OffscreenWindow(size: CGSize(width: 420, height: 420), dark: true,
-                                     WorktreeBasePicker(vm: vm, repo: repo.path, selected: nil, choose: { chosen.append($0) }, close: {}))
+                                     WorktreeBasePicker(vm: vm, space: vm.state.spaces[0].id, repo: repo.path, selected: nil, choose: { chosen.append($0) }, close: {}))
         defer { window.close() }
         try await eventuallyOnMain("the branches to load") { window.layout(); return window.elements().contains { $0.label?.hasPrefix("release") == true } }
         let row = try #require(window.elements().compactMap(\.label).first { $0.hasPrefix("release") })
         try window.press(row)
         #expect(chosen == ["release"])
         // The picker marks the branch it was given as selected, to VoiceOver as the check does.
-        let marked = WorktreeBasePicker(vm: vm, repo: repo.path, selected: "main", choose: { _ in }, close: {})
+        let marked = WorktreeBasePicker(vm: vm, space: vm.state.spaces[0].id, repo: repo.path, selected: "main", choose: { _ in }, close: {})
         let second = OffscreenWindow(size: CGSize(width: 420, height: 420), dark: true, marked)
         defer { second.close() }
         try await eventuallyOnMain("main to be marked selected") {
             second.layout(); return second.elements().contains { $0.label?.hasPrefix("main") == true && $0.isSelected }
         }
         #expect(second.elements().filter { $0.isSelected }.count == 1, "only the picked branch is marked")
+        // Its last row makes the picked branch the project's default, saved on the host, and clears it.
+        func pin() -> AccessibilityNode? { second.layout(); return second.elements().first { $0.label == "Default for this project" } }
+        #expect(try #require(pin()).value == "off")
+        #expect(try #require(pin()).press())
+        #expect(vm.state.spaces[0].worktreeBase == "main")
+        try await eventuallyOnMain("the default to be saved") { app.server.state.spaces[0].worktreeBase == "main" }
+        try await eventuallyOnMain("the row to show on") { pin()?.value == "on" }
+        #expect(try #require(pin()).press())
+        #expect(vm.state.spaces[0].worktreeBase == nil)
         // The checked-out branch is a valid start, unlike a comparison's base.
         #expect(window.elements().contains { $0.label?.hasPrefix("main") == true })
     }
@@ -309,6 +318,64 @@ extension NewThreadWorktreeBaseTests {
         #expect(vm.state.agents.first?.worktreeBase == "release")
         let branch = try #require(vm.state.agents.first?.worktreeBranch)
         #expect(try git(["rev-parse", branch], in: repo) == (try git(["rev-parse", "release"], in: repo)), "the branch starts at release")
+    }
+}
+
+extension NewThreadWorktreeBaseTests {
+    /// A project with a default base starts its threads with the worktree switch on, branches
+    /// from that base without a pick, and the switch stays on for the next thread. A project
+    /// without one starts in the checkout.
+    @MainActor
+    @Test func aProjectsDefaultBaseTurnsTheWorktreeOnAndIsWhereTheThreadStarts() async throws {
+        try StubPi.installAsEngine()
+        let repo = try Self.repo(), plain = try Self.repo()
+        defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: plain) }
+        let app = try AppHarness()
+        defer { app.stop() }
+        let pinned = Space(name: "pinned", path: repo.path, worktreeBase: "release")
+        let other = Fixture.space("plain", path: plain.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [pinned, other]))
+        vm.openNewThread(in: other.id)
+        let draft = vm.newThread
+        try await eventuallyOnMain("the defaults to load") { !draft.loadingDefaults }
+        #expect(!draft.worktree, "a project without a default starts in the checkout")
+        draft.choose(host: nil, space: pinned.id, vm: vm)
+        #expect(draft.worktree && draft.worktreeBase == nil && draft.projectBase(vm) == "release")
+        try await eventuallyOnMain("the project's defaults to load") { !draft.loadingDefaults }
+
+        draft.prompt = "tools:0 start from the project's base"
+        draft.send(vm)
+        try await eventuallyOnMain("the thread to start", timeout: .seconds(60)) { !draft.starting && (vm.selectedAgentID != nil || draft.error != nil) }
+        #expect(draft.error == nil)
+        let agent = try #require(vm.state.agents.first)
+        #expect(agent.worktreeBase == "release")
+        #expect(try git(["rev-parse", try #require(agent.worktreeBranch)], in: repo) == (try git(["rev-parse", "release"], in: repo)))
+        #expect(draft.worktree, "the next thread here is in a worktree too")
+
+        draft.choose(host: nil, space: other.id, vm: vm)
+        #expect(!draft.worktree)
+    }
+
+    /// A default base that no longer exists stops the thread instead of quietly branching from
+    /// somewhere else.
+    @MainActor
+    @Test func aDefaultBaseThatIsGoneRefusesToStart() async throws {
+        try StubPi.installAsEngine()
+        let repo = try Self.repo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Space(name: "pinned", path: repo.path, worktreeBase: "gone")
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+        vm.openNewThread(in: space.id)
+        let draft = vm.newThread
+        try await eventuallyOnMain("the defaults to load") { !draft.loadingDefaults }
+        #expect(draft.worktree)
+        draft.prompt = "tools:0 nowhere to start"
+        draft.send(vm)
+        try await eventuallyOnMain("the start to fail", timeout: .seconds(60)) { !draft.starting && draft.error != nil }
+        #expect(vm.state.agents.isEmpty)
+        #expect(draft.error?.contains("gone") == true, "\(draft.error ?? "")")
     }
 }
 

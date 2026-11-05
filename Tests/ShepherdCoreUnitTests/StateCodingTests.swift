@@ -324,6 +324,18 @@ struct DesignModelTests {
         #expect(try Fixture.roundTrip(tucked) == tucked)
     }
 
+    /// A project's default worktree base decodes nil from older files, is written only when set,
+    /// and round-trips.
+    @Test func aSpacesDefaultWorktreeBaseIsOptionalAndRoundTrips() throws {
+        let older = try Fixture.decode(Space.self, #"{"id":"s","name":"web","path":"/tmp/web","hidden":false}"#)
+        #expect(older.worktreeBase == nil)
+        #expect(try Fixture.encodeObject(older)["worktreeBase"] == nil)
+        var pinned = older
+        pinned.worktreeBase = "origin/nightly"
+        #expect(try Fixture.encodeObject(pinned)["worktreeBase"] as? String == "origin/nightly")
+        #expect(try Fixture.roundTrip(pinned) == pinned)
+    }
+
     /// The board count is what the host reads from the design's files: never written to state.json.
     @Test func thePersistedStateDropsBoardCounts() {
         let design = Design(name: "Checkout", createdAt: 1, boardCount: 4)

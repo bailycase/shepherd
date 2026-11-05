@@ -1003,9 +1003,10 @@ final class ShepherdViewModel {
                 let repo = cwd ?? space.path
                 let mode = self.settings.worktreeBaseMode
                 let fetch = fetchFirst ?? self.settings.worktreeFetchBeforeCreate
+                let projectBase = space.worktreeBase
                 let resolution = await Task.detached {
                     cwd == nil ? GitWorktree.BaseResolution(startPoint: nil, display: "", note: "")
-                        : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
+                        : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
                                           model: self.settings.defaultModel(piHome: self.server.pi.home),
@@ -1039,7 +1040,7 @@ final class ShepherdViewModel {
                             guard try GitWorktree.primaryCheckout(at: repo) == GitWorktree.primaryCheckout(at: space.path) else {
                                 throw RemoteCreateAgentError("Choose a directory in the selected space's repository")
                             }
-                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
+                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst, projectBase: space.worktreeBase)
                             let base = request.worktreeBase?.trimmingCharacters(in: .whitespacesAndNewlines)
                             return (try GitWorktree.add(repo: repo, branch: branch, from: base?.isEmpty == false ? base : resolution.startPoint), base?.isEmpty == false ? base! : resolution.display)
                         }.value

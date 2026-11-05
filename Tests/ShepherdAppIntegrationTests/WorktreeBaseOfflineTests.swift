@@ -18,7 +18,7 @@ struct WorktreeBaseOfflineTests {
         try git(["remote", "set-head", "origin", "--delete"], in: clone)
 
         #expect(GitWorktree.defaultBranch(repo: clone.path, network: false) == "main")
-        let base = GitWorktree.resolveBase(repo: clone.path, mode: .fresh, fetchFirst: false)
+        let base = GitWorktree.resolveBase(repo: clone.path, mode: .fresh, fetchFirst: false, projectBase: nil)
         #expect(base.startPoint == "origin/main")
         #expect(base.note == "cached — fetch disabled in settings")
     }

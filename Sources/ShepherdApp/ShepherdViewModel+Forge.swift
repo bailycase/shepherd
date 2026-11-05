@@ -175,8 +175,9 @@ extension ShepherdViewModel {
         if let branch = brief.worktreeBranch {
             let mode = settings.worktreeBaseMode
             let fetch = settings.worktreeFetchBeforeCreate
+            let projectBase = state.spaces.first { $0.id == spaceID }?.worktreeBase
             let (path, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
-                let resolution = GitWorktree.resolveBase(repo: cwd, mode: mode, fetchFirst: fetch)
+                let resolution = GitWorktree.resolveBase(repo: cwd, mode: mode, fetchFirst: fetch, projectBase: projectBase)
                 return (try GitWorktree.add(repo: cwd, branch: branch, from: resolution.startPoint), resolution.display)
             }.value
             config.workingDirectory = path

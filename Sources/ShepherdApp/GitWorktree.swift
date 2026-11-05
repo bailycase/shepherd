@@ -228,8 +228,18 @@ enum GitWorktree {
     /// default branch (fetched first when enabled) and degrades gracefully:
     /// fetch failure falls back to the cached ref, a repo with no origin
     /// falls back to the current branch — always disclosed in `note`.
+    /// A project's default base (`Space.worktreeBase`) outranks the mode: it is the start point
+    /// as it is, fetched first like a picked branch. A branch that no longer exists is not
+    /// replaced: `add` fails on it, so the thread never quietly starts somewhere else.
     /// Blocking (network); call off the main thread.
-    static func resolveBase(repo: String, mode: WorktreeBaseMode, fetchFirst: Bool) -> BaseResolution {
+    static func resolveBase(repo: String, mode: WorktreeBaseMode, fetchFirst: Bool, projectBase: String?) -> BaseResolution {
+        if let projectBase {
+            let note = !projectBase.hasPrefix("origin/") ? "project default"
+                : !fetchFirst ? "project default · cached"
+                : fetch(repo: repo, branch: String(projectBase.dropFirst("origin/".count))) ? "project default · fetched just now"
+                : "project default · cached — fetch failed"
+            return BaseResolution(startPoint: projectBase, display: projectBase, note: note)
+        }
         switch mode {
         case .head:
             let branch = currentBranch(repo: repo)
