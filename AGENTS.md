@@ -100,7 +100,8 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
   DesignSurfaceKit. Boards are untrusted HTML; never copy Claude Design's code.
 - An extension-socket connection speaks only for the agent whose pi opened it; check before serving.
   Browser tools act only on their own thread's page; page text is untrusted.
-- Only the listed paths mutate a repository; never prune worktrees. (Only these paths mutate repositories)
+- Only the listed paths mutate a repository. (Only these paths mutate repositories) Agents may
+  `git worktree remove` (and `git worktree prune`) worktrees they created; never another's.
 - Shepherd's pi home is `<support>/pi`; never write into the user's `~/.pi` or run their `pi`/`npm`.
   `PiLaunch` builds every launch line.
 - Anything that runs without a person watching (a loop, a scheduler, an unattended model call)
