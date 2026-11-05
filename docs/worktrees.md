@@ -32,7 +32,7 @@ There are three entry points:
   - **Base:** an editable ref, pre-filled from the resolved base (below), with a note
     describing where it came from, and a "Choose…" link that picks from this Mac's branches
     (`WorktreeBasePicker`, the Changes pane's base picker).
-  - **Checkout:** a sibling of the repository, `<parent>/<repo>-<branch with / replaced by ->`.
+  - **Checkout:** in Shepherd's support folder, `<support>/worktrees/<repo>-<path hash>/<branch with / replaced by ->`, never beside the project. Agents created before this keep their sibling checkout.
 
   "Create and open" is disabled until the base resolves. The agent is named after the branch
   leaf (`calm-stone-3831`) until the namer gives it a real title. It is selected immediately.

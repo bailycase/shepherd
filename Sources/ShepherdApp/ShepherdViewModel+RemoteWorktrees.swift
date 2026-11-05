@@ -29,7 +29,7 @@ extension ShepherdViewModel {
               let space = server.state.spaces.first(where: { $0.id == agent.spaceID }) else {
             throw RemoteCreateAgentError("Worktree agent no longer exists")
         }
-        let path = agent.worktreePath ?? GitWorktree.destination(repo: space.path, branch: branch)
+        let path = agent.worktreePath ?? GitWorktree.existingDestination(repo: space.path, branch: branch)
         if case .worktreeSetup(let action) = query {
             let setup = WorktreeSetupModel(repoPath: space.path)
             switch action {
