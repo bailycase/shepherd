@@ -99,3 +99,12 @@ test("a question stops the goal on the user and Resume waits for the answer", as
   assert.equal(f.goal.reason, "answer received · resume to continue");
   await f.action({ action: "resume" }); assert.equal(f.goal.state, "working");
 });
+
+test("the goal reminder leads the request so the conversation prompt cache survives each turn", async () => {
+  const f = fixture();
+  await f.action({ action: "set", text: "Acceptance passes" });
+  const history = [{ role: "user", content: "a" }, { role: "assistant", content: [] }, { role: "toolResult", content: [] }];
+  const { messages } = f.emit("context", { messages: history });
+  assert.match(messages[0].content[0].text, /SHEPHERD_GOAL_CURRENT_DATA/);
+  assert.deepEqual(messages.slice(1), history);
+});
