@@ -299,8 +299,9 @@ private struct ForgePullRequestSummary: View {
             SHHairline().padding(.vertical, SH.Space.xl)
             ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest)
         } rail: {
-            if !detail.reviewers.isEmpty {
+            if !detail.reviewers.isEmpty || detail.state == .open || detail.state == .draft {
                 ForgeRailSection(title: "Reviewers") {
+                    if detail.reviewers.isEmpty { Text("No one asked yet").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
                     ForEach(detail.reviewers, id: \.login) { reviewer in
                         HStack(spacing: SH.Space.m) {
                             ForgeAvatar(login: reviewer.login, you: isViewer(reviewer.login))
@@ -312,7 +313,31 @@ private struct ForgePullRequestSummary: View {
                         .frame(height: AppLayout.forgeRailRow)
                         .accessibilityElement(children: .combine)
                     }
+                } accessory: {
+                    if detail.state != .merged, detail.state != .closed {
+                        ForgeEditMenu(store: store, field: .reviewers, repo: detail.ref.repo,
+                                      current: detail.reviewers.filter { !$0.isTeam && $0.state == .pending }.map(\.login))
+                    }
                 }
+            }
+            if let assignees = detail.assignees, let labels = detail.labels {
+            ForgeRailSection(title: "Assignees") {
+                if assignees.isEmpty { Text("No one yet").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                ForEach(assignees, id: \.self) { login in
+                    HStack(spacing: SH.Space.m) {
+                        ForgeAvatar(login: login, you: isViewer(login))
+                        Text(isViewer(login) ? "you" : login).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
+                    }
+                    .frame(height: AppLayout.forgeRailRow)
+                }
+            } accessory: {
+                ForgeEditMenu(store: store, field: .assignees, repo: detail.ref.repo, current: assignees)
+            }
+            ForgeRailSection(title: "Labels") {
+                ForgeLabelsLine(labels: labels)
+            } accessory: {
+                ForgeEditMenu(store: store, field: .labels, repo: detail.ref.repo, current: labels.map(\.name))
+            }
             }
             if !detail.checks.isEmpty {
                 ForgeRailSection(title: ForgePresentation.checksTitle(detail.checks)) {
@@ -542,6 +567,7 @@ private struct ForgeChangesTab: View {
         ReviewActions(
             setPullRequest: { _ in },
             requestChanges: { vm.forgeSendLineComments(session) },
+            postToGitHub: { vm.forgePostLineComments(session) },
             commit: {},
             close: {},
             refresh: { store.loadFiles() },

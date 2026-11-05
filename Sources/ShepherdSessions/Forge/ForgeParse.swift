@@ -9,7 +9,7 @@ enum ForgeParse {
     /// The fields a row needs, asked of `gh pr list|view --json`.
     static let pullFields = "number,title,author,updatedAt,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup,additions,deletions,reviewRequests"
     static let pullDetailFields = pullFields
-        + ",createdAt,body,changedFiles,latestReviews,mergeable,mergeStateStatus,mergeCommit,closingIssuesReferences,autoMergeRequest"
+        + ",createdAt,body,changedFiles,latestReviews,mergeable,mergeStateStatus,mergeCommit,closingIssuesReferences,autoMergeRequest,labels,assignees"
     static let issueFields = "number,title,author,updatedAt,state,labels,assignees,closedByPullRequestsReferences"
     static let issueDetailFields = issueFields + ",createdAt,body,comments"
     static let repoFields = "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed,viewerDefaultMergeMethod,deleteBranchOnMerge"
@@ -55,6 +55,8 @@ enum ForgeParse {
         var closingIssuesReferences: [Numbered]?
         struct AutoMerge: Decodable { var mergeMethod: String? }
         var autoMergeRequest: AutoMerge?
+        var labels: [Label]?
+        var assignees: [User]?
     }
     struct Label: Decodable { var name: String; var color: String? }
     struct Comment: Decodable { var author: User?; var body: String?; var createdAt: String?; var id: String? }
@@ -288,7 +290,8 @@ enum ForgeParse {
             deletesBranchOnMerge: settings?.deleteBranchOnMerge ?? false, autoMerge: pull.autoMergeRequest != nil,
             mergeCommit: pull.mergeCommit?.oid.flatMap { $0.isEmpty ? nil : $0 },
             headBranchDeleted: timeline.flatMap { try? decode([TimelineItem].self, $0) }?.contains { $0.event == "head_ref_deleted" } ?? false,
-            closesIssues: (pull.closingIssuesReferences ?? []).map(\.number), viewer: viewer)
+            closesIssues: (pull.closingIssuesReferences ?? []).map(\.number), viewer: viewer,
+            labels: (pull.labels ?? []).map { ForgeLabel(name: $0.name, color: $0.color ?? "") }, assignees: (pull.assignees ?? []).compactMap(\.login))
     }
 
     static func lineComment(_ raw: LineComment) -> ForgeLineComment {
@@ -387,6 +390,80 @@ enum ForgeParse {
     }
 
     // MARK: Search, logs and diffs
+
+    /// What `gh api graphql` asks of each `search(type: ISSUE)` node: a row's fields, with its
+    /// repository and (for a pull request) the head commit's check rollup.
+    static let searchNode = """
+        ... on PullRequest { number title updatedAt createdAt state isDraft headRefName baseRefName reviewDecision additions deletions \
+        author { login } repository { nameWithOwner } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } \
+        ... on Issue { number title updatedAt createdAt state author { login } repository { nameWithOwner } \
+        labels(first: 10) { nodes { name color } } assignees(first: 10) { nodes { login } } \
+        closedByPullRequestsReferences(first: 5) { nodes { number url } } }
+        """
+
+    struct Nodes<T: Decodable>: Decodable { var nodes: [T]? }
+    struct SearchNode: Decodable {
+        struct Rollup: Decodable { var state: String? }
+        struct HeadCommit: Decodable { struct Commit: Decodable { var statusCheckRollup: Rollup? }; var commit: Commit? }
+        var number: Int?, title: String?, state: String?
+        var updatedAt: String?, createdAt: String?
+        var isDraft: Bool?, headRefName: String?, baseRefName: String?, reviewDecision: String?
+        var additions: Int?, deletions: Int?
+        var author: User?
+        var repository: SearchHit.Repository?
+        var commits: Nodes<HeadCommit>?
+        var labels: Nodes<Label>?, assignees: Nodes<User>?, closedByPullRequestsReferences: Nodes<Numbered>?
+    }
+    private struct SearchAnswer: Decodable {
+        struct PageInfo: Decodable { var hasNextPage: Bool?; var endCursor: String? }
+        struct Payload: Decodable { struct Search: Decodable { var nodes: [SearchNode]; var pageInfo: PageInfo? }; var search: Search }
+        var data: Payload
+    }
+
+    /// The cursor of a search's next page, or nil at its end.
+    static func searchNext(_ data: Data) throws -> String? {
+        let info = try decode(SearchAnswer.self, data).data.search.pageInfo
+        return info?.hasNextPage == true ? info?.endCursor : nil
+    }
+
+    /// `gh label list --json name,color` and `gh api repos/…/assignees`, either missing.
+    static func people(labels: Data?, assignable: Data?) -> ForgeRepoPeople {
+        ForgeRepoPeople(labels: (labels.flatMap { try? decode([Label].self, $0) } ?? []).map { ForgeLabel(name: $0.name, color: $0.color ?? "") },
+                        assignable: (assignable.flatMap { try? decode([User].self, $0) } ?? []).compactMap(\.login))
+    }
+
+    private static func searchNodes(_ data: Data) throws -> [(repo: String, node: SearchNode, number: Int, title: String, state: String)] {
+        try decode(SearchAnswer.self, data).data.search.nodes.compactMap { node in
+            guard let repo = node.repository?.nameWithOwner, let number = node.number, let title = node.title, let state = node.state
+            else { return nil }
+            return (repo, node, number, title, state)
+        }
+    }
+
+    /// A GraphQL search's pull requests, each in its own repository.
+    static func searchedPullRequests(_ data: Data) throws -> [PullRequestSummary] {
+        try searchNodes(data).map { repo, node, number, title, state in
+            var pull = summary(Pull(number: number, title: title, author: node.author, updatedAt: node.updatedAt, createdAt: node.createdAt,
+                                    state: state, isDraft: node.isDraft, headRefName: node.headRefName, baseRefName: node.baseRefName,
+                                    reviewDecision: node.reviewDecision, additions: node.additions, deletions: node.deletions), repo: repo)
+            pull.checks = switch node.commits?.nodes?.last?.commit?.statusCheckRollup?.state?.uppercased() {
+            case "SUCCESS"?: .passed
+            case "FAILURE"?, "ERROR"?: .failing
+            case "PENDING"?, "EXPECTED"?: .running
+            default: .none
+            }
+            return pull
+        }
+    }
+
+    /// A GraphQL search's issues, each in its own repository.
+    static func searchedIssues(_ data: Data, viewer: String?) throws -> [IssueSummary] {
+        try searchNodes(data).map { repo, node, number, title, state in
+            summary(Issue(number: number, title: title, author: node.author, updatedAt: node.updatedAt, createdAt: node.createdAt, state: state,
+                          labels: node.labels?.nodes, assignees: node.assignees?.nodes,
+                          closedByPullRequestsReferences: node.closedByPullRequestsReferences?.nodes), repo: repo, viewer: viewer)
+        }
+    }
 
     /// `gh search prs|issues --json number,repository` → "owner/name#12" keys.
     static func searchKeys(_ data: Data) throws -> Set<String> {

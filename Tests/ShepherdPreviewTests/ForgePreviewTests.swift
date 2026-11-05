@@ -93,6 +93,26 @@ extension PreviewTests {
         }
     }
 
+    /// A pull request's unsent line comments: Comment on GitHub beside Send to agent.
+    @Test func forgeLineCommentBar() async throws {
+        try await Preview.render("forge-line-comment-bar", size: CGSize(width: 900, height: 48)) {
+            SHReviewSendBar(count: "2 comments", detail: "on outbox.go, not posted or sent yet", onDiscard: {}, onSend: {}, onPost: {})
+        }
+    }
+
+    /// Everything, filtered to one author and a label: the chips and a browse's rows.
+    @Test func forgeFiltered() async throws {
+        let workspace = try await forgeWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        await openForge(vm, .pullRequest, 31)
+        vm.forgeStore.filter = ForgeFilter(state: .all, author: "baily", sort: .created)
+        await vm.forgeStore.browseTask?.value
+        try await Preview.render("forge-filtered", size: Self.forgeWindow, ready: { vm.forgeStore.results != nil }) {
+            forgeWindow(vm) { ForgeDestination(vm: vm) }
+        }
+    }
+
     @Test func forgePullRequestMergeMenu() async throws {
         let workspace = try await forgeWorkspace()
         defer { workspace.stop() }
@@ -164,7 +184,8 @@ extension PreviewTests {
     }
 
     @Test func forgeEmpty() async throws {
-        let runner = Self.forgeRunner { line, output in line.hasPrefix("gh pr list") ? "[]" : output }
+        let runner = Self.forgeRunner { line, output in line.hasPrefix("gh pr list") ? "[]"
+            : line.hasPrefix("gh api graphql") && line.contains("is:pr") ? #"{"data":{"search":{"nodes":[]}}}"# : output }
         let workspace = try await forgeWorkspace(runner)
         defer { workspace.stop() }
         let vm = workspace.vm

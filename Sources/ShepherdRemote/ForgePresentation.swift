@@ -172,6 +172,17 @@ public enum ForgePresentation {
     }
 
     /// "Needs my team's review · ledger" once its rows name the team.
+    /// A browse's header: "Open pull requests", "Merged pull requests", "All issues".
+    public static func browseTitle(_ state: ForgeFilter.State, kind: ForgeKind) -> String {
+        let noun = kind == .pullRequest ? "pull requests" : "issues"
+        return switch state {
+        case .open: "Open \(noun)"
+        case .closed: "Closed \(noun)"
+        case .merged: "Merged \(noun)"
+        case .all: "All \(noun)"
+        }
+    }
+
     public static func title(_ section: ForgeSection, kind: ForgeKind) -> String {
         let base = title(section.id, kind: kind)
         guard section.id == .teamReview, let team = section.pullRequests.lazy.compactMap(\.team).first else { return base }

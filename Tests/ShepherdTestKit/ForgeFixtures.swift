@@ -122,6 +122,26 @@ public enum ForgeFixtures {
 
     /// The fake gh's (and git's) answer to `arguments`: stdout and an exit status. Unknown commands
     /// fail as gh does.
+    /// A `--json` list as `gh api graphql`'s search answers it: each node with its repository,
+    /// connections as `nodes`, and the head commit's check rollup.
+    static func searched(_ list: String) -> String {
+        let rows = (try? JSONSerialization.jsonObject(with: Data(list.utf8))) as? [[String: Any]] ?? []
+        let nodes = rows.map { row -> [String: Any] in
+            var node = row
+            node["repository"] = ["nameWithOwner": repo]
+            for key in ["labels", "assignees", "closedByPullRequestsReferences"] { if let items = row[key] { node[key] = ["nodes": items] } }
+            if let checks = row["statusCheckRollup"] as? [[String: Any]] {
+                let states = checks.map { $0["status"] as? String == "COMPLETED" ? $0["conclusion"] as? String ?? "" : "PENDING" }
+                let state: Any = checks.isEmpty ? NSNull()
+                    : ["state": states.contains("FAILURE") ? "FAILURE" : states.contains("PENDING") ? "PENDING" : "SUCCESS"]
+                node["commits"] = ["nodes": [["commit": ["statusCheckRollup": state]]]]
+            }
+            return node
+        }
+        let data = try? JSONSerialization.data(withJSONObject: ["data": ["search": ["nodes": nodes]]])
+        return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+
     public static func answer(_ arguments: [String]) -> (output: String, status: Int32, errors: String) {
         func ok(_ text: String) -> (String, Int32, String) { (text, 0, "") }
         let line = arguments.joined(separator: " ")
@@ -154,6 +174,13 @@ public enum ForgeFixtures {
             if line.hasPrefix("gh run view") { return ok(logFailed) }
             if line.hasPrefix("gh search prs") { return ok(line.contains("user-review-requested") ? reviewSearch : line.contains("changes_requested") ? changesSearch : "[]") }
             if line.hasPrefix("gh search issues") { return ok(issueSearch) }
+            if line.hasPrefix("gh api graphql"), let q = arguments.last {
+                let list = q.contains("is:closed") ? "[]"
+                    : q.contains("author:") ? authored : q.contains("user-review-requested:@me") ? reviewRequested
+                    : q.contains("review-requested:@me") ? anyReviewRequested : q.contains("assignee:@me") ? assigned
+                    : q.contains("mentions:@me") ? mentioned : "[]"
+                return ok(searched(list))
+            }
             if ["comment", "review", "merge", "ready", "close", "reopen", "edit", "rerun"].contains(arguments.dropFirst(2).first ?? "") { return ok("") }
             if line.hasPrefix("gh api --method=DELETE") { return ok("") }
             return ("", 1, "GraphQL: Could not resolve to a PullRequest with the number of \(arguments.dropFirst(3).first ?? "?").")

@@ -89,6 +89,7 @@ struct ForgePullRequestContent: View {
         .background(Color.sh.bgWindow)
         .safeAreaInset(edge: .bottom, spacing: 0) { bar(store, model) }
         .task(id: key) {
+            Task { await store.loadPeople(host: key.host, repo: key.ref.repo) }
             await store.loadPullRequest(key)
             if store.sidebars[key.host] == nil { await store.loadSidebars() }
         }
@@ -153,6 +154,13 @@ struct ForgePullRequestContent: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .accessibilityLabel("\(model.detail.summary.headRef) into \(model.detail.summary.baseRef)")
+            let labels = model.detail.labels ?? []
+            if !labels.isEmpty {
+                SHWrapStack { ForEach(labels, id: \.name) { ForgeTag(text: $0.name, tone: ForgeRows.tone(hex: $0.color)) } }
+            }
+            if let assignees = model.detail.assignees, !assignees.isEmpty {
+                Text("Assigned to \(assignees.joined(separator: ", "))").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+            }
         }
         .padding(.top, SH.Space.s)
     }
@@ -223,6 +231,9 @@ struct ForgePullRequestContent: View {
             if let url = URL(string: key.ref.url) {
                 Link(destination: url) { Label("Open on GitHub", systemImage: "safari") }
             }
+            ForgeEditMenus(store: store, key: key, labels: (model.detail.labels ?? []).map(\.name), assignees: model.detail.assignees ?? [],
+                           reviewers: model.detail.state == .open || model.detail.state == .draft
+                               ? model.detail.reviewers.filter { !$0.isTeam && $0.state == .pending }.map(\.login) : nil)
             switch model.detail.state {
             case .open:
                 Button("Convert to draft", systemImage: "pencil.line") { change(.setDraft(ref: key.ref, draft: true), store) }
