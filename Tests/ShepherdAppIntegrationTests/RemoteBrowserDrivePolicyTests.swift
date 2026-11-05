@@ -9,8 +9,7 @@ import Testing
 import WebKit
 @testable import ShepherdApp
 
-/// What a host's agent can and cannot make the viewer's Mac do (docs/browser.md › Remote › What a
-/// host's agent can make this Mac do), end to end against a real off-screen web view: it may open the
+/// What a host's agent can and cannot make the viewer's Mac do, end to end against a real off-screen web view: it may open the
 /// host's own loopback ports and public addresses, and nothing on the viewer's own network, however
 /// it is spelled, redirected to, framed or navigated to by script.
 @Suite("Remote browser drive address policy", .mainActorExclusive)

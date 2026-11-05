@@ -725,8 +725,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     },
   });
 
-  // Trigger settings shared by automation_create and automation_update (docs/data-flow.md
-  // "Automation triggers"). Shepherd validates them; a nil field keeps the saved value.
+  // Trigger settings shared by automation_create and automation_update.
+  // Shepherd validates them; a nil field keeps the saved value.
   const GITHUB_EVENTS = ["issueOpened", "issueLabeled", "issueComment", "pullRequestOpened", "pullRequestLabeled",
     "pullRequestReview", "pullRequestComment", "pullRequestCommits", "pullRequestMerged"];
   const TRIGGER_PARAMS = {

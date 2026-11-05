@@ -4,7 +4,7 @@ import ImageIO
 import ShepherdProtocol
 import UniformTypeIdentifiers
 
-/// The images in a thread (docs/native-thread.md › Images). pi saves every image it was sent or a tool made in
+/// The images in a thread. pi saves every image it was sent or a tool made in
 /// its own session (verified: user and tool-result image blocks are written to the session file whole), and
 /// `get_messages` names each one by hash (`RPCImageRef`), so the host stores nothing: a snapshot names each image
 /// (`NativeThreadBlock.imageID`, bounded metadata, no bytes) and `NativeThreadRequest.image` asks pi for that one

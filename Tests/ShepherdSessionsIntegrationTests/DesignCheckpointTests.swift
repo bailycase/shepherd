@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Checkpoints (docs/designs.md › Checkpoints): a named state of every board and canvas.json that
+/// Checkpoints: a named state of every board and canvas.json that
 /// one call puts back as one revision, after saving the design as it was so a restore can be undone.
 @Suite("Design checkpoints", .integrationTimeLimit)
 struct DesignCheckpointTests {

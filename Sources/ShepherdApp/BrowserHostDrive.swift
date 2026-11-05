@@ -2,8 +2,7 @@ import Foundation
 import ShepherdProtocol
 import ShepherdRemote
 
-// A remote thread's agent drives the page this Mac shows (docs/browser.md › Remote › The agent drives
-// the page you see). The host hands each `BrowserRequest` here and the page answers it with the same
+// A remote thread's agent drives the page this Mac shows. The host hands each `BrowserRequest` here and the page answers it with the same
 // driver a local thread's agent has (`BrowserDriver.swift`); what differs is who is asking. A local
 // agent is on this Mac, so its page may go anywhere this Mac's user may take it. A host's agent is on
 // another machine, so the page must not become its window into this Mac's network: the rules below

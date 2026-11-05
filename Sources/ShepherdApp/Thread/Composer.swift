@@ -465,7 +465,7 @@ struct Composer: View {
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
-        // The hook glyph's counts for this thread's space, loaded once per folder (docs/hooks.md).
+        // The hook glyph's counts for this thread's space, loaded once per folder.
         .task(id: hookDirectory) { if let hookDirectory { hookPresenter?.ensure(cwd: hookDirectory) } }
         .onChange(of: store.goalID, initial: true) { _, id in
             if id != nil { queueStack.collapsed = true }
@@ -1246,7 +1246,7 @@ struct ComposerControlsModel: Equatable {
     var contextOpen: Bool
     var actionEnabled: Bool
     var actionHelp: String
-    /// Hooks run in the thread's space: the hook glyph (docs/hooks.md › Composer glyph).
+    /// Hooks run in the thread's space: the hook glyph.
     var hooks: HookIndicator? = nil
 }
 

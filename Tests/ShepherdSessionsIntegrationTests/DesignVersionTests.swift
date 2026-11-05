@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// A board's versions (docs/designs.md › Versions): each write keeps what it replaced, the last
+/// A board's versions: each write keeps what it replaced, the last
 /// 20 per board; a restore puts one back as a new write (so it can be undone too); and several
 /// boards written at once are one change.
 @Suite("Design versions", .integrationTimeLimit)

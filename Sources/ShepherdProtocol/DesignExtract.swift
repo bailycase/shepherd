@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdCore
 
-// `board_extract` (docs/designs.md › Shared pieces): one element of a board becomes a piece, a
+// `board_extract`: one element of a board becomes a piece, a
 // board of its own, and a `<dc-import>` takes its place, so it is drawn once and every board that
 // imports it follows. The same extraction can replace exact copies of the element in other
 // boards. Pure over the boards' text: the store reads the boards, runs this, and writes the

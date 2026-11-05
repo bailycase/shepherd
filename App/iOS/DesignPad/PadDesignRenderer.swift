@@ -8,7 +8,7 @@ import ShepherdRemote
 // The iPad's board rendering, and the only iOS file that imports DesignSurfaceKit (as
 // DesignHost.swift is on the Mac), so the renderer's API drift breaks exactly one file.
 //
-// Boards render on this device from the files the host serves (docs/designs.md › Remote), never
+// Boards render on this device from the files the host serves, never
 // on the host. A design on screen keeps at most `DesignTouchLivePlan.liveCap` live web view (the
 // selected board, else the board nearest the middle of the canvas), and one off-screen view
 // (`PadDesignRasterizer`) draws every other board's snapshot, one at a time: two web views at

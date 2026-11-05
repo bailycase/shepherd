@@ -4,7 +4,7 @@ import ShepherdProtocol
 
 /// Installs the per-session pi extension behind an agent's browser tools (`shepherd-browser.ts`:
 /// browser_open, browser_read, browser_click, …) from its embedded literal into the support
-/// directory (docs/browser.md). It is inert without `SHEPHERD_EXT_BROWSER`, in a native subagent
+/// directory. It is inert without `SHEPHERD_EXT_BROWSER`, in a native subagent
 /// and in a design's agent.
 enum BrowserExtension {
     static func installedPath() throws -> String {

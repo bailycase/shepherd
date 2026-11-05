@@ -10,7 +10,7 @@ extension EnvironmentValues {
     /// A local thread's design references (DesignRefStates): its chips' copies and freshness, the
     /// "Looked at…" lines' details, the @ picker's catalog, and what a chip does. Nil where
     /// references don't reach: a design's own chat, another host's thread, or with the Design
-    /// tool off (docs/designs.md › Isolation).
+    /// tool off.
     @Entry var designReferences: DesignReferenceChips? = nil
     /// Previews: sent chips open their preview as they appear.
     @Entry var designReferencesOpen = false

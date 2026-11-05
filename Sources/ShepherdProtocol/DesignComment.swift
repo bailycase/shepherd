@@ -1,6 +1,6 @@
 import Foundation
 
-// A design's comments (docs/designs.md › Comments): pinned by the viewer to an element of a
+// A design's comments: pinned by the viewer to an element of a
 // board, answered by the design agent under the pin, resolved only by the viewer. Kept in the
 // design folder's `comments.json` (`DesignComments`), beside `project/`, so an exported canvas
 // carries none of them.
@@ -227,7 +227,7 @@ public struct DesignCommentDraft: Codable, Hashable, Sendable {
 
 // MARK: - Anchoring
 
-/// Finding a comment's element again after a rewrite of its board (docs/designs.md › Comments):
+/// Finding a comment's element again after a rewrite of its board:
 /// a rewrite renumbers elements, so a comment's `tid` may name another element now.
 public enum DesignCommentAnchor {
     public struct Found: Equatable, Sendable {

@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 
 // Deleting a design and naming the designs Shepherd makes from others (a duplicate, a project
-// imported again). docs/designs.md › Deleting and importing.
+// imported again).
 
 /// A design the host deleted and still holds: out of the workspace (its record, its agents and
 /// their layouts), its agents stopped, its files set aside until `undoUntil`. Undo before then

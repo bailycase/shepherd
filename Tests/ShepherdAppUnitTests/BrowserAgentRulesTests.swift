@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdUI
 @testable import ShepherdApp
 
-/// The rules of an agent's browser tools (docs/browser.md): which URLs open, what the user's take
+/// The rules of an agent's browser tools: which URLs open, what the user's take
 /// over allows, how a result and the card are worded, keys, limits and the screenshot clamp.
 @Suite("Browser agent rules")
 struct BrowserAgentRulesTests {

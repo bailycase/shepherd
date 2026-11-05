@@ -3,7 +3,7 @@ import Testing
 import ShepherdCore
 @testable import ShepherdProtocol
 
-/// A design reference's string (docs/designs.md › Design references): what Copy reference copies
+/// A design reference's string: what Copy reference copies
 /// and a paste reads back. It names a design, a board and an element by id alone.
 @Suite("Design references")
 struct DesignReferenceTests {

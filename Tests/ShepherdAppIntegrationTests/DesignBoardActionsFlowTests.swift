@@ -10,8 +10,8 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// The board actions against a real server, a live stub agent and real board views
-/// (docs/designs.md › Board actions): a board dragged is written once where it lands, Duplicate
+/// The board actions against a real server, a live stub agent and real board views:
+/// a board dragged is written once where it lands, Duplicate
 /// adds one board, Variations reaches the design agent with the board fenced as data, and a
 /// presented board's links move Play between the design's boards and nowhere else.
 @Suite("Design board actions flow", .mainActorExclusive)

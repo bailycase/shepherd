@@ -12,8 +12,8 @@ enum MCPTransportKind: String, Sendable {
     case stdio, streamableHTTP, sse
 }
 
-/// How the agent reaches a server's tools (`shepherd.exposure`): pi's `deferred` or `direct`
-/// (docs/mcp.md). The stored word for Search stays `proxy`, which files written before pi's MCP
+/// How the agent reaches a server's tools (`shepherd.exposure`): pi's `deferred` or `direct`.
+/// The stored word for Search stays `proxy`, which files written before pi's MCP
 /// hold.
 enum MCPExposure: String, Sendable {
     /// Searched with `tool_search` when the agent needs one: nothing of the tools is in a prompt.

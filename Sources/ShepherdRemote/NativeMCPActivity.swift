@@ -1,6 +1,6 @@
 import Foundation
 
-/// How a call on pi's MCP reads as an activity line (docs/mcp.md › In the thread): a server's
+/// How a call on pi's MCP reads as an activity line: a server's
 /// tool, named as pi names it (`mcp__github__search_issues`), reads "Called search_issues" with
 /// the server and what it was asked in the line's meta ("github · “label:bug”"); the search that
 /// loads deferred tools is the quiet "Searched tools" with what was searched. Names are pi's

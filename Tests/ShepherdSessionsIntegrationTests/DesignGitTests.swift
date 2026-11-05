@@ -5,7 +5,7 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Git sharing for designs (docs/designs.md › Sharing with Git) against real git: a bare
+/// Git sharing for designs against real git: a bare
 /// repository on disk stands in for the host, and two scratch servers are the two Macs. The
 /// commit identity is passed in the environment of each git run here, never set on the user.
 @Suite("Design Git sharing", .integrationTimeLimit)

@@ -1,6 +1,6 @@
 import Foundation
 
-// `board_search` (docs/designs.md › Search): a design agent's grep over its boards, host-side
+// `board_search`: a design agent's grep over its boards, host-side
 // and without WebKit. Text or a regular expression over a board's markup, its visible text or
 // its labels; a structural query over the template tree (the element with this tag, attribute
 // or class, with its element id, a short chain of what it sits in and a snippet); and the

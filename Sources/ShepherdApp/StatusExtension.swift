@@ -9,8 +9,8 @@ struct SessionCommand {
     var env: [String: String]
 }
 
-/// What an agent's pi is launched with for MCP (Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers;
-/// docs/mcp.md): pi's own MCP and tool search switched on over the home's `-builtin:` switches, the
+/// What an agent's pi is launched with for MCP (Settings ▸ Pi ▸ Bundled extensions ▸ MCP
+/// servers): pi's own MCP and tool search switched on over the home's `-builtin:` switches, the
 /// secrets the servers' entries refer to in its environment, and, while Settings ▸ MCP servers ▸
 /// Also use a repo's .mcp.json is on, the extension that registers the repo's servers. An agent in a
 /// subproject also gets its parent's `.shepherd/mcp.json` servers (`sharingParent`).
@@ -174,7 +174,7 @@ enum StatusExtension {
         // suggest_instruction may draft a line for.
         if instructions != nil, !suggestFiles.isEmpty { env["SHEPHERD_SUGGEST_FILES"] = suggestFiles.joined(separator: ",") }
         if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
-        // Settings ▸ Pi ▸ Browser tools: the tools on the thread's own page (docs/browser.md).
+        // Settings ▸ Pi ▸ Browser tools: the tools on the thread's own page.
         if let browserExtensionPath { env["SHEPHERD_EXT_BROWSER"] = browserExtensionPath }
         if let childrenExtensionPath {
             env["SHEPHERD_NATIVE_CHILDREN"] = nativeChildren ? "1" : "0"
@@ -209,7 +209,7 @@ enum StatusExtension {
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
         // Keep the controller loaded so the experiment can change without restarting pi.
         env[GoalExtension.environmentKey] = "1"
-        // Hooks (docs/hooks.md): the runtime reads trust.json from here; a coordinator runs none.
+        // Hooks: the runtime reads trust.json from here; a coordinator runs none.
         env[HooksExtension.environmentKey] = HooksExtension.directory(in: home).path
         env["SHEPHERD_GOALS_ENABLED"] = goalsEnabled ? "1" : "0"
         if let projectContext {

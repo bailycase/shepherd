@@ -1,4 +1,4 @@
-// shepherd-mcp-project.ts, the one piece of MCP that runs in an agent's pi (docs/mcp.md): with the switch on it registers the
+// shepherd-mcp-project.ts, the one piece of MCP that runs in an agent's pi: with the switch on it registers the
 // servers of a repo's `.mcp.json` with pi's own MCP, which connects them, and the model reaches them through tool_search.
 // Real pi in RPC mode against the stand-in stdio server, a loopback fake provider and a temporary home.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/mcp-project.test.mjs

@@ -11,8 +11,7 @@ import Testing
 import WebKit
 @testable import ShepherdApp
 
-/// An agent on another Mac drives the page the viewer sees (docs/browser.md › Remote › The agent
-/// drives the page you see), end to end: the agent's extension on a host, its server, the remote
+/// An agent on another Mac drives the page the viewer sees, end to end: the agent's extension on a host, its server, the remote
 /// connection, and a real off-screen web view on the viewer that loads the host's dev server through
 /// the tunnel. The host is a second in-process Shepherd on this very Mac, so a port the page names
 /// here reaches the dev server's different one (`BrowserRemote.hostPorts`).

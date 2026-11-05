@@ -8,7 +8,7 @@ import Testing
 @testable import DesignSurfaceKit
 @testable import ShepherdApp
 
-/// Export and Attach to a thread end to end (DZExport; docs/designs.md › Export): a real server,
+/// Export and Attach to a thread end to end (DZExport): a real server,
 /// boards rendered off screen by the renderer, and the files written where a save panel would
 /// point (a scratch folder here). A ZIP holds the pages, tokens.css, the uploads and the canvas
 /// as a project folder that imports again; a PDF has a page per board; attached boards wait in

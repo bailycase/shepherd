@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdSessions
 
-/// ResponseVisibility (docs/design/mockups/response-visibility): A, the live line before the
+/// ResponseVisibility: A, the live line before the
 /// model's first event, while it thinks, while it writes a call, and while pi retries; B, live
 /// thinking opened onto the summary the provider shared; C, a finished reply's Response timing.
 /// Each from a snapshot a host served (its budget, over the wire's JSON) into the store the

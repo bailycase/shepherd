@@ -4,8 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// An agent on another Mac drives the page this Mac shows for its thread (docs/browser.md › Remote ›
-/// The agent drives the page you see). The page is a remote thread's `BrowserSession`; the host hands
+/// An agent on another Mac drives the page this Mac shows for its thread. The page is a remote thread's `BrowserSession`; the host hands
 /// each browser request to the viewer that owns the agent's browser, and this is where it arrives.
 extension ShepherdViewModel {
     func installRemoteBrowserDrive() {

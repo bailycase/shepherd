@@ -1,6 +1,6 @@
 import Foundation
 
-/// What MCP servers cost in every prompt (docs/mcp.md › What a prompt costs). pi lists only each
+/// What MCP servers cost in every prompt. pi lists only each
 /// tool's name, so these are measured figures per server, not a sum over the tools' schemas:
 /// a server that is searched adds a line to the system prompt (and the first of them pulls in the
 /// `tool_search` declaration), and a server set to Direct declares each of its tools.

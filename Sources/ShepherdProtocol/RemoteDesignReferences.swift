@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 
 // Design references to a host's own designs, in that host's threads, from another device
-// (`RemoteProtocol.designReferencesCapability`; docs/designs.md › Design references). The host
+// (`RemoteProtocol.designReferencesCapability`). The host
 // pins and resolves each piece itself, from its own design; a client only names it. A reference
 // to another host's design, or to a design this host doesn't have, is refused.
 

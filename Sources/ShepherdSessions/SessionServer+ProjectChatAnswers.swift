@@ -62,7 +62,7 @@ extension SessionServer {
     }
 
     /// A hook's consent prompt (a proposal, a PreToolUse ask) is the person's alone to answer in
-    /// the worker's own thread; no Project path answers it (docs/hooks.md › Proposals).
+    /// the worker's own thread; no Project path answers it.
     static func refuseHookConsent(kind: String, title: String, options: [String]) throws {
         guard !NativeHookPrompt.isConsent(kind: kind, title: title, options: options) else {
             throw LogicalProjectsError("hook_prompt", "A hook's prompt is answered only by the person in the worker's thread.")

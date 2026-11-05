@@ -13,9 +13,8 @@ import Testing
 /// phone's), holding what a design agent really leaves in a long session: paragraphs that run
 /// long, activity lines whose label names boards, calls whose arguments are one long JSON string,
 /// failures that name long paths, a compaction, and a comment's card with the agent's answer
-/// inside it (docs/designs.md › Comments). Every row fits its column: its words wrap, its meta
-/// and an over-long label truncate, and Show summary stays in reach (docs/design/thread.md ›
-/// Activity lines, Compactions).
+/// inside it. Every row fits its column: its words wrap, its meta
+/// and an over-long label truncate, and Show summary stays in reach.
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ThreadPreviewTests/designChat
 extension ThreadPreviewTests {

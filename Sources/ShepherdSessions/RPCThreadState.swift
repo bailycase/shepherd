@@ -2658,7 +2658,7 @@ final class RPCThreadState {
             // command said back, and the thread keeps it.
             recordNotify(request)
         case "setStatus" where request.statusKey == "shepherd.hook":
-            // A hook's status message while it runs: the thread's live line (docs/hooks.md).
+            // A hook's status message while it runs: the thread's live line.
             let text = request.statusText.map(Self.stripANSI)?.trimmingCharacters(in: .whitespacesAndNewlines)
             hookStatus = text.flatMap { $0.isEmpty ? nil : String($0.prefix(Self.hookStatusLimit)) }
         default:

@@ -1,6 +1,6 @@
 import Foundation
 
-/// One find-and-replace of a `board_edit` (docs/designs.md › The design agent).
+/// One find-and-replace of a `board_edit`.
 public struct DesignBoardEdit: Hashable, Sendable, Codable {
     /// The exact text to find, whitespace and line endings included. Never empty.
     public var find: String

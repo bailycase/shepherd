@@ -1,8 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-// A viewer's claim on one remote thread's browser (docs/browser.md › Remote › The agent drives the
-// page you see): when to claim it and when to let go, from what the Browser tab and the connection
+// A viewer's claim on one remote thread's browser: when to claim it and when to let go, from what the Browser tab and the connection
 // do. It is a value with no timers and no sockets, so the rules are tested with the clock handed in,
 // and the Mac app and the iPad share them: each asks it what to send, and tells it what came back.
 

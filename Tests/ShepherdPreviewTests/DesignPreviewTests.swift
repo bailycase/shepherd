@@ -547,7 +547,7 @@ struct DesignPreviewTests {
         }
     }
 
-    /// New thread from a design (docs/design/pages.md › New thread page): "@" lists this Mac's
+    /// New thread from a design: "@" lists this Mac's
     /// designs under the card as a thread's composer does, a design picked is a chip beside the
     /// prompt, a design alone is enough to send, and the picker says it is loading, or that it
     /// couldn't. Light and dark, at text scale 1 and 1.3, over the real model and real designs.

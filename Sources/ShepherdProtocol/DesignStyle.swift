@@ -1,7 +1,7 @@
 import Foundation
 
 /// An element's inline `style` as its board's source writes it: each declaration with where its
-/// value lies, so a tweak can rewrite one value in place (docs/designs.md › Tweak).
+/// value lies, so a tweak can rewrite one value in place.
 public struct DesignInlineStyle: Hashable, Sendable {
     public struct Declaration: Hashable, Sendable {
         /// The property, lower-cased (`padding`, `--accent`).
