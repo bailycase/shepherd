@@ -138,8 +138,9 @@ struct ThreadComposer: View {
                 }
                 if let matches = state.matches {
                     SHTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
+                                       title: matches.title,
                                        wide: wide) { chosen in
-                        store.draft = "/" + chosen.name + " "
+                        if let command = matches.commands.first(where: { $0.name == chosen.name }) { store.draft = matches.completion(command) }
                         focused = true
                     }
                     .shTransition(.content)

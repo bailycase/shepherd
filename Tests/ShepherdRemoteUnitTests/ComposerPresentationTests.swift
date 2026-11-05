@@ -93,17 +93,25 @@ struct ComposerPresentationTests {
         #expect(matches.total == 5)
     }
 
-    @Test(arguments: ["", "review", "/review now", "/re\nx", " /re"])
+    @Test(arguments: ["", "review", "/review now", "/re\nx", "see /tmp", "and/or", "costs 5$"])
     func onlyASlashWordStillBeingTypedOpensTheList(draft: String) {
         #expect(NativeSlashMatches(draft: draft, commands: commands) == nil)
+    }
+
+    @Test func aDollarListsSkillsAnywhereAndPickingOneLeadsTheDraft() throws {
+        let skills = [NativeCommand(name: "skill:debug", source: "skill"), NativeCommand(name: "review")]
+        let matches = try #require(NativeSlashMatches(draft: "fix the login bug $de", commands: skills))
+        #expect(matches.commands.map(\.name) == ["skill:debug"] && matches.total == 1)
+        #expect(matches.completion(skills[0]) == "/skill:debug fix the login bug ")
+        #expect(try #require(NativeSlashMatches(draft: "then /rev", commands: skills)).commands.map(\.name) == ["review"])
     }
 
     @Test func noCommandsMeansNoList() {
         #expect(NativeSlashMatches(draft: "/", commands: []) == nil)
     }
 
-    @Test func choosingACommandLeavesItsNameAndASpace() {
-        #expect(NativeSlashMatches.completion(commands[0]) == "/review ")
+    @Test func choosingACommandLeavesItsNameAndASpace() throws {
+        #expect(try #require(NativeSlashMatches(draft: "/", commands: commands)).completion(commands[0]) == "/review ")
         #expect(commands.map(NativeSlashMatches.tag) == [nil, nil, "prompt", "skill", nil])
     }
 
@@ -259,5 +267,29 @@ struct ComposerPresentationTests {
         // Only the asker's own "(Recommended)" marks one.
         #expect(options[2].recommended == false)
         #expect(options[2].title == "Deploy — recommended")
+    }
+}
+
+@Suite("Composer / and $ anywhere")
+struct ComposerCommandTokenTests {
+    @Test(arguments: [
+        ("/rev", "", "/", "rev"),
+        ("fix the bug /", "fix the bug ", "/", ""),
+        ("fix the bug $deb", "fix the bug ", "$", "deb"),
+    ])
+    func aSigilAtAWordStartIsAToken(draft: String, before: String, sigil: Character, text: String) throws {
+        let token = try #require(ComposerCommandToken.token(in: draft))
+        #expect(token.before == before && token.sigil == sigil && token.text == text)
+    }
+
+    @Test(arguments: ["and/or", "costs 5$", "/review now", "path /tmp/x y", "plain"])
+    func otherSlashesAndDollarsAreProse(draft: String) {
+        #expect(ComposerCommandToken.token(in: draft) == nil)
+    }
+
+    @Test func aCommandPickedMidDraftRunsWithTheWordsAsArguments() throws {
+        let token = try #require(ComposerCommandToken.token(in: "fix the login bug $deb"))
+        #expect(token.draft(running: "skill:debug", then: "") == "/skill:debug fix the login bug")
+        #expect(try #require(ComposerCommandToken.token(in: "/rev")).draft(running: "review", then: " ") == "/review ")
     }
 }

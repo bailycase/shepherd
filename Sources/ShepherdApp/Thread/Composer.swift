@@ -622,7 +622,8 @@ struct Composer: View {
         return ZStack(alignment: .bottomLeading) {
             if let query {
                 let slash = slash
-                SHSlashMenu(commands: slash.rows, total: menuCommands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
+                SHSlashMenu(commands: slash.rows, total: menuCommands.count, query: query,
+                            title: commandToken?.sigil == "$" ? "Skills" : "Commands", selection: $commandIndex, maxHeight: room) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
                 .shTransition(.overlay, anchor: .bottomLeading)
@@ -1449,31 +1450,6 @@ struct ComposerControlsMinimum: Layout {
 
     func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
                            cache: inout ()) -> CGFloat? { nil }
-}
-
-/// A "/" (pi's commands and prompts) or "$" (its skills) at the start of the draft or after
-/// whitespace, with no whitespace after it: the menu's trigger anywhere in a draft.
-struct ComposerCommandToken: Equatable {
-    /// The draft before the sigil.
-    var before: String
-    var sigil: Character
-    /// What follows the sigil.
-    var text: String
-
-    static func token(in draft: String) -> ComposerCommandToken? {
-        guard let at = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
-        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
-        let text = draft[draft.index(after: at)...]
-        guard !text.contains(where: \.isWhitespace) else { return nil }
-        return ComposerCommandToken(before: String(draft[..<at]), sigil: draft[at], text: String(text))
-    }
-
-    /// The draft running `name`: pi only runs a command that starts the message, so the command
-    /// moves to the front and the words typed before it become its arguments.
-    func draft(running name: String, then suffix: String) -> String {
-        let words = before.trimmingCharacters(in: .whitespacesAndNewlines)
-        return words.isEmpty ? "/" + name + suffix : "/" + name + " " + words + suffix
-    }
 }
 
 /// The slash menu's rows for the draft, derived once per draft and command list (a keystroke,
