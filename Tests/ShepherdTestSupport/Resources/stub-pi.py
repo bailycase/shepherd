@@ -321,6 +321,53 @@ if _history_bytes > 0:
     MESSAGES.append({"role": "assistant", "content": [{"type": "text", "text": "seeded reply"}], "stopReason": "stop"})
 
 
+# STUB_PI_STRESS="rows,rounds,deltas,ms" seeds `rows` realistic history turns (prose, a tool call
+# and its result, a code block) and, once serving, streams `rounds` markdown replies of `deltas`
+# chunks at `ms` intervals on its own, a second apart, for a profiling run (docs/audit).
+_stress = os.environ.get("STUB_PI_STRESS")
+if _stress:
+    _rows, _rounds, _deltas, _ms = (int(x) for x in _stress.split(","))
+    for i in range(_rows):
+        MESSAGES.append({"role": "user", "content": f"Seeded question {i}: why does the layout pass repeat?", "timestamp": 1733234567890 + i * 4})
+        MESSAGES.append({"role": "assistant", "stopReason": "toolUse", "timestamp": 1733234567891 + i * 4,
+                         "content": [{"type": "text", "text": f"Let me look at **step {i}** first."},
+                                     {"type": "toolCall", "id": f"stress_{i}", "name": "bash", "arguments": {"command": f"rg -n 'layout' Sources | head -{i % 7 + 1}"}}]})
+        MESSAGES.append({"role": "toolResult", "toolCallId": f"stress_{i}", "toolName": "bash", "timestamp": 1733234567892 + i * 4,
+                         "content": [{"type": "text", "text": "\n".join(f"Sources/File{j}.swift:{j * 13}: override func layout() {{ super.layout() }}" for j in range(i % 7 + 1))}], "isError": False})
+        MESSAGES.append({"role": "assistant", "stopReason": "stop", "timestamp": 1733234567893 + i * 4,
+                         "content": [{"type": "text", "text": f"Turn {i}: the pass repeats because the host's frame is set again.\n\n- `Host.layout()` runs per commit\n- the deck re-measures\n\n```swift\nlet frame = CGRect(origin: .zero, size: size{i})\nif host.frame != frame {{ host.frame = frame }}\n```\n\nThat is the lazy fix; the full one caches `sizeThatFits`."}]})
+
+
+def stress_stream():
+    words = ("The layout pass repeats because the host sets its frame on every commit, so **SwiftUI** "
+             "re-measures the `_FrameLayout` subtree. A row that reads `store.rows` directly is invalidated "
+             "per streamed chunk; the lazy fix keys its identity on the row id.\n\n").split(" ")
+    time.sleep(2)
+    for round_ in range(_rounds):
+        prompt = f"stress round {round_}"
+        MESSAGES.append({"role": "user", "content": prompt, "timestamp": now_ms()})
+        emit({"type": "agent_start"})
+        emit({"type": "turn_start"})
+        emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+        update({"type": "text_start", "contentIndex": 0})
+        text = f"## Round {round_}\n\n"
+        update({"type": "text_delta", "contentIndex": 0, "delta": text})
+        for i in range(_deltas):
+            piece = words[i % len(words)] + (" " if i % 40 != 39 else "\n\n- item\n\n```swift\nlet x = " + str(i) + "\n```\n\n")
+            text += piece
+            update({"type": "text_delta", "contentIndex": 0, "delta": piece})
+            time.sleep(_ms / 1000)
+        update({"type": "text_end", "contentIndex": 0, "content": text})
+        final = {"role": "assistant", "content": [{"type": "text", "text": text}], "stopReason": "stop", "timestamp": now_ms()}
+        MESSAGES.append(final)
+        STATE["messageCount"] = len(MESSAGES)
+        emit({"type": "message_end", "message": final})
+        emit({"type": "turn_end", "message": final, "toolResults": []})
+        emit({"type": "agent_end", "messages": [final], "willRetry": False})
+        emit({"type": "agent_settled"})
+        time.sleep(1)
+
+
 COMMANDS = [
     {"name": "session-name", "description": "Set or clear session name", "source": "extension"},
     {"name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "location": "project"},
@@ -1391,6 +1438,8 @@ def signed_in():
 
 
 record_launch()
+if _stress:
+    threading.Thread(target=stress_stream, daemon=True).start()
 if os.environ.get("STUB_PI_SPEAK"):
     threading.Thread(target=speak_at_start, daemon=True).start()
 startup()
