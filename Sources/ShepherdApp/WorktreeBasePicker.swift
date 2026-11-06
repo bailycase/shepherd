@@ -8,8 +8,9 @@ import ShepherdUI
 /// base picker (ChangesBase): search, then the default base, recents and every branch by last
 /// commit (`changesBaseOptions`, shared with the pane). Unlike a comparison, the checked-out
 /// branch is a valid start. Shown from the New thread page's workplace menu and the New Worktree
-/// sheet; a host's projects keep the base the host resolves. Its last row makes the picked branch
-/// the project's default base (`Space.worktreeBase`), or clears it.
+/// sheet; a host's projects keep the base the host resolves. Its last row, always shown, makes the
+/// picked branch the project's default base (`Space.worktreeBase`), or clears it. Turned on before
+/// a branch is picked, it pins the branch picked next.
 struct WorktreeBasePicker: View {
     let vm: ShepherdViewModel
     let space: SpaceID
@@ -24,6 +25,8 @@ struct WorktreeBasePicker: View {
     @State private var failure: String?
     @State private var query: String
     @FocusState private var searching: Bool
+    /// "Default for this project" is on: picking a branch also pins it.
+    @State private var pin: Bool
 
     init(vm: ShepherdViewModel, space: SpaceID, repo: String, selected: String?, query: String = "", choose: @escaping (String) -> Void,
          close: @escaping () -> Void, defaultChanged: @escaping (String?) -> Void = { _ in }) {
@@ -35,13 +38,25 @@ struct WorktreeBasePicker: View {
         self.close = close
         self.defaultChanged = defaultChanged
         _query = State(initialValue: query)
+        let projectBase = vm.state.spaces.first { $0.id == space }?.worktreeBase
+        _pin = State(initialValue: projectBase != nil && projectBase == selected)
+    }
+
+    private func pick(_ branch: String) {
+        if pin { setDefault(branch) }
+        choose(branch)
+    }
+
+    private func setDefault(_ base: String?) {
+        vm.setWorktreeBase(base, for: space)
+        defaultChanged(base)
     }
 
     var body: some View {
         let options = branches.map { changesBaseOptions($0, selected: selected ?? "", query: query, includeCurrent: true) } ?? []
         SHChangesMenu(width: SHChangesMenuMetrics.baseWidth) {
             SHChangesMenuSearch(text: $query, prompt: "Search branches", isFocused: $searching,
-                                onSubmit: { if let first = options.first { choose(first.name) } }, onEscape: close)
+                                onSubmit: { if let first = options.first { pick(first.name) } }, onEscape: close)
             SHChangesMenuTitle("Branch from")
             if branches != nil {
                 ScrollView {
@@ -49,7 +64,7 @@ struct WorktreeBasePicker: View {
                     LazyVStack(spacing: 0) {
                         ForEach(options) { option in
                             SHChangesMenuRow(option.name, systemImage: SHChangesScopeGlyph.branch.systemImage, titleIsMono: true,
-                                             trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { choose(option.name) }
+                                             trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { pick(option.name) }
                         }
                     }
                 }
@@ -66,17 +81,16 @@ struct WorktreeBasePicker: View {
                 .padding(.horizontal, SH.Space.m)
                 .frame(height: SHChangesMenuMetrics.rowHeight)
             }
-            if let selected {
-                let projectBase = vm.state.spaces.first { $0.id == space }?.worktreeBase
-                SHChangesMenuDivider()
-                SHChangesMenuToggle("Default for this project", subtitle: "New threads here start from this branch",
-                                    systemImage: SHGlyph.pin.symbolName, isOn: Binding(
-                    get: { projectBase == selected },
-                    set: { on in
-                        vm.setWorktreeBase(on ? selected : nil, for: space)
-                        defaultChanged(on ? selected : nil)
-                    }))
-            }
+            SHChangesMenuDivider()
+            SHChangesMenuToggle("Default for this project",
+                                subtitle: selected == nil ? "The branch you pick becomes the default" : "New threads here start from this branch",
+                                systemImage: SHGlyph.pin.symbolName, isOn: Binding(
+                get: { pin },
+                set: { on in
+                    pin = on
+                    if on, let selected { setDefault(selected) }
+                    if !on, vm.state.spaces.first(where: { $0.id == space })?.worktreeBase != nil { setDefault(nil) }
+                }))
         }
         .task {
             do { branches = try await vm.server.changes.branches(agentID: nil, cwd: (repo as NSString).expandingTildeInPath) }
