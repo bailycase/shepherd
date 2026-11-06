@@ -44,7 +44,7 @@ struct ThreadClipNoticeTests {
         #expect(store.snapshot?.clipped == false && store.snapshot?.clips == nil)
     }
 
-    @Test func aTurnsHiddenOutputIsSaidWhileItRunsAndStopsWhenItEnds() async throws {
+    @Test func aLongRunKeepsItsEndedOutputShownWhileItRuns() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, agents) = try await MountedWorkspace.open(1, in: app)
@@ -54,10 +54,11 @@ struct ThreadClipNoticeTests {
         let calls = RPCThreadState.pageSize + 6
         for call in 1..<calls { FileManager.default.createFile(atPath: app.dir.appendingPathComponent("tool-\(call)").path, contents: nil) }
         await store.send(text: "tools:\(calls) a long run")
-        try await eventuallyOnMain("the run to hide its oldest output", timeout: .seconds(60)) {
-            store.running && store.clipNotice?.lines == [NativeClipNotice.live]
+        // Its oldest calls ended, so they show as history while the last one still waits.
+        try await eventuallyOnMain("the run's oldest output to land in history", timeout: .seconds(60)) {
+            store.running && store.clipNotice == nil && store.messages.contains { $0.toolCallID != nil && !$0.entryID.hasPrefix("provisional:") }
+                && store.messages.count(where: { $0.toolCallID != nil }) >= calls - 1
         }
-        #expect(store.snapshot?.clips?.live ?? 0 > 0 && store.snapshot?.clipped == true)
 
         FileManager.default.createFile(atPath: app.dir.appendingPathComponent("tool-\(calls)").path, contents: nil)
         try await eventuallyOnMain("the turn to end", timeout: .seconds(60)) { !store.running && store.messages.last?.role == "assistant" }

@@ -1027,6 +1027,23 @@ struct ThreadEventTests {
         #expect(landed.revision > clipped.revision, "clients see the notice go")
     }
 
+    /// A long run's ended rows are in pi's history, so dropping one fetches it mid-turn rather than
+    /// hiding the row until the turn ends.
+    @Test func endedRowsALongRunDropsFoldIntoHistoryWhileItRuns() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        for i in 0..<(RPCThreadState.pageSize + 5) {
+            try await t.feed(
+                #"{"type":"tool_execution_start","toolCallId":"call_\#(i)","toolName":"bash"}"#,
+                #"{"type":"tool_execution_end","toolCallId":"call_\#(i)","toolName":"bash","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}"#)
+        }
+        try await eventually("the dropped rows to fold into history") {
+            let s = try await t.snapshot()
+            return s.clips == nil && !s.clipped && s.provisional.count < RPCThreadState.pageSize
+        }
+    }
+
     /// Active output is bounded before history fills the rest of the snapshot budget.
     @Test func largeProvisionalOutputIsClippedToTheActiveBudget() async throws {
         let t = try Thread()
