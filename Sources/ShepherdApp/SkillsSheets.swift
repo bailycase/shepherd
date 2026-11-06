@@ -17,6 +17,8 @@ import ShepherdRemote
 struct SkillsDirectorySheet: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
+    /// skills.sh's API; previews hand in one that answers from fixtures.
+    var directory = SkillsDirectory()
     /// Opens Add from repo on a repository (the preview's "Pick from all").
     let openRepo: (String) -> Void
     let close: () -> Void
@@ -36,7 +38,6 @@ struct SkillsDirectorySheet: View {
     enum Sort: String, CaseIterable { case installs, name }
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
-    private let directory = SkillsDirectory()
     private var listKey: String { "\(query)|\(ranking.rawValue)|\(topic ?? "")" }
 
     var body: some View {
