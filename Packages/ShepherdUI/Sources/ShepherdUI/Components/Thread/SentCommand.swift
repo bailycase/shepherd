@@ -113,3 +113,25 @@ public struct SHSentCommand: View {
             .foregroundStyle(Color.sh.textTertiary)
     }
 }
+
+/// A goal the user set, drawn as their sent message (the SentCommandsA pattern): a "Set goal" line
+/// leading the bubble, the condition as its words. Right-aligned at the bubble's measure, so a long
+/// goal wraps instead of spreading across the column.
+public struct SHSentGoal: View {
+    let text: String
+
+    public init(_ text: String) { self.text = text }
+
+    public var body: some View {
+        let sh = Color.sh
+        SHUserBubble(text) {
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "target")
+                    .font(.sh(.caption, weight: .medium))
+                    .foregroundStyle(sh.textTertiary)
+                    .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
+                Text("Set goal").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+            }
+        }
+    }
+}

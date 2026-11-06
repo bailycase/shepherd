@@ -46,5 +46,13 @@ struct GoalRecordTests {
         #expect(record.line == text)
         #expect(record.evidence == nil)
         #expect(!record.isClosing)
+        #expect(record.submitted == "Print the exact marker\n\nEvidence:\nthen stop.")
+    }
+
+    @Test func onlyASetRecordIsTheUsersSubmittedGoal() {
+        #expect(NativeGoalRecord("Goal set\n  Ship the release notes \n").submitted == "Ship the release notes")
+        #expect(NativeGoalRecord("Goal set\n").submitted == nil)
+        #expect(NativeGoalRecord("Goal check: working. Run tests.").submitted == nil)
+        #expect(NativeGoalRecord("Goal met · tests passed").submitted == nil)
     }
 }
