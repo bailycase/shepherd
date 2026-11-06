@@ -6,8 +6,12 @@ public struct NativeGoalRecord: Equatable, Sendable {
     public let evidence: String?
     public let isClosing: Bool
     public let showsDetails: Bool
+    /// The condition the user set, when this record is "Goal set": drawn as their sent message, not a divider.
+    public let submitted: String?
 
     public init(_ text: String) {
+        let body = text.hasPrefix("Goal set\n") ? text.dropFirst("Goal set\n".count).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        submitted = body.isEmpty ? nil : body
         isClosing = text.hasPrefix("Goal met")
         let split = ["Details", "Evidence"].compactMap { label in
             text.range(of: "\n\n\(label):\n").map { (label: label, range: $0) }

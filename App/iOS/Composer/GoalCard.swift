@@ -89,6 +89,11 @@ struct GoalRecordLine: View {
     init(text: String) { record = NativeGoalRecord(text) }
 
     var body: some View {
+        // The goal the user set reads as their sent message; checks and outcomes stay quiet dividers.
+        if let submitted = record.submitted { SHSentGoal(submitted) } else { divider }
+    }
+
+    private var divider: some View {
         VStack(spacing: SH.Space.s) {
             HStack(spacing: SH.Space.m) {
                 SHHairline().frame(minWidth: SH.Space.l)

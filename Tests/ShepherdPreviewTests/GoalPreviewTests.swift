@@ -145,6 +145,25 @@ struct GoalPreviewTests {
         }
     }
 
+    /// Issue #447: a set goal reads as the user's sent message, short and long, at narrow and normal widths.
+    @Test(arguments: [CGFloat(420), 860])
+    func aSetGoalIsTheUsersSentMessage(_ width: CGFloat) async throws {
+        let goals = ["Tests pass", "Every settings page renders in light and dark, the changelog names the migration, and the release build passes "
+                     + "on a clean checkout without warnings, with screenshots attached for review."]
+        let messages = goals.enumerated().map { index, goal in
+            RPCThreadState.project(entryID: "set-\(index)", message: RPCMessage(
+                role: "custom", content: [.text("Goal set\n" + goal)], customType: "shepherd.goal.set", display: true))
+        }
+        let presentation = nativeTurnPresentation(messages, live: false)
+        #expect(presentation.items.count == goals.count, "one item per set goal, never doubled")
+        try await Preview.renderMatrix("goal-sent-\(Int(width))", size: CGSize(width: width, height: 480)) {
+            AgentTurn(presentation: presentation, live: false, footer: false)
+                .padding(SH.Space.xl)
+                .frame(width: width, height: 480, alignment: .top)
+                .background(Color.sh.bgWindow)
+        }
+    }
+
     @Test(arguments: [SHGoalSize.desktop, .touch])
     func aLongConditionHasPaddingAndGrowsAtTextScaleOnePointFive(_ size: SHGoalSize) async throws {
         let goal = try #require(Self.runtime().goals.first)
