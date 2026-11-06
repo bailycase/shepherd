@@ -418,6 +418,8 @@ final class RPCThreadState {
     /// Rows of the running turn's output `trimLive` dropped since history was last read: the snapshot
     /// says so (`clips.live`), and the finished turn's history brings them back.
     private(set) var liveLeftOut = 0
+    /// A `foldLive` fetch is in flight.
+    private var liveFoldPending = false
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
     /// That error's message, when pi gave one.
@@ -2203,11 +2205,22 @@ final class RPCThreadState {
     func trimLive() {
         func trim(_ matches: (LiveItem.Kind) -> Bool) {
             guard live.count(where: { matches($0.kind) }) > Self.pageSize, let first = live.firstIndex(where: { matches($0.kind) }) else { return }
-            live.remove(at: first)
+            let dropped = live.remove(at: first)
             liveLeftOut += 1
+            if Self.persisted(dropped) { foldLive() }
         }
         trim { if case .assistant = $0 { true } else { false } }
         trim { if case .tool = $0 { true } else { false } }
+    }
+
+    /// A long run outgrew what a snapshot carries live. Its ended rows are in pi's history already,
+    /// so fetch it: they show as history now instead of hiding until the turn ends. One fetch at a
+    /// time; it moves every ended row out of `live`, so the next is due only when the run outgrows
+    /// the snapshot again.
+    private func foldLive() {
+        guard !liveFoldPending, !historyPending else { return }
+        liveFoldPending = true
+        refreshMessages { [weak self] _ in self?.liveFoldPending = false }
     }
 
     private func upsertAssistant(_ raw: RPCMessage, ended: Bool, thinking: [Int: String] = [:]) {
@@ -2840,6 +2853,8 @@ final class RPCThreadState {
             base, baseBytes: baseBytes, active: active, dialogs: sizedDialogs,
             historyEnd: end, history: { self.historyEntry($0) }
         )
+        // The budget left ended rows out: fold them into history (`foldLive`).
+        if beforeEntryID == nil, (budgeted.snapshot.clips?.live ?? 0) > liveLeftOut, live.contains(where: Self.persisted) { foldLive() }
         #if DEBUG
         encodesByLastSnapshot = encodesSinceSnapshot
         bytesEncodedByLastSnapshot = bytesEncodedSinceSnapshot
