@@ -636,6 +636,9 @@ public final class SessionServer: @unchecked Sendable {
     lazy var pushNotifications = PushNotifications(
         file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
+    /// Recovery checkpoints gate a thread's published output (`RPCThreadState.commit`), so they
+    /// never wait behind project file reads or state staging on `logicalProjectFiles` (#449).
+    let recoveryFiles = DispatchQueue(label: "shepherd.recovery-files", qos: .userInitiated)
     var stateWriteQueue: [() -> Void] = []
     var pendingMetadata: [MetadataMutation] = []
     var failureIntents: [AgentID: (value: String?, token: UUID)] = [:]
@@ -8597,7 +8600,12 @@ public final class SessionServer: @unchecked Sendable {
             thread.recoveryWritePending = false
             if saved { thread.recoveryWriteAttempts = 0; thread.commit() }
             else if thread.recoveryWriteAttempts < 8, thread.recoveryCheckpoint(sessionID: candidate?.sessionID ?? "") != candidate { thread.commit() }
-            else { thread.recoveryWriteAttempts = 0 }
+            else {
+                thread.recoveryWriteAttempts = 0
+                // The commit this stage held back has no other follow-up: until pi's next event
+                // (or Stop) the thread would keep showing old output. Write synchronously instead (#449).
+                if self.sessions[sessionID]?.thread === thread, self.checkpointAgentRecovery(sessionID: sessionID, thread: thread) { thread.commit() }
+            }
         }
         return false
     }
@@ -8626,7 +8634,7 @@ public final class SessionServer: @unchecked Sendable {
             recoveryWritesInFlight += 1
             recoveryWriteBytes += bytes
             let version = agentRecovery.revision(for: id), url = agentRecovery.file(for: id)
-            logicalProjectFiles.async {
+            recoveryFiles.async {
                 let phase = Self.storageSignposter.beginInterval("Recovery staging", id: Self.storageSignposter.makeSignpostID())
                 let result = Result {
                     if cancellation?.isCancelled == true { throw CancellationError() }

@@ -127,6 +127,9 @@ final class RPCThreadState {
     private var openingPrompt: OpeningPrompt?
     /// The opening prompt pi never read (it stopped before the thread served).
     var unreadOpeningPrompt: OpeningPrompt? { openingPrompt }
+    /// The opening prompt while its recovery checkpoint stages, before `dispatch` adds its row:
+    /// the first snapshot still shows it (#449).
+    private var stagingOpening: OpeningPrompt?
     /// Requests get a snapshot rather than `native_starting`.
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
@@ -1657,6 +1660,7 @@ final class RPCThreadState {
         bootstrapTimeout = nil
         if let opening = openingPrompt {
             openingPrompt = nil
+            stagingOpening = opening
             deliverOpeningPrompt(opening.text, images: opening.images, id: opening.id)
         }
         onServable?()
@@ -1682,7 +1686,8 @@ final class RPCThreadState {
         }
         pushRunArmed = true
         pushAwaitingStart = !running
-        send(id: id, text: text, delivery: .followUp, images: images) { result in
+        send(id: id, text: text, delivery: .followUp, images: images) { [weak self] result in
+            if let self, self.stagingOpening?.id == id { self.stagingOpening = nil }
             guard case .failure(let code, let message) = result else { return }
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")
         }
@@ -2045,6 +2050,7 @@ final class RPCThreadState {
     /// session may be acted on with the old generation.
     private func resetForNewSession() {
         cancelRecovery()
+        stagingOpening = nil
         historyPending = true
         generation = UUID().uuidString
         diagnosticTimings.removeAll(keepingCapacity: true)
@@ -2757,6 +2763,7 @@ final class RPCThreadState {
         hasher.combine(serviceTiers)
         hasher.combine(piSessionID)
         hasher.combine(openingPrompt?.id)
+        hasher.combine(stagingOpening?.id)
         hasher.combine(stats)
         hasher.combine(context)
         hasher.combine(commandsHash)
@@ -2846,6 +2853,9 @@ final class RPCThreadState {
         let sizedDialogs = zip(dialogs, dialogSizes()).map { Sized(value: $0, bytes: $1) }
         var active = activeEntries()
         if initializing, let opening = openingPrompt {
+            let row = NativeThreadMessage.pendingSend(operationID: opening.id, text: opening.text, images: opening.images.count, timestamp: opening.at)
+            active.insert(Sized(value: row, bytes: Self.bytes(row)), at: 0)
+        } else if let opening = stagingOpening, !active.contains(where: { $0.value.operationID == opening.id }) {
             let row = NativeThreadMessage.pendingSend(operationID: opening.id, text: opening.text, images: opening.images.count, timestamp: opening.at)
             active.insert(Sized(value: row, bytes: Self.bytes(row)), at: 0)
         }

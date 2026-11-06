@@ -33,7 +33,7 @@ struct RecoveryStagingTests {
         _ = try await other.ready()
         try await eventually("initial recovery save settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
         let gate = DispatchSemaphore(value: 0)
-        h.server.logicalProjectFiles.async { gate.wait() }
+        h.server.recoveryFiles.async { gate.wait() }
         defer { gate.signal() }
         let replied = Locked(false)
         let id = UUID(), payload = images(bytes)
@@ -64,7 +64,7 @@ struct RecoveryStagingTests {
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
         let gate = DispatchSemaphore(value: 0)
-        h.server.logicalProjectFiles.async { gate.wait() }
+        h.server.recoveryFiles.async { gate.wait() }
         defer { gate.signal() }
         let first = Task { try await pi.send("slow", images: images(1 << 20), from: ready) }
         try await eventually("first candidate held") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 1 } }
@@ -106,7 +106,7 @@ struct RecoveryStagingTests {
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
         let gate = DispatchSemaphore(value: 0)
-        h.server.logicalProjectFiles.async { gate.wait() }
+        h.server.recoveryFiles.async { gate.wait() }
         defer { gate.signal() }
         let limit = min(8, (32 << 20) / (bytes + "held 0".utf8.count))
         let requests = (0..<limit).map { index in Task { try await pi.send("held \(index)", images: images(bytes), from: ready) } }
@@ -118,6 +118,49 @@ struct RecoveryStagingTests {
         gate.signal()
         try await eventually("all reservations released") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 && h.server.recoveryWriteBytes == 0 } }
         #expect(pi.stdin("prompt").isEmpty)
+    }
+
+    /// #449: a recovery stage that cannot be admitted (every write slot busy) must not withhold a
+    /// running turn's streamed text until Stop or pi's next event.
+    @Test func aRefusedRecoveryStageStillPublishesStreamedText() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("slow", from: try await pi.ready())
+        _ = try await pi.snapshot("first deltas") { s in
+            s.provisional.contains { $0.role == "assistant" && $0.blocks.contains { $0.text.hasPrefix("Hello line") } }
+        }
+        try await eventually("turn checkpoint settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        try await h.server.enqueue {
+            h.server.recoveryWritesInFlight += 8
+            // The checkpoint changes while no write can be admitted.
+            try #require(h.server.rpcThread(forAgent: pi.agent.id)).recoveryAttempts += 1
+        }
+        pi.release(1)
+        _ = try await pi.snapshot("the rest of the reply", timeout: .seconds(5)) { s in
+            s.provisional.contains { $0.role == "assistant" && $0.blocks.contains { $0.text.hasSuffix("sep world") } }
+        }
+        try await h.server.enqueue { h.server.recoveryWritesInFlight -= 8 }
+        let saved = try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id)
+        #expect(saved?.attempts == 1)
+        pi.release(2)
+    }
+
+    /// #449: slow project file work must not hold back a turn's streamed text behind its checkpoint.
+    @Test func busyProjectFileWorkDoesNotWithholdStreamedText() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
+        let gate = DispatchSemaphore(value: 0)
+        h.server.logicalProjectFiles.async { gate.wait() }
+        defer { gate.signal() }
+        _ = try await pi.send("slow", from: ready)
+        _ = try await pi.snapshot("streamed text while project files are busy", timeout: .seconds(5)) { s in
+            s.running && s.provisional.contains { $0.role == "assistant" && $0.blocks.contains { $0.text.hasPrefix("Hello line") } }
+        }
+        gate.signal()
+        pi.release(1)
+        pi.release(2)
     }
 
     @Test func imageBytesCountAgainstTheWholeQueueBudget() async throws {
@@ -265,7 +308,7 @@ struct RecoveryStagingTests {
                 }
             }
         }
-        h.server.logicalProjectFiles.async { fileGate.wait() }
+        h.server.recoveryFiles.async { fileGate.wait() }
         let action = Task {
             let result = try await pi.queue(.unsteer(id: first), from: running)
             replies.withValue { $0.append(result) }
@@ -355,7 +398,7 @@ struct RecoveryStagingTests {
         #expect(try await pi.send("boundary image", images: payload, operationID: id, from: running).wasAccepted)
         try await eventually("queued checkpoint settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
         let gate = DispatchSemaphore(value: 0), done = Locked(0), captures = Locked(0)
-        h.server.logicalProjectFiles.async { gate.wait() }
+        h.server.recoveryFiles.async { gate.wait() }
         defer { gate.signal() }
         try await h.server.enqueue {
             let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
@@ -409,7 +452,7 @@ struct RecoveryStagingTests {
         try await eventually("queued checkpoint settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
         let first = DispatchSemaphore(value: 0), second = DispatchSemaphore(value: 0)
         defer { first.signal(); second.signal() }
-        h.server.logicalProjectFiles.async { first.wait() }
+        h.server.recoveryFiles.async { first.wait() }
         let old = Locked(0), newer = Locked(0)
         try await h.server.enqueue {
             h.server.rpcThread(forAgent: pi.agent.id)?.deliverAtBoundary(expiresAt: Date().timeIntervalSince1970 * 1000 + 2_000) {
@@ -417,7 +460,7 @@ struct RecoveryStagingTests {
             }
         }
         try await eventually("old boundary expires while staged", timeout: .seconds(5)) { old.current == 1 }
-        h.server.logicalProjectFiles.async { second.wait() }
+        h.server.recoveryFiles.async { second.wait() }
         try await h.server.enqueue {
             let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
             thread.paused = false
@@ -437,7 +480,7 @@ struct RecoveryStagingTests {
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h), ready = try await pi.ready()
         let gate = DispatchSemaphore(value: 0)
-        h.server.logicalProjectFiles.async { gate.wait() }
+        h.server.recoveryFiles.async { gate.wait() }
         defer { gate.signal() }
         let request: NativeThreadRequest = .send(expectedSessionID: ready.piSessionID, generation: ready.generation,
             operationID: UUID(), text: "must never reach pi", delivery: .followUp, images: images(1 << 20))
@@ -472,7 +515,7 @@ struct RecoveryStagingTests {
         let ready = try await pi.ready()
         try await eventually("initial recovery jobs settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
         let gate = DispatchSemaphore(value: 0)
-        h.server.logicalProjectFiles.async { gate.wait() }
+        h.server.recoveryFiles.async { gate.wait() }
         defer { gate.signal() }
         let authorized = Locked(true), replies = Locked<[NativeThreadResult]>([]), id = UUID()
         let request: NativeThreadRequest = .send(expectedSessionID: ready.piSessionID, generation: ready.generation,
