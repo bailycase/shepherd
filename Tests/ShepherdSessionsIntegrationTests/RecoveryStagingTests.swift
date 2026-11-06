@@ -120,6 +120,32 @@ struct RecoveryStagingTests {
         #expect(pi.stdin("prompt").isEmpty)
     }
 
+    /// #449: a recovery stage that cannot be admitted (every write slot busy) must not withhold a
+    /// running turn's streamed text until Stop or pi's next event.
+    @Test func aRefusedRecoveryStageStillPublishesStreamedText() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("slow", from: try await pi.ready())
+        _ = try await pi.snapshot("first deltas") { s in
+            s.provisional.contains { $0.role == "assistant" && $0.blocks.contains { $0.text.hasPrefix("Hello line") } }
+        }
+        try await eventually("turn checkpoint settled") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        try await h.server.enqueue {
+            h.server.recoveryWritesInFlight += 8
+            // The checkpoint changes while no write can be admitted.
+            try #require(h.server.rpcThread(forAgent: pi.agent.id)).recoveryAttempts += 1
+        }
+        pi.release(1)
+        _ = try await pi.snapshot("the rest of the reply", timeout: .seconds(5)) { s in
+            s.provisional.contains { $0.role == "assistant" && $0.blocks.contains { $0.text.hasSuffix("sep world") } }
+        }
+        try await h.server.enqueue { h.server.recoveryWritesInFlight -= 8 }
+        let saved = try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id)
+        #expect(saved?.attempts == 1)
+        pi.release(2)
+    }
+
     @Test func imageBytesCountAgainstTheWholeQueueBudget() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

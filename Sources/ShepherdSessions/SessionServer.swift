@@ -8597,7 +8597,12 @@ public final class SessionServer: @unchecked Sendable {
             thread.recoveryWritePending = false
             if saved { thread.recoveryWriteAttempts = 0; thread.commit() }
             else if thread.recoveryWriteAttempts < 8, thread.recoveryCheckpoint(sessionID: candidate?.sessionID ?? "") != candidate { thread.commit() }
-            else { thread.recoveryWriteAttempts = 0 }
+            else {
+                thread.recoveryWriteAttempts = 0
+                // The commit this stage held back has no other follow-up: until pi's next event
+                // (or Stop) the thread would keep showing old output. Write synchronously instead (#449).
+                if self.sessions[sessionID]?.thread === thread, self.checkpointAgentRecovery(sessionID: sessionID, thread: thread) { thread.commit() }
+            }
         }
         return false
     }
