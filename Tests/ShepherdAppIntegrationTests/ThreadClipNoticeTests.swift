@@ -29,7 +29,7 @@ struct ThreadClipNoticeTests {
         #expect(store.messages.count > 20 && store.clipNotice == nil)
     }
 
-    @Test func aLongReplyIsMarkedOnItsRowAndRaisesNoBanner() async throws {
+    @Test func aLongReplyShowsWholeAndRaisesNoBanner() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, agents) = try await MountedWorkspace.open(1, in: app)
@@ -38,9 +38,11 @@ struct ThreadClipNoticeTests {
         FileManager.default.createFile(atPath: app.dir.appendingPathComponent("tool-1").path, contents: nil)
         await store.send(text: "tools:1 a long answer long:300")
         try await eventuallyOnMain("the long reply", timeout: .seconds(30)) {
-            !store.running && store.messages.contains { $0.role == "assistant" && $0.truncated }
+            !store.running && store.messages.contains { $0.role == "assistant" && $0.blocks.contains { $0.text.contains("Paragraph 299") } }
         }
-        #expect(store.clipNotice == nil, "the row says its own text was shortened; the thread has nothing missing")
+        // Conversation text is never shortened (#396), so the row is whole and the thread says nothing.
+        #expect(!store.messages.contains { $0.role == "assistant" && $0.truncated })
+        #expect(store.clipNotice == nil)
         #expect(store.snapshot?.clipped == false && store.snapshot?.clips == nil)
     }
 
