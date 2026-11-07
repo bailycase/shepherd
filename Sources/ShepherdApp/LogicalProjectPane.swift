@@ -256,6 +256,7 @@ struct ProjectTaskDetail: View {
                 }
                 Menu {
                     Button("Open as a thread") { vm.openProjectWorkerThread(ref, task: task.id) }
+                    if task.group != .resolved { Button("Run on another host…") { vm.beginRunningElsewhere(ref, task: task.id) } }
                     if task.canResolve { Button("Mark resolved") { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } }
                 } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                     .menuStyle(.button)
