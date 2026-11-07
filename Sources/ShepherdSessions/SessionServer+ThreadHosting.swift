@@ -93,6 +93,10 @@ extension SessionServer {
         onNativeThreadDemand = { [weak self] agentID in
             Task { @MainActor in await self?.startThreadPi(agentID, hosting: hosting) }
         }
+        serveDesigns(DesignHosting(startAgent: { [weak self] design, brief in
+            guard let self else { throw RemoteCreateAgentError("host is shutting down") }
+            return try await self.startDesignAgent(design, brief: brief, hosting: hosting)
+        }))
     }
 
     /// Starts a thread's pi with the host's launch settings; a failure is logged.

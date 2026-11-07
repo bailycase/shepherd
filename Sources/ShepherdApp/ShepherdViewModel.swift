@@ -162,7 +162,10 @@ final class ShepherdViewModel {
     /// Designs on screen: only their revisions are pushed (`SessionServer.onDesignRevision`).
     @ObservationIgnored var visibleDesigns: Set<DesignID> = []
     /// Designs whose agent is being started, so a second open waits for it.
-    @ObservationIgnored var startingDesignAgents: Set<DesignID> = []
+    var startingDesignAgents: Set<DesignID> {
+        get { server.startingDesignAgents }
+        set { server.startingDesignAgents = newValue }
+    }
     /// Each remote design's canvas, kept for the app's run like a local one's.
     @ObservationIgnored var remoteDesignScreens: [RemoteDesignRef: DesignScreenModel] = [:]
     /// Each remote host's renderers, made when one of its designs is first drawn.
@@ -182,7 +185,10 @@ final class ShepherdViewModel {
     @ObservationIgnored var lastDesignSystem: DesignSystemTarget?
     @ObservationIgnored var designSystemPageCache: [DesignSystemTarget: (inputs: DesignSystemPageInputs, model: DesignSystemPageModel)] = [:]
     /// Projects whose system build is being started, so a second click waits for it.
-    @ObservationIgnored var startingSystemBuilds: Set<SpaceID> = []
+    var startingSystemBuilds: Set<SpaceID> {
+        get { server.startingSystemBuilds }
+        set { server.startingSystemBuilds = newValue }
+    }
     /// Draws every design's boards (`DesignHost.swift`), once a design or the Designs page is
     /// first shown.
     var designRendering: DesignRendering {
@@ -1064,62 +1070,15 @@ final class ShepherdViewModel {
                 }
             }
         }
-        // Another device's New design, made here as this Mac's own is (the host's Design tool on).
-        server.onRemoteCreateDesign = { [weak self] request, completion in
-            guard let self else {
-                completion(.failure(RemoteCreateAgentError("host is shutting down")))
-                return
-            }
-            Task { @MainActor in
-                do {
-                    completion(.success(try await self.createRemoteDesign(request)))
-                } catch {
-                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
-                }
-            }
-        }
-        // Another device opens a design with no agent here: one starts as this Mac's Open starts it.
-        server.onRemoteEnsureDesignAgent = { [weak self] id, completion in
-            guard let self else {
-                completion(.failure(RemoteCreateAgentError("host is shutting down")))
-                return
-            }
-            Task { @MainActor in
-                do {
-                    completion(.success(try await self.ensureRemoteDesignAgent(id)))
-                } catch {
-                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
-                }
-            }
-        }
-        // Another device's uploaded Claude Design ZIP, imported here as this Mac's own.
-        server.onRemoteImportDesign = { [weak self] url, completion in
-            guard let self else {
-                completion(.failure(RemoteDesignImportFailure("import_failed", "host is shutting down")))
-                return
-            }
-            Task { @MainActor in
-                do {
-                    completion(.success(try await self.importRemoteDesign(from: url)))
-                } catch {
-                    completion(.failure(error as? RemoteDesignImportFailure ?? RemoteDesignImportFailure("import_failed", "\(error)")))
-                }
-            }
-        }
-        // Another device's "Build one from a repo" in one of this Mac's spaces.
-        server.onRemoteBuildDesignSystem = { [weak self] spaceID, completion in
-            guard let self else {
-                completion(.failure(RemoteCreateAgentError("host is shutting down")))
-                return
-            }
-            Task { @MainActor in
-                do {
-                    completion(.success(try await self.buildRemoteDesignSystem(spaceID)))
-                } catch {
-                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
-                }
-            }
-        }
+        // Another device's New design, Open, Import and Build, made here as this Mac's own are.
+        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief in
+            guard let self else { throw RemoteCreateAgentError("host is shutting down") }
+            return try await self.startDesignAgent(design, brief: brief, images: [], select: false)
+        }, changed: { [weak self] in
+            guard let self else { return }
+            self.adopt(self.server.state)
+            await self.loadDesignSystems()
+        }))
         // Adopt the persisted workspace without waiting for a pane to render
         // (an empty sidebar can never render one).
         sessions.warmUp()

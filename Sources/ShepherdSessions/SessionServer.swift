@@ -671,6 +671,9 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var startingAutomationRuns = Set<AutomationID>()
     /// Main actor: terminal panes whose shell `startTerminal` is starting now.
     @MainActor var startingTerminals = Set<PaneID>()
+    /// Designs whose agent is starting, and spaces whose system build is, by this Mac or for a client.
+    @MainActor public var startingDesignAgents = Set<DesignID>()
+    @MainActor public var startingSystemBuilds = Set<SpaceID>()
     @MainActor var cancelledAutomationRuns = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
@@ -5344,7 +5347,12 @@ public final class SessionServer: @unchecked Sendable {
         // A viewer that shows the agent's page owns it: the request runs there, not on the host's own.
         if routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client) { return }
         guard let handler = onBrowserRequest else {
-            reply(.error(id: requestID, code: "unavailable", message: "The browser is unavailable here."), to: client)
+            // The background host has no page of its own: the app's window, connected over
+            // `host.sock`, runs it as it would in process.
+            if let app = localBrowserClient(),
+               routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client, ownerFD: app.fd) { return }
+            reply(.error(id: requestID, code: "unavailable",
+                         message: "The browser needs Shepherd's window, and it is closed. Open Shepherd and call the tool again."), to: client)
             return
         }
         nextBrowserToken += 1
@@ -5430,8 +5438,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Hands a request to the viewer that owns the agent's browser. False when none does, and the
     /// host's own page answers. The agent's 120 s deadline holds: a viewer that does not answer in
     /// time ends the request, loses the browser, and is told.
-    private func routeBrowserRequestToOwner(_ request: BrowserRequest, agentID: AgentID, requestID: Int, client: ExtensionConnection) -> Bool {
-        guard let ownerFD = browserOwners.owner(of: agentID) else { return false }
+    private func routeBrowserRequestToOwner(_ request: BrowserRequest, agentID: AgentID, requestID: Int, client: ExtensionConnection,
+                                            ownerFD fallback: Int32? = nil) -> Bool {
+        guard let ownerFD = browserOwners.owner(of: agentID) ?? fallback else { return false }
         guard browserDriveOffered, let owner = clients[ownerFD], owner.authenticated,
               owner.clientCapabilities.contains(RemoteProtocol.browserDriveCapability) else {
             browserOwners.drop(agent: agentID)
@@ -5486,10 +5495,17 @@ public final class SessionServer: @unchecked Sendable {
         failDriveRequests(ownerFD: client.fd)
     }
 
-    /// Tells the viewer that owns `agentID`'s browser, if there is one.
+    /// The app over `host.sock`, when it runs browser requests (it lists the drive capability).
+    private func localBrowserClient() -> ExtensionConnection? {
+        clients.values.first { $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.browserDriveCapability) }
+    }
+
+    /// Tells the viewer that owns `agentID`'s browser, or the app that runs it for a host with no
+    /// page of its own, if there is one.
     private func pushToBrowserOwner(_ agentID: AgentID, _ push: BrowserDrivePush) {
         queue.async { [self] in
-            guard let ownerFD = browserOwners.owner(of: agentID), let owner = clients[ownerFD] else { return }
+            let fallback = onBrowserRequest == nil ? localBrowserClient()?.fd : nil
+            guard let ownerFD = browserOwners.owner(of: agentID) ?? fallback, let owner = clients[ownerFD] else { return }
             send(.browserDrive(push), to: owner)
         }
     }

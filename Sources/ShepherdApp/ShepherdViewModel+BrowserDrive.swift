@@ -26,14 +26,18 @@ extension ShepherdViewModel {
         let ref = RemoteAgentRef(hostID: hostID, agentID: push.agentID)
         switch push {
         case .request(let token, _, let request):
-            // Only the page this Mac claimed on this connection runs what the host sends.
-            guard let session = browsers.existing(ref), let remote = session.remote, remote.drives(for: client) else {
+            // Only the page this Mac claimed on this connection runs what the host sends, or any
+            // page of the background host on this Mac, which has none of its own: its agents are
+            // this Mac's, so the page acts for them as it does in process.
+            let thisMac = remoteHosts.connections.first { $0.id == hostID }?.isThisMac == true
+            let claimed = browsers.existing(ref).flatMap { session in session.remote?.drives(for: client) == true ? session : nil }
+            guard let session = claimed ?? (thisMac ? browsers.session(for: ref, hosts: remoteHosts) : nil), let remote = session.remote else {
                 client.browserAnswer(token: token, outcome: .failure(code: BrowserDriveCode.viewerGone,
                                                                       message: "The Mac showing this page is not driving it any more."))
                 return
             }
             Task { @MainActor [weak self] in
-                let outcome = await session.performFromHost(request, policy: remote.policy)
+                let outcome = thisMac ? await session.perform(request) : await session.performFromHost(request, policy: remote.policy)
                 client.browserAnswer(token: token, outcome: outcome)
                 if request.opensPage, case .result = outcome, let url = session.tabs.agentTarget?.url { self?.agentOpenedPage(session, url) }
             }

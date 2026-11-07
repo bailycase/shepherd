@@ -18,13 +18,19 @@
   `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
   host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
-  actions (Move as the app's drag), a dormant thread's pi on demand, and terminals' shells. It answers host settings
+  actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
+  design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves
+  too, starting the agent its own way). It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
   `hostInventory` and `hostConfig` through the same `HostStores` the app serves. It answers
   worktree info, setup, finalize and delete, commit from review (the same `WorktreeQueries` the app
   serves in process), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
+  With no page of its own, the host hands an agent's browser call that no viewer claimed to the
+  app over `host.sock` (a `browserDrive` request to the local client that lists the drive
+  capability), which runs it on its own page with no tunnel; with no app connected the call is
+  refused as `unavailable`, saying Shepherd's window is closed.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands
