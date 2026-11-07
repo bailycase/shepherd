@@ -33,6 +33,9 @@ extension FixtureCatalog {
                 preview: ThreadFixtures.reply(MarkdownFixtures.structureReply(image: "docs/thread-table.png"))), routes: [.thread(preview)]),
             FixtureScreen(name: "thread-wide", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.wideReply)),
                           routes: [.thread(preview)]),
+            // A reply of about 240 blocks, drawn a chunk at a time: its tail, with the chunks above it built only as they scroll in.
+            FixtureScreen(name: "thread-long-reply", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.longReply(cycles: 60, markerEvery: 5))),
+                          routes: [.thread(preview)]),
             FixtureScreen(name: "thread-wide-table", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(wideTable)),
                           routes: [.thread(preview)], prepare: { _ in await ThreadFixtures.checkWideTable() }),
             // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
