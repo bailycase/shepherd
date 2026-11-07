@@ -254,6 +254,9 @@ struct DesignReferenceService: Sendable {
             if let board = pinned.board, let first = resolved.boards.first {
                 let entry = resolved.snapshot.index.boards[board]
                 payload.boardTitle = entry?.title.flatMap(DesignViewRecord.label)
+                payload.boardPageTitle = entry?.page.flatMap { id in
+                    resolved.snapshot.index.pages?.first { $0.id == id }?.name.flatMap(DesignViewRecord.label)
+                }
                 payload.width = entry?.w
                 payload.height = entry?.h
                 payload.boardSHA = first.source.sha256
