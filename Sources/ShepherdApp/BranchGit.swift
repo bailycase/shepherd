@@ -2,8 +2,8 @@ import Foundation
 import ShepherdSessions
 
 /// The branch card's git changes in an agent's checkout, each on the person's click (docs/rules.md
-/// "Only these paths mutate repositories"): Commit (the ticked files only; Amend only an unpushed
-/// last commit), Push (never forced), Update from the base (fetch, then rebase or merge; a conflict
+/// "Only these paths mutate repositories"): Commit (the ticked files only, or Amend the last
+/// commit), Push (never forced), Update from the base (fetch, then rebase or merge; a conflict
 /// stops and Abort restores the branch), Switch branch, New branch from here and Rename branch. Every name reaches git only after `check-ref-format --branch`, never as an
 /// option. Blocking; call off the main thread.
 enum BranchGit {
@@ -54,16 +54,18 @@ enum BranchGit {
         return nil
     }
 
-    /// Why Amend can't replace the last commit, else nil: there is none, a rebase or merge is
-    /// stopped, or any remote-tracking ref already has it (amending it would need a force-push).
+    /// Why Amend can't replace the last commit, else nil: there is none, or a rebase or merge is stopped.
     static func amendBlocked(cwd: String) -> String? {
         guard (try? git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], cwd: cwd)) != nil else { return "There’s no commit to amend yet." }
         if conflict(cwd: cwd) != nil { return "A rebase or merge is in progress." }
-        // A failed read counts as pushed: amend only what is known to be local.
-        guard let remotes = try? git(["branch", "--remotes", "--contains", "HEAD"], cwd: cwd), remotes.isEmpty else {
-            return "The last commit is already pushed."
-        }
         return nil
+    }
+
+    /// The remote-tracking ref that already has the last commit ("origin/agent/x"), else nil.
+    /// Amending it makes the branch differ from that ref, so a push afterwards is refused.
+    static func pushedTo(cwd: String) -> String? {
+        let remotes = (try? git(["branch", "--remotes", "--contains", "HEAD", "--format=%(refname:short)"], cwd: cwd)) ?? ""
+        return remotes.split(separator: "\n").map(String.init).first { !$0.hasSuffix("/HEAD") }
     }
 
     /// A name git takes as a new branch, else why not.
@@ -82,9 +84,24 @@ enum BranchGit {
     // MARK: Changing
 
     /// `git push -u origin refs/heads/<b>:refs/heads/<b>`: never forced, so a diverged remote refuses.
+    /// A rejection after the branch was rewritten here (amended after it was pushed) says so.
     static func push(cwd: String, branch: String) throws {
         try checkName(branch, cwd: cwd)
-        try git(["push", "--set-upstream", "origin", "refs/heads/\(branch):refs/heads/\(branch)"], cwd: cwd, timeout: 120)
+        do {
+            try git(["push", "--set-upstream", "origin", "refs/heads/\(branch):refs/heads/\(branch)"], cwd: cwd, timeout: 120)
+        } catch {
+            guard rewrittenAfterPush(cwd: cwd, branch: branch) else { throw error }
+            throw Failure(message: "\(branch) was amended after it was pushed; push with --force-with-lease in a terminal if you mean to replace it.")
+        }
+    }
+
+    /// origin's copy of `branch` was once this branch's tip and HEAD has moved off it (an amend or
+    /// reset here), rather than someone else pushing to it.
+    static func rewrittenAfterPush(cwd: String, branch: String) -> Bool {
+        guard let remote = try? git(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(branch)"], cwd: cwd),
+              (try? git(["merge-base", "--is-ancestor", remote, "HEAD"], cwd: cwd)) == nil,
+              let tips = try? git(["reflog", "--format=%H", "refs/heads/\(branch)"], cwd: cwd) else { return false }
+        return tips.split(separator: "\n").contains { $0 == remote }
     }
 
     /// `git commit --only -- <paths>`: the ticked files as they are now, whatever else is staged
