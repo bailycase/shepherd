@@ -67,6 +67,15 @@ final class ShepherdViewModel {
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [server] in await server.forge($0) })
+    /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
+    /// over the same transport; none while the branch has no pull request.
+    var branchPullRequests: [AgentID: ForgeStore] = [:]
+    @ObservationIgnored var branchPullRequestLookups: Set<AgentID> = []
+    /// The branch's pull request in a checkout (`gh pr view`); tests replace it.
+    @ObservationIgnored var branchPullRequestLookup: @MainActor (String) async -> ForgeItemRef? = { cwd in
+        let output = await LoginShell.run("gh pr view --json url --jq .url", cwd: cwd, timeout: 20)
+        return output.status == 0 ? ForgeItemRef(link: output.stdout) : nil
+    }
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
     /// The host whose missions the Missions page shows; nil is This Mac.

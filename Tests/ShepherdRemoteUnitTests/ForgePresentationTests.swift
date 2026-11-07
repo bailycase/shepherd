@@ -129,4 +129,40 @@ struct ForgePresentationTests {
         Self.expectFenced(brief.prompt, holding: Self.hostile)
         #expect(brief.prompt.contains("mara on ledger/outbox.go · line 103:") && brief.agentID == Self.thread.agentID)
     }
+
+    // MARK: The side pane's Pull request tab
+
+    @Test func thePanesFooterSaysWhatBlocksItOrWhatIsLeft() {
+        #expect(ForgePresentation.paneStatus(Self.detail()) == ("Changes requested · 1 check failing", .failed))
+        var ready = Self.detail()
+        ready.reviewers = []
+        ready.checks = []
+        #expect(ForgePresentation.paneStatus(ready) == ("Ready to merge", .done))
+        #expect(ForgePresentation.paneStatus(Self.detail(.merged, thread: Self.thread))
+            == ("Merged into main · the worktree for agent/refund-events is still on disk", .merged))
+        #expect(ForgePresentation.paneStatus(Self.detail(.merged)).text == "Merged into main")
+    }
+
+    @Test func checksCollapseToOneLineOnlyWhenAllPassed() {
+        let at = Self.now
+        let passed = [ForgeCheck(name: "build", state: .passed, startedAt: at, completedAt: at + 72),
+                      ForgeCheck(name: "test", state: .passed, startedAt: at, completedAt: at + 182),
+                      ForgeCheck(name: "docs", state: .skipped)]
+        #expect(ForgePresentation.allPassed(passed)! == ("All 2 passed", "3m 2s"))
+        #expect(ForgePresentation.allPassed(passed + [ForgeCheck(name: "lint", state: .failing)]) == nil)
+        #expect(ForgePresentation.allPassed([]) == nil)
+    }
+
+    @Test func feedbackIsWhatReviewsAskedNotApprovals() {
+        let line = ForgeLineComment(id: 7, author: "mara", path: "ledger/outbox.go", line: 103, diffHunk: "+x", body: "Wrap it.", createdAt: Self.now)
+        var detail = Self.detail()
+        detail.events = [
+            ForgeEvent(id: "1", actor: "mara", at: Self.now, kind: .reviewed(state: .changesRequested, body: "Close.", comments: [line])),
+            ForgeEvent(id: "2", actor: "devon", at: Self.now, kind: .reviewed(state: .approved, body: "Ship it.", comments: [])),
+            ForgeEvent(id: "3", actor: "devon", at: Self.now, kind: .commented(body: "Nice.")),
+        ]
+        let feedback = ForgePresentation.reviewFeedback(detail)
+        #expect(feedback.map(\.body) == ["Close.", "Wrap it."])
+        #expect(feedback.first?.path == "the pull request" && feedback.last == line)
+    }
 }
