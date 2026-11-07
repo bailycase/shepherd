@@ -177,7 +177,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                     case .delete(let directory, let file, let expected):
                         let root = try root(directory)
                         guard let kind = ProjectConfiguration.resourceKind(file) else {
-                            throw ProjectFileError("invalid_file", "Only a space's skills, prompt templates, subagents and extensions can be removed.")
+                            throw ProjectFileError("invalid_file", "Only a space's skills, prompt templates and extensions can be removed.")
                         }
                         try remove(root: root, file: file, expected: expected)
                         return .text(ProjectFileText(file: ProjectFile(path: file, category: kind == .extension ? .extensions : .skills, exists: false), text: nil))
@@ -575,7 +575,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
         if let kind = ProjectConfiguration.resourceKind(file) {
             var info = stat()
-            // Prompt templates and subagents live in the Resources tab beside skills.
+            // Prompt templates live in the Resources tab beside skills.
             return ProjectFile(path: file, category: kind == .extension ? .extensions : .skills,
                                exists: lstat(root.appendingPathComponent(file).path, &info) == 0)
         }

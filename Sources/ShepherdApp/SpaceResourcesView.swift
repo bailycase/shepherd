@@ -38,9 +38,10 @@ struct SpaceResourcesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
-            // Departure: the boards draw no kind switcher inside the Resources tab.
+            // Departure: the boards draw no kind switcher inside the Resources tab. Subagents are hidden:
+            // the runtime loads only Shepherd-owned profiles, so a space's would do nothing.
             SHSegmentedPicker("Resource kind", selection: $model.kind,
-                              options: ProjectResource.Kind.allCases.map { ($0, $0.title) })
+                              options: ProjectResource.Kind.allCases.filter { $0 != .agent }.map { ($0, $0.title) })
                 .shControlScale(.settings).fixedSize()
             HStack(alignment: .top, spacing: SH.Space.xl) {
                 SettingsHeader(title: model.kind.title, explanation: model.kind.subtitle(project.project.name))
