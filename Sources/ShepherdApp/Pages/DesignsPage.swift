@@ -37,7 +37,10 @@ struct DesignsDestination: View {
             // Over the page under its header (ImportDrop).
             .overlay { if dropTargeted { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
             .onDrop(of: DesignsDropDelegate.types, delegate: DesignsDropDelegate(targeted: $dropTargeted) { vm.importDesignProject($0) })
-            .task(id: vm.designThumbnailSignature) { await vm.loadDesignThumbnails() }
+            .task(id: vm.designThumbnailSignature) {
+                await vm.loadDesignThumbnails()
+                await vm.loadDesignCommentCounts()
+            }
             .task(id: vm.remoteDesignsSignature) { await vm.loadRemoteDesigns() }
             .task { await vm.loadDesignSystems() }
     }

@@ -118,4 +118,32 @@ extension ThreadPreviewTests {
             after: "Someone changed the board since I showed it. The card still shows revision 13, the version I looked at."),
             chips: Self.boardChips(freshness: .updatedSince(latest: 14, changes: ["the board changed"])))
     }
+
+    /// ThreadBoardPane: the card's board open beside the thread, in the side pane's Design tab.
+    @Test func threadBoardPane() async throws {
+        let chips = Self.boardChips(freshness: .current)
+        let board = try #require(chips.boards[Self.boardCopy])
+        let fixture = ThreadFixture(Self.boardSnapshot(
+            asked: "What did we decide the funnel should look like? I don’t want to open the design.",
+            said: "This is the board from Checkout redesign. Three counts across the top, then the steps as bars, widest at Cart. The comment pinned on the bars asks for the drop-off percent next to each count.",
+            after: "Want me to build it in dashboard-web? I’d reuse the existing stat card for the three counts."))
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        try await Preview.render("thread-board-pane", size: CGSize(width: 1600, height: 900), ready: { store.ready && !store.rows.isEmpty }) {
+            HStack(spacing: 0) {
+                fixture.thread(title: "Build the checkout funnel page", workingDirectory: "~/Developer/dashboard-web")
+                    .environment(\.designReferences, chips)
+                SHHairline(.vertical)
+                VStack(spacing: 0) {
+                    SHSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2, design: true), selection: SidePaneTab.design.rawValue,
+                                   select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
+                        Button("Reset Width") {}
+                    }
+                    BoardPane(board: board, open: {})
+                }
+                .frame(width: 600)
+                .background(Color.sh.bgWindow)
+            }
+        }
+    }
 }

@@ -73,6 +73,7 @@ extension ShepherdViewModel {
                 if let page = reference.page { self.remoteDesignScreen(design)?.reveal(page: page) }
                 else if let board = reference.board { self.remoteDesignScreen(design)?.reveal(board: board, element: reference.element) }
             },
+            showBeside: { [weak self] in self?.showBoardBeside(.remote(ref), $0) },
             attach: { [weak self] reference in try await self?.attachRemoteDesignReference(reference, to: ref) },
             sendLatest: { [weak self] reference in
                 do { try await self?.attachRemoteDesignReference(reference.unpinned, to: ref) } catch {
