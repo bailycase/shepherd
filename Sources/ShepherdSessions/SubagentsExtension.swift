@@ -1,10 +1,9 @@
 import Foundation
-import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs the publisher of Shepherd-owned child runs as setAgentChildren messages.
-enum SubagentsExtension {
-    static func installedPath() throws -> String {
+public enum SubagentsExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("shepherd-subagents.ts")
@@ -14,5 +13,5 @@ enum SubagentsExtension {
         }
         return url.path
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-subagents.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-subagents.ts") }
 }

@@ -1,10 +1,9 @@
 import Foundation
-import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs the opt-in, extension-owned native child runtime.
-enum ChildrenExtension {
-    static func installedPath() throws -> String {
+public enum ChildrenExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for (name, text) in sources {
@@ -18,7 +17,7 @@ enum ChildrenExtension {
         return url.path
     }
 
-    static var sources: [(String, String)] {
+    public static var sources: [(String, String)] {
         [("shepherd-lines.mjs", EmbeddedExtensions.source("shepherd-lines.mjs")),
          ("shepherd-children.ts", extensionSource), ("shepherd-children-config.ts", configSource),
          ("shepherd-workflow.ts", workflowSource), ("shepherd-missions.ts", missionsSource),
@@ -26,10 +25,10 @@ enum ChildrenExtension {
          ("shepherd-cli-client.mjs", EmbeddedExtensions.source("shepherd-cli-client.mjs")),
          ("shepherd-inspect.mjs", InspectExtension.extensionSource)]
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-children.ts") }
-    static var configSource: String { EmbeddedExtensions.source("shepherd-children-config.ts") }
-    static var workflowSource: String { EmbeddedExtensions.source("shepherd-workflow.ts") }
-    static var missionsSource: String { EmbeddedExtensions.source("shepherd-missions.ts") }
-    static var uiSource: String { EmbeddedExtensions.source("shepherd-children-ui.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-children.ts") }
+    public static var configSource: String { EmbeddedExtensions.source("shepherd-children-config.ts") }
+    public static var workflowSource: String { EmbeddedExtensions.source("shepherd-workflow.ts") }
+    public static var missionsSource: String { EmbeddedExtensions.source("shepherd-missions.ts") }
+    public static var uiSource: String { EmbeddedExtensions.source("shepherd-children-ui.ts") }
 
 }

@@ -1,11 +1,10 @@
 import Foundation
-import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs the per-session pi extension that lets an agent open a native
 /// diff-review pane and wait for the user's formatted review.
-enum ReviewExtension {
-    static func installedPath() throws -> String {
+public enum ReviewExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try EmbeddedExtensions.install("shepherd-lines.mjs", at: directory.appendingPathComponent("shepherd-lines.mjs"))
@@ -16,5 +15,5 @@ enum ReviewExtension {
         }
         return url.path
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-review.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-review.ts") }
 }

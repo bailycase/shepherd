@@ -1,10 +1,9 @@
 import Foundation
-import ShepherdSessions
 import ShepherdCore
 import ShepherdProtocol
 
-enum ProjectContextExtension {
-    static func installedPath() throws -> String {
+public enum ProjectContextExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try EmbeddedExtensions.install("shepherd-lines.mjs", at: directory.appendingPathComponent("shepherd-lines.mjs"))
@@ -14,10 +13,10 @@ enum ProjectContextExtension {
         return url.path
     }
 
-    static func context(_ project: Project) throws -> String {
+    public static func context(_ project: Project) throws -> String {
         struct Context: Encodable { var projectID: ProjectID }
         return String(decoding: try JSONEncoder().encode(Context(projectID: project.id)), as: UTF8.self)
     }
 
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-project-context.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-project-context.ts") }
 }

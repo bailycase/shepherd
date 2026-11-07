@@ -1,13 +1,12 @@
 import Foundation
-import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs the per-session pi extension behind an agent's browser tools (`shepherd-browser.ts`:
 /// browser_open, browser_read, browser_click, …) from its embedded literal into the support
 /// directory. It is inert without `SHEPHERD_EXT_BROWSER`, in a native subagent
 /// and in a design's agent.
-enum BrowserExtension {
-    static func installedPath() throws -> String {
+public enum BrowserExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try EmbeddedExtensions.install("shepherd-lines.mjs", at: directory.appendingPathComponent("shepherd-lines.mjs"))
@@ -18,5 +17,5 @@ enum BrowserExtension {
         }
         return url.path
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-browser.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-browser.ts") }
 }
