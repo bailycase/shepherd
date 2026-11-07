@@ -115,7 +115,7 @@ private struct OverviewColumns: View {
                             // The board's row: the bolt in its run's state, what it does and where.
                             Button { navigator.open(.thread(run.agentRef)) } label: {
                                 SHOverviewRow(row.name, detail: [row.stateWord, row.place, row.hostTag].compactMap { $0 }.joined(separator: " · "),
-                                              leading: .symbol("bolt", row.runStatus == .blocked ? .attention : .running))
+                                              leading: .symbol(SHGlyph.automation.symbolName, row.runStatus == .blocked ? .attention : .running))
                                     .equatable()
                             }
                             .buttonStyle(.shRow(radius: 0))
