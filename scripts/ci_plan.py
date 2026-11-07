@@ -134,8 +134,10 @@ AREAS = (
       PREVIEW + r"(SettingsPreviewTests|SubagentSettingsPreviewTests)")),
     (("Sources/ShepherdSessions/PiSignIn*.swift",), (SES + "RPCSessionTests",)),
     (("Sources/ShepherdApp/Pages/*", "Sources/ShepherdApp/Remote*.swift", "Sources/ShepherdApp/RemoteHostStore.swift",
-      "Sources/ShepherdSessions/AutomationRuns.swift", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/*"),
-     (APP + r"(Automations|LocalAutomation|RemoteAutomations|RemoteHost|RemotePaneStream|RemoteThreadMount|Sidebar|Workspace)",
+      "Sources/ShepherdSessions/AutomationRuns.swift", "Sources/ShepherdSessions/SessionServer+Automations.swift",
+      "Sources/ShepherdApp/ShepherdViewModel+Automation*.swift",
+      "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/*"),
+     (APP + r"(Automations|AutomationTrigger|ProjectAutomation|LocalAutomation|RemoteAutomations|RemoteHost|RemotePaneStream|RemoteThreadMount|Sidebar|Workspace)",
       SES + r"(Automation|RemoteAutomation|RemoteListener|RemoteSession|RemoteControl)")),
 )
 TEST_MODULES = ("ShepherdAppIntegrationTests", "ShepherdSessionsIntegrationTests",

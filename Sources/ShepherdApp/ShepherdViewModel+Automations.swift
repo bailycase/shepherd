@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
@@ -8,217 +7,38 @@ import ShepherdSessions
 /// automation persists in state.json; its running agent is ephemeral and
 /// behaves exactly like any hand-created agent (status, panes, deletion).
 extension ShepherdViewModel {
-    /// Serve automation socket requests (the pi automation skill): full
-    /// CRUD + run control. Installed once at VM creation, like
-    /// installPaneControl.
+    /// Serve automations through the server: the `automation_*` tools, remote clients and the
+    /// trigger clock. Runs start and go through this view model, so panes, selection and the
+    /// thread store follow them. Installed once at VM creation, like installPaneControl.
     func installAutomationControl() {
-        server.onAutomationRequest = { [weak self] request, completion in
-            guard let self else {
-                completion(.failed(code: "shutdown", message: "host is shutting down"))
-                return
-            }
-            Task { @MainActor in
-                completion(await self.handleAutomationRequest(request))
-            }
-        }
-    }
-
-    private func handleAutomationRequest(_ request: AutomationRequest) async -> AutomationOutcome {
-        do {
-            // Legacy requests carry no Project revision or authenticated Project scope.
-            let target: AutomationID?
-            switch request {
-            case .create(let automation, _): target = automation.id
-            case .list: target = nil
-            case .update(let id, _, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
-            }
-            if let target, server.state.automations.contains(where: { $0.id == target && $0.projectID != nil }) {
-                return .failed(code: "project_scope", message: "Use the Project's revision-checked automation controls.")
-            }
-            switch request {
-            case .create(let automation, let start):
-                try await server.addAutomation(automation)
-                adoptCanonical()
-                refreshAutomationTriggers()
-                // A triggered automation waits for its trigger; `start` is the watcher's.
-                if start, !automation.isTriggered {
-                    try await startAutomation(automation.id)
-                }
-                return .ok
-            case .list:
-                var infos: [AutomationInfo] = []
-                for automation in state.automations {
-                    infos.append(AutomationInfo(
-                        id: automation.id,
-                        name: automation.name,
-                        prompt: automation.prompt,
-                        cwd: automation.cwd,
-                        enabled: automation.enabled,
-                        agentStatus: automationAgent(automation)?.status.rawValue,
-                        settings: AutomationSettings(of: automation),
-                        triggerStatus: automation.isTriggered ? await server.automationTriggers.status(of: automation) : nil
-                    ))
-                }
-                return .automations(infos)
-            case .update(let automationID, let name, let prompt, let cwd, let enabled, let settings):
-                guard var automation = state.automations.first(where: { $0.id == automationID }) else {
-                    return .failed(code: "not_found", message: "unknown automation \(automationID)")
-                }
-                if let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    automation.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                if let prompt, !prompt.isEmpty { automation.prompt = prompt }
-                if let cwd, !cwd.isEmpty { automation.cwd = cwd }
-                if let enabled { automation.enabled = enabled }
-                if let settings {
-                    do { try settings.apply(to: &automation) } catch {
-                        return .failed(code: "invalid_automation", message: error.message)
-                    }
-                }
-                try await server.updateAutomation(automation)
-                refreshAutomationTriggers()
-                adoptCanonical()
-                return .ok
-            case .delete(let automationID):
-                guard state.automations.contains(where: { $0.id == automationID }) else {
-                    return .failed(code: "not_found", message: "unknown automation \(automationID)")
-                }
-                // Stop the run too: a skill deleting an automation means
-                // "make it gone", not "orphan its agent".
-                stopAutomation(automationID)
-                try await server.removeAutomation(automationID)
-                await server.automationTriggers.forget(automationID)
-                adoptCanonical()
-                return .ok
-            case .start(let automationID):
-                try await startAutomation(automationID)
-                return .ok
-            case .stop(let automationID):
-                guard state.automations.contains(where: { $0.id == automationID }) else {
-                    return .failed(code: "not_found", message: "unknown automation \(automationID)")
-                }
-                stopAutomation(automationID)
-                return .ok
-            }
-        } catch {
-            return .failed(code: "failed", message: String(describing: error))
-        }
-    }
-
-    /// Start an automation's agent in the reserved hidden space with the stored prompt, and
-    /// record the link on the automation. A run still going (or still being started) refuses.
-    /// A settled one is replaced once the new run exists (its run stays in the log), so a
-    /// settled run on screen hands the workspace straight to the new run's thread.
-    func startAutomation(_ id: AutomationID) async throws {
-        guard let previous = state.automations.first(where: { $0.id == id }) else {
-            throw AgentStartFailure(message: "automation no longer exists")
-        }
-        guard previous.projectID == nil else {
-            throw LogicalProjectsError("project_scope", "Use the Project's revision-checked run action.")
-        }
-        if previous.isTriggered {
-            // Run now on a triggered automation: one run with no event, outside its limits.
-            try await startTriggeredRun(previous, events: [])
-            return
-        }
-        guard startingAutomations.insert(id).inserted else {
-            throw AgentStartFailure(message: "\(previous.name) is already running")
-        }
-        cancelledAutomationStarts.remove(id)
-        defer {
-            startingAutomations.remove(id)
-            cancelledAutomationStarts.remove(id)
-        }
-        try await server.beginAutomationStart(id)
-        do {
-            try await startUnscopedAutomation(id, previous: previous)
-            await server.endAutomationStart(id)
-        } catch {
-            await server.endAutomationStart(id)
-            throw error
-        }
-    }
-
-    private func startUnscopedAutomation(_ id: AutomationID, previous: Automation) async throws {
-        let settled = try await settledRun(of: previous)
-        guard !cancelledAutomationStarts.contains(id),
-              let automation = state.automations.first(where: { $0.id == id }), automation.agentID == settled else { return }
-
-        let cwd = (automation.cwd as NSString).expandingTildeInPath
-        // Watch agents always live in the reserved hidden space — the
-        // AUTOMATIONS section is their only surface, never a space's thread
-        // rows. The space is just sidebar grouping; the agent's pane runs in
-        // the automation's own cwd regardless.
-        let spaceID = try await automationsSpaceID()
-        guard !cancelledAutomationStarts.contains(id), state.automations.contains(where: { $0.id == id }) else { return }
-
-        let config = NewAgentConfig(
-            spaceID: spaceID,
-            workingDirectory: cwd,
-            model: settings.defaultModel(piHome: server.pi.home),
-            thinking: settings.defaultThinking,
-            initialPrompt: automation.prompt,
-            isAutomation: true
-        )
-        let agentID = try await startAgent(config, selectAfter: false)
-        do {
-            // Wear the automation's name; it was chosen deliberately.
-            try? await server.renameAgent(agentID, to: automation.name)
-            guard !cancelledAutomationStarts.contains(id),
-                  var updated = state.automations.first(where: { $0.id == id }) else {
-                try await deleteAgentPersisted(agentID)
-                return
-            }
-            updated.agentID = agentID
-            try await server.updateAutomation(updated)
-            adoptCanonical()
-            // Stop can arrive while the link is awaiting the server too.
-            if cancelledAutomationStarts.contains(id) {
-                try await deleteAgentPersisted(agentID)
-                return
-            }
-        } catch {
-            try? await deleteAgentPersisted(agentID)
-            throw error
-        }
-
-        guard let settled, state.agents.contains(where: { $0.id == settled }) else { return }
+        var hosting = AutomationHosting(
+            defaults: { [unowned self] in
+                AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
+                                           serviceTier: settings.defaultServiceTier,
+                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,
+                                           projectsEnabled: settings.projectsEnabled)
+            },
+            startAgent: { [unowned self] config in try await startAgent(config, selectAfter: false) },
+            deleteAgent: { [unowned self] id in try await deleteAgentPersisted(id) },
+            stopRun: { [unowned self] id in deleteAgent(id) })
         // Selected before the old run goes, so its deletion has no selection to fall back from.
         // A run off screen leaves the selection alone.
-        if selectedAgentID == settled { selectAgent(agentID) }
-        try await deleteAgentPersisted(settled)
+        hosting.replacingRun = { [unowned self] old, new in if selectedAgentID == old { selectAgent(new) } }
+        hosting.stateChanged = { [weak self] in self?.adoptCanonical() }
+        hosting.triggersChanged = { [weak self] in self?.refreshAutomationTriggers() }
+        hosting.notify = { [weak self] title, body in self?.postAutomationBanner(title: title, body: body) }
+        server.serveAutomations(hosting)
+        installProjectAutomationAdmission()
     }
 
-    /// The agent of an automation's settled run, which its next run replaces; nil when it has
-    /// none. A live run (`AutomationRun.isLive`) throws instead: running again never cuts one short.
-    private func settledRun(of automation: Automation) async throws -> AgentID? {
-        guard let agentID = automation.agentID else { return nil }
-        let run = await server.automationRuns(automation.id).last { $0.agentID == agentID }
-        // Read after the runs: its agent may have gone, or started a turn, meanwhile.
-        guard state.automations.first(where: { $0.id == automation.id })?.agentID == agentID,
-              let agent = state.agents.first(where: { $0.id == agentID }) else { return nil }
-        guard !AutomationRun.isLive(agentStatus: agent.status, run: run) else {
-            throw AgentStartFailure(message: "\(automation.name) is already running")
-        }
-        return agentID
+    func startAutomation(_ id: AutomationID) async throws {
+        try await server.startAutomation(id)
     }
 
     /// Stop an unscoped run. Project-owned runs require the owner's revision-checked service,
     /// even when a sidebar menu was opened before its association reached the view model.
     func stopAutomation(_ id: AutomationID) {
-        let automation = server.state.automations.first { $0.id == id }
-        guard automation?.projectID == nil else {
-            remoteActionError = "Use the Project's revision-checked automation controls."
-            return
-        }
-        if automation?.isTriggered == true {
-            // Its runs are ordinary threads, stopped one by one; Stop pauses the trigger.
-            pauseAutomationTrigger(id)
-            return
-        }
-        if startingAutomations.contains(id) { cancelledAutomationStarts.insert(id) }
-        guard let agentID = automation?.agentID else { return }
-        deleteAgent(agentID)
+        do { try server.stopAutomation(id) } catch { remoteActionError = "\(error)" }
     }
 
     func deleteAutomation(_ id: AutomationID) {
@@ -238,32 +58,9 @@ extension ShepherdViewModel {
     /// adopted. Runs died with the previous app instance; enabled means the
     /// user wants the watch standing.
     func autoStartAutomations() {
-        // Triggered automations start nothing here: their trigger clock fires them.
-        startAutomationTriggers()
         startRemoteAutomationWatch()
-        let pending = state.automations.filter { $0.projectID == nil && $0.enabled && !$0.deleteAfterRun && $0.agentID == nil && !$0.isTriggered }
-        guard !pending.isEmpty else { return }
-        Task { @MainActor in
-            for automation in pending {
-                do {
-                    try await startAutomation(automation.id)
-                } catch {
-                    NSLog("Shepherd: automation \(automation.name) failed to start: \(error)")
-                }
-            }
-        }
-    }
-
-    /// The reserved hidden space hosting automation agents whose cwd matches
-    /// no user space. Created on first use; never rendered as a space row.
-    private func automationsSpaceID() async throws -> SpaceID {
-        if let existing = state.spaces.first(where: \.holdsAutomations) {
-            return existing.id
-        }
-        let space = Space(name: "Automations", path: "~", hidden: true)
-        try await server.addSpace(space)
-        adoptCanonical()
-        return space.id
+        let server = server
+        Task { @MainActor in await server.autoStartAutomations() }
     }
 
     /// The agent currently running an automation, if any.

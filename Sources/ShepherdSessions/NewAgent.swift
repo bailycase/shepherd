@@ -2,6 +2,13 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
+/// An agent, or an automation's run, that couldn't start.
+public struct AgentStartFailure: Error, CustomStringConvertible {
+    public let message: String
+    public init(message: String) { self.message = message }
+    public var description: String { message }
+}
+
 /// What a new agent starts from: the New Agent sheet, ⌘N, a worktree, a design, an automation.
 public struct NewAgentConfig {
     public var spaceID: SpaceID

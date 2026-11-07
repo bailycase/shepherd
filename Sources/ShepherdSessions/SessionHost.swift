@@ -14,8 +14,10 @@ public enum SessionHost {
     /// Runs `server` until a termination signal; never returns. A start that fails (another
     /// owner holds the workspace) exits with a failure status. `ready` runs once the server is
     /// up, on the main queue's thread (tests). `respawn` gives each agent with unfinished work its
-    /// spawn settings; the host respawns them once it serves.
+    /// spawn settings; the host respawns them once it serves. `automations`, when given, hosts
+    /// automations: their requests and triggers are served, and enabled ones start.
     public static func run(_ server: SessionServer = .shared, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                           automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                            ready: () -> Void = {}) -> Never {
         // Signals arrive through dispatch sources, so the default action (die without
         // stopping pi processes) is turned off before anything starts.
@@ -40,7 +42,12 @@ public enum SessionHost {
             exit(EXIT_FAILURE)
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
-        Task { @MainActor in await server.respawnAgentsNeedingRecovery(respawn) }
+        Task { @MainActor in
+            await server.respawnAgentsNeedingRecovery(respawn)
+            guard let automations else { return }
+            server.serveAutomations(automations(server))
+            await server.autoStartAutomations()
+        }
         ready()
         signalSources = sources
         if Thread.isMainThread { dispatchMain() }
