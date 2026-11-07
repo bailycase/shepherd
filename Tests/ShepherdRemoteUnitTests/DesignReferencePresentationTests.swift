@@ -152,4 +152,33 @@ struct DesignMentionTests {
         #expect(catalog.search("funnel", limit: 2).count == 2)
         #expect(catalog.search("CHECKOUT FÜNNEL").first?.kind == .design, "case and accents aside")
     }
+
+    // MARK: Board cards (ThreadBoardShown, ThreadBoardStale)
+
+    @Test func aBoardCardSaysItsPageSizeAndTheRevisionTheAgentShowed() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"), revision: 13))
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 13, capturedAt: 0, width: 560, height: 410)
+        payload.boardPageTitle = "Checkout"
+        #expect(DesignReferencePresentation.boardMeta(payload, freshness: .current) == ["Checkout", "560 × 410", "revision 13"])
+        let moved = DesignReferenceFreshness.updatedSince(latest: 14, changes: [])
+        #expect(DesignReferencePresentation.boardMeta(payload, freshness: moved) == ["Checkout", "560 × 410", "shown at revision 13"])
+        #expect(DesignReferencePresentation.boardNote(.current) == nil && DesignReferencePresentation.showLatest(.current) == nil)
+        #expect(DesignReferencePresentation.boardNote(moved) == "The design moved on since the agent showed this. It shows what the agent saw.")
+        #expect(DesignReferencePresentation.showLatest(moved) == "Show v14" && DesignReferencePresentation.showLatest(.deleted) == nil)
+    }
+
+    @Test func eachDesignShowIsItsOwnCardNeverJoinedToTheCallsAroundIt() {
+        func call(_ name: String, board: UUID?) -> NativeActivityCall {
+            var message = NativeThreadMessage(entryID: "e-\(UUID())", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "ok")], toolName: name,
+                                              toolCallID: UUID().uuidString, argumentsText: #"{"ref":"shepherd-design-ref://local/d1/A.dc.html@13"}"#,
+                                              status: "complete")
+            message.designBoard = board
+            return NativeActivityCall(message)
+        }
+        let one = UUID(), two = UUID()
+        let bursts = nativeActivityBursts([call("design_show", board: one), call("design_show", board: two), call("design_note", board: nil)])
+        #expect(bursts.map { $0.calls.map(\.designBoard) } == [[one], [two], [nil]])
+        #expect(bursts[0].calls[0].designRef == "shepherd-design-ref://local/d1/A.dc.html@13")
+    }
 }

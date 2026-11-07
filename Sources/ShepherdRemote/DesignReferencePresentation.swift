@@ -80,6 +80,32 @@ public enum DesignReferencePresentation {
         return "Send v\(latest)"
     }
 
+    /// A board card's meta (ThreadBoardShown, ThreadBoardStale): the board's page, its size, and
+    /// the revision the agent showed, "shown at revision 13" once the design moved on.
+    public static func boardMeta(_ payload: DesignReferencePayload, freshness: DesignReferenceFreshness) -> [String] {
+        var meta: [String] = []
+        if let page = payload.boardPageTitle ?? payload.pageTitle { meta.append(page) }
+        if let width = payload.width, let height = payload.height { meta.append("\(Int(width)) × \(Int(height))") }
+        meta.append((freshness == .current ? "revision " : "shown at revision ") + "\(payload.revision)")
+        return meta
+    }
+
+    /// What a board card says under its footer when the design moved on or went; nil while current.
+    public static func boardNote(_ freshness: DesignReferenceFreshness) -> String? {
+        switch freshness {
+        case .current: nil
+        case .updatedSince: "The design moved on since the agent showed this. It shows what the agent saw."
+        case .deleted: "The design was deleted since the agent showed this. It shows what the agent saw."
+        case .hostOffline: "The design’s host is offline. It shows what the agent saw."
+        }
+    }
+
+    /// "Show v14": a board card's way to the board as it is now, once the design moved on.
+    public static func showLatest(_ freshness: DesignReferenceFreshness) -> String? {
+        guard case .updatedSince(let latest, _) = freshness else { return nil }
+        return "Show v\(latest)"
+    }
+
     /// The toast after a send that stays on the canvas: "Sent card “Checkout funnel” to Checkout
     /// page polish."
     public static func sent(_ piece: String, to thread: String) -> String {

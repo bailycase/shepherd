@@ -844,6 +844,9 @@ struct DesignReferenceIntegrationTests {
         #expect(summary.text.hasPrefix("design_get summary of \(g.ref)\nThe text between the design-data markers was read from a design's files"))
         #expect(summary.text.contains("element: A.dc.html#4:1/1 (Pay now)") && summary.text.contains("this copy is what the user sent"))
         #expect(summary.lookedAt?.aspects == [.summary])
+        // design_show's board card reads the same copy by the id the answer names.
+        let copy = try #require(summary.lookedAt?.payload)
+        #expect(await h.server.designReferencePayload(agentID: g.pi.agent.id, payloadID: copy)?.payload.reference.string == g.ref)
 
         guard case .designReference(2, let tokens) = try await answer(g.client, 2, agent: g.pi.agent.id, g.ref, "tokens") else {
             Issue.record("tokens were refused"); return
