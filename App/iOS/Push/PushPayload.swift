@@ -8,6 +8,19 @@ struct PushPayload: Codable, Hashable, Sendable {
     let agentID: String
     let eventID: String
     let kind: String
+    /// A `review` push: the mission and exactly what Approve publishes.
+    var mission: Mission?
+
+    /// Where a tap or an action goes; not part of the push.
+    var destination = Destination.thread
+    enum Destination: Hashable, Sendable { case thread, changes, missionReview }
+    private enum CodingKeys: String, CodingKey { case hostID, agentID, eventID, kind, mission }
+
+    struct Mission: Codable, Hashable, Sendable {
+        let id: String
+        let revision: UInt64
+        let fingerprint: String
+    }
 
     /// Parses from the raw userInfo dictionary APNs delivers.
     static func from(_ userInfo: [AnyHashable: Any]) -> PushPayload? {

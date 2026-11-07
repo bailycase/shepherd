@@ -338,8 +338,8 @@
     (`design.lifecycle.v1`), its systems' files and their Rename, Duplicate, Delete and Re-sync
     (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
     "Build one from a repo" in a host's space), references to the host's own designs in its
-    threads (`design.references.v1`), a Claude Design ZIP uploaded to import
-    (`design.import.v1`), and a
+    threads (`design.references.v1`), adding or discarding the boards those threads drew
+    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), and a
     pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
     experiment turns on or off).
     Answered by the server itself; boards render on the client

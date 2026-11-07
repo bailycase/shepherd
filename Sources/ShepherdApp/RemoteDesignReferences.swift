@@ -73,6 +73,14 @@ extension ShepherdViewModel {
                 if let page = reference.page { self.remoteDesignScreen(design)?.reveal(page: page) }
                 else if let board = reference.board { self.remoteDesignScreen(design)?.reveal(board: board, element: reference.element) }
             },
+            showBeside: { [weak self] in self?.showBoardBeside(.remote(ref), $0) },
+            settle: { [weak self] id, accept in
+                guard let self, let connection = self.remoteHosts.connections.first(where: { $0.id == host }),
+                      connection.supportsDesignCapability(RemoteProtocol.designBoardsCapability), let library = self.remoteLibrary(host) else {
+                    throw DesignReferenceFailure("Update Shepherd on the host to add boards its threads draw.")
+                }
+                _ = try await library.request(.settleBoardProposal(agentID: agent, payloadID: id, accept: accept))
+            },
             attach: { [weak self] reference in try await self?.attachRemoteDesignReference(reference, to: ref) },
             sendLatest: { [weak self] reference in
                 do { try await self?.attachRemoteDesignReference(reference.unpinned, to: ref) } catch {

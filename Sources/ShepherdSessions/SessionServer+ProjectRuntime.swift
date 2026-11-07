@@ -44,12 +44,13 @@ extension SessionServer {
         }
     }
 
-    public func projectRuntime(_ id: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest) async throws -> Project {
-        try await performProjectRuntime(id, expectedRevision: expectedRevision, request: request, coordinator: nil)
+    /// `byPerson` marks a Pause the person asked for (`LogicalProjectsRequest.setPaused`): their messages then wait for Resume.
+    public func projectRuntime(_ id: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest, byPerson: Bool = false) async throws -> Project {
+        try await performProjectRuntime(id, expectedRevision: expectedRevision, request: request, coordinator: nil, byPerson: byPerson)
     }
 
     func performProjectRuntime(_ id: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest, coordinator: AgentID?,
-                               expectedGeneration: UInt64? = nil, reader: AgentID? = nil) async throws -> Project {
+                               expectedGeneration: UInt64? = nil, reader: AgentID? = nil, byPerson: Bool = false) async throws -> Project {
         let (current, epoch, generation, readAuthority, readRoutes) = try await enqueue {
             guard expectedGeneration == nil || expectedGeneration == self.projectsGeneration else {
                 throw LogicalProjectsError("project_paused", "Project admission was revoked.")
@@ -215,8 +216,8 @@ extension SessionServer {
             }
             p.retireResolvedTasks(eligible: Set(p.tasks.filter { $0.phase == .resolved && $0.id != request.targetTaskID }.map(\.id)))
             if let restored, !p.tasks.contains(where: { $0.id == restored.id }) { p.tasks.append(restored) }
-            // There is no Pause or Resume for the person. Only the runtime stops a Project (a failed launch or save, Projects turned
-            // off, a restart of an old record); the person's next message starts it again.
+            // A stop the runtime made on its own (a failed launch or save, Projects turned off, a restart of an old record) ends with
+            // the person's next message. A Pause the person made ends only with their Resume: until then messages wait.
             func restart() throws {
                 guard !p.interruptPending else { throw LogicalProjectsError("project_busy", "Shepherd is still stopping this project's threads. Send again in a moment.") }
                 guard p.paused else { return }
@@ -226,11 +227,11 @@ extension SessionServer {
                           let scope = self.projectChildScope(p, task: p.tasks[i], thread: thread), self.canResumeProjectChildScope(scope) else { continue }
                     p.tasks[i].childScopeEpoch = scope.epoch + 1; p.tasks[i].revision += 1
                 }
-                p.paused = false
+                p.paused = false; p.pausedByPerson = false
             }
             switch request {
             case .message(let op, let text, _):
-                if coordinator == nil { try restart() }
+                if coordinator == nil, !p.pausedByPerson { try restart() }
                 var message = ProjectMessage(id: op, text: text, images: acceptedImages)
                 message.humanSubmitted = true
                 p.messages.append(message)
@@ -307,6 +308,7 @@ extension SessionServer {
                 p.tasks[i].revision += 1
             case .pause:
                 p.paused = true; p.interruptPending = true
+                if byPerson { p.pausedByPerson = true }
                 self.projectChildClosed.formUnion(self.currentProjectChildScope.values.filter { $0.key.projectID == id && $0.key.ownerID == p.ownerID })
             case .resume:
                 try restart()

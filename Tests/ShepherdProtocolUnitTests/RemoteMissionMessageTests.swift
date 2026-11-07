@@ -25,6 +25,7 @@ enum RemoteMissionSamples {
         .specKitConsent(spaceID: space, fingerprint: "abc", continuePlanning: true), .specKitSetUp(spaceID: space),
         .acceptConvergence(attemptID: attempt), .save(draft: mission.draft), .launch, .pause, .stop, .changes(text: "Rename it"),
         .publish(fingerprint: "f00d"), .revalidate, .runAgain, .steer(attemptID: attempt, text: "Use the new API"),
+        .applyPatch(patchID: attempt), .rejectPatch(patchID: attempt), .autoApplyPatches(on: true),
     ]
     static let requests: [RemoteMissionRequest] = [
         .list, .get(missionID: mission.id), .startOptions,

@@ -35,6 +35,10 @@ struct SettingsView: View {
                let project = vm.projects.selected, let removal = vm.projectCookies.pending {
                 ProjectBrowserSettings(model: vm.projectCookies, project: project, scope: vm.cookieScope(for: project)).confirmation(removal)
             }
+            if vm.settingsSection == .projects, vm.projects.selected != nil, vm.projects.pending != nil,
+               vm.projects.category == .pi, !vm.projects.showingBrowser, !vm.projects.showingHooks {
+                SpaceSettingsLeaveDialog(model: vm.projects)
+            }
         }
         .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)

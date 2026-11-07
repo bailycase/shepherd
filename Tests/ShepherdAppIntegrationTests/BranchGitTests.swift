@@ -1,6 +1,7 @@
 import ShepherdSessions
 import Foundation
 import ShepherdCore
+import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
@@ -47,6 +48,78 @@ struct BranchGitTests {
         #expect(throws: BranchGit.Failure.self) { try BranchGit.push(cwd: repo.clone.path, branch: "--force") }
     }
 
+    @Test func commitTakesOnlyTheTickedFiles() throws {
+        let repo = try Clone()
+        defer { repo.remove() }
+        try "a\nB\n".write(to: repo.clone.appendingPathComponent("ledger.go"), atomically: true, encoding: .utf8)
+        try "new\n".write(to: repo.clone.appendingPathComponent("refund.go"), atomically: true, encoding: .utf8)
+        try "scratch\n".write(to: repo.clone.appendingPathComponent("notes.md"), atomically: true, encoding: .utf8)
+        let id = try BranchGit.commit(cwd: repo.clone.path, paths: ["ledger.go", "refund.go"], message: "Emit refunds\n\nWith a codec.", amend: false)
+        #expect(try repo.head().hasPrefix(id))
+        #expect(try git(["show", "--name-only", "--format=%B", "HEAD"], in: repo.clone) == "Emit refunds\n\nWith a codec.\n\n\nledger.go\nrefund.go\n")
+        #expect(try git(["status", "--porcelain"], in: repo.clone) == "?? notes.md\n", "the unticked file stays untracked")
+        #expect(throws: BranchGit.Failure.self) { try BranchGit.commit(cwd: repo.clone.path, paths: [], message: "x", amend: false) }
+    }
+
+    @Test func amendReplacesAnUnpushedCommit() throws {
+        let repo = try Clone()
+        defer { repo.remove() }
+        try BranchGit.push(cwd: repo.clone.path, branch: "agent/refund-events")
+        try repo.commit("ledger.go", "a\nB\n", in: repo.clone, "Emit refunds")
+        let parent = try repo.head("HEAD~1")
+        #expect(BranchGit.amendBlocked(cwd: repo.clone.path) == nil)
+        try "new\n".write(to: repo.clone.appendingPathComponent("refund.go"), atomically: true, encoding: .utf8)
+        try BranchGit.commit(cwd: repo.clone.path, paths: ["refund.go"], message: "Emit refund events", amend: true)
+        #expect(try repo.head("HEAD~1") == parent, "one commit, replaced")
+        #expect(try git(["show", "--name-only", "--format=%s", "HEAD"], in: repo.clone) == "Emit refund events\n\nledger.go\nrefund.go\n")
+        // No files: only the message changes. Then the amended commit pushes without force.
+        try BranchGit.commit(cwd: repo.clone.path, paths: [], message: "Emit refund events from the outbox", amend: true)
+        #expect(try repo.head("HEAD~1") == parent)
+        try BranchGit.push(cwd: repo.clone.path, branch: "agent/refund-events")
+        #expect(try git(["rev-parse", "agent/refund-events"], in: repo.origin) == git(["rev-parse", "HEAD"], in: repo.clone))
+    }
+
+    /// Amending a pushed commit is the person's call; Commit & push goes off, and the card's Push
+    /// afterwards is refused (never forced) with what happened and how to replace it by hand.
+    @MainActor
+    @Test func amendingAPushedCommitTurnsPushOff() async throws {
+        let repo = try Clone()
+        defer { repo.remove() }
+        try repo.commit("ledger.go", "a\nB\n", in: repo.clone)
+        try BranchGit.push(cwd: repo.clone.path, branch: "agent/refund-events")
+        let pushed = try repo.head()
+        #expect(BranchGit.amendBlocked(cwd: repo.clone.path) == nil)
+        #expect(BranchGit.pushedTo(cwd: repo.clone.path) == "origin/agent/refund-events")
+
+        let info = try await ReviewCommitGit.info(cwd: repo.clone.path, agentWorking: false, draftsMessage: false) { await LoginShell.run($0, cwd: $1) }
+        let form = BranchCommitSheet.Form(info: info, selected: [], title: "Emit refund events", details: "",
+                                          amendBlocked: nil, pushedTo: BranchGit.pushedTo(cwd: repo.clone.path))
+        #expect(BranchCommitSheet.pushProblem(form, amend: false) == nil)
+        #expect(BranchCommitSheet.pushProblem(form, amend: true)
+            == "Commit & push is off: the amended commit will differ from origin/agent/refund-events.")
+
+        try BranchGit.commit(cwd: repo.clone.path, paths: [], message: "Emit refund events", amend: true)
+        #expect(try repo.head() != pushed && repo.head("HEAD~1") == repo.head("\(pushed)~1"))
+        #expect(throws: BranchGit.Failure(message: "agent/refund-events was amended after it was pushed; push with --force-with-lease in a terminal if you mean to replace it.")) {
+            try BranchGit.push(cwd: repo.clone.path, branch: "agent/refund-events")
+        }
+        #expect(try git(["rev-parse", "agent/refund-events"], in: repo.origin).hasPrefix(pushed), "never forced")
+    }
+
+    @Test func amendRefusesDuringAMerge() throws {
+        let repo = try Clone()
+        defer { repo.remove() }
+        try repo.commit("ledger.go", "a\nours\n", in: repo.clone)
+        try repo.commit("ledger.go", "a\ntheirs\n", in: repo.origin)
+        _ = try BranchGit.update(cwd: repo.clone.path, base: "main", rebase: false)
+        let before = try repo.head()
+        #expect(BranchGit.amendBlocked(cwd: repo.clone.path) == "A rebase or merge is in progress.")
+        #expect(throws: BranchGit.Failure.self) {
+            try BranchGit.commit(cwd: repo.clone.path, paths: [], message: "x", amend: true)
+        }
+        #expect(try repo.head() == before)
+    }
+
     @Test func aRejectedPushIsNeverForced() throws {
         let repo = try Clone()
         defer { repo.remove() }
@@ -58,6 +131,7 @@ struct BranchGitTests {
         let theirs = try git(["rev-parse", "agent/refund-events"], in: repo.origin)
         try repo.commit("ledger.go", "ours\n", in: repo.clone)
         #expect(throws: BranchGit.Failure.self) { try BranchGit.push(cwd: repo.clone.path, branch: "agent/refund-events") }
+        #expect(!BranchGit.rewrittenAfterPush(cwd: repo.clone.path, branch: "agent/refund-events"), "someone else's push isn't an amend")
         #expect(try git(["rev-parse", "agent/refund-events"], in: repo.origin) == theirs)
     }
 
