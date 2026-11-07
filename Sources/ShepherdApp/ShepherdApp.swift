@@ -247,6 +247,40 @@ enum WorkspaceInUseAlert {
     }
 }
 
+extension ShepherdHost {
+    /// What the app's view model applies to its server from Settings, applied to the host's: at
+    /// start and on each change a client makes (`HostSettingsMapping`). Serve this Mac opens the
+    /// TCP listener as the app would; a change to it takes effect when the host next starts. The
+    /// listener's port, when it opened.
+    @discardableResult
+    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer) -> UInt16? {
+        server.setProjectsEnabled(settings.projectsEnabled)
+        settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
+        server.setDefaultQueueMode(settings.queueDelivery)
+        settings.onQueueDeliveryChange = { [weak server] in server?.setDefaultQueueMode($0) }
+        server.setGoalsEnabled(settings.goalsEnabled)
+        settings.onGoalsChange = { [weak server] in server?.setGoalsEnabled($0) }
+        server.setHiddenSlashCommands(settings.hiddenSlashCommands)
+        settings.onHiddenSlashCommandsChange = { [weak server] in server?.setHiddenSlashCommands($0) }
+        server.setDesignsServed(settings.designToolEnabled)
+        settings.onDesignToolChange = { [weak server] in server?.setDesignsServed($0) }
+        let pi = server.pi
+        let compact = { (percent: Int?) in
+            Task.detached(priority: .utility) { try? pi.applyCompactionThreshold(percent: percent) }
+        }
+        compact(settings.compactAtPercent)
+        settings.onCompactAtChange = { compact($0) }
+        guard settings.remoteListenerEnabled else { return nil }
+        do {
+            return try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort),
+                                                  tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
+        } catch {
+            ShepherdLog.error("host's remote listener failed to start: \(error)")
+            return nil
+        }
+    }
+}
+
 /// The headless host entry (`Shepherd --host`), for the launcher shim: the session server with
 /// no UI until SIGTERM. Nothing launches it yet.
 public enum ShepherdHost {
@@ -273,6 +307,9 @@ public enum ShepherdHost {
             var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
             spawn.mcp = mcp
             return spawn
+        }, configure: { server in
+            HostSettingsMapping.serve(on: server, settings: settings)
+            serveSettings(settings, on: server)
         }, threads: { server in
             ThreadHosting(defaults: {
                 ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
