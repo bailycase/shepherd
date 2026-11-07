@@ -442,36 +442,40 @@ extension ShepherdViewModel {
     /// Persist retirement and wait for the actual process exits before removing a checkout.
     func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {
         guard removeWorktree else { deleteAgent(id); return }
+        Task {
+            do { try await removeWorktreeAgent(id) } catch { fail("Couldn’t delete the worktree", error) }
+        }
+    }
+
+    /// Retires the agent, waits for its processes, then removes its checkout and local branch.
+    /// Throws before retiring it when the checkout isn't the agent's or is in use.
+    func removeWorktreeAgent(_ id: AgentID) async throws {
         guard let agent = state.agents.first(where: { $0.id == id }),
               let branch = agent.worktreeBranch,
               let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
         let path = agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch)
         let sessionIDs = state.tabs.filter { $0.id == agent.tabID }
             .flatMap { $0.layout.leaves.compactMap(\.sessionID) }
-        Task {
-            do {
-                let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
-                try verifyCheckoutAvailable(canonical)
-                try verifyCheckoutUnused(canonical, except: id)
-                hostBusyWorktrees.insert(canonical)
-                defer { hostBusyWorktrees.remove(canonical) }
-                let (checkoutBranch, fingerprint) = try await Task.detached {
-                    let identity = try GitWorktree.identity(at: path)
-                    try GitWorktree.verifyIdentity(worktree: path, repo: repo, branch: identity.branch)
-                    return (identity.branch, try GitWorktree.deletionFingerprint(worktree: path))
-                }.value
-                try await deleteAgentPersisted(id, worktreeOperation: true)
-                let deadline = ContinuousClock.now + .seconds(10)
-                for sessionID in sessionIDs {
-                    while await server.sessionInfo(sessionID: sessionID)?.isAlive == true {
-                        guard ContinuousClock.now < deadline else { throw GitWorktree.Failure(message: "Agent processes have not stopped. Checkout was kept.") }
-                        try await Task.sleep(for: .milliseconds(50))
-                    }
-                }
-                try verifyCheckoutUnused(canonical, except: id)
-                try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint, checkoutBranch: checkoutBranch) }.value
-            } catch { fail("Couldn’t delete the worktree", error) }
+        let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
+        try verifyCheckoutAvailable(canonical)
+        try verifyCheckoutUnused(canonical, except: id)
+        hostBusyWorktrees.insert(canonical)
+        defer { hostBusyWorktrees.remove(canonical) }
+        let (checkoutBranch, fingerprint) = try await Task.detached {
+            let identity = try GitWorktree.identity(at: path)
+            try GitWorktree.verifyIdentity(worktree: path, repo: repo, branch: identity.branch)
+            return (identity.branch, try GitWorktree.deletionFingerprint(worktree: path))
+        }.value
+        try await deleteAgentPersisted(id, worktreeOperation: true)
+        let deadline = ContinuousClock.now + .seconds(10)
+        for sessionID in sessionIDs {
+            while await server.sessionInfo(sessionID: sessionID)?.isAlive == true {
+                guard ContinuousClock.now < deadline else { throw GitWorktree.Failure(message: "Agent processes have not stopped. Checkout was kept.") }
+                try await Task.sleep(for: .milliseconds(50))
+            }
         }
+        try verifyCheckoutUnused(canonical, except: id)
+        try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint, checkoutBranch: checkoutBranch) }.value
     }
 
     /// `completion` hears the outcome once the deletion is persisted (a peer's `agent_delete`
@@ -509,6 +513,7 @@ extension ShepherdViewModel {
         subagentInspector.runByAgent.removeValue(forKey: id)
         childRuns.clear(agent: id)
         forgetNotifications(of: id)
+        forgetPullRequestLink(id)
         if selectedAgentID == id { selectPreviousAgent(after: id) }
         else { selectionHistory.removeAll { $0 == id } }
         adopt(server.state)

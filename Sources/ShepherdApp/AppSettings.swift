@@ -135,6 +135,7 @@ final class AppSettings {
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
         static let worktreeDeleteAction = "shepherd.worktree.deleteAction"
+        static let worktreeCloseOnMerge = "shepherd.worktree.closeOnMerge"
         static let skippedConfirmations = "shepherd.confirmations.skipped"
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
@@ -154,7 +155,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod, worktreeDeleteAction, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
+            worktreeMergeMethod, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
             goalsEnabled, projectsEnabled, designToolEnabled, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
@@ -497,6 +498,12 @@ final class AppSettings {
         didSet { store.set(worktreeAutoMergePR, forKey: Key.worktreeAutoMergePR) }
     }
 
+    /// Close threads when their pull request merges: a worktree thread whose pull request merges
+    /// is deleted with its worktree, its local branch and its branch on GitHub. **Off by default**.
+    var worktreeCloseOnMerge: Bool {
+        didSet { store.set(worktreeCloseOnMerge, forKey: Key.worktreeCloseOnMerge) }
+    }
+
     /// Merge method for auto-merged finalize PRs.
     var worktreeMergeMethod: WorktreeMergeMethod {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
@@ -652,6 +659,7 @@ final class AppSettings {
         worktreeGeneratePRDescription = store.object(forKey: Key.worktreeGeneratePRDescription) as? Bool ?? true
         worktreeDeleteLocalBranch = store.object(forKey: Key.worktreeDeleteLocalBranch) as? Bool ?? true
         worktreeAutoMergePR = store.bool(forKey: Key.worktreeAutoMergePR)
+        worktreeCloseOnMerge = store.bool(forKey: Key.worktreeCloseOnMerge)
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
             .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
         worktreeDeleteAction = store.string(forKey: Key.worktreeDeleteAction)
@@ -754,6 +762,7 @@ final class AppSettings {
         worktreeGeneratePRDescription = true
         worktreeDeleteLocalBranch = true
         worktreeAutoMergePR = false
+        worktreeCloseOnMerge = false
         worktreeMergeMethod = .squash
         worktreeDeleteAction = .ask
         skippedConfirmations = [:]

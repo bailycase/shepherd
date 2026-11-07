@@ -178,7 +178,13 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. Nothing else.
+is the confirmed Delete Worktree. Close threads when their pull request merges (Settings ▸ Worktrees,
+off by default; `ShepherdViewModel+PullRequestLinks.swift`): once a thread's pull request is seen
+going from open to merged in this launch, it deletes the thread, removes its worktree and local
+branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
+merged-only, never-a-fork deletion; only for a worktree in Shepherd's support folder whose branch is
+the pull request's head, and never while the thread runs or asks or its checkout has uncommitted
+changes or commits GitHub doesn't have (it stays, with a note). Nothing else.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split
