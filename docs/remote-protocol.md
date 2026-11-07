@@ -21,8 +21,9 @@
   actions but Move, a dormant thread's pi on demand, and terminals' shells. It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts). It answers
-  worktree info, setup, finalize and delete and commit from review (`SessionServer.serveWorktrees`,
-  the same `WorktreeQueries` the app serves in process); other `agentQuery` cases are refused.
+  worktree info, setup, finalize and delete, commit from review (the same `WorktreeQueries` the app
+  serves in process), subagents, transcript search and the working tree's review
+  (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands

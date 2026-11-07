@@ -1,6 +1,6 @@
-import ShepherdSessions
 import Foundation
 import Testing
+@testable import ShepherdSessions
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdTestSupport

@@ -1,4 +1,3 @@
-import ShepherdSessions
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -17,23 +16,23 @@ import ShepherdProtocol
 /// main actor; results carry a short match snippet for display.
 ///
 /// Shared by the Mac palette and the host's answer to a remote `agentQuery(.search)`.
-enum PaletteContentSearch {
-    static let minQueryLength = 3
+public enum PaletteContentSearch {
+    public static let minQueryLength = 3
     /// Bytes read from the end of each session file. 512KB covers days of
     /// conversation; a full-history index is deliberately out of scope.
-    static let tailBudget = 512 * 1024
+    public static let tailBudget = 512 * 1024
     /// Characters of context a snippet keeps before and after the match.
-    static let snippetLead = 30
-    static let snippetTrail = 40
+    public static let snippetLead = 30
+    public static let snippetTrail = 40
 
-    struct Match: Sendable {
-        let agentID: AgentID
-        let snippet: String
+    public struct Match: Sendable {
+        public let agentID: AgentID
+        public let snippet: String
     }
 
     /// Case-insensitive substring search across the given agents' sessions, under pi's
     /// `sessionsRoot`. Owns the off-main scan so cancellation reaches it from either caller.
-    static func search(
+    public static func search(
         query: String,
         agents: [(id: AgentID, piSessionID: String, cwd: String)],
         sessionsRoot: URL,
@@ -82,7 +81,7 @@ enum PaletteContentSearch {
 
     /// A snippet of the newest conversation text in the tail of the session file at `url` that
     /// contains `query`, or nil when nothing said there does.
-    static func snippet(
+    public static func snippet(
         for query: String, inSessionAt url: URL, tailBudget: Int = tailBudget,
         read: (FileHandle, Int) throws -> Data? = { try $0.read(upToCount: $1) }
     ) -> String? {
@@ -105,7 +104,7 @@ enum PaletteContentSearch {
 
     /// A snippet of the newest user or assistant text in `lines` (pi session JSONL) that
     /// contains `query`.
-    static func snippet(for query: String, inSessionLines lines: Data) -> String? {
+    public static func snippet(for query: String, inSessionLines lines: Data) -> String? {
         guard !query.isEmpty, !Task.isCancelled else { return nil }
         // One scan over the whole tail finds the lines holding the query, newest first; only
         // those are decoded. pi writes JSON with only quotes, backslashes and control characters
@@ -148,7 +147,7 @@ enum PaletteContentSearch {
     }
 
     /// A one-line excerpt around the match, cut at word boundaries, with `…` where it was cut.
-    static func snippet(around range: Range<String.Index>, in text: String) -> String {
+    public static func snippet(around range: Range<String.Index>, in text: String) -> String {
         var start = text.index(range.lowerBound, offsetBy: -snippetLead, limitedBy: text.startIndex) ?? text.startIndex
         var end = text.index(range.upperBound, offsetBy: snippetTrail, limitedBy: text.endIndex) ?? text.endIndex
         if start > text.startIndex, !text[text.index(before: start)].isWhitespace, let space = text[start..<range.lowerBound].firstIndex(where: \.isWhitespace) {

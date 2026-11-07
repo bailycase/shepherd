@@ -3,6 +3,7 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdUI
 
 /// The ⌘K command palette: agent and space lifecycle on the keyboard instead

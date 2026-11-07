@@ -109,7 +109,7 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Agent thread (pi RPC, turns, queue, questions) | `ShepherdSessions/RPCSession.swift`, `RPCThreadState*.swift`; `ShepherdRemote/NativeThreadStore`; `ShepherdApp/Thread/` |
 | Subagents (native children) | `Extensions/shepherd-children*.ts`, `ShepherdSessions/ChildrenExtension.swift`, `ShepherdRemote/NativeSubagent*.swift` |
 | Changes pane, Undo/Redo, review | `ShepherdSessions/Changes/`, `ShepherdApp/Changes*.swift`, `ShepherdSessions/ReviewCommit.swift` |
-| Worktrees | `ShepherdSessions/GitWorktree.swift`, `ShepherdApp/*Worktree*.swift`, `ShepherdSessions/WorktreeFinalize.swift`, `WorktreeQueries.swift` |
+| Worktrees | `ShepherdSessions/GitWorktree.swift`, `ShepherdApp/*Worktree*.swift`, `ShepherdSessions/WorktreeFinalize.swift`, `WorktreeQueries.swift` (also the host's `agentQuery`) |
 | Browser | `Extensions/shepherd-browser.ts`, `ShepherdApp/Browser*.swift`, `ShepherdRemote/Browser*.swift` |
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |

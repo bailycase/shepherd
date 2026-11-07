@@ -5,14 +5,16 @@ import ShepherdProtocol
 /// Ephemeral display state published by Shepherd's child runtime.
 /// Each publish replaces the parent's rows. Finished transcripts remain inspectable until
 /// the publisher removes them or the parent exits; stale live rows never strand the UI.
-struct ChildRuns {
+public struct ChildRuns {
     /// The publisher refreshes every five seconds while rows are visible.
-    var staleAfter: TimeInterval = 120
+    public var staleAfter: TimeInterval = 120
 
-    private(set) var rows: [AgentID: [ChildRun]] = [:]
+    public init() {}
+
+    public private(set) var rows: [AgentID: [ChildRun]] = [:]
     private var publishedAt: [AgentID: Date] = [:]
 
-    mutating func apply(agentID: AgentID, children: [ChildRun], now: Date = Date()) {
+    public mutating func apply(agentID: AgentID, children: [ChildRun], now: Date = Date()) {
         if children.isEmpty {
             clear(agent: agentID)
         } else {
@@ -22,7 +24,7 @@ struct ChildRuns {
     }
 
     /// Drop live rows from stale publishers. Finished transcripts remain inspectable.
-    mutating func sweep(now: Date = Date()) -> Bool {
+    public mutating func sweep(now: Date = Date()) -> Bool {
         var changed = false
         for agentID in Array(publishedAt.keys) {
             guard let last = publishedAt[agentID], now.timeIntervalSince(last) > staleAfter else { continue }
@@ -37,12 +39,12 @@ struct ChildRuns {
         return changed
     }
 
-    mutating func clear(agent agentID: AgentID) {
+    public mutating func clear(agent agentID: AgentID) {
         rows.removeValue(forKey: agentID)
         publishedAt.removeValue(forKey: agentID)
     }
 
-    func children(of agentID: AgentID) -> [ChildRun] {
+    public func children(of agentID: AgentID) -> [ChildRun] {
         rows[agentID] ?? []
     }
 }

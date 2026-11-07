@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// The ⌘K palette (Composer board, `.shCommandPalette`): a 620pt card 18% from the top over the
 /// scrim, capped to the window. A 44pt search row with All · Commands · Agents scopes, then

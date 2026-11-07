@@ -6,9 +6,10 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Worktree requests and commits from review served by `SessionServer` with no app
-/// (`serveWorktrees`), to a client over `host.sock`: a worktree thread is read and deleted with
-/// its checkout, and a thread's change is committed, each as an operation polled by id.
+/// A client's agent queries served by `SessionServer` with no app (`serveAgentQueries`), over
+/// `host.sock`: a worktree thread is read and deleted with its checkout, a thread's change is
+/// committed (each as an operation polled by id), and a thread's subagents, transcript and
+/// working tree are read.
 @Suite("Worktrees hosted by the server", .mainActorExclusive)
 @MainActor
 struct WorktreeHostingTests {
@@ -27,7 +28,7 @@ struct WorktreeHostingTests {
 
     private func host() async throws -> Hosted {
         let h = try ScratchServer.fresh()
-        let queries = h.server.serveWorktrees(WorktreeHosting(defaults: {
+        let queries = h.server.serveAgentQueries(WorktreeHosting(defaults: {
             .init(autoCommit: true, deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash", generateDescription: false)
         }, deleteAgent: { id, _ in try await h.server.deleteAgent(id) }))
         // `sh`, not the login shell, as the app's commit tests run it.
@@ -62,10 +63,10 @@ struct WorktreeHostingTests {
         return Hosted(scratch: h, client: client, queries: queries, repo: repo, space: space)
     }
 
-    private func addAgent(_ name: String, cwd: String, in hosted: Hosted, branch: String? = nil) async throws -> AgentID {
+    private func addAgent(_ name: String, cwd: String, in hosted: Hosted, branch: String? = nil, piSessionID: String? = nil) async throws -> AgentID {
         let pane = LeafPane(cwd: cwd)
         let tab = ShepherdCore.Tab(spaceID: hosted.space.id, order: 0, layout: .leaf(pane))
-        let agent = Agent(name: name, spaceID: hosted.space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true,
+        let agent = Agent(name: name, spaceID: hosted.space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true, piSessionID: piSessionID,
                           worktreeBranch: branch, worktreeBase: branch == nil ? nil : "main", worktreePath: branch == nil ? nil : cwd)
         try await hosted.scratch.server.addAgent(agent, withTab: tab)
         return agent.id
@@ -128,5 +129,39 @@ struct WorktreeHostingTests {
         #expect(operation.error == nil)
         #expect(try git(["log", "-1", "--format=%s"], in: hosted.repo).hasPrefix("Update the readme"))
         #expect(try git(["status", "--porcelain"], in: hosted.repo) == "?? notes.txt\n")
+    }
+
+    @Test func aClientReadsAThreadsSubagentsTranscriptAndWorkingTree() async throws {
+        let hosted = try await host()
+        defer { hosted.stop() }
+        let agentID = try await addAgent("docs", cwd: hosted.repo.path, in: hosted, piSessionID: "sess-docs")
+        try "changed\n".write(to: hosted.repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let sessions = PiSessionFile.projectDirectory(forCwd: hosted.repo.path, sessionsRoot: hosted.scratch.server.pi.sessionsRoot)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        try (#"{"type":"message","message":{"role":"user","content":"Tidy the marmalade docs"}}"# + "\n")
+            .write(to: sessions.appendingPathComponent("2026_sess-docs.jsonl"), atomically: true, encoding: .utf8)
+        let rows = [ChildRun(runID: "run-1", label: "worker: restyle", state: "running")]
+        // Seen once the host has taken the rows: its own handler runs first.
+        let published = Locked(false)
+        let hostHandler = hosted.scratch.server.onAgentChildren
+        hosted.scratch.server.onAgentChildren = { hostHandler?($0, $1); published.withValue { $0 = true } }
+        let pi = try ExtensionClient(path: hosted.scratch.socketPath)
+        try pi.send(.setAgentChildren(agentID: agentID, children: rows))
+        try await eventuallyOnMain("the host to take the published subagents") { published.withValue { $0 } }
+        let client = hosted.client
+        guard case .children(let children) = try await client.agentQuery(agentID: agentID, query: .children) else {
+            Issue.record("expected subagents"); return
+        }
+        #expect(children == rows)
+
+        guard case .search(let snippet) = try await client.agentQuery(agentID: agentID, query: .search(query: "marmalade")) else {
+            Issue.record("expected a search answer"); return
+        }
+        #expect(snippet?.contains("marmalade") == true)
+        guard case .review(let data, let reference) = try await client.agentQuery(agentID: agentID, query: .review(pullRequest: false)) else {
+            Issue.record("expected a review"); return
+        }
+        #expect(reference == nil)
+        #expect(try JSONDecoder().decode([DiffFile].self, from: data).map(\.displayPath) == ["README.md"])
     }
 }
