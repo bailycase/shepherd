@@ -28,9 +28,20 @@ struct PushTests {
         assert(PushRouter.route(review) == .missions(.review(host: hostID, mission: MissionID(rawValue: missionID))))
         review.destination = .changes
         assert(PushRouter.route(review) == .review(.changes(payload.agentRef!, file: nil)))
-        let categories = Dictionary(uniqueKeysWithValues: PushActions.categories.map { ($0.identifier, $0.actions.map(\.identifier)) })
+        review.destination = .mission(missionID)
+        assert(PushRouter.route(review) == .missions(.mission(host: hostID, mission: MissionID(rawValue: missionID))))
+        // An opened push swaps in its own buttons: a question's options, or Open mission when blocked.
+        assert(PushButtons.actions(kind: "needsAnswer", options: ["order_id", "payment_id"], mission: false)?.map(\.identifier)
+               == ["option:0", "option:1", "reply", "open"])
+        assert(PushButtons.actions(kind: "error", options: nil, mission: true)?.map(\.identifier) == ["openMission"])
+        assert(PushButtons.actions(kind: "error", options: nil, mission: false) == nil)
+        assert(PushButtons.actions(kind: "needsAnswer", options: [], mission: false) == nil)
+        let asked: [AnyHashable: Any] = ["shepherd": ["detail": ["options": ["order_id", "payment_id"]]]]
+        assert(PushButtons.optionText("option:1", userInfo: asked) == "payment_id")
+        assert(PushButtons.optionText("option:2", userInfo: asked) == nil && PushButtons.optionText("open", userInfo: asked) == nil)
+        let categories = Dictionary(uniqueKeysWithValues: PushButtons.categories.map { ($0.identifier, $0.actions.map(\.identifier)) })
         assert(categories == ["needsAnswer": ["reply", "open"], "error": ["open"], "done": ["review"], "review": ["approve", "openReview"]])
-        let approve = PushActions.categories.first { $0.identifier == "review" }!.actions[0]
+        let approve = PushButtons.categories.first { $0.identifier == "review" }!.actions[0]
         assert(approve.options.contains(.foreground) && approve.options.contains(.authenticationRequired),
                "Approve opens Shepherd, which asks for Face ID")
         // Reply…'s words pick the option they name, or answer a question that takes words.
@@ -49,7 +60,7 @@ struct PushTests {
         }
         var refused = false
         do {
-            try await PushActions.perform(PushActions.approve, text: nil, payload: review,
+            try await PushActions.perform(PushButtons.approve, text: nil, payload: review,
                                           hosts: MobileHosts(defaults: defaults, tokens: .memory()), authenticate: { throw GlanceFailure("no") })
         } catch { refused = (error as? GlanceFailure)?.message == "no" }
         assert(refused, "nothing is published without Face ID")

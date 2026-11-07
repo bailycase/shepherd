@@ -148,6 +148,9 @@ public struct MissionCheckout: Codable, Hashable, Sendable, Identifiable {
     /// HEAD after the mission's own last turn, when a stock Spec Kit step committed (the git extension's
     /// commit hooks, or the model): review diffs from `head` and accepts commits up to here. Nil: none.
     public var observedHead: String?
+    /// Lines the reviewed changes add and remove, read when the mission reached review. Nil before.
+    public var added: Int?
+    public var removed: Int?
     public var id: SpaceID { spaceID }
     public init(spaceID: SpaceID, repo: String, path: String, branch: String, base: String, head: String,
                 fingerprint: String? = nil, prURL: String? = nil, publishedHead: String? = nil, originFingerprint: String? = nil) {
