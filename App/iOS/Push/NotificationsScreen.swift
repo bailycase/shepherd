@@ -1,36 +1,87 @@
+import ActivityKit
 import SwiftUI
 import UIKit
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings ▸ Notifications: per-host push opt-in.
-/// Default off. Each host gets its own toggle; all event types enabled together.
-/// One flat list — every host appears regardless of connection state so error/retry
-/// rows stay visible even when the host goes offline.
+/// Settings ▸ Notifications (NotifSettings): what to send, to which device, per mission, and
+/// which hosts send at all. The choices live on the phone and go to every host it registered
+/// with, which applies them before sending (`RemotePushPreferences`).
 struct NotificationsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(PushManager.self) private var push
     @Environment(\.settingsColumn) private var inColumn
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
+    @State private var liveActivities = ActivityAuthorizationInfo().areActivitiesEnabled
+
+    private typealias Topic = RemotePushPreferences.Topic
+    private typealias Level = RemotePushPreferences.MissionLevel
 
     var body: some View {
+        let preferences = push.preferences
+        let missions = Self.missions(hosts.hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("Get notified when a thread finishes, hits an error, or needs your answer, even when Shepherd isn't open.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .padding(.horizontal, SH.Space.xs)
-
-                if hosts.hosts.isEmpty {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to enable push notifications.")
-                } else {
+                SettingsSection("Send me") {
                     SHListCard {
-                        ForEach(hosts.hosts) { host in
-                            PushHostRow(host: host)
+                        topic(.questions, "Questions and approvals", note: "Planner, subagent and automation questions, plans, reviews")
+                        topic(.blocked, "Blocked work", note: "Stuck lanes and empty budgets")
+                        topic(.failures, "Failures", note: "Failed turns and threads that stopped")
+                        topic(.finished, "Finished work", note: "Quietly, and in your Scheduled Summary")
+                    }
+                }
+                SettingsSection("Which device") {
+                    SHListCard {
+                        SettingsSwitchRow("Only when I’m away from my Mac",
+                                          note: "Your Mac gets it first. This device only after 2 minutes idle.",
+                                          isOn: preferences.awayOnly) { on in
+                            var next = preferences
+                            next.awayOnly = on
+                            save(next)
+                        }
+                        Button {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        } label: {
+                            SettingsControlRow("Live Activities") {
+                                Text(liveActivities ? "On" : "Off").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                                Image(systemName: "chevron.right").font(.sh(.caption, weight: .semibold))
+                                    .foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                if !missions.isEmpty {
+                    SettingsSection("Per mission") {
+                        SHListCard {
+                            ForEach(missions) { mission in
+                                SettingsControlRow(mission.title) {
+                                    SettingsPicker(mission.title, selection: preferences.missions[mission.id] ?? .everything,
+                                                   options: Level.allCases, title: Self.title) { level in
+                                        var next = preferences
+                                        next.missions[mission.id] = level == .everything ? nil : level
+                                        save(next)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+                SettingsSection("Send from") {
+                    if hosts.hosts.isEmpty {
+                        SettingsFootnote("Add a host in Settings ▸ Hosts to enable push notifications.")
+                    } else {
+                        SHListCard {
+                            ForEach(hosts.hosts) { host in
+                                PushHostRow(host: host)
+                            }
+                        }
+                    }
+                }
+                SettingsFootnote("Lock-screen previews follow iOS settings.")
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
@@ -40,10 +91,48 @@ struct NotificationsScreen: View {
         }
         .background(Color.sh.bgWindow)
         .task(id: scenePhase) {
-            if scenePhase == .active { await push.refreshPermission() }
+            if scenePhase == .active {
+                liveActivities = ActivityAuthorizationInfo().areActivitiesEnabled
+                await push.refreshPermission()
+            }
         }
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func topic(_ topic: Topic, _ title: String, note: String) -> some View {
+        SettingsSwitchRow(title, note: note, isOn: push.preferences.topics.contains(topic)) { on in
+            var next = push.preferences
+            if on { next.topics.insert(topic) } else { next.topics.remove(topic) }
+            save(next)
+        }
+    }
+
+    private func save(_ next: RemotePushPreferences) {
+        Task { await push.setPreferences(next, hosts: hosts.hosts) }
+    }
+
+    private static func title(_ level: Level) -> String {
+        switch level {
+        case .everything: "Everything"
+        case .onlyBlocked: "Only blocked"
+        case .onlyFailures: "Only failures"
+        case .nothing: "Nothing"
+        }
+    }
+
+    struct MissionRow: Identifiable, Equatable {
+        let id: String
+        let title: String
+    }
+
+    /// The missions still going on every host that has them, in each host's order.
+    static func missions(_ hosts: [MobileHost]) -> [MissionRow] {
+        hosts.flatMap { host in
+            host.missions.records
+                .filter { ![.done, .stopped].contains($0.run?.phase) }
+                .map { MissionRow(id: $0.id.rawValue, title: $0.draft.title) }
+        }
     }
 }
 

@@ -33,6 +33,9 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
         self.activeSince = activeSince; self.notice = notice; self.reviewFingerprint = reviewFingerprint
     }
 
+    /// The notice a person's Pause leaves, which tells it apart from a run that paused itself.
+    public static let pausedByPerson = "Paused. Worktrees and evidence are retained; nothing will resume on its own."
+
     public var tokens: Int { attempts.reduce(0) { $0 + $1.tokens } }
     public var cost: Double { attempts.reduce(0) { $0 + $1.cost } }
     public var plannerID: AgentID? { attempts.last(where: { $0.stationID == nil })?.agentID }

@@ -19,6 +19,8 @@ final class PushManager {
     }
     private(set) var hostStates: [UUID: HostPushState] = [:]
     private(set) var deviceTokenHex: String?
+    /// Settings ▸ Notifications, the same for every host; each host applies it before sending.
+    private(set) var preferences: RemotePushPreferences
     @ObservationIgnored private let keychain: PushKeychainAccess
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let isFixture: Bool
@@ -35,6 +37,7 @@ final class PushManager {
     @ObservationIgnored var onEnabledHostsChanged: ((Set<UUID>) -> Void)?
     private static let enabledHostsKey = "shepherd.ios.push.enabledHosts"
     private static let revokingHostsKey = "shepherd.ios.push.revokingHosts"
+    private static let preferencesKey = "shepherd.ios.push.preferences"
 
     init(defaults: UserDefaults = .standard, keychain: PushKeychainAccess = .real,
          isFixture: Bool = false, session: URLSession? = nil, tokenTimeout: Duration = .seconds(10),
@@ -48,6 +51,8 @@ final class PushManager {
         self.tokenTimeout = tokenTimeout
         self.authorize = authorize
         self.registerToken = registerToken
+        preferences = defaults.data(forKey: Self.preferencesKey)
+            .flatMap { try? JSONDecoder().decode(RemotePushPreferences.self, from: $0) } ?? RemotePushPreferences()
         for raw in defaults.stringArray(forKey: Self.enabledHostsKey) ?? [] {
             if let id = UUID(uuidString: raw) { hostStates[id] = HostPushState(enabled: true) }
         }
@@ -204,8 +209,24 @@ final class PushManager {
     private func registerWithHost(_ host: MobileHost, _ credential: PushKeychain.Credential) async throws {
         hostStates[host.id]?.registered = false
         if let client = host.connectedClient, hostSupportsPush(host) {
-            try await client.registerPush(RemotePushRegistration(id: credential.registrationID, sendToken: credential.sendToken))
+            try await client.registerPush(RemotePushRegistration(id: credential.registrationID, sendToken: credential.sendToken,
+                                                                 preferences: preferences))
             hostStates[host.id]?.registered = true
+        }
+    }
+
+    /// Saves Settings ▸ Notifications and tells every connected host that sends to this phone.
+    func setPreferences(_ next: RemotePushPreferences, hosts: [MobileHost]) async {
+        guard next != preferences else { return }
+        preferences = next
+        defaults.set(try? JSONEncoder().encode(next), forKey: Self.preferencesKey)
+        guard !isFixture else { return }
+        for host in hosts where isEnabled(host: host.id) && hostStates[host.id]?.revokeFailed != true {
+            await acquire(host.id)
+            do {
+                if let credential = try keychain.read(host.id) { try await registerWithHost(host, credential) }
+            } catch { hostStates[host.id]?.error = error.localizedDescription }
+            release(host.id)
         }
     }
 

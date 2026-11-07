@@ -163,7 +163,7 @@ final class MissionController {
         schedule(id: id, runID: run.id) { try await self.execute(id, runID: run.id) }
     }
 
-    func pause(id: MissionID, revision: UInt64) async throws { guard try record(id).revision == revision else { throw MissionError("stale_mission", "This mission changed. Pause the current run.") }; try await halt(id: id, phase: .paused, notice: "Paused. Worktrees and evidence are retained; nothing will resume on its own.") }
+    func pause(id: MissionID, revision: UInt64) async throws { guard try record(id).revision == revision else { throw MissionError("stale_mission", "This mission changed. Pause the current run.") }; try await halt(id: id, phase: .paused, notice: MissionRun.pausedByPerson) }
     func stop(id: MissionID, revision: UInt64) async throws { guard try record(id).revision == revision else { throw MissionError("stale_mission", "This mission changed. Stop the current run.") }; try await halt(id: id, phase: .stopped, notice: "Stopped. Worktrees and publication receipts are retained. Inspect any in-flight publication before trying again.") }
 
     func requestChanges(id: MissionID, revision: UInt64, text: String) async throws {

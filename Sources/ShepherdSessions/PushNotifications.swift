@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -52,6 +53,10 @@ final class PushNotifications: @unchecked Sendable {
     /// The thread you are watching on this Mac (`SessionServer.setFocusedThread`); it sends no pushes.
     var focused: AgentID?
     var now: () -> Date = Date.init
+    /// Seconds since the person last touched this Mac, for away-only phones.
+    var idleSeconds: () -> TimeInterval = {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
 
     init(file: URL, queue: DispatchQueue) {
         self.file = file
@@ -67,7 +72,8 @@ final class PushNotifications: @unchecked Sendable {
            let saved = try? JSONDecoder().decode([RemotePushRegistration].self, from: data), saved.count <= 16 {
             for registration in saved where Self.valid(registration) {
                 let id = UUID(uuidString: registration.id)!.uuidString
-                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken)
+                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken,
+                                                           preferences: registration.preferences)
             }
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         }
@@ -83,7 +89,7 @@ final class PushNotifications: @unchecked Sendable {
         let id = UUID(uuidString: registration.id)!.uuidString
         guard registrations[id] != nil || registrations.count < 16 else { throw Failure.full }
         var next = registrations
-        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken)
+        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken, preferences: registration.preferences)
         try persist(next)
         cancel(id)
         registrations = next
@@ -139,6 +145,15 @@ final class PushNotifications: @unchecked Sendable {
         #"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@"#
     ].map { try! NSRegularExpression(pattern: $0) }
 
+    /// Which Send me switch an alert of `kind` answers to, when the caller names none.
+    static func topic(_ kind: Kind) -> RemotePushPreferences.Topic {
+        switch kind {
+        case .needsAnswer, .review: .questions
+        case .error: .failures
+        case .done: .finished
+        }
+    }
+
     /// Loudness and Scheduled Summary rank by kind: a question outranks a failure outranks finished work.
     static func presentation(_ kind: Kind) -> (level: String, relevance: Double) {
         switch kind {
@@ -151,8 +166,15 @@ final class PushNotifications: @unchecked Sendable {
 
     /// `group` stacks the alert with its thread's or mission's others; `subtitle` names the kind.
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
-              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil) {
-        guard !registrations.isEmpty, agentID != focused else { return }
+              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil,
+              topic: RemotePushPreferences.Topic? = nil, missionID: String? = nil) {
+        let topic = topic ?? Self.topic(kind)
+        let away = idleSeconds() >= RemotePushPreferences.awayAfter
+        let wanted = registrations.values.filter { registration in
+            guard let preferences = registration.preferences else { return true }
+            return (away || !preferences.awayOnly) && preferences.allows(topic, mission: missionID ?? mission?.id)
+        }
+        guard !wanted.isEmpty, agentID != focused else { return }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
         guard eventCount < 30 else { return }
@@ -165,7 +187,7 @@ final class PushNotifications: @unchecked Sendable {
         guard let rich = try? JSONEncoder().encode(event), let legacy = try? JSONEncoder().encode(event.legacy) else { return }
         let body = relayIsLegacy ? legacy : rich
         // No pending queue: overload drops deliveries rather than growing memory or replaying later.
-        for registration in registrations.values where deliveries.count < 16 {
+        for registration in wanted where deliveries.count < 16 {
             post(body, legacy: body == legacy ? nil : legacy, to: registration)
         }
     }
