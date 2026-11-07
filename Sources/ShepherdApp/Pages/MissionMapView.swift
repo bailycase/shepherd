@@ -495,6 +495,9 @@ struct MissionMapPage: View {
     /// A pending patch (MXPatch) previews over the map: its marks, and the inspector opens on it.
     private let patch: MissionPatch?
     private let marks: MissionPatchMarks
+    /// MXTemplateSave: the template being saved, drawn in the map's place.
+    @State private var saving: (template: MissionTemplate, layout: MissionMapLayout)?
+    private var drawn: (mission: Mission, layout: MissionMapLayout) { saving.map { ($0.template.preview, $0.layout) } ?? (mission, layout) }
     @State private var selection: String?
     @State private var dismissed = false
     /// Narrow windows only: the selected station's inspector in place of the map.
@@ -567,6 +570,10 @@ struct MissionMapPage: View {
         .onChange(of: mission.revision) { _, _ in if !editable { undo = nil } }
         .onAppear {
             if seed.side { inspecting = true }
+            if seed.savingTemplate, done {
+                let template = MissionTemplate.from(mission, name: mission.draft.title, summary: mission.draft.goal, at: Date().timeIntervalSince1970)
+                saving = (template, MissionMapLayout(plan: template.plan))
+            }
             if let seeded = seed.wires { wires = seeded }
         }
     }
@@ -574,7 +581,9 @@ struct MissionMapPage: View {
     private static let patchID = "patch"
 
     @ViewBuilder private func inspector(_ id: String) -> some View {
-        if id == Self.patchID, let patch {
+        if saving != nil, done {
+            MissionTemplateSaveInspector(mission: mission, busy: busy, close: { saving = nil }, action: action)
+        } else if id == Self.patchID, let patch {
             MissionPatchInspector(mission: mission, patch: patch, busy: busy, editable: editable, openThread: openThread,
                                   close: { dismissed = true; inspecting = false }, edit: {
                                       action(.applyPatch(patch.id))
@@ -583,7 +592,10 @@ struct MissionMapPage: View {
         } else if let node = layout.node(id: id) {
             if node.role == .finish {
                 MissionDoneInspector(mission: mission, reviews: reviews, busy: busy, close: { dismissed = true; inspecting = false }, action: action,
-                                     showTrain: showTrain)
+                                     showTrain: showTrain, saveTemplate: {
+                                         let template = MissionTemplate.from(mission, name: mission.draft.title, summary: mission.draft.goal, at: Date().timeIntervalSince1970)
+                                         saving = (template, MissionMapLayout(plan: template.plan))
+                                     })
             } else if let station = node.station {
                 MissionStationInspector(mission: mission, station: station, layout: layout, models: models, busy: busy, editable: editable,
                                         openThread: openThread, close: { dismissed = true; inspecting = false },
@@ -598,8 +610,8 @@ struct MissionMapPage: View {
                     toolbar
                     GeometryReader { geometry in
                         ScrollView([.horizontal, .vertical]) {
-                            let size = layout.size(metrics)
-                            MissionGraph(mission: mission, layout: layout, metrics: metrics, filter: wires, selection: shown, marks: marks) {
+                            let size = drawn.layout.size(metrics)
+                            MissionGraph(mission: drawn.mission, layout: drawn.layout, metrics: metrics, filter: wires, selection: shown, marks: marks) {
                                 selection = $0; dismissed = false; inspecting = true
                             }
                             .scaleEffect(zoom, anchor: .topLeading)
@@ -639,7 +651,7 @@ struct MissionMapPage: View {
     /// Room right of the last lane for the wire words that hang past it (an artifact, "join · all").
     private static let labelRoom = SH.Space.xxxl
     /// The graph's width with its margins and that room, unzoomed.
-    private func framedWidth(_ m: MissionMapMetrics) -> CGFloat { layout.size(m).width + SH.Space.xl * 2 + Self.labelRoom }
+    private func framedWidth(_ m: MissionMapMetrics) -> CGFloat { drawn.layout.size(m).width + SH.Space.xl * 2 + Self.labelRoom }
 
     /// Every lane in view without shrinking text past legibility: the full map scaled down while it
     /// stays readable, else Run's compact route (MXRun) at its own size, scrolling if it must.
@@ -674,13 +686,23 @@ struct MissionMapPage: View {
             .padding(.horizontal, SH.Space.xs)
             .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
             Button {
-                let size = layout.size(metrics)
+                let size = drawn.layout.size(metrics)
                 zoomed = true
                 zoom = min(1, max(AppLayout.missionZoomRange.lowerBound,  min(viewport.width / framedWidth(metrics), viewport.height / (size.height + SH.Space.xxxl))))
             } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                 .buttonStyle(.shIcon(bordered: true)).shHelp("Fit the map").accessibilityLabel("Fit the map")
             Spacer(minLength: SH.Space.m)
-            if let patch {
+            if let saving {
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "eye").font(.sh(.caption))
+                    Text("Template preview").shText(.ui)
+                    Text("\(saving.template.plan.stations.count) stations · \(saving.template.inputs.count) inputs · \(saving.template.learned.count) learned").shText(.micro)
+                }
+                .foregroundStyle(Color.sh.textSecondary)
+                .padding(.horizontal, SH.Space.l).frame(height: SH.Height.controlM)
+                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+                .fixedSize()
+            } else if let patch {
                 MissionPatchBanner(patch: patch, diff: patch.diff(from: mission.draft)) {
                     selection = Self.patchID; dismissed = false; inspecting = true
                 }.fixedSize()
@@ -1047,6 +1069,7 @@ private struct MissionDoneInspector: View {
     let close: () -> Void
     let action: (MissionUIAction) -> Void
     var showTrain: (() -> Void)?
+    var saveTemplate: (() -> Void)?
 
     private var checkouts: [MissionCheckout] { mission.run?.checkouts ?? [] }
     private var validated: Bool {
@@ -1110,6 +1133,11 @@ private struct MissionDoneInspector: View {
                     .buttonStyle(.sh(.ghost)).disabled(busy)
                     .shHelp("Plan a new mission with the same destination, repositories, branches and model")
                 Spacer()
+                if let saveTemplate {
+                    Button(action: saveTemplate) { Label("Save as template", systemImage: SHGlyph.mission.symbolName) }
+                        .buttonStyle(.sh(.secondary)).disabled(busy)
+                        .shHelp("Keep this map to start the next mission like it from")
+                }
                 if let showTrain {
                     Button(action: showTrain) { Label(mission.run?.train == nil ? "Merge train…" : "Merge train", systemImage: SHGlyph.gitBranch.symbolName) }
                         .buttonStyle(.sh(mission.run?.train == nil ? .primary : .secondary))
