@@ -697,7 +697,7 @@ class VerifyAppTests(unittest.TestCase):
         self.assertEqual(len(consumers), len(installers))
         for consumer in consumers:
             installer = installers[consumer.stem.removeprefix("shepherd-")]
-            source = Path(ROOT, "Sources", "ShepherdApp", installer + "Extension.swift").read_text()
+            source = Path(ROOT, "Sources", "ShepherdSessions", installer + "Extension.swift").read_text()
             if installer == "Children":
                 self.assertIn('(\"shepherd-lines.mjs\", EmbeddedExtensions.source(\"shepherd-lines.mjs\"))', source)
             else:
