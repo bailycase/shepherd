@@ -16,6 +16,16 @@ extension MCPLaunch {
         }
         return MCPLaunch(extensions: extensions, environment: environment)
     }
+
+    /// A spawn's MCP under these settings (`AgentSpawn.mcp`): `forAgents`, shared with the
+    /// folder's project.
+    @MainActor
+    static func spawnMCP(settings: AppSettings, store: MCPStore) -> AgentSpawn.MCP {
+        { parent, agent, cwd, state, verifiedWorktree in
+            try forAgents(settings: settings, store: store)?
+                .sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree)
+        }
+    }
 }
 
 extension AppSettings {

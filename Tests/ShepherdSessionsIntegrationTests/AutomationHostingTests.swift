@@ -36,7 +36,9 @@ struct AutomationHostingTests {
     }
 
     private func serve(_ h: ScratchServer) {
-        let hosting = h.server.headlessAutomationHosting(launch: { AgentLaunchSettings() }, defaults: {
+        // The host's MCP, as `ShepherdHost` resolves it from the app's servers and Keychain.
+        let mcp: AgentSpawn.MCP = { _, _, _, _, _ in MCPLaunch(extensions: MCPLaunch.builtIns, environment: ["MCP_SECRET": "acme-token"]) }
+        let hosting = h.server.headlessAutomationHosting(launch: { AgentLaunchSettings() }, mcp: mcp, defaults: {
             AutomationHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
                                        worktreeFetchBeforeCreate: false, projectsEnabled: false)
         })
@@ -83,6 +85,7 @@ struct AutomationHostingTests {
         #expect(paneSession(agent, on: h) != nil)
         try await eventuallyOnMain("the run's pi to launch") { launch(of: run) != nil }
         #expect(launch(of: run)?.env["SHEPHERD_AUTOMATION"] == "1", "a run can't create automations")
+        #expect(launch(of: run)?.env["MCP_SECRET"] == "acme-token", "a run's pi gets the host's MCP")
 
         try h.server.stopAutomation(automation.id)
         try await eventuallyOnMain("the run to go") {

@@ -229,12 +229,20 @@ enum WorkspaceInUseAlert {
 public enum ShepherdHost {
     public static let argument = "--host"
 
-    /// Agents respawn, and automation runs start, with the app's settings. MCP waits for slice 4
-    /// (its secrets are the app's). Merged threads close per Settings ▸ Worktrees.
+    /// Agents respawn, and automation runs start, with the app's settings and its MCP servers
+    /// (their Keychain secrets read here, as the app reads them). Merged threads close per
+    /// Settings ▸ Worktrees.
     public static func main() -> Never {
         let settings = AppSettings.shared
-        SessionHost.run(respawn: { AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch) }, automations: { server in
-            server.headlessAutomationHosting(launch: { settings.agentLaunch }, defaults: {
+        let mcp = MainActor.assumeIsolated {
+            MCPLaunch.spawnMCP(settings: settings, store: MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in })))
+        }
+        SessionHost.run(respawn: {
+            var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
+            spawn.mcp = mcp
+            return spawn
+        }, automations: { server in
+            server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
                 AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
                                            serviceTier: settings.defaultServiceTier,
                                            worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,

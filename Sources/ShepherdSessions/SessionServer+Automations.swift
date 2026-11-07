@@ -53,13 +53,15 @@ public struct AutomationHosting {
 
 extension SessionServer {
     /// Hosting with no app: runs start through `startNewAgent` and go through `deleteAgent`.
+    /// `mcp` is what each run's pi gets for MCP.
     @MainActor
     public func headlessAutomationHosting(launch: @escaping @MainActor () -> AgentLaunchSettings,
+                                          mcp: @escaping AgentSpawn.MCP = { _, _, _, _, _ in nil },
                                           defaults: @escaping @MainActor () -> AutomationHosting.Defaults) -> AutomationHosting {
         AutomationHosting(
             defaults: defaults,
             startAgent: { [unowned self] config in
-                try await self.startNewAgent(config, launch: launch(), defaultServiceTier: defaults().serviceTier)
+                try await self.startNewAgent(config, launch: launch(), defaultServiceTier: defaults().serviceTier, mcp: mcp)
             },
             deleteAgent: { [unowned self] id in try await self.deleteAgent(id) },
             stopRun: { [unowned self] id in
@@ -70,9 +72,10 @@ extension SessionServer {
     }
 
     /// Starts a new agent with no app: adds its thread, spawns its pi, sends its opening prompt
-    /// and binds the session to its pane.
+    /// and binds the session to its pane. `mcp` is what its pi gets for MCP.
     @MainActor
-    public func startNewAgent(_ config: NewAgentConfig, launch: AgentLaunchSettings, defaultServiceTier: ServiceTier) async throws -> AgentID {
+    public func startNewAgent(_ config: NewAgentConfig, launch: AgentLaunchSettings, defaultServiceTier: ServiceTier,
+                              mcp: @escaping AgentSpawn.MCP = { _, _, _, _, _ in nil }) async throws -> AgentID {
         guard state.spaces.contains(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
         }
@@ -85,6 +88,7 @@ extension SessionServer {
         var spawn = AgentSpawn(agent: agent, cwd: AgentLaunch.resolvedCwd(pane.cwd), settings: launch)
         spawn.isAutomation = config.isAutomation
         spawn.specKit = true
+        spawn.mcp = mcp
         guard let info = try await spawnAgent(spawn) else { throw AgentStartFailure(message: "session failed: pane unavailable") }
         if let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id) {
             await sendOpeningPrompt(opening, sessionID: info.id)
