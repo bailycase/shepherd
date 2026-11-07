@@ -908,6 +908,17 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Advanced when the background service is off in Login Items: the one line (C11).
+    @Test func settingsAdvancedBackgroundServiceOff() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.backgroundServiceStatus = .requiresApproval
+        workspace.vm.settingsSection = .advanced
+        try await Preview.render("settings-advanced-background-off", size: CGSize(width: 1280, height: 1000)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     @Test func resetSettingsDialog() async throws {
         try await Preview.render("sheet-reset-settings", size: CGSize(width: SHDialogMetrics.width, height: 180)) {
             ResetSettingsDialog(reset: {}, cancel: {})

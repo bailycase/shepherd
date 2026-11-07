@@ -26,6 +26,9 @@ enum BackgroundHostClient {
     /// This launch's owner: written once by the start, off main, before the model is made; read
     /// on main after.
     nonisolated(unsafe) static var owner = Owner.app
+    /// The launchd job's status this launch, nil when it may not register (`BackgroundService`).
+    /// Written once by the start, like `owner`.
+    nonisolated(unsafe) static var serviceStatus: BackgroundService.Status?
 
     static func requested(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         environment[environmentKey] == "1"
@@ -38,8 +41,17 @@ enum BackgroundHostClient {
     /// The start's choice: the host when its socket answers; else the app takes the workspace.
     /// A workspace in use with no answer is a host starting: it is asked again `attempts` times,
     /// `wait` apart, then the launch says so.
-    static func choose(answers: () -> Bool, own: () throws -> Void, wait: () -> Void, attempts: Int = 10) throws -> Owner {
+    /// With the service on (`waitFirst`), the host is waited for before the app takes the
+    /// workspace: launchd may still be starting it.
+    static func choose(answers: () -> Bool, own: () throws -> Void, wait: () -> Void, attempts: Int = 10,
+                       waitFirst: Bool = false) throws -> Owner {
         if answers() { return .host }
+        if waitFirst {
+            for _ in 0..<attempts {
+                wait()
+                if answers() { return .host }
+            }
+        }
         do {
             try own()
             return .app
