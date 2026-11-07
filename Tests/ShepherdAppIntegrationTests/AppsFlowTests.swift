@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import SwiftUI
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import ShepherdTestSupport
@@ -180,5 +181,51 @@ struct AppsFlowTests {
         try await runThenStop("New thread", in: window)
         vm.selectAgent(thread.agent.id)
         try await runThenStop("the header", in: window)
+    }
+}
+
+/// The agent's app tools over the real extension socket (`ExtensionMessage.app`): an agent lists
+/// its own space's apps, runs one it is allowed to, reads its output and stops it; it is refused
+/// an app whose "Agents can start it" is off, and an app of another space.
+@Suite("App tools", .mainActorExclusive)
+@MainActor
+struct AppToolsFlowTests {
+    @Test func anAgentRunsReadsAndStopsItsSpacesAppAndIsRefusedTheRest() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let payments = app.dir.appendingPathComponent("payments"), ledger = app.dir.appendingPathComponent("ledger")
+        try AppsFile.save([AppDefinition(name: "Worker", command: "echo worker-up; sleep 60", agents: true),
+                           AppDefinition(name: "Docs", command: "sleep 60")], to: AppsFile.url(in: payments.path))
+        try AppsFile.save([AppDefinition(name: "Ledger job", command: "sleep 60", agents: true)], to: AppsFile.url(in: ledger.path))
+        let space = Fixture.space("payments", path: payments.path), other = Fixture.space("ledger", path: ledger.path)
+        let thread = Fixture.agent("Add refund events", in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space, other], agents: [thread]))
+        let agent = thread.agent.id
+
+        func text(_ reply: ExtensionReply) -> String? { if case .appResult(_, let text) = reply { text } else { nil } }
+        func code(_ reply: ExtensionReply) -> String? { if case .error(_, let code, _) = reply { code } else { nil } }
+
+        let list = try #require(text(try await app.extensionRequest(.app(id: 1, agentID: agent, action: .list, name: nil, lines: nil))))
+        #expect(list.contains("- Worker: not running · you can run it"))
+        #expect(list.contains("- Docs: not running · only the user can run it"))
+        #expect(!list.contains("Ledger job"), "another space's apps are not listed")
+
+        let started = try #require(text(try await app.extensionRequest(.app(id: 2, agentID: agent, action: .run, name: "Worker", lines: nil))))
+        #expect(started.hasPrefix("Started Worker"))
+        let key = AppKey(scope: .space(space.id), name: "Worker")
+        let apps = vm.apps
+        try await eventuallyOnMain("Settings and the header to see it run", timeout: .seconds(20)) { apps.process(key)?.lineCount == 1 }
+        let logs = try #require(text(try await app.extensionRequest(.app(id: 3, agentID: agent, action: .logs, name: "Worker", lines: 5))))
+        #expect(logs.hasSuffix("\nworker-up"), "\(logs)")
+
+        #expect(code(try await app.extensionRequest(.app(id: 4, agentID: agent, action: .run, name: "Docs", lines: nil))) == "not_allowed")
+        #expect(code(try await app.extensionRequest(.app(id: 5, agentID: agent, action: .run, name: "Ledger job", lines: nil))) == "no_such_app")
+        #expect(code(try await app.extensionRequest(.app(id: 6, agentID: agent, action: .logs, name: "Ledger job", lines: nil))) == "no_such_app")
+        // Logs need no switch: any app of the space.
+        #expect(text(try await app.extensionRequest(.app(id: 7, agentID: agent, action: .logs, name: "Docs", lines: nil))) == "Docs hasn't run since Shepherd started.")
+
+        let stopped = try #require(text(try await app.extensionRequest(.app(id: 8, agentID: agent, action: .stop, name: "Worker", lines: nil))))
+        #expect(stopped.hasPrefix("Stopping Worker"))
+        try await eventuallyOnMain("the app to stop") { apps.process(key)?.status.isLive == false }
     }
 }

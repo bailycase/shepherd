@@ -80,6 +80,7 @@ extension SettingsPreviewTests {
         editor.name = "Web app"
         editor.command = "npm run dev"
         editor.folder = "web"
+        editor.agents = true
         try await Preview.render("settings-apps-add", size: CGSize(width: AppLayout.appsSheetWidth, height: AppLayout.appsSheetHeight)) {
             AppEditSheet(editor: editor) {}
         }

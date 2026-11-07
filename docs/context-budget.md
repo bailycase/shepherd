@@ -34,7 +34,8 @@ tells what pi owns from what Shepherd adds).
 
 A tool the model rarely needs is registered `deferred`: pi's `tool_search` finds it by name or
 description and loads it for the rest of the thread, so its definition is not sent until then. The
-browser, other-thread, automation, review and project tools, the rarer native-helper tools
+browser, other-thread, automation, review, project and app tools (`app_list`, `app_run`, `app_stop`,
+`app_logs`), the rarer native-helper tools
 (`shepherd_child_agents`, `shepherd_child_cancel`, `shepherd_workflow`) and `codemode` with its
 script-writing guidelines are deferred this way; `ask_user` stays direct, since a model that has to
 search for it asks in prose instead.

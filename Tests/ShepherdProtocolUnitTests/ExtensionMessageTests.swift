@@ -17,7 +17,7 @@ struct ExtensionMessageTests {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming, .nativeQueueBoundary,
              .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
-             .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
+             .sendPaneInput, .readPane, .requestReview, .app, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designList, .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
@@ -27,7 +27,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 61
+    static let caseCount = 62
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -65,6 +65,8 @@ struct ExtensionMessageTests {
         .sendPaneInput(id: 7, agentID: agent, paneID: pane, text: "y", submit: false),
         .readPane(id: 8, agentID: agent, paneID: pane),
         .requestReview(id: 9, agentID: agent, cwd: "/tmp/repo", reference: "master..HEAD"),
+        .app(id: 10, agentID: agent, action: .list, name: nil, lines: nil),
+        .app(id: 11, agentID: agent, action: .logs, name: "Web app", lines: 40),
         .listAgents(id: 16, agentID: agent),
         .peerMessageReceived(agentID: agent, deliveryID: 42),
         .prepareProjectConfiguration(id: 116, agentID: agent, cwd: "/project"),
@@ -250,6 +252,8 @@ struct ExtensionMessageTests {
          .openPane(id: 7, agentID: agent, axis: .vertical, cwd: nil, relativeTo: nil, command: nil)),
         (#"{"type":"sendPaneInput","id":8,"agentID":"a1","paneID":"p1","text":"ls"}"#,
          .sendPaneInput(id: 8, agentID: agent, paneID: pane, text: "ls", submit: true)),
+        (#"{"type":"app","id":5,"agentID":"a1","action":"run","name":"Web app"}"#,
+         .app(id: 5, agentID: agent, action: .run, name: "Web app", lines: nil)),
         (#"{"type":"requestReview","id":4,"agentID":"a1"}"#,
          .requestReview(id: 4, agentID: agent, cwd: nil, reference: nil)),
         (#"{"type":"sendToAgent","id":3,"agentID":"a1","targetAgentID":"a2","text":"done"}"#,
@@ -417,7 +421,7 @@ struct ExtensionReplyTests {
 
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
-        case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
+        case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
@@ -425,7 +429,7 @@ struct ExtensionReplyTests {
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 40
+    static let caseCount = 41
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -470,6 +474,7 @@ struct ExtensionReplyTests {
         .paneOpened(id: 4, pane: pane),
         .paneContent(id: 5, paneID: pane.id, lines: ["$ npm run dev", "listening on :3000"]),
         .reviewResult(id: 7, text: "Looks good.\n\nSummary: ready to merge."),
+        .appResult(id: 8, text: "Apps in payments:\n- Web app: running · port 3000"),
         .automations(id: 1, automations: [
             AutomationInfo(id: AutomationID(), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
             AutomationInfo(id: AutomationID(), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),

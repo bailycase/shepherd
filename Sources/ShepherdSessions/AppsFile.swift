@@ -27,20 +27,24 @@ public struct AppDefinition: Codable, Hashable, Sendable, Identifiable {
     public var address: String?
     /// A Run button in the thread header and on New thread while you are in its space.
     public var quickAction: Bool
+    /// Agents can start and stop it (`app_run`, `app_stop`); a This Mac app is listed to agents
+    /// only with it. Off unless the person turns it on.
+    public var agents: Bool
 
     public var id: String { name }
 
     public init(name: String, command: String, folder: String = "", opens: Opens = .terminal, address: String? = nil,
-                quickAction: Bool = false) {
+                quickAction: Bool = false, agents: Bool = false) {
         self.name = name
         self.command = command
         self.folder = folder
         self.opens = opens
         self.address = address
         self.quickAction = quickAction
+        self.agents = agents
     }
 
-    private enum CodingKeys: String, CodingKey { case name, command, folder, opens, address, quickAction }
+    private enum CodingKeys: String, CodingKey { case name, command, folder, opens, address, quickAction, agents }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -51,6 +55,7 @@ public struct AppDefinition: Codable, Hashable, Sendable, Identifiable {
         opens = (try? c.decodeIfPresent(Opens.self, forKey: .opens)) ?? .terminal
         address = try c.decodeIfPresent(String.self, forKey: .address)
         quickAction = try c.decodeIfPresent(Bool.self, forKey: .quickAction) ?? false
+        agents = try c.decodeIfPresent(Bool.self, forKey: .agents) ?? false
     }
 
     /// The page to open: the address when it is http(s) on any host.

@@ -335,6 +335,15 @@ struct AppEditSheet: View {
                 Spacer(minLength: 0)
                 SettingsSwitch(label: "Show as a quick action", isOn: $editor.quickAction)
             }
+            HStack(alignment: .center, spacing: SH.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text("Agents can start it and read its output").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                    HookHelp(editor.spaceName == nil ? "An agent in any space can run it to check its work. It never edits the command."
+                             : "An agent in this space can run it to check its work. It never edits the command.")
+                }
+                Spacer(minLength: 0)
+                SettingsSwitch(label: "Agents can start it and read its output", isOn: $editor.agents)
+            }
         }
     }
 }

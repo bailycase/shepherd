@@ -411,6 +411,54 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     on ? { exposure: "deferred" as const, namespace } : {};
   const line = (on: boolean, snippet: string) => (on ? undefined : snippet);
 
+  // The space's apps (Settings › Apps): Shepherd runs them in the background. Run and stop need the user's
+  // per-app "Agents can start it"; list and logs read any app of the space.
+  const APPS = {
+    name: "shepherd_apps",
+    description: "the space's apps (dev servers): run, stop, logs",
+    instructions: "Shepherd apps: dev servers and tools saved in Settings › Apps for this space. List them, run or stop one, read its output.",
+  };
+  const appTool = async (action: string, params: { name?: string; lines?: number }) =>
+    text((await request({ type: "app", action, name: params.name, lines: params.lines })).text ?? "");
+  const appName = Type.String({ description: "The app's name, from app_list" });
+  if (!isAutomationAgent) {
+    pi.registerTool({
+      name: "app_list", label: "List Apps",
+      description: "List this space's apps (Settings › Apps): state, port, command, and whether you may run it.",
+      promptSnippet: line(DEFER, "List the space's apps and whether they run"),
+      ...later(DEFER, APPS),
+      parameters: Type.Object({}),
+      async execute() { return appTool("list", {}); },
+    });
+    pi.registerTool({
+      name: "app_run", label: "Run App",
+      description: "Start one of the space's apps in the background, if the user lets agents start it.",
+      promptSnippet: line(DEFER, "Start a space app Shepherd manages"),
+      ...later(DEFER, APPS),
+      parameters: Type.Object({ name: appName }),
+      async execute(_id, params) { return appTool("run", params); },
+    });
+    pi.registerTool({
+      name: "app_stop", label: "Stop App",
+      description: "Stop a running app of the space, if the user lets agents start it.",
+      promptSnippet: line(DEFER, "Stop a space app"),
+      ...later(DEFER, APPS),
+      parameters: Type.Object({ name: appName }),
+      async execute(_id, params) { return appTool("stop", params); },
+    });
+    pi.registerTool({
+      name: "app_logs", label: "App Logs",
+      description: "The last lines an app printed (default 40, at most 400), and its state.",
+      promptSnippet: line(DEFER, "Read an app's recent output"),
+      ...later(DEFER, APPS),
+      parameters: Type.Object({
+        name: appName,
+        lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 400, description: "How many lines" })),
+      }),
+      async execute(_id, params) { return appTool("logs", params); },
+    });
+  }
+
   // Project history is not sidebar registration. These requests go through the live app.
   const PROJECTS = {
     name: "shepherd_projects",

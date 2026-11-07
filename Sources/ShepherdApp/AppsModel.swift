@@ -257,6 +257,8 @@ final class AppEditor: Identifiable {
     var opens: AppDefinition.Opens
     var address: String
     var quickAction: Bool
+    /// Agents can start it and read its output (`app_run`, `app_stop`).
+    var agents: Bool
     private(set) var folders: [String]
     var saving = false
     var problem: String?
@@ -272,6 +274,7 @@ final class AppEditor: Identifiable {
         opens = .browser
         address = "http://localhost:3000"
         quickAction = true
+        agents = false
         folders = Self.folders(for: scope, model: model)
     }
 
@@ -285,6 +288,7 @@ final class AppEditor: Identifiable {
         opens = app.opens
         address = app.address ?? ""
         quickAction = app.quickAction
+        agents = app.agents
         folders = Self.folders(for: scope, model: model)
         if !folders.contains(folder) { folders.append(folder) }
     }
@@ -312,7 +316,8 @@ final class AppEditor: Identifiable {
     var app: AppDefinition {
         AppDefinition(name: name.trimmingCharacters(in: .whitespacesAndNewlines), command: command.trimmingCharacters(in: .whitespacesAndNewlines),
                       folder: folder.trimmingCharacters(in: .whitespaces), opens: opens,
-                      address: opens == .browser ? address.trimmingCharacters(in: .whitespaces) : nil, quickAction: quickAction)
+                      address: opens == .browser ? address.trimmingCharacters(in: .whitespaces) : nil, quickAction: quickAction,
+                      agents: agents)
     }
 
     /// Why Add app is off; nil when it can save.
