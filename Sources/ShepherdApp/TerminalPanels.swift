@@ -3,6 +3,7 @@ import Observation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdUI
 
 /// Which layout a terminal panel belongs to: a local agent's, or a remote agent's on its host.
@@ -50,6 +51,11 @@ final class TerminalPanels {
     /// The menu on a tab, while it is open (NewTerminalMenu): which panel, the tab it acts on,
     /// and where along the strip it hangs.
     var menu: TerminalMenuRequest?
+    /// App output tabs (AppsRunning): read-only logs of apps Shepherd runs, beside a layout's
+    /// terminals. They are not leaves of the layout: closing one closes the view, never the app.
+    private(set) var appTabs: [TerminalPanelKey: [TerminalPanelTab]] = [:]
+    /// The app each output tab shows.
+    private(set) var appKeys: [PaneID: AppKey] = [:]
 
     /// The terminals each layout had when last reconciled: one that appears opens the panel.
     @ObservationIgnored private var known: [TerminalPanelKey: Set<PaneID>] = [:]
@@ -75,7 +81,44 @@ final class TerminalPanels {
 
     /// The tab on screen in `layout`.
     func selectedTab(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?, focused: PaneID?) -> TerminalPanelTab? {
-        TerminalPanel.selected(TerminalPanel.tabs(in: layout, thread: thread), chosen: panel(key).chosenTab, focused: focused)
+        TerminalPanel.selected(tabs(key, layout: layout, thread: thread), chosen: panel(key).chosenTab, focused: focused)
+    }
+
+    /// The layout's terminals, then its app output tabs.
+    func tabs(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> [TerminalPanelTab] {
+        TerminalPanel.tabs(in: layout, thread: thread) + (appTabs[key] ?? [])
+    }
+
+    func appKey(_ tab: PaneID) -> AppKey? { appKeys[tab] }
+
+    /// Shows `app`'s output in `key`'s panel, on its own tab (made the first time), and selects it.
+    @discardableResult
+    func showApp(_ app: AppKey, title: String, in key: TerminalPanelKey) -> PaneID {
+        let id = appTabs[key]?.first { appKeys[$0.id] == app }?.id ?? {
+            let tab = TerminalPanelTab(leaf: LeafPane(cwd: "", title: title))
+            appTabs[key, default: []].append(tab)
+            appKeys[tab.id] = app
+            return tab.id
+        }()
+        update(key) {
+            $0.shown = true
+            $0.chosenTab = id
+        }
+        return id
+    }
+
+    /// Closes an output tab: the app keeps running. The panel hides with its last tab.
+    func closeApp(_ tab: PaneID, in key: TerminalPanelKey, terminals: Int) {
+        appTabs[key]?.removeAll { $0.id == tab }
+        if appTabs[key]?.isEmpty == true { appTabs[key] = nil }
+        appKeys[tab] = nil
+        update(key) {
+            if $0.chosenTab == tab { $0.chosenTab = nil }
+            if terminals == 0 && appTabs[key] == nil {
+                $0.shown = false
+                $0.maximized = false
+            }
+        }
     }
 
     /// Follows the layout: the first time a layout is seen, its panel shows if it has terminals
@@ -86,9 +129,10 @@ final class TerminalPanels {
     func reconcile(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> PaneID? {
         let tabs = TerminalPanel.tabs(in: layout, thread: thread)
         let terminals = Set(tabs.map(\.id))
+        let apps = !(appTabs[key] ?? []).isEmpty
         defer { known[key] = terminals }
-        // A panel never shows with no terminal in it, whichever way it came to.
-        if tabs.isEmpty, panel(key).shown || panel(key).maximized {
+        // A panel never shows with no tab in it, whichever way it came to.
+        if tabs.isEmpty, !apps, panel(key).shown || panel(key).maximized {
             update(key) {
                 $0.shown = false
                 $0.maximized = false
@@ -98,7 +142,7 @@ final class TerminalPanels {
             if !tabs.isEmpty, panels[key] == nil { update(key) { $0.shown = true } }
             return nil
         }
-        if TerminalPanel.closesWithLastTerminal(before: before.count, after: terminals.count) {
+        if !apps, TerminalPanel.closesWithLastTerminal(before: before.count, after: terminals.count) {
             update(key) {
                 $0.shown = false
                 $0.maximized = false
@@ -117,6 +161,7 @@ final class TerminalPanels {
         panels[key] = nil
         known[key] = nil
         activity[key] = nil
+        for tab in appTabs.removeValue(forKey: key) ?? [] { appKeys[tab.id] = nil }
     }
 
     // MARK: Activity

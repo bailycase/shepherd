@@ -562,6 +562,9 @@ public final class SessionServer: @unchecked Sendable {
     /// The hooks on this host (Settings › Hooks): remote clients read and change them through the
     /// server (`hooks.v1`), the Mac's page through its own catalog. Tests point it at a scratch home.
     public var hooks: HookCatalog
+    /// The apps Shepherd runs (Settings › Apps): background processes, each in its own group,
+    /// stopped when Shepherd quits.
+    public let apps = AppProcesses()
     /// A remote client changed this host's hooks: the GUI's Hooks page reloads. Delivered on the main actor.
     public var onHooksChanged: (() -> Void)?
     /// The files of every design (the Design tool), in the support directory's `designs/`. Reads
@@ -1245,6 +1248,7 @@ public final class SessionServer: @unchecked Sendable {
     /// terminates: sessions must not outlive the app. A design deleted within its undo window is
     /// deleted for good.
     public func stop() {
+        apps.stopAll()
         Task { await projects.stopMCP() }
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
