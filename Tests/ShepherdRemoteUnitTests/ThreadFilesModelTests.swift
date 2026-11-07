@@ -290,3 +290,89 @@ private actor FilesFirstReply<Value: Sendable> {
         reply = nil
     }
 }
+
+/// A remote thread's Files editor: tabs, saves over the text edited from, conflicts and the agent's changes.
+@Suite("Thread files editing")
+@MainActor
+struct ThreadFilesEditingTests {
+    /// A host's file as the edit tests see it: what it holds, and every save asked of it.
+    final class Disk: @unchecked Sendable {
+        var text = "a\nb\n"
+        var saves: [(text: String, expected: String)] = []
+    }
+
+    static func editing(_ disk: Disk) -> ThreadFilesModel {
+        ThreadFilesModel(list: { _, _ in ThreadFileListing(entries: []) }, read: { _ in Data(disk.text.utf8) }, write: { _, text, expected in
+            disk.saves.append((text, expected))
+            guard disk.text == expected else { return .changed(disk.text) }
+            disk.text = text
+            return .saved
+        })
+    }
+
+    @Test func aSaveWritesOverTheTextItWasEditedFromAndTabsKeepTheirEdits() async {
+        let disk = Disk()
+        let model = Self.editing(disk)
+        await model.open("src/App.tsx")
+        model.setText("mine\nb\n", for: "src/App.tsx")
+        await model.open("README.md")
+        #expect(model.openTabs == ["src/App.tsx", "README.md"])
+        await model.open("src/App.tsx")
+        #expect(model.edits["src/App.tsx"]?.isDirty == true, "switching tabs keeps unsaved edits")
+
+        await model.save()
+        #expect(disk.text == "mine\nb\n" && disk.saves.last?.expected == "a\nb\n")
+        #expect(model.edits["src/App.tsx"]?.isDirty == false && model.saveError == nil)
+
+        await model.closeTab("src/App.tsx")
+        #expect(model.openTabs == ["README.md"] && model.openPath == "README.md" && model.edits["src/App.tsx"] == nil)
+    }
+
+    @Test func aFileThatChangedUnderUnsavedEditsIsAConflictUntilOverwriteOrRevert() async {
+        let disk = Disk()
+        let model = Self.editing(disk)
+        await model.open("a.txt")
+        model.setText("mine\nb\n", for: "a.txt")
+        disk.text = "a\ntheirs\n"
+
+        await model.save()
+        #expect(disk.text == "a\ntheirs\n", "nothing is written over the newer version")
+        #expect(model.edits["a.txt"]?.conflict == "a\ntheirs\n" && model.edits["a.txt"]?.text == "mine\nb\n")
+        await model.save()
+        #expect(disk.saves.count == 1, "a plain Save waits for the person's choice")
+
+        await model.save(overwrite: true)
+        #expect(disk.text == "mine\nb\n" && disk.saves.last?.expected == "a\ntheirs\n")
+        #expect(model.edits["a.txt"]?.conflict == nil && model.edits["a.txt"]?.isDirty == false)
+
+        model.setText("again\n", for: "a.txt")
+        disk.text = "agent\n"
+        await model.checkDisk()
+        #expect(model.edits["a.txt"]?.conflict == "agent\n")
+        model.revert()
+        #expect(model.edits["a.txt"]?.text == "agent\n" && model.edits["a.txt"]?.conflict == nil)
+    }
+
+    @Test func aCleanEditorTakesTheAgentsChangeAndMarksWhatWasBefore() async {
+        let disk = Disk()
+        let model = Self.editing(disk)
+        await model.open("a.txt")
+        let revision = model.textRevision
+        disk.text = "a\nagent\n"
+        await model.checkDisk()
+        #expect(model.edits["a.txt"]?.text == "a\nagent\n" && model.edits["a.txt"]?.before == "a\nb\n")
+        #expect(model.textRevision != revision && model.content == .text("a\nagent\n"))
+    }
+
+    @Test func unsavedEditsOutliveAPayloadRelease() async {
+        let disk = Disk()
+        let model = Self.editing(disk)
+        await model.open("a.txt")
+        await model.open("b.txt")
+        model.setText("mine\n", for: "b.txt")
+        model.releasePayload()
+        #expect(model.edits.keys.sorted() == ["b.txt"])
+        model.forget()
+        #expect(model.edits.isEmpty)
+    }
+}
