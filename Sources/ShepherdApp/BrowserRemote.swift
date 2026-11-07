@@ -22,7 +22,8 @@ final class BrowserRemote {
     /// same one (a test's host is this very Mac, whose loopback cannot hold a dev server and its
     /// forward at one port).
     var hostPorts: [Int: Int] = [:]
-    /// Previews only: a page drawn at `localhost:5173` without listening on this Mac's 5173.
+    /// Off for the background host on this Mac (its loopback is this one) and in previews (a page
+    /// drawn at `localhost:5173` without listening on this Mac's 5173).
     var forwardsPorts = true
     /// Where an agent on the host may take this page (`BrowserViewerPolicy`); tests give it a
     /// resolver that never asks the network.

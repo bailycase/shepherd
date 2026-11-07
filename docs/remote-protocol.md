@@ -27,6 +27,10 @@
   worktree info, setup, finalize and delete, commit from review (the same `WorktreeQueries` the app
   serves in process), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
+  With no page of its own, the host hands an agent's browser call that no viewer claimed to the
+  app over `host.sock` (a `browserDrive` request to the local client that lists the drive
+  capability), which runs it on its own page with no tunnel; with no app connected the call is
+  refused as `unavailable`, saying Shepherd's window is closed.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands

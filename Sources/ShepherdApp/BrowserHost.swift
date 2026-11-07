@@ -155,6 +155,8 @@ final class BrowserSessions {
         if let session = remoteSessions[ref] { return session }
         let remote = BrowserRemote(ref: ref, hosts: hosts, ports: ports, policy: viewerPolicy,
                                    claimant: BrowserDriveClaimant(grace: driveGrace))
+        // The background host on this Mac shares its loopback: its ports load as they are.
+        if hosts?.connections.first(where: { $0.id == ref.hostID })?.isThisMac == true { remote.forwardsPorts = false }
         let identifier = remoteStoreIDs[ref] ?? hosts?.connections.first { $0.id == ref.hostID }.flatMap { connection in
             connection.state.agents.first { $0.id == ref.agentID }.map {
                 BrowserDataStores.identifier(for: $0, in: connection.state, hostID: ref.hostID)

@@ -147,6 +147,52 @@ struct BrowserDriveHostTests {
         #expect(s.asked.current.count == 1)
     }
 
+    /// The app over `host.sock`, as the background host's client: a raw local connection.
+    private func app(_ s: Setup) async throws -> RawRemote {
+        let path = s.host.host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = s.host.host.dir.appendingPathComponent("local-token")
+        try s.server.startLocalListener(path: path, tokenURL: tokenURL)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        var addr = try SessionServer.socketAddress(for: path)
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else { close(fd); throw WireError("connect: errno \(errno)") }
+        let client = RawRemote(connected: fd)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        try await client.hello(token: token, capabilities: RemoteProtocol.clientCapabilities)
+        return client
+    }
+
+    @Test func aHostWithNoPageOfItsOwnSaysTheWindowIsClosed() async throws {
+        let s = try await setup()
+        defer { s.stop() }
+        let agent = try s.extensionClient()
+        try agent.send(.browser(id: 1, agentID: s.a.id, request: click))
+        guard case .error(1, "unavailable", let message) = try await agent.reply() else { Issue.record("expected a refusal"); return }
+        #expect(message.contains("Shepherd's window"))
+    }
+
+    @Test func aHostWithNoPageOfItsOwnHandsItsAgentsBrowserToTheAppOverTheLocalSocket() async throws {
+        let s = try await setup()
+        defer { s.stop() }
+        let app = try await app(s)
+        let agent = try s.extensionClient()
+
+        try agent.send(.browser(id: 1, agentID: s.a.id, request: click))
+        guard case .request(let token, let agentID, let request) = try await app.nextDrive() else { Issue.record("the app was asked nothing"); return }
+        #expect(agentID == s.a.id && request == click)
+        try app.send(.browserAnswer(requestToken: token, outcome: .text("Clicked button \"Pay\".")))
+        #expect(try await agent.reply() == .browserResult(id: 1, text: "Clicked button \"Pay\".", image: nil))
+        #expect(s.server.browserOwnerFD(of: s.a.id) == nil, "the app runs it without owning it")
+
+        // A viewer that claims the browser takes it over from the app.
+        let viewer = try await s.viewer()
+        try await claim(viewer, s.a)
+        try agent.send(.browser(id: 2, agentID: s.a.id, request: click))
+        guard case .request = try await viewer.nextDrive() else { Issue.record("the viewer was asked nothing"); return }
+    }
+
     @Test func aViewerThatReleasesGivesTheBrowserBackAndOneThatDoesNotOwnItChangesNothing() async throws {
         let s = try await setup()
         defer { s.stop() }
