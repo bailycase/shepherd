@@ -12,6 +12,7 @@ struct ProjectsHost: Equatable, Identifiable {
     var supportsDetails = true
     var supportsMCP = true
     var supportsProjectTrust = true
+    var supportsResources = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -92,6 +93,14 @@ final class ProjectsModel {
     var showingBrowser = false
     /// The space's Hooks tab (HooksSpace board): a view of Settings › Hooks, not a space file.
     var showingHooks = false
+    /// The Settings tab shows the raw `settings.json` editor instead of the form (Edit JSON…).
+    var showingSettingsJSON = false
+    /// The Resources tab's lists and editors (`.skills` is the Resources tab).
+    let resources = SpaceResourcesModel()
+    /// The skills in a repository, from the space's host (Add from repo's preview).
+    @ObservationIgnored var lookUpSkills: @MainActor (ProjectsHost, String) async throws -> RepoSkills = { _, _ in
+        throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.")
+    }
     var selectedFile: ProjectFile?
     var savedNotice: String {
         if category == .mcp { return "Saved to the space folder. MCP changes apply to new threads." }
@@ -302,7 +311,7 @@ final class ProjectsModel {
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
-        showingBrowser = false; showingHooks = false
+        showingBrowser = false; showingHooks = false; showingSettingsJSON = false; resources.reset()
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
         context = ProjectContext(); readRows = []; peers = []
@@ -318,8 +327,23 @@ final class ProjectsModel {
     }
 
     func navigate(_ action: Pending) async {
-        guard !saving else { return }
-        if dirty { pending = action } else { await apply(action) }
+        guard !saving, !resources.saving else { return }
+        if dirty || category == .skills && resources.dirty { pending = action } else { await apply(action) }
+    }
+
+    /// The Resources tab's files: the space settings file pi reads is the first that exists.
+    func loadResources(keep: Bool = false) async {
+        guard let selected, selected.unavailable == nil else { return }
+        let settings = files.first { $0.category == .pi && $0.exists } ?? files.first { $0.category == .pi }
+        let host = selected.host
+        resources.lookUpSkills = { [weak self] repo in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            return try await self.lookUpSkills(host, repo)
+        }
+        await resources.load(directory: selected.project.directory, settingsPath: settings?.path ?? ".shepherd/settings.json", keep: keep) { [weak self] request in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            return try await self.request(host, request)
+        }
     }
 
     func discard() async {
@@ -331,13 +355,15 @@ final class ProjectsModel {
 
     private func apply(_ action: Pending) async {
         closeMCPSignIn()
+        if category == .skills { resources.reset() }
+        switch action { case .reload, .file: break; default: showingSettingsJSON = false }
         switch action {
         case .close:
             showingBrowser = false; showingHooks = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
         case .file(let file): showingBrowser = false; showingHooks = false; await read(file)
         case .category(let category):
             showingBrowser = false; showingHooks = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
-            if let file = preferredFile { await read(file) }
+            if category == .skills { await loadResources() } else if let file = preferredFile { await read(file) }
         case .browser:
             showingBrowser = true; showingHooks = false; draft = saved ?? ""
         case .hooks:
@@ -474,7 +500,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit space settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its spaces."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, supportsResources: connection.supportsProjectResources, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 
@@ -485,6 +511,14 @@ extension ShepherdViewModel {
             if host.id == "local" { return try await self.server.projects.request(request, state: self.server.state) }
             guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown space host.") }
             return try await self.remoteHosts.projects(hostID: id, endpointID: host.endpointID, request: request)
+        }
+        model.lookUpSkills = { [weak self] host, repo in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            let client: (any SkillsClient)? = host.id == "local" ? self.localSkills : self.remoteHosts.connections.first { $0.id.uuidString == host.id }?.skillsClient
+            guard let client, case .repo(let found) = try await client.skills(.lookUp(repo: repo)) else {
+                throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.")
+            }
+            return found
         }
         model.loadModels = { [weak self] host in
             // Only this Mac's catalog is at hand; another host's space offers its current and global model.

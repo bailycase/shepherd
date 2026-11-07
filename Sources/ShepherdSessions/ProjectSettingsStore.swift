@@ -545,33 +545,11 @@ public final class ProjectSettingsStore: @unchecked Sendable {
 
     private static func resource(_ kind: ProjectResource.Kind, path: String, display: String, text: String, global: Bool,
                                  settings: ([String: Any], String)?) -> ProjectResource {
-        let profile = SubagentProfileText(text)
-        let file = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-        var enabled = true
+        var resource = ProjectResource(kind: kind, path: path, displayPath: display, text: text, global: global)
         if let (object, base) = settings, let key = kind.settingsKey {
-            enabled = ProjectResourcePatterns.isEnabled(path, entries: object[key] as? [String] ?? [], base: base)
+            resource.enabled = ProjectResourcePatterns.isEnabled(path, entries: object[key] as? [String] ?? [], base: base)
         }
-        switch kind {
-        case .skill:
-            let front = SkillsText.frontmatter(text)
-            return ProjectResource(kind: kind, name: front.name ?? ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent,
-                                   description: front.description ?? "", path: path, displayPath: display, global: global, enabled: enabled)
-        case .prompt:
-            let first = profile.body.split(separator: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map(String.init) ?? ""
-            return ProjectResource(kind: kind, name: file, description: profile.scalar("description") ?? first, path: path, displayPath: display,
-                                   global: global, enabled: enabled, detail: profile.scalar("argument-hint") ?? "")
-        case .agent:
-            return ProjectResource(kind: kind, name: profile.scalar("name") ?? file, description: profile.scalar("description") ?? "",
-                                   path: path, displayPath: display, global: global, enabled: profile.bool("disabled") != true,
-                                   detail: (profile.list("tools") ?? []).joined(separator: " · "))
-        case .extension:
-            // An extension has no frontmatter: its first comment line describes it.
-            let comment = text.split(separator: "\n").lazy.map { $0.trimmingCharacters(in: .whitespaces) }
-                .first { $0.hasPrefix("//") || $0.hasPrefix("/*") || $0.hasPrefix("*") && $0 != "*/" }
-            let description = comment.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "/* ")) } ?? ""
-            return ProjectResource(kind: kind, name: (path as NSString).lastPathComponent, description: description,
-                                   path: path, displayPath: display, global: global, enabled: enabled)
-        }
+        return resource
     }
 
     /// Unlinks one resource file, refusing a link or a file that changed since it was read; a skill's

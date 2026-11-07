@@ -40,6 +40,8 @@ struct ProjectSettingsDetail: View {
                     header.frame(maxWidth: .infinity, alignment: .leading).disabled(cookies.clearing)
                     if model.category == .mcp {
                         editorColumn
+                    } else if showsResources {
+                        SpaceResourcesView(model: model.resources, project: project)
                     } else if showsForm {
                         SpaceSettingsFormView(model: model, project: project)
                     } else if narrow {
@@ -62,12 +64,16 @@ struct ProjectSettingsDetail: View {
                 .padding(.top, AppLayout.projectDetailTop)
                 .padding(.horizontal, AppLayout.settingsWideSides)
                 if showsForm { SpaceSettingsFormFooter(model: model, project: project) }
+                if showsResources { SpaceResourcesFooter(model: model.resources, project: project) }
             }
         }
     }
 
     /// The Settings tab draws pi's settings as a form (ProjectSettings board), not a JSON editor.
-    private var showsForm: Bool { !model.showingHooks && !model.showingBrowser && model.category == .pi }
+    /// Edit JSON… swaps it for the raw editor over the same draft.
+    private var showsForm: Bool { !model.showingHooks && !model.showingBrowser && model.category == .pi && !model.showingSettingsJSON }
+    /// The Resources tab lists resources by kind (ProjectResources board), not files.
+    private var showsResources: Bool { !model.showingHooks && !model.showingBrowser && model.category == .skills }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -167,6 +173,9 @@ struct ProjectSettingsDetail: View {
                     }
                     if let file = model.selectedFile {
                         Spacer(minLength: 0)
+                        if model.category == .pi {
+                            Button("Back to form") { model.showingSettingsJSON = false }.buttonStyle(.sh(.secondary)).disabled(model.saving)
+                        }
                         Text(project.project.displayPath + "/" + file.path).font(.shMono(AppLayout.projectsPathSize))
                             .foregroundStyle(Color.sh.settingsMuted).lineLimit(1)
                     }

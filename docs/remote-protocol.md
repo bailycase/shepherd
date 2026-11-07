@@ -268,6 +268,11 @@
     The home folder remains excluded. No credential or global trust setting crosses the wire.
   - `projects.details.v1`: adds host-local metadata/context and editor opening to spaces.
     Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
+  - `projects.resources.v1`: adds `resources` (a space's skills, prompt templates, subagents and
+    extensions with the host's global ones, by name and description), `delete` (one space
+    resource file, only while it holds the text the client read) and `installSkills` (copies
+    skills from a repository into the space's `.pi/skills` on the host). `save` also takes those
+    resource paths. Both clients refuse these before sending to a host without the capability.
   - `logicalProjects` (`logicalProjects.v1`): NEW logical `Project` records on the owner,
     separate from `projects` below. `LogicalProjectsRequest`/`LogicalProjectsResult` serve list,
     get, idempotent create with atomic initial owner-local Space links, revision-checked edit,

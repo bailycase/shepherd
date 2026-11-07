@@ -89,6 +89,57 @@ struct ProjectsControlTests {
                 try ControlPress.press("Reset Built-in tools to global", under: window.host)
                 try await save("tools reset")
                 #expect(try saved()["defaultTools"] == nil)
+                // Edit JSON… opens the raw editor over the same draft, for keys the form doesn't show.
+                window.layout()
+                try ControlPress.press("Edit JSON…", under: window.host)
+                try await eventuallyOnMain("the JSON editor") { model.showingSettingsJSON }
+                window.layout()
+                let json = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Space file editor" })
+                _ = json.object.perform(NSSelectorFromString("setAccessibilityValue:"), with: "{\n  \"enabledModels\": [\"claude-*\"]\n}\n")
+                if let textView = json.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
+                try await eventuallyOnMain("the JSON edit") { model.dirty }
+                window.layout()
+                try ControlPress.press("Save", under: window.host)
+                try await eventuallyOnMain("the JSON save") { !model.saving && !model.dirty }
+                #expect(try saved()["enabledModels"] as? [String] == ["claude-*"])
+                window.layout()
+                try ControlPress.press("Back to form", under: window.host)
+                #expect(!model.showingSettingsJSON)
+            }
+            if category == .skills {
+                let resources = model.resources
+                try await eventuallyOnMain("the space resources") { resources.loadedOnce && !resources.loading }
+                let settings = root.appendingPathComponent(".shepherd/settings.json")
+                func saveResources(_ what: String) async throws {
+                    window.layout()
+                    try ControlPress.press("Save changes", under: window.host)
+                    try await eventuallyOnMain(what) { !resources.saving && !resources.dirty && !resources.loading }
+                }
+                window.layout()
+                let toggle = try ControlPress.press("Enable check in dashboard", role: ControlRole.checkBox, under: window.host)
+                #expect(ControlPress.undersized([toggle], minimum: .desktop).isEmpty)
+                try await eventuallyOnMain("the toggle in the draft") { resources.dirty }
+                try await saveResources("the toggle saved")
+                let object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any])
+                #expect(object["skills"] as? [String] == ["-../.shepherd/skills/check/SKILL.md"] || object["skills"] as? [String] == ["-skills/check/SKILL.md"])
+                window.layout()
+                try ControlPress.press("Remove check from dashboard", under: window.host)
+                try await eventuallyOnMain("the remove confirmation") { resources.removing != nil }
+                window.layout()
+                try ControlPress.press("Remove", under: window.host)
+                try await saveResources("the removal saved")
+                #expect(!FileManager.default.fileExists(atPath: skills.path))
+                window.layout()
+                try ControlPress.press("Slash commands", role: ControlRole.radioButton, under: window.host)
+                window.layout()
+                try ControlPress.press("New command", under: window.host)
+                try await eventuallyOnMain("the editor") { resources.editor != nil }
+                resources.editor?.name = "review"; resources.editor?.body = "Review the changes."
+                window.layout()
+                try ControlPress.press("Create command", under: window.host)
+                try await eventuallyOnMain("the new command in the draft") { resources.editor == nil && resources.dirty }
+                try await saveResources("the command saved")
+                #expect(try String(contentsOf: root.appendingPathComponent(".pi/prompts/review.md"), encoding: .utf8) == "Review the changes.\n")
             }
         }
         window.layout()
