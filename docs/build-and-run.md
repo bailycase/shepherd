@@ -11,7 +11,7 @@ a package check and an Xcode build are not both required for every change.
 
 **The Mac app:** open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. The Mac target
 is a shim (`App/ShepherdLauncher.swift` calls `ShepherdMacApp.main()` from the `ShepherdApp`
-library). There is no `swift run` path for the GUI.
+library, or, given `--host`, the headless session host, which nothing launches yet). There is no `swift run` path for the GUI.
 
 A stable Shepherd and a development build cannot share state. The socket and `state.json` live
 in the support directory, and the server refuses to bind over a live socket. So there are three

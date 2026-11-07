@@ -88,6 +88,7 @@ public struct ShepherdMacApp: App {
             },
             failed: { error in
                 NSLog("Shepherd: failed to start session server: \(error)")
+                if SessionServerError.isWorkspaceInUse(error) { WorkspaceInUseAlert.show() }
                 exit(EXIT_FAILURE)
             })
         launch.begin()
@@ -199,4 +200,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SessionServer.shared.stop()
     }
 
+}
+
+/// What a launch says when another process (the background host, or another copy of the app)
+/// already owns this edition's workspace, instead of quitting silently.
+enum WorkspaceInUseAlert {
+    static var message: String { "\(ShepherdEdition.current.displayName) is already running" }
+    static let detail = "Another Shepherd process has this workspace open. Quit it, then open Shepherd again."
+
+    @MainActor static func show() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.addButton(withTitle: "Quit")
+        NSApp.activate()
+        alert.runModal()
+    }
+}
+
+/// The headless host entry (`Shepherd --host`), for the launcher shim: the session server with
+/// no UI until SIGTERM. Nothing launches it yet.
+public enum ShepherdHost {
+    public static let argument = "--host"
+
+    public static func main() -> Never { SessionHost.run() }
 }
