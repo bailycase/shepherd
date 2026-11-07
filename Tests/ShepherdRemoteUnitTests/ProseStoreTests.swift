@@ -31,7 +31,7 @@ struct ProseStoreTests {
         }
         func prose() -> [[NativeMarkdownBlock]]? {
             store.rows.last?.presentation?.items.compactMap {
-                if case .prose(_, _, let blocks, _) = $0 { blocks } else { nil }
+                if case .prose(_, _, let prose) = $0 { prose.blocks } else { nil }
             }
         }
         let answer = "Answer" + String(repeating: " grows", count: 6)
@@ -57,7 +57,7 @@ struct ProseStoreTests {
         }
         func prose() -> [NativeMarkdownBlock]? {
             store.rows.last?.presentation?.items.compactMap {
-                if case .prose(_, _, let blocks, _) = $0 { blocks } else { nil }
+                if case .prose(_, _, let prose) = $0 { prose.blocks } else { nil }
             }.last
         }
         let host = FakeHost(snapshot(1, long))

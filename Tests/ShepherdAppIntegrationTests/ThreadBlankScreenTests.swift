@@ -105,7 +105,7 @@ struct ThreadBlankScreenTests {
             try await eventuallyOnMain("\(what): the reply's parse to land") {
                 window.layout()
                 for item in (store.rows.last?.presentation?.items ?? []).reversed() {
-                    if case .prose(_, _, let parsed, _) = item { return parsed.count == blocks }
+                    if case .prose(_, _, let prose) = item { return prose.blockCount == blocks }
                 }
                 return false
             }

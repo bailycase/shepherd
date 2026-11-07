@@ -163,8 +163,8 @@ struct ThreadPreviewTests {
                     switch item {
                     case .thinking(_, _, let blocks, let seconds, let live, _):
                         ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: true) {}
-                    case .prose(_, _, let blocks, _):
-                        Prose(blocks: blocks)
+                    case .prose(_, _, let prose):
+                        Prose(prose: prose)
                     case .activity(_, let bursts):
                         ActivityLinesView(bursts: bursts)
                     default:

@@ -17,40 +17,40 @@ extension SHProseFileLinks {
         reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
 }
 
-/// Agent prose: the turn's parsed Markdown drawn by `SHAgentProse`, with fenced code
-/// highlighted. Blocks are parsed once per turn (`NativeTurnPresentation`); inline runs are
-/// styled once per text (`SHProseInline`).
+/// Agent prose: the turn's parsed Markdown drawn a chunk at a time (`SHProseChunks`), each by
+/// `SHAgentProse` with fenced code highlighted. Blocks are parsed and chunked once per turn
+/// (`NativeTurnPresentation`); inline runs are styled once per text (`SHProseInline`).
 struct Prose: View, Equatable {
-    let blocks: [NativeMarkdownBlock]
+    let prose: NativeProse
     var maxWidth: CGFloat = AppLayout.proseMaxWidth
     /// A streaming reply is writing the last fenced block (still open): it is colored as it
     /// grows (`CodeHighlightThrottle`), and in full once it is finished.
     var writingFence = false
-    /// Large new inline text is parsed off the main actor while the last blocks stay drawn.
-    @State private var gate = ProseInlineGate()
-    @State private var landed = 0
 
     static func == (lhs: Prose, rhs: Prose) -> Bool {
-        lhs.blocks == rhs.blocks && lhs.maxWidth == rhs.maxWidth && lhs.writingFence == rhs.writingFence
+        lhs.prose == rhs.prose && lhs.maxWidth == rhs.maxWidth && lhs.writingFence == rhs.writingFence
     }
 
-    init(blocks: [NativeMarkdownBlock], maxWidth: CGFloat = AppLayout.proseMaxWidth, writingFence: Bool = false) {
-        self.blocks = blocks
+    init(prose: NativeProse, maxWidth: CGFloat = AppLayout.proseMaxWidth, writingFence: Bool = false) {
+        self.prose = prose
         self.maxWidth = maxWidth
         self.writingFence = writingFence
     }
 
+    init(blocks: [NativeMarkdownBlock], maxWidth: CGFloat = AppLayout.proseMaxWidth, writingFence: Bool = false) {
+        self.init(prose: NativeProse(blocks), maxWidth: maxWidth, writingFence: writingFence)
+    }
+
     init(text: String, maxWidth: CGFloat = AppLayout.proseMaxWidth) {
-        self.init(blocks: nativeMarkdownBlocks(text), maxWidth: maxWidth)
+        self.init(prose: NativeProse(nativeMarkdownParse(text)), maxWidth: maxWidth)
     }
 
     var body: some View {
-        let _ = landed
-        let shown = gate.blocks(for: blocks) { [$landed] in $landed.wrappedValue &+= 1 }
-        let writing = writingFence ? Self.lastCode(shown.blocks) : nil
-        SHAgentProse(Self.proseBlocks(shown.blocks, inline: shown.attributed), maxWidth: maxWidth, writingFence: writingFence) { code, language in
-            HighlightedCodeBlock(code: code, language: language, writing: code == writing)
+        let last = prose.chunks.last?.id
+        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList) { chunk in
+            ProseChunk(chunk: chunk, maxWidth: maxWidth, writingFence: writingFence && chunk.id == last).equatable()
         }
+        .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
     /// The last fenced block's code, in document order: an open fence runs to the end.
@@ -127,6 +127,32 @@ struct Prose: View, Equatable {
             header: table.header.map(inline),
             rows: table.rows.map { $0.map(inline) },
             markdown: table.source)
+    }
+}
+
+/// One chunk of a reply's prose: the blocks `SHAgentProse` draws, their inline runs gated off the
+/// main actor when a large text lands (`ProseInlineGate`). Equatable, so a chunk that did not
+/// change is not drawn again.
+struct ProseChunk: View, Equatable {
+    let chunk: NativeProseChunk
+    let maxWidth: CGFloat
+    let writingFence: Bool
+    /// Large new inline text is parsed off the main actor while the last blocks stay drawn.
+    @State private var gate = ProseInlineGate()
+    @State private var landed = 0
+
+    static func == (lhs: ProseChunk, rhs: ProseChunk) -> Bool {
+        lhs.chunk == rhs.chunk && lhs.maxWidth == rhs.maxWidth && lhs.writingFence == rhs.writingFence
+    }
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("prose.chunk")
+        let _ = landed
+        let shown = gate.blocks(for: chunk.blocks) { [$landed] in $landed.wrappedValue &+= 1 }
+        let writing = writingFence ? Prose.lastCode(shown.blocks) : nil
+        SHAgentProse(Prose.proseBlocks(shown.blocks, inline: shown.attributed), maxWidth: maxWidth, writingFence: writingFence) { code, language in
+            HighlightedCodeBlock(code: code, language: language, writing: code == writing)
+        }
     }
 }
 

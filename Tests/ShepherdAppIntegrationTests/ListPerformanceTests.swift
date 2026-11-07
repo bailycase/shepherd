@@ -1109,7 +1109,7 @@ struct ListPerformanceTests {
     /// The blocks in the thread's last prose item once its parse has landed (0 before).
     private static func parsedBlocks(_ store: NativeThreadStore) -> Int {
         for item in (store.rows.last?.presentation?.items ?? []).reversed() {
-            if case .prose(_, _, let blocks, _) = item { return blocks.count }
+            if case .prose(_, _, let prose) = item { return prose.blockCount }
         }
         return 0
     }
@@ -1164,9 +1164,9 @@ struct ListPerformanceTests {
         #expect(counts["prose.table", default: 0] <= 100, "300 tables in the reply: \(counts)")
     }
 
-    /// Scrolling a long reply to its top and back builds the chunks it passes and lets go of the
-    /// ones far away: a creation count cannot show that, so this counts the native fields SwiftUI
-    /// dismantled against the ones it built.
+    /// Scrolling through a long reply from its top to its tail builds the chunks it passes and lets
+    /// go of the ones far behind: a creation count cannot show that, so this counts the native
+    /// fields SwiftUI dismantled against the ones it built (about 300 built, about 25 alive at once).
     @Test func aLongReplyLetsGoOfChunksScrolledFarAway() async throws {
         let text = MarkdownFixtures.longReply(cycles: 300)
         let blocks = nativeMarkdownBlocks(text).count
@@ -1182,8 +1182,23 @@ struct ListPerformanceTests {
         try await settleReply(thread, blocks: blocks)
         let scroll = try #require(thread.scrollView)
 
-        ListPerf.jump(thread.window, scroll, toEnd: false)
+        // A reader's scroll: the wheel's intent first, or the thread would follow its tail back down.
+        var held = 0
+        try await eventuallyOnMain("the thread to stay at its top") {
+            if scroll.contentView.bounds.origin.y > 1_000 {
+                held = 0
+                thread.input.readerScrolled(upward: true)
+                ListPerf.jump(thread.window, scroll, toEnd: false)
+            } else {
+                ListPerf.settle(thread.window)
+                held += 1
+            }
+            return held >= 10
+        }
         try await settleReply(thread, blocks: blocks)
+        // Then down through the whole reply a screenful at a time, as a reader does (a jump builds only
+        // the few chunks at its two ends), and on to the tail.
+        while ListPerf.scroll(thread.window, scroll, step: 800, steps: 20).distance > 0 {}
         ListPerf.jump(thread.window, scroll, toEnd: true)
         try await settleReply(thread, blocks: blocks)
         try await eventuallyOnMain("the chunks scrolled away to be let go") {

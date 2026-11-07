@@ -35,8 +35,9 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// shared readable text (ResponseVisibility › B: the live disclosure), and `since` is when
         /// the host saw it start (ms), for its clock; nil from older hosts.
         case thinking(id: String, text: String, blocks: [NativeMarkdownBlock], seconds: Double?, live: Bool, since: Double?)
-        /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
-        case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
+        /// `prose`: the text parsed as Markdown, in chunks a view builds as they come into view;
+        /// `endsInOpenFence` is the text ending inside a fence still open (the block a reply is writing).
+        case prose(id: String, text: String, prose: NativeProse)
         /// Consecutive activity lines, one per burst of work (SHThread: "one quiet line per
         /// burst"), between prose, notes, errors, steers and the subagent record. `id` follows
         /// the first burst.
@@ -69,7 +70,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .hook(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .hook(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
@@ -125,8 +126,8 @@ public func nativeTurnPresentation(
     errors: NativeTurnErrorContext = NativeTurnErrorContext(),
     call: (NativeThreadMessage) -> NativeActivityCall = NativeActivityCall.init,
     thinking: (String) -> [NativeMarkdownBlock] = nativeThinkingBlocks,
-    prose: (String, String, Bool) -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) = { _, text, streaming in
-        nativeMarkdownParse(text, streaming: streaming)
+    prose: (String, String, Bool) -> NativeProse = { _, text, streaming in
+        NativeProse(nativeMarkdownParse(text, streaming: streaming))
     }
 ) -> NativeTurnPresentation {
     enum Raw {
@@ -318,7 +319,7 @@ public func nativeTurnPresentation(
             flushStretch()
             let id = nextID("prose")
             let parsed = prose(id, text, live && streaming)
-            items.append(.prose(id: id, text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
+            items.append(.prose(id: id, text: text, prose: parsed))
             copy.append(text)
         case .goalRecord(let text):
             flushStretch()

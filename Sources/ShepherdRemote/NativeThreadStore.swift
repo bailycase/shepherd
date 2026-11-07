@@ -484,7 +484,7 @@ public final class NativeThreadStore {
     /// How many times thinking was parsed (tests).
     @ObservationIgnored private(set) var thinkingParses = 0
     /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
-    @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, blocks: [NativeMarkdownBlock], endsInOpenFence: Bool)] = [:]
+    @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, prose: NativeProse)] = [:]
     @ObservationIgnored private(set) var proseParses = 0
     /// Oversized prose/thinking, including cold loads, replacements and final text, parse off
     /// main. Keep the prior presentation (or empty blocks) until a text/mode-fenced result lands.
@@ -777,7 +777,7 @@ public final class NativeThreadStore {
                     return self.thinkingBlocks(turn: turn.id, index: thinkingIndex, text: text)
                 }, prose: { id, text, streaming in
                     used.insert(ProseKey(turn: turn.id, item: id))
-                    return self.proseBlocks(turn: turn.id, item: id, text: text, streaming: streaming)
+                    return self.prose(turn: turn.id, item: id, text: text, streaming: streaming)
                 })
                 for key in (proseKeysByTurn[turn.id] ?? []).subtracting(used) { invalidateParse(key) }
                 proseKeysByTurn[turn.id] = used
@@ -1065,23 +1065,24 @@ public final class NativeThreadStore {
         return value
     }
 
-    private func proseBlocks(turn: String, item: String, text: String, streaming: Bool)
-        -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) {
+    private func prose(turn: String, item: String, text: String, streaming: Bool) -> NativeProse {
         let key = ProseKey(turn: turn, item: item)
         if let cached = proseCache[key], cached.text == text, cached.streaming == streaming {
             invalidateParse(key)
-            return (cached.blocks, cached.endsInOpenFence)
+            return cached.prose
         }
         if text.utf8.count >= Self.offMainProseBytes {
-            parseOffMain(key, text: text, streaming: streaming, parse: { nativeMarkdownParse($0, streaming: streaming) }) { [weak self] value in
-                self?.cacheProse(key, text: text, streaming: streaming, blocks: value.blocks, open: value.endsInOpenFence)
+            let previous = proseCache[key]?.prose
+            parseOffMain(key, text: text, streaming: streaming,
+                         parse: { NativeProse(nativeMarkdownParse($0, streaming: streaming), reusing: previous) }) { [weak self] value in
+                self?.cacheProse(key, text: text, streaming: streaming, prose: value)
             }
-            return proseCache[key].map { ($0.blocks, $0.endsInOpenFence) } ?? ([], false)
+            return proseCache[key]?.prose ?? .empty
         }
         invalidateParse(key)
         proseParses += 1
-        let value = nativeMarkdownParse(text, streaming: streaming)
-        cacheProse(key, text: text, streaming: streaming, blocks: value.blocks, open: value.endsInOpenFence)
+        let value = NativeProse(nativeMarkdownParse(text, streaming: streaming), reusing: proseCache[key]?.prose)
+        cacheProse(key, text: text, streaming: streaming, prose: value)
         return value
     }
 
@@ -1097,16 +1098,16 @@ public final class NativeThreadStore {
         thinkingCache[key] = (text, blocks)
     }
 
-    private func cacheProse(_ key: ProseKey, text: String, streaming: Bool, blocks: [NativeMarkdownBlock], open: Bool) {
+    private func cacheProse(_ key: ProseKey, text: String, streaming: Bool, prose: NativeProse) {
         if proseCache[key] == nil, proseCache.count >= 1024 {
             proseCache = [:]
             cacheBytes -= proseCosts.values.reduce(0, +)
             proseCosts = [:]
         }
-        let cost = text.utf8.count * 3 + blocks.count * 64
+        let cost = text.utf8.count * 3 + prose.blockCount * 64
         cacheBytes += cost - (proseCosts[key] ?? 0)
         proseCosts[key] = cost
-        proseCache[key] = (text, streaming, blocks, open)
+        proseCache[key] = (text, streaming, prose)
     }
 
     /// At most two detached parses per store, one per item. Queued work is replaced by the
