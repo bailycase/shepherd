@@ -6,7 +6,8 @@ import ShepherdCore
 
 /// "Finalize Worktree…" on a worktree agent: the whole commit → push → PR →
 /// cleanup pipeline inside one sheet. Phases:
-///   checking → (setup wizard when prerequisites fail) → input → running →
+///   checking → (setup wizard when prerequisites fail) → plan (BranchFinalizePlan: tick the
+///   steps) → input (the pull request's title and description, when it is ticked) → running →
 ///   done / failed
 /// The setup phase is the guided wizard: each missing prerequisite shows an
 /// in-app remedy, and re-running the checks is the visual verification that
@@ -31,12 +32,27 @@ struct FinalizeWorktreeSheet: View {
     @State private var includedCommits: Int?
     /// Why Finalize could not start (another operation holds the checkout).
     @State private var startError: String?
+    /// The plan's ticks (BranchFinalizePlan), from Settings ▸ Worktrees until changed.
+    @State private var plan = Plan()
     @FocusState private var focusedField: Field?
     /// Set only by previews: the sheet opens in that state and runs no probes.
     private let staged: Staged?
 
     enum Phase {
-        case checking, setup, input, running, done, failed
+        case checking, setup, plan, input, running, done, failed
+    }
+
+    struct Plan: Equatable {
+        var commit = true
+        var commitMessage = ""
+        var push = true
+        var pullRequest = true
+        var merge = false
+        var mergeMethod = WorktreeMergeMethod.squash
+        var remove = true
+
+        var steps: Int { [commit, push, pullRequest, pullRequest && merge, remove].filter { $0 }.count }
+        var runTitle: String { "Run \(steps) step\(steps == 1 ? "" : "s")" }
     }
 
     /// A phase with its form and pipeline already filled, so a preview renders the sheet there
@@ -49,9 +65,10 @@ struct FinalizeWorktreeSheet: View {
         var includedCommits: Int?
         var steps: [WorktreeFinalizer.Step: WorktreeFinalizer.StepState] = [:]
         var prURL: String?
+        var plan = Plan(commitMessage: "")
     }
 
-    private enum Field { case base, title, description }
+    private enum Field { case base, title, description, commit }
 
     init(vm: ShepherdViewModel, agent: Agent, space: Space, staged: Staged? = nil) {
         self.vm = vm
@@ -68,6 +85,7 @@ struct FinalizeWorktreeSheet: View {
             _descriptionPrepared = State(initialValue: true)
             _includedCommits = State(initialValue: staged.includedCommits)
             _finalizer = State(initialValue: WorktreeFinalizer(staged: staged.steps, prURL: staged.prURL))
+            _plan = State(initialValue: staged.plan)
         }
     }
 
@@ -86,6 +104,8 @@ struct FinalizeWorktreeSheet: View {
                     vm.finalizeRequest = nil
                     vm.openGhLogin(besideAgent: agent.id)
                 }
+            case .plan:
+                planBody
             case .input:
                 inputBody
             case .running, .done, .failed:
@@ -100,6 +120,7 @@ struct FinalizeWorktreeSheet: View {
         // its new height; within a phase, late arrivals (the commit count, a generated
         // description, a start error, the PR link) settle without a jump.
         .shAnimation(.disclosure, value: phase)
+        .shAnimation(.content, value: plan)
         .shAnimation(.disclosure, value: startError)
         .shAnimation(.content, value: generatingDescription)
         .shAnimation(.content, value: includedCommits)
@@ -114,6 +135,7 @@ struct FinalizeWorktreeSheet: View {
         case .setup: return "Set up Finalize"
         case .done: return "Worktree finalized"
         case .failed: return "Finalize stopped"
+        case .plan: return "Finalize \(branch)"
         default: return "Finalize worktree"
         }
     }
@@ -124,12 +146,16 @@ struct FinalizeWorktreeSheet: View {
             return "Checking prerequisites…"
         case .setup:
             return "Shepherd finalizes worktrees fully in-app: commit, push, pull request, and cleanup. A few things need to be set up first."
+        case .plan:
+            return "Nothing runs until you press Run. Untick any step to skip it."
         case .input:
             return "Commits remaining work on \(branch), pushes it, opens a pull request, then removes the worktree and local branch. The remote branch stays until the PR merges."
         case .running:
             return "Working — each step must succeed before the next runs. Nothing is deleted until the worktree is verified clean."
         case .done:
-            return "The pull request is open and the worktree is cleaned up. The agent will be removed when you close this dialog."
+            return plan.remove ? "The steps ran and the worktree is cleaned up. The agent will be removed when you close this dialog."
+                : "The steps ran. The worktree and its thread stay."
+
         case .failed:
             return "A step failed, so the pipeline stopped. Your work is intact — fix the issue and finalize again."
         }
@@ -152,6 +178,8 @@ struct FinalizeWorktreeSheet: View {
                     SHDialogStatus("All set — ready to finalize")
                 }
             }
+        case .plan:
+            SHDialogStatus("\(plan.steps) step\(plan.steps == 1 ? "" : "s")")
         case .input:
             // Back into the wizard: prerequisite status plus the recommended per-repo GitHub
             // settings live there.
@@ -185,18 +213,35 @@ struct FinalizeWorktreeSheet: View {
             Button("Continue") {
                 Task {
                     await prepareInputDefaults()
-                    phase = .input
-                    await generateDescriptionIfNeeded()
+                    phase = .plan
                 }
             }
             .buttonStyle(.sh(.primary))
             .keyboardShortcut(.defaultAction)
             .disabled(!setup.allPassed)
-        case .input:
+        case .plan:
             Button("Cancel") { vm.finalizeRequest = nil }
                 .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
-            Button("Finalize") { start() }
+            if plan.pullRequest {
+                // The pull request's title and description come on the next screen.
+                Button("Continue") {
+                    phase = .input
+                    Task { await generateDescriptionIfNeeded() }
+                }
+                .buttonStyle(.sh(.primary))
+                .keyboardShortcut(.defaultAction)
+            } else {
+                Button(plan.runTitle) { start() }
+                    .buttonStyle(.sh(.primary))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(plan.steps == 0 || plan.commit && plan.commitMessage.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        case .input:
+            Button("Back") { phase = .plan }
+                .buttonStyle(.sh(.ghost))
+                .keyboardShortcut(.cancelAction)
+            Button(plan.runTitle) { start() }
                 .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(generatingDescription
@@ -227,8 +272,7 @@ struct FinalizeWorktreeSheet: View {
         }
         if setup.allPassed {
             await prepareInputDefaults()
-            phase = .input
-            await generateDescriptionIfNeeded()
+            phase = .plan
         } else {
             phase = .setup
         }
@@ -238,6 +282,12 @@ struct FinalizeWorktreeSheet: View {
 
     private func prepareInputDefaults() async {
         if title.isEmpty { title = agent.name }
+        if plan.commitMessage.isEmpty {
+            plan.commitMessage = agent.name
+            plan.commit = vm.settings.worktreeAutoCommit && (agent.checkout?.changedFiles ?? 0) > 0
+            plan.merge = vm.settings.worktreeAutoMergePR
+            plan.mergeMethod = vm.settings.worktreeMergeMethod
+        }
         if base.isEmpty {
             if let recorded = agent.worktreeBase {
                 // The branch the work actually started from — recorded at
@@ -405,10 +455,15 @@ struct FinalizeWorktreeSheet: View {
             base: base.trimmingCharacters(in: .whitespaces),
             title: title.trimmingCharacters(in: .whitespaces),
             body: prBody,
-            autoCommit: vm.settings.worktreeAutoCommit,
+            autoCommit: true,
             deleteLocalBranch: vm.settings.worktreeDeleteLocalBranch,
-            autoMergePR: vm.settings.worktreeAutoMergePR,
-            mergeMethod: vm.settings.worktreeMergeMethod.rawValue
+            autoMergePR: plan.merge,
+            mergeMethod: plan.mergeMethod.rawValue,
+            commit: plan.commit,
+            push: plan.push,
+            pullRequest: plan.pullRequest,
+            remove: plan.remove,
+            commitMessage: plan.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         Task {
             defer { vm.hostBusyWorktrees.remove(checkout) }
@@ -423,9 +478,7 @@ struct FinalizeWorktreeSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             // The merge step only renders when the user opted in — a
             // permanently-skipped row is noise, not information.
-            ForEach(WorktreeFinalizer.Step.allCases.filter {
-                $0 != .mergePR || vm.settings.worktreeAutoMergePR
-            }) { step in
+            ForEach(WorktreeFinalizer.Step.allCases.filter(planned)) { step in
                 let status = (finalizer.states[step] ?? .pending).checklist
                 SHChecklistRow(step.label, state: status.state, stateLabel: status.word, detail: status.detail)
             }
@@ -448,11 +501,69 @@ struct FinalizeWorktreeSheet: View {
         }
     }
 
+    /// A step the plan runs; the pipeline lists only those.
+    private func planned(_ step: WorktreeFinalizer.Step) -> Bool {
+        switch step {
+        case .commit: plan.commit
+        case .push: plan.push
+        case .pullRequest: plan.pullRequest
+        case .mergePR: plan.pullRequest && plan.merge
+        case .verifyClean, .removeWorktree, .deleteBranch: plan.remove
+        }
+    }
+
+    // MARK: Plan
+
+    /// BranchFinalizePlan: each step a checkbox with what it does.
+    private var planBody: some View {
+        let files = agent.checkout?.changedFiles ?? 0
+        return VStack(alignment: .leading, spacing: SH.Space.l) {
+            planStep(files == 0 ? "Nothing to commit" : "Commit \(files) remaining file\(files == 1 ? "" : "s")", isOn: $plan.commit) {
+                if plan.commit {
+                    TextField("Commit message", text: $plan.commitMessage)
+                        .focused($focusedField, equals: .commit)
+                        .shField(focused: focusedField == .commit)
+                }
+            }
+            .disabled(files == 0)
+            planStep("Push to origin", detail: "git push -u origin \(branch)" + (includedCommits.map { " · \($0) commit\($0 == 1 ? "" : "s")" } ?? ""),
+                     isOn: $plan.push) { EmptyView() }
+            planStep("Open a pull request into \(base)", detail: "Title and description drafted from the commits; edit them on the next screen.",
+                     isOn: $plan.pullRequest) { EmptyView() }
+            planStep("Merge when checks pass", isOn: $plan.merge) {
+                SHSegmentedPicker("Merge method", selection: $plan.mergeMethod,
+                                  options: [(.squash, "Squash"), (.merge, "Merge"), (.rebase, "Rebase")])
+                    .fixedSize()
+                    .disabled(!plan.merge)
+            }
+            .disabled(!plan.pullRequest)
+            planStep("Remove the worktree and local branch", detail: "Only after everything is on the remote. The remote branch is kept.",
+                     isOn: $plan.remove) { EmptyView() }
+            if let startError {
+                DialogBanner(state: .failed, title: "Finalize can't start yet", message: startError)
+            }
+        }
+        .padding(.horizontal, SHDialogMetrics.inset)
+    }
+
+    private func planStep<Extra: View>(_ title: String, detail: String? = nil, isOn: Binding<Bool>,
+                                       @ViewBuilder extra: () -> Extra) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.l) {
+            Toggle(title, isOn: isOn).toggleStyle(.shCheckbox).labelsHidden()
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text(title).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
+                if let detail { Text(detail).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary) }
+                extra()
+            }
+        }
+    }
+
     /// Success dialog closed: dismiss first, then retire the agent (same
-    /// teardown choreography as the delete dialogs).
+    /// teardown choreography as the delete dialogs). A plan that kept the worktree keeps its thread.
     private func finishAndRetire() {
         let agentID = agent.id
         vm.finalizeRequest = nil
+        guard plan.remove else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
             vm.deleteAgent(agentID)

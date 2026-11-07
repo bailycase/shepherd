@@ -167,6 +167,28 @@ public enum GitWorktree {
         return destination
     }
 
+    /// A new worktree on a branch that already exists (the new thread's Branch picker):
+    /// `git worktree add <dest> <branch>`; a remote branch ("origin/x") with no local copy gets one
+    /// tracking it (`--track -b x <dest> origin/x`). git refuses a branch another worktree has.
+    /// Returns the worktree's path and its local branch.
+    static func addExisting(repo: String, branch: String) throws -> (path: String, branch: String) {
+        let repoPath = (repo as NSString).expandingTildeInPath
+        let remote = branch.hasPrefix("origin/")
+        let local = remote ? String(branch.dropFirst("origin/".count)) : branch
+        guard !local.hasPrefix("-"), (try? run(["-C", repoPath, "check-ref-format", "--branch", local])) != nil else {
+            throw Failure(message: "“\(branch)” isn’t a valid branch name.")
+        }
+        let destination = destination(repo: repo, branch: local)
+        guard !FileManager.default.fileExists(atPath: destination) else { throw Failure(message: "\(destination) already exists") }
+        let hasLocal = (try? run(["-C", repoPath, "rev-parse", "--verify", "--quiet", "refs/heads/\(local)"])) != nil
+        if remote, !hasLocal {
+            try run(["-C", repoPath, "worktree", "add", "--track", "-b", local, "--", destination, "refs/remotes/\(branch)"])
+        } else {
+            try run(["-C", repoPath, "worktree", "add", "--", destination, local])
+        }
+        return (destination, local)
+    }
+
     /// Network git commands (fetch, set-head) give up after this long rather than hanging the
     /// worktree sheet on a dead network or a stalled remote.
     public static let networkTimeout: TimeInterval = 20

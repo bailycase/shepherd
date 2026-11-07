@@ -82,9 +82,27 @@ struct WorktreeFinalizePipelineTests {
         ])
         #expect(finalizer.states == [
             .commit: .done("committed"), .push: .done("pushed"), .pullRequest: .done(Self.prURL),
-            .mergePR: .skipped("off — Settings ▸ Worktrees"), .verifyClean: .done("clean"),
+            .mergePR: .skipped("not in the plan"), .verifyClean: .done("clean"),
             .removeWorktree: .done("removed"), .deleteBranch: .done("deleted"),
         ])
+    }
+
+    /// The Finalize plan: unticked steps run nothing, and keeping the worktree keeps its branch.
+    @Test func untickedPlanStepsAreSkippedAndKeepTheWorktree() async {
+        let shell = shell()
+        var plan = context()
+        plan.pullRequest = false
+        plan.remove = false
+        plan.commitMessage = "Emit refund events"
+        let finalizer = await run(plan, shell: shell)
+        #expect(finalizer.phase == .succeeded)
+        #expect(shell.scripts == [
+            "git status --porcelain",
+            "git add -A && git commit -m 'Emit refund events'",
+            "git push -u origin 'worktree/x'",
+        ])
+        #expect(finalizer.states[.pullRequest] == .skipped("not in the plan") && finalizer.states[.removeWorktree] == .skipped("worktree kept"))
+        #expect(finalizer.states[.deleteBranch] == .skipped("worktree kept"))
     }
 
     /// Work happens in the worktree; removing it and its branch happens from the repository.

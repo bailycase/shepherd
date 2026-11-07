@@ -154,7 +154,7 @@ struct TerminalMenuLayer: View {
                 close()
                 vm.newTerminalTab(target)
             }
-            if let tab {
+            if let tab, vm.terminalPanels.appKey(tab.id) == nil {
                 SHChangesMenuRow("Rename tab", systemImage: "pencil", enabled: control) {
                     close()
                     vm.renameTerminalTab(tab, target: target)

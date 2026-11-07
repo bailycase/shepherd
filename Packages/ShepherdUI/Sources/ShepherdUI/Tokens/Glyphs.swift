@@ -77,7 +77,7 @@ public enum SHGlyph: CaseIterable, Sendable {
     /// retain their accessibility actions rather than mounting the board's HTML.
     public enum Settings: String, CaseIterable {
         case back, search, appearance, terminal, agents, subagents, worktrees, projects, pi
-        case instructions, skills, extensions, slashCommands, hooks, mcp, remoteConnection, keyboard, advanced, experiments
+        case instructions, skills, extensions, slashCommands, apps, hooks, mcp, remoteConnection, keyboard, advanced, experiments
         case next, folder, computer, browserSearch, globe, lock
         case subagentPlus, subagentFile, subagentNext
 
@@ -98,11 +98,12 @@ public enum SHGlyph: CaseIterable, Sendable {
         }
 
         /// Advanced's gear is the system `gearshape` the boards draw: a hand-traced copy rendered as a lumpy polygon.
-        /// Hooks has no board artwork: it is the hook glyph's symbol.
+        /// Hooks has no board artwork: it is the hook glyph's symbol. Apps is the system 2×2 grid the board draws.
         public var systemSymbolName: String? {
             switch self {
             case .advanced: "gearshape"
             case .hooks: SHGlyph.hook.symbolName
+            case .apps: "square.grid.2x2"
             default: nil
             }
         }
@@ -152,6 +153,7 @@ public enum SHGlyph: CaseIterable, Sendable {
             case .skills: "graduationcap"
             case .extensions: "puzzlepiece.extension"
             case .slashCommands: "chevron.left.forwardslash.chevron.right"
+            case .apps: "square.grid.2x2"
             case .mcp: "server.rack"
             case .hooks: SHGlyph.hook.symbolName
             case .remoteConnection: SHGlyph.remoteConnection.symbolName

@@ -208,12 +208,17 @@ enum WorkspaceInUseAlert {
     static var message: String { "\(ShepherdEdition.current.displayName) is already running" }
     static let detail = "Another Shepherd process has this workspace open. Quit it, then open Shepherd again."
 
-    @MainActor static func show() {
+    @MainActor static func make() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = message
         alert.informativeText = detail
         alert.addButton(withTitle: "Quit")
+        return alert
+    }
+
+    @MainActor static func show() {
+        let alert = make()
         NSApp.activate()
         alert.runModal()
     }
