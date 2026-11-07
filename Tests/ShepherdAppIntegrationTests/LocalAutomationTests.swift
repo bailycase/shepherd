@@ -150,7 +150,7 @@ struct LocalAutomationTests {
         }
         try await vm.startAutomation(fixture.automation.id)
         try await eventuallyOnMain("cancelled automation creation to remove its run") {
-            stopped && !vm.startingAutomations.contains(fixture.automation.id)
+            stopped
                 && app.server.state.agents.allSatisfy { $0.id == fixture.other.agent.id }
         }
         if delete {

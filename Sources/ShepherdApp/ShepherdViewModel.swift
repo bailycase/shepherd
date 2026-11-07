@@ -10,11 +10,6 @@ import ShepherdRemote
 /// Disambiguates from SwiftUI.Tab for every file in this module.
 typealias Tab = ShepherdCore.Tab
 
-struct AgentStartFailure: Error, CustomStringConvertible {
-    let message: String
-    var description: String { message }
-}
-
 /// GUI-owned view state over the in-process session server's snapshot.
 /// Navigation is the sidebar: an agent row shows that agent's thread (and any terminal panes
 /// beside it); a space row is a disclosure. Tabs exist only in persisted state as per-agent
@@ -243,9 +238,6 @@ final class ShepherdViewModel {
     /// idle run agent is starting until its run has settled (`AutomationRun.isLive`). Read with
     /// every adopted state.
     var openAutomationRuns: [AutomationID: AutomationRun] = [:]
-    /// Automations whose next run is being started: a second start refuses rather than racing it.
-    @ObservationIgnored var startingAutomations: Set<AutomationID> = []
-    @ObservationIgnored var cancelledAutomationStarts: Set<AutomationID> = []
     /// ⌘⇧S hides the sidebar. Persisted, like the other sidebar disclosure choices.
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
@@ -924,7 +916,6 @@ final class ShepherdViewModel {
         installDesignRenderHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
-        installAutomationTriggers()
         // Agents can see, message, and spawn peer threads.
         installAgentPeerControl()
         // Agents drive their thread's Browser page.

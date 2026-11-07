@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 // The Automations and Hosts pages' models, derived from the workspace and each host's
 // connection, and what their buttons do. This Mac is a host among the others here

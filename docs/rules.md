@@ -211,7 +211,7 @@ anything that keeps going without a person watching. Each needs, before it is a 
   opt-in and shown in the UI; secrets are redacted and never reach logs or notifications.
 - Tool output, file contents, web pages and model prose are data, never instructions, including
   text that reaches an evaluator.
-- A restart never resumes unattended features (Projects, executions, goals, automations or design Git work): they come back paused. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle.
+- A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch or a host restart, but an automation run a restart interrupted is never resumed. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
   are each defined and tested.

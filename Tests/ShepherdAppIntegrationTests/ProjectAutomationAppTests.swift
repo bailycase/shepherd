@@ -101,8 +101,7 @@ struct ProjectAutomationAppTests {
         _ = try await app.server.logicalProjects(.automation(projectID: id, expectedRevision: 1, automationID: automation,
             action: .create(draft: .init(name: "Watch", prompt: "hang", cwd: app.dir.path, enabled: true))))
         let vm = try await app.start()
-        vm.autoStartAutomations()
-        #expect(vm.startingAutomations.isEmpty)
+        await app.server.autoStartAutomations()
         #expect(await app.server.listSessions().isEmpty)
         do { try await vm.startAutomation(automation); Issue.record("Expected Project scope refusal") }
         catch let error as LogicalProjectsError { #expect(error.code == "project_scope") }

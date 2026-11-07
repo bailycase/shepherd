@@ -660,6 +660,11 @@ public final class SessionServer: @unchecked Sendable {
     var executionSpaceAuthority: [SpaceID: UUID] = [:]
     var nativeRecoveryAuthority: [AgentID: UUID] = [:]
     var automationStarts = Set<AutomationID>()
+    /// Main actor: who hosts automations (`serveAutomations`), and the unscoped runs starting
+    /// now and those Stop cancelled while starting.
+    @MainActor var automationHosting: AutomationHosting?
+    @MainActor var startingAutomationRuns = Set<AutomationID>()
+    @MainActor var cancelledAutomationRuns = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
     /// Admits one Project automation run as a Project task: (Project, revision, automation, title, prompt).
@@ -736,7 +741,7 @@ public final class SessionServer: @unchecked Sendable {
     private let agentRecovery: AgentRecoveryStore
     /// How each automation's runs went (support directory), for remote clients.
     private let runLog: AutomationRunLog
-    /// Fires triggered automations (schedules, GitHub). The app installs its host and starts it.
+    /// Fires triggered automations (schedules, GitHub). `serveAutomations` installs its host.
     public let automationTriggers: AutomationTriggers
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
     /// their Undo. The app calls it directly; remote clients through
