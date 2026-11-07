@@ -4,10 +4,16 @@ import ShepherdProtocol
 /// A reference pasted into the draft becomes a chip (RefPasted): "A copied reference pastes as a
 /// chip, never as a link. Plain text pastes as text."
 public enum ComposerReferencePaste {
+    /// The most a keystroke adds to a draft: one scalar, four bytes in UTF-8. A flag or a skin tone
+    /// adds more and is still no paste; the references check below leaves it as text.
+    static let keystrokeBytes = 4
+
     /// The references a paste brought into `draft` (text that grew by more than a keystroke from
-    /// `previous`), each a whole word, and the draft without them. Nil when it brought none.
+    /// `previous`), each a whole word, and the draft without them. Nil when it brought none. The
+    /// growth is measured in bytes, which cost nothing however long the draft is.
     public static func extract(_ draft: String, previous: String) -> (draft: String, references: [DesignReference])? {
-        guard draft.count > previous.count + 1, draft.localizedCaseInsensitiveContains(DesignReference.scheme + "://") else { return nil }
+        guard draft.utf8.count > previous.utf8.count + keystrokeBytes,
+              draft.localizedCaseInsensitiveContains(DesignReference.scheme + "://") else { return nil }
         let known = Set(tokens(previous).compactMap { DesignReference(string: $0)?.string })
         var references: [DesignReference] = []
         var kept: [Substring] = []
