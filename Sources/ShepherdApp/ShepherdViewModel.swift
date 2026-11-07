@@ -67,6 +67,27 @@ final class ShepherdViewModel {
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [server] in await server.forge($0) })
+    /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
+    /// over the same transport; none while the branch has no pull request.
+    var branchPullRequests: [AgentID: ForgeStore] = [:]
+    @ObservationIgnored var branchPullRequestLookups: Set<AgentID> = []
+    /// Each local thread's link to its branch's pull request, as last looked up: the sidebar's
+    /// badge, the pane and Close threads when their pull request merges read it. Not persisted.
+    var pullRequestLinks: [AgentID: ThreadPullRequest] = [:]
+    /// Why a merged pull request's thread was kept open (running, uncommitted changes…).
+    var pullRequestCloseNotes: [AgentID: String] = [:]
+    /// The pull request each thread was last seen with open this launch: only a merge seen
+    /// happening closes a thread, never one found merged after a restart.
+    @ObservationIgnored var pullRequestsSeenOpen: [AgentID: ForgeItemRef] = [:]
+    /// Threads the poll has looked up at least once this launch.
+    @ObservationIgnored var pullRequestsPolled: Set<AgentID> = []
+    @ObservationIgnored var pullRequestsClosing: Set<AgentID> = []
+    @ObservationIgnored var pullRequestPoll: Task<Void, Never>?
+    /// The branch's pull request in a checkout (`gh pr view`); tests replace it.
+    @ObservationIgnored var branchPullRequestLookup: @MainActor (String) async -> ThreadPullRequest? = { cwd in
+        let output = await LoginShell.run("gh pr view --json \(ThreadPullRequest.fields)", cwd: cwd, timeout: 20)
+        return output.status == 0 ? ThreadPullRequest(json: output.stdout) : nil
+    }
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
     /// The host whose missions the Missions page shows; nil is This Mac.
@@ -369,6 +390,10 @@ final class ShepherdViewModel {
     let slashCommands: SlashCommandsModel
     /// Settings › Hooks and the composer's hook glyph.
     let hooks: HooksModel
+    /// Settings › Apps, and the apps running now.
+    let apps: AppsModel
+    /// The thread whose Browser waits for each app's address.
+    @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
     /// Each remote host's hooks, made when first shown (`hooks(for:)`).
     @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
@@ -710,7 +735,8 @@ final class ShepherdViewModel {
         yourPi: YourPiModel? = nil,
         piAuth: PiAuthStore? = nil,
         browserData: BrowserDataStores = .ephemeral,
-        hooks: HooksModel? = nil
+        hooks: HooksModel? = nil,
+        apps: AppsModel? = nil
     ) {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
@@ -740,6 +766,7 @@ final class ShepherdViewModel {
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
         self.hooks = hooks ?? HooksModel(catalog: server.hooks)
+        self.apps = apps ?? AppsModel(home: server.hooks.home)
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
@@ -1160,9 +1187,13 @@ final class ShepherdViewModel {
             }
         }
         installMissingSpaceWatch()
+        installPullRequestPoll()
         installProjectRuntime()
         installProjectExecution()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
+        self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
+        self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
+        installApps()
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes.
@@ -1271,6 +1302,7 @@ final class ShepherdViewModel {
             NotificationCenter.default.removeObserver(becomeActiveObserver)
         }
         missingSpaceWatch?.cancel()
+        pullRequestPoll?.cancel()
     }
 
     /// Chord→intent classification for the navigation fast path. Pure and
@@ -1403,6 +1435,8 @@ final class ShepherdViewModel {
         if paths != missingSpaceCheck.paths {
             missingSpaceCheck.paths = paths
             checkMissingSpaces()
+            // The thread header's and New thread's apps follow the spaces.
+            apps.reload()
         }
         reconcileSidebarCompletions()
         reconcileThreadStores()
@@ -1513,6 +1547,10 @@ final class ShepherdViewModel {
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             // A turn ending reads the branch card again (commits, a push, the PR's checks).
             if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
+            // A turn that ended may have opened, pushed to or merged the branch's pull request.
+            if old == .working, status == .done || status == .idle, checkouts != nil {
+                Task { await refreshPullRequestLink(id) }
+            }
             // A session (re)start reports idle; the server still remembers the failure until a
             // turn starts, so the row keeps reading failed.
             let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])

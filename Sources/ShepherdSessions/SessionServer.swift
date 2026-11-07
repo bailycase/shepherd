@@ -562,6 +562,9 @@ public final class SessionServer: @unchecked Sendable {
     /// The hooks on this host (Settings › Hooks): remote clients read and change them through the
     /// server (`hooks.v1`), the Mac's page through its own catalog. Tests point it at a scratch home.
     public var hooks: HookCatalog
+    /// The apps Shepherd runs (Settings › Apps): background processes, each in its own group,
+    /// stopped when Shepherd quits.
+    public let apps = AppProcesses()
     /// A remote client changed this host's hooks: the GUI's Hooks page reloads. Delivered on the main actor.
     public var onHooksChanged: (() -> Void)?
     /// The files of every design (the Design tool), in the support directory's `designs/`. Reads
@@ -1245,6 +1248,7 @@ public final class SessionServer: @unchecked Sendable {
     /// terminates: sessions must not outlive the app. A design deleted within its undo window is
     /// deleted for good.
     public func stop() {
+        apps.stopAll()
         Task { await projects.stopMCP() }
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
@@ -3293,6 +3297,33 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: an agent's app tool. Its space and folder are read here; the apps files and
+    /// processes off the queue (`AppTools`), and the answer comes back to the queue.
+    private func appTool(id: Int, agentID: AgentID, action: AppToolAction, name: String?, lines: Int?, client: ExtensionConnection) {
+        let state = store.state
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        let home = hooks.home
+        let space = state.spaces.first { $0.id == agent.spaceID && !$0.hidden }.map { space in
+            (id: space.id, name: space.name, root: space.path == "~" ? home : space.path.hasPrefix("~/") ? home + space.path.dropFirst() : space.path)
+        }
+        let tab = state.tabs.first { $0.id == agent.tabID }
+        let cwd = (agent.paneID.flatMap { tab?.layout.leaf(withID: $0) } ?? tab?.layout.firstLeaf)?.cwd
+        let place = AppTools.Place(space: space, cwd: cwd, home: home, unattended: Self.unattendedAgentIDs(in: state).contains(agentID))
+        let apps = self.apps
+        Task.detached { [weak self] in
+            let result = await AppTools.serve(action, name: name, lines: lines, place: place, apps: apps)
+            self?.queue.async {
+                switch result {
+                case .success(let text): self?.reply(.appResult(id: id, text: text), to: client)
+                case .failure(let refusal): self?.reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+                }
+            }
+        }
+    }
+
     private func announceSuggestions(_ snapshot: SuggestionsSnapshot) {
         guard let handler = onSuggestionsChanged else { return }
         hopToMain { handler(snapshot) }
@@ -4448,6 +4479,8 @@ public final class SessionServer: @unchecked Sendable {
             )
         case .readPane(let id, let agentID, let paneID):
             routePaneRequest(.read(agentID: agentID, paneID: paneID), requestID: id, client: client)
+        case .app(let id, let agentID, let action, let name, let lines):
+            appTool(id: id, agentID: agentID, action: action, name: name, lines: lines, client: client)
         case .requestReview(let id, let agentID, let cwd, let reference):
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
         case .suggestInstruction(let id, let agentID, let line, let reason, let file):
@@ -5447,7 +5480,7 @@ public final class SessionServer: @unchecked Sendable {
              .panes(let id, _),
              .paneOpened(let id, _),
              .paneContent(let id, _, _),
-             .reviewResult(let id, _),
+             .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
              .message(let id, _, _),

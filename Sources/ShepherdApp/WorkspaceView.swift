@@ -412,14 +412,22 @@ struct PaneTreeView: View {
                                                       focused: model.focusedPaneID)
         return GeometryReader { geo in
             let _ = SHRenderProbe.tick("layout.paneTreeGeo")
-            let selected = TerminalPanel.selected(TerminalPanel.tabs(in: tab.layout, thread: thread.paneID), chosen: panel.chosenTab,
+            let appTabs = vm.terminalPanels.appTabs[key] ?? []
+            let selected = TerminalPanel.selected(TerminalPanel.tabs(in: tab.layout, thread: thread.paneID) + appTabs, chosen: panel.chosenTab,
                                                   focused: model.focusedPaneID)
             let geometry = terminalPanelGeometry(for: tab.layout, thread: thread.paneID, selected: selected, shown: panel.shown,
                                                  maximized: panel.maximized, height: liveHeight ?? model.terminalHeight,
-                                                 in: geo.size)
+                                                 in: geo.size, appTabs: appTabs)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
-                    PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, shown: leaf.shown))
+                    Group {
+                        if let app = vm.terminalPanels.appKey(leaf.pane.id) {
+                            // An app's output: a read-only log, never a shell.
+                            if leaf.shown { AppLogView(vm: vm, app: app) }
+                        } else {
+                            PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, shown: leaf.shown))
+                        }
+                    }
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)

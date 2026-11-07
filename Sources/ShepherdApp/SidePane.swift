@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The side pane's tab strip over the current tab (PaneStates, Review, SubagentList, FilesTab): Changes, with
-/// its count of changed files, a local thread's Browser, Files with the space's file browser,
+/// its count of changed files, the branch's Pull request, a local thread's Browser, Files with the space's file browser,
 /// and Subagents with its count of runs.
 /// The subagent inspector is not a tab: it takes the
 /// whole pane over while a run is inspected (`AgentLayoutView`), and the Subagents tab is the list
@@ -46,6 +46,9 @@ struct SidePaneView: View {
                         BrowserPane(vm: vm, session: vm.browsers.session(for: ref, hosts: vm.remoteHosts), store: store, active: active)
                             .shTransition(.content)
                     }
+                case .pullRequest:
+                    pullRequestContent
+                        .shTransition(.content)
                 case .subagents:
                     SubagentListTab(store: store, inspect: inspect)
                         .shTransition(.content)
@@ -60,11 +63,21 @@ struct SidePaneView: View {
     }
 
     @ViewBuilder
+    private var pullRequestContent: some View {
+        if case .local(let agentID) = owner, let pullRequest = vm.branchPullRequests[agentID] {
+            PullRequestTab(vm: vm, store: pullRequest, agentID: agentID)
+        } else {
+            SHEmptyState(Text("No pull request"), message: "This thread's branch has no pull request on GitHub.", showsMark: false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
     private var filesContent: some View {
         switch owner {
         case .local(let agentID):
             if let model = vm.fileTree(for: agentID) {
-                FilesTab(model: model)
+                FilesTab(model: model, agentPath: vm.threadStores.existing(for: agentID)?.editingPath)
                     .id(model.rootPath)
             } else {
                 Text("Loading files…")
@@ -75,7 +88,7 @@ struct SidePaneView: View {
             }
         case .remote(let ref):
             if let model = vm.fileTree(for: ref) {
-                FilesTab(model: model)
+                FilesTab(model: model, agentPath: vm.remoteThreadStores.existing(for: ref)?.editingPath)
                     .id(model.rootPath)
                     .task { vm.ensureFileTree(owner) }
             } else {
@@ -107,9 +120,11 @@ private struct SidePaneTabBar: View {
     }
 
     var body: some View {
+        let tabs = vm.sidePaneTabs(for: owner)
         SHSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
-                                          browser: vm.sidePaneTabs(for: owner).contains(.browser), browserTip: browserTip,
-                                          subagents: SidePaneTabs.subagents(store.subagents)),
+                                          browser: tabs.contains(.browser), browserTip: browserTip,
+                                          subagents: SidePaneTabs.subagents(store.subagents),
+                                          pullRequest: tabs.contains(.pullRequest) ? pullRequest?.selection?.number : nil),
                        selection: tab.rawValue,
                        select: { id in SidePaneTab(rawValue: id).map { vm.showSidePane(owner, tab: $0) } },
                        closeShortcut: vm.keybindings.display(.toggleRightPane),
@@ -121,9 +136,23 @@ private struct SidePaneTabBar: View {
                 ReviewOptionItems(session: review, maximized: maximized, toggleMaximized: { vm.toggleSidePaneMaximized(owner) })
                 Divider()
             }
+            if tab == .pullRequest, let ref = pullRequest?.selection {
+                Button("Copy Link") { ShepherdViewModel.copyForgeLink(ref) }
+                Button("Open on GitHub") { ShepherdViewModel.openForgeURL(ref) }
+                Divider()
+            }
             Button("Reset Width") { vm.subagentInspector.width = 0 }
                 .disabled(vm.subagentInspector.width == 0)
         }
+        // The branch's pull request is looked up as the pane opens and again after each turn,
+        // which is when the agent may have opened one.
+        .task(id: store.running) {
+            if case .local(let agentID) = owner, !store.running { vm.refreshBranchPullRequest(agentID) }
+        }
+    }
+
+    private var pullRequest: ForgeStore? {
+        if case .local(let agentID) = owner { vm.branchPullRequests[agentID] } else { nil }
     }
 }
 
@@ -131,18 +160,19 @@ private struct SidePaneTabBar: View {
 enum SidePaneTabs {
     /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
     /// `subagents` is the thread's run count and status; nil while it has none (no tab).
+    /// `pullRequest` is the branch's pull request's number; nil while it has none (no tab).
     static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: SHSidePaneTabTip? = nil,
-                      subagents: (count: Int, status: AgentState)? = nil) -> [SHSidePaneTab] {
-        SidePaneTab.tabs(browser: browser).compactMap { tab in
+                      subagents: (count: Int, status: AgentState)? = nil, pullRequest: Int? = nil) -> [SHSidePaneTab] {
+        SidePaneTab.tabs(browser: browser, pullRequest: pullRequest != nil).compactMap { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
-            case .browser: nil
+            case .browser, .pullRequest: nil
             case .files: nil
             case .subagents: subagents?.count
             }
             if tab == .subagents, subagents == nil { return nil }
             return SHSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
-                                 news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
+                                 badge: tab == .pullRequest ? pullRequest.map { "#\($0)" } : nil, news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
         }
     }
 

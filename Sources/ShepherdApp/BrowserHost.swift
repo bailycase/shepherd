@@ -526,7 +526,11 @@ final class BrowserSession {
 
     /// Opens `server`'s page once it answers, trying every half second for a minute and a half.
     func wait(for server: DevServer) {
-        guard let url = server.url else { return }
+        if let url = server.url { wait(for: url) }
+    }
+
+    /// Opens `url` once it answers (an app's address), polling for up to 90 s.
+    func wait(for url: URL) {
         waitTask?.cancel()
         // A remote host's port is forwarded here first, so it answers by the way the page will go.
         guard forwardPort(of: url) else { return }

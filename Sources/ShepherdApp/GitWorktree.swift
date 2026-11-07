@@ -325,6 +325,21 @@ enum GitWorktree {
         return parts.isEmpty ? nil : parts.joined(separator: " and ")
     }
 
+    /// Why closing a merged pull request's worktree would lose work: uncommitted changes, or
+    /// commits no remote has when HEAD isn't the pull request's head (`pushedHead`). Nil when safe.
+    static func closeBlocker(worktree: String, pushedHead: String) throws -> String? {
+        let dirty = try run(["-C", worktree, "status", "--porcelain"]).split(separator: "\n").count
+        if dirty > 0 { return "\(dirty) uncommitted change\(dirty == 1 ? "" : "s")" }
+        let head = try run(["-C", worktree, "rev-parse", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard head != pushedHead else { return nil }
+        // A squash merge leaves the branch's commits off main; the remote branch (or GitHub's head) still has them.
+        let count = try run(["-C", worktree, "rev-list", "--count", "HEAD", "--not", "--remotes"])
+        guard let unpushed = Int(count.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure(message: "Could not verify commits on the remote")
+        }
+        return unpushed > 0 ? "\(unpushed) unpushed commit\(unpushed == 1 ? "" : "s")" : nil
+    }
+
     static func deletionFingerprint(worktree: String) throws -> String {
         let identity = try identity(at: worktree)
         var digest = SHA256()

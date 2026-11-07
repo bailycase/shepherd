@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSessions
 
 /// The New thread page (NavNewThread; ⌘N or the first destination): "What should the agent work
 /// on?", the composer with attach, the workplace chip (project · host, with the worktree option
@@ -87,9 +88,16 @@ struct NewThreadPage: View {
                     .foregroundStyle(Color.sh.textPrimary)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                composer
-                    .frame(maxWidth: AppLayout.newThreadComposerWidth)
-                    .zIndex(1)
+                VStack(spacing: SH.Space.l) {
+                    composer
+                        .zIndex(1)
+                    if draft.place?.host == nil, let apps = vm.quickApps(in: draft.place?.space) {
+                        NewThreadApps(apps: apps, run: { vm.runQuickApp($0) }, stop: { vm.stopApp($0) }, restart: { vm.restartApp($0) },
+                                      edit: { vm.openAppsSettings() })
+                    }
+                }
+                .frame(maxWidth: AppLayout.newThreadComposerWidth)
+                .zIndex(1)
                 if let notice = draft.notice(vm) {
                     Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                         .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
@@ -765,6 +773,46 @@ extension NewThreadState {
         guard let place, place.host == nil else { return [] }
         return catalog.filter { command in
             !hidden.contains(command.name) && (skills || command.source != "skill") && (goals || command.name != "goal")
+        }
+    }
+}
+
+/// "Run in payments" and the space's quick actions under New thread's composer (AppsNewThread
+/// board): each runs in the background in the space's folder; a running one stops, and one that
+/// exited restarts.
+private struct NewThreadApps: View {
+    let apps: QuickApps
+    let run: (AppKey) -> Void
+    let stop: (AppKey) -> Void
+    let restart: (AppKey) -> Void
+    let edit: () -> Void
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            Text("Run in \(apps.space)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                .padding(.trailing, SH.Space.xxs)
+            ForEach(apps.items) { item in
+                let (verb, glyph): (String, String) = switch item.status {
+                case .starting?, .running?: ("Stop", "stop.fill")
+                case .exited?: ("Restart", "arrow.clockwise")
+                default: ("Run", "play.fill")
+                }
+                Button {
+                    switch verb {
+                    case "Stop": stop(item.key)
+                    case "Restart": restart(item.key)
+                    default: run(item.key)
+                    }
+                } label: {
+                    Label(item.app.name, systemImage: glyph).labelStyle(AppRunLabelStyle())
+                }
+                .buttonStyle(.sh(.secondary, size: .s))
+                .help("\(verb) \(item.app.name)")
+                .accessibilityLabel("\(verb) \(item.app.name)")
+            }
+            Button("Edit apps…", action: edit).buttonStyle(.shLink(color: Color.sh.textTertiary))
+                .padding(.leading, SH.Space.s)
+            Spacer(minLength: 0)
         }
     }
 }

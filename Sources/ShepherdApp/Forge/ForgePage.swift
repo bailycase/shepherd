@@ -397,6 +397,8 @@ struct ForgeActivity: View {
     let events: [ForgeEvent]
     let viewer: String?
     let kind: ForgeKind
+    /// Reviews show their line comments (the side pane's PRPane).
+    var lineComments = false
 
     var body: some View {
         let shown = store.commentsOnly ? events.filter { ForgeActivityRow.words($0) != nil } : events
@@ -421,7 +423,7 @@ struct ForgeActivity: View {
             }
             LazyVStack(alignment: .leading, spacing: SH.Space.m) {
                 ForEach(shown) { event in
-                    ForgeActivityRow(event: event, viewer: viewer, kind: kind, now: now).equatable()
+                    ForgeActivityRow(event: event, viewer: viewer, kind: kind, now: now, lineComments: lineComments).equatable()
                 }
             }
         }

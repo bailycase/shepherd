@@ -133,3 +133,29 @@ struct DesignJumpCard: View {
         }
     }
 }
+
+/// The toast after a jump lands (JumpLanded), centered over the canvas's bottom: Back returns the
+/// canvas to where it was. It goes by itself after a while, or as the canvas is touched.
+struct DesignJumpBackLayer: View {
+    var screen: DesignScreenModel
+
+    var body: some View {
+        ZStack {
+            if let back = screen.jumpBack {
+                SHJumpBackToast(title: back.title, shortcut: KeybindingsStore.shared.display(.designJumpBack)) {
+                    screen.goBackFromJump()
+                }
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.bottom, SHJumpMetrics.backBottom)
+                .id(back.id)
+                .shTransition(.sheet, edge: .bottom)
+                .task(id: back.id) {
+                    guard (try? await Task.sleep(for: DesignJumpBack.lifetime)) != nil else { return }
+                    screen.dismissJumpBack(back.id)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .shAnimation(.sheet, value: screen.jumpBack?.id)
+    }
+}

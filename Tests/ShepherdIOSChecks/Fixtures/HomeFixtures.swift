@@ -14,6 +14,16 @@ extension FixtureCatalog {
             FixtureScreen(name: "home", prepare: settle),
             FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
             FixtureScreen(name: "home-empty", hosts: []),
+            // iPad: hosts with no threads, so the overview is its empty state.
+            FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
+                          prepare: settle),
+            // iPad: the overview with the sidebar out (portrait), and its rows and Open pressed.
+            FixtureScreen(name: "overview", hosts: fleet, prepare: { app in await settle(app); await OverviewOpenCheck.hideSidebar(app) }),
+            FixtureScreen(name: "overview-open", hosts: fleet, prepare: { app in
+                await settle(app)
+                await OverviewOpenCheck.hideSidebar(app)
+                await OverviewOpenCheck.run(app)
+            }),
             FixtureScreen(name: "home-quiet", hosts: HomeFixtureData.quiet(), prepare: settle),
             FixtureScreen(name: "needsyou", hosts: fleet, routes: [.home(.needsYou)], prepare: settle),
             FixtureScreen(name: "needsyou-empty", hosts: HomeFixtureData.quiet(), routes: [.home(.needsYou)], prepare: settle),
@@ -49,6 +59,43 @@ extension FixtureCatalog {
             FixtureScreen(name: "sidebar-groups", hosts: fleet, routes: [.thread(FixtureData.ref(FixtureData.preview))],
                           prepare: { app in await settle(app); await SidebarGroupsCheck.run(app) }),
         ]
+    }
+}
+
+/// The iPad overview opens what it lists: a running row, a finished row and a Needs you card's Open, each pressed the
+/// way VoiceOver activates it, open their threads.
+@MainActor enum OverviewOpenCheck {
+    /// Portrait shows the sidebar over the overview at first: put it away once the split view has settled.
+    static func hideSidebar(_ app: MobileApp) async {
+        try? await Task.sleep(for: .seconds(1))
+        app.navigator.padColumns = .detailOnly
+        try? await Task.sleep(for: .seconds(1))
+    }
+
+    static func run(_ app: MobileApp) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        let model = HomeFeed.of(app.hosts).model
+        let cases: [(String, String, AgentRef?)] = [
+            ("a running row", model.running.first?.title ?? "-", model.running.first?.ref.agentRef),
+            ("a finished row", model.finished.first?.title ?? "-", model.finished.first?.ref.agentRef),
+            ("a Needs you card's Open", "Open \(model.needsYou.first?.thread ?? "-")", model.needsYou.first?.ref.agentRef),
+        ]
+        for (what, label, ref) in cases {
+            app.navigator.padSelection = nil
+            await hideSidebar(app)
+            check(app.navigator.padColumns == .detailOnly, "the sidebar is out, so only the overview's element matches")
+            // The overview's element, not the sidebar's row of the same thread (the sidebar is out).
+            guard let ref, let element = SidebarAutomationsCheck.all.first(where: { $0.accessibilityLabel?.hasPrefix(label) == true }) else {
+                check(false, "\(what) to press (\(label))")
+                continue
+            }
+            let pressed = element.accessibilityActivate()
+            await FixtureCheck.wait("\(what) to open its thread", seconds: 5) { app.navigator.selectedThread == ref }
+            check(pressed && app.navigator.selectedThread == ref, "pressing \(what) opens its thread")
+        }
+        app.navigator.padSelection = nil
     }
 }
 

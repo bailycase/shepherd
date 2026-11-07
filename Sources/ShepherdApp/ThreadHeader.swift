@@ -3,6 +3,7 @@ import AppKit
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
 /// screen: "space / title", then the one side-pane button, the options menu (Refresh Thread,
@@ -17,6 +18,7 @@ struct ThreadHeader: View, Equatable {
             && a.paneOpen == b.paneOpen && a.paneNews == b.paneNews && a.paneShortcut == b.paneShortcut
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
             && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
+            && a.apps == b.apps
     }
 
     var store: NativeThreadStore
@@ -40,12 +42,22 @@ struct ThreadHeader: View, Equatable {
     /// automation's run, or the project tree on screen).
     var pinned: Bool?
     var togglePin: (() -> Void)?
+    /// The space's quick actions (AppsQuickAction board); nil draws no Run button.
+    var apps: QuickApps?
+    var runApp: (AppKey) -> Void = { _ in }
+    var stopApp: (AppKey) -> Void = { _ in }
+    var restartApp: (AppKey) -> Void = { _ in }
+    var appOutput: (AppKey) -> Void = { _ in }
+    var editApps: () -> Void = {}
 
     var body: some View {
         let _ = SHRenderProbe.tick("thread.header")
         SHThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
         } trailing: {
             ThreadGoalHeader(store: store)
+            if let apps {
+                ThreadAppsButton(apps: apps, run: runApp, stop: stopApp, restart: restartApp, output: appOutput, edit: editApps)
+            }
             if let togglePane {
                 SHSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)
             }

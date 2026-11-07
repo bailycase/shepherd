@@ -41,17 +41,19 @@ struct ForgePullRequestPage: View {
     }
 }
 
-/// Summary | Changes +200 −8 | Checks •.
-private struct ForgeTabs: View {
+/// Summary | Changes +200 −8 | Checks •; in the side pane (PRPane) Overview | Files 5 +200 −8 | Checks •,
+/// clear of the pane's own Changes tab.
+struct ForgeTabs: View {
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail?
+    var pane = false
 
     var body: some View {
         HStack(spacing: SH.Space.xxs) {
-            tab(.summary) { Text("Summary") }
+            tab(.summary) { Text(pane ? "Overview" : "Summary") }
             tab(.changes) {
                 HStack(spacing: SH.Space.s) {
-                    Text("Changes")
+                    Text(pane ? "Files \(detail?.changedFiles ?? 0)" : "Changes")
                     if let summary = detail?.summary { SHDiffStat(added: summary.additions, removed: summary.deletions, font: .sh(.mono)) }
                 }
             }
@@ -432,7 +434,7 @@ private struct ForgeStateNote: View {
 }
 
 /// A check's line: its glyph, name and duration; a failing one offers Fix with agent.
-private struct ForgeCheckLine: View {
+struct ForgeCheckLine: View {
     let check: ForgeCheck
     let fix: (() -> Void)?
 
@@ -457,7 +459,7 @@ private struct ForgeCheckLine: View {
 // MARK: Checks
 
 /// The Checks tab: every check, and under a failing one the end of its log, Fix with agent and Re-run failed.
-private struct ForgeChecksTab: View {
+struct ForgeChecksTab: View {
     var vm: ShepherdViewModel
     let store: ForgeStore
     let detail: PullRequestDetail
@@ -478,7 +480,7 @@ private struct ForgeChecksTab: View {
                         if check.state == .failing {
                             ForgeCheckLog(store: store, check: check)
                             HStack(spacing: SH.Space.m) {
-                                Button("Fix with agent") { vm.forgeFixCheck(check) }.buttonStyle(.sh(.secondary, size: .s))
+                                Button("Fix with agent") { vm.forgeFixCheck(check, store: store) }.buttonStyle(.sh(.secondary, size: .s))
                                 if let runID = check.runID {
                                     Button("Re-run failed") { Task { await store.perform(.rerunFailed(repo: detail.ref.repo, runID: runID)) } }
                                         .buttonStyle(.sh(.ghost, size: .s))
@@ -533,7 +535,7 @@ private struct ForgeCheckLog: View {
 
 /// The Changes tab (PRReviewChanges): the Changes pane over the pull request's diff, maximized
 /// with its file list. Line comments go to the agent as review feedback.
-private struct ForgeChangesTab: View {
+struct ForgeChangesTab: View {
     var vm: ShepherdViewModel
     let store: ForgeStore
     let detail: PullRequestDetail
@@ -566,8 +568,8 @@ private struct ForgeChangesTab: View {
     private func actions(_ session: ReviewSession) -> ReviewActions {
         ReviewActions(
             setPullRequest: { _ in },
-            requestChanges: { vm.forgeSendLineComments(session) },
-            postToGitHub: { vm.forgePostLineComments(session) },
+            requestChanges: { vm.forgeSendLineComments(session, store: store) },
+            postToGitHub: { vm.forgePostLineComments(session, store: store) },
             commit: {},
             close: {},
             refresh: { store.loadFiles() },

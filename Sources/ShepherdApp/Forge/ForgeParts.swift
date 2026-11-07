@@ -96,12 +96,16 @@ struct ForgeActivityRow: View, Equatable {
     let viewer: String?
     let kind: ForgeKind
     let now: Date
+    /// A review shows its line comments, each under its file, line and hunk (the side pane's PRPane).
+    var lineComments = false
 
     var body: some View {
         let line = ForgePresentation.line(event, viewer: viewer)
         let age = ForgePresentation.age(event.at, now: now)
         Group {
-            if let body = Self.words(event) {
+            if lineComments, case .reviewed(let state, let body, let comments) = event.kind, !body.isEmpty || !comments.isEmpty {
+                ForgeReviewCard(event: event, state: state, words: body, comments: comments, you: isViewer, age: age)
+            } else if let body = Self.words(event) {
                 VStack(alignment: .leading, spacing: SH.Space.s) {
                     HStack(spacing: SH.Space.m) {
                         ForgeAvatar(login: event.actor, you: isViewer)
@@ -171,6 +175,74 @@ struct ForgeActivityRow: View, Equatable {
         case .closed: ForgeTone.failed.color
         default: Color.sh.textTertiary
         }
+    }
+}
+
+/// A review with its words and line comments (PRPane): who and what they asked, then each
+/// comment's file and line, the hunk's last lines and the words.
+private struct ForgeReviewCard: View {
+    let event: ForgeEvent
+    let state: ForgeReviewState
+    let words: String
+    let comments: [ForgeLineComment]
+    let you: Bool
+    let age: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SH.Space.m) {
+                ForgeAvatar(login: event.actor, you: you)
+                Text(event.actor).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                Text(ForgePresentation.line(ForgeEvent(id: event.id, actor: event.actor, at: event.at,
+                                                       kind: .reviewed(state: state, body: "", comments: [])), viewer: nil).text)
+                    .font(.sh(.ui))
+                    .foregroundStyle(state == .changesRequested ? ForgeTone.failed.textColor : Color.sh.textSecondary)
+                Spacer(minLength: SH.Space.m)
+                Text(age).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            }
+            .padding(SH.Space.m)
+            if !words.isEmpty { paragraph(words) }
+            ForEach(comments) { comment in
+                SHHairline()
+                HStack(spacing: SH.Space.s) {
+                    Text(comment.path).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                    if let line = comment.line { Text("line \(line)").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                }
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.s)
+                let hunk = comment.diffHunk.split(separator: "\n", omittingEmptySubsequences: false).suffix(AppLayout.prPaneHunkLines)
+                if !comment.diffHunk.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(hunk.enumerated()), id: \.offset) { _, text in
+                            Text(String(text))
+                                .font(.sh(.code))
+                                .foregroundStyle(Color.sh.textPrimary)
+                                .lineLimit(1)
+                                .padding(.horizontal, SH.Space.m)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(text.hasPrefix("+") ? Color.sh.doneTint : text.hasPrefix("-") ? Color.sh.failedTint : Color.clear)
+                        }
+                    }
+                    .padding(.vertical, SH.Space.xs)
+                    .background(Color.sh.bgSunken)
+                }
+                paragraph(comment.body)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard()
+        .accessibilityElement(children: .combine)
+    }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(text)
+            .font(.sh(.body))
+            .foregroundStyle(Color.sh.textPrimary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, AppLayout.forgeAvatar + SH.Space.l + SH.Space.m)
+            .padding(.trailing, SH.Space.m)
+            .padding(.vertical, SH.Space.m)
     }
 }
 

@@ -95,11 +95,17 @@ final class DesignScreenModel {
 
     let designID: DesignID
     var viewport = SHCanvasViewport() {
-        didSet { if viewport != oldValue { viewportMoved() } }
+        didSet { if viewport != oldValue { jumpBack = nil; viewportMoved() } }
     }
     var tool: SHCanvasTool = .select {
-        didSet { if tool == .pan { pointer(nil) } }
+        didSet {
+            if tool != oldValue { jumpBack = nil }
+            if tool == .pan { pointer(nil) }
+        }
     }
+    /// Where the canvas was before a Jump landed (JumpLanded): its toast offers Back until it
+    /// times out or the canvas is panned, zoomed or clicked.
+    var jumpBack: DesignJumpBack?
     /// What is selected, most recent last: boards picked whole, and elements.
     private(set) var picks: [Pick] = []
     /// The element under the pointer with Select.
@@ -405,6 +411,7 @@ final class DesignScreenModel {
         let board = pick.board.flatMap(DesignPath.init)
         let asks = board != nil && pick.point != nil && host != nil
         let commenting = tool == .comment
+        jumpBack = nil
         closeComment()
         guard asks || picking != nil else {
             resolve(pick, on: board, element: nil, commenting: commenting)
