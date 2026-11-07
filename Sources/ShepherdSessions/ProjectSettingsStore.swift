@@ -434,7 +434,18 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             if let text = try? read(root: root, file: file.path), let settings = try? YourPiFiles.object(Data(text.utf8), file: file.path),
                let names = settings["mcpServers"] as? [String: Any] { servers.formUnion(names.keys) }
         }
-        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count)
+        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count, globalSettings: globalFormSettings())
+    }
+
+    /// The global values the space Settings form compares against, from Shepherd's pi home. Only the
+    /// form's keys cross the wire, never credentials or provider config.
+    private func globalFormSettings() -> String? {
+        guard let pi, let data = try? Data(contentsOf: pi.home.appendingPathComponent("settings.json")),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let keys = ["defaultProvider", "defaultModel", "defaultThinkingLevel", "defaultTools", "compaction", "retry", "shellPath", "shellCommandPrefix"]
+        let picked = object.filter { keys.contains($0.key) }
+        guard let encoded = try? JSONSerialization.data(withJSONObject: picked, options: [.sortedKeys]) else { return nil }
+        return String(decoding: encoded, as: UTF8.self)
     }
 
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
