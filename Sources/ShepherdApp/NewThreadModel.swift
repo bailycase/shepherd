@@ -497,7 +497,7 @@ final class NewThreadState {
                     config.reservedAgentID = standaloneID
                     if withPieces {
                         config.openingReferencesPending = true
-                        config.initialName = ShepherdViewModel.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
+                        config.initialName = NewAgentConfig.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
                     } else {
                         config.initialImages = images
                     }

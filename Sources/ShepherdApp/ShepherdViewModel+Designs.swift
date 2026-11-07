@@ -245,7 +245,7 @@ extension ShepherdViewModel {
     /// The design record and folder, with `system` installed before any agent starts, so its
     /// first turn reads it among the design's systems.
     private func makeDesign(brief: String, system: String?) async throws -> Design {
-        let design = Design(name: Self.provisionalName(for: brief), createdAt: SessionServer.nowMilliseconds())
+        let design = Design(name: NewAgentConfig.provisionalName(for: brief), createdAt: SessionServer.nowMilliseconds())
         _ = try await server.createDesign(design)
         if let system { _ = try await server.installDesignSystem(design.id, namespace: system) }
         adopt(server.state)

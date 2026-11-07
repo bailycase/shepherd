@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import ShepherdCore
 import ShepherdRemote
 
 /// The headless host: `Shepherd --host` owns the workspace with no UI. It starts the session
@@ -12,8 +13,10 @@ public enum SessionHost {
 
     /// Runs `server` until a termination signal; never returns. A start that fails (another
     /// owner holds the workspace) exits with a failure status. `ready` runs once the server is
-    /// up, on the main queue's thread (tests).
-    public static func run(_ server: SessionServer = .shared, ready: () -> Void = {}) -> Never {
+    /// up, on the main queue's thread (tests). `respawn` gives each agent with unfinished work its
+    /// spawn settings; the host respawns them once it serves.
+    public static func run(_ server: SessionServer = .shared, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                           ready: () -> Void = {}) -> Never {
         // Signals arrive through dispatch sources, so the default action (die without
         // stopping pi processes) is turned off before anything starts.
         let sources = [SIGTERM, SIGINT].map { number -> DispatchSourceSignal in
@@ -37,6 +40,7 @@ public enum SessionHost {
             exit(EXIT_FAILURE)
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
+        Task { @MainActor in await server.respawnAgentsNeedingRecovery(respawn) }
         ready()
         signalSources = sources
         if Thread.isMainThread { dispatchMain() }

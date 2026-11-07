@@ -199,24 +199,6 @@ extension ShepherdViewModel {
         )
     }
 
-    /// The name an agent wears until pi's namer proposes a real title: its
-    /// opening prompt, collapsed to one line and truncated on a word boundary.
-    /// ⌘N agents have no prompt, so they start as "New agent".
-    static func provisionalName(for prompt: String?) -> String {
-        let flattened = (prompt ?? "")
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        guard !flattened.isEmpty else { return "New agent" }
-        let limit = 48
-        guard flattened.count > limit else { return flattened }
-        let clipped = flattened.prefix(limit)
-        // Prefer cutting at the last space so the label never ends mid-word.
-        let stem = clipped.lastIndex(of: " ").map { clipped[..<$0] } ?? clipped
-        return stem.trimmingCharacters(in: .whitespaces) + "…"
-    }
-
-
     // MARK: New agent
 
     func sessionCaption() async -> String {
@@ -242,48 +224,13 @@ extension ShepherdViewModel {
         let reservation = UUID()
         startingCheckoutUsers[reservation] = config.workingDirectory
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }
-        let cwd = (config.workingDirectory as NSString).expandingTildeInPath
-        let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
         let agentID = config.reservedAgentID ?? AgentID()
         let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
         if opening != nil || config.openingReferencesPending {
             sidebarPreparingOpeningTurns.insert(agentID)
             sidebarOpeningTurns.insert(agentID)
         }
-        // A new agent is exactly its thread. Terminals are the agent's to
-        // open (see the panes extension) or the user's via ⌘D or ⌘J — starting
-        // with one put an idle shell in front of every new agent.
-        let primary = LeafPane(cwd: cwd, agentID: agentID)
-        let order = (state.tabs.filter { $0.spaceID == space.id }.map(\.order).max() ?? -1) + 1
-        let tab = Tab(
-            spaceID: space.id,
-            order: order,
-            layout: .leaf(primary)
-        )
-        var agent = Agent(
-            id: agentID,
-            name: name,
-            spaceID: space.id,
-            tabID: tab.id,
-            paneID: primary.id,
-            status: .idle,
-            model: config.model,
-            thinkingLevel: config.thinking,
-            // Provisional: pi's namer replaces it with a real title from the
-            // agent's opening prompt, whether that prompt came from the sheet
-            // or was typed into the TUI afterwards (⌘N). A design names itself.
-            nameIsFinal: config.designID != nil || config.coordinatorFor != nil,
-            piSessionID: config.piSessionID,
-            worktreeBranch: config.worktreeBranch,
-            worktreeBase: config.worktreeBase,
-            worktreePath: config.worktreePath,
-            // A new agent leads its activity group.
-            lastActiveAt: SessionServer.nowMilliseconds(),
-            designID: config.designID,
-            coordinatorFor: config.coordinatorFor,
-            serviceTier: config.serviceTier ?? settings.defaultServiceTier
-        )
-        agent.automationOrigin = config.automationOrigin
+        let (agent, tab, primary) = config.thread(id: agentID, in: state, defaultServiceTier: settings.defaultServiceTier)
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new
         // pane, whose view would otherwise lazily spawn its own pi process in

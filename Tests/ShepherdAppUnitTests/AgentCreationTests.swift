@@ -21,23 +21,23 @@ struct AgentCreationTests {
         ("   \n  ", "New agent"),
     ] as [(String?, String)])
     func provisionalNamesAreTheOpeningPromptOnOneLine(prompt: String?, name: String) {
-        #expect(ShepherdViewModel.provisionalName(for: prompt) == name)
+        #expect(NewAgentConfig.provisionalName(for: prompt) == name)
     }
 
     @Test func longPromptsTruncateOnAWordBoundary() {
-        let name = ShepherdViewModel.provisionalName(for: String(repeating: "alpha ", count: 20))
+        let name = NewAgentConfig.provisionalName(for: String(repeating: "alpha ", count: 20))
         #expect(name == String(repeating: "alpha ", count: 8).trimmingCharacters(in: .whitespaces) + "…")
         #expect(name.count <= 49)
     }
 
     @Test func aSingleOverlongWordIsClippedAtTheLimit() {
-        let name = ShepherdViewModel.provisionalName(for: String(repeating: "x", count: 80))
+        let name = NewAgentConfig.provisionalName(for: String(repeating: "x", count: 80))
         #expect(name == String(repeating: "x", count: 48) + "…")
     }
 
     @Test func aPromptAtTheLimitIsKeptWhole() {
         let prompt = String(repeating: "y", count: 48)
-        #expect(ShepherdViewModel.provisionalName(for: prompt) == prompt)
+        #expect(NewAgentConfig.provisionalName(for: prompt) == prompt)
     }
 
     // MARK: Quick create (⌘N)

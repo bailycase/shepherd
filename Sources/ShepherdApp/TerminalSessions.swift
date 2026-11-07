@@ -871,6 +871,12 @@ final class TerminalSessionStore {
                 reason: String(describing: error)
             )
         }
+        try didBind(pane: pane, session: session, sessionID: sessionID, tabID: tabID)
+    }
+
+    /// After the server bound `sessionID` to the pane: adopt the committed layout, and check the
+    /// pane is still this session's.
+    private func didBind(pane: LeafPane, session: PaneSession, sessionID: SessionID, tabID: TabID) throws {
         let committed = server.state
         serverState = committed
         if let layout = committed.tabs.first(where: { $0.id == tabID })?.layout {
@@ -969,18 +975,26 @@ final class TerminalSessionStore {
                     session.startupLocation = .other
                 }
                 var spawn = agentSpawn(agent, cwd: cwd, session: session)
-                // Respawn after relaunch: an agent that was never prompted has
-                // no session file yet, so the spawn seeds one before pi looks for it.
-                spawn.problem = ShepherdViewModel.folderExists(pane.cwd) ? nil : PiHomeProblem("folder missing: \(pane.cwd)")
                 spawn.checksResume = checksResume
                 spawn.stillWanted = { [unowned self] in
                     ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID)
                         && session.sessionID == nil && liveBinding(forPane: session.paneID) == nil
                 }
-                guard let spawned = try await server.spawnAgent(spawn) else {
-                    throw TerminalSessionStoreError.paneUnavailable(session.paneID)
+                // Respawn after relaunch, bound to its pane by the server: an agent that was never
+                // prompted has no session file yet, so the spawn seeds one before pi looks for it.
+                let spawned: SessionInfo?
+                do { spawned = try await server.respawnAgent(spawn) }
+                catch let refused as PaneBindingFailed {
+                    createdSessionID = refused.sessionID
+                    throw TerminalSessionStoreError.bindingFailed(paneID: refused.paneID, sessionID: refused.sessionID, reason: refused.reason)
                 }
-                info = spawned
+                guard let spawned else { throw TerminalSessionStoreError.paneUnavailable(session.paneID) }
+                createdSessionID = spawned.id
+                aliveSessions.insert(spawned.id)
+                try didBind(pane: pane, session: session, sessionID: spawned.id, tabID: tab.id)
+                try await adopt(session, sessionID: spawned.id)
+                createdSessionID = nil
+                return true
             } else {
                 let command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
                 if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }

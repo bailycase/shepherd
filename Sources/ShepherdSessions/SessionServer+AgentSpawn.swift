@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// How an agent's pi is spawned into its pane: what the caller's settings decide, as values.
 public struct AgentSpawn {
@@ -45,7 +46,66 @@ public struct AgentSpawnRefused: Error, CustomStringConvertible {
     public var description: String { problem.description }
 }
 
+/// A respawned pi that its pane refused (`SessionServer.respawnAgent`): it is still running,
+/// and the caller stops it.
+public struct PaneBindingFailed: Error, CustomStringConvertible {
+    public let paneID: PaneID
+    public let sessionID: SessionID
+    public let reason: String
+    public var description: String { "failed to bind session \(sessionID) to pane \(paneID): \(reason)" }
+}
+
 extension SessionServer {
+    /// Respawns an agent's pi into its own pane after a launch, and binds it there. Nil, with
+    /// nothing spawned, for a mission attempt (its dispatch starts attempts), when its pane no longer
+    /// holds it or is already bound to a live session, or when `stillWanted` says no. A folder that
+    /// is gone keeps the agent's place with a start problem. `spawn.cwd` is ignored: the pane's
+    /// folder is the agent's.
+    @MainActor
+    public func respawnAgent(_ spawn: AgentSpawn) async throws -> SessionInfo? {
+        let agentID = spawn.agent.id, state = self.state
+        guard !state.isMissionAgent(agentID),
+              let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+              let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+              let pane = tab.layout.leaf(withID: paneID), pane.agentID == agentID else { return nil }
+        var spawn = spawn
+        spawn.agent = agent
+        spawn.cwd = AgentLaunch.resolvedCwd(pane.cwd)
+        if spawn.problem == nil, !Self.folderExists(pane.cwd) { spawn.problem = PiHomeProblem("folder missing: \(pane.cwd)") }
+        if let bound = pane.sessionID, await sessionInfo(sessionID: bound)?.isAlive == true { return nil }
+        // Read just before pi spawns: the pane still holds the agent, and nothing bound it meanwhile.
+        let wanted = spawn.stillWanted
+        spawn.stillWanted = { [unowned self] in
+            let leaf = self.state.tabs.first(where: { $0.id == tab.id })?.layout.leaf(withID: paneID)
+            return leaf?.agentID == agentID && leaf?.cwd == pane.cwd && leaf?.sessionID == pane.sessionID && wanted()
+        }
+        guard let info = try await spawnAgent(spawn) else { return nil }
+        do {
+            try await updatePaneSession(tabID: tab.id, paneID: paneID, sessionID: info.id)
+        } catch {
+            throw PaneBindingFailed(paneID: paneID, sessionID: info.id, reason: String(describing: error))
+        }
+        return info
+    }
+
+    /// Startup respawn with no app: every agent whose unfinished work may be recovered
+    /// (`agentsNeedingStartupRecovery`), in workspace order, one at a time. Recovery resumes each
+    /// turn once its pi serves. Other agents wait for demand. A failed respawn is logged.
+    @MainActor
+    public func respawnAgentsNeedingRecovery(_ spawn: (Agent) -> AgentSpawn) async {
+        let recovering = await agentsNeedingStartupRecovery()
+        for agent in state.agents where recovering.contains(agent.id) {
+            do {
+                _ = try await respawnAgent(spawn(agent))
+            } catch let failed as PaneBindingFailed {
+                ShepherdLog.warning("respawn of \(agent.id) refused: \(failed)")
+                killSession(failed.sessionID)
+            } catch {
+                ShepherdLog.warning("respawn of \(agent.id) failed: \(error)")
+            }
+        }
+    }
+
     /// Spawns an agent's `pi --mode rpc` (its launch line from `AgentLaunch`) for a new agent and
     /// for a respawn alike. Nil, with nothing spawned, when the pane stopped wanting it
     /// (`stillWanted`). Binding the session to its pane is the caller's.
@@ -82,6 +142,11 @@ extension SessionServer {
             params: CreateSessionParams(cwd: cwd, command: command.argv, cols: spawn.cols, rows: spawn.rows,
                                         env: command.env.isEmpty ? nil : command.env, runtime: .rpc),
             resuming: resuming)
+    }
+
+    static func folderExists(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
     /// Forked threads retain space ownership and cwd but not worktree-management metadata.

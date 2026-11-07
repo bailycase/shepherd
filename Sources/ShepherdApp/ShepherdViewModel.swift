@@ -10,47 +10,6 @@ import ShepherdRemote
 /// Disambiguates from SwiftUI.Tab for every file in this module.
 typealias Tab = ShepherdCore.Tab
 
-struct NewAgentConfig {
-    var spaceID: SpaceID
-    var workingDirectory: String
-    var reservedAgentID: AgentID? = nil
-    var coordinatorFor: ProjectID? = nil
-    var model: String?
-    var thinking: ThinkingLevel
-    var initialPrompt: String?
-    /// Go to pi with the opening prompt (the New thread page's attachments).
-    var initialImages: [NativeImage] = []
-    /// Design references send their opening message after the session starts.
-    var openingReferencesPending = false
-    /// A caller-chosen starting name (worktree agents wear their branch
-    /// leaf). Provisional like a prompt-derived name: pi's namer retitles it
-    /// from the agent's first prompt when auto-naming is on.
-    var initialName: String?
-    /// The branch of the git worktree this agent was created on, when
-    /// Shepherd made one for it. Persisted on the agent so the sidebar can
-    /// render it as a worktree of its space.
-    var worktreeBranch: String?
-    /// The base the worktree branched from; Finalize targets the PR at it.
-    var worktreeBase: String?
-    /// Actual checkout path for imported worktrees whose directory name does
-    /// not follow Shepherd's generated repo-branch convention.
-    var worktreePath: String?
-    /// An automation's watch agent: spawned with SHEPHERD_AUTOMATION=1 so
-    /// the panes extension withholds the automation_* tools (a watcher must
-    /// never create watchers).
-    var isAutomation = false
-    /// Resume an existing pi session (a forked subagent transcript already in the cwd's
-    /// session directory) instead of a fresh one keyed by the agent id.
-    var piSessionID: String?
-    /// The design this agent draws: it launches with the design tools, keeps its name (the
-    /// design's), and has no row of its own in Recents.
-    var designID: DesignID?
-    /// The speed it starts on; nil takes Settings ▸ Agents ▸ Speed for new threads.
-    var serviceTier: ServiceTier?
-    /// A triggered automation's run thread (`Agent.automationOrigin`).
-    var automationOrigin: AutomationOrigin?
-}
-
 struct AgentStartFailure: Error, CustomStringConvertible {
     let message: String
     var description: String { message }
