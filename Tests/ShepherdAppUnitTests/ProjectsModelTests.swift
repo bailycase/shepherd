@@ -46,6 +46,7 @@ struct ProjectsModelTests {
             case .list: return .listing(ProjectListing(projects: [project]))
             case .context: return .context(ProjectContext())
             case .open: return .opened
+            case .resources, .delete, .installSkills: throw ProjectFileError("unsupported", "Not in this test.")
             }
         }
         await model.open(ProjectsRow(host: host, project: project))
@@ -84,6 +85,7 @@ struct ProjectsModelTests {
             case .save(_, let path, let text, _): return .text(.init(file: files.first { $0.path == path }!, text: text))
             case .mcp: return .mcp(.init())
             case .open: return .opened
+            case .resources, .delete, .installSkills: throw ProjectFileError("unsupported", "Not in this test.")
             }
         }
         await model.open(.init(host: .init(id: "local", name: "This Mac", known: []), project: project))
@@ -141,6 +143,7 @@ struct ProjectsModelTests {
             case .save: return .text(ProjectFileText(file: file, text: "saved"))
             case .context: return .context(ProjectContext())
             case .open: return .opened
+            case .resources, .delete, .installSkills: throw ProjectFileError("unsupported", "Not in this test.")
             }
         }
         await model.load([ProjectsHost(id: "local", name: "This Mac", known: [])])
@@ -171,6 +174,7 @@ struct ProjectsModelTests {
             case .save: saves += 1; return .text(ProjectFileText(file: file, text: "wrong host"))
             case .context: return .context(ProjectContext())
             case .open: return .opened
+            case .resources, .delete, .installSkills: throw ProjectFileError("unsupported", "Not in this test.")
             }
         }
         await model.load([old])

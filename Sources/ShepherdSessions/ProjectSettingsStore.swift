@@ -21,6 +21,8 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let systems: URL?
     private let globalDirectories: @Sendable () -> [URL]
     private let openEditor: (@MainActor @Sendable (URL) async throws -> Void)?
+    /// Copies skills from a repository into a folder (`SkillsStore.installCopies`), off this store's worker.
+    public var installSkills: (@Sendable (_ repo: String, _ paths: [String], _ commit: String?, _ destination: URL) throws -> Void)?
     /// The editor's bundle identifier (Settings ▸ Advanced; nil or empty: the file's default app), read when a file opens.
     @MainActor public var editor: @MainActor () -> String? = { nil }
     private var history: [Entry] = []
@@ -119,6 +121,23 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             if let openEditor { try await openEditor(reference) } else { try await Self.openEditor(reference, store: self) }
             return .opened
         }
+        if case .installSkills(let directory, let repo, let paths, let commit) = request {
+            guard let installSkills else { throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.") }
+            let destination: URL = try await withCheckedThrowingContinuation { continuation in
+                queue.async { [self] in
+                    continuation.resume(with: Result {
+                        try load()
+                        let root = try root(directory)
+                        // Create .pi/skills without following a link, so the copy lands in the space.
+                        try withParent(root: root, file: ".pi/skills/skill", create: true) { _, _ in }
+                        return root.appendingPathComponent(".pi/skills", isDirectory: true)
+                    })
+                }
+            }
+            // ponytail: the folder is checked, then copied into by path; a link swapped in between is not re-checked.
+            try await Task.detached(priority: .userInitiated) { try installSkills(repo, paths, commit, destination) }.value
+            return try await self.request(.files(directory: directory), state: state)
+        }
         return try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(with: Result {
@@ -151,6 +170,17 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                                                        nextOffset: end < history.count ? end : nil))
                     case .files(let directory):
                         return .files(try inventory(root: root(directory)))
+                    case .resources(let directory):
+                        return .resources(try resources(root: root(directory)))
+                    case .installSkills:
+                        preconditionFailure("Installing is handled before the worker above.")
+                    case .delete(let directory, let file, let expected):
+                        let root = try root(directory)
+                        guard let kind = ProjectConfiguration.resourceKind(file) else {
+                            throw ProjectFileError("invalid_file", "Only a space's skills, prompt templates and extensions can be removed.")
+                        }
+                        try remove(root: root, file: file, expected: expected)
+                        return .text(ProjectFileText(file: ProjectFile(path: file, category: kind == .extension ? .extensions : .skills, exists: false), text: nil))
                     case .context(let directory):
                         return .context(try context(root: root(directory)))
                     case .mcp:
@@ -424,7 +454,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             folder = parent
         }
         let files = try inventory(root: root)
-        var resources = files.filter { $0.category == .skills || $0.category == .extensions }.count
+        var resources = spaceResourcePaths(root: root).count
         if let settings = try resourceSettings(root: root) {
             resources += (settings["extensions"] as? [Any])?.count ?? 0
             resources += (settings["packages"] as? [Any])?.count ?? 0
@@ -448,7 +478,107 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         return String(decoding: encoded, as: UTF8.self)
     }
 
+    /// The space's resource files by kind, from `.shepherd`, `.pi` and `.agents/skills`, as pi
+    /// discovers them: a skill folder's SKILL.md, and a prompt, subagent or extension file directly
+    /// in its folder. A linked folder is skipped.
+    private func spaceResourcePaths(root: URL) -> [(ProjectResource.Kind, String)] {
+        var result: [(ProjectResource.Kind, String)] = []
+        for base in ProjectConfiguration.directories + [".agents"] {
+            for kind in ProjectResource.Kind.allCases where base != ".agents" || kind == .skill {
+                for name in Self.resourceNames(kind, in: root.appendingPathComponent(base + "/" + Self.folder(kind))) {
+                    let path = base + "/" + Self.folder(kind) + "/" + name + (kind == .skill ? "/SKILL.md" : "")
+                    if ProjectConfiguration.resourceKind(path) == kind { result.append((kind, path)) }
+                }
+            }
+        }
+        return result
+    }
+
+    private static func folder(_ kind: ProjectResource.Kind) -> String {
+        switch kind { case .skill: "skills"; case .prompt: "prompts"; case .agent: "agents"; case .extension: "extensions" }
+    }
+
+    private static func resourceNames(_ kind: ProjectResource.Kind, in folder: URL) -> [String] {
+        let fm = FileManager.default
+        guard folder.resolvingSymlinksInPath().path == folder.path else { return [] }
+        return ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).sorted().prefix(256).filter { name in
+            guard !name.hasPrefix(".") else { return false }
+            switch kind {
+            case .skill: return fm.fileExists(atPath: folder.appendingPathComponent(name + "/SKILL.md").path)
+            case .prompt, .agent: return name.hasSuffix(".md")
+            case .extension: return ["ts", "js", "mjs", "cjs"].contains((name as NSString).pathExtension)
+            }
+        }
+    }
+
+    /// The space's resources, then the host's global ones in Shepherd's pi home, each with its name
+    /// and description from its own file. A global skill, template or extension is on by the global
+    /// settings' patterns; a subagent by its `disabled`.
+    private func resources(root: URL) throws -> [ProjectResource] {
+        var result: [ProjectResource] = []
+        for (kind, path) in spaceResourcePaths(root: root) {
+            guard let text = try? read(root: root, file: path) else { continue }
+            result.append(Self.resource(kind, path: path, display: path, text: text, global: false, settings: nil))
+        }
+        guard let pi else { return result }
+        let home = pi.home.standardizedFileURL
+        let settings = (try? Data(contentsOf: home.appendingPathComponent("settings.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        for kind in ProjectResource.Kind.allCases {
+            for name in Self.resourceNames(kind, in: home.appendingPathComponent(Self.folder(kind))) {
+                let url = home.appendingPathComponent(Self.folder(kind) + "/" + name + (kind == .skill ? "/SKILL.md" : ""))
+                guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= Self.fileLimit,
+                      let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                result.append(Self.resource(kind, path: url.path, display: displayPath(url.path), text: text, global: true,
+                                            settings: (settings, home.path)))
+            }
+        }
+        return result
+    }
+
+    private func displayPath(_ path: String) -> String {
+        let home = home.standardizedFileURL.path
+        let support = home + "/Library/Application Support/"
+        if path.hasPrefix(support) { return String(path.dropFirst(support.count)) }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
+
+    private static func resource(_ kind: ProjectResource.Kind, path: String, display: String, text: String, global: Bool,
+                                 settings: ([String: Any], String)?) -> ProjectResource {
+        var resource = ProjectResource(kind: kind, path: path, displayPath: display, text: text, global: global)
+        if let (object, base) = settings, let key = kind.settingsKey {
+            resource.enabled = ProjectResourcePatterns.isEnabled(path, entries: object[key] as? [String] ?? [], base: base)
+        }
+        return resource
+    }
+
+    /// Unlinks one resource file, refusing a link or a file that changed since it was read; a skill's
+    /// folder goes too once nothing else is in it.
+    private func remove(root: URL, file: String, expected: String) throws {
+        try withParent(root: root, file: file) { parent, name in
+            let fd = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard fd >= 0 else { throw ProjectFileError(errno == ENOENT ? "conflict" : "unsafe", "This file changed elsewhere. Reload the space before removing it.") }
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size <= Self.fileLimit,
+                  String(data: try handle.read(upToCount: Self.fileLimit + 1) ?? Data(), encoding: .utf8) == expected else {
+                throw ProjectFileError("conflict", "This file changed elsewhere. Reload the space before removing it.")
+            }
+            guard unlinkat(parent, name, 0) == 0 else { throw ProjectFileError("write_failed", "Could not remove the space file.") }
+        }
+        if file.hasSuffix("/SKILL.md") {
+            let folder = (file as NSString).deletingLastPathComponent
+            try? withParent(root: root, file: folder) { parent, name in _ = unlinkat(parent, name, AT_REMOVEDIR) }
+        }
+    }
+
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
+        if let kind = ProjectConfiguration.resourceKind(file) {
+            var info = stat()
+            // Prompt templates live in the Resources tab beside skills.
+            return ProjectFile(path: file, category: kind == .extension ? .extensions : .skills,
+                               exists: lstat(root.appendingPathComponent(file).path, &info) == 0)
+        }
         guard let item = try inventory(root: root).first(where: { $0.path == file }) else {
             throw ProjectFileError("invalid_file", "Only project instruction, .shepherd and .pi configuration files can be edited.")
         }

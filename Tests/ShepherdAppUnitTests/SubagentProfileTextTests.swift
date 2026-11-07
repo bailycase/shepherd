@@ -1,4 +1,5 @@
 import Testing
+import ShepherdRemote
 @testable import ShepherdApp
 
 @Suite("Subagent profile text")

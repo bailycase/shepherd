@@ -18,8 +18,14 @@ struct SpaceSettingsFormView: View {
                     Text("Only this space. Unset values follow your global defaults.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                 }
                 Spacer(minLength: 0)
-                Text(model.selectedFile?.path ?? ".pi/settings.json").font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
-                    .padding(.top, SH.Space.l)
+                HStack(spacing: SH.Space.m) {
+                    Text(model.selectedFile?.path ?? ".pi/settings.json").font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
+                    // The form shows only its keys; every other key is edited as JSON, over the same draft.
+                    Button("Edit JSON…") { model.showingSettingsJSON = true }.buttonStyle(.sh(.secondary))
+                        .disabled(!model.fileLoaded || model.saving)
+                    Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(.sh(.secondary))
+                        .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil || model.openingEditor)
+                }.padding(.top, SH.Space.l)
             }.padding(.top, SH.Space.xxl - AppLayout.projectDetailGap).padding(.bottom, SH.Space.xl)
             Text(statusText).font(.sh(.caption)).foregroundStyle(statusAlert ? Color.sh.lanternText : Color.sh.textSecondary)
                 .padding(.bottom, SH.Space.l).accessibilityAddTraits(.updatesFrequently)

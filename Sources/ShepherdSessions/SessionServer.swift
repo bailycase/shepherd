@@ -1140,6 +1140,10 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+        let skills = self.skills
+        projects.installSkills = { repo, paths, commit, destination in
+            try skills.installCopies(repo: repo, paths: paths, commit: commit, into: destination)
+        }
     }
 
     /// Serves the Design tool to remote clients (`designs.v1`) while `served` (Settings ▸
@@ -2829,6 +2833,10 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard !request.requiresDetails || offeredCapabilities.contains(RemoteProtocol.projectDetailsCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
+                return
+            }
+            guard !request.requiresResources || offeredCapabilities.contains(RemoteProtocol.projectResourcesCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to manage space resources."), to: client)
                 return
             }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
