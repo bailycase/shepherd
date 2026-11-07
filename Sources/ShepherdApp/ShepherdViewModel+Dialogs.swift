@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 /// A sheet item for a value that is not itself `Identifiable` (a remote agent, an error).
 struct SheetItem<Value: Hashable>: Identifiable {

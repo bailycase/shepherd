@@ -52,12 +52,8 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Automation banners name no thread; clicking one opens nothing in particular.
-    nonisolated static let automationsBannerHost = UUID(uuidString: "00000000-0000-0000-0000-00000000a170")!
-
     func postAutomationBanner(title: String, body: String) {
-        notifications.post(AgentBanner(identifier: "automation-\(title)", target: .host(Self.automationsBannerHost), title: title,
-                                       subtitle: "Automation", body: body, level: .active, actions: [], group: "automations"))
+        notifications.post(AgentBanners.automation(title: title, body: body))
     }
 
     /// Finished worktree runs: the PR their branch opened, read once per run through `gh`.

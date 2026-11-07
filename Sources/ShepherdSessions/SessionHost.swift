@@ -10,16 +10,20 @@ import ShepherdRemote
 public enum SessionHost {
     /// Kept alive for the life of the process.
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
+    /// The threads' banners, while `run` was given somewhere to post them.
+    nonisolated(unsafe) public private(set) static var banners: ThreadBanners?
 
     /// Runs `server` until a termination signal; never returns. A start that fails (another
     /// owner holds the workspace) exits with a failure status. `ready` runs once the server is
     /// up, on the main queue's thread (tests). `respawn` gives each agent with unfinished work its
     /// spawn settings; the host respawns them once it serves. `automations`, when given, hosts
     /// automations: their requests and triggers are served, and enabled ones start.
-    /// `pullRequests`, when given, keeps each thread's pull request link on the poll.
+    /// `pullRequests`, when given, keeps each thread's pull request link on the poll. `banners`,
+    /// when given, is where threads' turn, question and notify-tool banners go.
     public static func run(_ server: SessionServer = .shared, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
                            automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                            pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
+                           banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
                            ready: () -> Void = {}) -> Never {
         // Signals arrive through dispatch sources, so the default action (die without
         // stopping pi processes) is turned off before anything starts.
@@ -45,6 +49,11 @@ public enum SessionHost {
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
         Task { @MainActor in
+            if let banners {
+                let observer = ThreadBanners(server: server, state: { server.state }, sink: banners(server))
+                observer.observeServer()
+                Self.banners = observer
+            }
             await server.respawnAgentsNeedingRecovery(respawn)
             if let pullRequests { server.servePullRequestLinks(pullRequests(server)).startPolling() }
             guard let automations else { return }

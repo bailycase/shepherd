@@ -4,6 +4,7 @@ import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+import ShepherdRemote
 
 /// Pinned threads against a real view model (Sidebar › Pinned): pinning moves a row, the pins
 /// outlive the view model, and what is gone is forgotten.

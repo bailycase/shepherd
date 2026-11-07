@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdTestKit
 import Testing
 @testable import ShepherdApp
+import ShepherdRemote
 
 /// The Activity sidebar's pins (Sidebar › Pinned): which threads, in what order, kept how.
 @Suite("Sidebar pins")

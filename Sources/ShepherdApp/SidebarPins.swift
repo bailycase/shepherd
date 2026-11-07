@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdUI
+import ShepherdRemote
 
 // The Activity sidebar's Pinned section (Sidebar › Pinned): which threads the user pinned, as
 // view state of this Mac. Plain values, so the order, persistence and pruning are testable

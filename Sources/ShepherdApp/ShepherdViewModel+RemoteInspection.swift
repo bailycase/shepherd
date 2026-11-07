@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 extension ShepherdViewModel {
     func installRemoteInspection() {

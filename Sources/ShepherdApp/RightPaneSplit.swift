@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdCore
 import ShepherdUI
+import ShepherdRemote
 
 /// Each thread's side pane: whether it is open, its tab, what pi opened
 /// in it that you have not looked at, which subagent it inspects, and the pane's width.

@@ -3,6 +3,7 @@ import UserNotifications
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 /// What the person did with a banner: clicked it (`action` nil) or chose one of its actions.
 struct BannerResponse: Equatable {
@@ -32,14 +33,18 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
     private var categories: [(id: String, category: UNNotificationCategory)] = []
     private static let categoryLimit = 64
 
-    // What has been posted about, so each question posts once and goes when answered.
-    var localAsks = ThreadAsks<AgentID>()
+    // What has been posted about, so each remote question posts once and goes when answered.
+    // Local threads' are `ThreadBanners`'.
     var remoteAsks = ThreadAsks<RemoteAgentRef>()
     /// Hosts whose offline banner is up.
     var offlineHosts: Set<UUID> = []
-    var statusReports: [AgentID: UUID] = [:]
 
-    override init() {
+    /// Brings Shepherd forward for a click, Open or Review: the app activates itself; a host with
+    /// no app opens it.
+    private let activate: @MainActor () -> Void
+
+    init(activate: @escaping @MainActor () -> Void = { NSApp.activate() }) {
+        self.activate = activate
         super.init()
         // The delegate must be in place before launch finishes, or a click that cold-launches
         // the app is dropped instead of selecting the agent.
@@ -75,20 +80,10 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
-    /// A custom notification from an agent's notify tool. Always posted — the agent explicitly
-    /// asked, so visibility rules don't apply. Grouped with its thread.
-    func agentNotify(_ agent: Agent, title: String, body: String) {
-        let target = BannerTarget.agent(agent.id)
-        post(AgentBanner(identifier: UUID().uuidString, target: target, title: title, subtitle: nil,
-                         body: body.isEmpty ? agent.name : "\(agent.name)\n\(body)", level: .active, actions: [],
-                         group: AgentBanners.group(target)))
-    }
-
     /// Sessions die with the app; their notifications should too.
     func removeAll() {
         guard available else { return }
         posted.removeAll()
-        statusReports.removeAll()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 
@@ -172,7 +167,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
             let clicked = actionID == UNNotificationDefaultActionIdentifier
             let action = clicked ? nil : BannerAction.named(actionID, in: self.posted[banner] ?? []) ?? Self.fallback(actionID)
             guard clicked || action != nil else { return }
-            if action?.opensShepherd ?? true { NSApp.activate() }
+            if action?.opensShepherd ?? true { self.activate() }
             guard let target else { return }
             self.onResponse?(BannerResponse(target: target, action: action, text: text, question: question, recovery: recovery))
         }

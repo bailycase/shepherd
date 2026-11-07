@@ -6,12 +6,6 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
 
-/// Sidebar selection target for an agent on a remote host.
-struct RemoteAgentRef: Hashable {
-    var hostID: UUID
-    var agentID: AgentID
-}
-
 /// Configured remote Shepherd hosts (persisted in UserDefaults as JSON) and
 /// one live connection per host. The remote host runs the full Shepherd app;
 /// this store is the MacBook-side viewer: it adopts pushed state for the

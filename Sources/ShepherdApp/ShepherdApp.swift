@@ -231,25 +231,46 @@ public enum ShepherdHost {
 
     /// Agents respawn, and automation runs start, with the app's settings and its MCP servers
     /// (their Keychain secrets read here, as the app reads them). Merged threads close per
-    /// Settings ▸ Worktrees.
+    /// Settings ▸ Worktrees. Banners post as the app's would, with nobody watching; a click opens
+    /// the app, and answers and Retry act here.
     public static func main() -> Never {
         let settings = AppSettings.shared
-        let mcp = MainActor.assumeIsolated {
-            MCPLaunch.spawnMCP(settings: settings, store: MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in })))
+        let (mcp, notifications) = MainActor.assumeIsolated {
+            (MCPLaunch.spawnMCP(settings: settings, store: MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in }))),
+             AgentNotifications(activate: { NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: .init()) }))
+        }
+        MainActor.assumeIsolated {
+            notifications.onResponse = { response in
+                guard case .agent(let id) = response.target, let action = response.action else { return }
+                Task { await SessionHost.banners?.respond(id, action: action, question: response.question,
+                                                          text: response.text, recovery: response.recovery) }
+            }
         }
         SessionHost.run(respawn: {
             var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
             spawn.mcp = mcp
             return spawn
         }, automations: { server in
-            server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
+            var hosting = server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
                 AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
                                            serviceTier: settings.defaultServiceTier,
                                            worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,
                                            projectsEnabled: settings.projectsEnabled)
             })
+            hosting.notify = { notifications.post(AgentBanners.automation(title: $0, body: $1)) }
+            return hosting
         }, pullRequests: { server in
-            server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
+            var hosting = server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
+            hosting.closed = { agent, link, branch, remote in
+                notifications.post(AgentBanners.pullRequestClosed(agent, number: link.ref.number, branch: branch, remote: remote))
+            }
+            hosting.keptOpen = { agent, link, reason in
+                notifications.post(AgentBanners.pullRequestKept(agent, number: link.ref.number, reason: reason))
+            }
+            return hosting
+        }, banners: { _ in
+            ThreadBanners.Sink(post: notifications.post, remove: notifications.remove, isWatching: { _ in false },
+                               notifyOnTurnFinished: { settings.notifyOnTurnFinished })
         })
     }
 }
