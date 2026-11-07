@@ -4,8 +4,8 @@ import ShepherdUI
 // MARK: Worktrees
 
 /// Settings ▸ Worktrees: how worktree agents are created and finalized. Every automated
-/// behavior in the worktree flows is opt-out here. The remote branch is never Shepherd's to
-/// delete regardless (deleting an open PR's head branch closes the PR).
+/// behavior in the worktree flows is opt-out here. Finalize never deletes the remote branch
+/// (deleting an open PR's head branch closes the PR); only closing a merged one's thread does.
 struct WorktreeSettings: View {
     @Bindable var settings: AppSettings
 
@@ -29,7 +29,7 @@ struct WorktreeSettings: View {
                 }
             }
             SettingsGroup(title: "Finalize",
-                          footnote: "The remote branch is never deleted by Shepherd. Merging the PR cleans it up on GitHub. Per-repo GitHub settings live in the Finalize sheet.") {
+                          footnote: "Finalize never deletes the remote branch. Merging the PR cleans it up on GitHub. Per-repo GitHub settings live in the Finalize sheet.") {
                 SettingsRow(title: "Commit remaining work",
                             subtitle: "Commits anything left in the worktree using the PR title. Off stops Finalize on a dirty worktree.") {
                     SettingsSwitch(label: "Commit remaining work", isOn: $settings.worktreeAutoCommit)
@@ -59,6 +59,10 @@ struct WorktreeSettings: View {
                             subtitle: "**Ask** shows the confirmation. A remembered removal still asks when the checkout has unreconciled work.") {
                     SHSegmentedPicker("Deleting a worktree agent", selection: $settings.worktreeDeleteAction,
                                       options: [(WorktreeDeleteAction.ask, "Ask"), (.keepWorktree, "Keep worktree"), (.removeWorktree, "Remove worktree")])
+                }
+                SettingsRow(title: "Close threads when their pull request merges",
+                            subtitle: "Deletes the thread, its worktree and its branch, here and on GitHub. A thread that is running, asking, or holds uncommitted or unpushed work stays open with a note.") {
+                    SettingsSwitch(label: "Close threads when their pull request merges", isOn: $settings.worktreeCloseOnMerge)
                 }
             }
         }

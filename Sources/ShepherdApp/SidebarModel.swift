@@ -76,8 +76,8 @@ struct SidebarListRow: Identifiable, Equatable {
     /// A remote thread whose host is not connected: its last known state, dimmed, and its menu
     /// has nothing to offer until the host is back.
     var offline = false
-    /// The title, and the worktree's branch.
-    let help: String
+    /// The title, the worktree's branch and its pull request.
+    var help: String
     /// "Fix the login, worktree, running, on horizon"; ", pinned" follows a pinned thread's.
     var accessibilityLabel: String
     /// A worktree agent: its menu offers Finalize and Delete Worktree Agent.
@@ -90,6 +90,8 @@ struct SidebarListRow: Identifiable, Equatable {
     var runGroup: AutomationID? = nil
     /// Activity folds it under this active automation's row in Automations.
     var foldedUnder: AutomationKey? = nil
+    /// This Mac's thread's pull request (`ShepherdViewModel.pullRequestLinks`).
+    var pullRequest: SHSidebarRow.Badge? = nil
 }
 
 /// An active automation's row in Activity's Automations group (the user's request: one row per automation, as Designs
@@ -236,6 +238,8 @@ struct SidebarSource: Equatable {
     var designs = false
     /// This Mac's spaces whose folder is gone (moved, renamed or deleted): no new threads.
     var missingSpaces: Set<SpaceID> = []
+    /// This Mac's threads' pull requests.
+    var pullRequests: [AgentID: SidebarPullRequest] = [:]
 
     /// Child work affects sidebar presentation, never the parent's actual turn status. What no
     /// row shows is dropped too (layouts, checkouts), so a pane divider drag or a changed-files
@@ -345,6 +349,7 @@ enum SidebarDerivation {
                                failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
+            if let pull = source.pullRequests[agent.id] { row.attach(pull) }
             // A manual automation's watcher run folds under it while live; a triggered run's thread is ordinary but
             // folds under its automation while that is on (as in the space tree). One waiting on you stays in Needs you;
             // a run of an automation that isn't active is a thread like any other.

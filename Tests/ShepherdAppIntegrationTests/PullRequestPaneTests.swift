@@ -19,7 +19,7 @@ struct PullRequestPaneTests {
         let ref = ForgeItemRef(kind: .pullRequest, repo: "acme/payments", number: 31)
         var asked: [String] = []
         var found: ForgeItemRef? = ref
-        vm.branchPullRequestLookup = { cwd in asked.append(cwd); return found }
+        vm.branchPullRequestLookup = { cwd in asked.append(cwd); return found.map { ThreadPullRequest(ref: $0, state: .open) } }
         // The page's reads go through the forge; this one stands in for gh.
         var requests: [RemoteForgeRequest] = []
         let store = ForgeStore { request in

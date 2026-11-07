@@ -344,7 +344,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Session naming model",
                        "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
-        case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically", "Deleting a worktree agent"]
+        case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically", "Deleting a worktree agent", "Close threads when their pull request merges"]
         case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
                           "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
         case .projects: ["Filter spaces", "All hosts", "Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
@@ -383,7 +383,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                                                      "screenshots", "cache"],
                        "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
                        "Codemode": ["javascript", "script", "batch", "tools", "space"]]
-        case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
+        case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"],
+                       "Close threads when their pull request merges": ["merged", "auto-close", "delete branch"]]
         case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"],
                           "Native subagents": ["children", "workflows"], "Concurrency": ["parallel", "limit"]]
         case .projects: ["Filter spaces": ["folders", "directory", "space settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".shepherd", "settings.json"]]

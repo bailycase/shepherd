@@ -337,6 +337,17 @@ public struct SHSidebarRow: View, Equatable {
         case shortcut(String)
     }
 
+    /// A short mono 10 label before the accessory, in its own color: a thread's pull request ("#31").
+    public struct Badge: Equatable, Sendable {
+        public let text: String
+        public let color: Color
+
+        public init(_ text: String, color: Color) {
+            self.text = text
+            self.color = color
+        }
+    }
+
     let title: String
     let leading: Leading
     let selected: Bool
@@ -344,13 +355,15 @@ public struct SHSidebarRow: View, Equatable {
     let accessory: Accessory
     let hasGoal: Bool
     let nested: Bool
+    let badge: Badge?
     @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     /// `nested` is a thread inside a project of the project tree: its leading slot sits under
     /// the project's folder (`SHDensity.treeChildLeading`).
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                hasGoal: Bool = false, nested: Bool = false) {
+                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil) {
+        self.badge = badge
         self.title = title
         self.leading = leading
         self.selected = selected
@@ -362,13 +375,14 @@ public struct SHSidebarRow: View, Equatable {
 
     /// A thread's row: its state dot.
     public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                hasGoal: Bool = false, nested: Bool = false) {
-        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested)
+                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil) {
+        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested,
+                  badge: badge)
     }
 
     public nonisolated static func == (a: SHSidebarRow, b: SHSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
-            && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested
+            && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested && a.badge == b.badge
     }
 
     public var body: some View {
@@ -388,6 +402,10 @@ public struct SHSidebarRow: View, Equatable {
                 .shAnimation(.content, value: title)
             Spacer(minLength: SH.Space.xs)
             if hasGoal { SHGoalGlyph().foregroundStyle(Color.sh.textTertiary) }
+            if let badge {
+                Text(badge.text).font(.shMono(SHSidebarMetrics.accessoryFont)).foregroundStyle(badge.color).monospacedDigit().lineLimit(1).fixedSize()
+                    .shAnimation(.content, value: badge)
+            }
             SHSidebarAccessoryView(accessory: accessory)
                 .shAnimation(.content, value: accessory)
         }

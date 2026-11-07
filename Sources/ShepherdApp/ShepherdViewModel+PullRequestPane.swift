@@ -10,13 +10,9 @@ extension ShepherdViewModel {
     /// Looks the branch's pull request up again (the pane opened, a turn ended) and reads it.
     /// No pull request, or none gh can find, drops the tab.
     func refreshBranchPullRequest(_ agentID: AgentID) {
-        guard !branchPullRequestLookups.contains(agentID), let agent = state.agents.first(where: { $0.id == agentID }) else { return }
-        branchPullRequestLookups.insert(agentID)
-        let cwd = agentCwd(agent)
+        guard !branchPullRequestLookups.contains(agentID), state.agents.contains(where: { $0.id == agentID }) else { return }
         Task {
-            let found = await branchPullRequestLookup(cwd)
-            branchPullRequestLookups.remove(agentID)
-            guard let ref = found, ref.kind == .pullRequest, state.agents.contains(where: { $0.id == agentID }) else {
+            guard let ref = await refreshPullRequestLink(agentID)?.ref, state.agents.contains(where: { $0.id == agentID }) else {
                 if branchPullRequests[agentID] != nil { branchPullRequests.removeValue(forKey: agentID) }
                 return
             }
