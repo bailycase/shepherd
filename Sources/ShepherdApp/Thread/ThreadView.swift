@@ -317,6 +317,7 @@ struct ThreadView: View {
                              designChat: designChat, restartPi: restartPi,
                              hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
                              slashLogin: slashLogin, projectUpNext: projectSend.map { _ in ProjectHeldMessages.upNext(held) })
+                        .equatable()
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                             if composerInset.height != $0 { composerInset.height = $0 }
                         }

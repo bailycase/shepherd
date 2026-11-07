@@ -1029,6 +1029,52 @@ struct ListPerformanceTests {
         }
     }
 
+    @MainActor @Observable final class RedrawCounter {
+        var value = 0
+    }
+
+    /// The composer under a parent that redraws and hands it a closure made afresh each time (the
+    /// thread's Jump to latest while the reader is detached captures the thread's state).
+    private struct ComposerUnderParent: View {
+        let counter: RedrawCounter
+        let store: NativeThreadStore
+        let input: ThreadInput
+
+        var body: some View {
+            let _ = SHRenderProbe.tick("test.parent")
+            let tick = counter.value
+            Composer(store: store, input: input, active: true, isFocused: false, agentName: "Investigate", hasTurns: true,
+                     gutter: AppLayout.gutter, listModels: { .empty }, jumpToLatest: { _ = tick })
+                .equatable()
+        }
+    }
+
+    /// A parent that redraws with closures made afresh leaves the composer alone: its inputs are
+    /// equal, whatever the closures capture.
+    @Test func aParentRedrawWithFreshClosuresRedrawsNoComposer() async throws {
+        let thread = try await chromeThread(running: false)
+        defer { thread.close() }
+        let counter = RedrawCounter()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 400), dark: true,
+                                     ComposerUnderParent(counter: counter, store: thread.store, input: ThreadInput()))
+        defer { window.close() }
+        var quiet = 0
+        try await eventuallyOnMain("the composer to stop redrawing") {
+            quiet = ListPerf.counting { ListPerf.settle(window) }["composer.body", default: 0] == 0 ? quiet + 1 : 0
+            return quiet >= 5
+        }
+
+        let rows = ListPerf.counting {
+            for _ in 1...5 {
+                counter.value += 1
+                ListPerf.settle(window)
+            }
+        }
+
+        #expect(rows["test.parent", default: 0] >= 5, "the parent redrew: \(rows)")
+        #expect(rows["composer.body", default: 0] == 0, "\(rows)")
+    }
+
     @Test(arguments: [false, true])
     func changingThreadGuttersDoesNotRebuildTheTranscript(dark: Bool) async throws {
         let threshold = AppLayout.threadMaxWidth + 2 * AppLayout.gutter

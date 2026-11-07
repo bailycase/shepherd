@@ -21,7 +21,7 @@ extension EnvironmentValues {
 /// ways (`NativeSendChoice`). Running subagents
 /// share that card, above Up next (`ComposerDock`), and a subagent's question answered from its
 /// row takes the composer's place until it is answered or hidden.
-struct Composer: View {
+struct Composer: View, Equatable {
     /// The thread's coordinate space: the menus measure the room above the card in it.
     static let threadSpace = "composer.thread"
     /// The card's own: the context details line up with the ring in it.
@@ -319,6 +319,26 @@ struct Composer: View {
     private var questionKey: String? {
         guard let dialog = dialogs.first, let session = store.session else { return nil }
         return session.key + ":" + dialog.id
+    }
+
+    /// Equal inputs leave the composer alone when its parent redraws. The closures are compared
+    /// by presence only: each captures objects stable for this view's life (the view model, the
+    /// agent's id, refs, `@State` objects, the scroll proxy), so a closure made afresh does the
+    /// same as the one it replaces (WorkspaceView, LogicalProjectConversation, ThreadView). One
+    /// that captured a value that changes would go stale here. The store and the other objects
+    /// are compared by identity: what they hold the composer reads itself.
+    static func == (lhs: Composer, rhs: Composer) -> Bool {
+        lhs.store === rhs.store && lhs.input === rhs.input && lhs.measuredInset === rhs.measuredInset
+            && lhs.finder === rhs.finder && lhs.queueState === rhs.queueState
+            && lhs.allowsLocalFiles == rhs.allowsLocalFiles && lhs.active == rhs.active && lhs.isFocused == rhs.isFocused
+            && lhs.agentName == rhs.agentName && lhs.hasTurns == rhs.hasTurns && lhs.gutter == rhs.gutter
+            && lhs.hookDirectory == rhs.hookDirectory && lhs.modelSettingsOpen == rhs.modelSettingsOpen
+            && lhs.commandKey == rhs.commandKey && lhs.contextDetailsOpen == rhs.contextDetailsOpen
+            && lhs.inspectedRunID == rhs.inspectedRunID && lhs.designChat == rhs.designChat
+            && lhs.hidesNotSignedIn == rhs.hidesNotSignedIn && lhs.projectUpNext == rhs.projectUpNext
+            && (lhs.listModels == nil) == (rhs.listModels == nil) && (lhs.jumpToLatest == nil) == (rhs.jumpToLatest == nil)
+            && (lhs.inspectSubagent == nil) == (rhs.inspectSubagent == nil) && (lhs.steerSubagent == nil) == (rhs.steerSubagent == nil)
+            && (lhs.restartPi == nil) == (rhs.restartPi == nil) && (lhs.slashLogin == nil) == (rhs.slashLogin == nil)
     }
 
     /// Everything here is anchored to the bottom of the thread: what opens above the card grows
