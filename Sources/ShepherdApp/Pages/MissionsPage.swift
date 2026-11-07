@@ -38,7 +38,8 @@ struct MissionsDestination<Driver: MissionDriving>: View {
                                  threads: MissionThreads(source: { controller.thread(for: $0) }, report: { controller.error = $0 },
                                                          isLive: { controller.isLive($0) }),
                                  send: { action in await submit(action, mission: selected).value },
-                                 action: { action in submit(action, mission: selected) })
+                                 action: { action in submit(action, mission: selected) },
+                                 others: controller.records.filter { $0.id != selected.id })
                     .id(selected.id)
             } else {
                 MissionsPage(records: controller.records, chrome: chrome,
@@ -160,6 +161,8 @@ enum MissionUIAction {
     case applyPatch(UUID), rejectPatch(UUID), autoApplyPatches(Bool)
     /// MXTrain: start the merge train in this order under these rules, change a paused one, pause, resume, skip a soak.
     case startTrain([SpaceID], MissionTrain.Rules), changeTrain([SpaceID], MissionTrain.Rules), pauseTrain, resumeTrain, skipSoak
+    /// MXLocks: wait in the queue, stack on the holder's branch, or run anyway, for a held repository.
+    case laneLock(SpaceID, MissionLaneLock.Choice)
 }
 
 struct MissionPublishApproval: Equatable {
@@ -219,6 +222,7 @@ extension Mission {
     var pill: (state: AgentState, label: String) {
         if run?.pendingQuestion != nil, phase == .map { return (.attention, "Needs you") }
         if run?.patch != nil, !phase.active { return (.attention, "Patch ready") }
+        if phase == .running, !heldLanes.isEmpty { return (.attention, "Running · \(heldLanes.count) lane\(heldLanes.count == 1 ? "" : "s") held") }
         if phase == .done, let train = run?.train {
             switch train.status {
             case .running: return (.running, "Merging · \(train.merged) of \(train.cars.count)")

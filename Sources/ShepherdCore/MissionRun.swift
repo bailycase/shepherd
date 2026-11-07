@@ -32,6 +32,8 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
     public var decisions: [MissionDecisionRecord]?
     /// The merge train over this run's published pull requests (MXTrain), once the owner started it.
     public var train: MissionTrain?
+    /// This mission's repositories another mission holds (MXLocks), with the owner's choice for each.
+    public var held: [SpaceID: MissionLaneLock]?
 
     public init(id: UUID = UUID(), model: String, phase: Phase = .map, messages: [MissionChatMessage] = [],
                 checkouts: [MissionCheckout] = [], attempts: [MissionAttempt] = [], elapsedSeconds: Double = 0,
@@ -80,6 +82,9 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
         try specKit?.validate()
         try patch?.validate()
         try train?.validate()
+        guard (held?.count ?? 0) <= 32, held?.values.allSatisfy({ $0.overlap.count <= 64 && $0.holderTitle.utf8.count <= 800 && $0.since.isFinite }) ?? true else {
+            throw MissionError("invalid_mission_run", "Invalid path lock record.")
+        }
         guard (decisions?.count ?? 0) <= 32, decisions?.allSatisfy({ $0.station.utf8.count <= 800 && $0.answer.utf8.count <= 400 && $0.at.isFinite }) ?? true else {
             throw MissionError("invalid_mission_run", "Invalid decision log.")
         }
