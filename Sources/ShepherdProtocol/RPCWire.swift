@@ -545,6 +545,8 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     public var nestedCalls: RPCNestedCalls?
     /// Validated at RPC decoding, not by reparsing tool JSON on the server state queue.
     public var projectAction: NativeProjectAction? = nil
+    /// `design_show`'s board card (`NativeThreadMessage.designBoard`), read from its details.
+    public var designBoard: UUID? = nil
     /// `compactionSummary` and `branchSummary` messages: what pi summarized, and (compaction)
     /// the context it replaced.
     public var summary: String?
@@ -625,6 +627,9 @@ public struct RPCMessage: Codable, Hashable, Sendable {
             else if let toolName, NativeProjectAction.toolNames.contains(toolName),
                     let action = try? c.decodeIfPresent(NativeProjectAction.self, forKey: .details) {
                 details = action.details
+            } else if let toolName, NativeThreadMessage.designBoardTools.contains(toolName) {
+                designBoard = NativeThreadMessage.designBoard(toolName: toolName, details: try? c.decodeIfPresent(JSONValue.self, forKey: .details),
+                                                              isError: isError)
             }
             projectAction = NativeProjectAction.receipt(toolName: toolName, details: details, content: content, isError: isError)
         case "compactionSummary", "branchSummary":
@@ -696,6 +701,7 @@ public struct RPCToolResult: Decodable, Hashable, Sendable {
     public var content: [RPCContentBlock]
     public var details: JSONValue?
     public var projectAction: NativeProjectAction? = nil
+    public var designBoard: UUID? = nil
 
     enum CodingKeys: String, CodingKey { case content, details }
 
@@ -853,6 +859,7 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
             var result = try c.decodeIfPresent(RPCToolResult.self, forKey: .result)
             if let value = result {
                 result?.projectAction = NativeProjectAction.receipt(toolName: name, details: value.details, content: value.content, isError: isError)
+                result?.designBoard = NativeThreadMessage.designBoard(toolName: name, details: value.details, isError: isError)
             }
             self = .toolExecutionEnd(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
