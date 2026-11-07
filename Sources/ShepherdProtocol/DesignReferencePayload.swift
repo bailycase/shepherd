@@ -94,6 +94,41 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
         }
     }
 
+    /// A board the thread's agent drew rather than one the user sent (design_show with a source):
+    /// a draft of a new board, or a change to the board `reference` names, kept here until the
+    /// user adds it to the design or discards it. Its `source` file is the drawn board.
+    public struct Proposal: Codable, Hashable, Sendable {
+        public enum Kind: String, Codable, Hashable, Sendable {
+            /// A new board (ThreadBoardDraft), at `reference.board`'s path once added.
+            case draft
+            /// A new version of `reference.board` (ThreadBoardChange).
+            case change
+        }
+
+        public enum State: String, Codable, Hashable, Sendable {
+            case pending
+            /// Added to the canvas (a draft) or applied over the board (a change).
+            case added
+            case discarded
+        }
+
+        public var kind: Kind
+        public var state: State
+        /// A change: the board's SHA-256 at `revision`, which Apply requires it still has.
+        public var baseSHA: String?
+        /// The canvas frame a draft takes once added.
+        public var x: Double?
+        public var y: Double?
+
+        public init(kind: Kind, state: State = .pending, baseSHA: String? = nil, x: Double? = nil, y: Double? = nil) {
+            self.kind = kind
+            self.state = state
+            self.baseSHA = baseSHA
+            self.x = x
+            self.y = y
+        }
+    }
+
     public var id: UUID
     public var agentID: AgentID
     /// The piece, pinned at the revision it was sent at.
@@ -122,6 +157,8 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var picture: File?
     /// The board's standalone page: no runtime, no scripts.
     public var html: File?
+    /// A board the agent drew (`Proposal`); nil for a piece the user sent. Absent from older copies.
+    public var proposal: Proposal?
     /// The element's markup as drawn, and the computed styles of it and what's under it (JSON).
     public var element: File?
     public var elementStyles: File?

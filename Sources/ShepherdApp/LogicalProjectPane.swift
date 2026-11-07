@@ -40,7 +40,9 @@ struct LogicalProjectPane: View {
                 header
                 if vm.logicalProjectPaneSearching { searchField }
                 switch vm.logicalProjectPaneTab {
-                case .threads: threads
+                case .threads:
+                    threads
+                    if presentation.paused { pausedFooter }
                 case .files: LogicalProjectFiles(vm: vm, ref: ref, project: project)
                 case .automations: LogicalProjectPaneAutomations(vm: vm, ref: ref, project: project)
                 }
@@ -174,6 +176,17 @@ struct LogicalProjectPane: View {
             .padding(.top, SHLeadMetrics.panePadding)
         }
         .scrollBounceBehavior(.basedOnSize)
+    }
+
+    /// "The project is paused." and Resume, under the Threads list (ProjectLead-PausedV2).
+    private var pausedFooter: some View {
+        SHLeadFooterCard(title: "The project is paused.", action: "Resume",
+                         enabled: !vm.logicalProjects.busy.contains(ref) && !presentation.stopping,
+                         height: SHLeadMetrics.pausedFooterHeight) {
+            Task { _ = await vm.logicalProjects.setPaused(ref, false) }
+        }
+        .padding(.horizontal, SHLeadMetrics.pausedFooterMargin)
+        .padding(.bottom, SHLeadMetrics.pausedFooterMargin)
     }
 
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.

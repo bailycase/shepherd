@@ -134,12 +134,12 @@ extension LogicalProjectPreviewTests {
         vm.logicalProjectPaneOpen = true
         vm.logicalProjectPaneTask = tasks.first { $0.title == jobs[2].0 }?.id
         try await Preview.renderMatrix("board-resolved", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }
-        // Board 04: Pause. The question stays waiting (the runtime does not abort a turn that is only asking).
+        // Board 04 (PausedV2): the person's Pause. The question stays waiting (the runtime does not abort a turn that is only asking).
         vm.logicalProjectPaneTask = nil
-        let running = try #require(vm.state.projects.first)
-        _ = try await vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
-        try await eventuallyOnMain("paused, with the question still waiting", timeout: .seconds(30)) {
-            vm.state.projects.first?.paused == true && vm.state.projects.first?.tasks.first { $0.title == jobs[1].0 }?.phase == .waiting
+        #expect(await vm.logicalProjects.setPaused(ref, true), "Pause: \(vm.logicalProjects.failure?.message ?? "no refusal")")
+        try await eventuallyOnMain("paused and stopped, with the question still waiting", timeout: .seconds(30)) {
+            vm.state.projects.first.map { $0.paused && $0.pausedByPerson && !$0.interruptPending } == true
+                && vm.state.projects.first?.tasks.first { $0.title == jobs[1].0 }?.phase == .waiting
         }
         try await Preview.renderMatrix("board-paused", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }
     }

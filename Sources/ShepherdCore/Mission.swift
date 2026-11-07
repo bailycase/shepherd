@@ -195,16 +195,22 @@ public struct MissionPlan: Codable, Hashable, Sendable {
     public var stations: [MissionStation]
     public var dependencies: [MissionDependency]
     public var limits: MissionLimits
+    /// The planner's estimate for the whole map, when it gave one.
+    public var estimate: MissionEstimate?
 
     public init(lanes: [MissionLane] = [], stations: [MissionStation] = [], dependencies: [MissionDependency] = [],
-                limits: MissionLimits = MissionLimits()) {
+                limits: MissionLimits = MissionLimits(), estimate: MissionEstimate? = nil) {
         self.lanes = lanes
         self.stations = stations
         self.dependencies = dependencies
         self.limits = limits
+        self.estimate = estimate
     }
 
-    public func validate() throws { _ = try orderedStations() }
+    public func validate() throws {
+        guard estimate?.valid ?? true else { throw MissionError("invalid_mission", "Invalid map estimate.") }
+        _ = try orderedStations()
+    }
 
     /// Both wire types constrain execution. Retries are bounded attempts, not graph cycles.
     public func orderedStations() throws -> [MissionStationID] {

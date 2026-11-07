@@ -19,6 +19,8 @@ struct MissionScreen: View {
     @State private var reply = ""
     @State private var station: MissionStationRow?
     @State private var confirmingStop = false
+    /// The patch the sheet shows: opens on its own when the planner proposes one (MobilePatch).
+    @State private var patchShown = false
 
     var body: some View {
         let mobileHost = hosts.hosts.first { $0.id == host }
@@ -36,6 +38,13 @@ struct MissionScreen: View {
         .task(id: mobileHost?.missions.record(id)?.revision) {
             guard let mobileHost, mobileHost.missions.record(id)?.run?.specKit != nil else { return }
             try? await mobileHost.missions.loadSpecKit(id)
+        }
+        .onChange(of: mobileHost?.missions.record(id)?.run?.patch?.id, initial: true) { _, patch in patchShown = patch != nil }
+        .sheet(isPresented: $patchShown) {
+            if let mission = mobileHost?.missions.record(id), let patch = mission.run?.patch {
+                MissionPatchSheet(mission: mission, patch: patch, busy: busy, perform: perform)
+                    .presentationDetents([.fraction(MobileLayout.missionPatchDetent), .large]).presentationDragIndicator(.visible)
+            }
         }
         .sheet(item: $station) { row in
             MissionStationSheet(row: row, host: host, mission: id, live: row.attempt.flatMap { mobileHost?.missions.live[id]?.attempts[$0] } ?? "",
@@ -68,6 +77,11 @@ struct MissionScreen: View {
                     SHBanner(.attention, title: notice) { EmptyView() }
                 }
                 if let question = controls.question { questionCard(question) }
+                if mission.run?.patch != nil {
+                    SHBanner(.attention, title: "The planner proposed a patch to the map.") {
+                        Button("Review patch") { patchShown = true }.buttonStyle(.sh(.secondary)).disabled(busy)
+                    }
+                }
                 ForEach(controls.consents) { consent in consentCard(consent) }
                 ForEach(controls.setUps) { setUp in
                     SHBanner(.attention, title: "\(setUp.name) has no Spec Kit project for pi yet.",

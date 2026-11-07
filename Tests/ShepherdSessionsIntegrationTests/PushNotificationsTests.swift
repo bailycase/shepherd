@@ -282,6 +282,11 @@ struct PushNotificationsTests {
         #expect(bodies.current.count == 3, "an older relay gets the old shape at once, never twice")
         #expect(bodies.current[2]["group"] == nil)
         #expect(PushNotifications.presentation(.needsAnswer) == ("active", 0.8))
+        try queue.sync {
+            pushes.send(agentID: agent, kind: .review, mission: .init(id: "m", revision: 2, fingerprint: "fp"))
+        }
+        #expect(bodies.current[3]["kind"] as? String == "done", "an older relay knows no review")
+        #expect(bodies.current[3]["mission"] == nil)
         #expect(PushNotifications.presentation(.error) == ("active", 0.6))
     }
 
@@ -307,6 +312,42 @@ struct PushNotificationsTests {
         #expect(sent.allSatisfy { $0["group"] == "mission:\(mission.id.rawValue)" && $0["title"] == "Checkout funnel events" })
         #expect(sent[0]["subtitle"] == "Planner question")
         #expect(sent[1]["subtitle"] == "orders · Turn failed")
+    }
+
+    @Test func aMissionReachingReviewAsksForApprovalOnceWithWhatApprovePublishes() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: Any]]>([])
+        try host.server.queue.sync {
+            try host.server.pushNotifications.register(registration())
+            host.server.pushNotifications.transport = { request, finished in
+                payloads.withValue { $0.append((try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]) }
+                finished(202)
+                return {}
+            }
+        }
+        var run = MissionRun(model: "test/model", phase: .running)
+        run.attempts = [MissionAttempt(agentID: AgentID(), status: .running)]
+        run.checkouts = ["contracts", "orders-svc"].map {
+            MissionCheckout(spaceID: SpaceID(), repo: $0, path: "/tmp/\($0)", branch: "mission/\($0)", base: "main", head: "abc")
+        }
+        let mission = Mission(draft: MissionDraft(title: "Checkout funnel events", goal: "Every order joins the funnel"), run: run)
+        host.server.queue.sync { host.server.store.updateLive { $0.missions = [mission] } }
+        let reviewed = try await host.server.updateMissionRun(id: mission.id, runID: run.id) {
+            $0.phase = .review
+            $0.reviewFingerprint = "fp-1"
+        }
+        try await eventually("review alert") { payloads.current.count == 1 }
+        let sent = payloads.current[0]
+        #expect(sent["kind"] as? String == "review")
+        #expect(sent["title"] as? String == "Checkout funnel events")
+        #expect(sent["subtitle"] as? String == "Ready to review")
+        #expect(sent["preview"] as? String == "2 pull requests merge in this order.")
+        #expect(sent["group"] as? String == "mission:\(mission.id.rawValue)")
+        let approval = try #require(sent["mission"] as? [String: Any])
+        #expect(approval["id"] as? String == mission.id.rawValue)
+        #expect((approval["revision"] as? NSNumber)?.uint64Value == reviewed.revision)
+        #expect(approval["fingerprint"] as? String == "fp-1")
     }
 
     private func record(_ server: SessionServer, payloads: Locked<[[String: String]]>? = nil) throws -> Locked<[String]> {

@@ -58,8 +58,9 @@ struct MissionRowModel: Identifiable, Equatable {
         let phase = mission.run?.phase ?? .map
         let waiting = mission.run?.pendingQuestion != nil && phase == .map
             || phase == .map && mission.run?.specKit?.lanes.contains { $0.convergence?.accepted == false } == true
-        state = waiting ? .attention : AgentState(phase)
-        label = waiting ? "Needs you" : phase.mobileLabel
+        let patched = mission.run?.patch != nil && !phase.active
+        state = waiting || patched ? .attention : AgentState(phase)
+        label = waiting ? "Needs you" : patched ? "Patch ready" : phase.mobileLabel
         let lanes = (mission.draft.plan?.lanes ?? []).map(\.name).joined(separator: ", ")
         detail = mission.run?.pendingQuestion ?? ([host.name] + (lanes.isEmpty ? [] : [lanes])).joined(separator: " · ")
         route = (mission.draft.plan?.stations ?? []).map { station in

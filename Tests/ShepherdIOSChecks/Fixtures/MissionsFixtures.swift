@@ -37,6 +37,8 @@ extension FixtureCatalog {
                           routes: [.missions(.list), .missions(.review(host: studio, mission: D.review)),
                                    .missions(.file(host: studio, mission: D.review, space: FixtureData.shepherdSpace.id, path: "Sources/Checkout/Events.swift"))],
                           prepare: load),
+            FixtureScreen(name: "mission-patch", hosts: hosts, routes: [.missions(.list), .missions(.mission(host: studio, mission: D.patched))],
+                          prepare: choose(D.patched)),
             FixtureScreen(name: "mission-new", hosts: hosts, routes: [.missions(.list)], presented: .missions(.new(host: studio)), prepare: load),
         ]
     }
@@ -74,6 +76,7 @@ enum MissionsFixtureData {
     static let question = MissionID(rawValue: "00000000-0000-4000-8000-000000000002")
     static let running = MissionID(rawValue: "00000000-0000-4000-8000-000000000003")
     static let consent = MissionID(rawValue: "00000000-0000-4000-8000-000000000004")
+    static let patched = MissionID(rawValue: "00000000-0000-4000-8000-000000000005")
     static let shepherd = FixtureData.shepherdSpace, horizon = FixtureData.horizonSpace
     static let now = FixtureData.start / 1000
 
@@ -144,7 +147,21 @@ enum MissionsFixtureData {
         {"status":"ready","testedVersion":"1.2.3","matchesTestedRelease":true,"integrations":["pi"],"missingCommands":[],"customizedFiles":[],
          "hooks":[],"ownershipConflicts":[],"warnings":[],"consentFingerprint":"5c1f0a9be27d4e8a"}
         """.utf8))
-        let missions = FixtureMissions(records: [reviewed, asking, working, trusting],
+        // MobilePatch: the planner's patch for horizon after a failed join, waiting on Apply.
+        var stuck = mission(patched, "Checkout funnel events", phase: .paused, settled: 1)
+        stuck.run?.notice = "Join events to orders failed its check twice. Paused for you."
+        var after = stuck.draft
+        let outbox = MissionStation(id: MissionStationID(rawValue: "00000000-0000-4000-8000-000000000150"), kind: .worker, laneID: horizon.id,
+                                    title: "outbox-tx", goal: "make outbox.Write take the caller's tx")
+        let outboxTest = MissionStation(id: MissionStationID(rawValue: "00000000-0000-4000-8000-000000000151"), kind: .check, laneID: horizon.id,
+                                        title: "go test ./internal/outbox/...", goal: "Run the outbox tests", command: "go test ./internal/outbox/...")
+        after.plan?.stations.insert(contentsOf: [outbox, outboxTest], at: 1)
+        after.plan?.stations[3].goal = "Join events to orders on top of the outbox fix"
+        after.plan?.estimate = MissionEstimate(tokens: 3_500_000, seconds: 2 * 3600 + 5 * 60)
+        stuck.draft.plan?.estimate = MissionEstimate(tokens: 3_100_000, seconds: 3600 + 38 * 60)
+        stuck.run?.patch = MissionPatch(proposedAt: now - 120, base: stuck.draft, draft: after,
+                                        summary: "Only horizon changes. The validator still waits for it, so nothing else re-runs.")
+        let missions = FixtureMissions(records: [reviewed, asking, working, trusting, stuck],
                                        options: RemoteMissionStartOptions(models: ["anthropic/claude-opus", "openai/gpt-5"], defaultModel: "anthropic/claude-opus",
                                                                           spaces: [shepherd, horizon],
                                                                           branchChoices: [shepherd.id: ["refs/heads/main", "refs/remotes/origin/main"],

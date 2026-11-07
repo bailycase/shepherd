@@ -16,7 +16,7 @@ import Testing
 @Suite("Project conversation and tasks", .mainActorExclusive)
 @MainActor
 struct LogicalProjectConversationTests {
-    @Test func theFirstMessageStartsTheConversationAndAMessageRestartsAPausedProject() async {
+    @Test func theFirstMessageStartsTheConversationARuntimeStopRestartsAndAPersonsPauseHoldsUntilResume() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.conversation() } }
         expectScenarioCompleted(result)
     }
@@ -396,6 +396,29 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("restarted and delivered") {
             let p = r.app.server.state.projects.first
             return p?.paused == false && p?.messages.first { $0.text == "wake up" }?.phase == .delivered
+        }
+
+        // The person's own Pause (ProjectLead-PausedV2): the banner and Resume show, a message waits instead of restarting it, and
+        // only Resume sends it.
+        #expect(await r.vm.logicalProjects.setPaused(r.ref, true), "\(r.vm.logicalProjects.failure?.message ?? "no refusal")")
+        try await eventuallyOnMain("paused by the person and stopped") {
+            r.app.server.state.projects.first.map { $0.paused && $0.pausedByPerson && !$0.interruptPending } == true
+                && r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision
+        }
+        try await eventuallyOnMain("the paused banner and Resume") {
+            window.layout()
+            return window.elements().contains { ($0.label ?? $0.value ?? "").hasPrefix("Paused. Threads stopped") }
+                && window.controls().contains { $0.label == "Resume" }
+        }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "wait for me"))
+        let held = try #require(r.app.server.state.projects.first)
+        #expect(held.paused && held.messages.contains { $0.text == "wait for me" && $0.phase == .queued }, "held, not delivered")
+        try await eventuallyOnMain("the page sees the held message") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
+        window.layout()
+        try window.press("Resume", nth: 0)
+        try await eventuallyOnMain("resumed and the held message delivered") {
+            let p = r.app.server.state.projects.first
+            return p?.paused == false && p?.messages.first { $0.text == "wait for me" }?.phase == .delivered
         }
     }
 
