@@ -250,6 +250,12 @@ public enum ShepherdHost {
             var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
             spawn.mcp = mcp
             return spawn
+        }, threads: { server in
+            ThreadHosting(defaults: {
+                ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
+                                       serviceTier: settings.defaultServiceTier, worktreeBaseMode: settings.worktreeBaseMode,
+                                       worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate)
+            }, launch: { settings.agentLaunch }, mcp: mcp, shell: { ShellIntegration.command(shell: settings.shellCommand) })
         }, automations: { server in
             var hosting = server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
                 AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,

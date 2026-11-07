@@ -19,8 +19,10 @@ public enum SessionHost {
     /// spawn settings; the host respawns them once it serves. `automations`, when given, hosts
     /// automations: their requests and triggers are served, and enabled ones start.
     /// `pullRequests`, when given, keeps each thread's pull request link on the poll. `banners`,
-    /// when given, is where threads' turn, question and notify-tool banners go.
+    /// when given, is where threads' turn, question and notify-tool banners go. `threads`, when
+    /// given, serves clients' threads and terminals: new threads, their actions, shells.
     public static func run(_ server: SessionServer = .shared, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                           threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
                            automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                            pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
                            banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
@@ -48,16 +50,17 @@ public enum SessionHost {
             exit(EXIT_FAILURE)
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
-        // The app's way in (`host.sock`); a path too long for a unix socket leaves the app to
-        // run in process.
-        let support = server.supportDirectory
-        do {
-            try server.startLocalListener(path: support.appendingPathComponent("host.sock").path,
-                                          tokenURL: support.appendingPathComponent("remote-token"))
-        } catch {
-            ShepherdLog.error("host has no local socket: \(error)")
-        }
         Task { @MainActor in
+            if let threads { server.serveThreads(threads(server)) }
+            // The app's way in (`host.sock`), once its threads are served; a path too long for a
+            // unix socket leaves the app to run in process.
+            let support = server.supportDirectory
+            do {
+                try server.startLocalListener(path: support.appendingPathComponent("host.sock").path,
+                                              tokenURL: support.appendingPathComponent("remote-token"))
+            } catch {
+                ShepherdLog.error("host has no local socket: \(error)")
+            }
             if let banners {
                 let observer = ThreadBanners(server: server, state: { server.state }, sink: banners(server))
                 observer.observeServer()
