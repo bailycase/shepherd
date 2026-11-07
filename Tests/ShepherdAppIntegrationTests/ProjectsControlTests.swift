@@ -177,9 +177,15 @@ struct ProjectsControlTests {
         try ControlPress.press("Save", under: window.host)
         try await eventuallyOnMain("the project save") { !model.saving && !model.dirty && model.notice != nil }
         #expect(try String(contentsOf: root.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "# Changed instructions\n")
-        _ = editor.object.perform(setter, with: "Discard this\n")
-        if let textView = editor.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
-        try await eventuallyOnMain("the second native edit") { model.dirty }
+        // The save reloads the space, which may redraw the editor: edit the one on screen now, until it takes.
+        try await eventuallyOnMain("the second native edit") {
+            window.layout()
+            if let current = AccessibilityNode.all(under: window.host).first(where: { $0.label == "Space file editor" }) {
+                _ = current.object.perform(setter, with: "Discard this\n")
+                if let textView = current.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
+            }
+            return model.dirty
+        }
         window.layout()
         try ControlPress.press("Back to Spaces", under: window.host)
         try await eventuallyOnMain("discard confirmation") { model.pending != nil }

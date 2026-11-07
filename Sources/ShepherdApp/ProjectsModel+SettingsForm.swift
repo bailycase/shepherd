@@ -1,10 +1,17 @@
 import Foundation
+import ShepherdProtocol
 
 /// The Settings tab's form controls. Each writes the draft's JSON, so Save, Discard and the
 /// file's conflict check stay the editor's.
 extension ProjectsModel {
     var formEditable: Bool {
         fileLoaded && selectedFile?.category == .pi && selected?.unavailable == nil && !saving && formSettings != nil
+    }
+
+    /// The selected space holds other spaces' folders, so they inherit its startup defaults.
+    var hasInheritingChildren: Bool {
+        guard let selected else { return false }
+        return rows.contains { $0.host.id == selected.host.id && ProjectNesting.parent(of: $0.project.directory, among: [selected.project.directory]) != nil }
     }
 
     func setForm(_ row: SpaceSettingsForm.Row, _ input: String) {

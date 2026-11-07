@@ -52,4 +52,30 @@ struct SpaceSettingsFormPreviewTests {
             SettingsView(vm: world.vm)
         }
     }
+
+    /// ProjectParentSettings and ProjectChildSettings: payments holds payments-refunds; the child
+    /// overrides its thinking and follows the parent's startup model.
+    @Test(arguments: ["parent", "child"])
+    func inheritance(state: String) async throws {
+        let world = try await ProjectsPreviewWorld(detail: true)
+        defer { world.stop() }
+        let vm = world.vm, model = vm.projects
+        model.loadModels = { _ in ["anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-6"] }
+        let payments = try #require(model.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
+        let root = URL(fileURLWithPath: payments.project.directory)
+        try? FileManager.default.removeItem(at: root.appendingPathComponent(".shepherd/settings.json"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".pi"), withIntermediateDirectories: true)
+        try Data(#"{"defaultProvider":"anthropic","defaultModel":"claude-opus-4-6","defaultThinkingLevel":"high"}"#.utf8).write(to: root.appendingPathComponent(".pi/settings.json"))
+        let child = root.appendingPathComponent("refunds")
+        try FileManager.default.createDirectory(at: child.appendingPathComponent(".pi"), withIntermediateDirectories: true)
+        try Data(#"{"defaultThinkingLevel":"low"}"#.utf8).write(to: child.appendingPathComponent(".pi/settings.json"))
+        _ = try await vm.handleProjectRequest(.register(path: child.path, name: "payments-refunds"))
+        let row = try #require(model.rows.first { $0.project.name == (state == "child" ? "payments-refunds" : "payments") && $0.host.id == "local" })
+        await model.open(row)
+        await model.navigate(.category(.pi))
+        try await eventuallyOnMain("the form") { model.fileLoaded && !model.formGroups.isEmpty && (state == "parent" || model.context.parentName != nil) }
+        try await Preview.renderMatrix("space-settings-\(state)", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: world.vm)
+        }
+    }
 }

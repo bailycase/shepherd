@@ -15,7 +15,7 @@ struct SpaceSettingsFormView: View {
             HStack(alignment: .top, spacing: SH.Space.xxl) {
                 VStack(alignment: .leading, spacing: SH.Space.s) {
                     Text("Space defaults").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                    Text("Only this space. Unset values follow your global defaults.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    Text(scopeCopy).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: SH.Space.m) {
@@ -27,6 +27,7 @@ struct SpaceSettingsFormView: View {
                         .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil || model.openingEditor)
                 }.padding(.top, SH.Space.l)
             }.padding(.top, SH.Space.xxl - AppLayout.projectDetailGap).padding(.bottom, SH.Space.xl)
+            if let parent = model.context.parentName { inheritance(parent) }
             Text(statusText).font(.sh(.caption)).foregroundStyle(statusAlert ? Color.sh.lanternText : Color.sh.textSecondary)
                 .padding(.bottom, SH.Space.l).accessibilityAddTraits(.updatesFrequently)
             ScrollView {
@@ -46,6 +47,32 @@ struct SpaceSettingsFormView: View {
                 }.padding(.bottom, SH.Space.xxl)
             }.scrollIndicators(.automatic)
         }.accessibilityElement(children: .contain).accessibilityLabel("Space settings form")
+    }
+
+    private var scopeCopy: String {
+        if let parent = model.context.parentName { return "Only this space. Unset values follow \(parent), then global defaults." }
+        if model.hasInheritingChildren { return "These defaults also apply to child spaces without a local override." }
+        return "Only this space. Unset values follow your global defaults."
+    }
+
+    /// ProjectChildSettings' banner: where unset values come from, and a way to the parent.
+    private func inheritance(_ parent: String) -> some View {
+        HStack(spacing: SH.Space.l) {
+            SHGlyph.Settings.subagents.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text("Inherited from \(parent)").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                Text("Local overrides win. Reset removes only \(project.project.name)’s override.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            }
+            Spacer(minLength: 0)
+            if let row = model.rows.first(where: { $0.host.id == project.host.id && $0.project.name == parent && $0.id != project.id }) {
+                Button("Open \(parent)") { Task { await model.navigate(.close); if model.selected == nil { await model.open(row) } } }
+                    .buttonStyle(.sh(.ghost)).disabled(model.saving)
+            }
+        }.padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+            .padding(.bottom, SH.Space.l)
+            .accessibilityElement(children: .contain).accessibilityLabel("Inherited from \(parent)")
     }
 
     private var statusText: String {
@@ -91,10 +118,10 @@ struct SpaceSettingsFormView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
             control(row).disabled(locked)
-            Button("Reset to global") { model.resetForm(row) }
+            Button("Reset to \(row.resetTo)") { model.resetForm(row) }
                 .buttonStyle(.sh(.ghost)).frame(width: AppLayout.spaceFormResetWidth)
                 .disabled(locked || !row.overridden)
-                .accessibilityLabel("Reset \(row.label) to global")
+                .accessibilityLabel("Reset \(row.label) to \(row.resetTo)")
         }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
             .accessibilityElement(children: .contain)
     }
@@ -183,7 +210,7 @@ struct SpaceSettingsFormFooter: View {
             Text(badge).font(.sh(.caption)).foregroundStyle(Color.sh.lanternText)
                 .padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.xs)
                 .background(Color.sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-            Text(model.formInvalid ? "Fix invalid values before saving." : model.conflict ? "Saving is blocked. Existing values will not be overwritten." : "Applies to new threads in this space.")
+            Text(model.formInvalid ? "Fix invalid values before saving." : model.conflict ? "Saving is blocked. Existing values will not be overwritten." : model.hasInheritingChildren ? "Applies to new threads in this space and inheriting child spaces." : "Applies to new threads in this space.")
                 .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             Spacer(minLength: 0)
             if model.conflict {
