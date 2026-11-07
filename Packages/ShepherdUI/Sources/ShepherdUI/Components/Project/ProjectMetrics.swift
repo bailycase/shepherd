@@ -190,6 +190,9 @@ public enum SHLeadMetrics {
     public static let composerFieldHeight: CGFloat = 56
     public static let composerBottom: CGFloat = 16
 
+    /// Run on another host (ProjectRunElsewhere): a 520pt dialog.
+    public static let runElsewhereWidth: CGFloat = 520
+
     // MARK: Pause banner (ProjectLead-PausedV2)
 
     /// 46pt tall inside the conversation section, 16pt in from its sides and 12pt under the toolbar, radius 8, 1pt `lineStrong` on
