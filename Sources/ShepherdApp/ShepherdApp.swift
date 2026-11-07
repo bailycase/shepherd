@@ -230,7 +230,7 @@ public enum ShepherdHost {
     public static let argument = "--host"
 
     /// Agents respawn, and automation runs start, with the app's settings. MCP waits for slice 4
-    /// (its secrets are the app's).
+    /// (its secrets are the app's). Merged threads close per Settings ▸ Worktrees.
     public static func main() -> Never {
         let settings = AppSettings.shared
         SessionHost.run(respawn: { AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch) }, automations: { server in
@@ -240,6 +240,8 @@ public enum ShepherdHost {
                                            worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,
                                            projectsEnabled: settings.projectsEnabled)
             })
+        }, pullRequests: { server in
+            server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
         })
     }
 }

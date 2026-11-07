@@ -226,13 +226,14 @@ struct ClientSettingsTests {
         let old = Self.host("old", client)
         await model.refresh(old)
         for change: HostSettingChange in [.designToolEnabled(true), .missionsEnabled(false), .skillsInSlashMenu(false),
-                                          .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2))] {
+                                          .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2)), .closeOnMerge(true)] {
             #expect(model.post(change, on: old) == nil, "\(change)")
         }
         #expect(client.requests == ["settings.fetch"])
         let live = Self.host("new", client, capabilities: Self.all.union([RemoteProtocol.designToolExperimentCapability,
                                                                           RemoteProtocol.missionsExperimentCapability,
-                                                                          RemoteProtocol.hostSettingsV2Capability]))
+                                                                          RemoteProtocol.hostSettingsV2Capability,
+                                                                          RemoteProtocol.hostSettingsCloseOnMergeCapability]))
         await model.refresh(live)
         await model.change(.designToolEnabled(true), on: live)
         #expect(model.settings(of: live)?.designToolEnabled == true)
@@ -240,6 +241,8 @@ struct ClientSettingsTests {
         #expect(model.settings(of: live)?.missionsEnabled == true, "a live mission keeps Missions on")
         await model.change(.slashCommand(name: "review", on: false), on: live)
         #expect(model.settings(of: live)?.hiddenSlashCommands == ["review"])
+        await model.change(.closeOnMerge(true), on: live)
+        #expect(model.settings(of: live)?.closeOnMerge == true)
     }
 
     @Test func aHostsConfigurationIsReadOnlyUntilItAdvertisesHostConfig() async {

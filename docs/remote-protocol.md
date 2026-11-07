@@ -176,7 +176,8 @@
     `designs.v1` with `capabilitiesChanged`. `experiments.missions.v1` switches Missions;
     `HostSettings.missionsActive` says a mission is planning, running or publishing, and the host
     refuses Missions off then (`settings_failed`), as the Mac's own card does. The bundled
-    extension list gains `designReferences`.
+    extension list gains `designReferences`. `hostSettings.closeOnMerge.v1` adds Close threads
+    when their pull request merges (missing from an older host: off).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
     `providers`), answered by the GUI. A sign-in column in words that name no machine ("Not

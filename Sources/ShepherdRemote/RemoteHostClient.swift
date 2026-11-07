@@ -908,7 +908,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .projectsEnabled: "toggle the Projects experiment"
             case .designToolEnabled: "toggle the Design tool experiment"
             case .missionsEnabled: "toggle the Missions experiment"
-            case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand: "change this setting"
+            case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
             default: "change this default"
             }
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to \(what).")

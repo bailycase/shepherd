@@ -188,8 +188,8 @@ origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Sh
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
 branch with a tracking local copy) or a named new one. Finalize's plan runs only the steps the person
 ticked. Close threads when their pull request merges (Settings ▸ Worktrees,
-off by default; `ShepherdViewModel+PullRequestLinks.swift`): once a thread's pull request is seen
-going from open to merged in this launch, it deletes the thread, removes its worktree and local
+off by default; `ShepherdSessions/PullRequestLinks.swift`): once a thread's pull request is seen
+going from open to merged in this host's run, it deletes the thread, removes its worktree and local
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
 merged-only, never-a-fork deletion; only for a worktree in Shepherd's support folder whose branch is
 the pull request's head, and never while the thread runs or asks or its checkout has uncommitted

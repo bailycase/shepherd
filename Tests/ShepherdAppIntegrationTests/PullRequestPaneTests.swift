@@ -1,5 +1,6 @@
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp

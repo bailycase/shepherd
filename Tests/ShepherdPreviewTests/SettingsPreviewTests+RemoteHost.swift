@@ -68,7 +68,8 @@ struct RemoteHostSettingsPreviewTests {
                                      RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostInventoryCapability,
                                      RemoteProtocol.hostConfigCapability, RemoteProtocol.goalExperimentCapability,
                                      RemoteProtocol.projectsExperimentCapability, RemoteProtocol.designToolExperimentCapability,
-                                     RemoteProtocol.missionsExperimentCapability, RemoteProtocol.suggestionsCapability]
+                                     RemoteProtocol.missionsExperimentCapability, RemoteProtocol.suggestionsCapability,
+                                     RemoteProtocol.hostSettingsCloseOnMergeCapability]
     static let older: Set<String> = [RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostInventoryCapability,
                                      RemoteProtocol.goalExperimentCapability]
 

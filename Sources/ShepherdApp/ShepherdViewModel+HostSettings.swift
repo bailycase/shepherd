@@ -82,6 +82,7 @@ enum HostSettingsMapping {
             deleteLocalBranch: app.worktreeDeleteLocalBranch,
             mergePRAutomatically: app.worktreeAutoMergePR,
             mergeMethod: HostSettings.MergeMethod(rawValue: app.worktreeMergeMethod.rawValue) ?? .squash,
+            closeOnMerge: app.worktreeCloseOnMerge,
             designToolEnabled: app.designToolEnabled,
             missionsEnabled: app.missionsEnabled,
             missionsActive: missionsActive,
@@ -125,6 +126,7 @@ enum HostSettingsMapping {
         case .deleteLocalBranch(let on): app.worktreeDeleteLocalBranch = on
         case .mergePRAutomatically(let on): app.worktreeAutoMergePR = on
         case .mergeMethod(let method): app.worktreeMergeMethod = WorktreeMergeMethod(rawValue: method.rawValue) ?? .squash
+        case .closeOnMerge(let on): app.worktreeCloseOnMerge = on
         case .bundledExtension(let id, let on):
             guard let keyPath = bundled.first(where: { $0.id == id })?.keyPath else { return nil }
             app[keyPath: keyPath] = on

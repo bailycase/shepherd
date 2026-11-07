@@ -21,6 +21,9 @@ extension FixtureCatalog {
             // Each host's own settings (hostSettings.v1).
             FixtureScreen(name: "settings-defaults", routes: [.settings(.defaults)], tab: .settings),
             FixtureScreen(name: "settings-worktrees", routes: [.settings(.worktrees)], tab: .settings),
+            // Its lower half: Deleting, with Close threads when their pull request merges.
+            FixtureScreen(name: "settings-worktrees-lower", routes: [.settings(.worktrees)], tab: .settings,
+                          prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
             FixtureScreen(name: "settings-pi", routes: [.settings(.piExtensions)], tab: .settings),
             // Root instructions on every host (instructions.v1).
             FixtureScreen(name: "settings-instructions", routes: [.settings(.instructions)], tab: .settings),
@@ -69,7 +72,7 @@ extension FixtureData {
     static func hostSettings(pi: String = "0.87.1") -> HostSettings {
         HostSettings(
             shepherdVersion: "0.4.2", piVersion: pi, defaultModel: "anthropic/claude-opus", defaultThinking: .medium,
-            queueDelivery: .all, mergePRAutomatically: true, mergeMethod: .squash,
+            queueDelivery: .all, mergePRAutomatically: true, mergeMethod: .squash, closeOnMerge: true,
             bundledExtensions: [
                 HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                 HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: true),
