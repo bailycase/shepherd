@@ -589,7 +589,7 @@ class VerifyAppTests(unittest.TestCase):
         patched.start()
         self.addCleanup(patched.stop)
 
-    def make_app(self, root, product, engine=True, extensions=True, **info):
+    def make_app(self, root, product, engine=True, extensions=True, launch_agent=True, agent_id=None, **info):
         path = os.path.join(root, product)
         os.makedirs(os.path.join(path, "Contents", "MacOS"))
         executable = info.get("CFBundleExecutable")
@@ -601,6 +601,10 @@ class VerifyAppTests(unittest.TestCase):
             make_engine(os.path.join(path, "Contents"))
         if extensions:
             self.make_extensions(path)
+        if launch_agent and executable:
+            subprocess.run([os.path.join(release.pi_engine.ROOT, "scripts", "host-launch-agent.sh"),
+                            os.path.join(path, release.launch_agent_plist(agent_id or info["CFBundleIdentifier"])),
+                            agent_id or info["CFBundleIdentifier"], executable], check=True)
         return path
 
     @staticmethod
@@ -632,6 +636,39 @@ class VerifyAppTests(unittest.TestCase):
             with self.subTest(app=key), tempfile.TemporaryDirectory() as root:
                 path = self.make_app(root, release.APPS[key].product, **self.info(key))
                 self.assertEqual(release.verify_app(path, key, "1.0.0"), [])
+
+    def test_the_launch_agent_runs_this_apps_executable_as_the_host_under_its_own_label(self):
+        labels = set()
+        for key in release.APPS:
+            with self.subTest(app=key), tempfile.TemporaryDirectory() as root:
+                info = self.info(key)
+                path = self.make_app(root, release.APPS[key].product, **info)
+                with open(os.path.join(path, release.launch_agent_plist(info["CFBundleIdentifier"])), "rb") as f:
+                    agent = plistlib.load(f)
+                self.assertEqual(agent["Label"], release.APPS[key].bundle_id + ".host")
+                self.assertEqual(agent["BundleProgram"], "Contents/MacOS/" + release.APPS[key].name)
+                self.assertEqual(agent["ProgramArguments"], [release.APPS[key].name, "--host"])
+                self.assertTrue(agent["KeepAlive"] and agent["RunAtLoad"])
+                labels.add(agent["Label"])
+        self.assertEqual(len(labels | {"com.bailycase.shepherd.dev.host"}), len(release.APPS) + 1, "Dev's label is neither shipped app's")
+
+    def test_an_app_without_its_launch_agent_or_with_another_apps_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", launch_agent=False, **self.info("main"))
+            problems = release.verify_app(path, "main", "1.0.0")
+            self.assertEqual(len(problems), 1)
+            self.assertTrue(problems[0].startswith("launch agent: Contents/Library/LaunchAgents/com.bailycase.shepherd.host.plist is unreadable"))
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            subprocess.run([os.path.join(release.pi_engine.ROOT, "scripts", "host-launch-agent.sh"),
+                            os.path.join(path, release.launch_agent_plist("com.bailycase.shepherd")),
+                            "com.bailycase.shepherd.nightly", "Shepherd Nightly"], check=True)
+            self.assertEqual(release.verify_app(path, "main", "1.0.0"), [
+                "launch agent: Label is 'com.bailycase.shepherd.nightly.host', expected 'com.bailycase.shepherd.host'",
+                "launch agent: BundleProgram is 'Contents/MacOS/Shepherd Nightly', expected 'Contents/MacOS/Shepherd'",
+                "launch agent: ProgramArguments is ['Shepherd Nightly', '--host'], expected ['Shepherd', '--host']",
+                "launch agent: AssociatedBundleIdentifiers is ['com.bailycase.shepherd.nightly'], expected ['com.bailycase.shepherd']",
+            ])
 
     def test_an_app_without_every_shipped_extension_is_refused(self):
         with tempfile.TemporaryDirectory() as root:
@@ -774,7 +811,8 @@ class VerifyAppTests(unittest.TestCase):
                          {"CFBundleIdentifier": "com.bailycase.shepherd"},
                          {"CFBundleName": "Shepherd"}):
             with self.subTest(override=override), tempfile.TemporaryDirectory() as root:
-                path = self.make_app(root, "Shepherd Nightly.app", **self.info("nightly", **override))
+                path = self.make_app(root, "Shepherd Nightly.app", agent_id=release.APPS["nightly"].bundle_id,
+                                     **self.info("nightly", **override))
                 self.assertEqual(len(release.verify_app(path, "nightly")), 1)
 
     def test_a_wrong_bundle_name_version_or_missing_executable_is_refused(self):

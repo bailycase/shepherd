@@ -28,7 +28,17 @@ struct AdvancedSettings: View {
     }
 
     var body: some View {
-        SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Quitting Shepherd stops every agent.") {
+        SettingsPage(title: "Advanced", explanation: vm.ownsWorkspace ? "Files, resets and app updates. Quitting Shepherd stops every agent."
+                     : "Files, resets and app updates. Agents keep running in the background when you quit Shepherd.") {
+            if vm.backgroundServiceStatus == .requiresApproval {
+                SettingsGroup(title: "Background") {
+                    SettingsRow(title: "Shepherd stops its agents when you quit",
+                                subtitle: "Turn on Shepherd in Login Items to keep them running.") {
+                        Button("Open Login Items") { vm.backgroundService?.openLoginItems() }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                    }
+                }
+            }
             SettingsGroup(title: "Files") {
                 PathRow(title: "Workspace state", subtitle: "Spaces, agents and terminals restored on relaunch.",
                         url: ShepherdPaths.stateURL())
@@ -77,6 +87,8 @@ struct AdvancedSettings: View {
         }
         // Sparkle reports whether it can update once it has started.
         .shAnimation(.disclosure, value: updater.available)
+        // Login Items may have changed while the window was elsewhere.
+        .onAppear { if let service = vm.backgroundService { vm.backgroundServiceStatus = service.status() } }
         .sheet(isPresented: $confirmingReset) {
             ResetSettingsDialog {
                 confirmingReset = false

@@ -582,6 +582,11 @@ final class ShepherdViewModel {
     @ObservationIgnored let remoteSignIns = RemoteSignIns()
     /// Settings' host picker: the remote host a host-level page shows; nil for this Mac.
     var settingsHostID: UUID?
+    /// The background host's launchd job, when this launch may use it (`BackgroundService.prepare`);
+    /// nil keeps the app in process with no Settings line. Set at launch.
+    @ObservationIgnored var backgroundService: BackgroundService?
+    /// Its status as Settings last read it.
+    var backgroundServiceStatus: BackgroundService.Status?
     /// A remote host's settings and configuration as Settings shows them (`settingsHostID`).
     @ObservationIgnored let remoteHostSettings = ClientHostSettings()
     @ObservationIgnored let remoteHostConfig = ClientHostConfig()

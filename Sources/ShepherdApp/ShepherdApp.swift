@@ -70,19 +70,30 @@ public struct ShepherdMacApp: App {
         let launch = ShepherdLaunch<ShepherdViewModel>(
             // Acquire the workspace before constructing anything that can restore agents or write it.
             start: {
-                guard BackgroundHostClient.requested() else { return try SessionServer.shared.start() }
+                let bundle = Bundle.main
+                let service = BackgroundService.app(bundleIdentifier: bundle.bundleIdentifier ?? "")
+                let status = service.prepare(may: BackgroundService.mayRegister(
+                    bundleIdentifier: bundle.bundleIdentifier, bundlePath: bundle.bundlePath,
+                    environment: ProcessInfo.processInfo.environment, adHoc: BackgroundService.isAdHoc()))
+                BackgroundHostClient.serviceStatus = status
+                guard BackgroundHostClient.requested() || status == .enabled else { return try SessionServer.shared.start() }
                 let socket = BackgroundHostClient.socketPath()
                 BackgroundHostClient.owner = try BackgroundHostClient.choose(
                     answers: { RemoteHostClient.localSocketAnswers(socket) },
                     own: { try SessionServer.shared.start() },
-                    wait: { Thread.sleep(forTimeInterval: 0.5) })
+                    wait: { Thread.sleep(forTimeInterval: 0.5) }, waitFirst: status == .enabled)
             },
             makeModel: {
+                // Settings ▸ Advanced reads the job's status while this launch may use it.
+                let status = BackgroundHostClient.serviceStatus
+                let service = status.map { _ in BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "") }
                 if BackgroundHostClient.owner == .host {
                     let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
                                                restoresAgentsAtLaunch: false, browserData: .persistent)
                     vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac,
                                                 socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
+                    vm.backgroundService = service
+                    vm.backgroundServiceStatus = status
                     return vm
                 }
                 AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
@@ -99,7 +110,10 @@ public struct ShepherdMacApp: App {
                         ShepherdDiagnostics.shared.record(activity, details: details)
                     }
                 }
-                return ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent)
+                let vm = ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent)
+                vm.backgroundService = service
+                vm.backgroundServiceStatus = status
+                return vm
             },
             failed: { error in
                 NSLog("Shepherd: failed to start session server: \(error)")
