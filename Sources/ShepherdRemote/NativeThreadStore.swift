@@ -231,6 +231,14 @@ public final class NativeThreadStore {
     /// the environment it carries and every other row stay as they were (a chunk used to
     /// invalidate the whole transcript: docs/audit/2026-11-05). Set in the same `derive` as `rows`.
     public private(set) var listRows: [NativeThreadRow] = []
+    /// The path of the last edit or write still running in `row`.
+    nonisolated static func editingPath(_ row: NativeThreadRow?) -> String? {
+        guard let items = row?.presentation?.items else { return nil }
+        for case .activity(_, let bursts) in items.reversed() {
+            if let call = bursts.flatMap(\.calls).last(where: { $0.kind == .edit && $0.state == .running }) { return call.path }
+        }
+        return nil
+    }
     /// The streaming reply with its content, replaced per chunk; nil while nothing streams. The
     /// shell's view reads it (`ThreadView`), so only that row redraws.
     public private(set) var liveRow: NativeThreadRow?
@@ -239,6 +247,10 @@ public final class NativeThreadStore {
     @ObservationIgnored public private(set) var rowStructureRevision = 0
     /// The streaming reply's row, set in the same `derive` as `rows`. Not observed.
     @ObservationIgnored public private(set) var liveRowID: String?
+    /// The file an edit or write in flight touches, as the call names it (relative to the
+    /// agent's folder, or absolute); nil when none runs. Set only when it changes, so the Files
+    /// tab's working-file spinner never redraws on a streamed chunk.
+    public private(set) var editingPath: String?
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
     public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
@@ -806,6 +818,8 @@ public final class NativeThreadStore {
         }
         let live = rows.first(where: \.live)
         if liveRow != live { liveRow = live }
+        let editing = Self.editingPath(live)
+        if editingPath != editing { editingPath = editing }
         let list = rows.map { $0.live ? Self.shell($0) : $0 }
         if listRows.count - rowStart != list.count || listRows.dropFirst(rowStart) != list[...] {
             listRows.replaceSubrange(rowStart..., with: list)

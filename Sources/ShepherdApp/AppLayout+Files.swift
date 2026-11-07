@@ -6,8 +6,19 @@ extension AppLayout {
     enum Files {
         /// The file viewer header bar height.
         static let headerHeight: CGFloat = 40
-        /// Metadata bar height (line count, language, size).
-        static let metadataHeight: CGFloat = 28
+        /// Status bar height under the editor (legend, caret, language, indentation).
+        static let statusBarHeight: CGFloat = 28
+        /// A changed line's bar in the gutter, and in the status bar's legend.
+        static let markWidth: CGFloat = 2
+        static let legendMarkHeight: CGFloat = 10
+        /// A tab's unsaved-edits dot.
+        static let dirtyDotSize: CGFloat = 6
+        /// The active tab's lantern rule along its top.
+        static let activeTabRule: CGFloat = 2
+        /// How often an open editor checks its file on disk.
+        static let diskCheckInterval: Duration = .seconds(2)
+        /// The pause in typing before the editor highlights again.
+        static let rehighlightDelay: Duration = .milliseconds(300)
         /// Tab strip height for open files.
         static let tabHeight: CGFloat = 36
         /// Default tree panel width.
