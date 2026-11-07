@@ -65,6 +65,7 @@ private struct BrowserPageView: View {
     let page: BrowserPage
     let host: MobileHost
     @Environment(ThreadStores.self) private var threads
+    @Environment(MobileNavigator.self) private var navigator
     @FocusState private var editing: Bool
     @State private var address = ""
 
@@ -170,13 +171,15 @@ private struct BrowserPageView: View {
             .disabled(page.url == nil || !served)
             .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
             .accessibilityLabel(page.isLoading ? "Stop loading" : "Reload")
-            // Select an element (iPadPaneBrowser): the next tap in the page picks what is under it.
-            Button { page.toggleSelecting() } label: { Image(systemName: shElementGlyph) }
-                .buttonStyle(.shIcon(isOn: page.selecting, size: MobileLayout.browserBarButton))
-                .disabled(page.url == nil || !served)
-                .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
-                .accessibilityLabel(page.selecting ? "Stop selecting" : "Select an element")
-                .accessibilityAddTraits(page.selecting ? .isSelected : [])
+            // Select an element (iPadPaneBrowser): the next tap in the page picks what is under it. The phone's board has none.
+            if navigator.layout == .pad {
+                Button { page.toggleSelecting() } label: { Image(systemName: shElementGlyph) }
+                    .buttonStyle(.shIcon(isOn: page.selecting, size: MobileLayout.browserBarButton))
+                    .disabled(page.url == nil || !served)
+                    .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
+                    .accessibilityLabel(page.selecting ? "Stop selecting" : "Select an element")
+                    .accessibilityAddTraits(page.selecting ? .isSelected : [])
+            }
         }
         .padding(.leading, SH.Space.l)
         .padding(.trailing, SH.Space.xs)
