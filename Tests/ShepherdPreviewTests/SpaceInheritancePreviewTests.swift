@@ -16,7 +16,16 @@ struct SpaceInheritancePreviewTests {
     func inheritance(state: String) async throws {
         let world = try await ProjectsPreviewWorld(detail: true)
         defer { world.stop() }
-        let vm = world.vm, model = vm.projects, fm = FileManager.default
+        let vm = world.vm, fm = FileManager.default
+        // The approval check runs pi's SDK, which the preview sandbox doesn't stage: answer it as an added space's host does.
+        let local = world.local.server
+        let model = ProjectsModel { host, request in
+            if case .mcp(_, _, .credentials) = request { return .mcp(.init(projectTrusted: true)) }
+            if host.id == "local" { return try await local.projects.request(request, state: local.state) }
+            return try await vm.remoteHosts.projects(hostID: UUID(uuidString: host.id)!, endpointID: host.endpointID, request: request)
+        }
+        vm.madeProjects = model
+        await model.load(vm.projectsSources)
         let payments = try #require(model.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
         let root = URL(fileURLWithPath: payments.project.directory)
         func write(_ folder: URL, _ relative: String, _ text: String) throws {

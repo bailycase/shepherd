@@ -16,13 +16,15 @@ struct ProjectMCPSettings: View {
 
     enum Scope: Hashable { case all, here, inherited }
 
-    /// One server on a parent or child space's page (ProjectParentMCP, ProjectChildMCP,
-    /// ProjectChildMCPOverride): the parent's, inherited, or this space's own, which may override one.
+    /// A group on a parent or child space's page (ProjectParentMCP, ProjectChildMCP,
+    /// ProjectChildMCPOverride): one inherited server or one override, each with its own actions,
+    /// or this space's other servers together in one table.
     struct Block: Equatable, Identifiable {
-        var row: MCPServerRowModel
+        var rows: [MCPServerRowModel]
         var inherited: Bool
         var overrides: Bool
-        var id: String { (inherited ? "inherited:" : "own:") + row.name }
+        var row: MCPServerRowModel { rows[0] }
+        var id: String { inherited ? "inherited:" + row.name : overrides ? "override:" + row.name : "own" }
     }
 
     init(model: ProjectsModel, initiallyExpanded: String? = nil, initialQuery: String = "", copyJSON: @escaping (String) -> Void = {
@@ -70,7 +72,8 @@ struct ProjectMCPSettings: View {
                 }
                 Spacer(minLength: SH.Space.m)
                 if sourced && model.mcp.problem == nil {
-                    Text("\(blocks.count) \(blocks.count == 1 ? "server" : "servers")").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    let count = blocks.reduce(0) { $0 + $1.rows.count }
+                    Text("\(count) \(count == 1 ? "server" : "servers")").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 } else {
                     Button("Reload") {
                         guard let file = model.selectedFile else { return }
@@ -150,15 +153,16 @@ struct ProjectMCPSettings: View {
         var result: [Block] = []
         for var row in model.parentMCP?.rows ?? [] {
             if model.mcp.entries.contains(where: { $0.name == row.name }) {
-                if let mine = own[row.name] { result.append(Block(row: mine, inherited: false, overrides: true)) }
+                if let mine = own[row.name] { result.append(Block(rows: [mine], inherited: false, overrides: true)) }
                 continue
             }
             guard trimmed.isEmpty || "\(row.name) \(row.endpoint)".localizedCaseInsensitiveContains(trimmed) else { continue }
             if model.isExcluded(mcp: row.name) { row.enabled = false; row.status = .off }
-            result.append(Block(row: row, inherited: true, overrides: false))
+            result.append(Block(rows: [row], inherited: true, overrides: false))
         }
         let parentNames = Set(model.parentMCP?.rows.map(\.name) ?? [])
-        result += visible.filter { !parentNames.contains($0.name) }.map { Block(row: $0, inherited: false, overrides: false) }
+        let others = visible.filter { !parentNames.contains($0.name) }
+        if !others.isEmpty { result.append(Block(rows: others, inherited: false, overrides: false)) }
         return result.filter { scope == .all || (scope == .inherited) == $0.inherited }
     }
 
@@ -189,7 +193,7 @@ struct ProjectMCPSettings: View {
                         .buttonStyle(.sh(.ghost)).disabled(!model.mcpEditable)
                 }
             }.accessibilityElement(children: .contain)
-            MCPServerList(rows: [block.row], details: block.inherited ? [:] : model.mcp.details,
+            MCPServerList(rows: block.rows, details: block.inherited ? [:] : model.mcp.details,
                           editable: !block.inherited && model.mcpEditable, expanded: block.inherited ? nil : expanded, empty: "",
                           rowActions: rowActions, detailActions: detailActions)
         }
