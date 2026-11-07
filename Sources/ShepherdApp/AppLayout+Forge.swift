@@ -45,4 +45,12 @@ extension AppLayout {
     /// The loading page's bars (PRReviewLoading): widths as fractions of the column.
     static let forgeSkeletonBar: CGFloat = 12
     static let forgeSkeletonTitle: CGFloat = 28
+
+    /// The side pane's Pull request tab (PRPane, PRPaneMerged): its 220 rail beside the column
+    /// once the pane is wide enough for both, the merged state's 40 title bar, and a line
+    /// comment's hunk (its last lines).
+    static let prPaneRailWidth: CGFloat = 220
+    static let prPaneTwoColumnMinWidth: CGFloat = 600
+    static let prPaneTitleBarHeight: CGFloat = 40
+    static let prPaneHunkLines = 2
 }

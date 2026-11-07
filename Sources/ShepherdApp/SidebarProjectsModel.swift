@@ -465,6 +465,7 @@ private struct TreeBuilder {
                                                  failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                                  notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
+            if let pull = source.pullRequests[agent.id] { row.attach(pull) }
             if let origin, automation == nil {
                 row.runGroup = origin.id
                 runGroupNames[origin.id] = origin.name

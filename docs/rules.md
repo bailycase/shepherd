@@ -169,14 +169,22 @@ worktree; that approval and publication's may come from a paired device over the
 defaulted on the host) and its per-turn worktree snapshots (a private copy of the index; only objects are written),
 a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
-Undo and Redo of a turn (the turn's files only; refused when any changed since), Add child project
+Undo and Redo of a turn (the turn's files only; refused when any changed since), Save in the Files
+tab (`FileTreeModel.save`: the person's Save, Save chord or Overwrite; one existing local text file inside
+the thread's folder, written in place only while it still holds the version the editor expected), Add child project
 (one empty directory), an explicit project folder transfer, and Issues & PRs' GitHub changes
 (`Forge/ForgeService.swift`, each on the person's click, through their gh with `--repo` from `/`, so
 no local checkout or branch is touched; bodies go on stdin): comment, review, merge (method, merge
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. Nothing else.
+is the confirmed Delete Worktree. Close threads when their pull request merges (Settings ▸ Worktrees,
+off by default; `ShepherdViewModel+PullRequestLinks.swift`): once a thread's pull request is seen
+going from open to merged in this launch, it deletes the thread, removes its worktree and local
+branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
+merged-only, never-a-fork deletion; only for a worktree in Shepherd's support folder whose branch is
+the pull request's head, and never while the thread runs or asks or its checkout has uncommitted
+changes or commits GitHub doesn't have (it stays, with a note). Nothing else.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split

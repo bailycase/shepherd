@@ -203,6 +203,8 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     public let systemImage: String
     /// Files changed, runs; nil shows none.
     public let count: Int?
+    /// A word after the label in the count's place ("#31", the Pull request tab's number).
+    public let badge: String?
     /// pi opened something there that you haven't looked at.
     public let news: Bool
     /// What the tab's work is doing (Subagents: running, done, failed), as a dot in the state's color after the count.
@@ -214,12 +216,13 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     /// localhost:5173/checkout"); nil says nothing.
     public let tip: SHSidePaneTabTip?
 
-    public init(id: String, title: String, systemImage: String, count: Int? = nil, news: Bool = false, status: AgentState? = nil,
-                shortcut: String? = nil, tip: SHSidePaneTabTip? = nil) {
+    public init(id: String, title: String, systemImage: String, count: Int? = nil, badge: String? = nil, news: Bool = false,
+                status: AgentState? = nil, shortcut: String? = nil, tip: SHSidePaneTabTip? = nil) {
         self.id = id
         self.title = title
         self.systemImage = systemImage
         self.count = count
+        self.badge = badge
         self.news = news
         self.status = status
         self.shortcut = shortcut
@@ -320,6 +323,11 @@ public struct SHSidePaneTabs<Options: View>: View {
                             .foregroundStyle(sh.textTertiary)
                             .shContentTransition(.numeric())
                     }
+                    if let badge = tab.badge {
+                        Text(badge)
+                            .font(.sh(.micro, weight: .regular))
+                            .foregroundStyle(sh.textTertiary)
+                    }
                     if tab.news {
                         Circle().fill(sh.running)
                             .frame(width: SHSidePaneMetrics.tabDot, height: SHSidePaneMetrics.tabDot)
@@ -343,7 +351,7 @@ public struct SHSidePaneTabs<Options: View>: View {
             .shAnimation(.hover, value: hovering)
             .shHelp(tab.title, shortcut: tab.shortcut)
             .accessibilityLabel(tab.title)
-            .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "the agent opened something" : nil, tab.status?.label]
+            .accessibilityValue([tab.count.map { "\($0)" }, tab.badge, tab.news ? "the agent opened something" : nil, tab.status?.label]
                 .compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .overlay(alignment: .topLeading) {

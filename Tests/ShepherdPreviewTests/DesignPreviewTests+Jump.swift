@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -49,6 +50,30 @@ extension DesignPreviewTests {
                 case .design(let id): vm.designRendering.thumbnails.image(id) != nil
                 }
             }
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// A jump landed (JumpLanded): from A picked, C jumped to through the card, picked and in
+    /// view, with the toast's Back and its chord over the canvas's bottom.
+    @Test func designJumpLanded() async throws {
+        // Selecting the design reads NSApp (notifications), as rendering does.
+        _ = NSApplication.shared
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        await screen.refresh()
+        screen.select("A.dc.html")
+        try await Preview.renderMatrix("app-window-design-jump-landed", size: Self.windowSizeForJump, scales: [1], ready: {
+            // The jump runs once the canvas has its size, as a person's would.
+            if screen.jumpBack == nil, screen.focusBoard == DesignPath("A.dc.html"), screen.isDrawn {
+                vm.openDesignJump(checkout.id)
+                if let row = vm.designJump?.rows.first(where: { $0.kind == .board(DesignPath("C.dc.html")!) }) { vm.runDesignJump(row) }
+            }
+            return screen.jumpBack != nil && screen.isDrawn
         }) {
             RootView(vm: vm)
         }

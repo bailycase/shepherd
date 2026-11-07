@@ -1855,6 +1855,25 @@ struct NativeThreadStoreTests {
         #expect(!store.showsThinking, "an idle thread")
     }
 
+    /// The Files tab's working file: the path of the edit in flight, and none once it lands.
+    @Test func editingPathFollowsTheEditInFlight() async throws {
+        let prompt = F.user(id: "u")
+        let reply = F.assistant("Fixing it.", status: "streaming", id: "p")
+        let args = #"{"path":"src/Checkout.tsx","edits":[{"oldText":"a","newText":"b"}]}"#
+        let running = F.tool("edit", args: args, status: "running", id: "provisional:tool:e", callID: "e")
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt], provisional: [reply, running]))
+        defer { task.cancel() }
+        #expect(store.editingPath == "src/Checkout.tsx")
+        host.snapshot = F.snapshot(revision: 2, running: true, messages: [prompt],
+                                   provisional: [reply, F.tool("edit", args: args, id: "provisional:tool:e", callID: "e")])
+        await store.refresh()
+        #expect(store.editingPath == nil, "a finished edit is no longer worked on")
+        host.snapshot = F.snapshot(revision: 3, running: true, messages: [prompt],
+                                   provisional: [reply, F.tool("read", args: #"{"path":"src/a.ts"}"#, status: "running", id: "r", callID: "r")])
+        await store.refresh()
+        #expect(store.editingPath == nil, "a read is not an edit")
+    }
+
     /// A call the model is still writing keeps the thread from looking idle: the agent runs (Stop
     /// stays), "Thinking…" stays away, and the call's line is the live row, following the
     /// arguments as they stream and continuing into the running call.

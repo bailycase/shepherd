@@ -7,18 +7,27 @@ import ImageIO
 
 // MARK: - Files tab (side pane)
 
-/// The side pane's Files tab (FileOpenSplit board): the space's file tree on the right,
-/// a code/image viewer on the left. Read-only browser of the local workspace.
-/// A remote thread's tree reads its host over `files.v1`; a host without it shows an unavailable message.
+/// The side pane's Files tab (PaneFiles board): the space's file tree on the left, an editor
+/// for the open file on the right. A local thread's text files edit and save in place; a remote
+/// thread's tree reads its host over `files.v1` (read-only), and a host without it shows an
+/// unavailable message.
 struct FilesTab: View {
     let model: FileTreeModel
+    /// The file the thread's agent is editing now (absolute), for the tab and tree spinners.
+    let agentPath: String?
     @State private var showTree = true
     @State private var treeWidth: CGFloat = AppLayout.Files.treeWidth
     @State private var liveTreeWidth: CGFloat?
+    /// A tab with unsaved edits the person asked to close: confirmed first.
+    @State private var closing: OpenFileTab?
     private let coordSpace = "files-panel-resize"
 
-    init(model: FileTreeModel, treeVisible: Bool = true) {
+    /// `agentPath` as the agent's edit call names it: relative to the thread's folder, or absolute.
+    init(model: FileTreeModel, agentPath: String? = nil, treeVisible: Bool = true) {
         self.model = model
+        self.agentPath = agentPath.map {
+            ($0.hasPrefix("/") ? $0 : (model.rootPath as NSString).appendingPathComponent($0) as String)
+        }.map { ($0 as NSString).standardizingPath }
         _showTree = State(initialValue: treeVisible)
     }
 
@@ -28,25 +37,24 @@ struct FilesTab: View {
             let clampedTree = min(liveTreeWidth ?? treeWidth, maxTree)
 
             HStack(spacing: 0) {
-                // Viewer (left)
+                if showTree {
+                    FileTreeContent(model: model, showHidden: Bindable(model).showHidden, agentPath: agentPath,
+                                    hideTree: { showTree = false })
+                        .frame(width: clampedTree)
+                    treeResizeHandle(maxTree: maxTree)
+                }
                 fileViewer
                     .frame(width: showTree ? max(0, geo.size.width - clampedTree - AppLayout.dividerWidth) : geo.size.width,
                            height: geo.size.height, alignment: .topLeading)
                     .clipped()
-
-                if showTree {
-                    treeResizeHandle(panelWidth: geo.size.width, maxTree: maxTree)
-                    FileTreeContent(model: model, showHidden: Bindable(model).showHidden, hideTree: { showTree = false })
-                        .frame(width: clampedTree)
-                }
             }
             .coordinateSpace(name: coordSpace)
         }
         .background(Color.sh.bgWindow)
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .topLeading) {
             if !showTree && model.selectedPath == nil {
                 Button { showTree = true } label: {
-                    Image(systemName: "sidebar.right")
+                    Image(systemName: "sidebar.left")
                         .font(.system(size: AppLayout.Files.showTreeIconSize))
                         .foregroundStyle(Color.sh.textTertiary)
                 }
@@ -58,9 +66,27 @@ struct FilesTab: View {
             }
         }
         .task(id: model.rootPath) { await model.loadRoot() }
+        // Changes on disk reach an open editor: a clean one takes them, a dirty one holds them as a conflict.
+        .task(id: model.selectedPath) {
+            guard model.canEdit else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: AppLayout.Files.diskCheckInterval)
+                guard !Task.isCancelled else { return }
+                await model.checkDisk()
+            }
+        }
+        .onChange(of: agentPath) { Task { await model.checkDisk() } }
+        .confirmationDialog("Close \(closing?.name ?? "") without saving?",
+                            isPresented: Binding(get: { closing != nil }, set: { if !$0 { closing = nil } }),
+                            presenting: closing) { tab in
+            Button("Discard Changes", role: .destructive) { Task { await model.closeTab(tab.id) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Your unsaved edits will be lost.")
+        }
     }
 
-    private func treeResizeHandle(panelWidth: CGFloat, maxTree: CGFloat) -> some View {
+    private func treeResizeHandle(maxTree: CGFloat) -> some View {
         Color.sh.lineSubtle
             .frame(width: AppLayout.dividerWidth)
             .overlay {
@@ -71,8 +97,7 @@ struct FilesTab: View {
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named(coordSpace))
                             .onChanged { value in
-                                let proposed = panelWidth - value.location.x
-                                liveTreeWidth = max(AppLayout.Files.treeMinWidth, min(proposed, maxTree))
+                                liveTreeWidth = max(AppLayout.Files.treeMinWidth, min(value.location.x, maxTree))
                             }
                             .onEnded { _ in
                                 if let live = liveTreeWidth { treeWidth = live }
@@ -114,8 +139,13 @@ struct FilesTab: View {
                     FileTabView(
                         tab: tab,
                         isActive: model.selectedPath == tab.id,
+                        isDirty: model.edits[tab.id]?.isDirty == true,
+                        agentWorking: agentPath == tab.id,
                         select: { Task { await model.select(path: tab.id) } },
-                        close: { Task { await model.closeTab(tab.id) } }
+                        close: {
+                            if model.edits[tab.id]?.isDirty == true { closing = tab }
+                            else { Task { await model.closeTab(tab.id) } }
+                        }
                     )
                 }
             }
@@ -142,42 +172,67 @@ struct FilesTab: View {
 
 // MARK: - File tab
 
+/// One open file: its name, then a lantern dot while it has unsaved edits, a spinner while the
+/// agent edits it, else its close button (shown on hover for the first two too).
 private struct FileTabView: View {
     let tab: OpenFileTab
     let isActive: Bool
+    let isDirty: Bool
+    let agentWorking: Bool
     let select: () -> Void
     let close: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: SH.Space.s) {
             Button(action: select) {
-                Text(tab.name)
-                    .font(.sh(.code))
-                    .foregroundStyle(isActive ? Color.sh.textPrimary : Color.sh.textSecondary)
-                    .lineLimit(1)
+                HStack(spacing: SH.Space.s) {
+                    Image(systemName: SHGlyph.document.symbolName)
+                        .font(.system(size: AppLayout.Files.treeFileIconSize))
+                        .foregroundStyle(Color.sh.textTertiary)
+                    Text(tab.name)
+                        .font(.sh(.code))
+                        .foregroundStyle(isActive ? Color.sh.textPrimary : Color.sh.textSecondary)
+                        .lineLimit(1)
+                }
             }
             .buttonStyle(.plain)
 
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(.system(size: AppLayout.Files.tabCloseFontSize, weight: .semibold))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .frame(width: AppLayout.Files.tabCloseSize, height: AppLayout.Files.tabCloseSize)
+            ZStack {
+                if hovering || !(isDirty || agentWorking) {
+                    Button(action: close) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: AppLayout.Files.tabCloseFontSize, weight: .semibold))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .frame(width: AppLayout.Files.tabCloseSize, height: AppLayout.Files.tabCloseSize)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close \(tab.name)")
+                } else if agentWorking {
+                    ProgressView()
+                        .progressViewStyle(.shSpinner(size: AppLayout.Files.tabCloseSize))
+                        .accessibilityLabel("The agent is editing \(tab.name)")
+                } else {
+                    Circle()
+                        .fill(Color.sh.lantern)
+                        .frame(width: AppLayout.Files.dirtyDotSize, height: AppLayout.Files.dirtyDotSize)
+                        .accessibilityLabel("Unsaved changes")
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close \(tab.name)")
+            .frame(width: AppLayout.Files.tabCloseSize, height: AppLayout.Files.tabCloseSize)
         }
         .padding(.horizontal, SH.Space.m)
         .frame(height: AppLayout.Files.tabHeight)
         .background(isActive ? Color.sh.bgBase : Color.clear)
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .top) {
             if isActive {
-                Color.sh.running.frame(height: 2)
+                Color.sh.lantern.frame(height: AppLayout.Files.activeTabRule)
             }
         }
         .overlay(alignment: .trailing) {
             Color.sh.lineSubtle.frame(width: 1)
         }
+        .onHover { hovering = $0 }
     }
 }
 
@@ -189,28 +244,69 @@ private struct FileViewerContent: View {
     let showTree: Bool
     let toggleTree: () -> Void
     @Bindable private var settings = AppSettings.shared
+    /// The caret's line and column (from 1), for the status bar.
+    @State private var cursor = FileCursor(line: 1, column: 1)
 
     private var isMarkdown: Bool {
         let ext = (path as NSString).pathExtension.lowercased()
         return ext == "md" || ext == "markdown"
     }
 
+    private var edit: FileEdit? { model.edits[path] }
+    /// The open file edits: local, and text.
+    private var editable: Bool {
+        guard model.canEdit, edit != nil, case .text = model.selectedContent else { return false }
+        return true
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             fileHeader
-            metadataBar
+            if let conflict = edit?.conflict, editable {
+                conflictBanner(conflict)
+            } else if let error = model.saveError, editable {
+                SHBanner(.failed, title: "Couldn\u{2019}t save \((path as NSString).lastPathComponent)", message: error)
+                    .padding(SH.Space.m)
+            }
             contentArea
+            if case .text = model.selectedContent {
+                statusBar
+            }
         }
+    }
+
+    private func conflictBanner(_ disk: String) -> some View {
+        SHBanner(.attention, title: "\((path as NSString).lastPathComponent) changed on disk",
+                 message: "Your edits aren\u{2019}t saved. Overwrite writes yours over the new version; Revert takes it and drops yours.") {
+            Button("Revert") { model.revert() }
+                .buttonStyle(SHButtonStyle(.ghost, size: .s))
+            Button("Overwrite") { Task { await model.save(overwrite: true) } }
+                .buttonStyle(SHButtonStyle(.secondary, size: .s))
+                .disabled(model.saving)
+        }
+        .padding(SH.Space.m)
     }
 
     private var fileHeader: some View {
         HStack(spacing: SH.Space.m) {
-            filePathLabel
+            breadcrumb
             Spacer()
             viewerToolbar
+            if editable, let edit {
+                Button("Revert") { model.revert() }
+                    .buttonStyle(SHButtonStyle(.ghost, size: .s))
+                    .disabled(!edit.isDirty)
+                    .help("Drop unsaved edits")
+                Button { Task { await model.save() } } label: {
+                    SHButtonTitle("Save", chord: KeybindingsStore.shared.display(.saveProjectFile))
+                }
+                .buttonStyle(SHButtonStyle(.secondary, size: .s))
+                .disabled(!edit.isDirty || edit.conflict != nil || model.saving)
+                .accessibilityLabel("Save")
+            }
             // Tree toggle button
             Button(action: toggleTree) {
-                Image(systemName: "sidebar.right")
+                Image(systemName: "sidebar.left")
                     .font(.system(size: AppLayout.Files.showTreeIconSize))
                     .foregroundStyle(showTree ? Color.sh.textPrimary : Color.sh.textSecondary)
             }
@@ -273,48 +369,56 @@ private struct FileViewerContent: View {
         }
     }
 
-    @ViewBuilder
-    private var filePathLabel: some View {
-        let relative = relativePath(path, root: model.rootPath)
-        let dir = (relative as NSString).deletingLastPathComponent
-        let name = (relative as NSString).lastPathComponent
-        HStack(spacing: 0) {
-            if !dir.isEmpty && dir != "." {
-                Text(dir + "/")
+    /// "src › components › Checkout.tsx", the folders of the path within the tree's root.
+    private var breadcrumb: some View {
+        let parts = relativePath(path, root: model.rootPath).split(separator: "/").map(String.init)
+        return HStack(spacing: SH.Space.s) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                if index > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: AppLayout.Files.treeChevronSize, weight: .semibold))
+                        .foregroundStyle(Color.sh.textTertiary)
+                }
+                Text(part)
                     .font(.sh(.code))
-                    .foregroundStyle(Color.sh.textSecondary)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .layoutPriority(index == parts.count - 1 ? 1 : 0)
             }
-            Text(name)
-                .font(.sh(.code))
-                .fontWeight(.medium)
-                .foregroundStyle(Color.sh.textPrimary)
-                .layoutPriority(1)
         }
         .lineLimit(1)
         .truncationMode(.head)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(relativePath(path, root: model.rootPath))
     }
 
-    @ViewBuilder
-    private var metadataBar: some View {
-        HStack(spacing: SH.Space.m) {
-                if case .text(let lines, _) = model.selectedContent {
-                    Text("\(lines.count) lines")
-                }
-                if let ext = fileExtension(path), !ext.isEmpty {
-                    Text(ext.uppercased())
-                }
-                if let size = findNodeInTree(path: path, root: model.root)?.fileSize {
-                    Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                }
+    /// The marks' legend (an editable file), then the caret, the language and the indentation.
+    private var statusBar: some View {
+        HStack(spacing: SH.Space.l) {
+            if editable {
+                legend("yours, unsaved", color: Color.sh.lantern)
+                legend("changed by the agent", color: Color.sh.running)
             }
-            .font(.sh(.caption))
-            .foregroundStyle(Color.sh.textTertiary)
-            .frame(height: AppLayout.Files.metadataHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SH.Space.l)
-            .overlay(alignment: .bottom) {
-                Color.sh.lineSubtle.frame(height: 1)
-            }
+            Spacer()
+            Text([cursor.label, fileExtension(path)?.uppercased(), edit?.indentation]
+                    .compactMap { $0 }.joined(separator: " \u{00B7} "))
+                .lineLimit(1)
+        }
+        .font(.sh(.micro))
+        .foregroundStyle(Color.sh.textTertiary)
+        .padding(.horizontal, SH.Space.l)
+        .frame(height: AppLayout.Files.statusBarHeight)
+        .overlay(alignment: .top) {
+            Color.sh.lineSubtle.frame(height: 1)
+        }
+    }
+
+    private func legend(_ title: String, color: Color) -> some View {
+        HStack(spacing: SH.Space.s) {
+            color.frame(width: AppLayout.Files.markWidth, height: AppLayout.Files.legendMarkHeight)
+            Text(title)
+                .font(.sh(.caption))
+        }
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -335,12 +439,16 @@ private struct FileViewerContent: View {
             switch content {
             case .text(let lines, _):
                 if isMarkdown && settings.filesMarkdownPreview {
-                    FilesMarkdownPreview(lines: lines)
+                    FilesMarkdownPreview(lines: edit.map { $0.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) } ?? lines)
                         .id(path)
                 } else {
-                    CodeTextView(lines: lines, path: path, wordWrap: settings.filesWordWrap,
-                                 refreshGeneration: model.refreshGeneration,
-                                 theme: ThemeStore.shared.theme, textScale: ThemeStore.shared.textScale)
+                    CodeTextView(text: edit?.text ?? lines.joined(separator: "\n"), saved: editable ? edit?.saved : nil, before: edit?.before,
+                                 path: path, editable: editable, wordWrap: settings.filesWordWrap,
+                                 revision: model.textRevision, refreshGeneration: model.refreshGeneration,
+                                 theme: ThemeStore.shared.theme, textScale: ThemeStore.shared.textScale,
+                                 onEdit: { [model, path] in model.setText($0, for: path) },
+                                 onSave: { [model] in Task { await model.save() } },
+                                 onCursor: { cursor = $0 })
                 }
             case .image(let data):
                 ImagePreview(data: data)
@@ -353,20 +461,40 @@ private struct FileViewerContent: View {
     }
 }
 
-// MARK: - NSTextView-backed code view with find bar
+/// The caret's line and column, from 1.
+struct FileCursor: Equatable {
+    var line: Int
+    var column: Int
+    var label: String { "Ln \(line), Col \(column)" }
+}
 
-/// NSTextView wrapper for read-only code display with:
+// MARK: - NSTextView-backed code editor with find bar
+
+/// NSTextView wrapper for code with:
+/// - Editing a local text file (read-only for a remote host or an image), undo per document,
+///   and Save on the Save chord while it has focus
 /// - Real text selection and copy (⌘C)
 /// - Native find bar (⌘F)
-/// - Line numbers drawn beside the source, without changing its selectable text
-/// - Tree-sitter syntax highlighting via CodeHighlight
+/// - Line numbers drawn beside the source, without changing its selectable text, and the marks
+///   of the lines changed since the last save (lantern) and by the agent (running)
+/// - Tree-sitter syntax highlighting via CodeHighlight, again after typing pauses
 private struct CodeTextView: NSViewRepresentable {
-    let lines: [String]
+    let text: String
+    /// The version unsaved edits are measured against; nil when the file doesn't edit.
+    let saved: String?
+    /// The version before the agent's last change on disk, for the agent's marks.
+    let before: String?
     let path: String
+    let editable: Bool
     let wordWrap: Bool
+    /// `FileTreeModel.textRevision`: the text was replaced from outside the editor.
+    let revision: UInt
     let refreshGeneration: UInt
     let theme: ThemeDefinition
     let textScale: CGFloat
+    let onEdit: (String) -> Void
+    let onSave: () -> Void
+    let onCursor: (FileCursor) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -390,11 +518,15 @@ private struct CodeTextView: NSViewRepresentable {
         let text = FilesTextView(frame: scroll.contentView.bounds, textContainer: container)
         text.isEditable = false
         text.isSelectable = true
+        text.allowsUndo = true
         text.usesFindBar = true
         text.isIncrementalSearchingEnabled = true
         text.isAutomaticQuoteSubstitutionEnabled = false
         text.isAutomaticDashSubstitutionEnabled = false
         text.isAutomaticTextReplacementEnabled = false
+        text.isAutomaticSpellingCorrectionEnabled = false
+        text.isContinuousSpellCheckingEnabled = false
+        text.smartInsertDeleteEnabled = false
         text.drawsBackground = false
         text.wantsLayer = true
         text.clipsToBounds = true
@@ -404,6 +536,7 @@ private struct CodeTextView: NSViewRepresentable {
         text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         text.autoresizingMask = []
         text.setAccessibilityLabel("File contents")
+        text.delegate = context.coordinator
         scroll.documentView = text
 
         scroll.contentView.postsBoundsChangedNotifications = true
@@ -419,12 +552,19 @@ private struct CodeTextView: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
+        coordinator.parent = self
+        guard let text = coordinator.textView else { return }
+        text.onSave = editable ? onSave : nil
+        text.isEditable = editable
         let scale = textScale
         let wrap = wordWrap
-        let key = ContentKey(path: path, generation: refreshGeneration, lines: lines,
+        let key = ContentKey(path: path, revision: revision, generation: refreshGeneration,
                              theme: theme, scale: scale, dark: colorScheme == .dark, wordWrap: wrap)
-        guard coordinator.currentKey != key, let text = coordinator.textView else { return }
+        defer { coordinator.mark(text) }
+        // Typing never resets the text: only another file, a replacement from outside, or a style change does.
+        guard coordinator.currentKey != key else { return }
         let sameDocument = coordinator.currentKey?.path == path
+        let replaced = coordinator.currentKey?.path != path || coordinator.currentKey?.revision != revision
         let selection = text.selectedRanges
         let origin = scroll.contentView.bounds.origin
         coordinator.currentKey = key
@@ -439,8 +579,10 @@ private struct CodeTextView: NSViewRepresentable {
         style.maximumLineHeight = AppLayout.Files.lineHeight * scale
         style.tabStops = []
         style.defaultTabInterval = ("0" as NSString).size(withAttributes: [.font: font]).width * AppLayout.Files.tabColumns
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.sh.textPrimary), .paragraphStyle: style]
         text.defaultParagraphStyle = style
-        text.configureGutter(lines: lines, font: font)
+        text.typingAttributes = attributes
+        text.configureGutter(text: self.text, font: font)
         scroll.hasHorizontalScroller = !wrap
         // Configure wrapping: when on, the text container tracks the scroll view's width
         // and the text view is not horizontally resizable. When off, the container is unbounded.
@@ -454,10 +596,8 @@ private struct CodeTextView: NSViewRepresentable {
             }
         }
         text.isHorizontallyResizable = !wrap
-        text.textStorage?.setAttributedString(NSAttributedString(
-            string: lines.joined(separator: "\n"),
-            attributes: [.font: font, .foregroundColor: NSColor(Color.sh.textPrimary), .paragraphStyle: style]
-        ))
+        text.textStorage?.setAttributedString(NSAttributedString(string: self.text, attributes: attributes))
+        if replaced { text.undoManager?.removeAllActions() }
         text.sizeToFit()
         if wrap {
             // In wrap mode, width is constrained to the scroll view; only height grows.
@@ -477,60 +617,129 @@ private struct CodeTextView: NSViewRepresentable {
             scroll.contentView.scroll(to: .zero)
         }
         scroll.reflectScrolledClipView(scroll.contentView)
-
-        guard CodeHighlight.supports(path: path) else { return }
-        let syntaxStyle = CodeHighlight.Style.theme
-        coordinator.highlightTask = Task { @MainActor [weak coordinator, weak text] in
-            let work = Task.detached(priority: .userInitiated) {
-                CodeHighlight.highlightLines(lines, path: path, style: syntaxStyle) { Task.isCancelled }
-            }
-            let highlighted = await withTaskCancellationHandler {
-                await work.value
-            } onCancel: {
-                work.cancel()
-            }
-            guard !Task.isCancelled, coordinator?.currentKey == key,
-                  let storage = text?.textStorage else { return }
-            storage.beginEditing()
-            var offset = 0
-            for line in highlighted {
-                // Tree-sitter produces SwiftUI Color attributes. Convert each run explicitly:
-                // Foundation's default AttributedString bridge can discard SwiftUI attributes.
-                for run in line.runs {
-                    let count = String(line[run.range].characters).utf16.count
-                    if let color = run.foregroundColor, offset + count <= storage.length {
-                        storage.addAttribute(.foregroundColor, value: NSColor(color),
-                                             range: NSRange(location: offset, length: count))
-                    }
-                    offset += count
-                }
-                offset += 1
-            }
-            storage.endEditing()
-        }
+        coordinator.highlight(text, after: nil)
     }
 
     static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
         coordinator.highlightTask?.cancel()
+        coordinator.marking?.cancel()
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     struct ContentKey: Equatable {
         let path: String
+        let revision: UInt
         let generation: UInt
-        let lines: [String]
         let theme: ThemeDefinition
         let scale: CGFloat
         let dark: Bool
         let wordWrap: Bool
     }
 
-    final class Coordinator {
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: CodeTextView
         weak var textView: FilesTextView?
         var currentKey: ContentKey?
         var highlightTask: Task<Void, Never>?
-        deinit { highlightTask?.cancel() }
+        var marking: Task<Void, Never>?
+        /// The text and versions the marks were last asked for.
+        private var marked: (text: String, saved: String?, before: String?)?
+
+        init(parent: CodeTextView) { self.parent = parent }
+        deinit { highlightTask?.cancel(); marking?.cancel() }
+
+        func textDidChange(_ notification: Notification) {
+            guard let text = textView else { return }
+            let string = text.string
+            text.configureGutter(text: string, font: nil)
+            parent.onEdit(string)
+            mark(text)
+            highlight(text, after: AppLayout.Files.rehighlightDelay)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let text = textView else { return }
+            parent.onCursor(text.cursor())
+        }
+
+        /// The marks for the editor's text, diffed off the main thread: one diff at a time, the
+        /// newest text next. A result for text the editor no longer holds never lands.
+        func mark(_ text: FilesTextView) {
+            let string = text.string, saved = parent.saved, before = parent.before
+            if let marked, marked.text == string, marked.saved == saved, marked.before == before { return }
+            marked = (string, saved, before)
+            guard let saved, string != saved || before != nil else {
+                marking?.cancel()
+                marking = nil
+                text.setMarks(unsaved: [], agent: [])
+                return
+            }
+            guard marking == nil else { return }
+            marking = Task { [weak self, weak text] in
+                let (unsaved, agent) = await Task.detached(priority: .userInitiated) {
+                    let unsaved = string == saved ? [] : InstructionsText.changedLines(saved: saved, draft: string)
+                    let agent = before.map { InstructionsText.changedLines(saved: $0, draft: string).subtracting(unsaved) } ?? []
+                    return (unsaved, agent)
+                }.value
+                guard let self, !Task.isCancelled else { return }
+                self.marking = nil
+                guard let text else { return }
+                if text.string == string, self.parent.saved == saved, self.parent.before == before {
+                    text.setMarks(unsaved: unsaved, agent: agent)
+                } else {
+                    // Superseded while it ran: mark the newest text.
+                    self.marked = nil
+                    self.mark(text)
+                }
+            }
+        }
+
+        /// Tree-sitter colors for the editor's text, `after` a pause in typing (nil: now).
+        func highlight(_ text: FilesTextView, after delay: Duration?) {
+            highlightTask?.cancel()
+            let path = parent.path
+            guard CodeHighlight.supports(path: path) else { return }
+            let string = text.string
+            let syntaxStyle = CodeHighlight.Style.theme
+            highlightTask = Task { @MainActor [weak text] in
+                if let delay {
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return }
+                }
+                let lines = string.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+                let work = Task.detached(priority: .userInitiated) {
+                    CodeHighlight.highlightLines(lines, path: path, style: syntaxStyle) { Task.isCancelled }
+                }
+                let highlighted = await withTaskCancellationHandler {
+                    await work.value
+                } onCancel: {
+                    work.cancel()
+                }
+                guard !Task.isCancelled, let text, text.string == string, let storage = text.textStorage else { return }
+                storage.beginEditing()
+                if delay != nil {
+                    storage.addAttribute(.foregroundColor, value: NSColor(Color.sh.textPrimary),
+                                         range: NSRange(location: 0, length: storage.length))
+                }
+                var offset = 0
+                for line in highlighted {
+                    // Tree-sitter produces SwiftUI Color attributes. Convert each run explicitly:
+                    // Foundation's default AttributedString bridge can discard SwiftUI attributes.
+                    for run in line.runs {
+                        let count = String(line[run.range].characters).utf16.count
+                        if let color = run.foregroundColor, offset + count <= storage.length {
+                            storage.addAttribute(.foregroundColor, value: NSColor(color),
+                                                 range: NSRange(location: offset, length: count))
+                        }
+                        offset += count
+                    }
+                    offset += 1
+                }
+                storage.endEditing()
+            }
+        }
     }
 }
 
@@ -565,25 +774,99 @@ private final class FilesScrollView: NSScrollView {
 }
 
 /// Native find stays in the viewer's responder chain, without a window-wide key monitor.
+/// Draws the gutter: line numbers, and a bar beside each line changed since the last save
+/// (lantern, with its tint across the line) or by the agent (running).
 private final class FilesTextView: NSTextView {
     private var lineStarts = [0]
     private var gutterWidth: CGFloat = 0
     private var gutterFont: NSFont?
+    private var unsavedLines: Set<Int> = []
+    private var agentLines: Set<Int> = []
+    /// Save, while the file edits.
+    var onSave: (() -> Void)?
+    // A window's shared undo stack outlives an editor whose file changes under it.
+    private let documentUndoManager = UndoManager()
+    override var undoManager: UndoManager? { documentUndoManager }
 
-    func configureGutter(lines: [String], font: NSFont) {
-        gutterFont = font
+    /// Line starts of `text`, and the gutter's width for its line count (`font` nil: the last one).
+    func configureGutter(text: String, font: NSFont?) {
+        if let font { gutterFont = font }
+        guard let font = gutterFont else { return }
+        var starts = [0]
         var offset = 0
-        lineStarts = lines.map { line in
-            defer { offset += line.utf16.count + 1 }
-            return offset
+        for unit in text.utf16 {
+            offset += 1
+            if unit == 10 { starts.append(offset) }
         }
-        let digits = max(2, String(lines.count).count)
-        gutterWidth = CGFloat(digits) * ("0" as NSString).size(withAttributes: [.font: font]).width + SH.Space.m * 2
-        textContainerInset = NSSize(width: gutterWidth + SH.Space.m, height: SH.Space.m)
+        let width = CGFloat(max(2, String(starts.count).count)) * ("0" as NSString).size(withAttributes: [.font: font]).width + SH.Space.m * 2
+        lineStarts = starts
+        if width != gutterWidth || textContainerInset.width != width + SH.Space.m {
+            gutterWidth = width
+            textContainerInset = NSSize(width: gutterWidth + SH.Space.m, height: SH.Space.m)
+        }
         needsDisplay = true
     }
 
+    func setMarks(unsaved: Set<Int>, agent: Set<Int>) {
+        guard unsaved != unsavedLines || agent != agentLines else { return }
+        unsavedLines = unsaved
+        agentLines = agent
+        needsDisplay = true
+    }
+
+    /// The caret's line and column, from 1.
+    func cursor() -> FileCursor {
+        let location = selectedRange().location
+        let line = lineIndex(at: location)
+        return FileCursor(line: line + 1, column: location - lineStarts[line] + 1)
+    }
+
+    /// The line (from 0) holding the UTF-16 offset `location`.
+    private func lineIndex(at location: Int) -> Int {
+        var low = 0, high = lineStarts.count
+        while low < high {
+            let mid = (low + high) / 2
+            if lineStarts[mid] <= location { low = mid + 1 } else { high = mid }
+        }
+        return max(0, low - 1)
+    }
+
     @objc func viewportChanged(_ notification: Notification) { needsDisplay = true }
+
+    /// Each visible line's index and rect (in view coordinates), first row only.
+    private func visibleLines() -> [(index: Int, rect: NSRect)] {
+        guard let layout = layoutManager, let container = textContainer else { return [] }
+        let origin = textContainerOrigin
+        let visible = visibleRect
+        let glyphs = layout.glyphRange(forBoundingRect: visible.offsetBy(dx: -origin.x, dy: -origin.y), in: container)
+        let characters = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        var index = lineIndex(at: characters.location)
+        var result: [(Int, NSRect)] = []
+        let length = textStorage?.length ?? 0
+        while index < lineStarts.count, lineStarts[index] <= NSMaxRange(characters) {
+            let position = lineStarts[index]
+            var rect = position < length
+                ? layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: position), effectiveRange: nil)
+                : layout.extraLineFragmentRect
+            // A wrapped line's mark spans all its rows.
+            if position < length, index + 1 < lineStarts.count, lineStarts[index + 1] - 1 > position {
+                let last = layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: lineStarts[index + 1] - 1), effectiveRange: nil)
+                rect = rect.union(last)
+            }
+            result.append((index, rect.offsetBy(dx: origin.x, dy: origin.y)))
+            index += 1
+        }
+        return result
+    }
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard !unsavedLines.isEmpty else { return }
+        NSColor(Color.sh.lanternTint).setFill()
+        for line in visibleLines() where unsavedLines.contains(line.index) {
+            NSRect(x: visibleRect.minX, y: line.rect.minY, width: visibleRect.width, height: line.rect.height).fill()
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let visible = visibleRect
@@ -593,33 +876,28 @@ private final class FilesTextView: NSTextView {
                                  width: max(0, visible.width - gutterWidth), height: visible.height)).addClip()
         super.draw(dirtyRect)
         NSGraphicsContext.restoreGraphicsState()
-        guard let layout = layoutManager, let container = textContainer, let font = gutterFont else { return }
-        let origin = textContainerOrigin
+        guard let font = gutterFont else { return }
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSBezierPath(rect: gutter.intersection(dirtyRect)).addClip()
-        let glyphs = layout.glyphRange(forBoundingRect: visible.offsetBy(dx: -origin.x, dy: -origin.y), in: container)
-        let characters = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-        var low = 0, high = lineStarts.count
-        while low < high {
-            let mid = (low + high) / 2
-            if lineStarts[mid] <= characters.location { low = mid + 1 } else { high = mid }
-        }
-        var index = max(0, low - 1)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.sh.textTertiary)]
-        while index < lineStarts.count, lineStarts[index] <= NSMaxRange(characters) {
-            let position = lineStarts[index]
-            let lineRect: NSRect
-            if position < (textStorage?.length ?? 0) {
-                lineRect = layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: position), effectiveRange: nil)
-            } else {
-                lineRect = layout.extraLineFragmentRect
+        if !unsavedLines.isEmpty {
+            NSColor(Color.sh.lanternTint).setFill()
+            for line in visibleLines() where unsavedLines.contains(line.index) {
+                NSRect(x: gutter.minX, y: line.rect.minY, width: gutter.width, height: line.rect.height).fill()
             }
-            let number = "\(index + 1)" as NSString
+        }
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.sh.textTertiary)]
+        for line in visibleLines() {
+            let number = "\(line.index + 1)" as NSString
             let size = number.size(withAttributes: attributes)
-            number.draw(at: NSPoint(x: gutter.maxX - size.width - SH.Space.s,
-                                   y: lineRect.minY + origin.y), withAttributes: attributes)
-            index += 1
+            number.draw(at: NSPoint(x: gutter.maxX - size.width - SH.Space.s, y: line.rect.minY), withAttributes: attributes)
+            let mark: Color? = unsavedLines.contains(line.index) ? Color.sh.lantern
+                : agentLines.contains(line.index) ? Color.sh.running : nil
+            if let mark {
+                NSColor(mark).setFill()
+                NSRect(x: gutter.maxX - AppLayout.Files.markWidth, y: line.rect.minY,
+                       width: AppLayout.Files.markWidth, height: line.rect.height).fill()
+            }
         }
     }
 
@@ -629,6 +907,10 @@ private final class FilesTextView: NSTextView {
             let item = NSMenuItem()
             item.tag = NSTextFinder.Action.showFindInterface.rawValue
             performFindPanelAction(item)
+            return true
+        }
+        if let onSave, window?.firstResponder === self, KeybindingsStore.shared.chord(for: .saveProjectFile).matches(event) {
+            onSave()
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -737,6 +1019,8 @@ private nonisolated func thumbnailImage(data: Data, maxDimension: CGFloat) -> CG
 private struct FileTreeContent: View {
     let model: FileTreeModel
     @Binding var showHidden: Bool
+    /// The file the agent is editing now: its row shows a spinner.
+    let agentPath: String?
     let hideTree: () -> Void
 
     var body: some View {
@@ -764,7 +1048,7 @@ private struct FileTreeContent: View {
                 .frame(maxWidth: AppLayout.Files.pathMaxWidth, alignment: .trailing)
             if model.selectedPath == nil {
                 Button(action: hideTree) {
-                    Image(systemName: "sidebar.right")
+                    Image(systemName: "sidebar.left")
                         .font(.system(size: AppLayout.Files.showTreeIconSize))
                         .frame(width: AppLayout.Files.toggleTreeSize, height: AppLayout.Files.toggleTreeSize)
                 }
@@ -830,6 +1114,7 @@ private struct FileTreeContent: View {
                             node: item.node,
                             depth: item.depth,
                             isSelected: model.selectedPath == item.node.id,
+                            agentWorking: agentPath == item.node.id,
                             action: {
                                 if item.node.isDirectory {
                                     Task { await model.toggle(path: item.node.id) }
@@ -900,10 +1185,13 @@ private struct FileTreeRow: View, Equatable {
     let node: FileNode
     let depth: Int
     let isSelected: Bool
+    let agentWorking: Bool
     let action: () -> Void
 
     /// A selection change redraws the two rows it touches, not every realized row.
-    static func == (a: FileTreeRow, b: FileTreeRow) -> Bool { a.node == b.node && a.depth == b.depth && a.isSelected == b.isSelected }
+    static func == (a: FileTreeRow, b: FileTreeRow) -> Bool {
+        a.node == b.node && a.depth == b.depth && a.isSelected == b.isSelected && a.agentWorking == b.agentWorking
+    }
 
     var body: some View {
         Button(action: action) {
@@ -947,6 +1235,10 @@ private struct FileTreeRow: View, Equatable {
                     ProgressView()
                         .controlSize(.mini)
                 }
+                if agentWorking {
+                    ProgressView()
+                        .progressViewStyle(.shSpinner(size: AppLayout.Files.tabCloseSize))
+                }
             }
             .frame(height: AppLayout.Files.treeRowHeight)
             .padding(.horizontal, SH.Space.m)
@@ -960,7 +1252,7 @@ private struct FileTreeRow: View, Equatable {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(node.name)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityValue(node.error ?? (node.isDirectory ? (node.isExpanded ? "expanded" : "collapsed") : ""))
+        .accessibilityValue(node.error ?? (node.isDirectory ? (node.isExpanded ? "expanded" : "collapsed") : agentWorking ? "the agent is editing it" : ""))
         .help(node.error ?? node.id)
     }
 }

@@ -55,6 +55,7 @@ struct AppSettingsTests {
         #expect(settings.worktreeBaseMode == .fresh && settings.worktreeFetchBeforeCreate)
         #expect(settings.worktreeAutoCommit && settings.worktreeGeneratePRDescription && settings.worktreeDeleteLocalBranch)
         #expect(!settings.worktreeAutoMergePR, "merging is strictly opt-in")
+        #expect(!settings.worktreeCloseOnMerge, "closing threads on merge is strictly opt-in")
         #expect(settings.worktreeMergeMethod == .squash)
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
@@ -355,6 +356,7 @@ struct AppSettingsTests {
         settings.uiTextScale = 1.2
         settings.sidebarWidth = 300
         settings.worktreeAutoMergePR = true
+        settings.worktreeCloseOnMerge = true
         settings.childConcurrency = 9
 
         settings.resetToDefaults()
@@ -363,7 +365,7 @@ struct AppSettingsTests {
         #expect(settings.defaultServiceTier == .standard)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
-        #expect(!settings.worktreeAutoMergePR && settings.childConcurrency == 4)
+        #expect(!settings.worktreeAutoMergePR && !settings.worktreeCloseOnMerge && settings.childConcurrency == 4)
         for key in AppSettings.Key.resettable {
             #expect(store.object(forKey: key) == nil, "\(key) survived reset")
         }
