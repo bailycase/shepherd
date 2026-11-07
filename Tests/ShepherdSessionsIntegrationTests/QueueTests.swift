@@ -964,7 +964,8 @@ struct QueueTests {
 
     /// The status extension's socket can run a whole run ahead of pi's stdout while a long record
     /// decodes: B's done arrives while B's prompt is still unanswered and is held, and B's
-    /// `agent_start` is read after it. The held done outlives that start and lands when B settles.
+    /// `agent_start` is read after it. The held done outlives that start, stays held while B runs,
+    /// and lands when B settles.
     @Test func aDoneThatOvertakesItsRunsStartLandsWhenTheRunSettles() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -997,7 +998,7 @@ struct QueueTests {
         #expect(try await blocking { entered.wait(timeout: .now() + 30) == .success }, "a long history reached the decoder")
 
         let second = UUID()
-        let b = Task { try await pi.send("tools:0 second", operationID: second, from: ready) }
+        let b = Task { try await pi.send("tools:0 second hold-settle", operationID: second, from: ready) }
         _ = try await pi.waitForStdin("prompt", count: 2)
         try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
         try status.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
@@ -1006,8 +1007,15 @@ struct QueueTests {
 
         release.signal()
         #expect(try await b.value == .accepted(operationID: second))
+        _ = try await pi.snapshot("the second run, after its start, before it settles") { s in
+            s.running && s.provisional.contains { $0.role == "assistant" && $0.status == "stop" }
+        }
+        #expect(agentStatus() == .working, "the second run is going: the held done is not applied")
+        #expect(try await doneHeld())
+
+        pi.releaseSettle()
         _ = try await pi.snapshot("the second run to settle") { s in
-            !s.running && s.messages.contains { $0.blocks.first?.text == "Reply to tools:0 second" }
+            !s.running && s.messages.contains { $0.blocks.first?.text == "Reply to tools:0 second hold-settle" }
         }
         try await eventually("done once the second run settles") { agentStatus() == .done }
         #expect(try await !doneHeld())

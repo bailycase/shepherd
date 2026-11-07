@@ -100,7 +100,7 @@ extension RPCThreadState {
             && !items.contains { $0.entry.held })
     }
 
-    /// pi is idle after all, and a "done" report was held for the queue: report it now.
+    /// pi is idle and nothing continues, and a done report is held (`doneHeld`): report it now.
     func idleAfterQueue() {
         guard doneHeld, !piBusy else { return }
         doneHeld = false
