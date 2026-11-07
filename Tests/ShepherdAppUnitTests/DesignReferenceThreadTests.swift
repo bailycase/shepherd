@@ -250,6 +250,46 @@ struct DesignReferenceThreadTests {
         #expect(DesignReferenceChips.changes(.current, version: 23) == nil)
     }
 
+    /// ThreadBoardShown and ThreadBoardStale: a board card reads the copy the agent showed, its
+    /// picture at half its pixels, and says so once the design moved on; "Show v14" and "Open in
+    /// design" open the board as it is now and as it was.
+    @Test func aBoardCardReadsTheCopyAndSaysWhenTheDesignMovedOn() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("board-card-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 112, pixelsHigh: 82, bitsPerSample: 8, samplesPerPixel: 4,
+                                                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        try #require(rep.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent("A@2x.png"))
+        let reference = DesignReference(designID: Self.checkout, board: Self.a, revision: 13)!
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "t"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 13, capturedAt: 0, width: 560, height: 410,
+                                             picture: .init(name: "A@2x.png", bytes: 1, pixelWidth: 112, pixelHeight: 82))
+        payload.boardPageTitle = "Checkout"
+        var freshness = DesignReferenceFreshness.current
+        var opened: [DesignReference] = []
+        let chips = DesignReferenceChips(agentID: AgentID(rawValue: "t"), io: DesignReferenceChips.IO(
+            payload: { $0 == payload.id ? (payload, folder) : nil }, freshness: { _ in freshness }, open: { opened.append($0) }))
+
+        await chips.loadBoard(payload.id)
+        let shown = try #require(chips.boards[payload.id])
+        #expect(shown.design == "Checkout redesign" && shown.board == "A · Funnel first")
+        #expect(shown.meta == ["Checkout", "560 × 410", "revision 13"] && shown.note == nil && shown.showLatest == nil)
+        #expect(shown.size == CGSize(width: 56, height: 41) && shown.picture != nil)
+
+        freshness = .updatedSince(latest: 14, changes: ["padding 24px → 20px"])
+        chips.designsChanged()
+        await chips.loadBoard(payload.id)
+        let stale = try #require(chips.boards[payload.id])
+        #expect(stale.meta.last == "shown at revision 13" && stale.showLatest == "Show v14")
+        #expect(stale.note == "The design moved on since the agent showed this. It shows what the agent saw.")
+        chips.io.open(stale.reference.unpinned)
+        chips.io.open(stale.reference)
+        #expect(opened.map(\.revision) == [nil, 13])
+
+        await chips.loadBoard(UUID())
+        #expect(chips.boards.count == 1, "a copy the thread no longer has draws no card")
+    }
+
     /// RefAtElements: an element's row on screen asks for its own picture, with its board and the
     /// elements listed on it; a design's or a board's row asks for none.
     @Test func anElementRowOnScreenAsksForItsOwnPicture() throws {

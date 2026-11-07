@@ -74,7 +74,7 @@ struct PushNotificationsTests {
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer " + String(repeating: "a", count: 64))
             let data = try #require(request.httpBody)
             let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-            #expect(Set(body.keys) == ["eventID", "agentID", "kind"])
+            #expect(Set(body.keys) == ["eventID", "agentID", "kind", "group", "level", "relevance"])
             #expect(body["kind"] as? String == "needsAnswer")
         }
         try await eventually("hung transports cancelled at the ten second bound", timeout: .seconds(12)) { cancelled.current == 16 }
@@ -91,8 +91,8 @@ struct PushNotificationsTests {
             let pushes = host.server.pushNotifications
             try pushes.register(registration())
             pushes.transport = { request, finished in
-                let body = (try? JSONDecoder().decode([String: String].self, from: request.httpBody!)) ?? [:]
-                bodies.withValue { $0.append(body) }
+                let body = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append(body.compactMapValues { $0 as? String }) }
                 finished(nil)
                 return {}
             }
@@ -246,6 +246,69 @@ struct PushNotificationsTests {
         #expect(callbacks.current.count == 16, "revocation never retries")
     }
 
+    @Test func alertsCarryTheirStackLoudnessAndSummaryRankAndFallBackForAnOlderRelay() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.rich")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let bodies = Locked<[[String: Any]]>([])
+        let agent = AgentID()
+        try queue.sync {
+            try pushes.register(registration())
+            pushes.transport = { request, finished in
+                let body = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append(body) }
+                // The deployed relay refuses fields it doesn't know.
+                finished(body["group"] == nil ? 202 : 400)
+                return {}
+            }
+            pushes.send(agentID: agent, kind: .done, title: "Investigate SwiftUI live preview", preview: "Done.",
+                        subtitle: "Turn finished")
+        }
+        try queue.sync {} // the refusal's callback hops onto the queue
+        let first = bodies.current
+        #expect(first.count == 2)
+        #expect(first[0]["group"] as? String == "thread:\(agent.rawValue)")
+        #expect(first[0]["subtitle"] as? String == "Turn finished")
+        #expect(first[0]["level"] as? String == "passive")
+        #expect(first[0]["relevance"] as? Double == 0.2)
+        #expect(Set(first[1].keys) == ["eventID", "agentID", "kind", "title", "preview"], "the same event in the old shape")
+        #expect(first[1]["eventID"] as? String == first[0]["eventID"] as? String)
+        try queue.sync {
+            #expect(pushes.relayIsLegacy)
+            pushes.send(agentID: agent, kind: .needsAnswer)
+        }
+        try queue.sync {}
+        #expect(bodies.current.count == 3, "an older relay gets the old shape at once, never twice")
+        #expect(bodies.current[2]["group"] == nil)
+        #expect(PushNotifications.presentation(.needsAnswer) == ("active", 0.8))
+        #expect(PushNotifications.presentation(.error) == ("active", 0.6))
+    }
+
+    @Test func aMissionsAgentsStackUnderTheMissionAndSayWhoAsks() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        _ = try record(host.server, payloads: payloads)
+        let planner = AgentID(), worker = AgentID()
+        let station = MissionStation(kind: .worker, laneID: nil, title: "orders", goal: "Write the event")
+        var run = MissionRun(model: "test/model", phase: .running)
+        run.attempts = [MissionAttempt(agentID: planner, status: .running),
+                        MissionAttempt(stationID: station.id, agentID: worker, status: .failed)]
+        let mission = Mission(draft: MissionDraft(title: "Checkout funnel events", goal: "Every order joins the funnel",
+                                                  plan: MissionPlan(lanes: [], stations: [station])), run: run)
+        host.server.queue.sync {
+            host.server.store.updateLive { $0.missions = [mission] }
+            host.server.sendPush(agentID: planner, kind: .needsAnswer, preview: "Which key joins a refund to the funnel?")
+            host.server.sendPush(agentID: worker, kind: .error, preview: "orders is stuck after 3 tries")
+        }
+        let sent = payloads.current
+        #expect(sent.count == 2)
+        #expect(sent.allSatisfy { $0["group"] == "mission:\(mission.id.rawValue)" && $0["title"] == "Checkout funnel events" })
+        #expect(sent[0]["subtitle"] == "Planner question")
+        #expect(sent[1]["subtitle"] == "orders · Turn failed")
+    }
+
     private func record(_ server: SessionServer, payloads: Locked<[[String: String]]>? = nil) throws -> Locked<[String]> {
         let events = Locked<[String]>([])
         try server.queue.sync {
@@ -253,7 +316,7 @@ struct PushNotificationsTests {
             server.pushNotifications.transport = { request, finished in
                 let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
                 events.withValue { $0.append(body?["kind"] as? String ?? "invalid") }
-                payloads?.withValue { $0.append(body as? [String: String] ?? [:]) }
+                payloads?.withValue { $0.append(body?.compactMapValues { $0 as? String } ?? [:]) }
                 finished(nil)
                 return {}
             }
