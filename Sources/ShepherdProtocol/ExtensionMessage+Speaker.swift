@@ -19,7 +19,7 @@ extension ExtensionMessage {
              .prepareProjectConfiguration(_, let agentID, _),
              .listPanes(_, let agentID), .openPane(_, let agentID, _, _, _, _), .closePane(_, let agentID, _),
              .focusPane(_, let agentID, _), .sendPaneInput(_, let agentID, _, _, _), .readPane(_, let agentID, _),
-             .requestReview(_, let agentID, _, _),
+             .requestReview(_, let agentID, _, _), .app(_, let agentID, _, _, _),
              .suggestInstruction(_, let agentID, _, _, _),
              .listAgents(_, let agentID), .sendToAgent(_, let agentID, _, _, _), .spawnAgent(_, let agentID, _, _),
              .moveAgent(_, let agentID, _, _), .coordinateAgent(_, let agentID, _, _), .agentResponse(let agentID, _, _), .cancelAgentRequest(_, let agentID),
@@ -48,7 +48,7 @@ extension ExtensionMessage {
         switch self {
         case .nativeQueueBoundary(let id, _, _, _), .childScope(let id, _, _, _), .listPanes(let id, _), .openPane(let id, _, _, _, _, _), .closePane(let id, _, _),
              .focusPane(let id, _, _), .sendPaneInput(let id, _, _, _, _), .readPane(let id, _, _),
-             .requestReview(let id, _, _, _),
+             .requestReview(let id, _, _, _), .app(let id, _, _, _, _),
              .suggestInstruction(let id, _, _, _, _), .prepareProjectConfiguration(let id, _, _),
              .listAgents(let id, _), .sendToAgent(let id, _, _, _, _), .spawnAgent(let id, _, _, _),
              .moveAgent(let id, _, _, _), .coordinateAgent(let id, _, _, _),
