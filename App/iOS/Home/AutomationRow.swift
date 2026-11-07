@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
-/// An automation run as Home's overview lists it (iPadOverview's Running now): read-only here;
+/// An automation run as the iPad sidebar lists it: read-only here;
 /// the Automations screen (automations track) is where they are managed.
 struct AutomationRow: View, Equatable {
     let row: FleetAutomationRow
