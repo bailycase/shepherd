@@ -235,7 +235,7 @@ final class RawRemote: @unchecked Sendable {
     func hello(token: String, id: Int = 1, capabilities: [String]? = nil) async throws -> [String] {
         try send(.hello(id: id, token: token, clientName: "raw", protocolVersion: RemoteProtocol.version, capabilities: capabilities))
         let reply = try await next()
-        guard case .helloOk(_, _, let capabilities) = reply else {
+        guard case .helloOk(_, _, let capabilities, _) = reply else {
             throw WireError("expected helloOk, got \(reply)")
         }
         return capabilities
