@@ -8,34 +8,7 @@ extension ShepherdViewModel {
     /// Settings ▸ Agents, Worktrees and Pi set, and one change at a time, applied as the Mac's own
     /// Settings would. Installed once at startup.
     func installHostSettings() {
-        server.onRemoteHostSettings = { [weak self] request, completion in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    completion(.failure(RemoteCreateAgentError("Host is shutting down")))
-                    return
-                }
-                let missionsActive = self.state.missions.contains { $0.run?.phase.active == true }
-                if case .change(let change) = request,
-                   let refusal = HostSettingsMapping.apply(change, to: self.settings, missionsActive: missionsActive) {
-                    completion(.failure(RemoteCreateAgentError(refusal)))
-                    return
-                }
-                let settings = HostSettingsMapping.settings(
-                    from: self.settings,
-                    shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-                    piVersion: self.server.pi.engine.version,
-                    missionsActive: missionsActive,
-                    slashCommands: self.server.slashCommandCatalog
-                )
-                let piHome = self.server.pi.home
-                Task.detached(priority: .userInitiated) {
-                    // pi's settings.json is read off the main actor.
-                    var answer = settings
-                    answer.installedExtensions = PiConfig.installedExtensions(in: piHome)
-                    completion(.success(answer))
-                }
-            }
-        }
+        HostSettingsMapping.serve(on: server, settings: settings)
     }
 }
 
@@ -58,6 +31,41 @@ enum HostSettingsMapping {
         ("deferTools", "Defer rarely used tools", \.deferTools),
         ("codemode", "Codemode", \.codemode),
     ]
+
+    /// Serves `server`'s clients `settings` (Settings on the iPhone and the iPad, and the app as the
+    /// background host's client): what Settings ▸ Agents, Worktrees and Pi set, and one change at
+    /// a time, applied as the Mac's own Settings would. Installed once, by the app or by the
+    /// headless host.
+    static func serve(on server: SessionServer, settings app: AppSettings) {
+        server.onRemoteHostSettings = { [weak server] request, completion in
+            MainActor.assumeIsolated {
+                guard let server else {
+                    completion(.failure(RemoteCreateAgentError("Host is shutting down")))
+                    return
+                }
+                let missionsActive = server.state.missions.contains { $0.run?.phase.active == true }
+                if case .change(let change) = request,
+                   let refusal = apply(change, to: app, missionsActive: missionsActive) {
+                    completion(.failure(RemoteCreateAgentError(refusal)))
+                    return
+                }
+                let answer = settings(
+                    from: app,
+                    shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+                    piVersion: server.pi.engine.version,
+                    missionsActive: missionsActive,
+                    slashCommands: server.slashCommandCatalog
+                )
+                let piHome = server.pi.home
+                Task.detached(priority: .userInitiated) {
+                    // pi's settings.json is read off the main actor.
+                    var answer = answer
+                    answer.installedExtensions = PiConfig.installedExtensions(in: piHome)
+                    completion(.success(answer))
+                }
+            }
+        }
+    }
 
     /// Why a client may not turn Missions off now.
     static let missionsLocked = "Pause or stop running missions before turning Missions off."

@@ -21,7 +21,10 @@ public enum SessionHost {
     /// `pullRequests`, when given, keeps each thread's pull request link on the poll. `banners`,
     /// when given, is where threads' turn, question and notify-tool banners go. `threads`, when
     /// given, serves clients' threads and terminals: new threads, their actions, shells.
+    /// `configure` runs first, on the main actor, once the server is up: the caller's settings
+    /// and listeners.
     public static func run(_ server: SessionServer = .shared, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                           configure: (@MainActor (SessionServer) -> Void)? = nil,
                            threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
                            automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                            pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
@@ -51,6 +54,7 @@ public enum SessionHost {
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
         Task { @MainActor in
+            configure?(server)
             if let threads { server.serveThreads(threads(server)) }
             // The app's way in (`host.sock`), once its threads are served; a path too long for a
             // unix socket leaves the app to run in process.
