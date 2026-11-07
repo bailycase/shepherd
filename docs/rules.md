@@ -188,8 +188,9 @@ is the confirmed Delete Worktree. The branch card's actions (`BranchGit.swift`, 
 checkout, each on the person's click; branch names pass `check-ref-format` and never reach git as
 options): Commit (`commit --only` of the ticked files, new ones intent-to-add first and taken back
 if the commit fails; refused while a rebase or merge is stopped), Amend the last commit (`commit
---amend`, only while no remote-tracking ref contains HEAD and no rebase or merge is stopped, so it
-never needs a force-push; approved on the user's delegation), Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
+--amend`; refused with no commit or while a rebase or merge is stopped; once a remote-tracking ref
+has the commit, Commit & push is off and the card's Push is refused, never forced, with how to
+replace it by hand), Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
 the base, then rebase or merge onto it; refused on a dirty tree; a conflict stops, and Abort runs
 `rebase --abort` or `merge --abort`), Switch branch (`switch`, a remote branch to a tracking local
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
