@@ -317,4 +317,38 @@ struct ComposerCommandTokenTests {
         #expect(token.draft(running: "skill:debug", then: "") == "/skill:debug fix the login bug")
         #expect(try #require(ComposerCommandToken.token(in: "/rev")).draft(running: "review", then: " ") == "/review ")
     }
+
+    /// The rule the walk back replaced, word for word: the last "/" or "$" anywhere in the draft.
+    private static func wholeDraftToken(in draft: String) -> (before: String, sigil: Character, text: String)? {
+        guard let at = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
+        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+        let text = draft[draft.index(after: at)...]
+        guard !text.contains(where: \.isWhitespace) else { return nil }
+        return (String(draft[..<at]), draft[at], String(text))
+    }
+
+    /// Every string of up to four of these, some of them joining into one Character ("e" + U+0301).
+    private static let corpus: [String] = {
+        let symbols = ["a", "/", "$", " ", "\n", "é", "e\u{301}", "\r\n", "\u{00A0}", "🚀"]
+        var all = [""], level = [""]
+        for _ in 1...4 {
+            level = level.flatMap { draft in symbols.map { draft + $0 } }
+            all += level
+        }
+        return all
+    }()
+
+    @Test func theWalkBackFindsWhatTheWholeDraftScanFound() {
+        let filler = String(repeating: "word ", count: 40)
+        var differing: [String] = []
+        for draft in Self.corpus + Self.corpus.map({ filler + $0 }) {
+            let walked = ComposerCommandToken.token(in: draft)
+            let scanned = Self.wholeDraftToken(in: draft)
+            let same = walked?.before == scanned?.before && walked?.sigil == scanned?.sigil && walked?.text == scanned?.text
+                && walked?.startsDraft == scanned?.before.isEmpty
+            if !same { differing.append(draft) }
+        }
+        #expect(Self.corpus.count == 11_111)
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
+    }
 }

@@ -134,18 +134,33 @@ public enum NativeQueueStack {
 /// A "/" (pi's commands and prompts) or "$" (its skills) at the start of the draft or after
 /// whitespace, with no whitespace after it: the menu's trigger anywhere in a draft.
 public struct ComposerCommandToken: Equatable, Sendable {
-    /// The draft before the sigil.
-    public var before: String
+    /// The draft before the sigil, kept as a view of the draft so finding a token costs the word
+    /// being typed, not the draft.
+    private let prefix: Substring
     public var sigil: Character
     /// What follows the sigil.
     public var text: String
 
+    /// The draft before the sigil.
+    public var before: String { String(prefix) }
+    /// The sigil starts the draft: nothing came before it.
+    public var startsDraft: Bool { prefix.isEmpty }
+
+    /// Walks back from the end of the draft to the last "/" or "$", and stops at whitespace before
+    /// one: a token holds none.
     public static func token(in draft: String) -> ComposerCommandToken? {
-        guard let at = draft.lastIndex(where: { $0 == "/" || $0 == "$" }) else { return nil }
-        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
-        let text = draft[draft.index(after: at)...]
-        guard !text.contains(where: \.isWhitespace) else { return nil }
-        return ComposerCommandToken(before: String(draft[..<at]), sigil: draft[at], text: String(text))
+        var end = draft.endIndex
+        while end > draft.startIndex {
+            let at = draft.index(before: end)
+            let character = draft[at]
+            if character == "/" || character == "$" {
+                if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+                return ComposerCommandToken(prefix: draft[..<at], sigil: character, text: String(draft[draft.index(after: at)...]))
+            }
+            if character.isWhitespace { return nil }
+            end = at
+        }
+        return nil
     }
 
     /// A whole skill ("/skill:debug", an inline chip) rather than a command still being typed.
@@ -186,7 +201,7 @@ public struct NativeSlashMatches: Equatable, Sendable {
             let name = $0.name.lowercased()
             return !name.hasPrefix(query) && name.contains(query)
         }
-        guard token.before.isEmpty || !(prefixed + containing).isEmpty else { return nil }
+        guard token.startsDraft || !(prefixed + containing).isEmpty else { return nil }
         self.token = token
         self.query = query
         self.commands = prefixed + containing
