@@ -369,6 +369,8 @@ final class ShepherdViewModel {
     let slashCommands: SlashCommandsModel
     /// Settings › Hooks and the composer's hook glyph.
     let hooks: HooksModel
+    /// Settings › Apps, and the apps running now.
+    let apps: AppsModel
     /// Each remote host's hooks, made when first shown (`hooks(for:)`).
     @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
@@ -706,7 +708,8 @@ final class ShepherdViewModel {
         yourPi: YourPiModel? = nil,
         piAuth: PiAuthStore? = nil,
         browserData: BrowserDataStores = .ephemeral,
-        hooks: HooksModel? = nil
+        hooks: HooksModel? = nil,
+        apps: AppsModel? = nil
     ) {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
@@ -736,6 +739,7 @@ final class ShepherdViewModel {
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
         self.hooks = hooks ?? HooksModel(catalog: server.hooks)
+        self.apps = apps ?? AppsModel(home: server.hooks.home)
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
@@ -1159,6 +1163,8 @@ final class ShepherdViewModel {
         installProjectRuntime()
         installProjectExecution()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
+        self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
+        self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes.
@@ -1390,6 +1396,7 @@ final class ShepherdViewModel {
             sidebarOpeningTurns.subtract(serverState.agents.filter { $0.status != .idle }.map(\.id))
         }
         state = serverState
+        pruneAppRuns()
         // A move keeps the selected thread and its existing layout visible in its new space.
         if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
             selectedSpaceID = agent.spaceID
@@ -1399,6 +1406,8 @@ final class ShepherdViewModel {
         if paths != missingSpaceCheck.paths {
             missingSpaceCheck.paths = paths
             checkMissingSpaces()
+            // The thread header's and New thread's apps follow the spaces.
+            apps.reload()
         }
         reconcileSidebarCompletions()
         reconcileThreadStores()

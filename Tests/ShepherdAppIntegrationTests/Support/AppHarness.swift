@@ -65,7 +65,9 @@ final class AppHarness {
             yourPi: yourPi,
             piAuth: piAuth,
             // Hooks read the scratch folder's home, never this machine's.
-            hooks: HooksModel(home: dir.appendingPathComponent("hooks-home").path, support: dir.appendingPathComponent("hooks-support"))
+            hooks: HooksModel(home: dir.appendingPathComponent("hooks-home").path, support: dir.appendingPathComponent("hooks-support")),
+            // Apps read the scratch folder's home too.
+            apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
         let server = server

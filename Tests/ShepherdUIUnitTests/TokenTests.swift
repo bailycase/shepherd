@@ -85,8 +85,9 @@ struct TokenTests {
         #expect(SHGlyph.Settings.advanced.systemSymbolName == "gearshape")
         #expect(SHGlyph.Settings.advanced.resourceURL == nil)
         #expect(NSImage(systemSymbolName: try #require(SHGlyph.Settings.advanced.systemSymbolName), accessibilityDescription: nil) != nil)
-        // Hooks has no board artwork: it draws the hook glyph's symbol.
-        #expect(SHGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.hooks, .advanced])
+        // Hooks has no board artwork: it draws the hook glyph's symbol. Apps draws the system 2×2 grid.
+        #expect(SHGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.apps, .hooks, .advanced])
+        #expect(NSImage(systemSymbolName: try #require(SHGlyph.Settings.apps.systemSymbolName), accessibilityDescription: nil) != nil)
         #expect(NSImage(systemSymbolName: SHGlyph.hook.symbolName, accessibilityDescription: nil) != nil)
     }
 

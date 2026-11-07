@@ -84,9 +84,16 @@ struct NewThreadPage: View {
                     .foregroundStyle(Color.sh.textPrimary)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                composer
-                    .frame(maxWidth: AppLayout.newThreadComposerWidth)
-                    .zIndex(1)
+                VStack(spacing: SH.Space.l) {
+                    composer
+                        .zIndex(1)
+                    if draft.place?.host == nil, let apps = vm.quickApps(in: draft.place?.space) {
+                        NewThreadApps(apps: apps, run: { vm.runQuickApp($0) }, stop: { vm.stopApp($0) },
+                                      edit: { vm.openAppsSettings() })
+                    }
+                }
+                .frame(maxWidth: AppLayout.newThreadComposerWidth)
+                .zIndex(1)
                 if let notice = draft.notice(vm) {
                     Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                         .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
@@ -710,6 +717,34 @@ extension NewThreadState {
         guard let place, place.host == nil else { return [] }
         return catalog.filter { command in
             !hidden.contains(command.name) && (skills || command.source != "skill") && (goals || command.name != "goal")
+        }
+    }
+}
+
+/// "Run in payments" and the space's quick actions under New thread's composer (AppsNewThread
+/// board): each runs under the space's latest thread; a running one stops.
+private struct NewThreadApps: View {
+    let apps: QuickApps
+    let run: (AppKey) -> Void
+    let stop: (AppKey) -> Void
+    let edit: () -> Void
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            Text("Run in \(apps.space)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                .padding(.trailing, SH.Space.xxs)
+            ForEach(apps.items) { item in
+                Button { item.running ? stop(item.key) : run(item.key) } label: {
+                    Label(item.app.name, systemImage: item.running ? "stop.fill" : "play.fill").labelStyle(AppRunLabelStyle())
+                }
+                .buttonStyle(.sh(.secondary, size: .s))
+                .disabled(!item.running && item.unavailable != nil)
+                .help(item.running ? "Stop \(item.app.name)" : item.unavailable ?? "Run \(item.app.name)")
+                .accessibilityLabel(item.running ? "Stop \(item.app.name)" : "Run \(item.app.name)")
+            }
+            Button("Edit apps…", action: edit).buttonStyle(.shLink(color: Color.sh.textTertiary))
+                .padding(.leading, SH.Space.s)
+            Spacer(minLength: 0)
         }
     }
 }

@@ -295,6 +295,7 @@ extension ShepherdViewModel {
     func setLayout(_ layout: PaneNode, forTab id: TabID) {
         guard let index = state.tabs.firstIndex(where: { $0.id == id }) else { return }
         state.tabs[index].layout = layout
+        pruneAppRuns()
         sessions.stateDidChange(state)
         enqueuePersistence("layout update") { try await $0.updateLayoutStructure(tabID: id, layout: layout) }
     }
