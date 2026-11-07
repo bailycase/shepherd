@@ -426,6 +426,8 @@ struct RemoteRequestTests {
         .fleetDigest(id: 97, agentID: S.agent, session: .init(piSessionID: "s", generation: "g"), revision: 9),
         .fleetDigest(id: 98, agentID: S.agent, session: nil, revision: nil),
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
+        .pushRegistration(id: 94, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
+            preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false, missions: ["m1": .onlyBlocked]))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),

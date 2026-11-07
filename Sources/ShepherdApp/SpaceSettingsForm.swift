@@ -22,6 +22,8 @@ enum SpaceSettingsForm {
         var placeholder: String
         var error: String?
         var overridden: Bool
+        /// What Reset returns to: "global", or "parent" for a key a parent space supplies.
+        var resetTo = "global"
         var id: String { key }
     }
 
@@ -149,8 +151,12 @@ enum SpaceSettingsForm {
 
     /// The form's groups for the space's settings `object`, unset values following `inherited`
     /// (named `inheritedName`, "Global"). `models` are `provider/model` ids to offer.
-    static func groups(_ object: [String: Any], inherited: [String: Any], inheritedName: String = "Global", models: [String]) -> [Group] {
-        let follow = "Follow " + inheritedName.lowercased()
+    /// `parent` is the nearest parent space's name and the inheritable keys (`SpaceInheritedDefaults.keys`)
+    /// its ancestors set: the startup model and thinking follow it, everything else follows global.
+    static func groups(_ object: [String: Any], inherited globalInherited: [String: Any], inheritedName globalName: String = "Global",
+                       parent: (name: String, settings: [String: Any])? = nil, models: [String]) -> [Group] {
+        var inherited = globalInherited, inheritedName = globalName
+        var follow = "Follow " + inheritedName.lowercased()
         func row(_ key: String, _ label: String, _ description: String, _ control: Control) -> Row {
             let raw = value(key, in: object), base = value(key, in: inherited)
             var options: [Option]?
@@ -160,7 +166,13 @@ enum SpaceSettingsForm {
             return Row(key: key, label: label, description: description, control: control, value: shown,
                        effective: integer(raw) ?? integer(base) ?? 0,
                        source: (raw == nil ? "Inherited from \(inheritedName)" : "Space override") + " · \(inheritedName): \(display(base, options: options))",
-                       placeholder: "\(inheritedName): \(display(base))", error: error(key, in: object), overridden: raw != nil)
+                       placeholder: "\(inheritedName): \(display(base))", error: error(key, in: object), overridden: raw != nil,
+                       resetTo: inheritedName == globalName ? "global" : "parent")
+        }
+        // The model and thinking rows follow the parent space for what it sets.
+        if let parent {
+            follow = "Follow parent"
+            if model(parent.settings) != nil { inherited = merged(inherited, parent.settings.filter { $0.key != "defaultThinkingLevel" }); inheritedName = parent.name }
         }
         let baseModel = model(inherited)
         var modelIDs = models
@@ -170,9 +182,14 @@ enum SpaceSettingsForm {
         modelRow.value = model(object) ?? ""
         modelRow.overridden = object["defaultModel"] != nil || object["defaultProvider"] != nil
         modelRow.source = (modelRow.overridden ? "Space override" : "Inherited from \(inheritedName)") + " · \(inheritedName): \(baseModel ?? "pi's choice")"
+        if let parent {
+            inherited = globalInherited; inheritedName = globalName
+            if let level = parent.settings["defaultThinkingLevel"] { inherited["defaultThinkingLevel"] = level; inheritedName = parent.name }
+        }
         let baseLevel = thinkingLevels.first { $0.0 == inherited["defaultThinkingLevel"] as? String }?.1 ?? display(inherited["defaultThinkingLevel"])
         let thinking = row("defaultThinkingLevel", "Thinking level", "Default reasoning effort for new sessions.",
                            .dropdown([Option(value: "", label: "\(follow) · \(baseLevel)")] + thinkingLevels.map { Option(value: $0.0, label: $0.1) }))
+        inherited = globalInherited; inheritedName = globalName; follow = "Follow " + globalName.lowercased()
         var toolsRow = row("defaultTools", "Built-in tools", "Choose whether this space follows inherited tool selection.",
                            .segments([Option(value: "", label: follow.capitalizedFirst), Option(value: "project", label: "Space selection")]))
         toolsRow.value = toolsRow.overridden ? "project" : ""

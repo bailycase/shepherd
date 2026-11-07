@@ -225,6 +225,39 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
     }
 
+    /// The startup model and thinking a space's agents take from its parent spaces when its own
+    /// settings leave them unset (slice 4 inheritance). Parents are the folders that hold it, as for
+    /// shared MCP: Shepherd's organization alone never grants configuration across unrelated folders.
+    public func launchDefaults(for cwd: String) async -> SpaceInheritedDefaults? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                try? load()
+                guard let parent = parentSettings(of: absolute(cwd)) else { continuation.resume(returning: nil); return }
+                let own = (try? resourceSettings(root: URL(fileURLWithPath: absolute(cwd)))) ?? nil
+                let model = own?["defaultModel"] == nil
+                    ? parent.settings["defaultProvider"].flatMap { provider in parent.settings["defaultModel"].map { provider + "/" + $0 } } : nil
+                let thinking = own?["defaultThinkingLevel"] == nil ? parent.settings["defaultThinkingLevel"] : nil
+                continuation.resume(returning: model == nil && thinking == nil ? nil : SpaceInheritedDefaults(model: model, thinking: thinking))
+            }
+        }
+    }
+
+    /// The inheritable keys the ancestor spaces of `directory` set, merged root first, and the
+    /// nearest ancestor's name. Nil when no ancestor sets one.
+    private func parentSettings(of directory: String) -> (name: String, settings: [String: String])? {
+        let ancestors = parentCandidates().filter { $0 != directory && directory.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }.sorted { $0.count < $1.count }
+        guard let nearest = ancestors.last else { return nil }
+        var merged: [String: String] = [:]
+        for ancestor in ancestors {
+            guard let root = try? validatedRoot(ancestor), let settings = (try? resourceSettings(root: root)) ?? nil else { continue }
+            for key in SpaceInheritedDefaults.keys {
+                if let value = settings[key] as? String, !value.trimmingCharacters(in: .whitespaces).isEmpty { merged[key] = value }
+            }
+        }
+        guard !merged.isEmpty else { return nil }
+        return (history.first { $0.directory == nearest }?.name ?? URL(fileURLWithPath: nearest).lastPathComponent, merged)
+    }
+
     /// Every project folder that can be a parent: never the home folder (its `.pi` is the user's
     /// own pi) and never the root.
     private func parentCandidates() -> [String] {
@@ -464,7 +497,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             if let text = try? read(root: root, file: file.path), let settings = try? YourPiFiles.object(Data(text.utf8), file: file.path),
                let names = settings["mcpServers"] as? [String: Any] { servers.formUnion(names.keys) }
         }
-        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count, globalSettings: globalFormSettings())
+        let parent = parentSettings(of: root.path)
+        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count, globalSettings: globalFormSettings(),
+                              parentName: parent?.name, parentSettings: parent?.settings)
     }
 
     /// The global values the space Settings form compares against, from Shepherd's pi home. Only the

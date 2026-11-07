@@ -67,7 +67,7 @@ public enum AgentLaunch {
                                   sessionIsFresh: Bool, isAutomation: Bool = false,
                                   project: Project? = nil, worktreeOwningSpace: String? = nil,
                                   suggestFiles: [InstructionFile] = [], modelOverride: String? = nil,
-                                  specKit: MissionSpecKitLaunch? = nil,
+                                  specKit: MissionSpecKitLaunch? = nil, inherited: SpaceInheritedDefaults? = nil,
                                   mcp: () throws -> MCPLaunch?) throws -> SessionCommand {
         try StatusExtension.command(
             home: pi.files,
@@ -103,8 +103,9 @@ public enum AgentLaunch {
             deferTools: settings.deferTools,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
-            model: modelOverride ?? (sessionIsFresh ? agent.model : nil),
-            thinking: sessionIsFresh ? agent.thinkingLevel : nil
+            // A child space's unset startup model and thinking follow its parent spaces (`inherited`).
+            model: modelOverride ?? (sessionIsFresh ? agent.model ?? inherited?.model : nil),
+            thinking: sessionIsFresh ? agent.thinkingLevel ?? inherited?.thinking.flatMap(ThinkingLevel.init(rawValue:)) : nil
         )
     }
 

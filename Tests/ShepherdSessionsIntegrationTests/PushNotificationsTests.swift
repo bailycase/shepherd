@@ -350,6 +350,71 @@ struct PushNotificationsTests {
         #expect(approval["fingerprint"] as? String == "fp-1")
     }
 
+    @Test func eachPhoneGetsOnlyWhatItsSettingsAskForAndKeepsThemAcrossRestarts() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.preferences")
+        let file = dir.appendingPathComponent("push.json")
+        let pushes = PushNotifications(file: file, queue: queue)
+        let sent = Locked<[String]>([])
+        let idle = Locked<TimeInterval>(0)
+        let older = registration()
+        let quiet = RemotePushRegistration(id: UUID().uuidString, sendToken: String(repeating: "b", count: 64),
+            preferences: RemotePushPreferences(topics: [.questions, .blocked, .failures], awayOnly: true,
+                                               missions: ["refunds": .onlyBlocked]))
+        try queue.sync {
+            try pushes.register(older)
+            try pushes.register(quiet)
+            pushes.idleSeconds = { idle.current }
+            pushes.transport = { request, finished in
+                sent.withValue { $0.append(String(request.value(forHTTPHeaderField: "Authorization")!.suffix(1))) }
+                finished(202)
+                return {}
+            }
+        }
+        func send(_ kind: PushNotifications.Kind, topic: RemotePushPreferences.Topic? = nil, mission: String? = nil) -> [String] {
+            sent.withValue { $0 = [] }
+            queue.sync { pushes.send(agentID: AgentID(), kind: kind, topic: topic, missionID: mission) }
+            return sent.current.sorted()
+        }
+        #expect(send(.needsAnswer) == ["a"], "away-only: the Mac is in use, so only the older phone hears it")
+        idle.withValue { $0 = RemotePushPreferences.awayAfter }
+        #expect(send(.needsAnswer) == ["a", "b"])
+        #expect(send(.done) == ["a"], "Finished work is off")
+        #expect(send(.needsAnswer, mission: "refunds") == ["a"], "this mission sends only blocked work")
+        #expect(send(.error, topic: .blocked, mission: "refunds") == ["a", "b"])
+        #expect(send(.error, mission: "other") == ["a", "b"])
+        let restored = PushNotifications(file: file, queue: queue)
+        #expect(restored.registrations[UUID(uuidString: quiet.id)!.uuidString]?.preferences == quiet.preferences)
+    }
+
+    @Test func aMissionThatPausesItselfIsBlockedButAPersonsPauseIsNot() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        _ = try record(host.server, payloads: payloads)
+        var run = MissionRun(model: "test/model", phase: .running)
+        run.attempts = [MissionAttempt(agentID: AgentID(), status: .running)]
+        let mission = Mission(draft: MissionDraft(title: "Refunds in the ledger", goal: "Refunds join the ledger"), run: run)
+        host.server.queue.sync { host.server.store.updateLive { $0.missions = [mission] } }
+        _ = try await host.server.updateMissionRun(id: mission.id, runID: run.id) {
+            $0.transition(to: .paused, at: 1, notice: "Time limit reached. Increase the limit explicitly before resuming.")
+        }
+        try await eventually("blocked alert") { payloads.current.count == 1 }
+        #expect(payloads.current[0]["subtitle"] == "Blocked")
+        #expect(payloads.current[0]["preview"] == "Time limit reached. Increase the limit explicitly before resuming.")
+        #expect(payloads.current[0]["group"] == "mission:\(mission.id.rawValue)")
+        var again = MissionRun(model: "test/model", phase: .running)
+        again.attempts = [MissionAttempt(agentID: AgentID(), status: .running)]
+        let paused = Mission(draft: MissionDraft(title: "Nightly migrations dry run", goal: "Dry run"), run: again)
+        host.server.queue.sync { host.server.store.updateLive { $0.missions.append(paused) } }
+        _ = try await host.server.updateMissionRun(id: paused.id, runID: again.id) {
+            $0.transition(to: .paused, at: 1, notice: MissionRun.pausedByPerson)
+        }
+        try host.server.queue.sync {}
+        #expect(payloads.current.count == 1)
+    }
+
     private func record(_ server: SessionServer, payloads: Locked<[[String: String]]>? = nil) throws -> Locked<[String]> {
         let events = Locked<[String]>([])
         try server.queue.sync {

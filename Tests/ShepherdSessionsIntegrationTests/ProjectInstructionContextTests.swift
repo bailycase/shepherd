@@ -72,6 +72,35 @@ struct ProjectInstructionContextTests {
         let global = try #require(context.globalSettings.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] })
         #expect(Set(global.keys) == ["defaultModel", "defaultThinkingLevel", "retry"])
     }
+
+    /// A child folder's agents take the parent spaces' unset startup model and thinking; an unrelated
+    /// folder takes nothing, whatever Shepherd's organization says.
+    @Test func aNestedSpaceInheritsItsParentsStartupDefaults() async throws {
+        let scratch = try ScratchServer()
+        defer { scratch.stop() }
+        let home = scratch.dir.appendingPathComponent("home")
+        let parent = home.appendingPathComponent("code/shepherd"), child = parent.appendingPathComponent("landing")
+        let unrelated = home.appendingPathComponent("code/elsewhere")
+        for folder in [child.appendingPathComponent(".pi"), parent.appendingPathComponent(".pi"), unrelated] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        try Data(#"{"defaultProvider":"anthropic","defaultModel":"claude-opus-4-6","defaultThinkingLevel":"high"}"#.utf8)
+            .write(to: parent.appendingPathComponent(".pi/settings.json"))
+        try Data(#"{"defaultThinkingLevel":"low"}"#.utf8).write(to: child.appendingPathComponent(".pi/settings.json"))
+        let store = ProjectSettingsStore(historyURL: scratch.dir.appendingPathComponent("history.json"), home: home,
+                                        sessions: scratch.dir.appendingPathComponent("sessions"))
+        var landing = Space(name: "shepherd-landing", path: child.path), other = Space(name: "elsewhere", path: unrelated.path)
+        let root = Space(name: "shepherd", path: parent.path)
+        other.parentID = root.id; other.parentIsExplicit = true; landing.parentID = root.id
+        let state = ShepherdState(spaces: [root, landing, other])
+        guard case .context(let context) = try await store.request(.context(directory: child.path), state: state) else { Issue.record("Missing context"); return }
+        #expect(context.parentName == "shepherd" && context.parentSettings?["defaultModel"] == "claude-opus-4-6")
+        let defaults = await store.launchDefaults(for: child.path)
+        #expect(defaults == SpaceInheritedDefaults(model: "anthropic/claude-opus-4-6", thinking: nil), "the child's own thinking wins")
+        #expect(await store.launchDefaults(for: unrelated.path) == nil)
+        guard case .context(let elsewhere) = try await store.request(.context(directory: unrelated.path), state: state) else { Issue.record("Missing context"); return }
+        #expect(elsewhere.parentName == nil)
+    }
 }
 
 @MainActor private final class OpenedProjectFile: Sendable { var path: String? }

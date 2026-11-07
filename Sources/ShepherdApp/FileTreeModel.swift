@@ -349,23 +349,8 @@ final class FileTreeModel {
     /// lines that changed are marked as the agent's); an editor with unsaved edits keeps them
     /// and holds the disk's text as a conflict, so neither side is lost.
     private func take(disk text: String, for path: String) {
-        guard var edit = edits[path] else {
-            edits[path] = FileEdit(saved: text, text: text)
-            textRevision &+= 1
-            return
-        }
-        if text == edit.saved {
-            edit.conflict = nil
-        } else if !edit.isDirty {
-            edit = FileEdit(saved: text, text: text, before: edit.before ?? edit.saved)
-            textRevision &+= 1
-        } else if text == edit.text {
-            // The disk caught up with the editor (saved elsewhere): nothing is unsaved now.
-            edit.saved = text
-            edit.conflict = nil
-        } else {
-            edit.conflict = text
-        }
+        var edit = edits[path] ?? FileEdit(saved: text, text: text)
+        if edits[path] == nil || edit.take(disk: text) { textRevision &+= 1 }
         if edits[path] != edit { edits[path] = edit }
     }
 
@@ -391,9 +376,7 @@ final class FileTreeModel {
     /// Drops the unsaved edits: the editor takes the file as it is on disk (the newer text when
     /// it changed under them).
     func revert() {
-        guard let path = selectedPath, let edit = edits[path], edit.isDirty || edit.conflict != nil else { return }
-        let disk = edit.conflict ?? edit.saved
-        edits[path] = FileEdit(saved: disk, text: disk, before: edit.conflict == nil ? edit.before : (edit.before ?? edit.saved))
+        guard let path = selectedPath, edits[path]?.revert() == true else { return }
         saveError = nil
         textRevision &+= 1
     }
@@ -412,10 +395,7 @@ final class FileTreeModel {
         switch result {
         case .saved:
             saveError = nil
-            edits[path]?.saved = text
-            edits[path]?.conflict = nil
-            // The marks were the agent's lines in the version the person just made their own.
-            edits[path]?.before = nil
+            edits[path]?.didSave(text)
             if selectedPath == path, case .text(_, let ext) = selectedContent {
                 selectedContent = .text(text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init), ext)
             }
@@ -520,42 +500,6 @@ enum FileContent: Equatable {
     case text([String], String)
     /// Raw image data.
     case image(Data)
-}
-
-/// One open text file in the editor.
-struct FileEdit: Equatable {
-    /// The file as last read or saved: unsaved edits are measured against it.
-    var saved: String
-    /// The editor's text.
-    var text: String
-    /// The file before the last change on disk the editor took in: the agent's lines are those
-    /// that differ from it. nil until the file changes under the editor, and again after a save.
-    var before: String?
-    /// The file changed on disk under unsaved edits: its new text. Nothing is written or
-    /// replaced until the person chooses (Overwrite saves theirs, Revert takes the disk's).
-    var conflict: String?
-    /// The status bar's indentation, read once from the file as it was taken in.
-    var indentation: String?
-
-    init(saved: String, text: String, before: String? = nil) {
-        self.saved = saved
-        self.text = text
-        self.before = before
-        self.indentation = Self.indentation(saved)
-    }
-
-    var isDirty: Bool { text != saved }
-
-    /// The status bar's indentation: "Tabs", or "Spaces: n" for the narrowest indented line.
-    static func indentation(_ text: String) -> String? {
-        var narrowest: Int?
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            if line.first == "\t" { return "Tabs" }
-            let spaces = line.prefix { $0 == " " }.count
-            if spaces > 0, spaces < line.count { narrowest = min(narrowest ?? spaces, spaces) }
-        }
-        return narrowest.map { "Spaces: \($0)" }
-    }
 }
 
 /// How a save went.
