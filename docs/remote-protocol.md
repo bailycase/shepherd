@@ -277,6 +277,14 @@
     empty and uncut). Files and tests run off the server queue; changes tell the Mac's Hooks page.
     The iPhone and iPad hide the page on older hosts; the Mac's Settings › Hooks shows a remote
     host through the host picker and asks an older host to update
+  - `apps` (`apps.v1`, `RemoteAppsRequest`): a space's apps (its `.shepherd/apps.json`, then the
+    host's `~/.shepherd/apps.json`), each with its run (`RemoteAppRun`: starting, running with its
+    port, exited with its code, or failed with why). `run` starts one as the Mac's Run does (a
+    space's app in the named thread's folder, else the space's), `stop` sends SIGTERM to its group
+    and SIGKILL after a grace period; each answers the list as it is afterwards. A hidden or missing
+    space is `no_such_space`, an unknown app `no_such_app`, a refused start `start_failed`. The
+    server answers itself (`AppTools.remote`, `AppProcesses`). The iPhone and iPad thread header's
+    Run reads the list while the thread is on screen; older hosts show no Run
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the

@@ -410,11 +410,11 @@ struct RemoteRequestTests {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 44
+    static let caseCount = 45
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -460,6 +460,10 @@ struct RemoteRequestTests {
         .hostConfig(id: 28, request: .mcpRefresh),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
         .hooks(id: 29, request: .setOn(hash: "ab12", on: false)),
+        .apps(id: 35, request: .list(spaceID: S.space)),
+        .apps(id: 36, request: .run(spaceID: S.space, name: "Web app", mac: false, agentID: S.agent)),
+        .apps(id: 37, request: .run(spaceID: S.space, name: "Simulator", mac: true, agentID: nil)),
+        .apps(id: 38, request: .stop(spaceID: S.space, name: "Web app", mac: false)),
         .projects(id: 30, request: .list()),
         .logicalProjects(id: 31, request: .list),
         .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
@@ -641,11 +645,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 44
+    static let caseCount = 45
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -686,6 +690,16 @@ struct RemoteReplyTests {
         .hostConfig(id: 29, result: .mcp(S.mcpInventory)),
         .skills(id: 30, result: .skills(S.skills)),
         .hooks(id: 30, result: .hooks(S.hooks)),
+        .apps(id: 35, result: RemoteAppsResult(space: "acme-web", apps: [
+            RemoteApp(app: AppDefinition(name: "Web app", command: "npm run dev", folder: "apps/web", opens: .browser,
+                                         address: "http://localhost:3000", quickAction: true),
+                      mac: false, run: RemoteAppRun(status: .running, port: 3000)),
+            RemoteApp(app: AppDefinition(name: "Storybook", command: "npm run storybook", quickAction: true), mac: false,
+                      run: RemoteAppRun(status: .exited(code: 1))),
+            RemoteApp(app: AppDefinition(name: "Simulator", command: "open -a Simulator", opens: .window), mac: true,
+                      run: RemoteAppRun(status: .failed("Its folder doesn’t exist."), stopping: true)),
+            RemoteApp(app: AppDefinition(name: "Docs", command: "make docs"), mac: true),
+        ])),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
         .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
@@ -1079,7 +1093,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,

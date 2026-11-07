@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import Testing
 @testable import ShepherdSessions
+import ShepherdProtocol
 
 /// What an agent's app tools see (`AppTools.visible`): its space's apps, and only the This Mac
 /// apps that let agents start them.

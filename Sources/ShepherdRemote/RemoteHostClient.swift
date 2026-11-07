@@ -962,6 +962,20 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Lists, runs or stops a space's apps on the host, and answers with the space's apps as they
+    /// are afterwards. A host without `appsCapability` throws `update_required` before sending.
+    @discardableResult
+    public func apps(_ request: RemoteAppsRequest) async throws -> RemoteAppsResult {
+        guard capabilities.contains(RemoteProtocol.appsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to run its apps from here.")
+        }
+        switch try await self.request { .apps(id: $0, request: request) } {
+        case .apps(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected apps reply")
+        }
+    }
+
     public func projectRuntime(_ request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
         guard !request.requiresResults || capabilities.contains(RemoteProtocol.projectResultCapability) else {
             throw RemoteHostClientError.rejected(code: "unsupported_result", message: "This owner cannot serve durable Project history/results.")
@@ -1375,7 +1389,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .forgeResult(let id, _), .instructions(let id, _),
              .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .hooks(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
              .browserClaimed(let id, _), .mission(let id, _),
-             .hostConfig(let id, _):
+             .hostConfig(let id, _), .apps(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
