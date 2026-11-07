@@ -97,6 +97,9 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public var coordinatorAgentID: AgentID?
     public var revision: UInt64
     public var paused: Bool
+    /// The person paused it (Project settings, or Pause on the page): their messages wait for Resume. A stop the runtime made on its
+    /// own (a failed launch or save, Projects turned off) leaves this false, and the person's next message restarts it.
+    public var pausedByPerson: Bool = false
     public var settings: LogicalProjectSettings
     public var memory: [ProjectMemory]
     public var linkedSpaces: [ProjectSpaceLink]
@@ -142,7 +145,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, referencedTasks, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext, outcomePage
+        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, pausedByPerson, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, referencedTasks, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext, outcomePage
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -153,6 +156,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         coordinatorAgentID = try c.decodeIfPresent(AgentID.self, forKey: .coordinatorAgentID)
         revision = try c.decodeIfPresent(UInt64.self, forKey: .revision) ?? 1
         paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? true
+        pausedByPerson = try c.decodeIfPresent(Bool.self, forKey: .pausedByPerson) ?? false
         settings = try c.decodeIfPresent(LogicalProjectSettings.self, forKey: .settings) ?? .init()
         memory = try c.decodeIfPresent([ProjectMemory].self, forKey: .memory) ?? []
         linkedSpaces = try c.decodeIfPresent([ProjectSpaceLink].self, forKey: .linkedSpaces) ?? []
