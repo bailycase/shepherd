@@ -60,4 +60,9 @@ struct PadSplitLayoutTests {
         #expect(PadSplitLayout.unfold([nil]) == nil)
         #expect(PadSplitLayout.unfold([.changes, nil]) == nil)
     }
+
+    @Test func artifactsIsATabOnlyOnceTheThreadHasOne() {
+        #expect(PadSidePaneTab.shown(artifacts: false) == [.changes, .files, .terminal, .subagents, .browser])
+        #expect(PadSidePaneTab.shown(artifacts: true).last == .artifacts)
+    }
 }

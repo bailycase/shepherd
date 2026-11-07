@@ -257,6 +257,9 @@ private struct SubagentTurnItem: View {
         case .hook(_, let row):
             // The phone and the iPad draw a hook's row as its line (the Mac draws HookEventRow).
             Text(row.spoken).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
+        case .artifact(_, let artifact):
+            // A subagent's transcript has no pane beside it: the card names the file and draws no Open.
+            ArtifactCardItem(artifact: artifact)
         case .images(_, let images):
             // The phone and the iPad do not draw a thread's images yet: how many, as the note it replaced said.
             Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.sh(.caption))
@@ -304,6 +307,7 @@ struct SubagentActivityLine: View {
     private var kind: SHActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
+        case .edit where burst.artifact != nil: .artifact
         case .edit: .edit
         case .run: .run
         case .subagents: .subagents

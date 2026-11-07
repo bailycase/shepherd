@@ -69,6 +69,8 @@ struct ActivityLineView: View, Equatable {
     /// Opens the review pane at a file an edit or write touched.
     var review: ((String) -> Void)?
     private let didPrepareInputs: ((Int) -> Void)?
+    @Environment(\.openArtifact) private var openArtifact
+    @Environment(\.threadArtifacts) private var artifacts
     @State private var expanded: Bool
     @State private var expandedCalls: Set<String>
     @State private var seedScripts = true
@@ -113,9 +115,9 @@ struct ActivityLineView: View, Equatable {
     private var line: some View {
         VStack(alignment: .leading, spacing: 0) {
             // A call the model is still writing says how much of its arguments came (ResponseVisibility › A).
-            SHActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
+            SHActivityLine(kind: kind, label: burst.label, meta: burst.meta(artifacts: artifacts), status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil, received: burst.received)
+                           action: opensArtifact ?? (burst.expandable ? toggle : nil), received: burst.received)
             if expanded {
                 // The mounted disclosure state, not the initializer's seed, owns preparation.
                 ActivityCallDetails(calls: burst.calls, review: review, expandedCalls: $expandedCalls,
@@ -129,9 +131,16 @@ struct ActivityLineView: View, Equatable {
         }
     }
 
+    /// "Made an artifact · plan.md" opens the file in the side pane, where a pane can show it.
+    private var opensArtifact: (() -> Void)? {
+        guard let artifact = burst.artifact, let openArtifact else { return nil }
+        return { openArtifact(artifact.path) }
+    }
+
     private var kind: SHActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
+        case .edit where burst.artifact != nil: .artifact
         case .edit: .edit
         case .run: .run
         case .subagents: .subagents

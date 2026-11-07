@@ -59,6 +59,10 @@ struct ThreadScreen: View {
         // Where the agent works (the branch chip); the host is named once there is more than one.
         let branch = agent.flatMap { AgentBranchLabel(agent: $0, host: hosts.hosts.count > 1 ? host?.name : nil) }
         let transcript = ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
+            .environment(\.openArtifact, store.supports("artifacts") || !store.artifacts.isEmpty ? { [navigator, ref] path in
+                ArtifactHooks.open(thread: ref, path: path, navigator: navigator)
+            } : nil)
+            .environment(\.threadArtifacts, store.artifacts.byPath)
         let arranged = navigator.sidePane.arranged == ref
         // The laptop arrangement's bar names the thread alone, beside its capsule (DuoLaptop).
         let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch,
@@ -676,7 +680,7 @@ private struct ThreadOptionsItems: View {
 
     var body: some View {
         Section {
-            ForEach(PadSidePaneTab.allCases, id: \.self) { tab in
+            ForEach(PadSidePaneTab.shown(artifacts: false), id: \.self) { tab in
                 Button { navigator.open(.paneScreen(tab, thread: ref)) } label: {
                     Label(tab.title, systemImage: SidePaneTabs.systemImage(tab))
                     if let detail = detail(tab) { Text(detail) }
@@ -710,7 +714,7 @@ private struct ThreadOptionsItems: View {
         case .subagents:
             let running = store.subagents.count { nativeRunPhase($0) == .running }
             return running > 0 ? "\(running) running" : nil
-        case .files, .browser:
+        case .files, .browser, .artifacts:
             return nil
         }
     }

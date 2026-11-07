@@ -274,7 +274,7 @@ final class HomeFeed {
             case .unchanged(let piSessionID, let generation, let revision):
                 unchanged(ref, digest: digest, piSessionID: piSessionID, generation: generation, revision: revision,
                           asked: asking != nil, session: session)
-            case .failure, .accepted, .transcript, .imageChunk:
+            case .failure, .accepted, .transcript, .imageChunk, .artifactChunk:
                 // A thread still starting, or one that has none: try again next connection.
                 readIn[ref] = session
             }

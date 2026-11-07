@@ -65,9 +65,9 @@ public enum PadSplitLayout {
 }
 
 /// The side pane's tabs (DuoSidePaneTabs board; the Mac's `SidePaneTab`): Changes, Files,
-/// Terminal, Subagents and Browser.
+/// Terminal, Subagents and Browser always, Artifacts once the thread has made one.
 public enum PadSidePaneTab: String, CaseIterable, Codable, Hashable, Sendable {
-    case changes, files, terminal, subagents, browser
+    case changes, files, terminal, subagents, browser, artifacts
 
     public var title: String {
         switch self {
@@ -76,6 +76,12 @@ public enum PadSidePaneTab: String, CaseIterable, Codable, Hashable, Sendable {
         case .terminal: "Terminal"
         case .subagents: "Subagents"
         case .browser: "Browser"
+        case .artifacts: "Artifacts"
         }
+    }
+
+    /// The tabs a thread's pane shows, in order.
+    public static func shown(artifacts: Bool) -> [PadSidePaneTab] {
+        artifacts ? allCases : allCases.filter { $0 != .artifacts }
     }
 }

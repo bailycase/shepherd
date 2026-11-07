@@ -59,8 +59,7 @@ extension MobileNavigator {
             settingsPath = try c.decode([MobileRoute].self, forKey: .settingsPath)
             padSelection = try c.decodeIfPresent(AgentRef.self, forKey: .padSelection)
             padPath = try c.decode([MobileRoute].self, forKey: .padPath)
-            // A tab a later version removed (Artifacts) restores as no tab rather than failing the window.
-            sidePane = (try? c.decodeIfPresent(PadSidePaneTab.self, forKey: .sidePane)) ?? nil
+            sidePane = try c.decodeIfPresent(PadSidePaneTab.self, forKey: .sidePane)
         }
     }
 

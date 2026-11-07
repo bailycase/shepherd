@@ -68,7 +68,7 @@ private extension PadSplitLayout.PaneDock {
 }
 
 /// The side pane (DuoSidePaneTabs): its tabs, then the open tab. Changes, Terminal and Subagents host the screens iOS already has;
-/// Files (`ThreadFilesPane`, files.v1) and Browser (`ThreadBrowserPane`, browser.tunnel.v1) are their own views.
+/// Files (`ThreadFilesPane`, files.v1) and Browser (`ThreadBrowserPane`, browser.tunnel.v1) are their own views; Artifacts joins once the thread has made one.
 struct ThreadSidePane: View {
     let ref: AgentRef
     @Environment(MobileNavigator.self) private var navigator
@@ -78,8 +78,9 @@ struct ThreadSidePane: View {
         let pane = navigator.sidePane
         let store = threads.store(for: ref)
         let review = ReviewStores.shared.store(for: ref)
-        let shown = PadSidePaneTab.allCases
-        let tab = pane.tab
+        let shown = PadSidePaneTab.shown(artifacts: !store.artifacts.isEmpty)
+        // A pane left on Artifacts over a thread that has none shows Changes.
+        let tab = shown.contains(pane.tab) ? pane.tab : .changes
         VStack(spacing: 0) {
             SHPadPaneHead(SidePaneTabs.items(shown, review: review, thread: store, terminals: runningTerminals(ref)),
                           selection: tab.rawValue, select: { id in PadSidePaneTab(rawValue: id).map(pane.show) }) {
@@ -92,6 +93,7 @@ struct ThreadSidePane: View {
                 case .terminal: TerminalScreen(ref: ref, embedded: true)
                 case .subagents: PadSubagentInspector(ref: ref)
                 case .browser: ThreadBrowserPane(thread: ref)
+                case .artifacts: PadArtifactsPane(ref: ref, store: review, artifacts: store.artifacts)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -126,6 +128,7 @@ enum SidePaneTabs {
         case .terminal: "apple.terminal"
         case .subagents: SHGlyph.gitBranch.symbolName
         case .browser: "globe"
+        case .artifacts: SHGlyph.artifact.symbolName
         }
     }
 
@@ -134,6 +137,7 @@ enum SidePaneTabs {
         return tabs.map { tab in
             let count: Int? = switch tab {
             case .changes: review.loaded ? review.entries.count : nil
+            case .artifacts: thread.artifacts.count
             default: nil
             }
             let status: AgentState? = switch tab {

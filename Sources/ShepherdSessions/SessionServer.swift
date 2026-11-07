@@ -1849,7 +1849,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if store.state.isMissionAgent(agentID) {
             switch request {
-            case .snapshot, .image, .subagentTranscript: break
+            case .snapshot, .image, .artifact, .subagentTranscript: break
             case .send(_, _, let operationID, let text, let delivery, let images, _, let references, let elements) where onMissionThreadSend != nil:
                 guard (images ?? []).isEmpty, (references ?? []).isEmpty, (elements ?? []).isEmpty else {
                     completion(.result(.failure(code: "mission_words_only", message: "A mission's thread takes words only. Remove the images or attachments and send again.")))
@@ -2016,7 +2016,7 @@ public final class SessionServer: @unchecked Sendable {
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             if case .snapshot(var snapshot) = result, self?.store.state.isMissionAgent(agentID) == true {
                 // Words go through the mission's owner, only while it can take them (`onMissionThreadSend`).
-                snapshot.supportedActions = self?.missionThreadTakesWords(agentID) == true ? ["images", "send"] : ["images"]
+                snapshot.supportedActions = self?.missionThreadTakesWords(agentID) == true ? ["images", "artifacts", "send"] : ["images", "artifacts"]
                 completion(.result(.snapshot(value: snapshot)))
             } else { completion(.result(result)) }
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }

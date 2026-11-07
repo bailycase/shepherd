@@ -68,6 +68,8 @@ extension MobileRoute {
         case .terminal: .terminal(.panes(thread))
         case .subagents: .subagents(.list(thread))
         case .browser: .browser(.page(thread))
+        // The phone shows an artifact in a sheet (`ArtifactHooks`); its list is the changes'.
+        case .artifacts: .review(.changes(thread, file: nil))
         }
     }
 }

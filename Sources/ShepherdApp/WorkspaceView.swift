@@ -576,6 +576,8 @@ struct PaneLeafView: View, Equatable {
                 )
                 // Design references reach an ordinary thread only.
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
+                .environment(\.openArtifact, { [vm] path in vm.selectAgent(agentID); vm.showArtifact(.local(agentID), path: path) })
+                .environment(\.threadArtifacts, vm.threadStores.existing(for: agentID)?.artifacts.byPath ?? [:])
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
                 .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
                 // The branch card floats over the thread's top right: never in its layout, so it
@@ -1061,6 +1063,8 @@ struct RemoteAgentThreadPane: View {
         .environment(\.designReferences, designChat ? nil : vm.remoteDesignReferenceChips(for: ref))
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))
+        .environment(\.openArtifact, designChat ? nil : { path in vm.showArtifact(.remote(ref), path: path) })
+        .environment(\.threadArtifacts, vm.remoteThreadStores.existing(for: ref)?.artifacts.byPath ?? [:])
     }
 }
 

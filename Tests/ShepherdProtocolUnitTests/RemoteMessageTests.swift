@@ -1114,7 +1114,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.checkpointRecoveryCapability,
             RemoteProtocol.nativeQueueSubagentCapability, RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.browserTabsCapability,
-            RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability,
+            RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability, RemoteProtocol.nativeArtifactsCapability,
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
@@ -1188,6 +1188,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeInterruptCapability == "native.interrupt.v1")
         #expect(RemoteProtocol.nativeServiceTierCapability == "native.serviceTier.v1")
         #expect(RemoteProtocol.nativeImagesCapability == "native.images.v1")
+        #expect(RemoteProtocol.nativeArtifactsCapability == "native.artifacts.v1")
         #expect(RemoteProtocol.designsCapability == "designs.v1")
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
         #expect(RemoteProtocol.designDeleteCapability == "design.delete.v1")

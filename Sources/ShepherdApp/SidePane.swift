@@ -4,8 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The side pane's tab strip over the current tab (PaneStates, Review, SubagentList, FilesTab): Changes, with
-/// its count of changed files, the branch's Pull request, a local thread's Browser, Files with the space's file browser,
-/// and Subagents with its count of runs.
+/// its count of changed files, the branch's Pull request, a local thread's Browser, Artifacts with its count of files,
+/// Files with the space's file browser, and Subagents with its count of runs.
 /// The subagent inspector is not a tab: it takes the
 /// whole pane over while a run is inspected (`AgentLayoutView`), and the Subagents tab is the list
 /// that opens it.
@@ -48,6 +48,9 @@ struct SidePaneView: View {
                     }
                 case .pullRequest:
                     pullRequestContent
+                        .shTransition(.content)
+                case .artifacts:
+                    ArtifactsTab(store: store, actions: vm.artifactsActions(for: owner))
                         .shTransition(.content)
                 case .subagents:
                     SubagentListTab(store: store, inspect: inspect)
@@ -123,6 +126,7 @@ private struct SidePaneTabBar: View {
         let tabs = vm.sidePaneTabs(for: owner)
         SHSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
                                           browser: tabs.contains(.browser), browserTip: browserTip,
+                                          artifacts: store.artifacts.isEmpty ? nil : store.artifacts.count,
                                           subagents: SidePaneTabs.subagents(store.subagents),
                                           pullRequest: tabs.contains(.pullRequest) ? pullRequest?.selection?.number : nil),
                        selection: tab.rawValue,
@@ -134,6 +138,21 @@ private struct SidePaneTabBar: View {
             // Open in its own window and Show tabs wait for the tabs that need them.
             if tab == .changes, let review {
                 ReviewOptionItems(session: review, maximized: maximized, toggleMaximized: { vm.toggleSidePaneMaximized(owner) })
+                Divider()
+            }
+            if tab == .artifacts, let path = vm.subagentInspector.artifact[owner],
+               let artifact = store.artifacts.first(where: { $0.path == path }) {
+                Button("Save a Copy…") {
+                    // The open file is held already; one still loading is fetched first.
+                    Task {
+                        switch await store.artifactFiles.load(artifact) {
+                        case .file(let data): ArtifactCopy.save(data, name: artifact.name, failed: { vm.remoteActionError = $0 })
+                        case .unavailable: vm.remoteActionError = "\(artifact.name) isn’t available."
+                        case .failed(let message): vm.remoteActionError = message
+                        case .cancelled: break
+                        }
+                    }
+                }
                 Divider()
             }
             if tab == .pullRequest, let ref = pullRequest?.selection {
@@ -159,18 +178,21 @@ private struct SidePaneTabBar: View {
 /// The strip's tabs, from what each one holds.
 enum SidePaneTabs {
     /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
+    /// `artifacts` is the thread's file count; nil while it has none (no tab).
     /// `subagents` is the thread's run count and status; nil while it has none (no tab).
     /// `pullRequest` is the branch's pull request's number; nil while it has none (no tab).
     static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: SHSidePaneTabTip? = nil,
-                      subagents: (count: Int, status: AgentState)? = nil, pullRequest: Int? = nil) -> [SHSidePaneTab] {
+                      artifacts: Int? = nil, subagents: (count: Int, status: AgentState)? = nil, pullRequest: Int? = nil) -> [SHSidePaneTab] {
         SidePaneTab.tabs(browser: browser, pullRequest: pullRequest != nil).compactMap { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
             case .browser, .pullRequest: nil
             case .files: nil
+            case .artifacts: artifacts
             case .subagents: subagents?.count
             }
             if tab == .subagents, subagents == nil { return nil }
+            if tab == .artifacts, artifacts == nil { return nil }
             return SHSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
                                  badge: tab == .pullRequest ? pullRequest.map { "#\($0)" } : nil, news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
         }

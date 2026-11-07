@@ -479,6 +479,7 @@ struct TurnPresentationTests {
             case .images(_, let images): "images:\(images.count)"
             case .goalRecord: "goal"
             case .hook(_, let row): "hook:" + row.kind.rawValue
+            case .artifact(_, let artifact): "artifact:" + artifact.name
             case .error(_, _, let final, let folded): final ? "error:final" : folded ? "error:folded" : "error"
             case .retrying: "retrying"
             case .steer(_, let text, _, _): "steer:" + text

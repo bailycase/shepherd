@@ -43,6 +43,9 @@ public enum SHGlyph: CaseIterable, Sendable {
     case hook
     /// A skill (SentCommandsA's "Used skill" line; the composer's skill chip): the outline book.
     case skill
+    /// A file the agent made (PaneArtifacts, iPadPaneArtifacts: the Artifacts tab and "Made an artifact"). The boards draw a page with a
+    /// sparkle in it, which no SF Symbol matches; the page with a plus is the nearest ("made").
+    case artifact
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -61,6 +64,7 @@ public enum SHGlyph: CaseIterable, Sendable {
         case .responseTiming: "stopwatch"
         case .hook: "point.topright.arrow.triangle.backward.to.point.bottomleft.scurvepath"
         case .skill: "book"
+        case .artifact: "doc.badge.plus"
         }
     }
 

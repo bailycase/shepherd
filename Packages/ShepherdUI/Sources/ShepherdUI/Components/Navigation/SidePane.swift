@@ -201,7 +201,7 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     public let id: String
     public let title: String
     public let systemImage: String
-    /// Files changed, runs; nil shows none.
+    /// Files changed, new artifacts; nil shows none.
     public let count: Int?
     /// A word after the label in the count's place ("#31", the Pull request tab's number).
     public let badge: String?
