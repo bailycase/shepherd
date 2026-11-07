@@ -126,7 +126,7 @@ struct WorkspaceCommands: Commands {
     let themes: ThemeManager
 
     var body: some Commands {
-        AppSettingsCommands(launch: launch)
+        AppSettingsCommands(launch: launch, keys: keys, bindings: keys.overrides)
         FileCommands(launch: launch, keys: keys, bindings: keys.overrides)
         ViewCommands(launch: launch, keys: keys, bindings: keys.overrides, themes: themes)
         PaneCommands(launch: launch, keys: keys, bindings: keys.overrides)
@@ -135,12 +135,25 @@ struct WorkspaceCommands: Commands {
     }
 }
 
-/// Settings (⌘,) and Check for Updates, in the app menu.
+/// Settings (⌘,), Check for Updates and Quit and Stop Agents, in the app menu.
 struct AppSettingsCommands: Commands {
     let launch: ShepherdLaunch<ShepherdViewModel>
+    let keys: KeybindingsStore
+    /// Read so the menu rebuilds when a shortcut is rebound.
+    let bindings: [ShortcutAction: KeyChord]
     private var vm: ShepherdViewModel? { launch.model }
 
     var body: some Commands {
+        CommandGroup(after: .appTermination) {
+            // Only while the background service runs the agents; ⌘Q leaves them running.
+            if let service = vm?.backgroundService, BackgroundHostClient.owner == .host {
+                Button(ShortcutAction.quitAndStopAgents.title) {
+                    do { try service.unregister() } catch { NSLog("Shepherd: background service not stopped: \(error)") }
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut(keys.shortcut(.quitAndStopAgents))
+            }
+        }
         CommandGroup(replacing: .appSettings) {
             Group {
                 SettingsCommandButton(vm: vm)

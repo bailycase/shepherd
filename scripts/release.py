@@ -546,7 +546,32 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
     problems += architecture_problems(path)
     problems += [f"pi engine: {problem}" for problem in pi_engine.verify(path)]
     problems += extension_problems(path)
+    problems += launch_agent_problems(path, app.bundle_id, executable)
     return problems
+
+
+def launch_agent_plist(bundle_id: str) -> str:
+    """Where the background host's LaunchAgent lives in the app (SMAppService.agent's plistName)."""
+    return os.path.join("Contents", "Library", "LaunchAgents", f"{bundle_id}.host.plist")
+
+
+def launch_agent_problems(app: str, bundle_id: str, executable: str | None) -> list[str]:
+    """A background host plist that would register another app's job, or run something other
+    than this app's own executable with --host (scripts/host-launch-agent.sh writes it)."""
+    relative = launch_agent_plist(bundle_id)
+    try:
+        with open(os.path.join(app, relative), "rb") as f:
+            agent = plistlib.load(f)
+    except (OSError, plistlib.InvalidFileException) as error:
+        return [f"launch agent: {relative} is unreadable: {error}"]
+    expected = {
+        "Label": f"{bundle_id}.host",
+        "BundleProgram": f"Contents/MacOS/{executable}",
+        "ProgramArguments": [executable, "--host"],
+        "AssociatedBundleIdentifiers": [bundle_id],
+    }
+    return [f"launch agent: {key} is {agent.get(key)!r}, expected {value!r}"
+            for key, value in expected.items() if agent.get(key) != value]
 
 
 # Every pi extension and node script the app installs ships in ShepherdSessions' resource bundle
