@@ -22,6 +22,8 @@ final class ThreadFilesStores {
                 try await Self.client(ref, hosts).listFiles(agentID: ref.agent, path: path, showHidden: hidden)
             }, read: { [weak hosts] path in
                 try await Self.client(ref, hosts).readFile(agentID: ref.agent, path: path)
+            }, write: { [weak hosts] path, text, expected in
+                try await Self.client(ref, hosts).writeFile(agentID: ref.agent, path: path, text: text, expected: expected)
             })
         }
     }
