@@ -71,6 +71,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// client's page, the agent's queue given up, this client's claim ended, the user's message
     /// that hands the page back, or a page the agent opened on the host. Main queue, in order.
     public var onBrowserDrive: ((BrowserDrivePush) -> Void)?
+    /// A design the background host on this Mac asks this client to draw off screen; answer it
+    /// with `designRelayAnswer` and the same token. Main queue, in order.
+    public var onDesignRelay: ((Int, DesignRelayJob) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -136,6 +139,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case missionLive(MissionID, RemoteMissionLive)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
+        case designRelay(Int, DesignRelayJob)
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -795,6 +799,11 @@ public final class RemoteHostClient: @unchecked Sendable {
     public func browserAnswer(token: Int, outcome: BrowserOutcome) {
         guard capabilities.contains(RemoteProtocol.browserDriveCapability) else { return }
         queue.async { self.sendRequest(.browserAnswer(requestToken: token, outcome: outcome)) }
+    }
+
+    /// Answers a `RemoteReply.designRelay`. Nothing answers it.
+    public func designRelayAnswer(token: Int, result: DesignRelayResult) {
+        queue.async { self.sendRequest(.designRelayAnswer(requestToken: token, result: result)) }
     }
 
     /// Why a host without `browserDriveCapability` leaves its agent on its own page.
@@ -1462,6 +1471,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             tunnels.receive(frame)
         case .browserDrive(let push):
             self.push(.browserDrive(push), bytes: line.count)
+        case .designRelay(let token, let job):
+            self.push(.designRelay(token, job), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1575,6 +1586,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .missionLive(let missionID, let live): self.onMissionLive?(missionID, live)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
+                case .designRelay(let token, let job): self.onDesignRelay?(token, job)
                 }
             }
             finish()

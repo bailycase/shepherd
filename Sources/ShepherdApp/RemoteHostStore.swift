@@ -260,6 +260,8 @@ final class RemoteHostStore {
     /// A host said something about an agent's browser (`BrowserDrivePush`): the host, the client
     /// that heard it (an answer goes back on it) and the push.
     @ObservationIgnored var onBrowserDrive: ((UUID, RemoteHostClient, BrowserDrivePush) -> Void)?
+    /// A board the background host on this Mac asks this app to draw (`DesignRelayJob`).
+    @ObservationIgnored var onDesignRelay: ((RemoteHostClient, Int, DesignRelayJob) -> Void)?
     /// A host hinted that a subscribed thread has a newer revision (`native.revisions.v1`): one callback
     /// for every window; at most one per agent per 250 ms from the host. A hint to pull, never content.
     @ObservationIgnored var onNativeThreadChanged: ((RemoteAgentRef) -> Void)?
@@ -508,6 +510,11 @@ final class RemoteHostStore {
         client.onBrowserDrive = { [weak self, weak connection, weak client] push in
             guard let self, let connection, let client, connection.client === client else { return }
             self.onBrowserDrive?(connection.id, client, push)
+        }
+        // Only the background host on this Mac asks; its paths are this Mac's.
+        client.onDesignRelay = { [weak self, weak connection, weak client] token, job in
+            guard let self, let connection, let client, connection.client === client, connection.isThisMac else { return }
+            self.onDesignRelay?(client, token, job)
         }
         client.onCapabilitiesChanged = { [weak self, weak connection, weak client] capabilities in
             guard let connection, let client, connection.client === client, connection.phase == .connected else { return }

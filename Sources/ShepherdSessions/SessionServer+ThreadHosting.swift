@@ -97,6 +97,8 @@ extension SessionServer {
             guard let self else { throw RemoteCreateAgentError("host is shutting down") }
             return try await self.startDesignAgent(design, brief: brief, hosting: hosting)
         }))
+        // No web view here: the app's window draws boards.
+        relayDesignDrawingToApp()
     }
 
     /// Starts a thread's pi with the host's launch settings; a failure is logged.

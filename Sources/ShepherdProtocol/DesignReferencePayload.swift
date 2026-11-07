@@ -225,8 +225,8 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
 /// What the app draws for a reference's copy at send (the server's `onDesignReferenceCapture`):
 /// each board off screen at zoom 1, from `source` (the version pinned, which may no longer be
 /// the file on disk), into `folder` under the given names.
-public struct DesignReferenceCaptureRequest: Sendable {
-    public struct Board: Sendable {
+public struct DesignReferenceCaptureRequest: Hashable, Sendable, Codable {
+    public struct Board: Hashable, Sendable, Codable {
         public var path: DesignPath
         public var source: String
         /// Whether the current board source matches. Informational only; capture uses pinned files.
@@ -267,8 +267,8 @@ public struct DesignReferenceCaptureRequest: Sendable {
 }
 
 /// What the app drew for a capture, each board's files in the request's order.
-public struct DesignReferenceCaptured: Sendable {
-    public struct Board: Sendable {
+public struct DesignReferenceCaptured: Hashable, Sendable, Codable {
+    public struct Board: Hashable, Sendable, Codable {
         public var picture: DesignReferencePayload.File?
         public var html: DesignReferencePayload.File?
 

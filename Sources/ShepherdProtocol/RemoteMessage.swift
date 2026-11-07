@@ -47,7 +47,10 @@ public enum RemoteProtocol {
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
     /// And it browses a thread's folder (`filesCapability`), which a host offers only to a client that lists it.
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
+    /// And it draws a background host's designs off screen when the host asks
+    /// (`designRelayCapability`), which a host asks only of a local client that lists it.
+    public static let designRelayCapability = "designRelay.v1"
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -663,6 +666,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// The owner's answer to a `BrowserDrivePush.request` carrying `requestToken`. Nothing answers it;
     /// an answer that is not the owner's, or for a request that is over, is ignored.
     case browserAnswer(requestToken: Int, outcome: BrowserOutcome)
+    /// The app's answer to a `RemoteReply.designRelay` carrying `requestToken`. Nothing answers
+    /// it; one from anyone but the client the job went to, or for a job that is over, is ignored.
+    case designRelayAnswer(requestToken: Int, result: DesignRelayResult)
 
     private enum CodingKeys: String, CodingKey {
         case registration, registrationID, agentIDs, session, revision
@@ -672,7 +678,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages, serviceTier
-        case requestToken, outcome
+        case requestToken, outcome, result
     }
 
     private enum Kind: String, Codable {
@@ -688,6 +694,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case design, mission
         case tunnel
         case browserClaim, browserRelease, browserAnswer
+        case designRelayAnswer
     }
 
     public init(from decoder: Decoder) throws {
@@ -711,6 +718,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .browserRelease(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .browserAnswer:
             self = .browserAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), outcome: try c.decode(BrowserOutcome.self, forKey: .outcome))
+        case .designRelayAnswer:
+            self = .designRelayAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), result: try c.decode(DesignRelayResult.self, forKey: .result))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
         case .mission:
@@ -997,6 +1006,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.browserAnswer, forKey: .type)
             try c.encode(requestToken, forKey: .requestToken)
             try c.encode(outcome, forKey: .outcome)
+        case .designRelayAnswer(let requestToken, let result):
+            try c.encode(Kind.designRelayAnswer, forKey: .type)
+            try c.encode(requestToken, forKey: .requestToken)
+            try c.encode(result, forKey: .result)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1163,6 +1176,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A viewer's part in an agent's browser (`BrowserDrivePush`), pushed only to a client that lists
     /// `RemoteProtocol.browserDriveCapability`.
     case browserDrive(BrowserDrivePush)
+    /// A design to draw off screen for the background host (`DesignRelayJob`), pushed only to a
+    /// local client that lists `RemoteProtocol.designRelayCapability`; answered
+    /// `RemoteRequest.designRelayAnswer` with the same token.
+    case designRelay(token: Int, job: DesignRelayJob)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1173,6 +1190,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case snapshot, settings, status
         case designID, revision, commentsRevision
         case url, push, missionID, live
+        case token, job
     }
 
     private enum Kind: String, Codable {
@@ -1186,6 +1204,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
+        case designRelay
     }
 
     public init(from decoder: Decoder) throws {
@@ -1203,6 +1222,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .browserClaimed(id: try c.decode(Int.self, forKey: .id), url: try c.decodeIfPresent(String.self, forKey: .url))
         case .browserDrive:
             self = .browserDrive(try c.decode(BrowserDrivePush.self, forKey: .push))
+        case .designRelay:
+            self = .designRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(DesignRelayJob.self, forKey: .job))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1478,6 +1499,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .browserDrive(let push):
             try c.encode(Kind.browserDrive, forKey: .type)
             try c.encode(push, forKey: .push)
+        case .designRelay(let token, let job):
+            try c.encode(Kind.designRelay, forKey: .type)
+            try c.encode(token, forKey: .token)
+            try c.encode(job, forKey: .job)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

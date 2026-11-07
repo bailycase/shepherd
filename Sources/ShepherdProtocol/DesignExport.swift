@@ -12,7 +12,7 @@ public struct DesignExportRequest: Hashable, Sendable, Codable {
     }
 }
 
-public struct DesignExportJob: Sendable {
+public struct DesignExportJob: Hashable, Sendable, Codable {
     public var designID: DesignID
     public var request: DesignExportRequest
     public var files: DesignExportFiles
@@ -294,8 +294,8 @@ public enum DesignExportTokens {
 }
 
 /// What an export of some boards reads from its design (`DesignStore.exportFiles`).
-public struct DesignExportFiles: Sendable, DesignFileSource {
-    public struct Asset: Hashable, Sendable {
+public struct DesignExportFiles: Hashable, Sendable, Codable, DesignFileSource {
+    public struct Asset: Hashable, Sendable, Codable {
         /// Its file name in `assets/`: `<id>.<ext>`.
         public var name: String
         public var data: Data
@@ -347,6 +347,29 @@ public struct DesignExportFiles: Sendable, DesignFileSource {
 
     public func blob(_ id: String) async -> (name: String, data: Data)? {
         assets[id].map { ($0.name, $0.data) }
+    }
+
+    private enum CodingKeys: String, CodingKey { case index, boards, members, sources, support, assets }
+
+    // The index travels as canvas.json's bytes; it has no Codable form of its own.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        index = try DesignIndex.decode(try c.decode(Data.self, forKey: .index))
+        boards = try c.decode([DesignPath].self, forKey: .boards)
+        members = try c.decode([DesignPath].self, forKey: .members)
+        sources = try c.decode([DesignPath: String].self, forKey: .sources)
+        support = try c.decode([String: Data].self, forKey: .support)
+        assets = try c.decode([String: Asset].self, forKey: .assets)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(try index.encoded(), forKey: .index)
+        try c.encode(boards, forKey: .boards)
+        try c.encode(members, forKey: .members)
+        try c.encode(sources, forKey: .sources)
+        try c.encode(support, forKey: .support)
+        try c.encode(assets, forKey: .assets)
     }
 
     public init(index: DesignIndex, boards: [DesignPath], members: [DesignPath], sources: [DesignPath: String],

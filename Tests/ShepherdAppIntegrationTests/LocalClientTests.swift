@@ -29,9 +29,44 @@ struct LocalClientTests {
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace", timeout: .seconds(30)) {
-            connection.phase == RemoteHostStore.Phase.connected && connection.state == host.server.state
+            // Designs reach a client only while the host serves them, so they aren't compared.
+            connection.phase == RemoteHostStore.Phase.connected && connection.state.spaces == host.server.state.spaces
+                && connection.state.agents == host.server.state.agents
         }
         return (vm, hosts, idle, connection, clientDir, defaults)
+    }
+
+    @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysItsWindowIsClosed() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.relayDesignDrawingToApp()
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let design = Design(name: "Two", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        _ = try await host.server.writeDesignBoard(design.id, path: try DesignPath.validate("Two.dc.html"), source: DesignAgentRenderFlowTests.board)
+        _ = try await host.server.updateDesignIndex(design.id, patch: .object(["boards": .object([
+            "Two.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(400), "h": .number(300), "title": .string("Two")]),
+        ])]))
+        let request = DesignRenderRequest(path: "Two.dc.html")
+        do {
+            _ = try await host.server.renderDesignBoard(design.id, request: request)
+            Issue.record("drew with no app")
+        } catch let failure as DesignRenderFailure {
+            #expect(failure.code == "render_unavailable" && failure.message.contains("Shepherd's window"))
+        }
+
+        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.connections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.designNetwork = .none
+        let rendered = try await host.server.renderDesignBoard(design.id, request: request)
+        #expect(rendered.image.mimeType == "image/png" && rendered.text.hasPrefix("Two.dc.html at 400×300"))
     }
 
     @Test func theHostsAgentDrivesTheAppsPageWithNoTunnel() async throws {
