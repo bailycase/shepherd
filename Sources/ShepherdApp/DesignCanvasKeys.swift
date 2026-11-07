@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The canvas's own chords (RefImplementMenu): Implement in a thread… (⌘↩ unless rebound) and
-/// Copy reference (⇧⌘C), answered only while the design is on screen and nothing that takes text
+/// Copy reference (⇧⌘C), and Back after a Jump (⌘[) while its toast shows, answered only while the design is on screen and nothing that takes text
 /// has the keyboard with something in it, so the chat's composer keeps its own ⌘↩ (send the
 /// other way) for a draft and a text field keeps ⇧⌘C. Clicking the canvas leaves the keyboard
 /// where it was (the chat's composer, usually), so an empty field doesn't hold the chords back.
@@ -12,6 +12,8 @@ struct DesignCanvasKeys: NSViewRepresentable {
     var chatHasDraft: () -> Bool = { false }
     let implement: () -> Void
     let copy: () -> Void
+    /// Back after a Jump; nil while no Jump's toast shows.
+    var back: (() -> Void)?
 
     func makeNSView(context: Context) -> Watcher { Watcher() }
 
@@ -20,6 +22,7 @@ struct DesignCanvasKeys: NSViewRepresentable {
         view.chatHasDraft = chatHasDraft
         view.implement = implement
         view.copy = copy
+        view.back = back
     }
 
     static func dismantleNSView(_ view: Watcher, coordinator: ()) {
@@ -31,6 +34,7 @@ struct DesignCanvasKeys: NSViewRepresentable {
         var chatHasDraft: () -> Bool = { false }
         var implement: () -> Void = {}
         var copy: () -> Void = {}
+        var back: (() -> Void)?
         private var monitor: Any?
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -65,6 +69,10 @@ struct DesignCanvasKeys: NSViewRepresentable {
             }
             if keys.chord(for: .copyDesignReference).matches(event) {
                 copy()
+                return true
+            }
+            if let back, keys.chord(for: .designJumpBack).matches(event) {
+                back()
                 return true
             }
             return false

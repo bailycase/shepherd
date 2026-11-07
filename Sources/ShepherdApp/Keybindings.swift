@@ -31,6 +31,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// in a thread… and Copy reference. The canvas holds no composer or terminal, so ⌘↩ here
     /// never meets the composer's alternate send.
     case implementInThread, copyDesignReference
+    /// Scoped to a design's canvas while a Jump's toast shows (JumpLanded): Back to where the
+    /// canvas was.
+    case designJumpBack
     /// Scoped to a thread's Browser tab while it shows (PaneStates › Keyboard): the address field
     /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
     /// so ⇧⌘C here never meets the canvas's Copy reference. ⌘T opens a new Browser tab
@@ -68,6 +71,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .cycleThinkingLevel: return "Cycle Thinking Level"
         case .implementInThread: return "Implement in a Thread…"
         case .copyDesignReference: return "Copy Design Reference"
+        case .designJumpBack: return "Back After a Jump"
         case .focusAddressBar: return "Focus Address Bar"
         case .selectElement: return "Select an Element"
         case .browserNewTab: return "New Browser Tab"
@@ -87,7 +91,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var scope: Scope {
         switch self {
         case .alternateSend, .cycleThinkingLevel: .composer
-        case .implementInThread, .copyDesignReference: .canvas
+        case .implementInThread, .copyDesignReference, .designJumpBack: .canvas
         case .focusAddressBar, .selectElement, .browserNewTab: .browser
         default: .app
         }
@@ -141,6 +145,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         // The boards' ⌘↩ and ⇧⌘C (RefImplementMenu), on the canvas only.
         case .implementInThread: return KeyChord(key: "return", command: true)
         case .copyDesignReference: return KeyChord(key: "c", command: true, shift: true)
+        // JumpLanded's toast: ⌘[, the system's Back.
+        case .designJumpBack: return KeyChord(key: "[", command: true)
         // PaneStates › Keyboard: ⌘L the address bar, ⇧⌘C select an element.
         case .focusAddressBar: return KeyChord(key: "l", command: true)
         case .selectElement: return KeyChord(key: "c", command: true, shift: true)

@@ -22,7 +22,7 @@ struct KeyboardSettings: View {
         ("Terminal", [.newTerminal, .closeTerminal, .nextTerminal, .previousTerminal,
                       .toggleTerminal, .maximizeTerminal]),
         ("Browser", [.focusAddressBar, .selectElement, .browserNewTab]),
-        ("Designs", [.importDesign, .implementInThread, .copyDesignReference]),
+        ("Designs", [.importDesign, .implementInThread, .copyDesignReference, .designJumpBack]),
     ]
 
     var body: some View {
