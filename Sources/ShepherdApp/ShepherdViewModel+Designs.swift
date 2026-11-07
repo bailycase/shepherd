@@ -343,7 +343,8 @@ final class NewDesignState {
     private(set) var preparingImages = 0
     /// How dropped images are resized and read; a test holds it to see a send wait.
     @ObservationIgnored var prepareImages: ([NSItemProvider]) async -> [(URL, ImageFile?)] = { providers in
-        await ImageFile.read(await AppImageDrop.resolve(providers))
+        // A PDF (From a screenshot) goes as its first page.
+        await ImageFile.read(await AppImageDrop.resolve(providers).map { PageCapture.imageFile($0) })
     }
     /// Why Send waits for the images being read; nil when none are.
     var imagesPending: String? { preparingImages > 0 ? "Adding images…" : nil }
@@ -477,6 +478,28 @@ final class NewDesignState {
         attach(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
     }
 
+    /// The page Capture a page is drawing, by its host; nil when none is.
+    private(set) var capturing: String?
+
+    /// Capture a page: the page at `address` drawn off screen and attached to the brief.
+    func capture(_ address: String) {
+        guard capturing == nil else { return }
+        guard let url = PageCapture.address(address) else {
+            error = "Enter a web address, like https://staging.acme.dev."
+            return
+        }
+        capturing = url.host() ?? url.absoluteString
+        error = nil
+        Task {
+            defer { capturing = nil }
+            do {
+                attach(urls: [try await PageCapture.capture(url)])
+            } catch {
+                self.error = "Couldn't capture \(url.absoluteString): \(ShepherdViewModel.words(error))."
+            }
+        }
+    }
+
     /// What the line under the card says: a failed start, an upload under way, or an image left out.
     var notice: String? {
         if let uploading { return "Sending the project to the host… \(Int(uploading * 100))%" }
@@ -507,6 +530,7 @@ final class NewDesignState {
     /// Why Send is unavailable; nil when it can send.
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
+        if capturing != nil { return "Capturing the page…" }
         if brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the design first." }
         if let imagesPending { return imagesPending }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }

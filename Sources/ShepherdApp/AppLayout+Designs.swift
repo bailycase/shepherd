@@ -33,9 +33,8 @@ extension AppLayout {
     /// The starting points: 10pt under their label, 10pt apart, three to a row.
     static let newDesignCardsLabelGap: CGFloat = 10
     static let newDesignCardsGap: CGFloat = 10
-    static let newDesignCardsPerRow: CGFloat = 3
-    /// A starting point's card: its three lines with their padding.
-    static let newDesignCardHeight: CGFloat = 84
+    /// Capture a page's address popover.
+    static let newDesignCapturePopoverWidth: CGFloat = 320
 
     // A design system's page (DZSystem); the section list and the swatches are `SHDesignMetrics`
     /// The content's padding, and between its sections.
