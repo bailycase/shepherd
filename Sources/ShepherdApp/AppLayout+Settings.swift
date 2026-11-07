@@ -309,6 +309,8 @@ extension AppLayout {
     static let branchCardGlyph: CGFloat = 16
     /// The branch card's sheets: Update from the base, New and Rename branch, the Finalize plan.
     static let branchSheetWidth: CGFloat = 520
+    /// The branch card's Commit… (BranchCommit).
+    static let branchCommitSheetWidth: CGFloat = 560
     /// The new thread's ⚙ popover (BranchWhereItRuns).
     static let whereItRunsWidth: CGFloat = 270
     /// The folded card's widest; a long branch truncates in the middle.

@@ -3097,9 +3097,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// A thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `files.v1`): only for a client that
-    /// listed the capability and is sent the agent (`remoteState`), inside the folder the thread runs in, read off
-    /// the server's queue.
+    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`): only for
+    /// a client that listed `files.v1` and is sent the agent (`remoteState`), inside the folder the thread runs in, off
+    /// the server's queue. A save writes only over the text the client edited from.
     private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
         guard offeredCapabilities(to: client).contains(RemoteProtocol.filesCapability) else {
             send(.error(id: id, code: "unsupported", message: "Files needs a newer Shepherd on this device."), to: client)
@@ -3126,6 +3126,8 @@ public final class SessionServer: @unchecked Sendable {
                 case .success(let data): reply = .agentResult(id: id, result: .fileData(data))
                 case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
                 }
+            case .fileWrite(let path, let text, let expected):
+                reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
             default: return
             }
             self?.queue.async {
@@ -5850,8 +5852,7 @@ public final class SessionServer: @unchecked Sendable {
         if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
            thread.pushQuestion != question {
             thread.pushQuestion = question
-            pushNotifications.send(agentID: agentID, kind: .needsAnswer,
-                title: store.state.agents[index].name, preview: question)
+            sendPush(agentID: agentID, kind: .needsAnswer, preview: question)
         } else if question == nil {
             thread?.pushQuestion = nil
         }
@@ -8629,8 +8630,7 @@ public final class SessionServer: @unchecked Sendable {
         if let agent = agentID(forSession: sessionID) {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false
-                pushNotifications.send(agentID: agent, kind: .error,
-                    title: store.state.agents.first(where: { $0.id == agent })?.name,
+                sendPush(agentID: agent, kind: .error,
                     preview: thread.pushAwaitingStart ? nil : thread.turnFailure?.message)
             }
             projectRuntimeExited(agentID: agent)
@@ -9009,8 +9009,7 @@ public final class SessionServer: @unchecked Sendable {
               thread.subagents.allSatisfy({ $0.isTerminal && $0.state != "paused" && !$0.needsAttention }) else { return }
         thread.pushRunArmed = false
         thread.pushQuestion = nil
-        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
-            title: store.state.agents.first(where: { $0.id == agentID })?.name,
+        sendPush(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
             preview: thread.turnFailure == nil ? thread.pushFinalText : thread.turnFailure?.message)
     }
 

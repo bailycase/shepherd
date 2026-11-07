@@ -2,9 +2,9 @@ import Foundation
 import ShepherdSessions
 
 /// The branch card's git changes in an agent's checkout, each on the person's click (docs/rules.md
-/// "Only these paths mutate repositories"): Push (never forced), Update from the base (fetch, then
-/// rebase or merge; a conflict stops and Abort restores the branch), Switch branch, New branch from
-/// here and Rename branch. Every name reaches git only after `check-ref-format --branch`, never as an
+/// "Only these paths mutate repositories"): Commit (the ticked files only; Amend only an unpushed
+/// last commit), Push (never forced), Update from the base (fetch, then rebase or merge; a conflict
+/// stops and Abort restores the branch), Switch branch, New branch from here and Rename branch. Every name reaches git only after `check-ref-format --branch`, never as an
 /// option. Blocking; call off the main thread.
 enum BranchGit {
     struct Failure: Error, LocalizedError, Equatable {
@@ -54,6 +54,18 @@ enum BranchGit {
         return nil
     }
 
+    /// Why Amend can't replace the last commit, else nil: there is none, a rebase or merge is
+    /// stopped, or any remote-tracking ref already has it (amending it would need a force-push).
+    static func amendBlocked(cwd: String) -> String? {
+        guard (try? git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], cwd: cwd)) != nil else { return "There’s no commit to amend yet." }
+        if conflict(cwd: cwd) != nil { return "A rebase or merge is in progress." }
+        // A failed read counts as pushed: amend only what is known to be local.
+        guard let remotes = try? git(["branch", "--remotes", "--contains", "HEAD"], cwd: cwd), remotes.isEmpty else {
+            return "The last commit is already pushed."
+        }
+        return nil
+    }
+
     /// A name git takes as a new branch, else why not.
     static func invalidName(_ name: String, cwd: String) -> String? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -73,6 +85,29 @@ enum BranchGit {
     static func push(cwd: String, branch: String) throws {
         try checkName(branch, cwd: cwd)
         try git(["push", "--set-upstream", "origin", "refs/heads/\(branch):refs/heads/\(branch)"], cwd: cwd, timeout: 120)
+    }
+
+    /// `git commit --only -- <paths>`: the ticked files as they are now, whatever else is staged
+    /// stays staged. `amend` replaces the last commit instead (`amendBlocked` must be nil; with no
+    /// paths only the message changes). Returns the new commit's short id.
+    @discardableResult
+    static func commit(cwd: String, paths: [String], message: String, amend: Bool) throws -> String {
+        if conflict(cwd: cwd) != nil { throw Failure(message: "A rebase or merge is in progress here. Finish or abort it first.") }
+        if amend, let reason = amendBlocked(cwd: cwd) { throw Failure(message: reason) }
+        guard amend || !paths.isEmpty else { throw Failure(message: "Choose at least one file.") }
+        guard paths.allSatisfy(ReviewCommitGit.isSafePath) else { throw Failure(message: "A file’s path is outside the repository.") }
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure(message: "Write a commit message.") }
+        // New files join the index as intent-to-add so `--only` takes them; a failed commit takes that back.
+        let untracked = paths.isEmpty ? [] : try git(["--literal-pathspecs", "ls-files", "-z", "--others", "--"] + paths, cwd: cwd)
+            .split(separator: "\0").map(String.init)
+        if !untracked.isEmpty { try git(["--literal-pathspecs", "add", "-N", "--"] + untracked, cwd: cwd) }
+        do {
+            try git(["--literal-pathspecs", "commit", "-q", "-m", message] + (amend ? ["--amend"] : []) + ["--only", "--"] + paths, cwd: cwd)
+        } catch {
+            if !untracked.isEmpty { _ = try? git(["--literal-pathspecs", "reset", "-q", "--"] + untracked, cwd: cwd) }
+            throw error
+        }
+        return try git(["rev-parse", "--short", "HEAD"], cwd: cwd)
     }
 
     /// Fetch `base` from origin (best effort: offline keeps the cached ref), then rebase or merge
