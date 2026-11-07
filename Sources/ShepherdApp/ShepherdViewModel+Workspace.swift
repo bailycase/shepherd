@@ -454,28 +454,13 @@ extension ShepherdViewModel {
               let branch = agent.worktreeBranch,
               let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
         let path = agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch)
-        let sessionIDs = state.tabs.filter { $0.id == agent.tabID }
-            .flatMap { $0.layout.leaves.compactMap(\.sessionID) }
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
         try verifyCheckoutAvailable(canonical)
         try verifyCheckoutUnused(canonical, except: id)
         hostBusyWorktrees.insert(canonical)
         defer { hostBusyWorktrees.remove(canonical) }
-        let (checkoutBranch, fingerprint) = try await Task.detached {
-            let identity = try GitWorktree.identity(at: path)
-            try GitWorktree.verifyIdentity(worktree: path, repo: repo, branch: identity.branch)
-            return (identity.branch, try GitWorktree.deletionFingerprint(worktree: path))
-        }.value
-        try await deleteAgentPersisted(id, worktreeOperation: true)
-        let deadline = ContinuousClock.now + .seconds(10)
-        for sessionID in sessionIDs {
-            while await server.sessionInfo(sessionID: sessionID)?.isAlive == true {
-                guard ContinuousClock.now < deadline else { throw GitWorktree.Failure(message: "Agent processes have not stopped. Checkout was kept.") }
-                try await Task.sleep(for: .milliseconds(50))
-            }
-        }
-        try verifyCheckoutUnused(canonical, except: id)
-        try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint, checkoutBranch: checkoutBranch) }.value
+        try await server.deleteAgentRemovingWorktree(id, checkUnused: { try verifyCheckoutUnused(canonical, except: id) },
+                                                     retire: { try await self.deleteAgentPersisted(id, worktreeOperation: true) })
     }
 
     /// `completion` hears the outcome once the deletion is persisted (a peer's `agent_delete`
