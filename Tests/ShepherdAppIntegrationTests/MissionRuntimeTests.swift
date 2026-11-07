@@ -24,6 +24,13 @@ struct MissionRuntimeTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aRevisedMapWaitsAsAPatchUntilTheOwnerAppliesOrRejectsIt() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.patchScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func stopKillsAnInFlightHostCheckAndItsChildWithoutAcceptingLateEvidence() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.stopScenario() }
@@ -350,6 +357,60 @@ struct MissionRuntimeTests {
         let gh = try String(contentsOf: fixture.ghLog, encoding: .utf8)
         #expect(gh.split(separator: "\n").filter { $0.hasPrefix("pr create ") }.count == 2)
         try fixture.expectSourcesUnchanged()
+    }
+
+    static func patchScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        let id = try await fixture.create()
+        let controller = fixture.controller!
+        let first = try controller.record(id).draft
+
+        // Feedback on a drawn map: the revision waits beside it; nothing about the map changes.
+        try await controller.plan(id: id, feedback: "Keep the same shape.")
+        try await fixture.wait(id, phase: .map)
+        let held = try controller.record(id)
+        let patch = try #require(held.run?.patch)
+        #expect(held.draft == first)
+        #expect(patch.applies(to: first) && !patch.clearsFog)
+        #expect(held.pill.label == "Patch ready")
+        try await controller.rejectPatch(id: id, revision: held.revision, patchID: patch.id)
+        #expect(try controller.record(id).run?.patch == nil)
+        #expect(try controller.record(id).draft == first)
+
+        // Applying makes it the map and clears any approval; an edit after the proposal makes it stale.
+        try await controller.plan(id: id, feedback: "Again.")
+        try await fixture.wait(id, phase: .map)
+        var mission = try controller.record(id)
+        let second = try #require(mission.run?.patch)
+        var edited = mission.draft
+        edited.title = "Renamed by the owner"
+        try await controller.saveDraft(id: id, revision: mission.revision, draft: edited)
+        mission = try controller.record(id)
+        await #expect(throws: MissionError.self) { try await controller.applyPatch(id: id, revision: mission.revision, patchID: second.id) }
+        try await controller.rejectPatch(id: id, revision: mission.revision, patchID: second.id)
+        try await controller.plan(id: id, feedback: "Once more.")
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        let third = try #require(mission.run?.patch)
+        try await controller.applyPatch(id: id, revision: mission.revision, patchID: third.id)
+        mission = try controller.record(id)
+        #expect(mission.draft == third.draft && mission.run?.patch == nil && mission.approvedPlanRevision == nil)
+
+        // With auto-apply on, a patch that settles your answer and fits the budget applies on its own.
+        try await controller.setAutoApplyPatches(id: id, revision: mission.revision, on: true)
+        try fixture.askClarification()
+        try await controller.plan(id: id, feedback: "One more question?")
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        #expect(mission.run?.pendingQuestion != nil)
+        try await controller.answer(id: id, revision: mission.revision, text: "Yes, the same format.")
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        #expect(mission.run?.patch == nil)
+        #expect(mission.run?.decisions?.last?.answer == "Yes, the same format.")
+        #expect(mission.draft.plan?.estimate == MissionEstimate(tokens: 20_000, seconds: 600))
+        try fixture.expectUnpublished(id)
     }
 
     static func retryScenario() async throws {

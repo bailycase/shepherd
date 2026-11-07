@@ -102,7 +102,7 @@ struct MissionsDestination<Driver: MissionDriving>: View {
         }
         if controller.records.first(where: { $0.id == id })?.run?.publicationApproval != nil {
             switch action {
-            case .plan, .answer, .save, .launch, .revalidate, .changes, .specKitConsent, .specKitSetUp, .acceptConvergence:
+            case .plan, .answer, .save, .launch, .revalidate, .changes, .specKitConsent, .specKitSetUp, .acceptConvergence, .applyPatch:
                 controller.error = "Publication was already authorized. These receipts cannot be reused for new work."
                 return Task { false }
             default: break
@@ -156,6 +156,8 @@ enum MissionUIAction {
     case specKitSetUp(SpaceID)
     case save(MissionDraft, UInt64), launch, pause, stop, changes(String)
     case publish(MissionPublishApproval), refresh, revalidate, runAgain
+    /// MXPatch: the owner's Apply or Reject of the planner's patch it showed, and the auto-apply switch.
+    case applyPatch(UUID), rejectPatch(UUID), autoApplyPatches(Bool)
 }
 
 struct MissionPublishApproval: Equatable {
@@ -214,6 +216,7 @@ extension Mission {
     /// The list's pill: a pending question is the board's "Needs you".
     var pill: (state: AgentState, label: String) {
         if run?.pendingQuestion != nil, phase == .map { return (.attention, "Needs you") }
+        if run?.patch != nil, !phase.active { return (.attention, "Patch ready") }
         // A completion report waits for your acceptance (or appended tasks for approval): that is not a draft.
         if phase == .map, run?.specKit?.lanes.contains(where: { $0.convergence?.accepted == false }) == true { return (.attention, "Needs you") }
         return (phase.missionState, phase.missionLabel)
@@ -319,7 +322,7 @@ enum MissionListFilter: String, CaseIterable {
         let phase = mission.phase
         switch self {
         case .all: return true
-        case .needsYou: return phase == .paused || phase == .review || mission.run?.pendingQuestion != nil
+        case .needsYou: return phase == .paused || phase == .review || mission.run?.pendingQuestion != nil || mission.run?.patch != nil
         case .running: return phase.active
         case .drafts: return phase == .map
         case .done: return phase == .done || phase == .stopped
