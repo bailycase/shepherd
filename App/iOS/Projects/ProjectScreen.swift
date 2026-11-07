@@ -54,6 +54,12 @@ struct ProjectScreen: View {
                     if projects.host(ref)?.supports(RemoteProtocol.logicalProjectFilesCapability) == true {
                         Button("Files", systemImage: "doc") { navigator.open(.projects(.files(ref, path: ""))) }
                     }
+                    // The person's Pause or Resume (ProjectLead-PausedV2), as on the Mac's Project settings.
+                    let paused = project.paused && project.pausedByPerson
+                    Button(paused ? "Resume project" : "Pause project", systemImage: paused ? "play" : "pause") {
+                        Task { _ = await projects.model.setPaused(ref, !paused) }
+                    }
+                    .disabled(!projects.canEdit(ref) || (paused && project.interruptPending))
                     Button("Project settings", systemImage: "gearshape") { navigator.open(.projects(.settings(ref))) }
                 }
             }
@@ -119,6 +125,10 @@ private struct ProjectConversation: View {
     private func banner(host: MobileHost?, store: NativeThreadStore) -> String? {
         guard let host else { return "This host was forgotten." }
         if !host.phase.isConnected { return "\(host.name) is offline · showing the last known conversation" }
+        if project.paused && project.pausedByPerson {
+            return project.interruptPending ? "Paused. Stopping threads at a safe point. Messages wait until you resume."
+                : "Paused. Threads stopped at a safe point and nothing new starts. Messages wait until you resume."
+        }
         if project.paused { return "Shepherd stopped this project. Your next message starts it again." }
         return store.loadError
     }
