@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ShepherdSessions
+import ShepherdProtocol
 
 /// Settings › Apps' `apps.json`: an older or hand-written file keeps loading, and an app runs
 /// in the folder it names.

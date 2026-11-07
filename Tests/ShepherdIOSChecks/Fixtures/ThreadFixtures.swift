@@ -17,6 +17,14 @@ extension FixtureCatalog {
         return [
             // MobileThread, iPadThread: a finished turn, tokens in the header, the changes card.
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
+            // AppsRunning: the header's Run shows the space's app running with its port; then its
+            // menu open, listing the space's quick actions with what each does next.
+            FixtureScreen(name: "thread-apps", hosts: ThreadFixtures.apps(ThreadFixtures.hosts()), routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-apps-menu", hosts: ThreadFixtures.apps(ThreadFixtures.hosts()), routes: [.thread(preview)],
+                          prepare: { _ in
+                              SidebarAutomationsCheck.enableAccessibility()
+                              await TriggerFlowCheck.press("Web app, running")
+                          }),
             // Rich content in prose: the reported reply's table, then task and nested lists,
             // images, a disclosure and footnotes, then a table wider than the phone and fences.
             FixtureScreen(name: "thread-table", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.toolsReply)),
@@ -149,6 +157,28 @@ enum ThreadFixtures {
         hosts[0].threads[FixtureData.dock] = dock
         hosts[0].models = ["anthropic/claude-opus", "anthropic/claude-sonnet", "anthropic/claude-haiku", "openai/gpt-5", "openai/o3",
                            "google/gemini-2.5-pro"]
+        return hosts
+    }
+
+    /// Studio's hosts with apps in the thread's space (`apps.v1`): Web app running on :3000,
+    /// Storybook that exited, and This Mac's Simulator not yet run.
+    static func apps(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
+        var hosts = hosts
+        let earlier = hosts[0].reply
+        let result = RemoteAppsResult(space: FixtureData.shepherdSpace.name, apps: [
+            RemoteApp(app: AppDefinition(name: "Web app", command: "npm run dev", folder: "apps/web", opens: .browser,
+                                         address: "http://localhost:3000", quickAction: true),
+                      mac: false, run: RemoteAppRun(status: .running, port: 3000)),
+            RemoteApp(app: AppDefinition(name: "Storybook", command: "npm run storybook", opens: .browser,
+                                         address: "http://localhost:6006", quickAction: true),
+                      mac: false, run: RemoteAppRun(status: .exited(code: 1))),
+            RemoteApp(app: AppDefinition(name: "Simulator", command: "open -a Simulator", opens: .window, quickAction: true), mac: true),
+            RemoteApp(app: AppDefinition(name: "Docs", command: "make docs"), mac: true),
+        ])
+        hosts[0].reply = { request in
+            if case .apps(let id, .list) = request { return .apps(id: id, result: result) }
+            return earlier?(request)
+        }
         return hosts
     }
 

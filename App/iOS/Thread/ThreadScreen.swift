@@ -29,9 +29,16 @@ struct ThreadScreen: View {
     @State private var visible = false
     /// The thread's height: the composer may take a share of it (`composerMaxHeight`).
     @State private var height: CGFloat = 0
+    /// The space's apps, for the header's Run (`ThreadAppsMenu`).
+    @State private var apps = ThreadApps()
 
     /// The poll loop's identity: another thread in the same view, a new connection, or the
     /// thread leaving the screen restarts it.
+    private struct AppsKey: Equatable {
+        var session: UUID?
+        var space: SpaceID?
+    }
+
     private struct RunKey: Equatable {
         var ref: AgentRef
         var session: UUID?
@@ -138,6 +145,11 @@ struct ThreadScreen: View {
                                 withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
                             }
                         }
+                        if !arranged, let quick = apps.apps {
+                            ThreadAppsMenu(apps: quick, problem: apps.problem) { item in
+                                Task { await apps.act(on: item, client: host?.connectedClient, space: agent?.spaceID, agent: ref.agent) }
+                            }
+                        }
                         ThreadStopButton(store: store, enabled: key.session != nil)
                     }
                 }
@@ -163,6 +175,9 @@ struct ThreadScreen: View {
             SHRenderProbe.tick("thread.appear")
         }
         .onDisappear { visible = false }
+        .task(id: AppsKey(session: key.active ? key.session : nil, space: agent?.spaceID)) {
+            await apps.watch(key.active && key.session != nil ? host?.connectedClient : nil, space: agent?.spaceID)
+        }
         .task(id: key) {
             // Through the thread's viewers: the same thread may be on screen in another window.
             let viewers = threads.viewers(for: ref)

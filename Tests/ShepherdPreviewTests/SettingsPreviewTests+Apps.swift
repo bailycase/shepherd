@@ -6,6 +6,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+import ShepherdProtocol
 
 /// Apps (AppsSettings, AppsAdd, AppsQuickAction, AppsRunning, AppsNewThread boards) in light and
 /// dark, from apps files written in a scratch space and home and read through the real model;

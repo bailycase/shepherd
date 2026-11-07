@@ -231,7 +231,8 @@ final class FixtureHost: @unchecked Sendable {
             case .failure(let error): return [.error(id: id, code: error.code, message: error.description)]
             }
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
-             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .hooks(let id, _):
+             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .hooks(let id, _),
+             .apps(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
         default:
@@ -348,6 +349,11 @@ final class FixtureHost: @unchecked Sendable {
             mutation("tunnel")
             if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
             return []
+        case .apps(let id, let command):
+            // A thread header's Run and Stop change the host; its list is a read.
+            if case .list = command { return nil }
+            mutation("apps")
+            return [.error(id: id, code: "fixture", message: refused)]
         case .projects(let id, _), .logicalProjectRuntime(let id, _):
             // Projects are not drawn by any fixture screen: a request is refused rather than served.
             mutation("projects")

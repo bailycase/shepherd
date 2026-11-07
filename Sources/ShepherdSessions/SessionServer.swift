@@ -2593,6 +2593,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSkills(id: id, request: request, client: client)
         case .hooks(let id, let request):
             remoteHooks(id: id, request: request, client: client)
+        case .apps(let id, let request):
+            remoteApps(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .mission(let id, let request):
@@ -3326,6 +3328,36 @@ public final class SessionServer: @unchecked Sendable {
                 switch result {
                 case .success(let text): self?.reply(.appResult(id: id, text: text), to: client)
                 case .failure(let refusal): self?.reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+                }
+            }
+        }
+    }
+
+    /// Server queue: a remote client's thread header lists, runs or stops a space's apps
+    /// (`apps.v1`). The space and the thread's folder are read here; the files and processes off
+    /// the queue (`AppTools.remote`).
+    private func remoteApps(id: Int, request: RemoteAppsRequest, client: ExtensionConnection) {
+        let state = store.state
+        let home = hooks.home
+        guard let space = state.spaces.first(where: { $0.id == request.spaceID && !$0.hidden }) else {
+            send(.error(id: id, code: "no_such_space", message: "That space isn't on this host."), to: client)
+            return
+        }
+        let root = space.path == "~" ? home : space.path.hasPrefix("~/") ? home + space.path.dropFirst() : space.path
+        var cwd: String?
+        if case .run(_, _, _, let agentID?) = request, let agent = state.agents.first(where: { $0.id == agentID && $0.spaceID == space.id }) {
+            let tab = state.tabs.first { $0.id == agent.tabID }
+            cwd = (agent.paneID.flatMap { tab?.layout.leaf(withID: $0) } ?? tab?.layout.firstLeaf)?.cwd
+        }
+        let place = AppTools.Place(space: (space.id, space.name, root), cwd: cwd, home: home, unattended: false)
+        let apps = self.apps
+        Task.detached { [weak self] in
+            let result = await AppTools.remote(request, place: place, apps: apps)
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.apps(id: id, result: answer), to: client)
+                case .failure(let refusal): self.send(.error(id: id, code: refusal.code, message: refusal.message), to: client)
                 }
             }
         }
