@@ -1,3 +1,4 @@
+import ShepherdSessions
 import Foundation
 import AppKit
 import ShepherdCore

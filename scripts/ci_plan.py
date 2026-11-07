@@ -110,7 +110,8 @@ AREAS = (
       "Sources/ShepherdApp/ShepherdViewModel+Review*.swift", "Sources/ShepherdApp/GitDiff.swift",
       "Sources/ShepherdApp/CodeHighlight.swift", "Sources/ShepherdApp/SplitDiffWheelReader.swift",
       "Sources/ShepherdApp/ChecklistStatus.swift", "Sources/ShepherdApp/CheckoutMonitor.swift",
-      "Sources/ShepherdSessions/Changes/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/*"),
+      "Sources/ShepherdSessions/Changes/*", "Sources/ShepherdSessions/GitWorktree.swift",
+      "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/*"),
      (APP + r"(Review|DiffDrawing|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|WorktreeAgent|WorktreeBaseOffline|NewThreadWorktreeBase|ListPerformance|CheckoutMonitor)",
       SES + "Changes", PREVIEW + "ReviewPreviewTests")),
     (("Sources/ShepherdApp/CodeHighlight.swift",),
@@ -125,7 +126,7 @@ AREAS = (
       "Sources/ShepherdApp/YourPi*.swift", "Sources/ShepherdApp/Instructions*.swift", "Sources/ShepherdApp/Suggestions*.swift",
       "Sources/ShepherdApp/Skills*.swift", "Sources/ShepherdSessions/Skills*.swift",
       "Sources/ShepherdSessions/Suggestions*.swift", "Sources/ShepherdSessions/Instructions*.swift",
-      "Sources/ShepherdSessions/YourPi*.swift", "Sources/ShepherdSessions/PiSignIn*.swift",
+      "Sources/ShepherdSessions/YourPi*.swift", "Sources/ShepherdSessions/PiSignIn*.swift", "Sources/ShepherdSessions/PiSessionFile.swift",
       "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/*",
       "Packages/ShepherdUI/Sources/ShepherdUI/Components/Skills/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/*"),
      (APP + r"(MCP|PiSignIn|PiHomeLaunch|YourPi|Settings|SubagentSettings|CodemodeSettings|GoalCheckSettings|InstructionsEditor|ModelCatalog)",
@@ -150,6 +151,13 @@ MODULES = (
     ("Sources/TerminalSurfaceKit/*", (APP + r"(?:Terminal|Pane|Shell|ThreadInput)",)),
     ("Sources/DesignSurfaceKit/*", (APP + "Design", r"^DesignSurfaceKitIntegrationTests\.", PREVIEW + "DesignPreviewTests")),
 )
+
+
+# The pi launch line, moved from ShepherdApp: its app callers still run.
+MOVED_LAUNCH = {f"Sources/ShepherdSessions/{name}.swift" for name in (
+    "AgentLaunch", "StatusExtension", "PanesExtension", "ReviewExtension", "SubagentsExtension", "ChildrenExtension",
+    "InspectExtension", "NamerExtension", "InstructionsExtension", "DesignExtension", "DesignReferencesExtension",
+    "BrowserExtension", "ContextExtension", "ProjectContextExtension", "MCPParentExtension")}
 
 
 def affects_swift(paths: list[str]) -> bool:
@@ -232,7 +240,7 @@ def filters_for(paths: list[str], full: bool = False, *, root: Path = ROOT) -> l
     for path in paths:
         if not affects_swift([path]):
             continue
-        if fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift") or fnmatch.fnmatchcase(path, "Extensions/*"):
+        if (fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift") or path in MOVED_LAUNCH or fnmatch.fnmatchcase(path, "Extensions/*")):
             filters.extend((SES + "NativeThreadTests", APP + "ExtensionIdentityFlowTests"))
             continue
         if path == "Tests/Extensions/service-tier-support.json":
