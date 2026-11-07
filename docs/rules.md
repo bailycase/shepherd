@@ -176,7 +176,8 @@ a shared design's own repository under `<designs>/.git/<id>/`, the Changes engin
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
 Undo and Redo of a turn (the turn's files only; refused when any changed since), Save in the Files
 tab (`FileTreeModel.save`: the person's Save, Save chord or Overwrite; one existing local text file inside
-the thread's folder, written in place only while it still holds the version the editor expected), Add child project
+the thread's folder, written in place only while it still holds the version the editor expected; a paired
+device's Save reaches the host's server as `fileWrite`, `ThreadFileSystem.save`, under the same rule), Add child project
 (one empty directory), an explicit project folder transfer, and Issues & PRs' GitHub changes
 (`Forge/ForgeService.swift`, each on the person's click, through their gh with `--repo` from `/`, so
 no local checkout or branch is touched; bodies go on stdin): comment, review, merge (method, merge
