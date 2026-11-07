@@ -203,7 +203,11 @@
     and a short final reply, error, or explicit question preview by default, with generic text when
     unavailable. The relay receives optional `title` (100 Unicode scalars) and `preview` (240),
     whitespace-normalized and credential-redacted before truncation; redaction cannot detect every
-    secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
+    secret. Thinking and tool logs are not preview sources. It also receives `group` (the APNs thread-id:
+    `mission:<id>` for a mission's planner and stations, else `thread:<agentID>`), `subtitle` (60),
+    `level` (`passive` for finished work, else `active`) and `relevance` (the Scheduled Summary
+    rank); a relay that answers 400 to them gets the same event without them, and only the old
+    fields until the host restarts. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`

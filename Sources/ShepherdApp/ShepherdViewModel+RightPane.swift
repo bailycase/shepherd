@@ -19,6 +19,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case subagents
     /// The space's file browser (FileOpenSplit board): read-only tree and viewer.
     case files
+    /// A board the agent showed in the thread, opened beside it (ThreadBoardPane), while one is.
+    case design
 
     var title: String {
         switch self {
@@ -27,6 +29,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .pullRequest: "Pull request"
         case .subagents: "Subagents"
         case .files: "Files"
+        case .design: "Design"
         }
     }
 
@@ -37,17 +40,19 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .pullRequest: ForgeSymbol.pullRequest
         case .subagents: SHGlyph.gitBranch.symbolName
         case .files: SHGlyph.document.symbolName
+        case .design: "pencil.tip"
         }
     }
 
     /// The tabs a thread's pane shows: Changes, Pull request while the branch has one, Browser,
-    /// Files (always, for local; the tab itself shows unavailable for remote), and Subagents once it has a run.
+    /// Design while a board is open in it, Files (always, for local; the tab itself shows unavailable for remote), and
+    /// Subagents once it has a run.
     /// `SidePaneTabs.items` and `ShepherdViewModel.sidePaneTabs(for:)` drop conditional ones while they have nothing.
-    static func tabs(browser: Bool, pullRequest: Bool = false) -> [SidePaneTab] {
-        [.changes] + (pullRequest ? [.pullRequest] : []) + (browser ? [.browser] : []) + [.files, .subagents]
+    static func tabs(browser: Bool, pullRequest: Bool = false, design: Bool = false) -> [SidePaneTab] {
+        [.changes] + (pullRequest ? [.pullRequest] : []) + (browser ? [.browser] : []) + (design ? [.design] : []) + [.files, .subagents]
     }
 
-    /// Fixed chord digits: ⌃1 Changes, ⌃2 Browser, ⌃3 Pull request, ⌃4 Subagents, ⌃5 Files.
+    /// Fixed chord digits: ⌃1 Changes, ⌃2 Browser, ⌃3 Pull request, ⌃4 Subagents, ⌃5 Files, ⌃6 Design.
     /// A tab keeps its digit regardless of which tabs are visible.
     var digit: Int {
         switch self {
@@ -56,6 +61,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .pullRequest: 3
         case .subagents: 4
         case .files: 5
+        case .design: 6
         }
     }
     var shortcutDisplay: String { "⌃\(digit)" }
@@ -71,6 +77,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .subagents: "Agent started a subagent"
         // Files is user-driven; the agent never opens it.
         case .files: "Files changed in the workspace"
+        // Only the user opens a board here, from its card.
+        case .design: "A board is open in Design"
         }
     }
 }
@@ -147,8 +155,15 @@ extension ShepherdViewModel {
         switch shown {
         case .changes: ensureReview(owner)
         case .files: ensureFileTree(owner)
-        case .browser, .subagents, .pullRequest: break
+        case .browser, .subagents, .pullRequest, .design: break
         }
+    }
+
+    /// A board card's picture (ThreadBoardPane): the board opens in the pane's Design tab, beside
+    /// the thread, as the card shows it.
+    func showBoardBeside(_ owner: SidePaneOwner, _ board: DesignReferenceChips.Board) {
+        if subagentInspector.boards[owner] != board { subagentInspector.boards[owner] = board }
+        showSidePane(owner, tab: .design)
     }
 
     /// The pane over the whole layout (ChangesWide), or back beside the thread.
@@ -266,7 +281,8 @@ extension ShepherdViewModel {
             browser = remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true
         }
         let pullRequest = if case .local(let id) = owner { branchPullRequests[id] != nil } else { false }
-        return SidePaneTab.tabs(browser: browser, pullRequest: pullRequest).filter { $0 != .subagents || hasRuns }
+        return SidePaneTab.tabs(browser: browser, pullRequest: pullRequest, design: subagentInspector.boards[owner] != nil)
+            .filter { $0 != .subagents || hasRuns }
     }
 
     /// The header button's state for `owner` (`SidePaneTab.button`).

@@ -228,6 +228,8 @@ struct BranchSheetView: View {
 
     var body: some View {
         switch sheet {
+        case .commit(let id):
+            if let cwd = vm.checkoutDirectory(of: id) { BranchCommitSheet(vm: vm, agentID: id, cwd: cwd) }
         case .update(let id):
             if let agent = agent(id), let label = AgentBranchLabel(agent: agent), let cwd = vm.checkoutDirectory(of: id) {
                 BranchUpdateSheet(vm: vm, agentID: id, branch: label.branch, recordedBase: agent.worktreeBase.map(BranchCardGitReader.baseName), cwd: cwd)

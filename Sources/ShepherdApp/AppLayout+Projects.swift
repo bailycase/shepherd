@@ -28,6 +28,10 @@ extension AppLayout {
     static let projectsChevronSize: CGFloat = 10
     static let projectsFooterLineHeight: CGFloat = 1.55
     static let projectDetailTop: CGFloat = 36
+    /// ProjectSettings' form: its 320pt dropdowns and fields, a 124pt reset column, and the retry stepper's ceiling.
+    static let spaceFormControlWidth: CGFloat = 320
+    static let spaceFormResetWidth: CGFloat = 124
+    static let spaceFormStepperMax = 99
     static let projectNarrowWidth: CGFloat = 720
     static let projectNarrowEditorHeight: CGFloat = 500
     static let projectBrowserTitleSize: CGFloat = 15
