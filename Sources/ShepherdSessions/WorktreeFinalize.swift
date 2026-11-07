@@ -1,17 +1,22 @@
 import Foundation
 import Observation
 import ShepherdProtocol
-import ShepherdSessions
 
 /// Async login-shell runner for worktree setup probes and the finalize
 /// pipeline. `zsh -l` resolves the user's PATH (gh, brew-installed git)
 /// exactly like Shepherd's pi launch path. Prompting is disabled so a
 /// missing credential fails fast instead of hanging a non-TTY child.
-enum LoginShell {
-    struct Output: Equatable, Sendable {
-        var status: Int32
-        var stdout: String
-        var stderr: String
+public enum LoginShell {
+    public struct Output: Equatable, Sendable {
+        public var status: Int32
+        public var stdout: String
+        public var stderr: String
+
+        public init(status: Int32, stdout: String, stderr: String) {
+            self.status = status
+            self.stdout = stdout
+            self.stderr = stderr
+        }
     }
 
     private final class CompletionState: @unchecked Sendable {
@@ -55,7 +60,7 @@ enum LoginShell {
         }
     }
 
-    static func run(
+    public static func run(
         _ script: String,
         cwd: String? = nil,
         timeout: TimeInterval? = nil
@@ -120,7 +125,7 @@ enum LoginShell {
 }
 
 /// Single-quote a string for safe interpolation into a zsh script.
-func shellQuoted(_ value: String) -> String {
+public func shellQuoted(_ value: String) -> String {
     "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
@@ -128,16 +133,16 @@ func shellQuoted(_ value: String) -> String {
 
 /// The prerequisites for a fully in-app finalize, probed in order. Each has
 /// a user-facing remedy in `WorktreeSetupChecklist`.
-enum WorktreeSetupCheck: String, CaseIterable, Identifiable {
+public enum WorktreeSetupCheck: String, CaseIterable, Identifiable, Sendable {
     case git        // git resolvable (and Command Line Tools present for /usr/bin/git)
     case identity   // user.name + user.email
     case remote     // origin exists and is reachable with current credentials
     case gh         // GitHub CLI installed
     case ghAuth     // GitHub CLI authenticated
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var label: String {
+    public var label: String {
         switch self {
         case .git: return "Git installed"
         case .identity: return "Git identity"
@@ -151,19 +156,19 @@ enum WorktreeSetupCheck: String, CaseIterable, Identifiable {
 /// Recommended per-repo GitHub settings surfaced (never gated) by the
 /// finalize setup view. Repo state, not app preferences — a Settings toggle
 /// could neither read nor change 45 repositories truthfully.
-enum WorktreeRepoSetting: String, CaseIterable, Identifiable {
+public enum WorktreeRepoSetting: String, CaseIterable, Identifiable, Sendable {
     case deleteBranchOnMerge, allowAutoMerge
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var label: String {
+    public var label: String {
         switch self {
         case .deleteBranchOnMerge: return "Auto-delete merged branches"
         case .allowAutoMerge: return "Allow auto-merge"
         }
     }
 
-    var explanation: String {
+    public var explanation: String {
         switch self {
         case .deleteBranchOnMerge:
             return "GitHub deletes the remote branch after its PR merges (restorable from the PR). Recommended — Shepherd never deletes remote branches itself."
@@ -172,7 +177,7 @@ enum WorktreeRepoSetting: String, CaseIterable, Identifiable {
         }
     }
 
-    var enableFlag: String {
+    public var enableFlag: String {
         switch self {
         case .deleteBranchOnMerge: return "--delete-branch-on-merge"
         case .allowAutoMerge: return "--enable-auto-merge"
@@ -180,24 +185,24 @@ enum WorktreeRepoSetting: String, CaseIterable, Identifiable {
     }
 }
 
-typealias WorktreeRepoSettingState = RemoteWorktreeRepoSettingState
-typealias WorktreeCheckState = RemoteWorktreeCheckState
+public typealias WorktreeRepoSettingState = RemoteWorktreeRepoSettingState
+public typealias WorktreeCheckState = RemoteWorktreeCheckState
 
 /// Probes the finalize prerequisites and applies the fixable remedies.
 /// Repo-scoped: the `remote` check runs against the space's checkout.
 @MainActor
 @Observable
-final class WorktreeSetupModel {
-    private(set) var states: [WorktreeSetupCheck: WorktreeCheckState]
+public final class WorktreeSetupModel {
+    public private(set) var states: [WorktreeSetupCheck: WorktreeCheckState]
     /// Recommended GitHub repo settings — informational, never gate `allPassed`.
-    private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
-    private(set) var running = false
-    private(set) var repoPath: String
-    @ObservationIgnored var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
-    private(set) var actionError: String?
-    @ObservationIgnored var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
+    public private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
+    public private(set) var running = false
+    public private(set) var repoPath: String
+    @ObservationIgnored public var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
+    public private(set) var actionError: String?
+    @ObservationIgnored public var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
 
-    var snapshot: RemoteWorktreeSetup {
+    public var snapshot: RemoteWorktreeSetup {
         .init(repoPath: repoPath,
               checks: Dictionary(uniqueKeysWithValues: states.map { ($0.key.rawValue, $0.value) }),
               repoSettings: Dictionary(uniqueKeysWithValues: repoSettings.map { ($0.key.rawValue, $0.value) }))
@@ -219,17 +224,17 @@ final class WorktreeSetupModel {
         }
     }
 
-    init(repoPath: String) {
+    public init(repoPath: String) {
         self.repoPath = repoPath
         states = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0, .pending) })
         repoSettings = Dictionary(uniqueKeysWithValues: WorktreeRepoSetting.allCases.map { ($0, .unknown) })
     }
 
-    var allPassed: Bool {
+    public var allPassed: Bool {
         WorktreeSetupCheck.allCases.allSatisfy { states[$0]?.passed == true }
     }
 
-    func runAll() async {
+    public func runAll() async {
         guard !running else { return }
         if remoteAction != nil { await performRemote(.check); return }
         running = true
@@ -243,7 +248,7 @@ final class WorktreeSetupModel {
     /// Read both recommended settings in one REST call. gh resolves
     /// `{owner}/{repo}` from the checkout's origin remote. Needs gh auth —
     /// callers should probe only after the ghAuth check passes.
-    func probeRepoSettings() async {
+    public func probeRepoSettings() async {
         if remoteAction != nil { await performRemote(.check); return }
         for setting in WorktreeRepoSetting.allCases {
             repoSettings[setting] = .checking
@@ -276,7 +281,7 @@ final class WorktreeSetupModel {
 
     /// `gh repo edit <flag>` — admin-only on the repo; failure is disclosed,
     /// never retried silently.
-    func enableRepoSetting(_ setting: WorktreeRepoSetting) async {
+    public func enableRepoSetting(_ setting: WorktreeRepoSetting) async {
         if remoteAction != nil {
             await performRemote(setting == .deleteBranchOnMerge ? .enableDeleteBranchOnMerge : .enableAutoMerge)
             return
@@ -291,7 +296,7 @@ final class WorktreeSetupModel {
     }
 
     /// `git config --global` the identity, then re-probe that row.
-    func applyIdentity(name: String, email: String) async {
+    public func applyIdentity(name: String, email: String) async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty, !trimmedEmail.isEmpty else { return }
@@ -305,11 +310,11 @@ final class WorktreeSetupModel {
     }
 
     /// Kick off Apple's Command Line Tools installer (its own GUI takes over).
-    func installCommandLineTools() {
+    public func installCommandLineTools() {
         Task { await installTools() }
     }
 
-    func installTools() async {
+    public func installTools() async {
         if remoteAction != nil { await performRemote(.installCommandLineTools); return }
         let output = await runner("xcode-select --install", nil)
         actionError = output.status == 0 ? nil : output.stderr
@@ -368,22 +373,22 @@ final class WorktreeSetupModel {
 
     /// Why `git ls-remote` failed: its last line that is not git's closing boilerplate, which
     /// follows every SSH failure and says nothing about this one. nil when nothing else is left.
-    static func remoteFailureDetail(_ stderr: String) -> String? {
+    public static func remoteFailureDetail(_ stderr: String) -> String? {
         stderr.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .last { !$0.isEmpty && !gitRemoteBoilerplate.contains($0) }
     }
 
     /// git's closing advice after a failed remote operation; it never names the problem.
-    nonisolated static let gitRemoteBoilerplate: Set<String> = [
+    nonisolated public static let gitRemoteBoilerplate: Set<String> = [
         "fatal: Could not read from remote repository.",
         "Please make sure you have the correct access rights",
         "and the repository exists.",
     ]
 }
 
-enum WorktreeCommitCount {
-    static func load(base: String, worktree: String) async -> Int? {
+public enum WorktreeCommitCount {
+    public static func load(base: String, worktree: String) async -> Int? {
         let name = base.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         let result = await LoginShell.run(
@@ -398,10 +403,15 @@ enum WorktreeCommitCount {
 
 // MARK: - Pull-request descriptions
 
-struct WorktreePRDescriptionGenerator {
-    struct Result: Equatable {
-        var body: String
-        var generated: Bool
+public struct WorktreePRDescriptionGenerator {
+    public struct Result: Equatable, Sendable {
+        public var body: String
+        public var generated: Bool
+
+        public init(body: String, generated: Bool) {
+            self.body = body
+            self.generated = generated
+        }
     }
 
     private static let defaultModels = [
@@ -411,22 +421,22 @@ struct WorktreePRDescriptionGenerator {
     ]
 
     /// Shepherd's pi, which drafts.
-    var pi: PiSetup
-    var runner: (String, String?, TimeInterval?) async -> LoginShell.Output = {
+    public var pi: PiSetup
+    public var runner: (String, String?, TimeInterval?) async -> LoginShell.Output = {
         await LoginShell.run($0, cwd: $1, timeout: $2)
     }
     /// Readies the pi home before a draft; false when no pi may start there.
-    var prepare: (PiSetup) async -> Bool = { pi in await Task.detached(priority: .userInitiated) { pi.prepare() == nil }.value }
+    public var prepare: (PiSetup) async -> Bool = { pi in await Task.detached(priority: .userInitiated) { pi.prepare() == nil }.value }
 
-    init(pi: PiSetup) {
+    public init(pi: PiSetup) {
         self.pi = pi
     }
 
-    static func shouldGenerate(enabled: Bool, prepared: Bool, force: Bool) -> Bool {
+    public static func shouldGenerate(enabled: Bool, prepared: Bool, force: Bool) -> Bool {
         enabled && (force || !prepared)
     }
 
-    func generate(base: String, title: String, worktree: String) async -> Result {
+    public func generate(base: String, title: String, worktree: String) async -> Result {
         let localBase = shellQuoted(base)
         let remoteBase = shellQuoted("origin/" + base)
         let resolveBase = "base=\(remoteBase); git rev-parse --verify \"$base\" >/dev/null 2>&1 || base=\(localBase)"
@@ -480,14 +490,14 @@ struct WorktreePRDescriptionGenerator {
     /// `pi --print` with the prompt alone, on the drafting model (`SHEPHERD_PR_DESCRIPTION_MODEL`,
     /// else the first default): no session, tools, extensions or context files. PR descriptions
     /// and commit messages from review are drafted this way.
-    static func draftCommand(prompt: String, home: PiHome) -> String {
+    public static func draftCommand(prompt: String, home: PiHome) -> String {
         let model = ProcessInfo.processInfo.environment["SHEPHERD_PR_DESCRIPTION_MODEL"]
             .flatMap { $0.split(separator: ",").first.map(String.init) }
             ?? defaultModels[0]
         return PiLaunch.draft(home: home, model: model, prompt: prompt).script
     }
 
-    static func applying(_ generated: String, replacing original: String, current: String) -> String {
+    public static func applying(_ generated: String, replacing original: String, current: String) -> String {
         current == original ? generated : current
     }
 }
@@ -503,13 +513,13 @@ struct WorktreePRDescriptionGenerator {
 /// dialog, not mid-pipeline.
 @MainActor
 @Observable
-final class WorktreeFinalizer {
-    enum Step: Int, CaseIterable, Identifiable {
+public final class WorktreeFinalizer {
+    public enum Step: Int, CaseIterable, Identifiable, Sendable {
         case commit, push, pullRequest, mergePR, verifyClean, removeWorktree, deleteBranch
 
-        var id: Int { rawValue }
+        public var id: Int { rawValue }
 
-        var label: String {
+        public var label: String {
             switch self {
             case .commit: return "commit remaining work"
             case .push: return "push branch to origin"
@@ -522,7 +532,7 @@ final class WorktreeFinalizer {
         }
     }
 
-    enum StepState: Equatable {
+    public enum StepState: Equatable, Sendable {
         case pending
         case running
         case done(String)
@@ -530,61 +540,72 @@ final class WorktreeFinalizer {
         case failed(String)
     }
 
-    enum Phase: Equatable {
+    public enum Phase: Equatable, Sendable {
         case idle, running, succeeded, failed
     }
 
-    struct Context {
-        var repo: String
-        var worktree: String
-        var branch: String
-        var base: String
-        var title: String
-        var body: String
+    public struct Context: Sendable {
+        public var repo: String
+        public var worktree: String
+        public var branch: String
+        public var base: String
+        public var title: String
+        public var body: String
         /// Settings ▸ Worktrees: off = a dirty worktree stops the pipeline
         /// instead of being committed automatically.
-        var autoCommit = true
+        public var autoCommit = true
         /// Settings ▸ Worktrees: off = the local branch survives finalize.
-        var deleteLocalBranch = true
+        public var deleteLocalBranch = true
         /// Settings ▸ Worktrees, **off by default**: merge the PR after
         /// creating it — GitHub auto-merge first, immediate merge fallback.
-        var autoMergePR = false
+        public var autoMergePR = false
         /// gh merge method flag ("squash") when autoMergePR is on.
-        var mergeMethod = "squash"
+        public var mergeMethod = "squash"
         /// The Finalize plan's ticks (BranchFinalizePlan): an unticked step is skipped. Removing
         /// covers the clean check, the worktree and the local branch.
-        var commit = true
-        var push = true
-        var pullRequest = true
-        var remove = true
+        public var commit = true
+        public var push = true
+        public var pullRequest = true
+        public var remove = true
         /// The commit's message; the pull request's title when nil.
-        var commitMessage: String?
+        public var commitMessage: String?
+
+        public init(repo: String, worktree: String, branch: String, base: String, title: String, body: String,
+                    autoCommit: Bool = true, deleteLocalBranch: Bool = true, autoMergePR: Bool = false,
+                    mergeMethod: String = "squash", commit: Bool = true, push: Bool = true,
+                    pullRequest: Bool = true, remove: Bool = true, commitMessage: String? = nil) {
+            self.repo = repo; self.worktree = worktree; self.branch = branch; self.base = base
+            self.title = title; self.body = body; self.autoCommit = autoCommit
+            self.deleteLocalBranch = deleteLocalBranch; self.autoMergePR = autoMergePR
+            self.mergeMethod = mergeMethod; self.commit = commit; self.push = push
+            self.pullRequest = pullRequest; self.remove = remove; self.commitMessage = commitMessage
+        }
     }
 
-    private(set) var states: [Step: StepState]
-    private(set) var phase: Phase = .idle
-    private(set) var prURL: String?
+    public private(set) var states: [Step: StepState]
+    public private(set) var phase: Phase = .idle
+    public private(set) var prURL: String?
 
     /// Injectable for tests; production uses the login shell.
-    @ObservationIgnored var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1) }
+    @ObservationIgnored public var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1) }
     /// Injectable clean gate; production is the same probe the delete dialog uses.
-    @ObservationIgnored var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
+    @ObservationIgnored public var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
 
-    @ObservationIgnored var beforeCleanup: (() async throws -> Void)?
+    @ObservationIgnored public var beforeCleanup: (() async throws -> Void)?
 
-    init() {
+    public init() {
         states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, .pending) })
     }
 
     /// A pipeline already at `steps` (unlisted steps pending), for previews; it never runs.
-    init(staged steps: [Step: StepState], prURL: String? = nil) {
+    public init(staged steps: [Step: StepState], prURL: String? = nil) {
         states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, steps[$0] ?? .pending) })
         self.prURL = prURL
         let failed = steps.values.contains { if case .failed = $0 { true } else { false } }
         phase = failed ? .failed : states.values.contains { $0 == .pending || $0 == .running } ? .running : .succeeded
     }
 
-    func run(_ ctx: Context) async {
+    public func run(_ ctx: Context) async {
         guard phase == .idle else { return }
         phase = .running
         for step in Step.allCases {
@@ -694,7 +715,7 @@ final class WorktreeFinalizer {
     /// first line (the rest is its tooltip), so the line that names the problem moves to the
     /// front: a rejected ref, else the first `fatal:`/`error:` that isn't git's closing
     /// boilerplate, ahead of the `To <remote>` header and hints.
-    static func failureDetail(_ output: LoginShell.Output) -> String {
+    public static func failureDetail(_ output: LoginShell.Output) -> String {
         let err = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         let out = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = err.isEmpty ? out : err

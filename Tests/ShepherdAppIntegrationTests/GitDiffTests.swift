@@ -2,6 +2,7 @@ import Foundation
 import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 @Suite("Per-file revert", .integrationTimeLimit)

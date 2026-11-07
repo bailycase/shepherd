@@ -2,6 +2,7 @@ import Foundation
 import ShepherdProtocol
 import ShepherdTestKit
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// What commit from review reads from a checkout: the inspection's lines, the push remote and

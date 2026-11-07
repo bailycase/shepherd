@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import SwiftUI
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// The ChangesSplit board's outbox.go: three hunks with 28 and 55 unmodified lines between them.

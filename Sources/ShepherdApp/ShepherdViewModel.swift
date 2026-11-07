@@ -271,15 +271,36 @@ final class ShepherdViewModel {
     var remoteWorktreeFinalize = false
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
-    var hostPRDescriptionGenerator: WorktreePRDescriptionGenerator
-    var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
-    var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
-    var hostBusyWorktrees: Set<String> = []
+    /// This Mac's worktree operations and commits from review, as a host; the headless host has
+    /// its own.
+    let worktrees: WorktreeQueries
+    var hostPRDescriptionGenerator: WorktreePRDescriptionGenerator {
+        get { worktrees.descriptions }
+        set { worktrees.descriptions = newValue }
+    }
+    var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] {
+        get { worktrees.operations }
+        set { worktrees.operations = newValue }
+    }
+    var hostWorktreeOperationAgents: [UUID: AgentID] {
+        get { worktrees.operationAgents }
+        set { worktrees.operationAgents = newValue }
+    }
+    var hostBusyWorktrees: Set<String> {
+        get { worktrees.busy }
+        set { worktrees.busy = newValue }
+    }
     /// A review pane's Commit… sheet by review session, kept while its commit runs.
     @ObservationIgnored var reviewCommitStores: [UUID: ReviewCommitStore] = [:]
     /// Runs commit from review's git and gh (tests stub gh here); reads time out, mutations don't.
-    @ObservationIgnored var reviewCommitRunner: ReviewCommitGit.Runner = { await LoginShell.run($0, cwd: $1) }
-    var startingCheckoutUsers: [UUID: String] = [:]
+    var reviewCommitRunner: ReviewCommitGit.Runner {
+        get { worktrees.commitRunner }
+        set { worktrees.commitRunner = newValue }
+    }
+    var startingCheckoutUsers: [UUID: String] {
+        get { worktrees.starting }
+        set { worktrees.starting = newValue }
+    }
     var remoteChildren: [RemoteAgentRef: [ChildRun]] {
         Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
             connection.children.map { (RemoteAgentRef(hostID: connection.id, agentID: $0.key), $0.value) }
@@ -698,7 +719,7 @@ final class ShepherdViewModel {
         self.state = ShepherdState()
         self.server = server
         self.ownsWorkspace = ownsWorkspace
-        self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(pi: server.pi)
+        self.worktrees = WorktreeQueries(server: server)
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults

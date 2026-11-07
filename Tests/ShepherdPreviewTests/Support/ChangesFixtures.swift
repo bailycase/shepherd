@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// The Changes boards' review (ChangesSplit and its siblings): agent/refund-events against

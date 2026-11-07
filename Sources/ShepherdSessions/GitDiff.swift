@@ -1,17 +1,16 @@
 import Foundation
 import ShepherdProtocol
-import ShepherdSessions
 
-enum GitDiff {
+public enum GitDiff {
     /// The parser lives with `DiffFile` (ShepherdProtocol), which every review client shares.
-    static func parse(_ unified: String) -> [DiffFile] {
+    public static func parse(_ unified: String) -> [DiffFile] {
         DiffFile.parse(unified)
     }
 
     /// Resolve the ref spec for "the changes sitting in this branch's PR":
     /// merge-base diff against the PR base branch (gh), falling back to the
     /// remote default branch when gh is missing or there is no PR.
-    static func pullRequestReference(cwd: String) -> String {
+    public static func pullRequestReference(cwd: String) -> String {
         // gh lives on the user's PATH, not the GUI app's — resolve through a
         // login shell like the worktree-finalize prerequisites do.
         if let base = try? runLoginShell("gh pr view --json baseRefName -q .baseRefName", cwd: cwd),
@@ -31,13 +30,13 @@ enum GitDiff {
     /// tracked file returns to HEAD; a new untracked file moves to the Trash rather than being
     /// deleted; a rename restores the old path and trashes the new one. Blocking.
     /// The working tree's top level (diff paths are relative to it); `cwd` if git can't say.
-    static func repositoryRoot(cwd: String) -> String {
+    public static func repositoryRoot(cwd: String) -> String {
         guard let result = try? runGit(["rev-parse", "--show-toplevel"], cwd: cwd), result.status == 0 else { return cwd }
         let path = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return path.isEmpty ? cwd : path
     }
 
-    static func revert(_ file: DiffFile, cwd: String) throws {
+    public static func revert(_ file: DiffFile, cwd: String) throws {
         let cwd = repositoryRoot(cwd: cwd)
         let root = URL(fileURLWithPath: cwd, isDirectory: true)
         func trash(_ path: String) throws {
@@ -71,7 +70,7 @@ enum GitDiff {
         }
     }
 
-    static func load(cwd: String, reference: String?) throws -> [DiffFile] {
+    public static func load(cwd: String, reference: String?) throws -> [DiffFile] {
         let reference = reference.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         // A fresh repo with no commits has an unborn HEAD; `git diff HEAD`
         // exits 128 there. In local mode everything is untracked, so skip
