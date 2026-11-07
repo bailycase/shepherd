@@ -879,7 +879,7 @@ struct ListPerformanceTests {
             }
         }
 
-        #expect(rows["thread.view", default: 0] >= 5, "the reply streamed: \(rows)")
+        #expect(rows["thread.liveRow", default: 0] >= 5, "the reply streamed: \(rows)")
         // On CI's macOS 26 VM the composer redrew for every chunk (5 bodies, 15 chip rows); a
         // Mac redraws none. A known issue there until the cause is found, a failure everywhere else.
         withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
@@ -918,7 +918,7 @@ struct ListPerformanceTests {
             }
         }
 
-        #expect(rows["thread.view", default: 0] >= 5, "the reply streamed: \(rows)")
+        #expect(rows["thread.liveRow", default: 0] >= 5, "the reply streamed: \(rows)")
         #expect(rows["queue.row", default: 0] == 0, "\(rows)")
         // See aStreamedChunkRedrawsNoComposerOrToolbar: CI's VM redraws the composer per chunk.
         withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
@@ -1099,7 +1099,7 @@ struct ListPerformanceTests {
                 ListPerf.settle(thread.window)
             }
         }
-        #expect(streamed["thread.view", default: 0] >= 5, "the reply streamed: \(streamed)")
+        #expect(streamed["thread.liveRow", default: 0] >= 5, "the reply streamed: \(streamed)")
         #expect(streamed["prose.table", default: 0] == 0, "\(streamed)")
         #expect(streamed["prose.tableCell", default: 0] == 0, "\(streamed)")
     }
