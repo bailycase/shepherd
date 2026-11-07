@@ -62,7 +62,7 @@ PRESENTED = [
     ("tools.browser", "Shepherd tools: browser_*", "shepherd"),
     ("tools.mcp", "pi's MCP: tool_search and its server list (servers on Search)", "shepherd"),
     ("tools.mcp_direct", "pi's MCP: tools of servers set to Direct", "shepherd"),
-    ("tools.design", "Shepherd tools: design_get, design_note", "shepherd"),
+    ("tools.design", "Shepherd tools: design_get, design_show, design_note", "shepherd"),
     ("tools.design_agent", "Shepherd tools: a design agent's (design_read, board_write, ...)", "shepherd"),
     ("tools.other", "Other tools", "shepherd"),
     ("skills", "Skills list", "skills"),

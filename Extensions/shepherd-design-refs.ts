@@ -5,6 +5,8 @@
 //   those copies, never the design as it is now: a newer version reaches the thread only when the
 //   user sends it. Everything the design's files say comes back fenced as data; pictures and
 //   pages come back as the copy's files, never megabytes over the socket.
+// - design_show(ref) draws the copy of a board or element in the thread as a card (ThreadBoardShown);
+//   its result's details name the copy, which the thread reads like a sent chip's.
 // - design_note(ref, text) leaves a short note on a board or element this thread was sent
 //   ("Implemented in #142 on agent/checkout-funnel."), shown on the canvas as the thread's pin.
 //
@@ -181,6 +183,27 @@ export default function shepherdDesignRefs(pi: ExtensionAPI) {
           }
         }
         return { content, details: { files: answer.files ?? [], lookedAt: answer.lookedAt } };
+      },
+    });
+    pi.registerTool({
+      name: "design_show",
+      label: "Design Show",
+      description:
+        "Show the user a board or element you were sent (a design-ref record's ref) as a picture in this thread, " +
+        "as it was when sent. Use it when the user asks what a design looks like instead of describing it.",
+      promptSnippet: "Show the user a design piece sent to this thread as a picture in the chat",
+      parameters: Type.Object({
+        ref: Type.String({ description: "The ref of a board or element design-ref record in this thread" }),
+      }),
+      async execute(_toolCallId, params) {
+        const ref = String(params.ref ?? "");
+        const reply = await request({ type: "designGet", reference: ref, what: "summary" });
+        const lookedAt = reply.answer?.lookedAt as { title?: string; payload?: string } | undefined;
+        if (!lookedAt || typeof lookedAt.payload !== "string") throw new Error("Shepherd's design_show reply had no copy to show");
+        return {
+          content: [{ type: "text", text: `Showed ${lookedAt.title ?? ref} in the thread, as it was when sent.` }],
+          details: { board: lookedAt.payload },
+        };
       },
     });
     pi.registerTool({

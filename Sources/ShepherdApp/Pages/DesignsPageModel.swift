@@ -15,7 +15,7 @@ struct DesignsPageModel: Equatable {
         /// The design's system: its namespace; nil while it is drawn in none (a design belongs to
         /// no project).
         let system: String?
-        /// "4 boards".
+        /// "4 boards · 2 comments", "9 boards · phone" (NavDesignsPlanned).
         let detail: String
         /// "edited 2h ago".
         let edited: String
@@ -133,7 +133,7 @@ struct DesignsPageModel: Equatable {
     static func make(designs: [Design], spaces: [Space], firstBoards: [DesignID: FirstBoard], filter: String,
                      selection: DesignID?, now: Date, systems: [DesignSystemSummary] = [],
                      swatches: [String: [DesignSystemPresentation.Swatch]] = [:], importing: DesignImporting? = nil,
-                     building: Set<String> = []) -> DesignsPageModel {
+                     building: Set<String> = [], comments: [DesignID: Int] = [:]) -> DesignsPageModel {
         let names = Dictionary(spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         // A card names its system by title (an imported design's "Checkout DS"), else its folder.
         let titles = Dictionary(systems.map { ($0.namespace, $0.info.title) }, uniquingKeysWith: { first, _ in first })
@@ -148,9 +148,11 @@ struct DesignsPageModel: Equatable {
         var model = DesignsPageModel()
         model.cards = matching.map { design in
             let first = firstBoards[design.id]
-            return Card(id: design.id, name: design.name, system: system(design), detail: boardsText(design.boardCount ?? 0),
+            let board = SHDesignCardBoard(size: first?.size)
+            return Card(id: design.id, name: design.name, system: system(design),
+                        detail: detail(boards: design.boardCount ?? 0, comments: comments[design.id] ?? 0, phone: board == .phone),
                         edited: "edited \(SuggestionsPresentation.when(design.lastActiveAt / 1000, now: now))",
-                        board: SHDesignCardBoard(size: first?.size), thumbnail: first?.version ?? 0,
+                        board: board, thumbnail: first?.version ?? 0,
                         selected: design.id == selection)
         }
 
@@ -200,6 +202,13 @@ struct DesignsPageModel: Equatable {
         return model
     }
 
+    /// A card's line after its system: its boards, its open comments, and "phone" when its first
+    /// board is a phone's ("4 boards · 2 comments", "9 boards · phone").
+    static func detail(boards: Int, comments: Int, phone: Bool) -> String {
+        [boardsText(boards), comments == 0 ? nil : comments == 1 ? "1 comment" : "\(comments) comments", phone ? "phone" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
     /// "1 board", "4 boards".
     static func boardsText(_ count: Int) -> String { count == 1 ? "1 board" : "\(count) boards" }
 
@@ -222,6 +231,8 @@ struct DesignsPageInputs: Equatable {
     var importing: DesignImporting?
     /// Systems still being built (their build's agent at work).
     var building: Set<String> = []
+    /// Each design's open comments.
+    var comments: [DesignID: Int] = [:]
     /// The minute its relative times were worded in.
     var minute: Int
 }

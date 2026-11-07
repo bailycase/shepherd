@@ -103,6 +103,9 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var boardTitle: String?
     public var page: String?
     public var pageTitle: String?
+    /// A board or element reference: the name of the canvas page its board was on, for a board
+    /// card's meta ("Checkout · 560 × 410 · revision 13"). Absent from older copies.
+    public var boardPageTitle: String?
     /// The element's words, and its `data-el` name (else its tag).
     public var elementLabel: String?
     public var elementName: String?
@@ -389,9 +392,12 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
     public var html: Page?
     public var styles: Styles?
     public var tokens: Tokens?
+    /// The kept copy it read (`DesignReferencePayload.id`): what design_show's board card draws.
+    /// Absent from older hosts.
+    public var payload: UUID?
 
     public init(ref: String, title: String, aspects: [DesignReferenceAspect], picture: Picture? = nil, html: Page? = nil,
-                styles: Styles? = nil, tokens: Tokens? = nil) {
+                styles: Styles? = nil, tokens: Tokens? = nil, payload: UUID? = nil) {
         self.ref = ref
         self.title = title
         self.aspects = aspects
@@ -399,6 +405,7 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
         self.html = html
         self.styles = styles
         self.tokens = tokens
+        self.payload = payload
     }
 
     /// The line's meta: "picture · html · 11 styles · 8 tokens".
@@ -416,7 +423,7 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
         let title = DesignReference.label(design: payload.design, board: payload.reference.board.map { payload.boardTitle ?? $0.stem },
                                           element: nil, page: payload.reference.page.map { payload.pageTitle ?? $0 })
         var out = DesignReferenceLookedAt(ref: payload.reference.string, title: title,
-                                          aspects: DesignReferenceAspect.allCases.filter(aspects.contains))
+                                          aspects: DesignReferenceAspect.allCases.filter(aspects.contains), payload: payload.id)
         if aspects.contains(.image) {
             if let picture = payload.picture {
                 let board = payload.reference.board.map { payload.boardTitle ?? $0.stem } ?? payload.design
