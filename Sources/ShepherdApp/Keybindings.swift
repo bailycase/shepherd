@@ -40,6 +40,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// (BrowserTabs boards); ⇧⌘T is New Agent with Options, so the two never meet.
     case focusAddressBar, selectElement, browserNewTab
     case saveProjectFile
+    /// Shepherd ▸ Quit and Stop Agents, while the background service runs them (C6): turns the
+    /// service off until the next launch, which stops its agents, then quits.
+    case quitAndStopAgents
 
     var id: String { rawValue }
 
@@ -76,6 +79,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .selectElement: return "Select an Element"
         case .browserNewTab: return "New Browser Tab"
         case .saveProjectFile: return "Save Space File"
+        case .quitAndStopAgents: return "Quit and Stop Agents"
         }
     }
 
@@ -153,6 +157,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         // BrowserTabs boards: the New tab button's ⌘T.
         case .browserNewTab: return KeyChord(key: "t", command: true)
         case .saveProjectFile: return KeyChord(key: "s", command: true)
+        case .quitAndStopAgents: return KeyChord(key: "q", command: true, option: true)
         }
     }
 }
