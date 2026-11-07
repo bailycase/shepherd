@@ -292,10 +292,11 @@ public enum ShepherdHost {
     /// the app, and answers and Retry act here.
     public static func main() -> Never {
         let settings = AppSettings.shared
-        let (mcp, notifications) = MainActor.assumeIsolated {
-            (MCPLaunch.spawnMCP(settings: settings, store: MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in }))),
+        let (mcpStore, notifications) = MainActor.assumeIsolated {
+            (MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in })),
              AgentNotifications(activate: { NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: .init()) }))
         }
+        let mcp = MainActor.assumeIsolated { MCPLaunch.spawnMCP(settings: settings, store: mcpStore) }
         MainActor.assumeIsolated {
             notifications.onResponse = { response in
                 guard case .agent(let id) = response.target, let action = response.action else { return }
@@ -310,6 +311,10 @@ public enum ShepherdHost {
         }, configure: { server in
             HostSettingsMapping.serve(on: server, settings: settings)
             serveSettings(settings, on: server)
+            // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
+            let subagents = SubagentDefinitionsModel(pi: server.pi)
+            HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
+                       remoteSignIns: RemoteSignIns()).serve(on: server)
             server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                       deleteAgent: { id, _ in try await server.deleteAgent(id) }))
         }, threads: { server in
