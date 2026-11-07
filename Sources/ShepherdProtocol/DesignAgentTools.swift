@@ -336,7 +336,7 @@ public struct DesignRenderRequest: Hashable, Sendable, Codable {
 
 /// What the app is asked to draw: the board, and the files it needs (`DesignExportFiles`: the
 /// canvas, the board and every board it imports, the project's other files and its uploads).
-public struct DesignRenderJob: Sendable {
+public struct DesignRenderJob: Hashable, Sendable, Codable {
     public var designID: DesignID
     public var path: DesignPath
     public var request: DesignRenderRequest
@@ -366,7 +366,7 @@ public struct DesignRenderFailure: Error, Hashable, Sendable, CustomStringConver
 }
 
 /// What the app drew: the image the agent gets, and the words that go with it.
-public struct DesignRendered: Hashable, Sendable {
+public struct DesignRendered: Hashable, Sendable, Codable {
     public var image: BrowserImage
     public var text: String
     public var diagnostics: [String]

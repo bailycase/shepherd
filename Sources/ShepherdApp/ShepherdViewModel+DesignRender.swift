@@ -7,6 +7,39 @@ import ShepherdProtocol
 
 extension ShepherdViewModel {
     func installDesignRenderHandler() {
+        // The background host on this Mac has no web view: its agents' boards are drawn here, by
+        // the same handlers this app's own server has.
+        remoteHosts.onDesignRelay = { [weak self] client, token, job in
+            let answer = { (result: DesignRelayResult) in client.designRelayAnswer(token: token, result: result) }
+            let unavailable = DesignRelayResult.failed(code: "render_unavailable", message: "The workspace is gone.")
+            guard let server = self?.server else { return answer(unavailable) }
+            switch job {
+            case .render(let job):
+                guard let draw = server.onDesignRender else { return answer(unavailable) }
+                draw(job) { result in
+                    switch result {
+                    case .success(let rendered): answer(.rendered(rendered))
+                    case .failure(let failure): answer(.failed(code: failure.code, message: failure.message))
+                    }
+                }
+            case .export(let job):
+                guard let export = server.onDesignExport else { return answer(unavailable) }
+                export(job) { result in
+                    switch result {
+                    case .success: answer(.exported)
+                    case .failure(let failure): answer(.failed(code: failure.code, message: failure.message))
+                    }
+                }
+            case .capture(let request):
+                guard let capture = server.onDesignReferenceCapture else { return answer(unavailable) }
+                capture(request) { result in
+                    switch result {
+                    case .success(let captured): answer(.captured(captured))
+                    case .failure(let failure): answer(.failed(code: failure.code, message: failure.message))
+                    }
+                }
+            }
+        }
         server.onDesignExport = { [weak self] job, respond in
             MainActor.assumeIsolated {
                 guard let self else {

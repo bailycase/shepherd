@@ -860,6 +860,10 @@ public final class SessionServer: @unchecked Sendable {
     /// entry, so a request is answered at most once.
     private var driveRequests: [Int: DriveRequest] = [:]
     private var nextDriveToken = 0
+    /// Designs handed to the app to draw (`relayDesign`), by token: the connection it went to and
+    /// who waits for the answer. Server queue.
+    var designRelays: [Int: (fd: Int32, answer: (DesignRelayResult?) -> Void)] = [:]
+    var nextDesignRelayToken = 0
 
     private struct DriveRequest {
         let asker: ExtensionConnection
@@ -2602,6 +2606,9 @@ public final class SessionServer: @unchecked Sendable {
             remoteBrowserRelease(agentID, client: client)
         case .browserAnswer(let token, let outcome):
             remoteBrowserAnswer(token: token, outcome: outcome, client: client)
+        case .designRelayAnswer(let token, let result):
+            guard designRelays[token]?.fd == client.fd else { return }
+            designRelays.removeValue(forKey: token)?.answer(result)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isFiles:
@@ -4267,6 +4274,7 @@ public final class SessionServer: @unchecked Sendable {
         Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
+        for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -7265,6 +7273,20 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         return destination
+    }
+
+    /// Hands `job` to the app connected over `host.sock` to draw, for a host with no web view of
+    /// its own. `answer` gets the app's result, or nil when no app that draws is connected or it
+    /// went away first. Any thread; `answer` is called on the server queue.
+    func relayDesign(_ job: DesignRelayJob, answer: @escaping (DesignRelayResult?) -> Void) {
+        queue.async { [self] in
+            guard let app = clients.values.first(where: {
+                $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.designRelayCapability)
+            }) else { return answer(nil) }
+            nextDesignRelayToken += 1
+            designRelays[nextDesignRelayToken] = (app.fd, answer)
+            send(.designRelay(token: nextDesignRelayToken, job: job), to: app)
+        }
     }
 
     /// One answer to a render, whichever of the app and the deadline comes first.

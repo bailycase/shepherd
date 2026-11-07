@@ -410,11 +410,11 @@ struct RemoteRequestTests {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig, .apps:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 45
+    static let caseCount = 46
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -475,6 +475,13 @@ struct RemoteRequestTests {
         .browserAnswer(requestToken: 12, outcome: .text("Clicked button \"Pay\".")),
         .browserAnswer(requestToken: 13, outcome: .result(text: "Screenshot.", image: BrowserImage(data: "/9j/4AAQ", mimeType: "image/jpeg"))),
         .browserAnswer(requestToken: 14, outcome: .failure(code: "refused_url", message: "That address is on your network.")),
+        .designRelayAnswer(requestToken: 3, result: .rendered(DesignRendered(image: BrowserImage(data: "iVBORw0K", mimeType: "image/png"),
+                                                                             text: "Two.dc.html at 400×300", diagnostics: ["1 font missing"]))),
+        .designRelayAnswer(requestToken: 4, result: .exported),
+        .designRelayAnswer(requestToken: 5, result: .captured(DesignReferenceCaptured(
+            boards: [.init(picture: .init(name: "board.png", bytes: 1_024, pixelWidth: 800, pixelHeight: 600), html: nil)],
+            computedStyles: ["color": "#111111"]))),
+        .designRelayAnswer(requestToken: 6, result: .failed(code: "render_failed", message: "Two.dc.html couldn't be drawn.")),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -645,11 +652,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 45
+    static let caseCount = 46
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -717,7 +724,23 @@ struct RemoteReplyTests {
         .browserClaimed(id: 34, url: nil),
         .browserDrive(.request(token: 12, agentID: S.agent, request: .click(ref: "e4", double: false, note: "paying"))),
         .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
+        .designRelay(token: 3, job: .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
+                                                            request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
+                                                            deadline: Date(timeIntervalSince1970: 1_000)))),
+        .designRelay(token: 4, job: .export(DesignExportJob(designID: RemoteReplyTests.relayDesign, request: DesignExportRequest(format: .png),
+                                                            files: RemoteReplyTests.files, destination: URL(fileURLWithPath: "/tmp/acme/exports/Two.png")))),
+        .designRelay(token: 5, job: .capture(DesignReferenceCaptureRequest(
+            reference: DesignReference(designID: RemoteReplyTests.relayDesign, board: DesignPath("Two.dc.html"))!,
+            boards: [.init(path: DesignPath("Two.dc.html")!, source: "<x-dc></x-dc>", isCurrent: true, picture: "board.png", html: "board.html")],
+            folder: URL(fileURLWithPath: "/tmp/acme/refs"), files: RemoteReplyTests.files))),
     ]
+
+    static let relayDesign = DesignID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c33")
+
+    /// A design's files as a relay carries them: canvas.json's index, a board, a support file and an upload.
+    static let files = DesignExportFiles(index: try! DesignIndex.decode(Data(#"{"v":3,"title":"Two"}"#.utf8)), boards: [DesignPath("Two.dc.html")!],
+                                         members: [DesignPath("Two.dc.html")!], sources: [DesignPath("Two.dc.html")!: "<x-dc></x-dc>"],
+                                         support: ["ds/tokens.css": Data(":root{}".utf8)], assets: ["a1": .init(name: "a1.png", data: Data([0x89, 0x50]))])
 
     @Test func samplesCoverEveryCase() {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
