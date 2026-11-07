@@ -26,6 +26,9 @@ import Testing
 @MainActor
 struct ThreadBlankScreenTests {
     static let base = 1_700_000_000_000.0
+    /// The most background a reader may see in a row of the thread, in points: well over the gaps
+    /// between blocks (16) and turns (40), well under a screen.
+    static let blankBandLimit = 64
 
     // MARK: Rig
 
@@ -72,12 +75,13 @@ struct ThreadBlankScreenTests {
                            insetTop: scroll.contentInsets.top, insetBottom: scroll.contentInsets.bottom)
         }
 
-        /// Pixels in the thread above the composer that differ from its background: zero means
-        /// the thread draws nothing.
-        var ink: Int {
+        /// What the thread above the composer draws, from one capture: the pixels that differ from
+        /// its background (zero means the thread draws nothing), and the longest run of rows, in
+        /// points, that draw only the background.
+        var drawing: (ink: Int, longestBlankBand: Int) {
             let inset = (reading?.insetBottom ?? 0) + 24
             let capture = FrameTimer.capture(window, CGRect(x: 0, y: 0, width: size.width, height: size.height - inset))
-            return capture.data.withUnsafeBytes { raw -> Int in
+            let ink = capture.data.withUnsafeBytes { raw -> Int in
                 let p = raw.bindMemory(to: UInt8.self)
                 let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
                 var count = 0
@@ -89,6 +93,37 @@ struct ThreadBlankScreenTests {
                     }
                 }
                 return count
+            }
+            return (ink, capture.longestBlankBand)
+        }
+
+        var ink: Int { drawing.ink }
+        var longestBlankBand: Int { drawing.longestBlankBand }
+
+        /// Waits for the reply's off-main parse to land: its prose has `blocks` top-level blocks.
+        func expectParsed(blocks: Int, _ what: String) async throws {
+            try await eventuallyOnMain("\(what): the reply's parse to land") {
+                window.layout()
+                for item in (store.rows.last?.presentation?.items ?? []).reversed() {
+                    if case .prose(_, _, let parsed, _) = item { return parsed.count == blocks }
+                }
+                return false
+            }
+        }
+
+        /// Waits for the thread to draw its tail with no blank stretch in it longer than
+        /// `Self.blankBandLimit`: a blank region inside a long reply, which `expectTail` (any ink at
+        /// all) and the tail guard (its row marker spans the whole row) cannot see.
+        func expectNoBlankBand(_ what: String) async throws {
+            var last: (ink: Int, longestBlankBand: Int) = (0, 0)
+            do {
+                try await eventuallyOnMain("\(what): no blank band", timeout: .seconds(4), poll: .milliseconds(16)) {
+                    window.layout()
+                    last = drawing
+                    return last.ink > 0 && last.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit
+                }
+            } catch {
+                throw TimedOut(what: "\(what): no blank band (\(last.longestBlankBand) pt of background in a row, limit \(ThreadBlankScreenTests.blankBandLimit); \(reading.map(String.init(describing:)) ?? "no scroll view"))")
             }
         }
 
@@ -357,6 +392,44 @@ struct ThreadBlankScreenTests {
                 $0.append(Self.reply("a41", Self.prose(3, 41) + "\n\n" + Self.code(41), at: promptAt + 90_000))
             }
             try await rig.expectTail("that turn finishing")
+        }
+    }
+
+    /// A reply of hundreds of blocks streams in, crossing many chunk boundaries (the earlier chunks
+    /// become lazy as the last one moves on), and finishes: the thread draws its tail, and no
+    /// stretch of it goes blank, at every step.
+    @Test(arguments: sizes)
+    func aVeryLongReplyStreamingAndFinishingNeverLeavesTheThreadBlank(size: CGSize) async throws {
+        try await Self.withRig(size: size) { rig in
+            rig.host.answersUnchanged = true
+            let promptAt = Self.base + 41 * 60_000
+            await rig.publish { $0.append(Self.user("u40", "Write the whole report.", at: promptAt)) }
+            try await rig.expectTail("the prompt")
+
+            func streaming(_ text: String) -> NativeThreadMessage {
+                NativeThreadMessage(entryID: "provisional:assistant:1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
+                                    status: "streaming", truncated: false)
+            }
+            var cycles = 0
+            for step in 0..<5 {
+                cycles += 50
+                let text = MarkdownFixtures.longReply(cycles: cycles)
+                await rig.publish(provisional: [streaming(text)])
+                try await rig.expectParsed(blocks: nativeMarkdownParse(text, streaming: true).blocks.count, "streaming step \(step)")
+                try await rig.expectTail("streaming step \(step)")
+                try await rig.expectNoBlankBand("streaming step \(step)")
+            }
+
+            let text = MarkdownFixtures.longReply(cycles: cycles)
+            await rig.publish(running: false, turnChanges: [Self.recorded(promptAt: promptAt)]) {
+                $0.append(Self.reply("a40", text, at: promptAt + 60_000))
+            }
+            try await rig.expectParsed(blocks: nativeMarkdownBlocks(text).count, "the turn finishing")
+            try await rig.expectTail("the turn finishing")
+            try await rig.expectNoBlankBand("the turn finishing")
+            try await eventuallyOnMain("the turn to settle") { !rig.store.settledRunning }
+            try await rig.expectTail("the turn settled")
+            try await rig.expectNoBlankBand("the turn settled")
         }
     }
 }

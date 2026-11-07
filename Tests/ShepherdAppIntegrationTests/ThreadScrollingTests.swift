@@ -22,6 +22,9 @@ private final class ThreadHarness {
     private let pillSize = NSHostingView(rootView: SHJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
     var olderRequestPhases: [ScrollPhase] = []
+    /// Answers a poll for the revision it already serves with `.unchanged`, as a host does (a whole
+    /// snapshot again would clear the live row of a reply being streamed).
+    var answersUnchanged = false
     private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
@@ -41,6 +44,9 @@ private final class ThreadHarness {
                 self.olderRequests += 1
                 self.olderRequestPhases.append(self.scrollPhase)
                 return await withCheckedContinuation { self.olderReply = $0 }
+            }
+            if self.answersUnchanged, case .snapshot(_, nil, let after?) = value, after == self.snapshot.revision {
+                return .unchanged(piSessionID: self.snapshot.piSessionID, generation: self.snapshot.generation, revision: after)
             }
             return .snapshot(value: self.snapshot)
         }
@@ -161,6 +167,65 @@ private final class ThreadHarness {
             print("Paging label '\(text)' missing: visible OCR=\(recognized), clip=\(scrollView.contentView.bounds), document=\(String(describing: scrollView.documentView?.bounds)), insets=\(scrollView.contentInsets), model messages=\(store.messages.count), requests=\(olderRequests), loading=\(store.loadingOlder)")
         }
         return result
+    }
+
+    /// Every `## Marker N` heading on screen, by N, at its viewport position (OCR, so independent of lazy-stack height estimates).
+    func markerPositions() throws -> [Int: CGFloat] {
+        window.layout()
+        let host = window.host
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let image = try #require(bitmap.cgImage)
+        let request = VNRecognizeTextRequest()
+        try request.useCPUForTests()
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        var found: [Int: CGFloat] = [:]
+        for observation in request.results ?? [] {
+            guard let text = observation.topCandidates(1).first?.string, text.hasPrefix("Marker "),
+                  let number = Int(text.dropFirst("Marker ".count)) else { continue }
+            found[number] = (1 - observation.boundingBox.midY) * host.bounds.height
+        }
+        return found
+    }
+
+    /// The longest run of rows, in points, above the composer that draw only the background.
+    var longestBlankBand: Int {
+        window.layout()
+        let inset = scrollView.contentInsets.bottom + 24
+        let host = window.host
+        return FrameTimer.capture(window, CGRect(x: 0, y: 0, width: host.bounds.width, height: host.bounds.height - inset)).longestBlankBand
+    }
+
+    /// The reader scrolls up `distance` points: the wheel monitor's real input path, then the clip view's own movement.
+    func scrollUp(by distance: CGFloat) {
+        input.readerScrolled(upward: true)
+        let clip = scrollView.contentView
+        let target = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - distance), size: clip.bounds.size)).origin
+        clip.scroll(to: target)
+        scrollView.reflectScrolledClipView(clip)
+        window.layout()
+    }
+
+    /// Serves a conversation of one question and its (long) reply, finished or streaming, and waits for the reply's parse to land.
+    func publishReply(_ text: String, streaming: Bool) async throws {
+        var next = snapshot
+        next.revision += 1
+        next.running = streaming
+        let reply = NativeThreadMessage(entryID: streaming ? "provisional:assistant:1" : "long", role: "assistant",
+                                        blocks: [NativeThreadBlock(kind: .text, text: text)], status: streaming ? "streaming" : nil, truncated: false)
+        next.messages = [NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Write it all down")], truncated: false)]
+        next.provisional = []
+        if streaming { next.provisional = [reply] } else { next.messages.append(reply) }
+        await publish(next)
+        let blocks = nativeMarkdownParse(text, streaming: streaming).blocks.count
+        try await eventuallyOnMain("the reply's parse to land") {
+            window.layout()
+            for item in (store.rows.last?.presentation?.items ?? []).reversed() {
+                if case .prose(_, _, let parsed, _) = item { return parsed.count == blocks }
+            }
+            return false
+        }
     }
 
     /// The wheel monitor's real input path, followed by its native clip-view movement.
@@ -971,6 +1036,66 @@ struct ThreadScrollingTests {
         #expect(thread.isPinned)
         let after = try #require(try thread.position(of: "Question 22"))
         #expect(abs(after - before) < 2, "an obsolete history anchor displaced the new navigation from \(before) to \(after)")
+    }
+
+    /// A reader scrolls up through a finished reply of many chunks (each lazy, built as it comes
+    /// into view): every heading they can see moves exactly as far as they scrolled, and no stretch
+    /// of the thread goes blank. A lazy stack that mis-estimates the chunks it has not built shows
+    /// as a heading that jumps. Light, because Vision misses dark low-contrast lines.
+    @Test func aReaderScrollingUpThroughALongReplySeesItMoveOnlyAsFarAsTheyScroll() async throws {
+        let thread = ThreadHarness(messages: 2)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let text = MarkdownFixtures.longReply(cycles: 80, markerEvery: 1)
+        #expect(nativeMarkdownBlocks(text).count > 12 * 20, "twelve chunks or more")
+        try await thread.publishReply(text, streaming: false)
+        try await eventuallyOnMain("the long reply to open at its tail") { thread.isPinned }
+        try await thread.settle()
+
+        var previous = try thread.markerPositions()
+        var compared = 0
+        for step in 1...32 {
+            thread.scrollUp(by: 300)
+            try await thread.settle()
+            let now = try thread.markerPositions()
+            for (marker, y) in now {
+                guard let before = previous[marker] else { continue }
+                compared += 1
+                #expect(abs((y - before) - 300) <= 4, "step \(step): Marker \(marker) moved \(y - before) pt for a 300 pt scroll")
+            }
+            #expect(thread.longestBlankBand <= 64, "step \(step): a blank band of \(thread.longestBlankBand) pt")
+            previous = now
+        }
+        #expect(compared >= 8, "the headings were measured: \(compared) comparisons")
+    }
+
+    /// A reader parked in the middle of a reply that is still streaming (its chunks crossing boundaries
+    /// below them) sees nothing move.
+    @Test func aDetachedReaderInALongReplyStaysPutWhileItStreams() async throws {
+        let thread = ThreadHarness(messages: 2)
+        thread.answersUnchanged = true
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        var cycles = 60
+        try await thread.publishReply(MarkdownFixtures.longReply(cycles: cycles, markerEvery: 1), streaming: true)
+        try await eventuallyOnMain("the streaming reply to open at its tail") { thread.isPinned }
+        for _ in 0..<4 {
+            thread.scrollUp(by: 300)
+            try await thread.settle()
+        }
+        thread.scrollUp(by: 150)
+        try await thread.settle()
+        #expect(thread.distanceFromBottom > NativeScrollFollower.threshold, "the reader is detached")
+        let parked = try thread.markerPositions()
+        let (marker, y0) = try #require(parked.min { $0.key < $1.key }, "a heading is in view")
+
+        for step in 1...5 {
+            cycles += 12
+            try await thread.publishReply(MarkdownFixtures.longReply(cycles: cycles, markerEvery: 1), streaming: true)
+            try await thread.settle()
+            let y = try #require(try thread.markerPositions()[marker], "step \(step): Marker \(marker) is still in view")
+            #expect(abs(y - y0) <= 2, "step \(step): Marker \(marker) moved from \(y0) to \(y)")
+        }
     }
 
     /// A code block scrolls sideways only when its longest line is wider than the column; one

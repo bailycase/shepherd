@@ -1104,6 +1104,127 @@ struct ListPerformanceTests {
         #expect(streamed["prose.tableCell", default: 0] == 0, "\(streamed)")
     }
 
+    // MARK: Thread prose
+
+    /// The blocks in the thread's last prose item once its parse has landed (0 before).
+    private static func parsedBlocks(_ store: NativeThreadStore) -> Int {
+        for item in (store.rows.last?.presentation?.items ?? []).reversed() {
+            if case .prose(_, _, let blocks, _) = item { return blocks.count }
+        }
+        return 0
+    }
+
+    /// The native code fields under `view`.
+    private static func nativeFields(in view: NSView) -> Int {
+        (view is SHNativeCodeText.Field ? 1 : 0) + view.subviews.reduce(0) { $0 + nativeFields(in: $1) }
+    }
+
+    /// Draws until the reply stops building: its parse has landed (`blocks` top-level blocks) and the
+    /// window's counts hold still.
+    private func settleReply(_ thread: FakeThread, blocks: Int) async throws {
+        try await eventuallyOnMain("the reply's off-main parse to land") {
+            ListPerf.settle(thread.window)
+            return Self.parsedBlocks(thread.store) == blocks
+        }
+        var last = SHRenderProbe.counts
+        var still = 0
+        try await eventuallyOnMain("the long reply to stop building") {
+            ListPerf.settle(thread.window)
+            let now = SHRenderProbe.counts
+            still = now == last ? still + 1 : 0
+            last = now
+            return still >= 5
+        }
+    }
+
+    /// A finished reply of 300 cycles (a paragraph, a swift fence, a table and a list each: about
+    /// 1,200 blocks) opens at its tail. Only the chunks in view and the last one are built: before,
+    /// every fence and table of the reply was.
+    @Test func aLongReplyBuildsOnlyTheChunksOnScreen() async throws {
+        let text = MarkdownFixtures.longReply(cycles: 300)
+        let blocks = nativeMarkdownBlocks(text).count
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
+        // Counting from before the window opens: the thread may load in its first frames.
+        SHRenderProbe.start()
+        let thread = FakeThread(ThreadFixture.snapshot(turn + [ThreadFixture.assistant("long", text)]),
+                                size: CGSize(width: 900, height: 800))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await settleReply(thread, blocks: blocks)
+        let counts = SHRenderProbe.stop()
+
+        #expect(counts["thread.agentTurn", default: 0] > 0, "the thread was built: \(counts)")
+        // A 900x800 window shows two or three cycles; the lazy stack builds some ahead, and the last chunk is built whole.
+        withKnownIssue("older SwiftUI builds more of a lazy stack than is on screen", isIntermittent: true) {
+            #expect(counts["code.nativeCreated", default: 0] <= 40, "\(counts)")
+            #expect(counts["prose.table", default: 0] <= 40, "\(counts)")
+            #expect(counts["prose.chunk", default: 0] <= 12, "\(counts)")
+        } when: { ListPerf.olderLazyStacks }
+        #expect(counts["code.nativeCreated", default: 0] <= 100, "300 fences in the reply: \(counts)")
+        #expect(counts["prose.table", default: 0] <= 100, "300 tables in the reply: \(counts)")
+    }
+
+    /// Scrolling a long reply to its top and back builds the chunks it passes and lets go of the
+    /// ones far away: a creation count cannot show that, so this counts the native fields SwiftUI
+    /// dismantled against the ones it built.
+    @Test func aLongReplyLetsGoOfChunksScrolledFarAway() async throws {
+        let text = MarkdownFixtures.longReply(cycles: 300)
+        let blocks = nativeMarkdownBlocks(text).count
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
+        SHRenderProbe.start()
+        let thread = FakeThread(ThreadFixture.snapshot(turn + [ThreadFixture.assistant("long", text)]),
+                                size: CGSize(width: 900, height: 800))
+        defer {
+            thread.close()
+            SHRenderProbe.stop()
+        }
+        try await thread.waitUntilReady()
+        try await settleReply(thread, blocks: blocks)
+        let scroll = try #require(thread.scrollView)
+
+        ListPerf.jump(thread.window, scroll, toEnd: false)
+        try await settleReply(thread, blocks: blocks)
+        ListPerf.jump(thread.window, scroll, toEnd: true)
+        try await settleReply(thread, blocks: blocks)
+        try await eventuallyOnMain("the chunks scrolled away to be let go") {
+            ListPerf.settle(thread.window)
+            let counts = SHRenderProbe.counts
+            let created = counts["code.nativeCreated", default: 0], dismantled = counts["code.nativeDismantled", default: 0]
+            return dismantled > 0 && created - dismantled <= 40
+        }
+        #expect(Self.nativeFields(in: thread.window.host) <= 40, "fields alive in the window")
+    }
+
+    /// A reply grown in five serves of 40 cycles, following its tail, keeps only its tail built:
+    /// the chunks it streamed past are let go, counted both ways.
+    @Test func streamingALongReplyBuildsOnlyItsTail() async throws {
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
+        SHRenderProbe.start()
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming("Here it is.")], running: true),
+                                size: CGSize(width: 900, height: 800))
+        thread.answersUnchanged = true
+        defer {
+            thread.close()
+            SHRenderProbe.stop()
+        }
+        try await thread.waitUntilReady()
+        var text = ""
+        for serve in 0..<5 {
+            text += (serve == 0 ? "" : "\n\n") + MarkdownFixtures.longReply(cycles: 40, from: serve * 40)
+            var next = thread.snapshot
+            next.revision += 1
+            next.provisional = [ThreadFixture.streaming(text)]
+            await thread.serve(next)
+            try await settleReply(thread, blocks: nativeMarkdownParse(text, streaming: true).blocks.count)
+        }
+        let counts = SHRenderProbe.counts
+        let created = counts["code.nativeCreated", default: 0], dismantled = counts["code.nativeDismantled", default: 0]
+        #expect(created - dismantled <= 40, "fields alive by count: created \(created), dismantled \(dismantled)")
+        let fields = Self.nativeFields(in: thread.window.host)
+        #expect(fields <= 40, "fields alive in the window")
+        #expect(fields > 0, "the reply's tail is on screen: \(counts)")
+    }
+
     // MARK: Workspace
 
     /// Launching into a workspace of many agents builds the visible layout first: its first
