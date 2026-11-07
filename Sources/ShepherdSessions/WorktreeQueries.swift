@@ -386,28 +386,64 @@ public final class WorktreeQueries {
 }
 
 extension SessionServer {
-    /// A client's worktree requests and commits from review, answered with no app. Once per
-    /// server, before clients connect. The rest of `agentQuery` stays the app's for now.
+    /// A client's `agentQuery` answered with no app: worktree requests and commits from review
+    /// (through `hosting`), subagents, transcript search and the working tree's review. Once per
+    /// server, before clients connect. The rest (review panes and the inspector) is the app's
+    /// views, refused here. The server answers Changes, terminals and dev servers itself.
     @MainActor
     @discardableResult
-    public func serveWorktrees(_ hosting: WorktreeHosting) -> WorktreeQueries {
+    public func serveAgentQueries(_ hosting: WorktreeHosting) -> WorktreeQueries {
         let queries = WorktreeQueries(server: self)
         queries.hosting = hosting
-        onRemoteAgentQuery = { agentID, query, completion in
+        let children = HostedChildren()
+        onAgentChildren = { agentID, rows in MainActor.assumeIsolated { children.runs.apply(agentID: agentID, children: rows) } }
+        onRemoteAgentQuery = { [weak self] agentID, query, completion in
             Task { @MainActor in
                 do {
-                    switch query {
-                    case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup,
-                         .worktreeCommitCount, .worktreeDescription:
-                        completion(.success(try await queries.worktree(agentID, query: query)))
-                    case .commitInfo, .commitMessage, .commit:
-                        completion(.success(try await queries.commit(agentID, query: query)))
-                    default:
-                        throw RemoteCreateAgentError("Open Shepherd on the host for this.")
-                    }
+                    guard let self else { throw RemoteCreateAgentError("host is shutting down") }
+                    completion(.success(try await self.answer(query, agentID: agentID, queries: queries, children: children)))
                 } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
             }
         }
         return queries
     }
+
+    @MainActor
+    private func answer(_ query: RemoteAgentQuery, agentID: AgentID, queries: WorktreeQueries,
+                        children: HostedChildren) async throws -> RemoteAgentResult {
+        switch query {
+        case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup,
+             .worktreeCommitCount, .worktreeDescription:
+            return try await queries.worktree(agentID, query: query)
+        case .commitInfo, .commitMessage, .commit:
+            return try await queries.commit(agentID, query: query)
+        case .children:
+            // Swept on read rather than on a timer: a publisher that went quiet keeps only its
+            // finished transcripts.
+            _ = children.runs.sweep()
+            return .children(children.runs.children(of: agentID))
+        case .search, .review:
+            guard let agent = state.agents.first(where: { $0.id == agentID }),
+                  let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { throw RemoteCreateAgentError("Agent no longer exists") }
+            let cwd = tab.layout.leaves.first { $0.agentID == agentID }?.cwd ?? tab.layout.firstLeaf.cwd
+            if case .search(let text) = query {
+                let matches = await PaletteContentSearch.search(query: text, agents: [(agentID, agent.effectivePiSessionID, cwd)],
+                                                                sessionsRoot: pi.sessionsRoot)
+                return .search(snippet: matches.first?.snippet)
+            }
+            let pullRequest = if case .review(pullRequest: true) = query { true } else { false }
+            return try await Task.detached {
+                let reference = pullRequest ? GitDiff.pullRequestReference(cwd: cwd) : nil
+                return RemoteAgentResult.review(files: try JSONEncoder().encode(GitDiff.load(cwd: cwd, reference: reference)), reference: reference)
+            }.value
+        default:
+            throw RemoteCreateAgentError("Open Shepherd on the host for this.")
+        }
+    }
+}
+
+/// The subagent rows each thread's pi last published, for a client's `children` query.
+@MainActor
+private final class HostedChildren {
+    var runs = ChildRuns()
 }

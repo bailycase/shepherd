@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// Child-run rows are ephemeral display state mirrored from the subagents extension. The

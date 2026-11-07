@@ -310,8 +310,8 @@ public enum ShepherdHost {
         }, configure: { server in
             HostSettingsMapping.serve(on: server, settings: settings)
             serveSettings(settings, on: server)
-            server.serveWorktrees(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
-                                                  deleteAgent: { id, _ in try await server.deleteAgent(id) }))
+            server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
+                                                      deleteAgent: { id, _ in try await server.deleteAgent(id) }))
         }, threads: { server in
             ThreadHosting(defaults: {
                 ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
