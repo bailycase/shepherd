@@ -1,3 +1,4 @@
+import ShepherdSessions
 import SwiftUI
 import ShepherdCore
 import ShepherdUI

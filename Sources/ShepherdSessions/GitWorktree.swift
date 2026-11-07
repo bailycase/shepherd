@@ -171,7 +171,7 @@ public enum GitWorktree {
     /// `git worktree add <dest> <branch>`; a remote branch ("origin/x") with no local copy gets one
     /// tracking it (`--track -b x <dest> origin/x`). git refuses a branch another worktree has.
     /// Returns the worktree's path and its local branch.
-    static func addExisting(repo: String, branch: String) throws -> (path: String, branch: String) {
+    public static func addExisting(repo: String, branch: String) throws -> (path: String, branch: String) {
         let repoPath = (repo as NSString).expandingTildeInPath
         let remote = branch.hasPrefix("origin/")
         let local = remote ? String(branch.dropFirst("origin/".count)) : branch
