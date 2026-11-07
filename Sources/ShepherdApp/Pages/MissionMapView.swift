@@ -489,6 +489,8 @@ struct MissionMapPage: View {
     let editable: Bool
     let openThread: (AgentID) -> Void
     let action: (MissionUIAction) -> Void
+    /// Done's way to the merge train (MXTrain), when the mission published pull requests.
+    var showTrain: (() -> Void)?
     private let layout: MissionMapLayout
     /// A pending patch (MXPatch) previews over the map: its marks, and the inspector opens on it.
     private let patch: MissionPatch?
@@ -511,9 +513,9 @@ struct MissionMapPage: View {
     @FocusState private var asking: Bool
 
     init(mission: Mission, done: Bool, models: [String], reviews: [MissionRepositoryReview], busy: Bool, editable: Bool,
-         openThread: @escaping (AgentID) -> Void, action: @escaping (MissionUIAction) -> Void) {
+         openThread: @escaping (AgentID) -> Void, action: @escaping (MissionUIAction) -> Void, showTrain: (() -> Void)? = nil) {
         self.mission = mission; self.done = done; self.models = models; self.reviews = reviews
-        self.busy = busy; self.editable = editable; self.openThread = openThread; self.action = action
+        self.busy = busy; self.editable = editable; self.openThread = openThread; self.action = action; self.showTrain = showTrain
         let current = mission.draft.plan ?? MissionPlan()
         if !done, let patch = mission.run?.patch {
             let preview = patch.preview(over: current)
@@ -580,7 +582,8 @@ struct MissionMapPage: View {
                                   }, action: action)
         } else if let node = layout.node(id: id) {
             if node.role == .finish {
-                MissionDoneInspector(mission: mission, reviews: reviews, busy: busy, close: { dismissed = true; inspecting = false }, action: action)
+                MissionDoneInspector(mission: mission, reviews: reviews, busy: busy, close: { dismissed = true; inspecting = false }, action: action,
+                                     showTrain: showTrain)
             } else if let station = node.station {
                 MissionStationInspector(mission: mission, station: station, layout: layout, models: models, busy: busy, editable: editable,
                                         openThread: openThread, close: { dismissed = true; inspecting = false },
@@ -790,7 +793,8 @@ struct MissionInspectorHead<Menu: View>: View {
     var subtitle: String? = nil
     /// Stations are named in mono; Done's summary title is prose (MXDone).
     var mono = true
-    let close: () -> Void
+    /// Nil: an inspector that is the page's own column and doesn't close (MXTrain).
+    let close: (() -> Void)?
     @ViewBuilder let menu: () -> Menu
 
     var body: some View {
@@ -816,8 +820,10 @@ struct MissionInspectorHead<Menu: View>: View {
             }
             Spacer(minLength: 0)
             menu()
-            Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.shIcon)
-                .keyboardShortcut(.cancelAction).accessibilityLabel("Close inspector")
+            if let close {
+                Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.shIcon)
+                    .keyboardShortcut(.cancelAction).accessibilityLabel("Close inspector")
+            }
         }
         .padding(SH.Space.xl)
         .overlay(alignment: .bottom) { SHHairline() }
@@ -1040,6 +1046,7 @@ private struct MissionDoneInspector: View {
     let busy: Bool
     let close: () -> Void
     let action: (MissionUIAction) -> Void
+    var showTrain: (() -> Void)?
 
     private var checkouts: [MissionCheckout] { mission.run?.checkouts ?? [] }
     private var validated: Bool {
@@ -1103,6 +1110,11 @@ private struct MissionDoneInspector: View {
                     .buttonStyle(.sh(.ghost)).disabled(busy)
                     .shHelp("Plan a new mission with the same destination, repositories, branches and model")
                 Spacer()
+                if let showTrain {
+                    Button(action: showTrain) { Label(mission.run?.train == nil ? "Merge train…" : "Merge train", systemImage: SHGlyph.gitBranch.symbolName) }
+                        .buttonStyle(.sh(mission.run?.train == nil ? .primary : .secondary))
+                        .shHelp("Merge the pull requests one at a time, in the order the data wires need")
+                }
             }.padding(.horizontal, SH.Space.xl).frame(height: SHPageMetrics.headerHeight)
         }
         .background(Color.sh.bgWindow)

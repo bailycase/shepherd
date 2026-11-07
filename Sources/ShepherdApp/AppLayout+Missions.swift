@@ -70,6 +70,16 @@ extension AppLayout {
 
     static let missionBudgetRefresh: TimeInterval = 1
 
+    // Merge train (MXTrain)
+    static let missionTrainCardWidth: CGFloat = 236
+    static let missionTrainNumber: CGFloat = 18
+    static let missionTrainReasonTitle: CGFloat = 220
+    static let missionTrainReasonNumber: CGFloat = 44
+    /// One step row's first line, so a glyph, a spinner and the time sit level with its words.
+    static let missionTrainStepLine: CGFloat = 18
+    /// The arrows between cards sit level with their headers.
+    static let missionTrainArrowTop: CGFloat = 52
+
     /// A side column's width: the board's, shrinking with a narrow window so the main column keeps room.
     static let missionSideMinimum: CGFloat = 260
     static let missionSideShare: CGFloat = 0.42

@@ -1508,6 +1508,11 @@ public final class SessionServer: @unchecked Sendable {
                         state.projectExecutions[i].revision += 1
                         state.projectExecutions[i].outcome = "Executor restarted; no work was resumed or replayed."
                     }
+                    // A merge train never resumes on its own: it comes back paused, its step as it was.
+                    for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
+                        state.missions[i].run?.train?.pause("Shepherd restarted. The train waits for you; nothing merged since.")
+                        state.missions[i].revision += 1
+                    }
                     for i in state.missions.indices where state.missions[i].run?.phase.active == true {
                         state.missions[i].run?.transition(to: .paused, at: Date().timeIntervalSince1970,
                             notice: "Shepherd restarted. Nothing resumed. Inspect the retained work before continuing.")
@@ -1637,6 +1642,14 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        if isStarted, store.state.missions.contains(where: { $0.run?.train?.status == .running }) {
+            try? mutateState { state in
+                for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
+                    state.missions[i].run?.train?.pause("Shepherd closed. The train waits for you; nothing merges until you resume it.")
+                    state.missions[i].revision += 1
+                }
+            }
+        }
         if isStarted, store.state.missions.contains(where: { $0.run?.phase.active == true }) {
             // Save the active clock before shutdown; offline time is not mission execution time.
             try? mutateState { state in

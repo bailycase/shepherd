@@ -94,6 +94,11 @@ final class MissionRuntimeFixture {
         try Data().write(to: root.appendingPathComponent("ask-clarification"))
     }
 
+    /// The train's next `gh pr update-branch` reports a conflict; `red-ci` makes every PR's checks fail.
+    func mark(_ name: String) throws {
+        try Data().write(to: root.appendingPathComponent(name))
+    }
+
     func failFirstPRCreate() throws {
         try Data().write(to: root.appendingPathComponent("fail-first-pr-create"))
     }
@@ -163,6 +168,18 @@ final class MissionRuntimeFixture {
               exit 1
             fi
             printf 'https://github.invalid/fixture/repo/pull/1\\n' ;;
+          # The merge train: each repository's PR state lives in a file keyed by the checkout it runs in.
+          'pr update-branch')
+            if [ -f \(shellQuoted(root.appendingPathComponent("conflict-once").path)) ]; then
+              rm -- \(shellQuoted(root.appendingPathComponent("conflict-once").path))
+              echo 'Cannot update PR branch due to conflicts' >&2; exit 1
+            fi ;;
+          'pr checks')
+            if [ -f \(shellQuoted(root.appendingPathComponent("red-ci").path)) ]; then echo fail; else echo pass; fi ;;
+          'pr view')
+            if [ -f "\(root.path)/merged-$(pwd | cksum | cut -d' ' -f1)" ]; then echo MERGED; else echo OPEN; fi ;;
+          'pr merge') touch "\(root.path)/merged-$(pwd | cksum | cut -d' ' -f1)" ;;
+          'run list') printf 'success\\n' ;;
 
           *) echo 'unexpected gh command' >&2; exit 90 ;;
         esac

@@ -69,6 +69,11 @@ extension MissionController: MissionDriving {
         case .applyPatch(let patch): try await applyPatch(id: id, revision: revision, patchID: patch)
         case .rejectPatch(let patch): try await rejectPatch(id: id, revision: revision, patchID: patch)
         case .autoApplyPatches(let on): try await setAutoApplyPatches(id: id, revision: revision, on: on)
+        case .startTrain(let order, let rules): try await startTrain(id: id, revision: revision, order: order, rules: rules)
+        case .changeTrain(let order, let rules): try await changeTrain(id: id, revision: revision, order: order, rules: rules)
+        case .pauseTrain: try await pauseTrain(id: id, revision: revision)
+        case .resumeTrain: try await resumeTrain(id: id, revision: revision)
+        case .skipSoak: try await skipSoak(id: id, revision: revision)
         }
     }
 }
@@ -170,6 +175,11 @@ final class RemoteMissionDriver: MissionDriving {
         case .applyPatch(let patch): wire = .applyPatch(patchID: patch)
         case .rejectPatch(let patch): wire = .rejectPatch(patchID: patch)
         case .autoApplyPatches(let on): wire = .autoApplyPatches(on: on)
+        case .startTrain(let order, let rules): wire = .startTrain(order: order, rules: rules)
+        case .changeTrain(let order, let rules): wire = .changeTrain(order: order, rules: rules)
+        case .pauseTrain: wire = .pauseTrain
+        case .resumeTrain: wire = .resumeTrain
+        case .skipSoak: wire = .skipSoak
         }
         let made = try await remote { try await self.missions.perform(id, revision: shown, wire) }
         if let made { selectedID = made }

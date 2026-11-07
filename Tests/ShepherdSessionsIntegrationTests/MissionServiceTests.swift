@@ -56,6 +56,25 @@ struct MissionServiceTests {
         #expect(restarted.server.state.agents.isEmpty)
     }
 
+    @Test func aRunningMergeTrainComesBackPausedAfterARestart() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let spaces = [Space(name: "contracts", path: host.dir.path)]
+        try await host.seed(ShepherdState(spaces: spaces))
+        let created = try await host.server.createMission(draft: draft(in: spaces))
+        var run = MissionRun(model: "test/model", phase: .done)
+        run.train = MissionTrain(order: [spaces[0].id], rules: .init(), startedAt: 1)
+        run.train?.cars[0].steps[0].status = .running
+        _ = try await host.server.setMissionRun(id: created.id, expectedRevision: created.revision, run: run)
+
+        host.stop(keepFiles: true)
+        let restarted = try ScratchServer(dir: host.dir)
+        defer { restarted.stop() }
+        let train = try #require(try await restarted.server.missions().first?.run?.train)
+        #expect(train.status == .paused && train.notice != nil, "closing or restarting the host pauses it")
+        #expect(train.cars[0].steps[0].status == .pending, "the interrupted step runs again only on Resume")
+    }
+
     @Test func unresolvedPlannerQuestionBlocksApprovalOfAnOtherwiseValidMap() async throws {
         let host = try ScratchServer()
         defer { host.stop() }

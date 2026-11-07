@@ -158,6 +158,8 @@ enum MissionUIAction {
     case publish(MissionPublishApproval), refresh, revalidate, runAgain
     /// MXPatch: the owner's Apply or Reject of the planner's patch it showed, and the auto-apply switch.
     case applyPatch(UUID), rejectPatch(UUID), autoApplyPatches(Bool)
+    /// MXTrain: start the merge train in this order under these rules, change a paused one, pause, resume, skip a soak.
+    case startTrain([SpaceID], MissionTrain.Rules), changeTrain([SpaceID], MissionTrain.Rules), pauseTrain, resumeTrain, skipSoak
 }
 
 struct MissionPublishApproval: Equatable {
@@ -217,6 +219,13 @@ extension Mission {
     var pill: (state: AgentState, label: String) {
         if run?.pendingQuestion != nil, phase == .map { return (.attention, "Needs you") }
         if run?.patch != nil, !phase.active { return (.attention, "Patch ready") }
+        if phase == .done, let train = run?.train {
+            switch train.status {
+            case .running: return (.running, "Merging · \(train.merged) of \(train.cars.count)")
+            case .paused: return (.attention, "Train paused")
+            case .done: return (.done, "Merged")
+            }
+        }
         // A completion report waits for your acceptance (or appended tasks for approval): that is not a draft.
         if phase == .map, run?.specKit?.lanes.contains(where: { $0.convergence?.accepted == false }) == true { return (.attention, "Needs you") }
         return (phase.missionState, phase.missionLabel)
