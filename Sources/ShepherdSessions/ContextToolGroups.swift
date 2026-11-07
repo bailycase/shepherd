@@ -25,8 +25,8 @@ enum ContextToolGroups {
     /// The group a tool belongs to: a key of `labels`.
     static func id(forTool name: String) -> String {
         if piTools.contains(name) { return "pi" }
-        if name.hasPrefix("terminal_") { return "terminal" }
-        if name.hasPrefix("agent_") { return "agent" }
+        if name.hasPrefix("terminal_") || name.hasPrefix("app_") { return "terminal" }
+        if name.hasPrefix("agent_") || name == "goal_finish" { return "agent" }
         if name.hasPrefix("automation_") || name == "notify" { return "automation" }
         if name == "review_diff" { return "review" }
         if name.hasPrefix("shepherd_child_") || name == "shepherd_workflow" || name == "shepherd_mission" || name == "shepherd_parent_message" { return "subagents" }
