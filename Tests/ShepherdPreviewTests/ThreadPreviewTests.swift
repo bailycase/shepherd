@@ -786,8 +786,6 @@ struct ThreadPreviewTests {
                 Button {} label: { SHModelSettingsLabel(model: "claude-opus", thinking: "Medium") }
                     .buttonStyle(.shComposerChip())
                 Spacer(minLength: 8)
-                BranchChipMenu(branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
-                               directory: nil, showChanges: nil)
                 SHComposerActionButton(stop ? .stop : .send, enabled: stop || enabled) {}
             }
         }

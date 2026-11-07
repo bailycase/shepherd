@@ -48,10 +48,6 @@ struct ThreadHeader: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("thread.header")
         SHThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
-            // A question takes the composer's place, so its checkout menu moves back here.
-            if let branch {
-                QuestionBranchMenu(store: store, branch: branch, directory: directory, showChanges: showChanges)
-            }
         } trailing: {
             ThreadGoalHeader(store: store)
             if let togglePane {
@@ -67,21 +63,13 @@ struct ThreadHeader: View, Equatable {
                     Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned), action: togglePin)
                 }
             }
-            if let branchCard { BranchCardButton(handle: branchCard) }
-        }
-    }
-}
-
-/// Observe question changes here, not in the toolbar that hosts the fallback.
-private struct QuestionBranchMenu: View {
-    let store: NativeThreadStore
-    let branch: AgentBranchLabel
-    let directory: String?
-    let showChanges: (() -> Void)?
-
-    var body: some View {
-        if !store.dialogs.isEmpty {
-            BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            // The branch lives here, never in the composer: the card for this Mac's threads, the
+            // plain chip for a thread whose branch this Mac can't read (another host's).
+            if let branchCard {
+                BranchCardButton(handle: branchCard)
+            } else if let branch {
+                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            }
         }
     }
 }

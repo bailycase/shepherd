@@ -84,9 +84,7 @@ extension ThreadPreviewTests {
           ThreadView(
             store: fixture.store, active: true, isFocused: false, request: fixture.request,
             agentName: "Review the composer", workingDirectory: "~/Developer/Shepherd",
-            branch: AgentBranchLabel(
-              kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
-            showChanges: {}, listModels: { .empty }, modelSettingsOpen: settings)
+            listModels: { .empty }, modelSettingsOpen: settings)
         }
       }
     }
