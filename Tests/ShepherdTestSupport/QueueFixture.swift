@@ -13,6 +13,10 @@ public final class QueueFixture {
     public private(set) var sends: [(text: String, delivery: NativeThreadDelivery)] = []
     public private(set) var aborts = 0
     private var deleted: [UUID: NativeQueuedMessage] = [:]
+    /// Answers a poll for the revision it already serves with `.unchanged`, as a host does. By
+    /// default every poll gets the whole snapshot again, which the store derives from for nothing:
+    /// a derive that rebuilds no row also clears the live row, so a reply being streamed goes blank.
+    public var answersUnchanged = false
 
     public init(_ snapshot: NativeThreadSnapshot) {
         var snapshot = snapshot
@@ -35,7 +39,10 @@ public final class QueueFixture {
     /// Serves `request` as the host would.
     public func answer(_ request: NativeThreadRequest) -> NativeThreadResult {
         switch request {
-        case .snapshot:
+        case .snapshot(_, let before, let after):
+            if answersUnchanged, before == nil, let after, after == snapshot.revision {
+                return .unchanged(piSessionID: snapshot.piSessionID, generation: snapshot.generation, revision: after)
+            }
             return .snapshot(value: snapshot)
         case .send(_, _, let operation, let text, let delivery, let images, _, _, let elements):
             sends.append((text, delivery))

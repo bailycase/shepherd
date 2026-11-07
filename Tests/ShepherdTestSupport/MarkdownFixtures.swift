@@ -77,6 +77,35 @@ public enum MarkdownFixtures {
     $$
     """
 
+    /// A long reply of `cycles` cycles, each a paragraph, a Swift fence, a 3x3 table and a three-item list.
+    /// The cycles are numbered from `first`, so a reply grown by appending more of them keeps its earlier text.
+    /// With `markerEvery`, a `## Marker N` heading starts every that-many-th cycle, for a reader to find their place by.
+    public static func longReply(cycles: Int, from first: Int = 0, markerEvery: Int? = nil) -> String {
+        (first..<first + cycles).map { n in
+            let marker = markerEvery.map { n.isMultiple(of: $0) } == true ? "## Marker \(n)\n\n" : ""
+            return """
+            \(marker)Paragraph \(n) of the reply, long enough to wrap onto a second line or two inside the column of the thread.
+
+            ```swift
+            func step\(n)(input: Int) -> Int {
+                let doubled = input * 2 // step \(n)
+                return doubled + \(n)
+            }
+            ```
+
+            | Step | Calls | Result |
+            |---|---|---|
+            | a\(n) | \(n % 7) | ok |
+            | b\(n) | \(n % 5) | ok |
+            | c\(n) | \(n % 3) | failed |
+
+            - First item of cycle \(n), with a few words to read.
+            - Second item of cycle \(n).
+            - Third item of cycle \(n).
+            """
+        }.joined(separator: "\n\n")
+    }
+
     /// A reply ending in a table of `rows` rows, three columns each.
     public static func largeTable(rows: Int) -> String {
         var lines = ["Every call this session made:", "", "| # | Tool | Result |", "|--:|---|---|"]
