@@ -383,6 +383,8 @@ final class FixtureHost: @unchecked Sendable {
         case .designRelayAnswer:
             // Only the Mac app answers a background host's drawing; a phone never sends it.
             return []
+        case .drain(let id):
+            return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
             return [.ok(id: id)]

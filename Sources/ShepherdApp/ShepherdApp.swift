@@ -94,6 +94,8 @@ public struct ShepherdMacApp: App {
                                                 socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                     vm.backgroundService = service
                     vm.backgroundServiceStatus = status
+                    let socket = BackgroundHostClient.socketPath()
+                    vm.remoteHosts.onLocalHostLost = { BackgroundHostClient.hostLost(service: service, socket: socket) }
                     return vm
                 }
                 AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
