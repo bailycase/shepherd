@@ -8104,8 +8104,8 @@ public final class SessionServer: @unchecked Sendable {
             let piDirectory = pi.home
             let cwd = params.cwd
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
-            // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
-            // agent is done even though its status report was held for the queue.
+            // pi is idle and nothing continues (the run a done was held across has settled, or the
+            // queue did not go after all): the agent is done even though its report was held.
             thread.onIdleAfterQueue = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
                       server.store.state.agents.first(where: { $0.id == agentID })?.status == .working else { return }
