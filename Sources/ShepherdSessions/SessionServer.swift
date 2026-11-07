@@ -392,6 +392,9 @@ public final class SessionServer: @unchecked Sendable {
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
     /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
     /// main actor.
+    /// The background host drains when a newer app on the local socket asks (`RemoteRequest.drain`,
+    /// `hostDrainCapability`). Set once before serving; called on the main actor.
+    public var onDrainRequest: (() -> Void)?
     public var onRemoteHostUpdate: ((RemoteHostUpdateRequest, @escaping () async -> Bool, @escaping (HostUpdateStatus) -> Void) -> Void)?
     private var hostUpdateReserved = false
     private var hostUpdateRequests: [Int32: UUID] = [:]
@@ -671,6 +674,8 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var startingAutomationRuns = Set<AutomationID>()
     /// Main actor: terminal panes whose shell `startTerminal` is starting now.
     @MainActor var startingTerminals = Set<PaneID>()
+    /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
+    @MainActor var spawningAgents = 0
     /// Designs whose agent is starting, and spaces whose system build is, by this Mac or for a client.
     @MainActor public var startingDesignAgents = Set<DesignID>()
     @MainActor public var startingSystemBuilds = Set<SpaceID>()
@@ -1018,6 +1023,7 @@ public final class SessionServer: @unchecked Sendable {
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
             + (client.isLocal ? [RemoteProtocol.localCapability] : [])
+            + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
 
     /// Serves Missions to remote clients (`missions.v1`) while `served` (Settings ▸ Experiments ▸
@@ -2983,6 +2989,13 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "unsupported", message: "Terminals are tabs and have no splits to resize."), to: client)
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
+        case .drain(let id):
+            guard client.isLocal, let handler = onDrainRequest else {
+                send(.error(id: id, code: "unsupported", message: "This host doesn't drain on request."), to: client)
+                return
+            }
+            send(.ok(id: id), to: client)
+            hopToMain { handler() }
         case .listModels(let id):
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.

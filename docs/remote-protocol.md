@@ -16,7 +16,11 @@
   are signed as something else, so they are closed unanswered. Then `hello` with the same token
   as TCP. Local clients alone are offered `local.v1` (`RemoteProtocol.localCapability`, never in
   `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
-  host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. With no app, the host
+  host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. A host that drains
+  offers local clients `host.drain.v1` and takes `drain` (answered `ok`, refused to TCP clients):
+  it keeps serving and exits once no agent is working, blocked or starting, or after two hours
+  (`HostDrain`). It drains on its own when its bundle's `CFBundleVersion` on disk changes or the
+  bundle is gone (`BundleVersionWatch`). With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves

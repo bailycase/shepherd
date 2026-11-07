@@ -408,13 +408,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 46
+    static let caseCount = 47
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -441,6 +441,7 @@ struct RemoteRequestTests {
         .resizePaneSplit(id: 16, agentID: S.agent, split: S.split, ratio: 0.7),
         .listDir(id: 8, path: ""),
         .listModels(id: 10),
+        .drain(id: 10),
         .addSpace(id: 5, path: "/Users/demo/Developer/project"),
         .createAgent(id: 6, spaceID: S.space, cwd: "/tmp/checkout", model: "anthropic/claude-4", thinking: .high,
                      initialPrompt: "fix the \"thing\"\nplease", worktreeBranch: "worktree/a", worktreeBase: "origin/release",
@@ -656,7 +657,7 @@ struct RemoteReplyTests {
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 46
+    static let caseCount = 47
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),

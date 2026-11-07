@@ -391,6 +391,17 @@ public final class RemoteHostClient: @unchecked Sendable {
                             thinkingLevels: thinkingLevels, serviceTiers: serviceTiers, contexts: contexts)
     }
 
+    /// Asks this Mac's background host to drain (`hostDrainCapability`): the app is newer.
+    public func drain() async throws {
+        let reply = try await request { id in .drain(id: id) }
+        guard case .ok = reply else {
+            if case .error(_, let code, let message) = reply {
+                throw RemoteHostClientError.rejected(code: code, message: message)
+            }
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected drain reply")
+        }
+    }
+
     /// Create a space from a directory on the host.
     @discardableResult
     public func addSpace(path: String) async throws -> SpaceID {

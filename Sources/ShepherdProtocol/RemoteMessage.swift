@@ -153,6 +153,9 @@ public enum RemoteProtocol {
     /// Offered only on the local socket (`host.sock`): the client is this Mac's own app, as a
     /// background host's client. Never in `capabilities`, which every client may be offered.
     public static let localCapability = "local.v1"
+    /// Offered only on the local socket: the host takes `RemoteRequest.drain`, from an app newer
+    /// than it. Older hosts leave it off and drain once they see the new bundle.
+    public static let hostDrainCapability = "host.drain.v1"
     /// The host takes the terminal panel's actions on an agent's terminal panes
     /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill
     /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`
@@ -592,6 +595,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case listDir(id: Int, path: String)
     /// The host's pi model ids and default (for the remote model picker).
     case listModels(id: Int)
+    /// Local clients only (`hostDrainCapability`): the app is newer than its background host,
+    /// which keeps serving and exits once no agent is busy, so launchd starts the new build.
+    /// Answered `ok`.
+    case drain(id: Int)
     /// Create a space from a directory that exists on the host.
     case addSpace(id: Int, path: String)
     /// Create an agent on the host: the host GUI runs its normal creation
@@ -686,7 +693,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -844,6 +851,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             )
         case .listModels:
             self = .listModels(id: try c.decode(Int.self, forKey: .id))
+        case .drain:
+            self = .drain(id: try c.decode(Int.self, forKey: .id))
         case .addSpace:
             self = .addSpace(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1062,6 +1071,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
         case .listModels(let id):
             try c.encode(Kind.listModels, forKey: .type)
+            try c.encode(id, forKey: .id)
+        case .drain(let id):
+            try c.encode(Kind.drain, forKey: .type)
             try c.encode(id, forKey: .id)
         case .addSpace(let id, let path):
             try c.encode(Kind.addSpace, forKey: .type)
