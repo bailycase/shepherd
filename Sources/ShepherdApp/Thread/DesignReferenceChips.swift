@@ -46,6 +46,8 @@ final class DesignReferenceChips {
         var wantPictures: (MentionScope) -> Void = { _ in }
         var rowVisibility: (DesignMentionItem, Bool, String) -> Void = { _, _, _ in }
         var open: (DesignReference) -> Void = { _ in }
+        /// A board card's picture: the board opens beside the thread, in the pane's Design tab.
+        var showBeside: (Board) -> Void = { _ in }
         var attach: (DesignReference) async throws -> Void = { _ in }
         var sendLatest: (DesignReference) async throws -> Void = { _ in }
         var startDesign: (() -> Void)? = nil

@@ -15,7 +15,8 @@ struct BoardCardView<Fallback: View>: View {
     var body: some View {
         if let references, let board = references.boards[id] {
             SHBoardCard(design: board.design, board: board.board, meta: board.meta, note: board.note, size: board.size,
-                        picture: board.picture.map { .picture($0.image) } ?? (board.hasPicture ? .loading : .missing)) {
+                        picture: board.picture.map { .picture($0.image) } ?? (board.hasPicture ? .loading : .missing),
+                        open: { references.io.showBeside(board) }) {
                 if let latest = board.showLatest {
                     Button(latest) { references.io.open(board.reference.unpinned) }
                         .buttonStyle(.sh(.secondary, size: .s))
@@ -29,5 +30,16 @@ struct BoardCardView<Fallback: View>: View {
             fallback()
                 .task(id: references?.generation) { await references?.loadBoard(id) }
         }
+    }
+}
+
+/// The board a card opened beside the thread (ThreadBoardPane), in the side pane's Design tab.
+struct BoardPane: View {
+    let board: DesignReferenceChips.Board
+    let open: () -> Void
+
+    var body: some View {
+        SHBoardPane(design: board.design, board: board.board, meta: board.meta, size: board.size, picture: board.picture?.image,
+                    open: open) {}
     }
 }

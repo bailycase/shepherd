@@ -68,6 +68,7 @@ extension ShepherdViewModel {
             wantPictures: { [weak self] in self?.wantMentionPictures($0) },
             rowVisibility: { [weak self] in self?.mentionPictureVisibility($0, visible: $1, consumer: $2) },
             open: { [weak self] in self?.openDesignReference($0) },
+            showBeside: { [weak self] in self?.showBoardBeside(.local(agentID), $0) },
             attach: { [weak self] reference in
                 guard let self else { return }
                 try await self.attachDesignReference(reference, to: agentID)
@@ -181,6 +182,14 @@ extension ShepherdViewModel {
             guard let snapshot = try? await server.designSnapshot(id) else { return }
             rendering.boardPictures.request(id, snapshot: snapshot)
             rendering.thumbnails.update(id, snapshot: snapshot)
+        }
+    }
+
+    /// The Design tab's Open in design: the board the pane shows, on this Mac's canvas or its host's.
+    func openBoardReference(_ owner: SidePaneOwner, _ reference: DesignReference) {
+        switch owner {
+        case .local: openDesignReference(reference)
+        case .remote(let ref): remoteDesignReferenceChips(for: ref)?.io.open(reference)
         }
     }
 
