@@ -202,6 +202,8 @@ struct SidebarSource: Equatable {
         var offline = false
         /// The agents its missions started (`missions.v1`): a host sends no missions in its state.
         var missionAgents: Set<AgentID> = []
+        /// The background host on this Mac: its threads are this Mac's, so they wear no host tag.
+        var thisMac = false
     }
 
     var local: ShepherdState
@@ -425,7 +427,7 @@ enum SidebarDerivation {
                         ?? .remoteDesign(RemoteDesignRef(hostID: host.id, designID: design.id))
                     var row = designRow(design)
                     row = SidebarListRow(id: id, title: row.title, leading: row.leading,
-                                         accessory: .tag(host.name), section: .designs, help: row.help,
+                                         accessory: host.thisMac ? row.accessory : .tag(host.name), section: .designs, help: row.help,
                                          accessibilityLabel: row.accessibilityLabel + ", on \(host.name)", worktree: false,
                                          automation: nil, automationLive: false)
                     row.offline = host.offline
@@ -623,7 +625,7 @@ enum SidebarDerivation {
             word = "needs you"
         } else {
             leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))
-            accessory = .tag(host.name)
+            accessory = host.thisMac ? .none : .tag(host.name)
             word = AgentRow.statusWord(agent.status)
         }
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
