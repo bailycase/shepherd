@@ -3097,9 +3097,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// A thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `files.v1`): only for a client that
-    /// listed the capability and is sent the agent (`remoteState`), inside the folder the thread runs in, read off
-    /// the server's queue.
+    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`): only for
+    /// a client that listed `files.v1` and is sent the agent (`remoteState`), inside the folder the thread runs in, off
+    /// the server's queue. A save writes only over the text the client edited from.
     private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
         guard offeredCapabilities(to: client).contains(RemoteProtocol.filesCapability) else {
             send(.error(id: id, code: "unsupported", message: "Files needs a newer Shepherd on this device."), to: client)
@@ -3126,6 +3126,8 @@ public final class SessionServer: @unchecked Sendable {
                 case .success(let data): reply = .agentResult(id: id, result: .fileData(data))
                 case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
                 }
+            case .fileWrite(let path, let text, let expected):
+                reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
             default: return
             }
             self?.queue.async {

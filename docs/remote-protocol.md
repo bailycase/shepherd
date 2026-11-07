@@ -109,7 +109,7 @@
   - a thread's Files (`files.v1`, offered only to a client that lists it in `hello`; both clients do):
     `RemoteAgentQuery.files(path:showHidden:)` lists a folder and `.fileRead(path:)` reads a file,
     each relative to the thread's own folder on the host (its layout's cwd, else its space), answered
-    by the server itself off its queue, only for an agent the client is sent. Read-only. Paths are
+    by the server itself off its queue, only for an agent the client is sent. Paths are
     relative (no leading `/` or `~`, no `.` or `..`); every component must stay inside the folder,
     and a symlinked folder that resolves to one above it is refused; the open descriptor is checked
     again (`ThreadFileSystem`, shared with the Mac's local Files pane). A listing scans at most
@@ -118,7 +118,12 @@
     of at most 256 KiB, one reply. Errors: `invalid_path`, `outside_root`, `not_found`,
     `not_directory`, `special_file`, `too_large`, `binary`, `read_failed`, and `unsupported` for a
     client that did not list it. No added/modified marks. A client of an older host says Files needs
-    a newer Shepherd there
+    a newer Shepherd there. Behind `files.write.v1` (host capability; served only to a client offered
+    `files.v1`), `.fileWrite(path:text:expected:)` saves an existing UTF-8 file in place, both texts
+    at most 256 KiB, only while the file still holds `expected` (the text the client edited from):
+    answered `.fileWrite(.saved)`, `.changed(text)` with the host's text and nothing written (the
+    Mac editor's conflict), or `.failed(message)`. It never creates a file. A client of a host
+    without it keeps Files read-only
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`)
   - `creationBranches(spaceID:)`, behind `agent.creation.branches.v1`: a space's branches for a
