@@ -32,6 +32,8 @@ extension AppLayout {
     static let spaceFormControlWidth: CGFloat = 320
     static let spaceFormResetWidth: CGFloat = 124
     static let spaceFormStepperMax = 99
+    /// ProjectAdd's dialog: a 552pt field inside its insets.
+    static let spaceAddWidth: CGFloat = 600
     /// ProjectResourceManager: the list's FROM, STATUS and remove columns, the 272pt search, the
     /// 20pt row glyph and 32pt empty glyph, the editor dialog (760×680) and Add from repo (680).
     static let resourceFromWidth: CGFloat = 160

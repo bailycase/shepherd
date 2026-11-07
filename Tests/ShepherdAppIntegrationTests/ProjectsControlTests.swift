@@ -213,11 +213,32 @@ struct ProjectsControlTests {
         window.layout()
         let add = try ControlPress.press("Add space", under: window.host)
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
-        try await eventuallyOnMain("the folder picker") { window.window.attachedSheet != nil }
+        try await eventuallyOnMain("the Add space dialog") { window.window.attachedSheet != nil }
         let sheet = try #require(window.window.attachedSheet?.contentView)
         sheet.layoutSubtreeIfNeeded()
         try ControlPress.press("Cancel", under: sheet)
-        try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet == nil }
+        try await eventuallyOnMain("the Add space dialog to close") { window.window.attachedSheet == nil }
+        // Add a root space by typing its name and folder, the board's way.
+        let landing = scratch.dir.appendingPathComponent("landing")
+        try FileManager.default.createDirectory(at: landing, withIntermediateDirectories: true)
+        window.layout()
+        try ControlPress.press("Add space", under: window.host)
+        try await eventuallyOnMain("the Add space dialog again") { window.window.attachedSheet != nil }
+        let form = try #require(window.window.attachedSheet?.contentView)
+        form.layoutSubtreeIfNeeded()
+        for (label, value) in [("Space name", "landing-docs"), ("Space folder", landing.path)] {
+            let node = try #require(AccessibilityNode.all(under: form).first { $0.label == label && $0.role == "AXTextField" })
+            _ = node.object.perform(setter, with: value)
+            if let field = nativeTextField(under: form, label: label) {
+                field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
+            }
+        }
+        try await eventuallyOnMain("the typed entries") {
+            form.layoutSubtreeIfNeeded()
+            return ControlPress.controls(in: form).contains { $0.label == "Add space" && $0.isEnabled }
+        }
+        try ControlPress.press("Add space", under: form)
+        try await eventuallyOnMain("the new space") { vm.state.spaces.contains { $0.name == "landing-docs" } && window.window.attachedSheet == nil }
         window.layout()
         let settingsSearch = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Search settings" && $0.role == "AXTextField" })
         let settingsSetter = NSSelectorFromString("setAccessibilityValue:")

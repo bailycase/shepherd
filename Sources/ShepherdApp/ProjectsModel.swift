@@ -593,6 +593,22 @@ extension ShepherdViewModel {
         return result
     }
 
+    /// Add space's model: this Mac registers the folder under its name, then records the parent;
+    /// another host adds a root space named after its folder.
+    func addSpaceModel(host: ProjectsHost, parentID: SpaceID? = nil) -> AddSpaceModel {
+        AddSpaceModel(hosts: projects.hosts, rows: projects.rows, hostID: host.id, parentID: parentID) { [weak self] model in
+            guard let self, let host = model.host else { return }
+            let typed = model.path.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Another host's home isn't this Mac's: its "~" is left for that host to expand.
+            guard host.id == "local" else { try await self.addSettingsProject(path: typed, host: host); return }
+            let path = (typed as NSString).expandingTildeInPath
+            let added = try await self.handleProjectRequest(.register(path: path, name: model.name.trimmingCharacters(in: .whitespacesAndNewlines)))
+            if let parent = model.parentID, let space = added.space {
+                _ = try await self.handleProjectRequest(.edit(projectID: space.id, request: ProjectEdit(parentProjectID: parent.rawValue)))
+            }
+        }
+    }
+
     func addSettingsProject(path: String, host: ProjectsHost) async throws {
         if host.id == "local" {
             _ = try await handleProjectRequest(.register(path: path, name: URL(fileURLWithPath: path).lastPathComponent))
