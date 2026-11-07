@@ -25,7 +25,7 @@ const rows = new Map();
 for (const family of registry.families) for (const name of family.tools) rows.set(name, family);
 
 // Tools that register only when something else is on: a design reference, the suggestions experiment.
-const CONDITIONAL = new Set(["design_get", "design_note", "suggest_instruction"]);
+const CONDITIONAL = new Set(["design_get", "design_show", "design_note", "suggest_instruction"]);
 
 // The tools a launch sends the model that Shepherd's extensions registered: not pi's other built-ins (inactive, never sent), and
 // not an MCP server's direct tools, which are the user's (`mcp__<server>__<tool>`, pi's own MCP).

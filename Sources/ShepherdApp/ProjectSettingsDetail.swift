@@ -20,6 +20,7 @@ struct ProjectSettingsDetail: View {
     var body: some View {
         GeometryReader { geometry in
             let narrow = geometry.size.width - AppLayout.settingsWideSides * 2 < AppLayout.projectColumnsMinimumWidth
+            VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: AppLayout.projectDetailGap) {
                 if model.showingHooks, let hooks {
                     ScrollView {
@@ -39,6 +40,10 @@ struct ProjectSettingsDetail: View {
                     header.frame(maxWidth: .infinity, alignment: .leading).disabled(cookies.clearing)
                     if model.category == .mcp {
                         editorColumn
+                    } else if showsResources {
+                        SpaceResourcesView(model: model.resources, project: project)
+                    } else if showsForm {
+                        SpaceSettingsFormView(model: model, project: project)
                     } else if narrow {
                         ScrollView {
                             VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
@@ -58,8 +63,17 @@ struct ProjectSettingsDetail: View {
                 .accessibilityIdentifier("SettingsPageContent")
                 .padding(.top, AppLayout.projectDetailTop)
                 .padding(.horizontal, AppLayout.settingsWideSides)
+                if showsForm { SpaceSettingsFormFooter(model: model, project: project) }
+                if showsResources { SpaceResourcesFooter(model: model.resources, project: project) }
+            }
         }
     }
+
+    /// The Settings tab draws pi's settings as a form (ProjectSettings board), not a JSON editor.
+    /// Edit JSON… swaps it for the raw editor over the same draft.
+    private var showsForm: Bool { !model.showingHooks && !model.showingBrowser && model.category == .pi && !model.showingSettingsJSON }
+    /// The Resources tab lists resources by kind (ProjectResources board), not files.
+    private var showsResources: Bool { !model.showingHooks && !model.showingBrowser && model.category == .skills }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -68,6 +82,13 @@ struct ProjectSettingsDetail: View {
                     Text("Spaces").frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
                 }.buttonStyle(.shRow(focusColor: .sh.running)).accessibilityLabel("Back to Spaces").disabled(model.saving || cookies.clearing)
                 SHGlyph.Settings.next.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+                // A child space's breadcrumb names its parent (ProjectChildSettings), which opens it.
+                if let parent = model.rows.first(where: { $0.host.id == project.host.id && $0.project.directory == project.project.parent }) {
+                    Button { Task { await model.navigate(.close); if model.selected == nil { await model.open(parent) } } } label: {
+                        Text(parent.project.name).frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
+                    }.buttonStyle(.shRow(focusColor: .sh.running)).accessibilityLabel("Open parent space \(parent.project.name)").disabled(model.saving || cookies.clearing)
+                    SHGlyph.Settings.next.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+                }
                 Text(project.project.name).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }.font(.shSans(AppLayout.projectFileSize)).foregroundStyle(Color.sh.textSecondary)
                 .frame(height: AppLayout.projectBreadcrumbHeight)
@@ -159,6 +180,9 @@ struct ProjectSettingsDetail: View {
                     }
                     if let file = model.selectedFile {
                         Spacer(minLength: 0)
+                        if model.category == .pi {
+                            Button("Back to form") { model.showingSettingsJSON = false }.buttonStyle(.sh(.secondary)).disabled(model.saving)
+                        }
                         Text(project.project.displayPath + "/" + file.path).font(.shMono(AppLayout.projectsPathSize))
                             .foregroundStyle(Color.sh.settingsMuted).lineLimit(1)
                     }
@@ -174,17 +198,6 @@ struct ProjectSettingsDetail: View {
                     Spacer()
                     Button("Keep editing") { model.pending = nil }.buttonStyle(.sh(.ghost))
                     Button("Discard") { Task { await model.discard() } }.buttonStyle(.sh())
-                }
-            }
-            if model.selectedFile?.category == .pi, model.fileLoaded {
-                SettingsGroup(title: "Tools") {
-                    SettingsRow(title: "Codemode",
-                                subtitle: "Overrides this host's global setting for this space. Save the file, then start or restart the agent.",
-                                problem: model.codemodeProblem) {
-                        SHSegmentedPicker("Space codemode", selection: $model.projectCodemode,
-                                          options: [(ProjectsModel.CodemodeChoice.inherit, "Use global default"), (.on, "On"), (.off, "Off")])
-                            .disabled(model.codemodeProblem != nil || model.saving || model.selected?.unavailable != nil)
-                    }
                 }
             }
             if model.category == .mcp, model.fileLoaded {

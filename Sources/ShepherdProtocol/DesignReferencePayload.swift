@@ -94,6 +94,41 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
         }
     }
 
+    /// A board the thread's agent drew rather than one the user sent (design_show with a source):
+    /// a draft of a new board, or a change to the board `reference` names, kept here until the
+    /// user adds it to the design or discards it. Its `source` file is the drawn board.
+    public struct Proposal: Codable, Hashable, Sendable {
+        public enum Kind: String, Codable, Hashable, Sendable {
+            /// A new board (ThreadBoardDraft), at `reference.board`'s path once added.
+            case draft
+            /// A new version of `reference.board` (ThreadBoardChange).
+            case change
+        }
+
+        public enum State: String, Codable, Hashable, Sendable {
+            case pending
+            /// Added to the canvas (a draft) or applied over the board (a change).
+            case added
+            case discarded
+        }
+
+        public var kind: Kind
+        public var state: State
+        /// A change: the board's SHA-256 at `revision`, which Apply requires it still has.
+        public var baseSHA: String?
+        /// The canvas frame a draft takes once added.
+        public var x: Double?
+        public var y: Double?
+
+        public init(kind: Kind, state: State = .pending, baseSHA: String? = nil, x: Double? = nil, y: Double? = nil) {
+            self.kind = kind
+            self.state = state
+            self.baseSHA = baseSHA
+            self.x = x
+            self.y = y
+        }
+    }
+
     public var id: UUID
     public var agentID: AgentID
     /// The piece, pinned at the revision it was sent at.
@@ -103,6 +138,9 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var boardTitle: String?
     public var page: String?
     public var pageTitle: String?
+    /// A board or element reference: the name of the canvas page its board was on, for a board
+    /// card's meta ("Checkout · 560 × 410 · revision 13"). Absent from older copies.
+    public var boardPageTitle: String?
     /// The element's words, and its `data-el` name (else its tag).
     public var elementLabel: String?
     public var elementName: String?
@@ -119,6 +157,8 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var picture: File?
     /// The board's standalone page: no runtime, no scripts.
     public var html: File?
+    /// A board the agent drew (`Proposal`); nil for a piece the user sent. Absent from older copies.
+    public var proposal: Proposal?
     /// The element's markup as drawn, and the computed styles of it and what's under it (JSON).
     public var element: File?
     public var elementStyles: File?
@@ -389,9 +429,12 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
     public var html: Page?
     public var styles: Styles?
     public var tokens: Tokens?
+    /// The kept copy it read (`DesignReferencePayload.id`): what design_show's board card draws.
+    /// Absent from older hosts.
+    public var payload: UUID?
 
     public init(ref: String, title: String, aspects: [DesignReferenceAspect], picture: Picture? = nil, html: Page? = nil,
-                styles: Styles? = nil, tokens: Tokens? = nil) {
+                styles: Styles? = nil, tokens: Tokens? = nil, payload: UUID? = nil) {
         self.ref = ref
         self.title = title
         self.aspects = aspects
@@ -399,6 +442,7 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
         self.html = html
         self.styles = styles
         self.tokens = tokens
+        self.payload = payload
     }
 
     /// The line's meta: "picture · html · 11 styles · 8 tokens".
@@ -416,7 +460,7 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
         let title = DesignReference.label(design: payload.design, board: payload.reference.board.map { payload.boardTitle ?? $0.stem },
                                           element: nil, page: payload.reference.page.map { payload.pageTitle ?? $0 })
         var out = DesignReferenceLookedAt(ref: payload.reference.string, title: title,
-                                          aspects: DesignReferenceAspect.allCases.filter(aspects.contains))
+                                          aspects: DesignReferenceAspect.allCases.filter(aspects.contains), payload: payload.id)
         if aspects.contains(.image) {
             if let picture = payload.picture {
                 let board = payload.reference.board.map { payload.boardTitle ?? $0.stem } ?? payload.design

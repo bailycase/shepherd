@@ -50,11 +50,18 @@ struct DesignPreviewTests {
         return (workspace, checkout, agent)
     }
 
+    /// Recent designs: the checkout funnel with two open comments, the onboarding a phone design
+    /// (NavDesignsPlanned).
     @Test func designsPage() async throws {
-        let (workspace, _, _) = try await designWorkspace()
+        let (workspace, checkout, _) = try await designWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
+        for text in ["Bigger KPIs", "Fewer columns"] {
+            _ = try await workspace.server.addDesignComment(checkout.id, draft: DesignCommentDraft(
+                board: DesignPath(DesignFixtures.checkout[0].path)!, tid: 2, path: [1], label: "KPI row", target: "KPI row", rect: nil, text: text))
+        }
         await vm.loadDesignThumbnails()
+        await vm.loadDesignCommentCounts()
         try await Preview.render("page-designs", size: Self.pageSize, ready: {
             vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil }
         }) {

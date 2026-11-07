@@ -16,8 +16,10 @@ struct ProjectPagePresentationTests {
         return task
     }
 
-    private func page(_ tasks: [ProjectTask], paused: Bool = false) -> ProjectPagePresentation {
-        var project = Project(name: "Sample App", paused: paused)
+    /// `paused` alone is a stop the runtime made; `byPerson` is the person's Pause.
+    private func page(_ tasks: [ProjectTask], paused: Bool = false, byPerson: Bool = false) -> ProjectPagePresentation {
+        var project = Project(name: "Sample App", paused: paused || byPerson)
+        project.pausedByPerson = byPerson
         project.tasks = tasks
         return ProjectPagePresentation(project)
     }
@@ -299,6 +301,21 @@ struct ProjectPagePresentationTests {
         #expect(page([task("A", .waiting, question: "?")]).status == "1 thread is waiting on you.")
         #expect(page([task("A", .waiting, question: "?")], paused: true).status == "1 thread is waiting on you.", "no Paused wording")
         #expect(page([task("A", .running)], paused: true).status == "1 thread is working.")
+    }
+
+    /// Only the person's Pause is drawn as Paused (ProjectLead-PausedV2): a runtime stop ends with their next message, so saying
+    /// "waits until you resume" there would be false.
+    @Test func thePersonsPauseIsSaidAndARuntimeStopIsNot() {
+        let paused = page([task("A", .waiting, question: "?"), task("B", .resolved)], byPerson: true)
+        #expect(paused.paused && paused.status == "Paused. 1 thread is still waiting on you.")
+        #expect(page([task("A", .waiting, question: "?"), task("B", .waiting, question: "?")], byPerson: true).status
+                == "Paused. 2 threads are still waiting on you.")
+        #expect(page([task("A", .settled)], byPerson: true).status == "Paused. Nothing runs until you resume.")
+        #expect(!page([task("A", .running)], paused: true).paused)
+        var asking = task("Asking", .waiting, question: "Pick")
+        asking.pendingAnswer = ProjectQuestionAnswer(operationID: UUID(), sessionID: "s", generation: "g", dialogID: "d", request: Data("x".utf8), phase: .queued)
+        #expect(page([asking], byPerson: true).rows[0].detail == "Sends when the project resumes.")
+        #expect(TaskQuestion.footer(title: "X", paused: true) == "Or just reply in chat. Your answer waits until you resume.")
     }
 
     @Test func noTasksMeansNoStripAndNoSummary() {

@@ -622,7 +622,7 @@ extension TerminalConfiguration {
         "shift+cmd+i",
         // ⌃1–5: the side pane's Changes, Browser, Pull request, Subagents and Files tabs.
         "ctrl+one", "ctrl+physical:one", "ctrl+two", "ctrl+physical:two", "ctrl+three", "ctrl+physical:three",
-        "ctrl+four", "ctrl+physical:four", "ctrl+five", "ctrl+physical:five",
+        "ctrl+four", "ctrl+physical:four", "ctrl+five", "ctrl+physical:five", "ctrl+six", "ctrl+physical:six",
         // ⌘L the Browser's address bar · ⇧⌘C select an element · ⌘T a new Browser tab.
         "cmd+l", "shift+cmd+c", "cmd+t",
         // ⌘1–9: the first nine Recents rows.

@@ -56,6 +56,21 @@ struct AgentLaunchTests {
         #expect(try line(fresh: false, override: "stub/model-b").contains("model-b"))
     }
 
+    /// A child space's unset startup model and thinking come from its parent spaces, and only for a
+    /// fresh session the thread itself didn't choose for.
+    @Test func parentDefaultsFillOnlyWhatTheThreadLeavesUnset() throws {
+        let inherited = SpaceInheritedDefaults(model: "stub/parent-model", thinking: "low")
+        func line(_ agent: Agent, fresh: Bool = true) throws -> String {
+            try AgentLaunch.rpcCommand(for: agent, cwd: "/tmp/project", pi: pi, settings: AgentLaunchSettings(), sessionIsFresh: fresh,
+                                       inherited: inherited, mcp: { nil }).argv.joined(separator: " ")
+        }
+        var unset = agent(model: nil); unset.thinkingLevel = nil
+        let inheriting = try line(unset), chosen = try line(agent()), resumed = try line(unset, fresh: false)
+        #expect(inheriting.contains("parent-model") && inheriting.contains("--thinking 'low'"))
+        #expect(!chosen.contains("parent-model") && chosen.contains("--thinking 'high'"))
+        #expect(!resumed.contains("parent-model"))
+    }
+
     @Test func mcpGoesToTheLaunch() throws {
         let env = try command(agent(), mcp: MCPLaunch(extensions: MCPLaunch.builtIns, environment: ["MCP_SECRET": "x"])).env
         #expect(env["MCP_SECRET"] == "x")

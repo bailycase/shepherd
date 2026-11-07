@@ -152,4 +152,59 @@ struct DesignMentionTests {
         #expect(catalog.search("funnel", limit: 2).count == 2)
         #expect(catalog.search("CHECKOUT FÜNNEL").first?.kind == .design, "case and accents aside")
     }
+
+    // MARK: Board cards (ThreadBoardShown, ThreadBoardStale)
+
+    @Test func aBoardCardSaysItsPageSizeAndTheRevisionTheAgentShowed() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"), revision: 13))
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 13, capturedAt: 0, width: 560, height: 410)
+        payload.boardPageTitle = "Checkout"
+        #expect(DesignReferencePresentation.boardMeta(payload, freshness: .current) == ["Checkout", "560 × 410", "revision 13"])
+        let moved = DesignReferenceFreshness.updatedSince(latest: 14, changes: [])
+        #expect(DesignReferencePresentation.boardMeta(payload, freshness: moved) == ["Checkout", "560 × 410", "shown at revision 13"])
+        #expect(DesignReferencePresentation.boardNote(.current) == nil && DesignReferencePresentation.showLatest(.current) == nil)
+        #expect(DesignReferencePresentation.boardNote(moved) == "The design moved on since the agent showed this. It shows what the agent saw.")
+        #expect(DesignReferencePresentation.showLatest(moved) == "Show v14" && DesignReferencePresentation.showLatest(.deleted) == nil)
+    }
+
+    @Test func eachDesignShowIsItsOwnCardNeverJoinedToTheCallsAroundIt() {
+        func call(_ name: String, board: UUID?) -> NativeActivityCall {
+            var message = NativeThreadMessage(entryID: "e-\(UUID())", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "ok")], toolName: name,
+                                              toolCallID: UUID().uuidString, argumentsText: #"{"ref":"shepherd-design-ref://local/d1/A.dc.html@13"}"#,
+                                              status: "complete")
+            message.designBoard = board
+            return NativeActivityCall(message)
+        }
+        let one = UUID(), two = UUID()
+        let bursts = nativeActivityBursts([call("design_show", board: one), call("design_show", board: two), call("design_note", board: nil)])
+        #expect(bursts.map { $0.calls.map(\.designBoard) } == [[one], [two], [nil]])
+        #expect(bursts[0].calls[0].designRef == "shepherd-design-ref://local/d1/A.dc.html@13")
+    }
+
+    /// ThreadBoardDraft and ThreadBoardChange: a board the agent drew says where it stands, in its
+    /// line, its meta and its note, until it is added, applied or discarded.
+    @Test func aDrawnBoardSaysWhereItStands() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("B-Pay-on-phone.dc.html"), revision: 13))
+        var draft = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                           boardTitle: "B · Pay on phone", revision: 13, capturedAt: 0, width: 320, height: 480)
+        draft.boardPageTitle = "Checkout"
+        draft.proposal = .init(kind: .draft)
+        #expect(DesignReferencePresentation.boardMeta(draft, freshness: .deleted) == ["Checkout", "320 × 480", "not on the canvas yet"])
+        #expect(DesignReferencePresentation.boardLine(draft)! == ("Drew a board", "B · Pay on phone · draft in Checkout redesign"))
+        #expect(DesignReferencePresentation.boardNote(draft.proposal!, revision: 13)
+            == "Drawn in this thread. It isn’t on the design’s canvas until you add it.")
+        var change = draft
+        change.proposal = .init(kind: .change, baseSHA: "abc")
+        #expect(DesignReferencePresentation.boardMeta(change, freshness: .current).last == "proposed from revision 13")
+        #expect(DesignReferencePresentation.boardLine(change)! == ("Changed a board", "B · Pay on phone · from revision 13"))
+        #expect(DesignReferencePresentation.boardNote(change.proposal!, revision: 13)
+            == "Proposed change to the board on the canvas. Adding it replaces revision 13.")
+        change.proposal?.state = .discarded
+        #expect(DesignReferencePresentation.boardMeta(change, freshness: .current).last == "discarded")
+        draft.proposal?.state = .added
+        #expect(DesignReferencePresentation.boardMeta(draft, freshness: .current).last == "added to the canvas")
+        #expect(DesignReferencePresentation.boardLine(DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference,
+                                                                             design: "x", revision: 1, capturedAt: 0)) == nil)
+    }
 }

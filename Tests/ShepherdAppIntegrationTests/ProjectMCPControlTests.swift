@@ -58,6 +58,7 @@ struct ProjectMCPControlTests {
                 if action == .approveProject { approvals += 1 }
                 return .mcp(.init(projectTrusted: true))
             case .open: return .opened
+            case .resources, .delete, .installSkills: throw ProjectFileError("unsupported", "Not in this test.")
             }
         }
         await model.load([host]); await model.open(.init(host: host, project: project)); await model.navigate(.category(.mcp))

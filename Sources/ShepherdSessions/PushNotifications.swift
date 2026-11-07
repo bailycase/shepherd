@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -7,13 +8,33 @@ import ShepherdRemote
 /// bounded, never retried or replayed. The injected transport returns a cancellation closure.
 final class PushNotifications: @unchecked Sendable {
     typealias Transport = (URLRequest, @escaping @Sendable (Int?) -> Void) -> (() -> Void)
-    enum Kind: String, Codable { case done, error, needsAnswer }
+    enum Kind: String, Codable { case done, error, needsAnswer, review }
+    /// The mission an alert approves: Approve publishes exactly this reviewed revision (NotifPhoneReview).
+    struct MissionReview: Encodable, Equatable {
+        let id: String
+        let revision: UInt64
+        let fingerprint: String
+    }
     private struct Event: Encodable {
         let eventID = UUID()
         let agentID: AgentID
-        let kind: Kind
+        var kind: Kind
         let title: String?
         let preview: String?
+        // The relay's newer fields: the stack (APNs thread-id), the kind line, how loud
+        // (passive finished work waits for the Scheduled Summary) and its rank in the summary.
+        var group: String?
+        var subtitle: String?
+        var level: String?
+        var relevance: Double?
+        var mission: MissionReview?
+        /// An older relay knows no review: it hears a finished turn, with no approval.
+        var legacy: Event {
+            var event = self
+            (event.group, event.subtitle, event.level, event.relevance, event.mission) = (nil, nil, nil, nil, nil)
+            if event.kind == .review { event.kind = .done }
+            return event
+        }
     }
     private struct Delivery {
         let registrationID: String
@@ -25,10 +46,17 @@ final class PushNotifications: @unchecked Sendable {
     private var deliveries: [UUID: Delivery] = [:]
     private var window = Date.distantPast
     private var eventCount = 0
+    /// An older relay answers 400 to fields it doesn't know; from then on send it only the old ones.
+    /// ponytail: remembered until the host restarts, so a relay upgrade is picked up on the next launch.
+    private(set) var relayIsLegacy = false
     var transport: Transport
     /// The thread you are watching on this Mac (`SessionServer.setFocusedThread`); it sends no pushes.
     var focused: AgentID?
     var now: () -> Date = Date.init
+    /// Seconds since the person last touched this Mac, for away-only phones.
+    var idleSeconds: () -> TimeInterval = {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
 
     init(file: URL, queue: DispatchQueue) {
         self.file = file
@@ -44,7 +72,8 @@ final class PushNotifications: @unchecked Sendable {
            let saved = try? JSONDecoder().decode([RemotePushRegistration].self, from: data), saved.count <= 16 {
             for registration in saved where Self.valid(registration) {
                 let id = UUID(uuidString: registration.id)!.uuidString
-                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken)
+                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken,
+                                                           preferences: registration.preferences)
             }
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         }
@@ -60,7 +89,7 @@ final class PushNotifications: @unchecked Sendable {
         let id = UUID(uuidString: registration.id)!.uuidString
         guard registrations[id] != nil || registrations.count < 16 else { throw Failure.full }
         var next = registrations
-        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken)
+        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken, preferences: registration.preferences)
         try persist(next)
         cancel(id)
         registrations = next
@@ -116,38 +145,82 @@ final class PushNotifications: @unchecked Sendable {
         #"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@"#
     ].map { try! NSRegularExpression(pattern: $0) }
 
-    func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil) {
-        guard !registrations.isEmpty, agentID != focused else { return }
+    /// Which Send me switch an alert of `kind` answers to, when the caller names none.
+    static func topic(_ kind: Kind) -> RemotePushPreferences.Topic {
+        switch kind {
+        case .needsAnswer, .review: .questions
+        case .error: .failures
+        case .done: .finished
+        }
+    }
+
+    /// Loudness and Scheduled Summary rank by kind: a question outranks a failure outranks finished work.
+    static func presentation(_ kind: Kind) -> (level: String, relevance: Double) {
+        switch kind {
+        case .review: ("active", 0.9)
+        case .needsAnswer: ("active", 0.8)
+        case .error: ("active", 0.6)
+        case .done: ("passive", 0.2)
+        }
+    }
+
+    /// `group` stacks the alert with its thread's or mission's others; `subtitle` names the kind.
+    func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
+              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil,
+              topic: RemotePushPreferences.Topic? = nil, missionID: String? = nil) {
+        let topic = topic ?? Self.topic(kind)
+        let away = idleSeconds() >= RemotePushPreferences.awayAfter
+        let wanted = registrations.values.filter { registration in
+            guard let preferences = registration.preferences else { return true }
+            return (away || !preferences.awayOnly) && preferences.allows(topic, mission: missionID ?? mission?.id)
+        }
+        guard !wanted.isEmpty, agentID != focused else { return }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
         guard eventCount < 30 else { return }
         eventCount += 1
-        guard let body = try? JSONEncoder().encode(Event(agentID: agentID, kind: kind,
-            title: Self.notificationText(title, limit: 100), preview: Self.notificationText(preview, limit: 240))) else { return }
+        let (level, relevance) = Self.presentation(kind)
+        let event = Event(agentID: agentID, kind: kind,
+            title: Self.notificationText(title, limit: 100), preview: Self.notificationText(preview, limit: 240),
+            group: group ?? "thread:\(agentID.rawValue)", subtitle: Self.notificationText(subtitle, limit: 60),
+            level: level, relevance: relevance, mission: mission)
+        guard let rich = try? JSONEncoder().encode(event), let legacy = try? JSONEncoder().encode(event.legacy) else { return }
+        let body = relayIsLegacy ? legacy : rich
         // No pending queue: overload drops deliveries rather than growing memory or replaying later.
-        for registration in registrations.values where deliveries.count < 16 {
-            let id = UUID()
-            var request = URLRequest(url: URL(string: "https://api.useshepherd.app/api/push/registrations/\(registration.id)/events")!)
-            request.httpMethod = "POST"
-            request.timeoutInterval = 10
-            request.setValue("Bearer \(registration.sendToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = body
-            let cancel = transport(request) { [weak self] status in
-                guard let self else { return }
-                self.queue.async {
-                    self.deliveries.removeValue(forKey: id)
-                    guard status == 401 || status == 410,
-                          self.registrations[registration.id] == registration else { return }
-                    // A revoked relay credential must not permanently consume a host slot.
-                    // Never remove a replacement credential because an old request finished late.
-                    try? self.unregister(registration.id)
+        for registration in wanted where deliveries.count < 16 {
+            post(body, legacy: body == legacy ? nil : legacy, to: registration)
+        }
+    }
+
+    /// One delivery; `legacy` is the same event in the old relay's shape, sent once if this one is refused.
+    private func post(_ body: Data, legacy: Data?, to registration: RemotePushRegistration) {
+        let id = UUID()
+        var request = URLRequest(url: URL(string: "https://api.useshepherd.app/api/push/registrations/\(registration.id)/events")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(registration.sendToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        let cancel = transport(request) { [weak self] status in
+            guard let self else { return }
+            self.queue.async {
+                self.deliveries.removeValue(forKey: id)
+                // The relay validates before it claims the event id, so the same event may go again.
+                if status == 400, let legacy, self.registrations[registration.id] == registration {
+                    self.relayIsLegacy = true
+                    self.post(legacy, legacy: nil, to: registration)
+                    return
                 }
+                guard status == 401 || status == 410,
+                      self.registrations[registration.id] == registration else { return }
+                // A revoked relay credential must not permanently consume a host slot.
+                // Never remove a replacement credential because an old request finished late.
+                try? self.unregister(registration.id)
             }
-            deliveries[id] = Delivery(registrationID: registration.id, cancel: cancel)
-            queue.asyncAfter(deadline: .now() + .seconds(10)) { [weak self] in
-                self?.deliveries.removeValue(forKey: id)?.cancel()
-            }
+        }
+        deliveries[id] = Delivery(registrationID: registration.id, cancel: cancel)
+        queue.asyncAfter(deadline: .now() + .seconds(10)) { [weak self] in
+            self?.deliveries.removeValue(forKey: id)?.cancel()
         }
     }
 

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ShepherdRemote
 import Observation
 import ShepherdSessions
 

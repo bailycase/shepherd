@@ -191,31 +191,12 @@ final class GlanceBridge {
         }
     }
 
-    /// Sends to the thread's own host: over its connection while the app is in front, else over
-    /// one made for this request and closed after it.
+    /// Sends to the thread's own host (`MobileHosts.withClient`).
     private func send(host: String, agent: String, _ request: NativeThreadRequest) async throws {
-        guard let id = UUID(uuidString: host), let mobile = hosts.host(id) else {
-            throw GlanceFailure("That host is no longer on this device.")
+        guard let id = UUID(uuidString: host) else { throw GlanceFailure("That host is no longer on this device.") }
+        let result = try await hosts.withClient(id) { client in
+            try await client.nativeThread(agentID: AgentID(rawValue: agent), request: request)
         }
-        let client: RemoteHostClient
-        var owned = false
-        if let connected = mobile.connectedClient {
-            client = connected
-        } else {
-            guard let token = try hosts.token(for: id), !token.isEmpty else {
-                throw GlanceFailure("Open Shepherd to reconnect to \(mobile.name).")
-            }
-            client = RemoteHostClient()
-            owned = true
-            do {
-                _ = try await client.connect(host: mobile.record.address, port: mobile.record.port, token: token, clientName: "Shepherd iOS")
-            } catch {
-                client.disconnect()
-                throw GlanceFailure("\(mobile.name) is unreachable.")
-            }
-        }
-        defer { if owned { client.disconnect() } }
-        let result = try await client.nativeThread(agentID: AgentID(rawValue: agent), request: request)
         if case .failure(_, let message) = result { throw GlanceFailure(message) }
         if hosts.foreground { Task { await feed.refresh() } }
     }
@@ -303,4 +284,24 @@ final class GlanceBridge {
 
     /// Milliseconds since 1970 as a date.
     private static func date(_ milliseconds: Double) -> Date { Date(timeIntervalSince1970: milliseconds / 1000) }
+}
+
+extension MobileHosts {
+    /// Runs `body` on the host's own connection while the app is in front, else over one made for
+    /// it and closed after (a glance button, a notification action). `GlanceFailure` names why not.
+    func withClient<T>(_ id: UUID, _ body: (RemoteHostClient) async throws -> T) async throws -> T {
+        guard let mobile = host(id) else { throw GlanceFailure("That host is no longer on this device.") }
+        if let connected = mobile.connectedClient { return try await body(connected) }
+        guard let token = try token(for: id), !token.isEmpty else {
+            throw GlanceFailure("Open Shepherd to reconnect to \(mobile.name).")
+        }
+        let client = RemoteHostClient()
+        defer { client.disconnect() }
+        do {
+            _ = try await client.connect(host: mobile.record.address, port: mobile.record.port, token: token, clientName: "Shepherd iOS")
+        } catch {
+            throw GlanceFailure("\(mobile.name) is unreachable.")
+        }
+        return try await body(client)
+    }
 }

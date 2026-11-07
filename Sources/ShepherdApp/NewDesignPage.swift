@@ -13,8 +13,8 @@ import ShepherdUI
 ///
 /// The one card is the design system the boards are drawn in: the one picked from its menu, else
 /// the most recently changed system built here, else Shepherd Design. It names the project a system
-/// was read from as information; a design belongs to no project. The Capture a page and From a
-/// screenshot starting points come later.
+/// was read from as information; a design belongs to no project. Capture a page and From a
+/// screenshot attach an image of a web page or a file to the brief.
 struct NewDesignPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
@@ -22,6 +22,8 @@ struct NewDesignPage: View {
     @State private var dropTargeted = false
     @State private var picking = false
     @State private var pickingZip = false
+    @State private var capturingPage = false
+    @State private var pageAddress = ""
     @State private var menu: ChipMenu?
     @State private var picker: ModelPickerState?
     @State private var dismissal = ComposerMenuDismissal()
@@ -81,7 +83,7 @@ struct NewDesignPage: View {
         }
         .onDisappear { dismissal.watch(false) }
         .task { await vm.loadDesignSystems() }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.image, .pdf], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             draft.attach(urls: urls)
         }
@@ -210,19 +212,23 @@ struct NewDesignPage: View {
 
     // MARK: Starting points
 
-    /// "DESIGN SYSTEM & STARTING POINT": the design system the design is drawn in, chosen, and
-    /// Import a project (ImportNewDesign), each at a third of the row. The system's menu picks
-    /// another system; the import opens the picker for a Claude Design ZIP or folder.
+    /// "DESIGN SYSTEM & STARTING POINT", three to a row: the design system the design is drawn
+    /// in, chosen; Capture a page and From a screenshot (DZStartPlanned), which attach an image of
+    /// the page or file to the brief; then Import a project (ImportNewDesign) and where it is made.
+    /// The system's menu picks another system; the import opens the picker for a Claude Design ZIP
+    /// or folder.
     private var startingPoints: some View {
-        VStack(alignment: .leading, spacing: AppLayout.newDesignCardsLabelGap) {
+        let gap = AppLayout.newDesignCardsGap
+        return VStack(alignment: .leading, spacing: AppLayout.newDesignCardsLabelGap) {
             Text("Design system & starting point").shSectionLabel()
                 .accessibilityAddTraits(.isHeader)
-            GeometryReader { proxy in
-                let width = (proxy.size.width - AppLayout.newDesignCardsGap * (AppLayout.newDesignCardsPerRow - 1))
-                    / AppLayout.newDesignCardsPerRow
-                HStack(spacing: AppLayout.newDesignCardsGap) {
+            Grid(horizontalSpacing: gap, verticalSpacing: gap) {
+                GridRow {
                     systemCard
-                        .frame(width: max(0, width))
+                    captureCard
+                    screenshotCard
+                }
+                GridRow {
                     Button {
                         if draft.host == nil { vm.chooseDesignProject() } else { pickingZip = true }
                     } label: {
@@ -232,16 +238,77 @@ struct NewDesignPage: View {
                     }
                     .disabled(draft.host.flatMap(vm.newDesignHost).map { !$0.supportsDesignCapability(RemoteProtocol.designImportCapability) } ?? false)
                     .buttonStyle(.plain)
-                    .frame(width: max(0, width))
                     .help("Import a Claude Design project as a new design (\(KeybindingsStore.shared.display(.importDesign)))")
                     if !vm.newDesignHosts.isEmpty {
                         hostCard
-                            .frame(width: max(0, width))
+                    } else {
+                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                     }
-                    Spacer(minLength: 0)
+                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                 }
             }
-            .frame(height: AppLayout.newDesignCardHeight)
+            // The cards' own height: a menu's label would otherwise ask for more.
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Images go only to a design made on This Mac, so the image starting points wait for it.
+    private var imagesHelp: String? {
+        draft.host == nil ? nil : "Images go only to a design made on This Mac for now."
+    }
+
+    /// Capture a page: an address, then the page drawn off screen and attached to the brief.
+    private var captureCard: some View {
+        Button { capturingPage = true } label: {
+            SHDesignStartCard(symbol: "link", title: "Capture a page", line: "paste a URL to start from",
+                              note: draft.capturing.map { "capturing \($0)…" } ?? "staging or production", chosen: false)
+        }
+        .buttonStyle(.plain)
+        .disabled(draft.host != nil || draft.capturing != nil)
+        .help(imagesHelp ?? "Start from a web page: Shepherd captures it and adds it to the brief")
+        .popover(isPresented: $capturingPage, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                Text("Capture a page").font(.sh(.body, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                TextField("Address", text: $pageAddress, prompt: Text("https://staging.acme.dev"))
+                    .textFieldStyle(.sh(mono: true))
+                    .onSubmit(capturePage)
+                    .accessibilityLabel("Page address")
+                HStack {
+                    Spacer()
+                    Button("Cancel") { capturingPage = false }
+                        .buttonStyle(.sh(.ghost, size: .s))
+                    Button("Capture", action: capturePage)
+                        .buttonStyle(.sh(.primary, size: .s))
+                        .disabled(PageCapture.address(pageAddress) == nil)
+                }
+            }
+            .padding(SH.Space.l)
+            .frame(width: AppLayout.newDesignCapturePopoverWidth)
+            .background(Color.sh.bgRaised)
+        }
+    }
+
+    private func capturePage() {
+        guard PageCapture.address(pageAddress) != nil else { return }
+        capturingPage = false
+        draft.capture(pageAddress)
+        pageAddress = ""
+        composing = true
+    }
+
+    /// From a screenshot: an image or a PDF picked, attached to the brief (a drop on the
+    /// composer does the same).
+    private var screenshotCard: some View {
+        Button { picking = true } label: {
+            SHDesignStartCard(symbol: "photo", title: "From a screenshot", line: "drop an image or a file",
+                              note: "PNG, PDF, Figma export", chosen: false)
+        }
+        .buttonStyle(.plain)
+        .disabled(draft.host != nil || draft.attachments.isFull)
+        .help(imagesHelp ?? "Start from an image or a PDF")
+        .onDrop(of: [.image, .fileURL], isTargeted: nil) { providers in
+            draft.attach(providers)
+            return true
         }
     }
 
@@ -266,6 +333,7 @@ struct NewDesignPage: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
+            .frame(maxWidth: .infinity)
             .help("Make it on This Mac or on a connected host")
     }
 
@@ -284,6 +352,7 @@ struct NewDesignPage: View {
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity)
                 .help("Draw it in another design system")
         } else {
             card

@@ -106,7 +106,7 @@ extension SessionServer {
                 let id = project.id
                 Task {
                     let result: Result<LogicalProjectsResult, Error>
-                    do { result = .success(.project(try await self.projectRuntime(id, expectedRevision: revision, request: paused ? .pause : .resume))) }
+                    do { result = .success(.project(try await self.projectRuntime(id, expectedRevision: revision, request: paused ? .pause : .resume, byPerson: true))) }
                     catch { result = .failure(error) }
                     self.queue.async { completion(result) }
                 }
@@ -141,7 +141,7 @@ extension SessionServer {
                         project.spaceProposals[i].phase = .denied; project.spaceProposals[i].revision += 1
                     }
                 }
-            case .setPaused(_, _, let paused): project.paused = paused
+            case .setPaused(_, _, let paused): project.paused = paused; project.pausedByPerson = paused
             case .addMemory(_, _, let id, let text, let source):
                 guard !project.memory.contains(where: { $0.id == id }) else {
                     throw LogicalProjectsError("conflict", "Memory ID already exists.")

@@ -98,6 +98,29 @@ struct DesignFlowTests {
         #expect(agent.model == "anthropic/claude-opus-4-5" && agent.thinkingLevel == .high)
     }
 
+    /// The Designs page's card counts a design's open comments from its comments file; a
+    /// resolved one drops out (NavDesignsPlanned: "· 2 comments").
+    @Test func aDesignsCardCountsItsOpenComments() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, _) = try await start(app)
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await app.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: app.server)
+        try await eventuallyOnMain("the design to arrive") { vm.state.designs.first?.boardCount == 1 }
+        var added: [DesignComment] = []
+        for text in ["Bigger KPIs", "Fewer columns", "Dark header"] {
+            added.append(try await app.server.addDesignComment(design.id, draft: DesignCommentDraft(
+                board: DesignPath(DesignFixtures.checkout[0].path)!, tid: 2, path: [1], label: "KPI row", target: "KPI row", rect: nil,
+                text: text)).comment)
+        }
+        try await app.server.resolveDesignComment(design.id, commentID: added[0].id)
+
+        await vm.loadDesignCommentCounts()
+        #expect(vm.designCommentCounts == [design.id: 2])
+        #expect(vm.designsPage.cards.first?.detail == "1 board · 2 comments")
+    }
+
     @Test func openingADesignWhoseAgentIsGoneStartsAFreshOne() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness()

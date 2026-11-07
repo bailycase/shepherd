@@ -60,19 +60,86 @@ struct ProjectsControlTests {
             #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) hit area is \(String(describing: control.frame))")
             try await eventuallyOnMain("the category to load") { model.category == category && !model.fileLoading }
             if category == .pi {
-                #expect(model.projectCodemode == .inherit)
-                for (label, expected) in [("Off", false as Bool?), ("On", true as Bool?), ("Use global default", nil as Bool?)] {
+                let file = root.appendingPathComponent(".shepherd/settings.json")
+                func saved() throws -> [String: Any] {
+                    try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+                }
+                func save(_ what: String) async throws {
                     window.layout()
-                    let choice = try window.press(label, role: ControlRole.radioButton)
+                    try ControlPress.press("Save changes", under: window.host)
+                    try await eventuallyOnMain(what) { !model.saving && !model.dirty }
+                }
+                #expect(model.projectCodemode == .inherit)
+                for (label, expected) in [("Off", false as Bool?), ("On", true as Bool?), ("Follow global", nil as Bool?)] {
+                    window.layout()
+                    let choice = try ControlPress.press(label, role: ControlRole.radioButton, in: "Codemode", under: window.host)
                     #expect(ControlPress.undersized([choice], minimum: .desktop).isEmpty)
                     #expect(model.dirty)
-                    window.layout()
-                    try window.press("Save")
-                    try await eventuallyOnMain("codemode saved") { !model.saving && !model.dirty }
-                    let contents = try Data(contentsOf: root.appendingPathComponent(".shepherd/settings.json"))
-                    let settings = try #require(JSONSerialization.jsonObject(with: contents) as? [String: Any])
-                    #expect(PiCodemode.projectOverride(in: settings) == expected)
+                    try await save("codemode saved")
+                    #expect(PiCodemode.projectOverride(in: try saved()) == expected)
                 }
+                // The form writes the file's keys: a space tool selection, one tool off, then back to global.
+                window.layout()
+                try ControlPress.press("Space selection", role: ControlRole.radioButton, in: "Built-in tools", under: window.host)
+                window.layout()
+                try ControlPress.press("bash", role: ControlRole.checkBox, under: window.host)
+                try await save("tools saved")
+                #expect(try saved()["defaultTools"] as? [String] == ["read", "edit", "write"])
+                window.layout()
+                try ControlPress.press("Reset Built-in tools to global", under: window.host)
+                try await save("tools reset")
+                #expect(try saved()["defaultTools"] == nil)
+                // Edit JSON… opens the raw editor over the same draft, for keys the form doesn't show.
+                window.layout()
+                try ControlPress.press("Edit JSON…", under: window.host)
+                try await eventuallyOnMain("the JSON editor") { model.showingSettingsJSON }
+                window.layout()
+                let json = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Space file editor" })
+                _ = json.object.perform(NSSelectorFromString("setAccessibilityValue:"), with: "{\n  \"enabledModels\": [\"claude-*\"]\n}\n")
+                if let textView = json.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
+                try await eventuallyOnMain("the JSON edit") { model.dirty }
+                window.layout()
+                try ControlPress.press("Save", under: window.host)
+                try await eventuallyOnMain("the JSON save") { !model.saving && !model.dirty }
+                #expect(try saved()["enabledModels"] as? [String] == ["claude-*"])
+                window.layout()
+                try ControlPress.press("Back to form", under: window.host)
+                #expect(!model.showingSettingsJSON)
+            }
+            if category == .skills {
+                let resources = model.resources
+                try await eventuallyOnMain("the space resources") { resources.loadedOnce && !resources.loading }
+                let settings = root.appendingPathComponent(".shepherd/settings.json")
+                func saveResources(_ what: String) async throws {
+                    window.layout()
+                    try ControlPress.press("Save changes", under: window.host)
+                    try await eventuallyOnMain(what) { !resources.saving && !resources.dirty && !resources.loading }
+                }
+                window.layout()
+                let toggle = try ControlPress.press("Enable check in dashboard", role: ControlRole.checkBox, under: window.host)
+                #expect(ControlPress.undersized([toggle], minimum: .desktop).isEmpty)
+                try await eventuallyOnMain("the toggle in the draft") { resources.dirty }
+                try await saveResources("the toggle saved")
+                let object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any])
+                #expect(object["skills"] as? [String] == ["-../.shepherd/skills/check/SKILL.md"] || object["skills"] as? [String] == ["-skills/check/SKILL.md"])
+                window.layout()
+                try ControlPress.press("Remove check from dashboard", under: window.host)
+                try await eventuallyOnMain("the remove confirmation") { resources.removing != nil }
+                window.layout()
+                try ControlPress.press("Remove", under: window.host)
+                try await saveResources("the removal saved")
+                #expect(!FileManager.default.fileExists(atPath: skills.path))
+                window.layout()
+                try ControlPress.press("Slash commands", role: ControlRole.radioButton, under: window.host)
+                window.layout()
+                try ControlPress.press("New command", under: window.host)
+                try await eventuallyOnMain("the editor") { resources.editor != nil }
+                resources.editor?.name = "review"; resources.editor?.body = "Review the changes."
+                window.layout()
+                try ControlPress.press("Create command", under: window.host)
+                try await eventuallyOnMain("the new command in the draft") { resources.editor == nil && resources.dirty }
+                try await saveResources("the command saved")
+                #expect(try String(contentsOf: root.appendingPathComponent(".pi/prompts/review.md"), encoding: .utf8) == "Review the changes.\n")
             }
         }
         window.layout()
@@ -110,9 +177,15 @@ struct ProjectsControlTests {
         try ControlPress.press("Save", under: window.host)
         try await eventuallyOnMain("the project save") { !model.saving && !model.dirty && model.notice != nil }
         #expect(try String(contentsOf: root.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "# Changed instructions\n")
-        _ = editor.object.perform(setter, with: "Discard this\n")
-        if let textView = editor.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
-        try await eventuallyOnMain("the second native edit") { model.dirty }
+        // The save reloads the space, which may redraw the editor: edit the one on screen now, until it takes.
+        try await eventuallyOnMain("the second native edit") {
+            window.layout()
+            if let current = AccessibilityNode.all(under: window.host).first(where: { $0.label == "Space file editor" }) {
+                _ = current.object.perform(setter, with: "Discard this\n")
+                if let textView = current.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
+            }
+            return model.dirty
+        }
         window.layout()
         try ControlPress.press("Back to Spaces", under: window.host)
         try await eventuallyOnMain("discard confirmation") { model.pending != nil }
@@ -146,11 +219,32 @@ struct ProjectsControlTests {
         window.layout()
         let add = try ControlPress.press("Add space", under: window.host)
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
-        try await eventuallyOnMain("the folder picker") { window.window.attachedSheet != nil }
+        try await eventuallyOnMain("the Add space dialog") { window.window.attachedSheet != nil }
         let sheet = try #require(window.window.attachedSheet?.contentView)
         sheet.layoutSubtreeIfNeeded()
         try ControlPress.press("Cancel", under: sheet)
-        try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet == nil }
+        try await eventuallyOnMain("the Add space dialog to close") { window.window.attachedSheet == nil }
+        // Add a root space by typing its name and folder, the board's way.
+        let landing = scratch.dir.appendingPathComponent("landing")
+        try FileManager.default.createDirectory(at: landing, withIntermediateDirectories: true)
+        window.layout()
+        try ControlPress.press("Add space", under: window.host)
+        try await eventuallyOnMain("the Add space dialog again") { window.window.attachedSheet != nil }
+        let form = try #require(window.window.attachedSheet?.contentView)
+        form.layoutSubtreeIfNeeded()
+        for (label, value) in [("Space name", "landing-docs"), ("Space folder", landing.path)] {
+            let node = try #require(AccessibilityNode.all(under: form).first { $0.label == label && $0.role == "AXTextField" })
+            _ = node.object.perform(setter, with: value)
+            if let field = nativeTextField(under: form, label: label) {
+                field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
+            }
+        }
+        try await eventuallyOnMain("the typed entries") {
+            form.layoutSubtreeIfNeeded()
+            return ControlPress.controls(in: form).contains { $0.label == "Add space" && $0.isEnabled }
+        }
+        try ControlPress.press("Add space", under: form)
+        try await eventuallyOnMain("the new space") { vm.state.spaces.contains { $0.name == "landing-docs" } && window.window.attachedSheet == nil }
         window.layout()
         let settingsSearch = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Search settings" && $0.role == "AXTextField" })
         let settingsSetter = NSSelectorFromString("setAccessibilityValue:")
