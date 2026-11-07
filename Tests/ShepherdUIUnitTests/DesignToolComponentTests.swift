@@ -293,4 +293,18 @@ struct DesignToolComponentTests {
             == M.headerHeight + 2 * M.rowHeight)
         #expect(SHMentionPicker.listHeight(section, room: 200) == 200)
     }
+
+    /// ThreadBoardShown and ThreadBoardPane: a board card's picture fits its field and never grows past the board; the
+    /// pane fits the board in its canvas (99% for a 560pt board in a 600pt pane) and zooms in steps within its range.
+    @Test func aBoardFitsItsCardAndItsPane() {
+        let funnel = CGSize(width: 560, height: 410)
+        #expect(SHBoardCardMetrics.box(funnel, widest: 788) == CGSize(width: 350, height: 256))
+        #expect(SHBoardCardMetrics.box(CGSize(width: 120, height: 80), widest: 788) == CGSize(width: 120, height: 80))
+        #expect(SHBoardCardMetrics.box(nil, widest: 788) == CGSize(width: 256, height: 256))
+        let fit = SHBoardCardMetrics.fitScale(funnel, in: CGSize(width: 600, height: 758))
+        #expect(Int((fit * 100).rounded()) == 99)
+        #expect(SHBoardCardMetrics.fitScale(CGSize(width: 320, height: 480), in: CGSize(width: 600, height: 758)) == 1, "a phone shows at 100%")
+        #expect(SHBoardCardMetrics.zoomed(1, by: 1) == 1.25 && SHBoardCardMetrics.zoomed(4, by: 1) == 4)
+        #expect(SHBoardCardMetrics.zoomed(0.1, by: -1) == 0.1)
+    }
 }

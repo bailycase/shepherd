@@ -26,6 +26,11 @@ enum ProjectFixtures {
             FixtureScreen(name: "projects", hosts: [host], routes: [.projects(.list)], prepare: prepare),
             FixtureScreen(name: "project", hosts: [host], routes: [.projects(.project(ref))], prepare: prepare),
             FixtureScreen(name: "project-tasks", hosts: [host], routes: [.projects(.tasks(ref))], prepare: prepare),
+            // ProjectLead-PausedV2 on a phone and an iPad: the person's own Pause, through the owner's revisioned setPaused.
+            FixtureScreen(name: "project-paused", hosts: [ProjectFixtureBackend().host], routes: [.projects(.project(ref))], prepare: { app in
+                await prepare(app)
+                check(await app.projects.model.setPaused(ref, true), "projects: Pause goes to the owner and comes back paused")
+            }),
             FixtureScreen(name: "project-task", hosts: [host], routes: [.projects(.task(ref, waitingID))], prepare: prepare),
             FixtureScreen(name: "project-files", hosts: [host], routes: [.projects(.files(ref, path: ""))], prepare: prepare),
             FixtureScreen(name: "project-settings", hosts: [host], routes: [.projects(.settings(ref))], prepare: prepare),
@@ -208,6 +213,7 @@ private final class ProjectFixtureBackend: @unchecked Sendable {
                     return .logicalProjects(id: id, result: .file(LogicalProjectFile(projectID: projectID, relativePath: path, mimeType: "text/markdown", data: Self.report)))
                 case .edit(_, _, let name, let goal): records[index].name = name; records[index].goal = goal
                 case .settings(_, _, let settings): records[index].settings = settings
+                case .setPaused(_, _, let paused): records[index].paused = paused; records[index].pausedByPerson = paused
                 case .delete(let projectID, _): records.remove(at: index); return .logicalProjects(id: id, result: .deleted(projectID: projectID))
                 default: return .error(id: id, code: "unsupported", message: "No fixture answer for this action.")
                 }

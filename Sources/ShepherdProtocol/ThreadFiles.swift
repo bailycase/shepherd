@@ -1,8 +1,8 @@
 import Foundation
 
-// A thread's folder, read-only: the Mac's Files pane reads a local
-// thread's folder with it, and a host's server answers a remote viewer's `RemoteAgentQuery.files`
-// and `.fileRead` (`files.v1`) with it, for the thread's folder on its own disk.
+// A thread's folder: the Mac's Files pane reads and saves a local thread's folder with it, and a
+// host's server answers a remote viewer's `RemoteAgentQuery.files` and `.fileRead` (`files.v1`) and
+// `.fileWrite` (`files.write.v1`) with it, for the thread's folder on its own disk.
 
 /// One entry of a listed folder.
 public struct ThreadFileEntry: Codable, Hashable, Sendable {
@@ -47,6 +47,14 @@ public enum ThreadFilesLimits {
     public static let listedEntries = 2_000
     public static let listingBytes = 512 * 1024
     public static let readBytes = 256 * 1024
+}
+
+/// A save's outcome: written, or refused because the file no longer holds the text the editor
+/// was edited from (its text now; nothing was written), or failed.
+public enum ThreadFileSaveResult: Codable, Hashable, Sendable {
+    case saved
+    case changed(String)
+    case failed(String)
 }
 
 /// Why a folder or file can't be read.
@@ -157,6 +165,70 @@ public enum ThreadFileSystem {
                 decodeText(data) == nil ? .failure(.binaryFile) : .success(data)
             }
         }
+    }
+
+    /// A remote save of `relative` in `root` (`RemoteAgentQuery.fileWrite`): `text` over the existing
+    /// UTF-8 file only while it still holds `expected`, both within `ThreadFilesLimits.readBytes` so
+    /// the conflict's text fits a reply as a read does.
+    public static func save(_ relative: String, in root: String, text: String, expected: String) -> ThreadFileSaveResult {
+        guard text.utf8.count <= ThreadFilesLimits.readBytes else {
+            return .failed(ThreadFileError.tooLarge(Int64(text.utf8.count)).localizedDescription)
+        }
+        switch resolve(relative, in: root) {
+        case .failure(let error): return .failed(error.localizedDescription)
+        case .success(let path):
+            guard let realRoot = canonicalRealpath(root) else { return .failed(ThreadFileError.notFound.localizedDescription) }
+            return write(path: path, resolvedRoot: realRoot, text: text, expected: expected, maxSize: Int64(ThreadFilesLimits.readBytes))
+        }
+    }
+
+    /// Writes `text` over the regular file at `path` inside `resolvedRoot`, in place (its inode,
+    /// mode and links stay), only when it still reads as `expected`. The descriptor is checked
+    /// the way `read` checks one: regular, and inside the root by F_GETPATH; a file over `maxSize`
+    /// is refused.
+    /// ponytail: compare-then-write on one descriptor, not a lock; a writer landing between the
+    /// read and the write in the same instant is not caught.
+    public static func write(path: String, resolvedRoot: String, text: String, expected: String, maxSize: Int64) -> ThreadFileSaveResult {
+        let fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else {
+            return .failed(errno == ENOENT ? ThreadFileError.notFound.localizedDescription : String(cString: strerror(errno)))
+        }
+        defer { close(fd) }
+        var st = stat()
+        guard fstat(fd, &st) == 0 else { return .failed("fstat failed") }
+        guard (st.st_mode & S_IFMT) == S_IFREG else { return .failed(ThreadFileError.specialFile.localizedDescription) }
+        var fdPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(fd, F_GETPATH, &fdPath) == 0 else { return .failed("Cannot resolve fd path") }
+        guard isContained(String(cString: fdPath), in: resolvedRoot) else {
+            return .failed(ThreadFileError.outsideRoot.localizedDescription)
+        }
+        guard Int64(st.st_size) <= maxSize else { return .failed(ThreadFileError.tooLarge(Int64(st.st_size)).localizedDescription) }
+        let flags = fcntl(fd, F_GETFL)
+        if flags >= 0 { _ = fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) }
+
+        var current = Data()
+        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
+        while current.count <= maxSize {
+            let n = chunk.withUnsafeMutableBufferPointer { pread(fd, $0.baseAddress!, $0.count, off_t(current.count)) }
+            if n < 0, errno == EINTR { continue }
+            guard n >= 0 else { return .failed(String(cString: strerror(errno))) }
+            if n == 0 { break }
+            current.append(contentsOf: chunk.prefix(n))
+        }
+        guard current.count <= maxSize else { return .failed(ThreadFileError.tooLarge(Int64(current.count)).localizedDescription) }
+        guard let disk = decodeText(current) else { return .failed(ThreadFileError.binaryFile.localizedDescription) }
+        guard disk == expected else { return .changed(disk) }
+
+        let bytes = Array(text.utf8)
+        guard ftruncate(fd, 0) == 0 else { return .failed(String(cString: strerror(errno))) }
+        var written = 0
+        while written < bytes.count {
+            let n = bytes.withUnsafeBufferPointer { pwrite(fd, $0.baseAddress! + written, $0.count - written, off_t(written)) }
+            if n < 0, errno == EINTR { continue }
+            guard n > 0 else { return .failed(String(cString: strerror(errno))) }
+            written += n
+        }
+        return .saved
     }
 
     /// The first entries that fit a reply: `listedEntries`, and names whose JSON (every escape

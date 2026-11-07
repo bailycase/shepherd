@@ -40,7 +40,9 @@ struct LogicalProjectPane: View {
                 header
                 if vm.logicalProjectPaneSearching { searchField }
                 switch vm.logicalProjectPaneTab {
-                case .threads: threads
+                case .threads:
+                    threads
+                    if presentation.paused { pausedFooter }
                 case .files: LogicalProjectFiles(vm: vm, ref: ref, project: project)
                 case .automations: LogicalProjectPaneAutomations(vm: vm, ref: ref, project: project)
                 }
@@ -176,6 +178,17 @@ struct LogicalProjectPane: View {
         .scrollBounceBehavior(.basedOnSize)
     }
 
+    /// "The project is paused." and Resume, under the Threads list (ProjectLead-PausedV2).
+    private var pausedFooter: some View {
+        SHLeadFooterCard(title: "The project is paused.", action: "Resume",
+                         enabled: !vm.logicalProjects.busy.contains(ref) && !presentation.stopping,
+                         height: SHLeadMetrics.pausedFooterHeight) {
+            Task { _ = await vm.logicalProjects.setPaused(ref, false) }
+        }
+        .padding(.horizontal, SHLeadMetrics.pausedFooterMargin)
+        .padding(.bottom, SHLeadMetrics.pausedFooterMargin)
+    }
+
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.
     static func age(_ settledAt: Double) -> String {
         let seconds = max(0, Date().timeIntervalSince1970 - settledAt / 1000)
@@ -243,6 +256,7 @@ struct ProjectTaskDetail: View {
                 }
                 Menu {
                     Button("Open as a thread") { vm.openProjectWorkerThread(ref, task: task.id) }
+                    if task.group != .resolved { Button("Run on another host…") { vm.beginRunningElsewhere(ref, task: task.id) } }
                     if task.canResolve { Button("Mark resolved") { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } }
                 } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                     .menuStyle(.button)

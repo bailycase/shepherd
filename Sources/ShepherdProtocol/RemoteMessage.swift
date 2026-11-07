@@ -140,6 +140,8 @@ public enum RemoteProtocol {
     public static let projectDetailsCapability = "projects.details.v1"
     public static let projectMCPCapability = "projects.mcp.v1"
     public static let projectTrustCapability = "projects.trust.v1"
+    /// The host lists a space's resources, removes one, and copies skills into it from a repository.
+    public static let projectResourcesCapability = "projects.resources.v1"
     /// The host serves `RemoteRequest.skills`: the agent skills its pi reads (on, off,
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
@@ -208,7 +210,10 @@ public enum RemoteProtocol {
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
     public static let filesCapability = "files.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability]
+    /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
+    /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
+    public static let filesWriteCapability = "files.write.v1"
+    public static let capabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, projectResourcesCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -508,11 +513,14 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case files(path: String, showHidden: Bool)
     /// A UTF-8 text file in the thread's folder, at most `ThreadFilesLimits.readBytes`.
     case fileRead(path: String)
+    /// Saves `text` over an existing UTF-8 file in the thread's folder only while it still holds `expected`, the
+    /// text the client edited from; both at most `ThreadFilesLimits.readBytes` (`filesWriteCapability`).
+    case fileWrite(path: String, text: String, expected: String)
 
-    /// `files` or `fileRead`: answered by the host's server itself.
+    /// `files`, `fileRead` or `fileWrite`: answered by the host's server itself.
     public var isFiles: Bool {
         switch self {
-        case .files, .fileRead: true
+        case .files, .fileRead, .fileWrite: true
         default: false
         }
     }
@@ -556,6 +564,8 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case files(ThreadFileListing)
     /// A file's bytes, UTF-8 text (`RemoteAgentQuery.fileRead`).
     case fileData(Data)
+    /// A save's outcome (`RemoteAgentQuery.fileWrite`).
+    case fileWrite(ThreadFileSaveResult)
 }
 
 /// Client → host. The first message on a connection must be a successful

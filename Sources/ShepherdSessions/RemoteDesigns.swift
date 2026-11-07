@@ -183,6 +183,14 @@ struct RemoteDesignService: Sendable {
         case .referenceFreshness(let reference):
             guard reference.host == .local else { throw RemoteDesignRefusal("remote_design", "That design isn't on this host.") }
             return .referenceFreshness(await server.designReferenceFreshness(reference))
+        case .settleBoardProposal(let agentID, let payloadID, let accept):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            do {
+                let payload = try await server.settleDesignBoardProposal(agentID: agentID, payloadID: payloadID, accept: accept)
+                return .referenceKept(payload, picture: nil, freshness: .current)
+            } catch let error as DesignReferenceError {
+                throw RemoteDesignRefusal(error.code, error.message)
+            }
         case .referenceLookedAt(let agentID, let ref, let aspects):
             guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
             return .referenceLookedAt(await server.designReferenceLookedAt(agentID: agentID, ref: ref, aspects: Set(aspects)))

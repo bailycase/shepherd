@@ -7,8 +7,8 @@ import ShepherdSessions
 import ShepherdUI
 
 // The thread's branch card (BranchCard, BranchCardMenu boards): where the agent works, read when
-// the card opens (git's status and GitHub's pull request). Its menu runs the Changes pane's
-// Commit…, Finalize…, and the branch changes in `BranchGit` (Push, Update from the base, Switch,
+// the card opens (git's status and GitHub's pull request). Its menu runs
+// Finalize…, and the branch changes in `BranchGit` (Commit…, Push, Update from the base, Switch,
 // New and Rename branch), each on the person's click; Change base only rewrites Shepherd's record.
 
 /// What the card shows before anything is read: the space, the branch, and the space's other
@@ -212,9 +212,7 @@ extension ShepherdViewModel {
     func performBranchCard(_ action: BranchCardAction, on id: AgentID) {
         switch action {
         case .showChanges: openReview(agentID: id, path: nil)
-        case .commit:
-            openReview(agentID: id, path: nil)
-            reviewSessions.values.first { $0.agentID == id }?.commitRequested = true
+        case .commit: branchSheet = .commit(id)
         case .finalize: beginFinalizeWorktree(id)
         case .copyBranch:
             guard let branch = branchCard(id)?.branch else { return }
@@ -264,10 +262,11 @@ extension ShepherdViewModel {
 
 /// A sheet the branch card opens over the window.
 enum BranchSheet: Identifiable, Equatable {
-    case update(AgentID), newBranch(AgentID), renameBranch(AgentID)
+    case commit(AgentID), update(AgentID), newBranch(AgentID), renameBranch(AgentID)
 
     var id: String {
         switch self {
+        case .commit(let id): "commit-\(id.rawValue)"
         case .update(let id): "update-\(id.rawValue)"
         case .newBranch(let id): "new-\(id.rawValue)"
         case .renameBranch(let id): "rename-\(id.rawValue)"

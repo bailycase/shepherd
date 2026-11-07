@@ -4,13 +4,13 @@ import Foundation
 /// The form rewrites only the keys it owns. A key it does not draw (one the runtime parser
 /// rejects, an alias, a comment) stays in the file exactly as written, so editing a field never
 /// repairs or loses another.
-struct SubagentProfileText: Equatable {
+public struct SubagentProfileText: Equatable, Sendable {
     private var head: [String]
     /// Everything after the closing fence, starting at that line's newline.
     private var tail: String
     private var fenced: Bool
 
-    init(_ text: String) {
+    public init(_ text: String) {
         let lines = text.components(separatedBy: "\n")
         if lines.first == "---", let close = lines.indices.dropFirst().first(where: { Self.isFence(lines[$0]) }) {
             head = Array(lines[1..<close])
@@ -23,14 +23,14 @@ struct SubagentProfileText: Equatable {
         }
     }
 
-    var text: String {
+    public var text: String {
         guard fenced else { return String(tail.dropFirst(2)) }
         return (head.isEmpty ? "---\n---" : "---\n" + head.joined(separator: "\n") + "\n---") + tail
     }
 
     /// The instructions: what follows the fence, less the one newline that ends it and the blank
     /// line after it. Anything beyond those is the author's and is kept.
-    var body: String {
+    public var body: String {
         get {
             var rest = Substring(tail)
             for _ in 0..<2 where rest.first == "\n" { rest = rest.dropFirst() }
@@ -41,7 +41,7 @@ struct SubagentProfileText: Equatable {
 
     // MARK: Reading
 
-    func scalar(_ key: String) -> String? {
+    public func scalar(_ key: String) -> String? {
         guard let (inline, rest) = value(of: key) else { return nil }
         if let marker = inline.first, marker == ">" || marker == "|" {
             return rest.joined(separator: marker == ">" ? " " : "\n")
@@ -49,7 +49,7 @@ struct SubagentProfileText: Equatable {
         return Self.decode(([inline] + rest).filter { !$0.isEmpty }.joined(separator: " "))
     }
 
-    func bool(_ key: String) -> Bool? {
+    public func bool(_ key: String) -> Bool? {
         switch scalar(key)?.lowercased() {
         case "true": true
         case "false": false
@@ -58,7 +58,7 @@ struct SubagentProfileText: Equatable {
     }
 
     /// A flow list (`[a, b]`), a block list, or the comma-separated string the parser also takes.
-    func list(_ key: String) -> [String]? {
+    public func list(_ key: String) -> [String]? {
         guard let (inline, rest) = value(of: key) else { return nil }
         if inline.isEmpty { return rest.filter { $0.hasPrefix("-") }.map { Self.decode(String($0.dropFirst()).trimmingCharacters(in: .whitespaces)) } }
         var whole = ([inline] + rest).joined(separator: " ")
@@ -68,9 +68,9 @@ struct SubagentProfileText: Equatable {
 
     // MARK: Writing (nil removes the key)
 
-    mutating func set(_ key: String, scalar: String?) { set(key, lines: scalar.map { ["\(key): \(Self.encode($0))"] }) }
-    mutating func set(_ key: String, bool: Bool?) { set(key, lines: bool.map { ["\(key): \($0)"] }) }
-    mutating func set(_ key: String, list: [String]?) {
+    public mutating func set(_ key: String, scalar: String?) { set(key, lines: scalar.map { ["\(key): \(Self.encode($0))"] }) }
+    public mutating func set(_ key: String, bool: Bool?) { set(key, lines: bool.map { ["\(key): \($0)"] }) }
+    public mutating func set(_ key: String, list: [String]?) {
         set(key, lines: list.map { ["\(key): [\($0.map(Self.encode).joined(separator: ", "))]"] })
     }
 

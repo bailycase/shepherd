@@ -22,12 +22,12 @@ struct ExtensionMessageTests {
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designList, .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
-             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote,
+             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 62
+    static let caseCount = 63
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -142,6 +142,9 @@ struct ExtensionMessageTests {
         .designGet(id: 32, agentID: agent, reference: "shepherd-design-ref://local/d1@7", what: "image"),
         .designNote(id: 33, agentID: agent, reference: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@7",
                     text: "Implemented in #142 on agent/checkout-funnel. Bars use --accent; “counts” use the table cell."),
+        .designPropose(id: 34, agentID: agent, reference: "shepherd-design-ref://local/d1/A.dc.html@7",
+                       source: #"<script src="./support.js"></script><x-dc><div>“Pay”</div></x-dc>"#, title: "B · Pay on phone"),
+        .designPropose(id: 35, agentID: agent, reference: "shepherd-design-ref://local/d1/A.dc.html@7", source: "<x-dc></x-dc>", title: nil),
         .helloBrowser(agentID: agent),
         .browser(id: 40, agentID: agent, request: .open(url: "http://localhost:5173/checkout", note: "opening the checkout")),
     ] + browserRequests.map { .browser(id: 41, agentID: agent, request: $0) }

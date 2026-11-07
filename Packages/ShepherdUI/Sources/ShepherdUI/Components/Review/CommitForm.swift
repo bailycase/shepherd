@@ -133,18 +133,23 @@ public struct SHCommitFileRow: View, Equatable {
 
     let item: Item
     let showsDirectory: Bool
+    let showsStatus: Bool
     let toggle: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `showsDirectory` draws the directory after the name (the Mac); the phone and iPad boards
-    /// show the name alone, and VoiceOver reads the directory either way.
-    public init(_ item: Item, showsDirectory: Bool = true, toggle: @escaping () -> Void) {
+    /// show the name alone, and VoiceOver reads the directory either way. `showsStatus` (the
+    /// branch card's Commit sheet) draws the status letter, then the whole path as one.
+    public init(_ item: Item, showsDirectory: Bool = true, showsStatus: Bool = false, toggle: @escaping () -> Void) {
         self.item = item
         self.showsDirectory = showsDirectory
+        self.showsStatus = showsStatus
         self.toggle = toggle
     }
 
-    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.item == rhs.item && lhs.showsDirectory == rhs.showsDirectory }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item && lhs.showsDirectory == rhs.showsDirectory && lhs.showsStatus == rhs.showsStatus
+    }
 
     public var body: some View {
         let sh = Color.sh
@@ -155,18 +160,21 @@ public struct SHCommitFileRow: View, Equatable {
                     .labelsHidden()
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+                if showsStatus {
+                    Text(item.status.letter).font(.sh(.code)).foregroundStyle(item.status.color).accessibilityHidden(true)
+                }
                 // At accessibility sizes the directory and stat move under the name.
                 let stacked = typeSize.isAccessibilitySize
                 let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: SH.Space.xxs))
                     : AnyLayout(HStackLayout(spacing: SH.Space.s))
                 layout {
-                    Text(item.name)
+                    Text(showsStatus ? item.directory + item.name : item.name)
                         .font(.sh(.code))
                         .foregroundStyle(item.selected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(stacked ? 3 : 1)
                         .truncationMode(.middle)
                         .layoutPriority(1)
-                    if showsDirectory && !item.directory.isEmpty {
+                    if showsDirectory && !showsStatus && !item.directory.isEmpty {
                         Text(item.directory)
                             .font(.sh(.micro, weight: .regular))
                             .foregroundStyle(sh.textTertiary)

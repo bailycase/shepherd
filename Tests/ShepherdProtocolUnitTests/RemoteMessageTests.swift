@@ -93,6 +93,7 @@ enum RemoteSamples {
         .files(path: "", showHidden: false),
         .files(path: "Sources/App Intents", showHidden: true),
         .fileRead(path: "Widgets/NeedsYouWidget.swift"),
+        .fileWrite(path: "src/Checkout.tsx", text: "let pay = \"ok\"\n", expected: ""),
     ]
 
     static let revision = ChangesRevision(old: "3f2a91c0", new: "4b825dc6")
@@ -172,6 +173,9 @@ enum RemoteSamples {
                                  truncated: true)),
         .files(ThreadFileListing(entries: [])),
         .fileData(Data("let x = 1\n".utf8)),
+        .fileWrite(.saved),
+        .fileWrite(.changed("let x = 2\n")),
+        .fileWrite(.failed("No such file or folder")),
     ]
 
     static let automation = AutomationID(rawValue: "automation")
@@ -1107,7 +1111,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
@@ -1124,9 +1128,9 @@ struct RemoteProtocolConstantTests {
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
-            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability,
+            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability, RemoteProtocol.designBoardsCapability,
             // Offered only to a client that lists it in hello.
-            RemoteProtocol.filesCapability,
+            RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.
             RemoteProtocol.missionsCapability,
         ]
@@ -1146,6 +1150,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.projectsV2Capability))
         #expect(!RemoteProtocol.capabilities.contains(RemoteProtocol.projectsCapability))
         #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
+        #expect(RemoteProtocol.projectResourcesCapability == "projects.resources.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
