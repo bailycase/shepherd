@@ -218,3 +218,22 @@ test("design_show reads the copy's summary and names the copy for the thread's b
     await assert.rejects(tool.execute("call-2", { ref: "shepherd-design-ref://local/d2/B.dc.html" }), /\(not_granted\)/);
   });
 });
+
+test("design_show with a source sends the drawn board and names the kept copy", async () => {
+  await withRefs("granted", (frame) => {
+    if (frame.type !== "designPropose") return { type: "error", code: "protocol", message: "unexpected" };
+    if (!frame.source.includes("support.js")) return { type: "error", code: "missing_support_script", message: "keep the head line" };
+    return { type: "designReference", answer: { text: `Drew ${frame.title ?? "a change"}.`, files: [],
+      lookedAt: { ref: frame.reference, title: "Checkout › B", aspects: [], payload: "0D3B2C1A-0000-4000-8000-000000000002" } } };
+  }, async (pi, frames) => {
+    const tool = pi.tools.get("design_show");
+    const source = '<script src="./support.js"></script><x-dc></x-dc>';
+    const draft = await tool.execute("call-1", { ref: REF, source, title: "B · Pay on phone" });
+    assert.deepEqual(frames[0], { type: "designPropose", reference: REF, source, title: "B · Pay on phone", id: frames[0].id, agentID: "a1" });
+    assert.deepEqual(draft.content, [{ type: "text", text: "Drew B · Pay on phone." }]);
+    assert.deepEqual(draft.details, { board: "0D3B2C1A-0000-4000-8000-000000000002" });
+    await tool.execute("call-2", { ref: REF, source });
+    assert.equal("title" in frames[1], false, "a change carries no title");
+    await assert.rejects(tool.execute("call-3", { ref: REF, source: "<div></div>" }), /\(missing_support_script\)/);
+  });
+});

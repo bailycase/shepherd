@@ -303,6 +303,7 @@ struct DesignToolComponentTests {
         #expect(SHBoardCardMetrics.box(nil, widest: 788) == CGSize(width: 256, height: 256))
         let fit = SHBoardCardMetrics.fitScale(funnel, in: CGSize(width: 600, height: 758))
         #expect(Int((fit * 100).rounded()) == 99)
+        #expect(SHBoardCardMetrics.fitScale(CGSize(width: 320, height: 480), in: CGSize(width: 600, height: 758)) == 1, "a phone shows at 100%")
         #expect(SHBoardCardMetrics.zoomed(1, by: 1) == 1.25 && SHBoardCardMetrics.zoomed(4, by: 1) == 4)
         #expect(SHBoardCardMetrics.zoomed(0.1, by: -1) == 0.1)
     }

@@ -74,6 +74,7 @@ enum RemoteDesignSamples {
         .referencePicture(agentID: AgentID(rawValue: "thread"), payloadID: comment, offset: 262_144),
         .referenceFreshness(DesignReference(designID: design, board: board, revision: 7)!),
         .referenceLookedAt(agentID: AgentID(rawValue: "thread"), ref: "shepherd-design-ref://local/design-1/A@7", aspects: [.summary]),
+        .settleBoardProposal(agentID: AgentID(rawValue: "thread"), payloadID: comment, accept: true),
     ]
 
     static let keptPayload = DesignReferencePayload(agentID: AgentID(rawValue: "thread"), reference: DesignReference(designID: design, board: board, revision: 7)!,
@@ -160,7 +161,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel:
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal:
             Wire.caseName(request)
         }
     }
@@ -175,7 +176,7 @@ struct RemoteDesignMessageTests {
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 39)
+        #expect(Set(S.requests.map(Self.caseName)).count == 40)
         #expect(Set(S.results.map(Self.caseName)).count == 24)
     }
 
@@ -241,6 +242,10 @@ struct RemoteDesignMessageTests {
             case .referenceKept, .referencePicture, .referenceLookedAt:
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
+                #expect(request.designID == nil)
+            case .settleBoardProposal:
+                #expect(request.capability == RemoteProtocol.designBoardsCapability && RemoteProtocol.designBoardsCapability == "design.boards.v1")
+                #expect(request.writes)
                 #expect(request.designID == nil)
             case .deleteSystemBuild:
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
