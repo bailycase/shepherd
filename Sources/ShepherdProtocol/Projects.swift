@@ -18,6 +18,49 @@ public enum RemoteProjectsRequest: Codable, Hashable, Sendable {
     }
     case read(directory: String, file: String)
     case save(directory: String, file: String, text: String, expected: String?)
+    /// The space's skills, prompt templates, subagents and extensions, and the host's global ones
+    /// (`projectResourcesCapability`).
+    case resources(directory: String)
+    /// Removes one space resource file while it still holds `expected` (a skill's folder goes too
+    /// once it is empty).
+    case delete(directory: String, file: String, expected: String)
+    /// Copies skills from a repository into the space's `.pi/skills`, on the host.
+    case installSkills(directory: String, repo: String, paths: [String], commit: String?)
+    public var requiresResources: Bool {
+        switch self { case .resources, .delete, .installSkills: true; default: false }
+    }
+}
+
+/// A skill, prompt template (slash command), subagent profile or extension a space's agents load:
+/// one of the space's own files, or one of the host's global ones.
+public struct ProjectResource: Codable, Hashable, Sendable, Identifiable {
+    public enum Kind: String, Codable, CaseIterable, Sendable {
+        case skill, prompt, agent, `extension`
+        /// The key in pi's `settings.json` whose patterns turn it on or off; nil for subagents,
+        /// whose own frontmatter says `disabled`.
+        public var settingsKey: String? {
+            switch self { case .skill: "skills"; case .prompt: "prompts"; case .extension: "extensions"; case .agent: nil }
+        }
+    }
+    public var kind: Kind
+    public var name: String
+    public var description: String
+    /// A space file's path in the space folder; a global one's absolute path on the host.
+    public var path: String
+    public var displayPath: String
+    public var global: Bool
+    /// Whether it loads by the host's own files: a subagent's `disabled`, a global resource's
+    /// global settings. A space skill, template or extension's state is the space settings' call.
+    public var enabled: Bool
+    /// A subagent's tools, a template's argument hint.
+    public var detail: String
+    public var id: String { (global ? "global:" : "space:") + path }
+
+    public init(kind: Kind, name: String, description: String = "", path: String, displayPath: String? = nil,
+                global: Bool = false, enabled: Bool = true, detail: String = "") {
+        self.kind = kind; self.name = name; self.description = description; self.path = path
+        self.displayPath = displayPath ?? path; self.global = global; self.enabled = enabled; self.detail = detail
+    }
 }
 
 public struct ProjectSummary: Codable, Hashable, Sendable, Identifiable {
@@ -152,6 +195,7 @@ public enum RemoteProjectsResult: Codable, Hashable, Sendable {
     case context(ProjectContext)
     case opened
     case mcp(ProjectMCPResult)
+    case resources([ProjectResource])
 }
 
 public enum ProjectMCPAction: Codable, Hashable, Sendable {
@@ -197,9 +241,25 @@ public struct ProjectContext: Codable, Hashable, Sendable {
     /// The host's global pi settings as a JSON object, only the keys the Settings form shows: what an
     /// unset space value follows. Nil from an older host.
     public var globalSettings: String?
-    public init(files: [File] = [], resources: Int = 0, mcpServers: Int = 0, globalSettings: String? = nil) {
+    /// The nearest parent space (a folder that holds this one) and the inheritable defaults its
+    /// ancestors set (`SpaceInheritedDefaults.keys`), merged root first. Nil without one, and from an older host.
+    public var parentName: String?
+    public var parentSettings: [String: String]?
+    public init(files: [File] = [], resources: Int = 0, mcpServers: Int = 0, globalSettings: String? = nil,
+                parentName: String? = nil, parentSettings: [String: String]? = nil) {
         self.files = files; self.resources = resources; self.mcpServers = mcpServers; self.globalSettings = globalSettings
+        self.parentName = parentName; self.parentSettings = parentSettings
     }
+}
+
+/// What a child space's new agents take from its parent spaces when its own settings leave it unset.
+/// Only these keys inherit: pi has no settings layer between a project and the user, so Shepherd
+/// passes them as launch flags (`--model`, `--thinking`).
+public struct SpaceInheritedDefaults: Codable, Hashable, Sendable {
+    public static let keys = ["defaultProvider", "defaultModel", "defaultThinkingLevel"]
+    public var model: String?
+    public var thinking: String?
+    public init(model: String?, thinking: String?) { self.model = model; self.thinking = thinking }
 }
 
 public struct ProjectFileError: Error, CustomStringConvertible, Sendable {

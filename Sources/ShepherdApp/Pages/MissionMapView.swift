@@ -146,6 +146,7 @@ struct MissionGraph: View {
     let metrics: MissionMapMetrics
     let filter: MissionWireFilter
     let selection: String?
+    var marks = MissionPatchMarks()
     let select: (String) -> Void
 
     private var states: MissionNodeState { MissionNodeState(mission: mission) }
@@ -153,7 +154,7 @@ struct MissionGraph: View {
     var body: some View {
         let size = layout.size(metrics)
         ZStack(alignment: .topLeading) {
-            MissionWires(layout: layout, metrics: metrics, filter: filter, mission: mission)
+            MissionWires(layout: layout, metrics: metrics, filter: filter, mission: mission, marks: marks)
             ForEach(layout.lanes) { lane in
                 VStack(spacing: SH.Space.xxs) {
                     HStack(spacing: SH.Space.xs) {
@@ -172,8 +173,9 @@ struct MissionGraph: View {
             MissionWireLabels(layout: layout, metrics: metrics, filter: filter, retries: mission.draft.limits.retries, done: mission.phase == .done)
             ForEach(layout.nodes) { node in
                 let frame = layout.frame(node, metrics)
-                MissionNodeView(node: node, mission: mission, state: states.state(node), started: states.started, metrics: metrics,
-                                selected: selection == node.id, selectable: node.role == .station || node.role == .finish) { select(node.id) }
+                MissionNodeView(node: node, mission: mission, state: marks.resolved == node.id ? .done : states.state(node), started: states.started, metrics: metrics,
+                                selected: selection == node.id, selectable: node.role == .station || node.role == .finish,
+                                mark: marks.mark(node.id)) { select(node.id) }
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
             }
@@ -188,6 +190,7 @@ private struct MissionWires: View {
     let metrics: MissionMapMetrics
     let filter: MissionWireFilter
     let mission: Mission
+    let marks: MissionPatchMarks
 
     var body: some View {
         Canvas { context, size in
@@ -217,9 +220,11 @@ private struct MissionWires: View {
                 }
                 let live = states.state(t) == .running && states.state(s) == .done
                 let data = wire.kind == .data && filter != .flow
-                let color = data ? nw.synKeyword : live ? nw.running : nw.lineStrong
+                // A patch preview draws its new wires green and dashed, the ones it drops as not taken.
+                let patched = marks.patched(wire), dropped = marks.dropped(wire)
+                let color = patched ? nw.done : dropped ? nw.lineSubtle : data ? nw.synKeyword : live ? nw.running : nw.lineStrong
                 var style = line
-                if data { style.dash = AppLayout.missionDataDash }
+                if data || patched || dropped { style.dash = AppLayout.missionDataDash }
                 context.stroke(path, with: .color(color), style: style)
             }
             guard filter != .data else { return }
@@ -348,6 +353,7 @@ private struct MissionNodeView: View {
     let metrics: MissionMapMetrics
     let selected: Bool
     let selectable: Bool
+    var mark: MissionPatchMarks.Mark?
     let select: () -> Void
 
     private var lane: MissionLane? { mission.lane(node.laneID) }
@@ -391,6 +397,8 @@ private struct MissionNodeView: View {
         }
     }
     private var dashed: Color? {
+        if mark == .added { return Color.sh.done }
+        if mark == .removed { return Color.sh.lineStrong }
         if node.station?.kind == .decision && state == .attention { return Color.sh.lantern }
         if node.station?.kind == .research && state == .running { return Color.sh.running }
         return nil
@@ -408,26 +416,43 @@ private struct MissionNodeView: View {
                 .shBorder(metrics.compact || node.station?.kind == .check ? .clear : Color.sh.lineSubtle, radius: SH.Radius.s)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.sh(metrics.compact ? .micro : .mono, weight: .semibold)).lineLimit(1).truncationMode(.tail)
+                    .foregroundStyle(mark == .removed ? Color.sh.textTertiary : Color.sh.textPrimary)
                 if !metrics.compact && node.station?.kind != .check {
                     Text(subtitle).shText(.caption).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
-            marker
+            if mark == .added {
+                Text("NEW").font(.sh(.micro, weight: .semibold)).foregroundStyle(Color.sh.done)
+            } else {
+                marker
+            }
         }
         .padding(.horizontal, metrics.compact ? SH.Space.s : SH.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.sh.bgRaised, in: shape)
         .overlay {
             if let dashed {
-                shape.strokeBorder(dashed, style: StrokeStyle(lineWidth: AppLayout.missionWireWidth, dash: AppLayout.missionDataDash))
+                shape.strokeBorder(dashed, style: StrokeStyle(lineWidth: selected ? AppLayout.missionSelectedBorder : AppLayout.missionWireWidth, dash: AppLayout.missionDataDash))
             } else {
                 shape.strokeBorder(selected ? Color.sh.textPrimary : state == .running ? Color.sh.running : Color.sh.lineStrong,
                                    lineWidth: selected || state == .running ? AppLayout.missionSelectedBorder : 1)
             }
         }
         .contentShape(shape)
-        let label = "\(title), \(subtitle), \(state?.label ?? (started ? "waiting" : "not started"))"
+        // A patch's settled decision wears your answer on its corner (MXPatch).
+        .overlay(alignment: .topTrailing) {
+            if case .resolved(let answer)? = mark, !metrics.compact {
+                Text(answer).shText(.micro).foregroundStyle(Color.sh.lanternText).lineLimit(1)
+                    .padding(.horizontal, SH.Space.s).frame(maxWidth: metrics.nodeWidth / 2)
+                    .frame(height: AppLayout.missionChipHeight - SH.Space.xxs)
+                    .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                    .shBorder(Color.sh.lantern, radius: SH.Radius.xs)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(x: -SH.Space.m, y: -AppLayout.missionChipHeight / 2)
+            }
+        }
+        let label = "\(title), \(subtitle), \(mark == .added ? "new in the patch" : mark == .removed ? "removed by the patch" : state?.label ?? (started ? "waiting" : "not started"))"
         Group {
             if selectable {
                 Button(action: select) { content.accessibilityHidden(true) }.buttonStyle(.plain)
@@ -464,7 +489,12 @@ struct MissionMapPage: View {
     let editable: Bool
     let openThread: (AgentID) -> Void
     let action: (MissionUIAction) -> Void
+    /// Done's way to the merge train (MXTrain), when the mission published pull requests.
+    var showTrain: (() -> Void)?
     private let layout: MissionMapLayout
+    /// A pending patch (MXPatch) previews over the map: its marks, and the inspector opens on it.
+    private let patch: MissionPatch?
+    private let marks: MissionPatchMarks
     @State private var selection: String?
     @State private var dismissed = false
     /// Narrow windows only: the selected station's inspector in place of the map.
@@ -483,17 +513,27 @@ struct MissionMapPage: View {
     @FocusState private var asking: Bool
 
     init(mission: Mission, done: Bool, models: [String], reviews: [MissionRepositoryReview], busy: Bool, editable: Bool,
-         openThread: @escaping (AgentID) -> Void, action: @escaping (MissionUIAction) -> Void) {
+         openThread: @escaping (AgentID) -> Void, action: @escaping (MissionUIAction) -> Void, showTrain: (() -> Void)? = nil) {
         self.mission = mission; self.done = done; self.models = models; self.reviews = reviews
-        self.busy = busy; self.editable = editable; self.openThread = openThread; self.action = action
-        layout = MissionMapLayout(plan: mission.draft.plan ?? MissionPlan())
+        self.busy = busy; self.editable = editable; self.openThread = openThread; self.action = action; self.showTrain = showTrain
+        let current = mission.draft.plan ?? MissionPlan()
+        if !done, let patch = mission.run?.patch {
+            let preview = patch.preview(over: current)
+            self.patch = patch; marks = preview.marks
+            layout = MissionMapLayout(plan: preview.plan)
+        } else {
+            patch = nil; marks = MissionPatchMarks()
+            layout = MissionMapLayout(plan: current)
+        }
     }
 
-    /// Done opens on the publication; the map on the first worker.
+    /// Done opens on the publication; a pending patch on itself; the map on the first worker.
     private var shown: String? {
         if dismissed { return nil }
+        if selection == Self.patchID, patch != nil { return Self.patchID }
         if let selection, layout.node(id: selection) != nil { return selection }
         if done { return "finish" }
+        if patch != nil { return Self.patchID }
         return (layout.nodes.first { $0.station?.kind == .worker } ?? layout.nodes.first { $0.role == .station })?.id
     }
 
@@ -502,7 +542,7 @@ struct MissionMapPage: View {
             if page.size.width < AppLayout.missionNarrowWidth, let id = shown {
                 // A narrow window shows the map or the selected station, as Review shows diff or contract.
                 VStack(spacing: 0) {
-                    SHSegmentedPicker("Show", selection: $inspecting, options: [(false, "Map"), (true, id == "finish" ? "Summary" : "Station")])
+                    SHSegmentedPicker("Show", selection: $inspecting, options: [(false, "Map"), (true, id == "finish" ? "Summary" : id == Self.patchID ? "Patch" : "Station")])
                         .fixedSize().padding(SH.Space.m)
                     SHHairline()
                     if inspecting { inspector(id) } else { canvas }
@@ -531,10 +571,19 @@ struct MissionMapPage: View {
         }
     }
 
+    private static let patchID = "patch"
+
     @ViewBuilder private func inspector(_ id: String) -> some View {
-        if let node = layout.node(id: id) {
+        if id == Self.patchID, let patch {
+            MissionPatchInspector(mission: mission, patch: patch, busy: busy, editable: editable, openThread: openThread,
+                                  close: { dismissed = true; inspecting = false }, edit: {
+                                      action(.applyPatch(patch.id))
+                                      selection = patch.diff(from: mission.draft).added.first?.id.rawValue
+                                  }, action: action)
+        } else if let node = layout.node(id: id) {
             if node.role == .finish {
-                MissionDoneInspector(mission: mission, reviews: reviews, busy: busy, close: { dismissed = true; inspecting = false }, action: action)
+                MissionDoneInspector(mission: mission, reviews: reviews, busy: busy, close: { dismissed = true; inspecting = false }, action: action,
+                                     showTrain: showTrain)
             } else if let station = node.station {
                 MissionStationInspector(mission: mission, station: station, layout: layout, models: models, busy: busy, editable: editable,
                                         openThread: openThread, close: { dismissed = true; inspecting = false },
@@ -550,7 +599,7 @@ struct MissionMapPage: View {
                     GeometryReader { geometry in
                         ScrollView([.horizontal, .vertical]) {
                             let size = layout.size(metrics)
-                            MissionGraph(mission: mission, layout: layout, metrics: metrics, filter: wires, selection: shown) {
+                            MissionGraph(mission: mission, layout: layout, metrics: metrics, filter: wires, selection: shown, marks: marks) {
                                 selection = $0; dismissed = false; inspecting = true
                             }
                             .scaleEffect(zoom, anchor: .topLeading)
@@ -567,7 +616,8 @@ struct MissionMapPage: View {
                     legend
                     Spacer()
                 }.padding(SH.Space.xl).allowsHitTesting(false)
-                if editable && !done {
+                // A pending patch is the planner's answer; Apply or Reject it before asking again.
+                if editable && !done && patch == nil {
                     plannerInput.padding(.horizontal, SH.Space.xl).padding(.bottom, SH.Space.xl)
                 }
                 if let undo {
@@ -630,8 +680,14 @@ struct MissionMapPage: View {
             } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                 .buttonStyle(.shIcon(bordered: true)).shHelp("Fit the map").accessibilityLabel("Fit the map")
             Spacer(minLength: SH.Space.m)
-            // The counts never wrap: without room they step aside (the inspector repeats them).
-            ViewThatFits(in: .horizontal) { frontier.fixedSize(); EmptyView() }
+            if let patch {
+                MissionPatchBanner(patch: patch, diff: patch.diff(from: mission.draft)) {
+                    selection = Self.patchID; dismissed = false; inspecting = true
+                }.fixedSize()
+            } else {
+                // The counts never wrap: without room they step aside (the inspector repeats them).
+                ViewThatFits(in: .horizontal) { frontier.fixedSize(); EmptyView() }
+            }
         }
         .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.m)
     }
@@ -676,10 +732,27 @@ struct MissionMapPage: View {
                     .frame(width: AppLayout.missionLegendSwatch, height: AppLayout.missionWireWidth)
                 Text("data").shText(.micro)
             }
+            if patch != nil {
+                HStack(spacing: SH.Space.s) {
+                    Path { path in path.move(to: .zero); path.addLine(to: CGPoint(x: AppLayout.missionLegendSwatch, y: 0)) }
+                        .stroke(Color.sh.done, style: StrokeStyle(lineWidth: AppLayout.missionWireWidth, dash: AppLayout.missionDataDash))
+                        .frame(width: AppLayout.missionLegendSwatch, height: AppLayout.missionWireWidth)
+                    Text("patch").shText(.micro)
+                }
+                HStack(spacing: SH.Space.s) {
+                    Path { path in path.move(to: .zero); path.addLine(to: CGPoint(x: AppLayout.missionLegendSwatch, y: 0)) }
+                        .stroke(Color.sh.lineStrong, style: StrokeStyle(lineWidth: AppLayout.missionWireWidth, dash: AppLayout.missionDataDash))
+                        .frame(width: AppLayout.missionLegendSwatch, height: AppLayout.missionWireWidth)
+                    Text("not taken").shText(.micro)
+                }
+            }
         }
         .foregroundStyle(Color.sh.textTertiary)
+        // Wires and nodes scroll under the legend; it stays readable over them.
+        .padding(.trailing, SH.Space.s)
+        .background(Color.sh.bgWindow)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Solid lines are flow, dashed lines are data")
+        .accessibilityLabel(patch == nil ? "Solid lines are flow, dashed lines are data" : "Solid lines are flow, dashed lines are data, green dashed is the patch, grey dashed is not taken")
     }
 
     private var plannerInput: some View {
@@ -720,7 +793,8 @@ struct MissionInspectorHead<Menu: View>: View {
     var subtitle: String? = nil
     /// Stations are named in mono; Done's summary title is prose (MXDone).
     var mono = true
-    let close: () -> Void
+    /// Nil: an inspector that is the page's own column and doesn't close (MXTrain).
+    let close: (() -> Void)?
     @ViewBuilder let menu: () -> Menu
 
     var body: some View {
@@ -746,8 +820,10 @@ struct MissionInspectorHead<Menu: View>: View {
             }
             Spacer(minLength: 0)
             menu()
-            Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.shIcon)
-                .keyboardShortcut(.cancelAction).accessibilityLabel("Close inspector")
+            if let close {
+                Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.shIcon)
+                    .keyboardShortcut(.cancelAction).accessibilityLabel("Close inspector")
+            }
         }
         .padding(SH.Space.xl)
         .overlay(alignment: .bottom) { SHHairline() }
@@ -970,6 +1046,7 @@ private struct MissionDoneInspector: View {
     let busy: Bool
     let close: () -> Void
     let action: (MissionUIAction) -> Void
+    var showTrain: (() -> Void)?
 
     private var checkouts: [MissionCheckout] { mission.run?.checkouts ?? [] }
     private var validated: Bool {
@@ -1033,6 +1110,11 @@ private struct MissionDoneInspector: View {
                     .buttonStyle(.sh(.ghost)).disabled(busy)
                     .shHelp("Plan a new mission with the same destination, repositories, branches and model")
                 Spacer()
+                if let showTrain {
+                    Button(action: showTrain) { Label(mission.run?.train == nil ? "Merge train…" : "Merge train", systemImage: SHGlyph.gitBranch.symbolName) }
+                        .buttonStyle(.sh(mission.run?.train == nil ? .primary : .secondary))
+                        .shHelp("Merge the pull requests one at a time, in the order the data wires need")
+                }
             }.padding(.horizontal, SH.Space.xl).frame(height: SHPageMetrics.headerHeight)
         }
         .background(Color.sh.bgWindow)

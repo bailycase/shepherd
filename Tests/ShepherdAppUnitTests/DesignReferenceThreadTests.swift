@@ -290,6 +290,34 @@ struct DesignReferenceThreadTests {
         #expect(chips.boards.count == 1, "a copy the thread no longer has draws no card")
     }
 
+    /// ThreadBoardDraft: a drawn board is never stale, its card offers Discard and Add to design,
+    /// and settling it reads the copy again; a refusal comes back as words for the card.
+    @Test func aDrawnBoardSettlesFromItsCard() async throws {
+        let reference = DesignReference(designID: Self.checkout, board: DesignPath("B.dc.html")!, revision: 13)!
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "t"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "B · Pay on phone", revision: 13, capturedAt: 0, width: 320, height: 480)
+        payload.proposal = .init(kind: .draft)
+        let kept = Locked(payload)
+        var settled: [Bool] = []
+        let chips = DesignReferenceChips(agentID: AgentID(rawValue: "t"), io: DesignReferenceChips.IO(
+            payload: { $0 == payload.id ? (kept.current, URL(fileURLWithPath: "/nonexistent")) : nil },
+            freshness: { _ in .deleted },
+            settle: { _, accept in
+                settled.append(accept)
+                if accept { throw DesignReferenceError("board_changed", "B changed since the agent drew this.") }
+                kept.withValue { $0.proposal?.state = .discarded }
+            }))
+        await chips.loadBoard(payload.id)
+        let card = try #require(chips.boards[payload.id])
+        #expect(card.proposal?.state == .pending && card.copy == payload.id && card.note?.hasPrefix("Drawn in this thread") == true)
+        #expect(card.meta.last == "not on the canvas yet" && card.showLatest == nil, "a draft isn't on the canvas to be stale")
+        #expect(card.lineLabel == "Drew a board" && card.lineMeta == "B · Pay on phone · draft in Checkout redesign")
+
+        #expect(await chips.settle(payload.id, accept: true) == "B changed since the agent drew this.")
+        #expect(await chips.settle(payload.id, accept: false) == nil)
+        #expect(settled == [true, false] && chips.boards[payload.id]?.proposal?.state == .discarded)
+    }
+
     /// RefAtElements: an element's row on screen asks for its own picture, with its board and the
     /// elements listed on it; a design's or a board's row asks for none.
     @Test func anElementRowOnScreenAsksForItsOwnPicture() throws {

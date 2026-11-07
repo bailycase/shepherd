@@ -50,6 +50,8 @@ final class MissionController {
     @ObservationIgnored var agentSlots: [MissionID: MissionSlots] = [:]
     /// What `liveOutput` and `attemptOutput` last published to paired devices, by mission (`publishLiveOutput`).
     @ObservationIgnored var publishedLive: [MissionID: RemoteMissionLive] = [:]
+    /// Each running merge train's loop (MXTrain). Never restarted on its own.
+    @ObservationIgnored var trainJobs: [MissionID: Task<Void, Never>] = [:]
 
     init(vm: ShepherdViewModel) { self.vm = vm; server = vm.server }
     var records: [Mission] { vm?.state.missions ?? [] }

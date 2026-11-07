@@ -24,6 +24,14 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
     public var inputApprovals: [String: String]?
     /// Present only for a mission driven by each repository's stock Spec Kit project. Nil keeps the map runner.
     public var specKit: MissionSpecKitRun?
+    /// A revised map waiting for the owner's Apply or Reject (map runner only). Never applied by the host on its own
+    /// unless `autoApplyPatches` is on, the patch settles a decision and its estimate fits the limits.
+    public var patch: MissionPatch?
+    public var autoApplyPatches: Bool?
+    /// Decisions settled by applied patches, oldest first.
+    public var decisions: [MissionDecisionRecord]?
+    /// The merge train over this run's published pull requests (MXTrain), once the owner started it.
+    public var train: MissionTrain?
 
     public init(id: UUID = UUID(), model: String, phase: Phase = .map, messages: [MissionChatMessage] = [],
                 checkouts: [MissionCheckout] = [], attempts: [MissionAttempt] = [], elapsedSeconds: Double = 0,
@@ -70,6 +78,11 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
             throw MissionError("invalid_mission_run", "Invalid or oversized mission execution record.")
         }
         try specKit?.validate()
+        try patch?.validate()
+        try train?.validate()
+        guard (decisions?.count ?? 0) <= 32, decisions?.allSatisfy({ $0.station.utf8.count <= 800 && $0.answer.utf8.count <= 400 && $0.at.isFinite }) ?? true else {
+            throw MissionError("invalid_mission_run", "Invalid decision log.")
+        }
         for fingerprints in [inputApprovals] + attempts.map(\.inputFingerprints) {
             guard fingerprints.map({ $0.count <= 32 && $0.allSatisfy { UUID(uuidString: $0.key) != nil && $0.value.utf8.count <= 128 } }) ?? true else {
                 throw MissionError("invalid_mission_run", "Invalid input version receipts.")

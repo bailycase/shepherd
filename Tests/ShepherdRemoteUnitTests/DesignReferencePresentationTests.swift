@@ -181,4 +181,30 @@ struct DesignMentionTests {
         #expect(bursts.map { $0.calls.map(\.designBoard) } == [[one], [two], [nil]])
         #expect(bursts[0].calls[0].designRef == "shepherd-design-ref://local/d1/A.dc.html@13")
     }
+
+    /// ThreadBoardDraft and ThreadBoardChange: a board the agent drew says where it stands, in its
+    /// line, its meta and its note, until it is added, applied or discarded.
+    @Test func aDrawnBoardSaysWhereItStands() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("B-Pay-on-phone.dc.html"), revision: 13))
+        var draft = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                           boardTitle: "B · Pay on phone", revision: 13, capturedAt: 0, width: 320, height: 480)
+        draft.boardPageTitle = "Checkout"
+        draft.proposal = .init(kind: .draft)
+        #expect(DesignReferencePresentation.boardMeta(draft, freshness: .deleted) == ["Checkout", "320 × 480", "not on the canvas yet"])
+        #expect(DesignReferencePresentation.boardLine(draft)! == ("Drew a board", "B · Pay on phone · draft in Checkout redesign"))
+        #expect(DesignReferencePresentation.boardNote(draft.proposal!, revision: 13)
+            == "Drawn in this thread. It isn’t on the design’s canvas until you add it.")
+        var change = draft
+        change.proposal = .init(kind: .change, baseSHA: "abc")
+        #expect(DesignReferencePresentation.boardMeta(change, freshness: .current).last == "proposed from revision 13")
+        #expect(DesignReferencePresentation.boardLine(change)! == ("Changed a board", "B · Pay on phone · from revision 13"))
+        #expect(DesignReferencePresentation.boardNote(change.proposal!, revision: 13)
+            == "Proposed change to the board on the canvas. Adding it replaces revision 13.")
+        change.proposal?.state = .discarded
+        #expect(DesignReferencePresentation.boardMeta(change, freshness: .current).last == "discarded")
+        draft.proposal?.state = .added
+        #expect(DesignReferencePresentation.boardMeta(draft, freshness: .current).last == "added to the canvas")
+        #expect(DesignReferencePresentation.boardLine(DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference,
+                                                                             design: "x", revision: 1, capturedAt: 0)) == nil)
+    }
 }

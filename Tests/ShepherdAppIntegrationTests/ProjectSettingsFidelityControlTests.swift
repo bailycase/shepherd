@@ -240,7 +240,17 @@ struct ProjectSettingsFidelityControlTests {
             try await eventuallyOnMain("the project's page") { vm.destination == .project }
             vm.openLogicalProjectSettings(LogicalProjectRef(home: .local, id: id))
             try await eventuallyOnMain("settings again") { window.layout(); return window.element("Delete…") != nil }
-            #expect(window.element("Pause") == nil && window.element("Resume") == nil, "settings offer no Pause or Resume")
+            // Pause project (ProjectLead-PausedV2's way in) is the person's: it pauses on the owner, then the row offers Resume.
+            try await press(window, "Pause")
+            try await eventuallyOnMain("paused by the person") {
+                window.layout()
+                return app.server.state.projects.first.map { $0.paused && $0.pausedByPerson } == true && window.element("Resume") != nil
+            }
+            try await press(window, "Resume")
+            try await eventuallyOnMain("resumed") {
+                window.layout()
+                return app.server.state.projects.first.map { !$0.paused && !$0.pausedByPerson } == true && window.element("Pause") != nil
+            }
 
             // Delete… opens the confirmation (which says the files stay); Cancel keeps the project; confirming removes only the record.
             let kept = app.dir.appendingPathComponent("logical-projects/\(id.rawValue)")

@@ -190,6 +190,20 @@ public enum SHLeadMetrics {
     public static let composerFieldHeight: CGFloat = 56
     public static let composerBottom: CGFloat = 16
 
+    /// Run on another host (ProjectRunElsewhere): a 520pt dialog.
+    public static let runElsewhereWidth: CGFloat = 520
+
+    // MARK: Pause banner (ProjectLead-PausedV2)
+
+    /// 46pt tall inside the conversation section, 16pt in from its sides and 12pt under the toolbar, radius 8, 1pt `lineStrong` on
+    /// `bgRaised`, padding 8/12/8/8 around a 14pt pause glyph, the line and Resume.
+    public static let bannerHeight: CGFloat = 46
+    public static let bannerInset: CGFloat = 16
+    public static let bannerTop: CGFloat = 12
+    public static let bannerPadding = EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 8)
+    public static let bannerGap: CGFloat = 12
+    public static let bannerGlyph: CGFloat = 14
+
     // MARK: Right pane (Threads)
 
     /// The pane's header tabs: 28pt buttons 2pt apart (Threads 8pt in, then Files, Automations, New thread).
@@ -214,6 +228,9 @@ public enum SHLeadMetrics {
     /// The pane's footer card ("This thread is resolved."): 50pt, 8pt radius.
     public static let footerHeight: CGFloat = 50
     public static let footerInset: CGFloat = 16
+    /// The paused footer (ProjectLead-PausedV2): 46pt, 8pt from the pane's sides and bottom.
+    public static let pausedFooterHeight: CGFloat = 46
+    public static let pausedFooterMargin: CGFloat = 8
     public static let footerGlyph: CGFloat = 14
 
     /// A worker's thread in the pane: prose and its composer sit 16pt in from the pane's left edge; the composer card ends 16pt

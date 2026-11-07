@@ -1140,6 +1140,10 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+        let skills = self.skills
+        projects.installSkills = { repo, paths, commit, destination in
+            try skills.installCopies(repo: repo, paths: paths, commit: commit, into: destination)
+        }
     }
 
     /// Serves the Design tool to remote clients (`designs.v1`) while `served` (Settings ▸
@@ -1508,6 +1512,11 @@ public final class SessionServer: @unchecked Sendable {
                         state.projectExecutions[i].revision += 1
                         state.projectExecutions[i].outcome = "Executor restarted; no work was resumed or replayed."
                     }
+                    // A merge train never resumes on its own: it comes back paused, its step as it was.
+                    for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
+                        state.missions[i].run?.train?.pause("Shepherd restarted. The train waits for you; nothing merged since.")
+                        state.missions[i].revision += 1
+                    }
                     for i in state.missions.indices where state.missions[i].run?.phase.active == true {
                         state.missions[i].run?.transition(to: .paused, at: Date().timeIntervalSince1970,
                             notice: "Shepherd restarted. Nothing resumed. Inspect the retained work before continuing.")
@@ -1637,6 +1646,14 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        if isStarted, store.state.missions.contains(where: { $0.run?.train?.status == .running }) {
+            try? mutateState { state in
+                for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
+                    state.missions[i].run?.train?.pause("Shepherd closed. The train waits for you; nothing merges until you resume it.")
+                    state.missions[i].revision += 1
+                }
+            }
+        }
         if isStarted, store.state.missions.contains(where: { $0.run?.phase.active == true }) {
             // Save the active clock before shutdown; offline time is not mission execution time.
             try? mutateState { state in
@@ -2829,6 +2846,10 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard !request.requiresDetails || offeredCapabilities.contains(RemoteProtocol.projectDetailsCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
+                return
+            }
+            guard !request.requiresResources || offeredCapabilities.contains(RemoteProtocol.projectResourcesCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to manage space resources."), to: client)
                 return
             }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
@@ -4733,6 +4754,14 @@ public final class SessionServer: @unchecked Sendable {
             designGetRequest(id: id, agentID: agentID, reference: reference, what: what, client: client)
         case .designNote(let id, let agentID, let reference, let text):
             designNoteRequest(id: id, agentID: agentID, reference: reference, text: text, client: client)
+        case .designPropose(let id, let agentID, let reference, let source, let title):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+                return
+            }
+            answerOffQueue(id: id, client: client) { server in
+                .designReference(id: id, answer: try await server.proposeDesignBoard(agentID: agentID, reference: reference, source: source, title: title))
+            }
         }
     }
 
@@ -8088,8 +8117,8 @@ public final class SessionServer: @unchecked Sendable {
             let piDirectory = pi.home
             let cwd = params.cwd
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
-            // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
-            // agent is done even though its status report was held for the queue.
+            // pi is idle and nothing continues (the run a done was held across has settled, or the
+            // queue did not go after all): the agent is done even though its report was held.
             thread.onIdleAfterQueue = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
                       server.store.state.agents.first(where: { $0.id == agentID })?.status == .working else { return }

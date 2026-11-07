@@ -177,14 +177,19 @@ extension MissionController {
         let mission = try record(id)
         if mission.run?.publicationApproval != nil {
             switch action {
-            case .plan, .answer, .save, .launch, .revalidate, .changes, .specKitConsent, .specKitSetUp, .acceptConvergence:
+            case .plan, .answer, .save, .launch, .revalidate, .changes, .specKitConsent, .specKitSetUp, .acceptConvergence, .applyPatch:
                 throw MissionError("mission_published", "Publication was already authorized. These receipts cannot be reused for new work.")
             default: break
             }
         }
         // Pause and Stop only halt: a running mission's receipts move its revision on every turn, and
         // refusing a halt over that would keep the work going. Every other action needs the shown revision.
-        let halting: Bool = switch action { case .pause, .stop: mission.run?.phase.active == true; default: false }
+        let halting: Bool = switch action {
+        case .pause, .stop: mission.run?.phase.active == true
+        // A running train moves the revision with every step; halting it never waits on that.
+        case .pauseTrain, .skipSoak: true
+        default: false
+        }
         if case .steer = action {} else if !halting, mission.revision != revision {
             throw MissionError("stale_mission", "This mission changed on the host. Review it again before acting.")
         }
@@ -205,6 +210,14 @@ extension MissionController {
         case .revalidate: try await revalidate(id: id, revision: current)
         case .runAgain: return try await keepingSelection { try await self.runAgain(id: id) }
         case .steer(let attempt, let text): try await steer(id: id, revision: revision, attemptID: attempt, text: text)
+        case .applyPatch(let patch): try await applyPatch(id: id, revision: current, patchID: patch)
+        case .rejectPatch(let patch): try await rejectPatch(id: id, revision: current, patchID: patch)
+        case .autoApplyPatches(let on): try await setAutoApplyPatches(id: id, revision: current, on: on)
+        case .startTrain(let order, let rules): try await startTrain(id: id, revision: current, order: order, rules: rules)
+        case .changeTrain(let order, let rules): try await changeTrain(id: id, revision: current, order: order, rules: rules)
+        case .pauseTrain: try await pauseTrain(id: id, revision: mission.revision)
+        case .resumeTrain: try await resumeTrain(id: id, revision: current)
+        case .skipSoak: try await skipSoak(id: id, revision: mission.revision)
         }
         return nil
     }

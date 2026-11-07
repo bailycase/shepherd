@@ -48,6 +48,8 @@ final class DesignReferenceChips {
         var open: (DesignReference) -> Void = { _ in }
         /// A board card's picture: the board opens beside the thread, in the pane's Design tab.
         var showBeside: (Board) -> Void = { _ in }
+        /// Add to design or Apply to design (`true`), or Discard, on a board the agent drew.
+        var settle: (UUID, Bool) async throws -> Void = { _, _ in }
         var attach: (DesignReference) async throws -> Void = { _ in }
         var sendLatest: (DesignReference) async throws -> Void = { _ in }
         var startDesign: (() -> Void)? = nil
@@ -77,6 +79,13 @@ final class DesignReferenceChips {
         var picture: SHReferenceImage?
         var hasPicture: Bool
         var reference: DesignReference
+        /// The kept copy it draws.
+        var copy: UUID? = nil
+        /// A board the agent drew (ThreadBoardDraft, ThreadBoardChange); nil for one it showed.
+        var proposal: DesignReferencePayload.Proposal? = nil
+        /// The line above it: "Drew a board", "B · Pay on phone · draft in Checkout redesign".
+        var lineLabel: String? = nil
+        var lineMeta: String? = nil
     }
 
     let agentID: AgentID
@@ -150,15 +159,22 @@ final class DesignReferenceChips {
         async let freshness = io.freshness(id)
         guard let kept = await io.payload(id) else { return }
         let payload = kept.payload
-        let standing = await freshness
+        // A board the agent drew isn't on the canvas to be compared with.
+        let standing = payload.proposal == nil ? await freshness : .current
         let file = payload.picture ?? payload.boards?.first?.picture
         var next = boards[id] ?? Board(design: payload.design, board: "", meta: [], hasPicture: file != nil, reference: payload.reference)
         next.design = payload.design
         next.board = payload.reference.board.map { payload.boardTitle ?? $0.stem }
             ?? payload.boards?.first.map { $0.title ?? $0.board.stem } ?? payload.design
         next.meta = DesignReferencePresentation.boardMeta(payload, freshness: standing)
-        next.note = DesignReferencePresentation.boardNote(standing)
+        next.note = payload.proposal.map { DesignReferencePresentation.boardNote($0, revision: payload.revision) }
+            ?? DesignReferencePresentation.boardNote(standing)
         next.showLatest = DesignReferencePresentation.showLatest(standing)
+        next.proposal = payload.proposal
+        next.copy = id
+        let line = DesignReferencePresentation.boardLine(payload)
+        next.lineLabel = line?.label
+        next.lineMeta = line?.meta
         if let width = file?.pixelWidth, let height = file?.pixelHeight {
             next.size = CGSize(width: CGFloat(width) / 2, height: CGFloat(height) / 2)
         } else if let width = payload.width, let height = payload.height {
@@ -169,6 +185,18 @@ final class DesignReferenceChips {
                                               maxPixels: AppLayout.boardCardPicturePixels)
         }
         if boards[id] != next { boards[id] = next }
+    }
+
+    /// Add to design, Apply to design or Discard on a board the agent drew, then the card reads
+    /// its copy again. Nil when it went, else why not.
+    func settle(_ id: UUID, accept: Bool) async -> String? {
+        do {
+            try await io.settle(id, accept)
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? (error as? CustomStringConvertible)?.description ?? "\(error)"
+        }
+        await loadBoard(id)
+        return nil
     }
 
     /// Reads how a composer chip's pinned version stands against its design now.

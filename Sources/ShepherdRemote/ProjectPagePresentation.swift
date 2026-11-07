@@ -55,6 +55,11 @@ public struct ProjectPagePresentation: Equatable {
     public let projectID: ProjectID
     public let name: String
     public let conversationAgent: AgentID?
+    /// The person paused it (ProjectLead-PausedV2): nothing new starts and messages wait for Resume. A stop the runtime made on its
+    /// own is not drawn as Paused, since the person's next message restarts it.
+    public let paused: Bool
+    /// Paused, and the owner has not yet seen every thread stop at its safe point; Resume is refused until it has.
+    public let stopping: Bool
     public let rows: [ProjectTaskRow]
     public let waiting: Int
     /// Queued, reserved or running: work actually in progress. A settled task has stopped, not finished successfully.
@@ -76,10 +81,14 @@ public struct ProjectPagePresentation: Equatable {
         return parts.joined(separator: " · ")
     }
 
-    /// The pane's sentence under "Welcome back": "3 threads are working.", "1 thread is waiting on you."
+    /// The pane's sentence under "Welcome back": "3 threads are working.", "1 thread is waiting on you.",
+    /// "Paused. 1 thread is still waiting on you."
     public var status: String {
         func threads(_ n: Int) -> String { n == 1 ? "1 thread" : "\(n) threads" }
         if total == 0 { return "Nothing running yet." }
+        if paused {
+            return waiting > 0 ? "Paused. \(threads(waiting)) \(waiting == 1 ? "is" : "are") still waiting on you." : "Paused. Nothing runs until you resume."
+        }
         if waiting > 0 { return "\(threads(waiting)) \(waiting == 1 ? "is" : "are") waiting on you." }
         if working > 0 { return "\(threads(working)) \(working == 1 ? "is" : "are") working." }
         return "Nothing is running."
@@ -91,11 +100,14 @@ public struct ProjectPagePresentation: Equatable {
         projectID = project.id
         name = project.name
         conversationAgent = project.coordinatorAgentID
+        let paused = project.paused && project.pausedByPerson
+        self.paused = paused
+        stopping = paused && project.interruptPending
         let published = Dictionary(grouping: project.artifacts.filter { $0.state == .ready }, by: \.taskID)
         let built = project.tasks.map { task in
             Self.row(task, files: (published[task.id] ?? []).map {
                 ProjectTaskFile(id: $0.id, name: $0.artifactName, relativePath: $0.relativePath, size: $0.size)
-            })
+            }, paused: paused)
         }
         rows = built
         waiting = built.filter { $0.group == .waiting }.count
@@ -134,14 +146,17 @@ public struct ProjectPagePresentation: Equatable {
         (outcome.kind.label, [outcome.evidence, outcome.recordedBy == nil ? "recorded by owner" : "per coordinator"].compactMap { $0 }.joined(separator: " · "))
     }
 
-    private static func row(_ task: ProjectTask, files: [ProjectTaskFile]) -> ProjectTaskRow {
+    private static func row(_ task: ProjectTask, files: [ProjectTaskFile], paused: Bool) -> ProjectTaskRow {
         let group: ProjectTaskGroup
         var lead: String?, detail: String?
         switch task.phase {
         case .waiting:
             group = .waiting; lead = "Blocked"; detail = task.question
             // An answer the person already gave is said in words. The envelope itself is never read here, shown or logged.
-            if let answer = task.pendingAnswer { lead = Self.answerLead(answer.phase); detail = Self.answerDetail(answer.phase) ?? task.question }
+            if let answer = task.pendingAnswer {
+                lead = Self.answerLead(answer.phase)
+                detail = paused && answer.phase == .queued ? "Sends when the project resumes." : Self.answerDetail(answer.phase) ?? task.question
+            }
         case .resolved:
             // No recorded outcome stays unknown: resolution alone claims no acceptance, merge or release.
             group = .resolved

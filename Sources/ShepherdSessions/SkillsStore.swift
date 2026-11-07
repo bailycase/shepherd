@@ -255,10 +255,46 @@ public final class SkillsStore: @unchecked Sendable {
     /// it's used unless `invocation` says otherwise; a new one is on and automatic unless it says.
     @discardableResult
     public func install(repo: String, paths: [String], commit: String?, invocation: SkillInvocation?) throws -> SkillsSnapshot {
-        guard let reference = SkillsText.reference(repo) else { throw StoreError.notARepository(repo) }
         let staging = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: staging) }
-        let staged: [Staged] = try gitLock.withLock {
+        let staged = try stage(repo: repo, paths: paths, commit: commit, into: staging)
+        return try lock.withLock {
+            var records = loadRecords()
+            let date = now().timeIntervalSince1970
+            try writing {
+                for skill in staged {
+                    let existing = locate(skill.name)
+                    let current = existing.map { SkillsText.invocation(Self.skillText(in: $0.folder)) }
+                    try Self.apply(invocation ?? current ?? SkillsText.invocation(Self.skillText(in: skill.folder)), to: skill.folder)
+                    let destination = existing?.folder ?? directory.appendingPathComponent(skill.name, isDirectory: true)
+                    try swap(skill.folder, into: destination)
+                    records.skills[skill.name] = Record(source: skill.source, installedAt: date)
+                    records.removed[skill.name] = nil
+                }
+                try save(records)
+            }
+            return unlockedSnapshot()
+        }
+    }
+
+    /// Copies the skills at `paths` in a repository into `destination` (a space's skills folder),
+    /// leaving this host's own skills alone. A skill already there by the same name is refused.
+    @discardableResult
+    public func installCopies(repo: String, paths: [String], commit: String?, into destination: URL) throws -> [String] {
+        let staging = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let staged = try stage(repo: repo, paths: paths, commit: commit, into: staging)
+        if let skill = staged.first(where: { FileManager.default.fileExists(atPath: destination.appendingPathComponent($0.name).path) }) {
+            throw StoreError.alreadyThere(skill.name)
+        }
+        try writing { for skill in staged { try FileManager.default.moveItem(at: skill.folder, to: destination.appendingPathComponent(skill.name, isDirectory: true)) } }
+        return staged.map(\.name)
+    }
+
+    /// Fetches a repository and writes each skill at `paths` into its own folder under `staging`.
+    private func stage(repo: String, paths: [String], commit: String?, into staging: URL) throws -> [Staged] {
+        guard let reference = SkillsText.reference(repo) else { throw StoreError.notARepository(repo) }
+        return try gitLock.withLock {
             let git = repository(for: reference)
             let resolved: String
             if let commit {
@@ -296,23 +332,6 @@ public final class SkillsStore: @unchecked Sendable {
                                                          committedAt: change.date)))
             }
             return result
-        }
-        return try lock.withLock {
-            var records = loadRecords()
-            let date = now().timeIntervalSince1970
-            try writing {
-                for skill in staged {
-                    let existing = locate(skill.name)
-                    let current = existing.map { SkillsText.invocation(Self.skillText(in: $0.folder)) }
-                    try Self.apply(invocation ?? current ?? SkillsText.invocation(Self.skillText(in: skill.folder)), to: skill.folder)
-                    let destination = existing?.folder ?? directory.appendingPathComponent(skill.name, isDirectory: true)
-                    try swap(skill.folder, into: destination)
-                    records.skills[skill.name] = Record(source: skill.source, installedAt: date)
-                    records.removed[skill.name] = nil
-                }
-                try save(records)
-            }
-            return unlockedSnapshot()
         }
     }
 

@@ -36,8 +36,12 @@ struct SettingsView: View {
                 ProjectBrowserSettings(model: vm.projectCookies, project: project, scope: vm.cookieScope(for: project)).confirmation(removal)
             }
             if vm.settingsSection == .projects, vm.projects.selected != nil, vm.projects.pending != nil,
-               vm.projects.category == .pi, !vm.projects.showingBrowser, !vm.projects.showingHooks {
+               vm.projects.category == .pi, !vm.projects.showingSettingsJSON, !vm.projects.showingBrowser, !vm.projects.showingHooks {
                 SpaceSettingsLeaveDialog(model: vm.projects)
+            }
+            if vm.settingsSection == .projects, let project = vm.projects.selected,
+               vm.projects.category == .skills, !vm.projects.showingBrowser, !vm.projects.showingHooks {
+                SpaceResourceDialogs(projects: vm.projects, project: project)
             }
         }
         .background { WindowChrome() }

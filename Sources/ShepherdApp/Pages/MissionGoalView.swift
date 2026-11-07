@@ -35,7 +35,7 @@ struct MissionWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             MissionHeader(title: mission.draft.title, pill: mission.pill, steps: steps, chrome: chrome, back: back,
-                          select: { page = $0 == .run && MissionWorkspacePage.review.available(for: mission) ? .review : $0 }) { compact in
+                          select: { page = $0 == .run && !mission.trainShown && MissionWorkspacePage.review.available(for: mission) ? .review : $0 }) { compact in
                 trailing(compact: compact)
             }
             if [.paused, .stopped].contains(phase), let notice = mission.run?.notice {
@@ -55,7 +55,13 @@ struct MissionWorkspace: View {
                                     showMap: { page = .map })
                 case .map, .done:
                     MissionMapPage(mission: mission, done: displayed == .done, models: models, reviews: reviews,
-                                   busy: busy, editable: editable, openThread: openThread, action: action)
+                                   busy: busy, editable: editable, openThread: openThread, action: action,
+                                   showTrain: mission.trainShown ? { page = .run } : nil)
+                case .run where mission.trainShown:
+                    MissionTrainPage(mission: mission, reviews: reviews, busy: busy, action: action) {
+                        MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
+                                       threads: threads)
+                    }
                 case .run:
                     MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
                                    threads: threads)
@@ -76,7 +82,10 @@ struct MissionWorkspace: View {
         let limits = mission.draft.limits
         if !compact {
             if phase == .map || (phase == .planning && mission.stationAttempts.isEmpty) {
-                Text("budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
+                // The planner's estimate (a pending patch's, as MXPatch previews it) against the limits, else the limits.
+                let estimate = mission.run?.patch?.draft.plan?.estimate ?? mission.draft.plan?.estimate
+                Text(estimate.map { "est. \(MissionFormat.tokens($0.tokens)) of \(MissionFormat.tokens(limits.tokens)) · \(MissionFormat.duration($0.seconds)) of \(MissionFormat.duration(limits.seconds))" }
+                     ?? "budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
                     .shText(.mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             } else {
                 MissionMeters(mission: mission)
@@ -113,11 +122,21 @@ struct MissionWorkspace: View {
                     Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? SHGlyph.mission.symbolName : "play.fill")
                 }
                 .buttonStyle(.sh(.primary))
-                .keyboardShortcut(.return, modifiers: .command)
+                // A pending patch's Apply owns ⌘↩ (MXPatch).
+                .keyboardShortcut(mission.run?.patch == nil ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 .disabled(busy)
                 .shHelp(needsPlan ? "Continue planning" : mission.specKit != nil
                         ? "Approve each repository's spec, plan and tasks as they are now, then run /speckit.implement and /speckit.converge"
                         : "Approve this map and start work", shortcut: "⌘↩")
+            }
+        case .done:
+            // MXTrain: the train's own Pause and Resume, beside the meters.
+            switch mission.run?.train?.status {
+            case .running?:
+                Button { action(.pauseTrain) } label: { Label("Pause train", systemImage: "pause.fill") }.buttonStyle(.sh(.secondary)).disabled(busy)
+            case .paused?:
+                Button { action(.resumeTrain) } label: { Label("Resume train", systemImage: "play.fill") }.buttonStyle(.sh(.primary)).disabled(busy)
+            default: EmptyView()
             }
         default: EmptyView()
         }
@@ -301,6 +320,8 @@ enum MissionWorkspacePage: String, CaseIterable {
         if phase == .map && preferred == nil && mission.specKit != nil && mission.approvedPlanRevision == nil
             && (!mission.specKitConsented || mission.specKitNext != nil) { return .goal }
         if let preferred, preferred.available(for: mission) { return preferred }
+        // A started train that hasn't finished is the mission's work now.
+        if mission.trainShown, let train = mission.run?.train, train.status != .done { return .run }
         if [.paused, .stopped].contains(phase) {
             if mission.run?.reviewFingerprint != nil && Self.review.available(for: mission) { return .review }
             if !mission.stationAttempts.isEmpty { return .run }
@@ -316,7 +337,7 @@ enum MissionWorkspacePage: String, CaseIterable {
         case .map: mission.draft.plan?.stations.isEmpty == false && mission.run?.pendingQuestion == nil ? 1 : 0
         case .paused, .stopped: mission.stationAttempts.isEmpty ? (mission.draft.plan?.stations.isEmpty == false ? 1 : 0) : 2
         case .running, .review, .publishing: 2
-        case .done: 3
+        case .done: mission.run?.train.map { $0.status == .done } ?? true ? 3 : 2
         }
     }
 
