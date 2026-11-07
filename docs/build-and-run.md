@@ -11,7 +11,8 @@ a package check and an Xcode build are not both required for every change.
 
 **The Mac app:** open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. The Mac target
 is a shim (`App/ShepherdLauncher.swift` calls `ShepherdMacApp.main()` from the `ShepherdApp`
-library, or, given `--host`, the headless session host, which nothing launches yet). There is no `swift run` path for the GUI.
+library, or, given `--host`, the headless session host that launchd runs as Shepherd Nightly's
+background service). There is no `swift run` path for the GUI.
 
 A stable Shepherd and a development build cannot share state. The socket and `state.json` live
 in the support directory, and the server refuses to bind over a live socket. So there are three
@@ -44,6 +45,13 @@ support directory, the listener's default port (7434 instead of 7433), the windo
 update channel. It starts with an empty support directory; nothing is copied from Shepherd's.
 Info.plist takes the executable, the names, and the feed file (`SHEPHERD_APPCAST`) from build
 settings, and each configuration compiles only its own icon.
+
+**The background service** (`Shepherd --host` under launchd, [ARCHITECTURE](../ARCHITECTURE.md))
+registers only for Shepherd Nightly run from a stable, signed bundle (`BackgroundService.mayRegister`).
+Dev and Prod run in process: Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`, so it never
+registers. To try the client path in Dev, start a host on Dev's folder
+(`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`) and run the scheme with
+`SHEPHERD_BACKGROUND_HOST=1` ([environment](environment.md)).
 
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
 Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it

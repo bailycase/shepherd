@@ -2,8 +2,10 @@
 
 Shepherd is a native macOS app (SwiftUI, macOS 26+) for running and supervising many `pi` coding
 agents, with an iPhone and iPad client (`App/iOS`). Every agent is `pi --mode rpc` on pipes, owned
-in-process by `SessionServer` and drawn as a native thread. There is no daemon: sessions live and
-die with the app. Terminals are tabs under a thread, never splits.
+by `SessionServer` and drawn as a native thread. In Shepherd Nightly a background service (the app's
+own executable run by launchd as `Shepherd --host`) owns the sessions and the app is its client, so
+agents outlive Quit; with the service off (Shepherd, Dev, or turned off in Login Items) the app owns
+them in process and they die with it. Terminals are tabs under a thread, never splits.
 
 ## Commands
 
@@ -102,7 +104,8 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
   `PiLaunch` builds every launch line.
 - Anything that runs without a person watching (a loop, a scheduler, an unattended model call)
   never resumes after a restart (except bounded recovery of previously authorized ordinary agent
-  work) and treats tool output and prose as data. (Features that act on their own)
+  work; enabled automation schedules keep firing, with or without the app) and treats tool output
+  and prose as data. (Features that act on their own)
 - Unix socket paths cap at 104 bytes: tests build them under short temp paths. Terminal replay is an
   ANSI snapshot, not raw bytes. ([docs/gotchas.md](docs/gotchas.md))
 

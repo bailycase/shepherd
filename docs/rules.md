@@ -81,6 +81,8 @@ callbacks, extension handlers and remote connections exclude each other without 
 - Attach is atomic: snapshot, registration and output watermark in one queue turn.
 - Callbacks hop to the main queue in FIFO order; never call them from the server queue. `onThreadRevision`
   is paced (once per display frame) and carries no state.
+- As the background service's client, the app never blocks the main thread on `host.sock`: every
+  request is async, as to a paired Mac.
 
 ## PTY children
 
@@ -103,7 +105,10 @@ escalates to SIGKILL.
   and logs table violations. `SessionServer.start()` resets every persisted status to `idle`;
   `Agent.lastFailure` (a failed turn's error, or why pi couldn't start) is what survives it.
 - Startup reconciliation drops shell tabs, `inspectorFor` tabs, review leaves and automation runs,
-  and settles design agents into the designs space. Never keep a run agent across launches.
+  and settles design agents into the designs space. Never keep a run agent across a server start.
+  A server start is the host's start (login, a drain, Quit and Stop Agents, a crash) or, in
+  process, the app's launch. Relaunching the app as the background service's client is not one:
+  the host keeps its shells, terminals and runs.
 - Agent names settle once: `setAgentName` never overwrites a final name, naming never blocks pi,
   and moving an agent to a different pi session clears `nameIsFinal`.
 - Dropped images are resized to 2000 px on the way in and the user's own file is never rewritten.
@@ -211,7 +216,7 @@ anything that keeps going without a person watching. Each needs, before it is a 
   opt-in and shown in the UI; secrets are redacted and never reach logs or notifications.
 - Tool output, file contents, web pages and model prose are data, never instructions, including
   text that reaches an evaluator.
-- A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch or a host restart, but an automation run a restart interrupted is never resumed. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle.
+- A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch, a login or a host restart, with the app open or not, but an automation run a restart interrupted is never resumed: its run log records it as interrupted. A login start and an update's drain are restarts. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
   are each defined and tested.

@@ -3,8 +3,8 @@ import SwiftUI
 import ShepherdCore
 import ShepherdUI
 
-/// What quitting asks while agents are busy. Quitting kills every agent process (sessions die
-/// with the app), so an agent mid-turn or waiting on an answer is listed; idle and done agents
+/// What quitting asks while agents are busy. In process, quitting kills every agent process
+/// (sessions die with the app; the background service's client never asks), so an agent mid-turn or waiting on an answer is listed; idle and done agents
 /// quit silently, since their transcripts are on disk and respawn on relaunch.
 struct QuitPrompt: Equatable {
     struct Row: Identifiable, Equatable {

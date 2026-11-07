@@ -1,17 +1,29 @@
 # Architecture
 
-Shepherd is one macOS process with an in-process session server. The app owns:
+Shepherd runs its session server in one of two processes. Whichever holds `<support>/server.lock`
+owns:
 
 - the workspace
 - every agent's `pi --mode rpc` process
 - the PTYs behind the terminals
 - persistence
 - the extension socket
-- the views
+- the remote listeners
 
-It can also serve its agents to other devices over an authenticated TCP listener. There is no
-daemon: quitting Shepherd ends every child process, and relaunching restores the workspace and
-respawns each agent in its pi session.
+**Background service** (Shepherd Nightly, while Login Items allows it): the app's own executable,
+run by launchd as `Shepherd --host` (`SessionHost`, `ShepherdHost`; the LaunchAgent is
+`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`). It owns
+everything above and has no UI. The app is its client over `<support>/host.sock`, through the same
+remote-host paths it uses for a paired Mac, plus `local.v1` for what only this Mac's app gets (the
+Browser and design drawing run in the app's web views). Quitting the app leaves agents running;
+the host drains and restarts on its own when an update replaces the bundle (`HostDrain`).
+
+**In process** (Shepherd and Dev, the service off in Login Items, or tests): the app owns
+everything above itself. Quitting Shepherd ends every child process, and relaunching restores the
+workspace and respawns each agent in its pi session. `SHEPHERD_BACKGROUND_HOST=1` lets any build be
+a running host's client.
+
+Either owner can also serve its agents to other devices over an authenticated TCP listener.
 
 [DESIGN.md](DESIGN.md) holds the UI rules. This document covers module boundaries, ownership,
 and where each feature lives. The code and its tests are the detail. [AGENTS.md](AGENTS.md) is
@@ -89,7 +101,9 @@ decodes on a concurrent queue while its session holds its later records in order
 - the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
-It calls the server directly, with no socket, and adopts its `onStateChanged` snapshots. A
+In process it calls the server directly, with no socket, and adopts its `onStateChanged`
+snapshots; as the background service's client it never starts a server (`BackgroundHostClient`)
+and shows the host's threads as a host's, over `host.sock`. A
 persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
 model reconciles itself and `TerminalSessionStore` from `server.state`.
 

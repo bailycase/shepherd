@@ -220,8 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// Quitting kills every agent process (sessions die with the app), so a quit while agents
-    /// are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
+    /// In process, quitting kills every agent process (sessions die with the app), so a quit while
+    /// agents are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // The background host keeps every agent running.
         if BackgroundHostClient.owner == .host { return .terminateNow }
@@ -298,7 +298,8 @@ extension ShepherdHost {
 }
 
 /// The headless host entry (`Shepherd --host`), for the launcher shim: the session server with
-/// no UI until SIGTERM. Nothing launches it yet.
+/// no UI until SIGTERM or a drain. launchd runs it as Shepherd Nightly's background service
+/// (`BackgroundService`).
 public enum ShepherdHost {
     public static let argument = "--host"
 
