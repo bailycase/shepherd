@@ -669,6 +669,8 @@ public final class SessionServer: @unchecked Sendable {
     /// Main actor: each thread's pull request link (`servePullRequestLinks`); nil until served.
     @MainActor public internal(set) var pullRequestLinks: PullRequestLinks?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
+    /// Main actor: terminal panes whose shell `startTerminal` is starting now.
+    @MainActor var startingTerminals = Set<PaneID>()
     @MainActor var cancelledAutomationRuns = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.

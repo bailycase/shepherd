@@ -177,6 +177,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         self.init(socketOpen: { _, _ in try Self.openUnix(path) })
     }
 
+    /// Whether a host listens on the local socket at `path` now (a connect, closed at once).
+    public static func localSocketAnswers(_ path: String) -> Bool {
+        guard let fd = try? openUnix(path) else { return false }
+        close(fd)
+        return true
+    }
+
     /// A connected unix socket at `path`, blocking.
     static func openUnix(_ path: String) throws -> Int32 {
         var addr = sockaddr_un()

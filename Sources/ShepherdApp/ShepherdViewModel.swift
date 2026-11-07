@@ -669,9 +669,13 @@ final class ShepherdViewModel {
     @ObservationIgnored var persistenceTail: Task<Void, Never>?
 
     let server: SessionServer
+    /// False while the background host owns the workspace and this app is its client
+    /// (`BackgroundHostClient`): the host serves this Mac to other devices, not the app.
+    let ownsWorkspace: Bool
 
     init(
         server: SessionServer = .shared,
+        ownsWorkspace: Bool = true,
         settings: AppSettings? = nil,
         keybindings: KeybindingsStore? = nil,
         themeManager: ThemeManager? = nil,
@@ -693,6 +697,7 @@ final class ShepherdViewModel {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
         self.server = server
+        self.ownsWorkspace = ownsWorkspace
         self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(pi: server.pi)
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
@@ -1588,6 +1593,7 @@ final class ShepherdViewModel {
     func setRemoteListenerEnabled(_ enabled: Bool, persist: Bool = true) {
         if persist { settings.remoteListenerEnabled = enabled }
         remoteListenerFailure = nil
+        guard ownsWorkspace else { return }
         if enabled {
             guard remoteListenerBoundPort == nil else { return }
             let port = UInt16(clamping: settings.remoteListenerPort)

@@ -3,6 +3,7 @@ import ShepherdUI
 import AppKit
 import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 /// The one main window's scene id.
 enum MainWindow {
@@ -68,8 +69,22 @@ public struct ShepherdMacApp: App {
         SHFonts.register()
         let launch = ShepherdLaunch<ShepherdViewModel>(
             // Acquire the workspace before constructing anything that can restore agents or write it.
-            start: { try SessionServer.shared.start() },
+            start: {
+                guard BackgroundHostClient.requested() else { return try SessionServer.shared.start() }
+                let socket = BackgroundHostClient.socketPath()
+                BackgroundHostClient.owner = try BackgroundHostClient.choose(
+                    answers: { RemoteHostClient.localSocketAnswers(socket) },
+                    own: { try SessionServer.shared.start() },
+                    wait: { Thread.sleep(forTimeInterval: 0.5) })
+            },
             makeModel: {
+                if BackgroundHostClient.owner == .host {
+                    let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
+                                               restoresAgentsAtLaunch: false, browserData: .persistent)
+                    vm.remoteHosts.addLocalHost(name: Host.current().localizedName ?? "This Mac",
+                                                socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
+                    return vm
+                }
                 AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
                 let resourceSampler = SessionResourceSampler()
                 ShepherdDiagnostics.shared.start(settings: .shared, resourceSampler: {
@@ -89,6 +104,7 @@ public struct ShepherdMacApp: App {
             failed: { error in
                 NSLog("Shepherd: failed to start session server: \(error)")
                 if SessionServerError.isWorkspaceInUse(error) { WorkspaceInUseAlert.show() }
+                if error is BackgroundHostClient.HostStarting { WorkspaceInUseAlert.show(.hostStarting) }
                 exit(EXIT_FAILURE)
             })
         launch.begin()
@@ -191,13 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quitting kills every agent process (sessions die with the app), so a quit while agents
     /// are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // The background host keeps every agent running.
+        if BackgroundHostClient.owner == .host { return .terminateNow }
         if let reply = AppUpdater.shared.remoteTerminationReply { return reply }
         return QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         BoundedCommand.stopForAppTermination()
-        SessionServer.shared.stop()
+        if BackgroundHostClient.owner == .app { SessionServer.shared.stop() }
     }
 
 }
@@ -205,20 +223,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// What a launch says when another process (the background host, or another copy of the app)
 /// already owns this edition's workspace, instead of quitting silently.
 enum WorkspaceInUseAlert {
+    /// Another process has it, or the background host holds it but hasn't answered yet.
+    enum Reason { case inUse, hostStarting }
+
     static var message: String { "\(ShepherdEdition.current.displayName) is already running" }
     static let detail = "Another Shepherd process has this workspace open. Quit it, then open Shepherd again."
+    static let hostStartingMessage = "Shepherd's background service is starting"
+    static let hostStartingDetail = "Your agents keep running. Open Shepherd again in a moment."
 
-    @MainActor static func make() -> NSAlert {
+    @MainActor static func make(_ reason: Reason = .inUse) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = message
-        alert.informativeText = detail
+        alert.messageText = reason == .inUse ? message : hostStartingMessage
+        alert.informativeText = reason == .inUse ? detail : hostStartingDetail
         alert.addButton(withTitle: "Quit")
         return alert
     }
 
-    @MainActor static func show() {
-        let alert = make()
+    @MainActor static func show(_ reason: Reason = .inUse) {
+        let alert = make(reason)
         NSApp.activate()
         alert.runModal()
     }
@@ -250,6 +273,12 @@ public enum ShepherdHost {
             var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
             spawn.mcp = mcp
             return spawn
+        }, threads: { server in
+            ThreadHosting(defaults: {
+                ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
+                                       serviceTier: settings.defaultServiceTier, worktreeBaseMode: settings.worktreeBaseMode,
+                                       worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate)
+            }, launch: { settings.agentLaunch }, mcp: mcp, shell: { ShellIntegration.command(shell: settings.shellCommand) })
         }, automations: { server in
             var hosting = server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
                 AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
