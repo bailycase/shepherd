@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 
 /// Run with run-push.sh: injected HTTP, memory credentials, no APNs or permission requests.
@@ -16,12 +17,42 @@ struct PushTests {
         assert(PushPayload.from(["shepherd": ["hostID": hostID.uuidString, "agentID": agentID.uuidString,
             "eventID": "bad", "kind": "done"]]) == nil)
 
+        // A review push carries what Approve publishes, and each action opens its own screen.
+        let missionID = UUID().uuidString.lowercased()
+        var review = PushPayload.from(["shepherd": ["hostID": hostID.uuidString, "agentID": agentID.uuidString,
+            "eventID": eventID.uuidString, "kind": "review",
+            "mission": ["id": missionID, "revision": 7, "fingerprint": "fp-1"]]])!
+        assert(review.mission == PushPayload.Mission(id: missionID, revision: 7, fingerprint: "fp-1"))
+        assert(review.destination == .thread && PushRouter.route(review) == .thread(payload.agentRef!))
+        review.destination = .missionReview
+        assert(PushRouter.route(review) == .missions(.review(host: hostID, mission: MissionID(rawValue: missionID))))
+        review.destination = .changes
+        assert(PushRouter.route(review) == .review(.changes(payload.agentRef!, file: nil)))
+        let categories = Dictionary(uniqueKeysWithValues: PushActions.categories.map { ($0.identifier, $0.actions.map(\.identifier)) })
+        assert(categories == ["needsAnswer": ["reply", "open"], "error": ["open"], "done": ["review"], "review": ["approve", "openReview"]])
+        let approve = PushActions.categories.first { $0.identifier == "review" }!.actions[0]
+        assert(approve.options.contains(.foreground) && approve.options.contains(.authenticationRequired),
+               "Approve opens Shepherd, which asks for Face ID")
+        // Reply…'s words pick the option they name, or answer a question that takes words.
+        let pick = NativeThreadDialog(id: "d1", kind: .select, title: "Which key joins a refund to the funnel?",
+                                      options: ["order_id", "payment_id"])
+        assert(PushActions.answer(" Payment_ID ", to: pick) == .select(value: "payment_id"))
+        assert(PushActions.answer("", to: pick) == nil)
+        assert(PushActions.answer("Rename new ones", to: NativeThreadDialog(id: "d2", kind: .input, title: "Rename?"))
+               == .input(value: "Rename new ones"))
+
         let suite = FileManager.default.temporaryDirectory.appendingPathComponent("push-check-\(UUID())").path
         let defaults = UserDefaults(suiteName: suite)!
         defer {
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(atPath: suite + ".plist")
         }
+        var refused = false
+        do {
+            try await PushActions.perform(PushActions.approve, text: nil, payload: review,
+                                          hosts: MobileHosts(defaults: defaults, tokens: .memory()), authenticate: { throw GlanceFailure("no") })
+        } catch { refused = (error as? GlanceFailure)?.message == "no" }
+        assert(refused, "nothing is published without Face ID")
         let memory = PushKeychainMemory()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [RelayStub.self]

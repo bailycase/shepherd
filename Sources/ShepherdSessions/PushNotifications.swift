@@ -7,11 +7,17 @@ import ShepherdRemote
 /// bounded, never retried or replayed. The injected transport returns a cancellation closure.
 final class PushNotifications: @unchecked Sendable {
     typealias Transport = (URLRequest, @escaping @Sendable (Int?) -> Void) -> (() -> Void)
-    enum Kind: String, Codable { case done, error, needsAnswer }
+    enum Kind: String, Codable { case done, error, needsAnswer, review }
+    /// The mission an alert approves: Approve publishes exactly this reviewed revision (NotifPhoneReview).
+    struct MissionReview: Encodable, Equatable {
+        let id: String
+        let revision: UInt64
+        let fingerprint: String
+    }
     private struct Event: Encodable {
         let eventID = UUID()
         let agentID: AgentID
-        let kind: Kind
+        var kind: Kind
         let title: String?
         let preview: String?
         // The relay's newer fields: the stack (APNs thread-id), the kind line, how loud
@@ -20,9 +26,12 @@ final class PushNotifications: @unchecked Sendable {
         var subtitle: String?
         var level: String?
         var relevance: Double?
+        var mission: MissionReview?
+        /// An older relay knows no review: it hears a finished turn, with no approval.
         var legacy: Event {
             var event = self
-            (event.group, event.subtitle, event.level, event.relevance) = (nil, nil, nil, nil)
+            (event.group, event.subtitle, event.level, event.relevance, event.mission) = (nil, nil, nil, nil, nil)
+            if event.kind == .review { event.kind = .done }
             return event
         }
     }
@@ -133,6 +142,7 @@ final class PushNotifications: @unchecked Sendable {
     /// Loudness and Scheduled Summary rank by kind: a question outranks a failure outranks finished work.
     static func presentation(_ kind: Kind) -> (level: String, relevance: Double) {
         switch kind {
+        case .review: ("active", 0.9)
         case .needsAnswer: ("active", 0.8)
         case .error: ("active", 0.6)
         case .done: ("passive", 0.2)
@@ -141,7 +151,7 @@ final class PushNotifications: @unchecked Sendable {
 
     /// `group` stacks the alert with its thread's or mission's others; `subtitle` names the kind.
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
-              group: String? = nil, subtitle: String? = nil) {
+              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil) {
         guard !registrations.isEmpty, agentID != focused else { return }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
@@ -151,7 +161,7 @@ final class PushNotifications: @unchecked Sendable {
         let event = Event(agentID: agentID, kind: kind,
             title: Self.notificationText(title, limit: 100), preview: Self.notificationText(preview, limit: 240),
             group: group ?? "thread:\(agentID.rawValue)", subtitle: Self.notificationText(subtitle, limit: 60),
-            level: level, relevance: relevance)
+            level: level, relevance: relevance, mission: mission)
         guard let rich = try? JSONEncoder().encode(event), let legacy = try? JSONEncoder().encode(event.legacy) else { return }
         let body = relayIsLegacy ? legacy : rich
         // No pending queue: overload drops deliveries rather than growing memory or replaying later.
