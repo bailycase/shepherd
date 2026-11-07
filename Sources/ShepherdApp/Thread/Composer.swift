@@ -400,7 +400,7 @@ struct Composer: View {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
-                                       readOnly: projectUpNext != nil)
+                                       readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
                     }
                 }
                 // A lifted row floats over the card too.

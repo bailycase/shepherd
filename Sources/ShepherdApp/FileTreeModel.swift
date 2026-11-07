@@ -349,23 +349,8 @@ final class FileTreeModel {
     /// lines that changed are marked as the agent's); an editor with unsaved edits keeps them
     /// and holds the disk's text as a conflict, so neither side is lost.
     private func take(disk text: String, for path: String) {
-        guard var edit = edits[path] else {
-            edits[path] = FileEdit(saved: text, text: text)
-            textRevision &+= 1
-            return
-        }
-        if text == edit.saved {
-            edit.conflict = nil
-        } else if !edit.isDirty {
-            edit = FileEdit(saved: text, text: text, before: edit.before ?? edit.saved)
-            textRevision &+= 1
-        } else if text == edit.text {
-            // The disk caught up with the editor (saved elsewhere): nothing is unsaved now.
-            edit.saved = text
-            edit.conflict = nil
-        } else {
-            edit.conflict = text
-        }
+        var edit = edits[path] ?? FileEdit(saved: text, text: text)
+        if edits[path] == nil || edit.take(disk: text) { textRevision &+= 1 }
         if edits[path] != edit { edits[path] = edit }
     }
 
@@ -391,9 +376,7 @@ final class FileTreeModel {
     /// Drops the unsaved edits: the editor takes the file as it is on disk (the newer text when
     /// it changed under them).
     func revert() {
-        guard let path = selectedPath, let edit = edits[path], edit.isDirty || edit.conflict != nil else { return }
-        let disk = edit.conflict ?? edit.saved
-        edits[path] = FileEdit(saved: disk, text: disk, before: edit.conflict == nil ? edit.before : (edit.before ?? edit.saved))
+        guard let path = selectedPath, edits[path]?.revert() == true else { return }
         saveError = nil
         textRevision &+= 1
     }
@@ -412,10 +395,7 @@ final class FileTreeModel {
         switch result {
         case .saved:
             saveError = nil
-            edits[path]?.saved = text
-            edits[path]?.conflict = nil
-            // The marks were the agent's lines in the version the person just made their own.
-            edits[path]?.before = nil
+            edits[path]?.didSave(text)
             if selectedPath == path, case .text(_, let ext) = selectedContent {
                 selectedContent = .text(text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init), ext)
             }
@@ -499,51 +479,9 @@ final class FileTreeModel {
             .flatMap { isImage ? .success(.image($0)) : content(text: $0, ext: ext) }
     }
 
-    /// Writes `text` over the regular file at `path` inside `resolvedRoot`, in place (its inode,
-    /// mode and links stay), only when it still reads as `expected`. The descriptor is checked
-    /// the way `ThreadFileSystem.read` checks one: regular, and inside the root by F_GETPATH.
-    /// ponytail: compare-then-write on one descriptor, not a lock; a writer landing between the
-    /// read and the write in the same instant is not caught.
+    /// Writes `text` over the file only while it still holds `expected` (`ThreadFileSystem.write`).
     nonisolated static func safeWriteFile(path: String, resolvedRoot: String, text: String, expected: String) -> FileSaveResult {
-        let fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else {
-            return .failed(errno == ENOENT ? ThreadFileError.notFound.localizedDescription : String(cString: strerror(errno)))
-        }
-        defer { close(fd) }
-        var st = stat()
-        guard fstat(fd, &st) == 0 else { return .failed("fstat failed") }
-        guard (st.st_mode & S_IFMT) == S_IFREG else { return .failed(ThreadFileError.specialFile.localizedDescription) }
-        var fdPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        guard fcntl(fd, F_GETPATH, &fdPath) == 0 else { return .failed("Cannot resolve fd path") }
-        guard ThreadFileSystem.isContained(String(cString: fdPath), in: resolvedRoot) else {
-            return .failed(ThreadFileError.outsideRoot.localizedDescription)
-        }
-        guard Int64(st.st_size) <= maxTextSize else { return .failed(ThreadFileError.tooLarge(Int64(st.st_size)).localizedDescription) }
-        let flags = fcntl(fd, F_GETFL)
-        if flags >= 0 { _ = fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) }
-
-        var current = Data()
-        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
-        while current.count <= maxTextSize {
-            let n = chunk.withUnsafeMutableBufferPointer { pread(fd, $0.baseAddress!, $0.count, off_t(current.count)) }
-            if n < 0, errno == EINTR { continue }
-            guard n >= 0 else { return .failed(String(cString: strerror(errno))) }
-            if n == 0 { break }
-            current.append(contentsOf: chunk.prefix(n))
-        }
-        guard let disk = ThreadFileSystem.decodeText(current) else { return .failed(ThreadFileError.binaryFile.localizedDescription) }
-        guard disk == expected else { return .changed(disk) }
-
-        let bytes = Array(text.utf8)
-        guard ftruncate(fd, 0) == 0 else { return .failed(String(cString: strerror(errno))) }
-        var written = 0
-        while written < bytes.count {
-            let n = bytes.withUnsafeBufferPointer { pwrite(fd, $0.baseAddress! + written, $0.count - written, off_t(written)) }
-            if n < 0, errno == EINTR { continue }
-            guard n > 0 else { return .failed(String(cString: strerror(errno))) }
-            written += n
-        }
-        return .saved
+        ThreadFileSystem.write(path: path, resolvedRoot: resolvedRoot, text: text, expected: expected, maxSize: maxTextSize)
     }
 
     /// Text lines of `data`, or the binary error.
@@ -564,49 +502,8 @@ enum FileContent: Equatable {
     case image(Data)
 }
 
-/// One open text file in the editor.
-struct FileEdit: Equatable {
-    /// The file as last read or saved: unsaved edits are measured against it.
-    var saved: String
-    /// The editor's text.
-    var text: String
-    /// The file before the last change on disk the editor took in: the agent's lines are those
-    /// that differ from it. nil until the file changes under the editor, and again after a save.
-    var before: String?
-    /// The file changed on disk under unsaved edits: its new text. Nothing is written or
-    /// replaced until the person chooses (Overwrite saves theirs, Revert takes the disk's).
-    var conflict: String?
-    /// The status bar's indentation, read once from the file as it was taken in.
-    var indentation: String?
-
-    init(saved: String, text: String, before: String? = nil) {
-        self.saved = saved
-        self.text = text
-        self.before = before
-        self.indentation = Self.indentation(saved)
-    }
-
-    var isDirty: Bool { text != saved }
-
-    /// The status bar's indentation: "Tabs", or "Spaces: n" for the narrowest indented line.
-    static func indentation(_ text: String) -> String? {
-        var narrowest: Int?
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            if line.first == "\t" { return "Tabs" }
-            let spaces = line.prefix { $0 == " " }.count
-            if spaces > 0, spaces < line.count { narrowest = min(narrowest ?? spaces, spaces) }
-        }
-        return narrowest.map { "Spaces: \($0)" }
-    }
-}
-
 /// How a save went.
-enum FileSaveResult: Equatable, Sendable {
-    case saved
-    /// The file no longer holds the version the editor expected: its text now. Nothing was written.
-    case changed(String)
-    case failed(String)
-}
+typealias FileSaveResult = ThreadFileSaveResult
 
 /// Errors from tree and file operations.
 typealias FileTreeError = ThreadFileError

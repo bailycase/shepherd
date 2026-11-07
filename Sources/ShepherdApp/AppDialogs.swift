@@ -62,6 +62,11 @@ struct AppDialogs: ViewModifier {
                         .dialogSheetFrame()
                 }
             }
+            .sheet(item: $vm.runningElsewhere) { shown in
+                RunElsewhereSheet(vm: vm, draft: Binding(get: { vm.runningElsewhere ?? shown }, set: { if vm.runningElsewhere != nil { vm.runningElsewhere = $0 } }),
+                                  dismiss: { vm.runningElsewhere = nil })
+                    .dialogSheetFrame()
+            }
             .sheet(item: Binding(get: { vm.projectsEnabled ? vm.newLogicalProject : nil }, set: { vm.newLogicalProject = $0 })) { shown in
                 // A dismissing sheet writes its last value back; only write while a draft exists, so turning Projects off (which clears it) stays cleared.
                 NewProjectSheet(vm: vm, draft: Binding(get: { vm.newLogicalProject ?? shown }, set: { if vm.newLogicalProject != nil { vm.newLogicalProject = $0 } }),

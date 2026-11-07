@@ -508,8 +508,9 @@ struct QueueStackView: View {
     var focusedRow: FocusState<String?>.Binding
     let focusComposer: () -> Void
     /// A queue someone else holds (a Project's owner): its rows draw the same, with no control the holder does not offer (no
-    /// steer, edit, delete, reorder, row keys or options menu).
+    /// steer, edit, delete, reorder, row keys or options menu), and `heldReason` is its Paused tooltip.
     var readOnly = false
+    var heldReason: String? = nil
 
     var body: some View {
         let _ = SHRenderProbe.tick("queue.body")
@@ -517,7 +518,7 @@ struct QueueStackView: View {
         let keys = KeybindingsStore.shared
         let actions = QueueRowActions(state: state, store: store, running: running)
         SHQueueStack(count: state.count,
-                     paused: readOnly ? nil : NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
+                     paused: readOnly ? heldReason : NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
                      scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > SHQueueMetrics.expandedMaxRows,
                      drop: state.dropSlot, framed: framed, afterGoalCheck: store.hasGoal, showsOptions: !readOnly,

@@ -63,7 +63,9 @@ struct ProjectComposer: View {
 
     private var field: some View {
         @Bindable var store = target.store
-        return TextField(task == nil ? "Message the project owner…" : "Steer this thread…", text: $store.draft, axis: .vertical)
+        let paused = projects.model.project(ref).map { $0.paused && $0.pausedByPerson } == true
+        return TextField(task != nil ? "Steer this thread…" : paused ? "Paused. Your message waits until you resume…" : "Message the project owner…",
+                         text: $store.draft, axis: .vertical)
             .font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
             .lineLimit(1...SHComposerMetrics.fieldMaxLines)
             .focused($focused)

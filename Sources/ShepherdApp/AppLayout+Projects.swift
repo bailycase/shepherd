@@ -28,6 +28,28 @@ extension AppLayout {
     static let projectsChevronSize: CGFloat = 10
     static let projectsFooterLineHeight: CGFloat = 1.55
     static let projectDetailTop: CGFloat = 36
+    /// ProjectSettings' form: its 320pt dropdowns and fields, a 124pt reset column, and the retry stepper's ceiling.
+    static let spaceFormControlWidth: CGFloat = 320
+    static let spaceFormResetWidth: CGFloat = 124
+    static let spaceFormStepperMax = 99
+    /// ProjectAdd's dialog: a 552pt field inside its insets.
+    static let spaceAddWidth: CGFloat = 600
+    /// ProjectResourceManager: the list's FROM, STATUS and remove columns, the 272pt search, the
+    /// 20pt row glyph and 32pt empty glyph, the editor dialog (760×680) and Add from repo (680).
+    static let resourceFromWidth: CGFloat = 160
+    static let resourceStatusWidth: CGFloat = 130
+    static let resourceRemoveWidth: CGFloat = 40
+    static let resourceSearchWidth: CGFloat = 272
+    static let resourceGlyph: CGFloat = 20
+    static let resourceEmptyGlyph: CGFloat = 32
+    static let resourceEmptyHeight: CGFloat = 240
+    static let resourceEditorWidth: CGFloat = 760
+    static let resourceEditorHeight: CGFloat = 680
+    static let resourceInstallWidth: CGFloat = 680
+    static let resourceDescriptionHeight: CGFloat = 58
+    static let resourceBodyHeight: CGFloat = 190
+    static let resourceAgentBodyHeight: CGFloat = 160
+    static let resourceToolWidth: CGFloat = 94
     static let projectNarrowWidth: CGFloat = 720
     static let projectNarrowEditorHeight: CGFloat = 500
     static let projectBrowserTitleSize: CGFloat = 15

@@ -124,6 +124,7 @@ extension SessionServer {
         }
         let state = self.state
         let parent = await projects.parentProject(of: cwd, state: state)
+        let inherited = await projects.launchDefaults(for: cwd)
         let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
         // RPC mode ignores a positional prompt; an opening prompt goes to the session afterwards.
         let command = try problem.map(AgentLaunch.refusedCommand)
@@ -134,6 +135,7 @@ extension SessionServer {
                                       suggestFiles: suggestions.snapshot().settings.files(for: spawn.isAutomation ? .automation : .thread),
                                       modelOverride: spawn.takeModelOverride(),
                                       specKit: spawn.specKit ? state.specKitLaunch(for: agent.id, cwd: cwd) : nil,
+                                      inherited: inherited,
                                       mcp: { try spawn.mcp(parent, agent, cwd, state, verifiedWorktree) })
         // A forked transcript resumes: pi not finding it is a start problem, never a new session.
         let resuming = spawn.checksResume && !fresh ? agent.effectivePiSessionID : nil

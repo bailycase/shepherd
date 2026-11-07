@@ -102,8 +102,8 @@ struct RemoteAutomationsTests {
         }
         let first = try #require(host.state.automations.first?.agentID)
         // Creating the row precedes pi's first turn. Finish that real opening turn before
-        // simulating extension reports: otherwise a late agent_start clears the held done
-        // report, and the stub has no status extension to send it again.
+        // simulating extension reports, so they describe a settled run instead of racing the
+        // opening turn's own start and settle.
         try await eventuallyAsync("the automation's opening turn to finish", timeout: .seconds(30)) {
             guard case .snapshot(let snapshot) = try await host.nativeThread(agentID: first, request: .snapshot()) else { return false }
             return !snapshot.running && snapshot.messages.contains { message in

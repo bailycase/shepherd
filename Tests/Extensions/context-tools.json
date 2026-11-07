@@ -278,6 +278,7 @@
     {
       "tools": [
         "design_get",
+        "design_show",
         "design_note"
       ],
       "group": "design",

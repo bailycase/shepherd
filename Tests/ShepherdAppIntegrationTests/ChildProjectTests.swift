@@ -40,6 +40,28 @@ struct ChildProjectTests {
         #expect(try JSONDecoder().decode(ShepherdState.self, from: Data(contentsOf: app.scratch.stateURL)) == app.server.state)
     }
 
+    /// Add space with a parent (ProjectAdd): the folder lies outside the parent's, and the parent is
+    /// recorded as Shepherd's explicit organization, persisted, with nothing moved.
+    @Test func addSpaceRecordsAnExplicitParentForAFolderElsewhere() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let parentFolder = app.dir.appendingPathComponent("shepherd"), childFolder = app.dir.appendingPathComponent("elsewhere/landing")
+        try FileManager.default.createDirectory(at: parentFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: childFolder, withIntermediateDirectories: true)
+        let parent = Fixture.space("shepherd", path: parentFolder.path)
+        let vm = try await app.start(with: Fixture.state(spaces: [parent], agents: []))
+        await vm.projects.load(vm.projectsSources, force: true)
+        let local = try #require(vm.projects.hosts.first { $0.id == "local" })
+        let model = vm.addSpaceModel(host: local, parentID: parent.id)
+        model.name = "shepherd-landing"; model.path = childFolder.path
+        #expect(await model.submit(), "\(model.error ?? "")")
+        let child = try #require(app.server.state.spaces.first { $0.name == "shepherd-landing" })
+        #expect(child.parentID == parent.id && child.parentIsExplicit)
+        #expect(vm.projects.visible.first { $0.project.name == "shepherd-landing" }?.parentName == "shepherd")
+        #expect(try JSONDecoder().decode(ShepherdState.self, from: Data(contentsOf: app.scratch.stateURL)) == app.server.state)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: childFolder.path).isEmpty)
+    }
+
     @Test func childPathsCannotEscapeOrCreateIntermediateFolders() async throws {
         let app = try AppHarness()
         defer { app.stop() }

@@ -219,6 +219,31 @@ final class InstructionsTextView: UITextView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// Long lines run on and scroll sideways instead of wrapping (the Files editor's code).
+    var wraps = true {
+        didSet {
+            textContainer.widthTracksTextView = wraps
+            // A finite width: TextKit wraps at the view's width again for an infinite one.
+            if !wraps { textContainer.size = CGSize(width: MobileLayout.unwrappedLineWidth, height: CGFloat.greatestFiniteMagnitude) }
+            alwaysBounceHorizontal = false
+            setNeedsLayout()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !wraps else { return }
+        // UITextView fits its container to its own width as it lays out: put the run-on width back.
+        if textContainer.widthTracksTextView || textContainer.size.width != MobileLayout.unwrappedLineWidth {
+            textContainer.widthTracksTextView = false
+            textContainer.size = CGSize(width: MobileLayout.unwrappedLineWidth, height: CGFloat.greatestFiniteMagnitude)
+        }
+        // It sizes its content to its own width too; unwrapped, it is as wide as the longest line.
+        let used = layoutManager.usedRect(for: textContainer).width + textContainerInset.left + textContainerInset.right
+        let width = max(bounds.width, ceil(used))
+        if contentSize.width != width { contentSize.width = width }
+    }
+
     /// Draws `changed` lines tinted, and the numbers, at `styles`' sizes.
     func decorate(changed: Set<Int>, styles: InstructionsEditorStyles) {
         decorations.changedLines = changed
@@ -239,9 +264,15 @@ final class InstructionsTextView: UITextView {
 }
 
 /// Draws behind the text: a changed line's tint across the editor, and each line's number in
-/// the gutter beside its first row.
+/// the gutter beside its first row. The Files editor also draws a bar at `markX` beside each
+/// changed line (`mark`) and each line the agent changed (`agentMark`).
 final class InstructionsLayoutManager: NSLayoutManager {
     var changedLines: Set<Int> = []
+    var agentLines: Set<Int> = []
+    var markX: CGFloat = 0
+    var markWidth: CGFloat = 0
+    var mark: UIColor = .clear
+    var agentMark: UIColor = .clear
     var numberAttributes: [NSAttributedString.Key: Any] = [:]
     var numberHeight: CGFloat = 12
     var rowHeight: CGFloat = 21
@@ -261,6 +292,10 @@ final class InstructionsLayoutManager: NSLayoutManager {
             if self.changedLines.contains(line) {
                 self.tint.setFill()
                 UIRectFill(CGRect(x: 0, y: row.minY, width: row.maxX + self.trailingInset, height: row.height))
+            }
+            if self.markWidth > 0, let color = self.changedLines.contains(line) ? self.mark : self.agentLines.contains(line) ? self.agentMark : nil {
+                color.setFill()
+                UIRectFill(CGRect(x: self.markX, y: row.minY, width: self.markWidth, height: row.height))
             }
             // A line wrapped over several rows is numbered on its first.
             if characters.location == starts[line] { self.drawNumber(line + 1, top: row.minY) }

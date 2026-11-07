@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import UIKit
+import ShepherdCore
 import ShepherdRemote
 
 /// Routes a push notification tap to the right thread. Handles both warm and cold launch.
@@ -22,7 +23,7 @@ final class PushRouter {
             pending = payload
             return
         }
-        if navigate(to: ref, windows: windows) {
+        if navigate(to: payload, windows: windows) {
             pending = nil
         } else {
             pending = payload
@@ -33,7 +34,7 @@ final class PushRouter {
     func drainPending(hosts: MobileHosts, windows: MobileWindows) {
         guard let payload = pending else { return }
         if let ref = payload.agentRef, hosts.host(ref.host) != nil {
-            if navigate(to: ref, windows: windows) {
+            if navigate(to: payload, windows: windows) {
                 pending = nil
             }
         } else {
@@ -42,11 +43,23 @@ final class PushRouter {
         }
     }
 
-    /// Navigate to a thread in the foreground window. Returns true if a window was found.
+    /// Navigate to what the push names in the foreground window. Returns true if a window was found.
     @discardableResult
-    private func navigate(to ref: AgentRef, windows: MobileWindows) -> Bool {
-        guard let window = windows.notificationWindow else { return false }
-        window.navigator.reveal(.thread(ref))
+    private func navigate(to payload: PushPayload, windows: MobileWindows) -> Bool {
+        guard let window = windows.notificationWindow, let ref = payload.agentRef else { return false }
+        window.navigator.reveal(Self.route(payload) ?? .thread(ref))
         return true
+    }
+
+    /// The screen a push opens: its thread, that thread's Changes, or its mission's review.
+    static func route(_ payload: PushPayload) -> MobileRoute? {
+        guard let ref = payload.agentRef else { return nil }
+        switch payload.destination {
+        case .thread: return .thread(ref)
+        case .changes: return .review(.changes(ref, file: nil))
+        case .missionReview:
+            guard let mission = payload.mission else { return .thread(ref) }
+            return .missions(.review(host: ref.host, mission: MissionID(rawValue: mission.id)))
+        }
     }
 }

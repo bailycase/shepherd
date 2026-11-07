@@ -3,12 +3,14 @@ import Observation
 import ShepherdProtocol
 
 /// A remote thread's Files (`files.v1`): a lazy tree of the thread's folder on its host,
-/// a filter over the expanded folders, and one file open read-only. Rows are derived once per change; views draw them.
+/// a filter over the expanded folders, and open files: read in place of the tree (iPhone), or as tabs that edit and save over
+/// `files.write.v1` (iPad, `FileEdit` as on the Mac). Rows are derived once per change; views draw them.
 @MainActor
 @Observable
 public final class ThreadFilesModel {
     public typealias List = @Sendable (_ path: String, _ showHidden: Bool) async throws -> ThreadFileListing
     public typealias Read = @Sendable (_ path: String) async throws -> Data
+    public typealias Write = @Sendable (_ path: String, _ text: String, _ expected: String) async throws -> ThreadFileSaveResult
 
     /// One line of the tree: a folder, a file, or a note under a folder the host cut short.
     public struct Row: Identifiable, Equatable, Sendable {
@@ -42,9 +44,20 @@ public final class ThreadFilesModel {
     /// The file last opened: its row stays marked after Back.
     public private(set) var selectedPath: String?
     public private(set) var content = Content.loading
+    /// Files open as tabs, in the order they were opened.
+    public private(set) var openTabs: [String] = []
+    /// Each open text file's editor state, by path. Survives switching tabs; closing the tab drops it.
+    public private(set) var edits: [String: FileEdit] = [:]
+    /// Bumped whenever an editor's text is replaced from outside it (a read, a revert), so the editor
+    /// resets its text then and never while the person types.
+    public private(set) var textRevision: UInt = 0
+    /// Why the last save failed (a conflict is `FileEdit.conflict`); nil after a save.
+    public private(set) var saveError: String?
+    public private(set) var saving = false
 
     @ObservationIgnored private let list: List
     @ObservationIgnored private let read: Read
+    @ObservationIgnored private let write: Write?
     @ObservationIgnored private var listings: [String: ThreadFileListing] = [:]
     @ObservationIgnored private var expanded: Set<String> = []
     @ObservationIgnored private var directoryLoads: [String: Task<Void, Never>] = [:]
@@ -59,9 +72,10 @@ public final class ThreadFilesModel {
     public var hasPendingRequests: Bool { pendingRequests > 0 }
     var retainedEntryCount: Int { listings.values.reduce(0) { $0 + $1.entries.count } }
 
-    public init(list: @escaping List, read: @escaping Read) {
+    public init(list: @escaping List, read: @escaping Read, write: Write? = nil) {
         self.list = list
         self.read = read
+        self.write = write
     }
 
     /// Restores only the visible expanded tree and the open file after payload eviction.
@@ -164,6 +178,7 @@ public final class ThreadFilesModel {
         fileRead?.cancel()
         openPath = path
         selectedPath = path
+        if !openTabs.contains(path) { openTabs.append(path) }
         content = .loading
         let pending = Task { @MainActor in
             guard token == openGeneration else { return }
@@ -177,9 +192,77 @@ public final class ThreadFilesModel {
             guard token == openGeneration else { return }
             fileRead = nil
             content = result
+            if case .text(let text) = result { take(disk: text, for: path) }
         }
         fileRead = pending
         await pending.value
+    }
+
+    /// Closes a tab and drops its unsaved edits (the view confirms a dirty one first); the last tab
+    /// opened before it shows next.
+    public func closeTab(_ path: String) async {
+        openTabs.removeAll { $0 == path }
+        edits[path] = nil
+        guard openPath == path else { return }
+        if let next = openTabs.last { await open(next) } else { close() }
+    }
+
+    // MARK: Editing
+
+    /// The host's text folded into the file's editor (`FileEdit.take`).
+    private func take(disk text: String, for path: String) {
+        var edit = edits[path] ?? FileEdit(saved: text, text: text)
+        if edits[path] == nil || edit.take(disk: text) { textRevision &+= 1 }
+        if edits[path] != edit { edits[path] = edit }
+    }
+
+    /// The person typed: the editor's text for `path`.
+    public func setText(_ text: String, for path: String) {
+        guard edits[path] != nil, edits[path]?.text != text else { return }
+        edits[path]?.text = text
+    }
+
+    /// Reads the open file again without the loading state: a clean editor takes the host's text,
+    /// one with unsaved edits holds it as a conflict. The end of an agent's edit calls this.
+    public func checkDisk() async {
+        guard !forgotten, let path = openPath, edits[path] != nil, fileRead == nil else { return }
+        let token = openGeneration
+        guard let data = try? await read(path), token == openGeneration, openPath == path,
+              let text = String(data: data, encoding: .utf8) else { return }
+        if content != .text(text) { content = .text(text) }
+        take(disk: text, for: path)
+    }
+
+    /// Drops the open file's unsaved edits for the host's text (the newer one after a conflict).
+    public func revert() {
+        guard let path = openPath, edits[path]?.revert() == true else { return }
+        saveError = nil
+        textRevision &+= 1
+    }
+
+    /// Saves the open file's text over the version it was edited from. A file that changed since is
+    /// never overwritten: it becomes the conflict, and only `overwrite` (the person's Overwrite)
+    /// writes over that newer version, still only while it holds.
+    public func save(overwrite: Bool = false) async {
+        guard let path = openPath, let edit = edits[path], let write, !saving,
+              edit.conflict == nil ? edit.isDirty : overwrite else { return }
+        saving = true
+        defer { saving = false }
+        let text = edit.text, expected = edit.conflict ?? edit.saved
+        let result: ThreadFileSaveResult
+        do { result = try await write(path, text, expected) } catch { result = .failed(Self.message(error)) }
+        guard edits[path] != nil else { return }
+        switch result {
+        case .saved:
+            saveError = nil
+            edits[path]?.didSave(text)
+            if openPath == path { content = .text(text) }
+        case .changed(let disk):
+            saveError = nil
+            edits[path]?.conflict = disk
+        case .failed(let message):
+            saveError = message
+        }
     }
 
     /// Back to the tree.
@@ -205,6 +288,8 @@ public final class ThreadFilesModel {
         fileRead = nil
         errors = [:]
         rows = []
+        // Unsaved edits are not reloadable: they stay until their tab closes or the thread is forgotten.
+        edits = forgotten ? [:] : edits.filter { $0.value.isDirty || $0.value.conflict != nil }
         let unavailable = "This thread or host is no longer available."
         content = forgotten && openPath != nil ? .failed(unavailable) : .loading
         phase = forgotten ? .failed(unavailable) : .loading
@@ -237,6 +322,7 @@ public final class ThreadFilesModel {
         case .text(let text), .failed(let text): cost += text.utf8.count
         case .loading: break
         }
+        cost += edits.values.reduce(0) { $0 + ($1.isDirty || $1.conflict != nil ? 0 : $1.saved.utf8.count * 2) }
         retainedCost = cost
     }
 
