@@ -343,7 +343,8 @@ extension SessionServer {
         let station = attempt.stationID.flatMap { id in mission.draft.plan?.stations.first { $0.id == id } }
         pushNotifications.send(agentID: agentID, kind: kind, title: mission.draft.title, preview: preview,
                                group: "mission:\(mission.id.rawValue)",
-                               subtitle: station.map { "\($0.title) · \(line)" } ?? "Planner \(line.lowercased())")
+                               subtitle: station.map { "\($0.title) · \(line)" } ?? "Planner \(line.lowercased())",
+                               missionID: mission.id.rawValue)
     }
 
     public func missionSteerOutcome(agentID: AgentID, operationID: UUID) async -> MissionSteerOutcome {
@@ -448,6 +449,17 @@ extension SessionServer {
         let before = store.state.missions.first { $0.id == mission.id }?.run?.phase
         try mutateState { state in state.missions = state.missions.map { $0.id == mission.id ? mission : $0 } }
         if before != .review { pushReviewReady(mission) }
+        if before?.active == true { pushBlocked(mission) }
+    }
+
+    /// Server queue: a run that paused itself (a limit reached, a stuck lane, an error) is blocked
+    /// work; a person's own Pause is not.
+    func pushBlocked(_ mission: Mission) {
+        guard let run = mission.run, run.phase == .paused, run.notice != MissionRun.pausedByPerson,
+              let planner = run.plannerID else { return }
+        pushNotifications.send(agentID: planner, kind: .error, title: mission.draft.title, preview: run.notice,
+                               group: "mission:\(mission.id.rawValue)", subtitle: "Blocked",
+                               topic: .blocked, missionID: mission.id.rawValue)
     }
 
     /// Server queue: a mission that just reached review asks for approval on the phone, carrying

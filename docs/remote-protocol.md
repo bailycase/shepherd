@@ -207,7 +207,9 @@
     `mission:<id>` for a mission's planner and stations, else `thread:<agentID>`), `subtitle` (60),
     `level` (`passive` for finished work, else `active`) and `relevance` (the Scheduled Summary
     rank); a relay that answers 400 to them gets the same event without them, and only the old
-    fields until the host restarts. Hosts without this capability cannot register destinations.
+    fields until the host restarts. A registration may carry `preferences` (Settings ▸ Notifications
+    on the phone: which topics, away-only, and a level per mission); the host sends that phone only
+    what they allow, and an older phone's registration without them gets everything. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
