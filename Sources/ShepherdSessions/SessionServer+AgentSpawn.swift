@@ -112,6 +112,8 @@ extension SessionServer {
     @MainActor
     public func spawnAgent(_ spawn: AgentSpawn) async throws -> SessionInfo? {
         let agent = spawn.agent, cwd = spawn.cwd
+        spawningAgents += 1
+        defer { spawningAgents -= 1 }
         try await projects.prepareProjectConfiguration(for: cwd)
         var (fresh, problem) = (false, spawn.problem)
         if problem == nil {

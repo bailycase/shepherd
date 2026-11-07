@@ -5,13 +5,16 @@ import ShepherdCore
 import ShepherdRemote
 
 /// The headless host: `Shepherd --host` owns the workspace with no UI. It starts the session
-/// server, serves until SIGTERM or SIGINT, then stops every session and exits. Nothing launches
-/// it yet; the app still owns the workspace itself.
+/// server, serves until SIGTERM or SIGINT, then stops every session and exits. It also exits once
+/// quiet after its bundle changes or a newer app asks it to drain (`HostDrain`); launchd starts
+/// it again from the bundle there now.
 public enum SessionHost {
     /// Kept alive for the life of the process.
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
     /// The threads' banners, while `run` was given somewhere to post them.
     nonisolated(unsafe) public private(set) static var banners: ThreadBanners?
+    /// The host's own bundle, watched for an update while the host runs.
+    nonisolated(unsafe) private static var watch: BundleVersionWatch?
 
     /// Runs `server` until a termination signal; never returns. A start that fails (another
     /// owner holds the workspace) exits with a failure status. `ready` runs once the server is
@@ -32,14 +35,17 @@ public enum SessionHost {
                            ready: () -> Void = {}) -> Never {
         // Signals arrive through dispatch sources, so the default action (die without
         // stopping pi processes) is turned off before anything starts.
+        let stop = {
+            BoundedCommand.stopForAppTermination()
+            server.stop()
+            exit(EXIT_SUCCESS)
+        }
         let sources = [SIGTERM, SIGINT].map { number -> DispatchSourceSignal in
             signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
             source.setEventHandler {
                 ShepherdLog.info("host stopping on signal \(number)")
-                BoundedCommand.stopForAppTermination()
-                server.stop()
-                exit(EXIT_SUCCESS)
+                stop()
             }
             source.activate()
             return source
@@ -54,6 +60,15 @@ public enum SessionHost {
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
         Task { @MainActor in
+            // Handoff: a changed bundle, or a newer app's `drain`, lets the host exit once quiet.
+            let drain = HostDrain(server: server, exit: stop)
+            server.onDrainRequest = { drain.begin("a newer app asked") }
+            let bundle = Bundle.main.bundleURL
+            if bundle.pathExtension == "app" {
+                watch = BundleVersionWatch(bundle: bundle, running: server.hostBuild) {
+                    drain.begin("bundle version \(server.hostBuild ?? "?") is now \($0 ?? "gone")")
+                }
+            }
             configure?(server)
             if let threads { server.serveThreads(threads(server)) }
             // The app's way in (`host.sock`), once its threads are served; a path too long for a

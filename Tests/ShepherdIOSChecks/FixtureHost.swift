@@ -377,6 +377,8 @@ final class FixtureHost: @unchecked Sendable {
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
             return []
+        case .drain(let id):
+            return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
             return [.ok(id: id)]
