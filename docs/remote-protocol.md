@@ -16,7 +16,9 @@
   are signed as something else, so they are closed unanswered. Then `hello` with the same token
   as TCP. Local clients alone are offered `local.v1` (`RemoteProtocol.localCapability`, never in
   `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
-  host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts.
+  host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. With no app, the host
+  answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
+  actions but Move, a dormant thread's pi on demand, and terminals' shells.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands

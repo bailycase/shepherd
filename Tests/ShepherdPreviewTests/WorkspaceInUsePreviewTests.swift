@@ -4,7 +4,8 @@ import Testing
 @testable import ShepherdApp
 
 /// The alert a launch shows when another Shepherd process (the background host, or another copy
-/// of the app) owns the workspace, as AppKit lays it out, light and dark.
+/// of the app) owns the workspace, or the background host holds it and hasn't answered yet, as
+/// AppKit lays it out, light and dark.
 @Suite("Workspace in use", .enabled(if: Preview.enabled), .mainActorExclusive)
 @MainActor
 struct WorkspaceInUsePreviewTests {
@@ -12,8 +13,9 @@ struct WorkspaceInUsePreviewTests {
         let directory = try #require(Preview.directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         _ = NSApplication.shared
-        for dark in [false, true] {
-            let alert = WorkspaceInUseAlert.make()
+        let renders = [(WorkspaceInUseAlert.Reason.inUse, "workspace-in-use"), (.hostStarting, "host-starting")]
+        for (reason, name) in renders { for dark in [false, true] {
+            let alert = WorkspaceInUseAlert.make(reason)
             alert.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             alert.layout()
             let view = try #require(alert.window.contentView)
@@ -32,7 +34,7 @@ struct WorkspaceInUsePreviewTests {
             content.draw(in: view.bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             NSGraphicsContext.restoreGraphicsState()
             let png = try #require(bitmap.representation(using: .png, properties: [:]))
-            try png.write(to: directory.appendingPathComponent("workspace-in-use-\(dark ? "dark" : "light").png"))
-        }
+            try png.write(to: directory.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
+        } }
     }
 }

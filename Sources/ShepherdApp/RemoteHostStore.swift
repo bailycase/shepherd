@@ -27,9 +27,13 @@ final class RemoteHostStore {
         var host: String
         var port: UInt16
         var token: String
+        /// The background host on this Mac (`host.sock`), in place of `host` and `port`. Never
+        /// persisted: each launch finds it again.
+        var localSocket: String?
 
         init(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String,
-             bindingID: UUID = UUID()) {
+             bindingID: UUID = UUID(), localSocket: String? = nil) {
+            self.localSocket = localSocket
             self.id = id
             self.bindingID = bindingID
             self.name = name
@@ -315,6 +319,16 @@ final class RemoteHostStore {
         }
     }
 
+    /// The background host on this Mac, through its local socket at `socket`; not persisted.
+    @discardableResult
+    func addLocalHost(name: String, socket: String, token: String) -> Connection {
+        let connection = Connection(config: HostConfig(name: name, host: "", port: 0, token: token, localSocket: socket),
+                                    designCache: designCache)
+        connections.append(connection)
+        connect(connection)
+        return connection
+    }
+
     func addHost(name: String, host: String, port: UInt16, token: String) {
         let config = HostConfig(name: name, host: host, port: port, token: token)
         let connection = Connection(config: config, designCache: designCache)
@@ -376,7 +390,7 @@ final class RemoteHostStore {
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(connections.map(\.config)) {
+        if let data = try? JSONEncoder().encode(connections.map(\.config).filter { $0.localSocket == nil }) {
             defaults.set(data, forKey: Self.defaultsKey)
         }
     }
@@ -395,7 +409,7 @@ final class RemoteHostStore {
         connection.phase = .connecting
         connection.reconnectTask = Task { [weak self, weak connection] in
             guard let self, let connection else { return }
-            let client = RemoteHostClient()
+            let client = connection.config.localSocket.map(RemoteHostClient.init(localSocket:)) ?? RemoteHostClient()
             self.wire(client: client, to: connection)
             connection.client = client
             let stateGeneration = connection.stateGeneration
