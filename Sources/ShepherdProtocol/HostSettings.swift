@@ -101,6 +101,10 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// Settings ▸ Worktrees ▸ Close threads when their pull request merges
     /// (`hostSettingsCloseOnMergeCapability`). Older hosts omit it, which reads as off.
     public var closeOnMerge: Bool
+    /// Whether the Mac keeps its agents running when Shepherd is quit: true while its background
+    /// service runs them, false while that is turned off in Login Items, nil where the Mac has no
+    /// service or is older (`hostSettingsBackgroundServiceCapability`).
+    public var backgroundService: Bool?
 
     /// Settings ▸ Experiments ▸ Design tool (`designToolExperimentCapability`). Older hosts omit
     /// it, which reads as false.
@@ -138,7 +142,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
-                mergeMethod: MergeMethod = .squash, closeOnMerge: Bool = false,
+                mergeMethod: MergeMethod = .squash, closeOnMerge: Bool = false, backgroundService: Bool? = nil,
                 designToolEnabled: Bool = false, missionsEnabled: Bool = false, missionsActive: Bool = false,
                 subagentDefaults: SubagentDefaults = SubagentDefaults(), worktreeDeleteAction: WorktreeDeleteAction = .ask,
                 skillsInSlashMenu: Bool = true, mcpProjectConfig: Bool = false,
@@ -164,6 +168,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.mergePRAutomatically = mergePRAutomatically
         self.mergeMethod = mergeMethod
         self.closeOnMerge = closeOnMerge
+        self.backgroundService = backgroundService
         self.designToolEnabled = designToolEnabled
         self.missionsEnabled = missionsEnabled
         self.missionsActive = missionsActive
@@ -183,7 +188,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, namingModel, compactAtPercent
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
-        case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, bundledExtensions, installedExtensions
+        case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
         case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
@@ -211,6 +216,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         mergePRAutomatically = try c.decode(Bool.self, forKey: .mergePRAutomatically)
         mergeMethod = try c.decode(MergeMethod.self, forKey: .mergeMethod)
         closeOnMerge = try c.decodeIfPresent(Bool.self, forKey: .closeOnMerge) ?? false
+        backgroundService = try c.decodeIfPresent(Bool.self, forKey: .backgroundService)
         designToolEnabled = try c.decodeIfPresent(Bool.self, forKey: .designToolEnabled) ?? false
         missionsEnabled = try c.decodeIfPresent(Bool.self, forKey: .missionsEnabled) ?? false
         missionsActive = try c.decodeIfPresent(Bool.self, forKey: .missionsActive) ?? false

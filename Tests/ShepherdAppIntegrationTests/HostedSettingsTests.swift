@@ -21,7 +21,8 @@ struct HostedSettingsTests {
         settings.designToolEnabled = false
         settings.remoteListenerEnabled = true
         settings.remoteListenerPort = 0
-        HostSettingsMapping.serve(on: host.server, settings: settings)
+        var service: BackgroundService.Status? = .enabled
+        HostSettingsMapping.serve(on: host.server, settings: settings) { service?.keepsAgentsRunning }
         let port = try #require(ShepherdHost.serveSettings(settings, on: host.server), "Serve this Mac listens in the host")
 
         let socket = host.dir.appendingPathComponent("h.sock").path
@@ -43,5 +44,12 @@ struct HostedSettingsTests {
         _ = try await phone.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
         defer { phone.disconnect() }
         #expect(try await phone.hostSettings().designToolEnabled)
+        // From the host's launchd status: on, off in Login Items, no job.
+        #expect(phone.capabilities.contains(RemoteProtocol.hostSettingsBackgroundServiceCapability))
+        #expect(try await phone.hostSettings().backgroundService == true)
+        service = .requiresApproval
+        #expect(try await phone.hostSettings().backgroundService == false)
+        service = nil
+        #expect(try await phone.hostSettings().backgroundService == nil)
     }
 }

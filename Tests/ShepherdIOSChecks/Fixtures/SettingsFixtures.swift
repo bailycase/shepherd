@@ -12,6 +12,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),
             FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
+            // Its background service turned off in Login Items: agents stop when Shepherd quits.
+            FixtureScreen(name: "host-service-off", hosts: FixtureData.serviceOff(),
+                          routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
             FixtureScreen(name: "host-offline", routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
             FixtureScreen(name: "hosts-refused", hosts: FixtureData.refusingLaptop(), routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host-refused", hosts: FixtureData.refusingLaptop(),
@@ -56,6 +59,15 @@ extension FixtureCatalog {
 }
 
 extension FixtureData {
+    /// The usual hosts, with the studio's background service turned off in Login Items.
+    static func serviceOff() -> [FixtureHostData] {
+        hosts().map { host in
+            var host = host
+            if host.id == studio { host.hostSettings?.backgroundService = false }
+            return host
+        }
+    }
+
     /// The given hosts (the usual ones by default), with the laptop up but refusing the phone's token.
     static func refusingLaptop(_ hosts: [FixtureHostData] = hosts()) -> [FixtureHostData] {
         hosts.map { host in
@@ -72,7 +84,7 @@ extension FixtureData {
     static func hostSettings(pi: String = "0.87.1") -> HostSettings {
         HostSettings(
             shepherdVersion: "0.4.2", piVersion: pi, defaultModel: "anthropic/claude-opus", defaultThinking: .medium,
-            queueDelivery: .all, mergePRAutomatically: true, mergeMethod: .squash, closeOnMerge: true,
+            queueDelivery: .all, mergePRAutomatically: true, mergeMethod: .squash, closeOnMerge: true, backgroundService: true,
             bundledExtensions: [
                 HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                 HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: true),
