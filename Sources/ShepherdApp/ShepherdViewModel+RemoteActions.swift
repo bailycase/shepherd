@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 extension ShepherdViewModel {
     func remoteAgent(_ target: RemoteAgentRef) -> Agent? {

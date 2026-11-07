@@ -608,6 +608,14 @@ final class ShepherdViewModel {
     let terminalPanels = TerminalPanels()
     /// System notifications when an unwatched agent finishes, fails, or asks, or a subagent asks.
     let notifications = AgentNotifications()
+    /// When local threads' turns and questions post (`ThreadBanners`): through `notifications`,
+    /// quiet while you watch.
+    @ObservationIgnored lazy var threadBanners = ThreadBanners(
+        server: server, state: { [unowned self] in self.state },
+        sink: .init(post: { [unowned self] in self.notifications.post($0) },
+                    remove: { [unowned self] in self.notifications.remove($0) },
+                    isWatching: { [unowned self] in self.isWatching($0) },
+                    notifyOnTurnFinished: { [unowned self] in self.settings.notifyOnTurnFinished }))
     let settings: AppSettings
     private let sidebarDefaults: UserDefaults
     let keybindings: KeybindingsStore
@@ -877,7 +885,7 @@ final class ShepherdViewModel {
         }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
-            self.notifications.agentNotify(agent, title: title, body: body)
+            self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
         }
         if let checkoutReader {
             let monitor = CheckoutMonitor(read: checkoutReader) { [server] ids, cwd, checkout in

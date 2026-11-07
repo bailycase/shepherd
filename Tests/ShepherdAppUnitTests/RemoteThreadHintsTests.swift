@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 @testable import ShepherdApp
+import ShepherdRemote
 
 /// Which remote threads each host hints about: the on-screen ordinary threads, capped, sent on change.
 @Suite("Remote thread hints")

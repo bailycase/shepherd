@@ -71,8 +71,8 @@ public struct PullRequestLinkHosting {
 }
 
 extension SessionServer {
-    /// Hosting with no app: gh through a login shell, and `deleteAgentRemovingWorktree`.
-    // ponytail: no banners here; slice 4 moves notifications into the server.
+    /// Hosting with no app: gh through a login shell, and `deleteAgentRemovingWorktree`. What the
+    /// user is told is only logged unless the host replaces `closed` and `keptOpen`.
     @MainActor
     public func headlessPullRequestHosting(closeOnMerge: @escaping @MainActor () -> Bool) -> PullRequestLinkHosting {
         var hosting = PullRequestLinkHosting(

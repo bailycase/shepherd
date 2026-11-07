@@ -38,110 +38,38 @@ extension ShepherdViewModel {
 
     // MARK: Posting
 
-    /// Whether an agent's turns and questions post as a thread's. A design's agent never does:
-    /// its chat is the design's, and every banner here words and acts on a thread.
+    /// Whether an agent's turns and questions post as a thread's (`ThreadBanners.notifiesAsThread`).
     static func notifiesAsThread(_ agentID: AgentID, in state: ShepherdState) -> Bool {
-        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return !state.isDesignAgent(agentID) }
-        return state.isOrdinaryThread(agent)
+        ThreadBanners.notifiesAsThread(agentID, in: state)
     }
 
-    /// A local agent's status report: a turn that finished (with its closing line) or failed,
-    /// and an asking tool that never opened a question.
+    /// A local agent's status report (`ThreadBanners.status`).
     func notifyStatus(_ agent: Agent, from old: AgentStatus, failure: TurnFailure?) {
-        guard notifications.available, Self.notifiesAsThread(agent.id, in: state) else { return }
-        let target = BannerTarget.agent(agent.id)
-        let report = UUID()
-        notifications.statusReports[agent.id] = report
-        let watching = isWatching(target)
-        if agent.status == .blocked, old == .working, !watching { postWaitingIfNoQuestion(agent.id) }
-        // No longer waiting: a "Waiting on your answer." banner (never a question's) comes down.
-        if old == .blocked, agent.status != .blocked, !notifications.localAsks.isAsking(agent.id) {
-            notifications.remove([AgentBanners.identifier("question", target)])
-        }
-        guard let banner = AgentBanners.status(of: agent, from: old, failure: failure, watching: watching) else { return }
-        guard failure == nil else {
-            Task { [weak self] in
-                guard let self else { return }
-                let thread = await self.snapshot(target)
-                guard self.notifications.statusReports[agent.id] == report,
-                      Self.notifiesAsThread(agent.id, in: self.state),
-                      self.state.agents.first(where: { $0.id == agent.id })?.piSessionID == agent.piSessionID else { return }
-                var stamped = banner
-                stamped.recovery = thread.flatMap(AgentBanners.recovery(in:))
-                self.notifications.post(stamped)
-            }
-            return
-        }
-        Task { [weak self] in
-            guard let self else { return }
-            let reply = await self.snapshot(target).flatMap { AgentBanners.closingReply(in: $0.messages) }
-            let current = self.state.agents.first { $0.id == agent.id } ?? agent
-            let result = AgentBanners.result(reply)
-            // Settings ▸ Agents ▸ Notify when a turn finishes: the one banner that can be muted.
-            guard self.settings.notifyOnTurnFinished else { return }
-            if let finished = AgentBanners.status(of: current, from: old, failure: nil, result: result, watching: false) {
-                self.notifications.post(finished)
-            }
-        }
+        guard notifications.available else { return }
+        threadBanners.status(agent, from: old, failure: failure)
     }
 
-    /// An asking tool set `blocked`; its question usually follows as `waitingOn`. If none comes,
-    /// the thread still waits on you, so say that much.
-    private func postWaitingIfNoQuestion(_ id: AgentID) {
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard let self, let agent = self.state.agents.first(where: { $0.id == id }), agent.status == .blocked,
-                  !self.notifications.localAsks.isAsking(id), !self.isWatching(.agent(id)) else { return }
-            self.notifications.post(AgentBanners.waiting(agent))
-        }
-    }
-
-    /// The questions local threads ask, from each adopted state: a new one posts, an answered one
-    /// comes down, and a deleted agent's go with it.
+    /// The questions local threads ask, from each adopted state (`ThreadBanners.questions`).
     func notifyLocalQuestions() {
         guard notifications.available else { return }
-        for agent in state.agents where Self.notifiesAsThread(agent.id, in: state) {
-            let target = BannerTarget.agent(agent.id)
-            switch notifications.localAsks.update(agent.id, waitingOn: agent.waitingOn) {
-            case .asked(let question):
-                guard !isWatching(target) else { continue }
-                let automation = state.automations.contains { $0.agentID == agent.id }
-                postQuestion(target, asked: question, title: agent.name, automation: automation)
-            case .answered:
-                notifications.remove([AgentBanners.identifier("question", target)])
-            case nil:
-                break
-            }
-        }
-        let live = Set(state.agents.map(\.id))
-        let gone = notifications.localAsks.prune { !live.contains($0) }
-        notifications.remove(gone.map { AgentBanners.identifier("question", .agent($0)) })
+        threadBanners.questions()
     }
 
-    /// A thread's question with the dock's choices: its dialog read from the thread.
-    private func postQuestion(_ target: BannerTarget, asked: String, title: String, automation: Bool) {
+    /// A remote thread's question with the dock's choices: its dialog read from the thread.
+    private func postQuestion(_ ref: RemoteAgentRef, asked: String, title: String, automation: Bool) {
         Task { [weak self] in
             guard let self else { return }
-            let dialogs = await self.snapshot(target)?.dialogs ?? []
-            let still: String? = switch target {
-            case .agent(let id): self.notifications.localAsks.current(id)
-            case .remote(let ref): self.notifications.remoteAsks.current(ref)
-            case .host: nil
-            }
-            guard still == asked else { return }
-            let dialog = dialogs.first { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) == asked } ?? dialogs.first
-            self.notifications.post(AgentBanners.question(dialog.map(NativeQuestionPrompt.init(dialog:)), asked: asked,
-                                                          title: title, target: target, automation: automation))
+            let dialogs = await self.snapshot(.remote(ref))?.dialogs ?? []
+            guard self.notifications.remoteAsks.current(ref) == asked else { return }
+            self.notifications.post(ThreadBanners.question(dialogs, asked: asked, title: title, target: .remote(ref),
+                                                           automation: automation))
         }
     }
 
     /// The agent is gone: its question's banner goes with it. A subagent's question never posts
     /// one: it goes to its parent, which asks the user in its own thread when it must.
     func forgetNotifications(of agentID: AgentID) {
-        let target = BannerTarget.agent(agentID)
-        notifications.localAsks.forget(agentID)
-        notifications.statusReports.removeValue(forKey: agentID)
-        notifications.remove([AgentBanners.identifier("question", target)])
+        threadBanners.forget(agentID)
     }
 
     /// Every host's threads notify here as this Mac's do: their questions.
@@ -167,7 +95,7 @@ extension ShepherdViewModel {
                 switch notifications.remoteAsks.update(ref, waitingOn: agent.waitingOn) {
                 case .asked(let question) where !isWatching(target):
                     let automation = connection.state.automations.contains { $0.agentID == agent.id }
-                    postQuestion(target, asked: question, title: agent.name, automation: automation)
+                    postQuestion(ref, asked: question, title: agent.name, automation: automation)
                 case .answered:
                     notifications.remove([AgentBanners.identifier("question", target)])
                 default:

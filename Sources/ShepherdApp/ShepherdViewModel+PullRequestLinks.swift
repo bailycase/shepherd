@@ -10,9 +10,6 @@ import SwiftUI
 /// (`PullRequestLinks`): what the app passes it, and the sidebar's badges.
 @MainActor
 extension ShepherdViewModel {
-    /// Closed-thread banners name no thread; clicking one opens nothing in particular.
-    nonisolated static let pullRequestBannerHost = UUID(uuidString: "00000000-0000-0000-0000-0000000000c1")!
-
     /// Keeps the links in the server (`SessionServer.servePullRequestLinks`): the switch read from
     /// Settings, the busy-checkout checks of Delete Worktree, and banners. `pullRequestLinks` and
     /// `pullRequestCloseNotes` follow the server's. Installed once at VM creation.
@@ -30,18 +27,10 @@ extension ShepherdViewModel {
             if pullRequestCloseNotes != links.closeNotes { pullRequestCloseNotes = links.closeNotes }
         }
         hosting.closed = { [weak self] agent, link, branch, remote in
-            self?.notifications.post(AgentBanner(
-                identifier: "pull-request-closed-\(agent.id.rawValue)", target: .host(Self.pullRequestBannerHost),
-                title: "Closed \(agent.name)", subtitle: "Pull request #\(link.ref.number) merged",
-                body: "Deleted the thread, its worktree, \(branch) and \(remote).", level: .passive, actions: [],
-                group: "pull-request-closed"))
+            self?.notifications.post(AgentBanners.pullRequestClosed(agent, number: link.ref.number, branch: branch, remote: remote))
         }
         hosting.keptOpen = { [weak self] agent, link, reason in
-            let target = BannerTarget.agent(agent.id)
-            self?.notifications.post(AgentBanner(
-                identifier: "pull-request-kept-\(agent.id.rawValue)", target: target,
-                title: "Kept \(agent.name)", subtitle: "Pull request #\(link.ref.number) merged",
-                body: "Not closed: \(reason).", level: .active, actions: [], group: AgentBanners.group(target)))
+            self?.notifications.post(AgentBanners.pullRequestKept(agent, number: link.ref.number, reason: reason))
         }
         server.servePullRequestLinks(hosting)
     }
