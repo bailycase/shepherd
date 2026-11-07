@@ -401,7 +401,8 @@ struct WorkspaceHeaderView: View {
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
                             pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } },
-                            apps: apps, runApp: { vm.runQuickApp($0) }, stopApp: { vm.stopApp($0) }, editApps: { vm.openAppsSettings() })
+                            apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },
+                            restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()
     }
 }

@@ -126,18 +126,10 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Runs `command` in a new terminal of `agentID`'s layout (the Browser's Start, an app's Run),
-    /// by the same rules as an agent's `terminal_open`. `title` names its tab; `start` starts its
-    /// shell at once rather than when its view first draws (an app run from Settings, whose
-    /// thread may not be on screen).
-    func openTerminalPane(for agentID: AgentID, cwd: String, command: String, title: String? = nil, start: Bool = false,
-                          respond: @escaping (PaneOutcome) -> Void) {
-        guard let agent = state.agents.first(where: { $0.id == agentID }),
-              let tab = state.tabs.first(where: { $0.id == agent.tabID }) else {
-            respond(.failed(code: "no_such_agent", message: "unknown agent \(agentID)"))
-            return
-        }
-        openTerminal(agent: agent, tab: tab, cwd: cwd, command: command, title: title, start: start, respond: respond)
+    /// Runs `command` in a new terminal of `agentID`'s layout (the Browser's Start), by the same
+    /// rules as an agent's `terminal_open`.
+    func openTerminalPane(for agentID: AgentID, cwd: String, command: String, respond: @escaping (PaneOutcome) -> Void) {
+        handle(.open(agentID: agentID, axis: .vertical, cwd: cwd, relativeTo: nil, command: command), activate: false, respond: respond)
     }
 
     // MARK: Helpers
@@ -175,22 +167,19 @@ extension ShepherdViewModel {
         tab: Tab,
         cwd: String?,
         command: String?,
-        title: String? = nil,
-        start: Bool = false,
         respond: @escaping (PaneOutcome) -> Void
     ) {
         let thread = agent.paneID.flatMap { tab.layout.leaf(withID: $0) } ?? tab.layout.firstLeaf
         let folder = cwd.map { ($0 as NSString).expandingTildeInPath } ?? thread.cwd
         do { try verifyCheckoutAvailable(folder) }
         catch { respond(.failed(code: "checkout_busy", message: String(describing: error))); return }
-        let newTerminal = LeafPane(cwd: folder, title: title)
+        let newTerminal = LeafPane(cwd: folder)
         guard let newLayout = tab.layout.splitting(pane: thread.id, axis: .horizontal, newPane: newTerminal) else {
             respond(.failed(code: "open_failed", message: "could not open a terminal beside the thread"))
             return
         }
 
         setLayout(newLayout, forTab: tab.id)
-        if start, let tab = state.tabs.first(where: { $0.id == tab.id }) { sessions.activateTerminal(newTerminal, in: tab) }
 
         // The terminal's view spawns the shell when it renders. Wait for that binding before
         // reporting, so a command runs in a live process rather than being written into a

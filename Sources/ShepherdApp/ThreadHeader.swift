@@ -3,6 +3,7 @@ import AppKit
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
 /// screen: "space / title", the branch chip only while a question replaces the composer,
@@ -45,6 +46,8 @@ struct ThreadHeader: View, Equatable {
     var apps: QuickApps?
     var runApp: (AppKey) -> Void = { _ in }
     var stopApp: (AppKey) -> Void = { _ in }
+    var restartApp: (AppKey) -> Void = { _ in }
+    var appOutput: (AppKey) -> Void = { _ in }
     var editApps: () -> Void = {}
 
     var body: some View {
@@ -57,7 +60,7 @@ struct ThreadHeader: View, Equatable {
         } trailing: {
             ThreadGoalHeader(store: store)
             if let apps {
-                ThreadAppsButton(apps: apps, run: runApp, stop: stopApp, edit: editApps)
+                ThreadAppsButton(apps: apps, run: runApp, stop: stopApp, restart: restartApp, output: appOutput, edit: editApps)
             }
             if let togglePane {
                 SHSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)

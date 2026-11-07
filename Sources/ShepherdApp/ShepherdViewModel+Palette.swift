@@ -127,7 +127,7 @@ extension ShepherdViewModel {
         if let target = unreconciledTerminalTarget {
             let panel = terminalPanels.panel(target.key)
             items += Self.terminalPaletteItems(shown: panel.shown, maximized: panel.shown && panel.maximized,
-                                               hasTerminals: !target.tabs.isEmpty, keys: keys)
+                                               hasTerminals: !panelTabs(target).isEmpty, keys: keys)
         }
 
         // Subagents, live and recent: a thread's, never a design's agent's.

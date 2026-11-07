@@ -49,9 +49,8 @@ private struct AppsGroupView: View {
                 SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
                     ForEach(group.apps) { app in
                         let key = AppKey(scope: group.scope, name: app.name)
-                        AppRow(app: app, running: model.run(key) != nil, starting: model.starting.contains(key),
-                               unavailable: vm.appRunUnavailable(group.scope),
-                               run: { vm.runApp(app, key: key) }, stop: { vm.stopApp(key) })
+                        AppRow(app: app, process: model.process(key),
+                               run: { vm.runApp(app, key: key) }, stop: { vm.stopApp(key) }, restart: { vm.restartApp(key) })
                             .contextMenu {
                                 Button("Edit…") { model.edit(app, scope: group.scope) }
                                 Button("Remove") { model.remove(key) }
@@ -79,14 +78,13 @@ private struct AppsGroupView: View {
 }
 
 /// One app: its kind's glyph in a tile, name (and Quick action), where it opens and what it runs,
-/// then Running and Stop, or Run.
+/// then what it is doing (AppStatusLabel) and Run, Stop or Restart.
 private struct AppRow: View {
     let app: AppDefinition
-    let running: Bool
-    let starting: Bool
-    let unavailable: String?
+    let process: AppProcessSnapshot?
     let run: () -> Void
     let stop: () -> Void
+    let restart: () -> Void
 
     var body: some View {
         HStack(spacing: SH.Space.l) {
@@ -109,21 +107,20 @@ private struct AppRow: View {
                     .help(app.command)
             }
             Spacer(minLength: SH.Space.xl)
-            if running {
-                HStack(spacing: SH.Space.s) {
-                    SHStatusDot(.done)
-                    Text(["Running", Self.port(app)].compactMap { $0 }.joined(separator: " · "))
-                        .font(.sh(.ui, weight: .regular)).foregroundStyle(AgentState.done.textColor)
-                }
-                .accessibilityElement(children: .combine)
+            if let process { AppStatusLabel(process: process) }
+            switch process?.status {
+            case .starting?, .running?:
                 Button(action: stop) { Label("Stop", systemImage: "stop.fill") }
                     .buttonStyle(.sh(.secondary, size: .s))
+                    .disabled(process?.stopping == true)
                     .accessibilityLabel("Stop \(app.name)")
-            } else {
+            case .exited?:
+                Button(action: restart) { Label("Restart", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Restart \(app.name)")
+            default:
                 Button(action: run) { Label("Run", systemImage: "play.fill") }
                     .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(unavailable != nil || starting)
-                    .help(unavailable ?? "")
                     .accessibilityLabel("Run \(app.name)")
             }
         }
@@ -132,7 +129,7 @@ private struct AppRow: View {
         .frame(minHeight: AppLayout.appsRowHeight)
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(running ? "\(app.name), running" : app.name)
+        .accessibilityLabel(process.map { "\(app.name), \(AppStatusLabel.words($0))" } ?? app.name)
     }
 
     static func symbol(_ opens: AppDefinition.Opens) -> String {
@@ -154,8 +151,44 @@ private struct AppRow: View {
         }
     }
 
-    /// ":3000" beside Running, for a browser app on a port.
-    static func port(_ app: AppDefinition) -> String? { app.url?.port.map { ":\($0)" } }
+}
+
+/// What an app is doing, as a dot and words: Starting…, Running · :3000, Stopping…,
+/// Exited (code 1), or why it couldn't start.
+struct AppStatusLabel: View {
+    let process: AppProcessSnapshot
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            SHStatusDot(state)
+            Text(Self.words(process))
+                .font(.sh(.ui, weight: .regular)).foregroundStyle(state.textColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .help(Self.words(process))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var state: AgentState {
+        switch process.status {
+        case .starting: .running
+        case .running: process.stopping ? .running : .done
+        case .exited(let code): code == 0 || process.stopping ? .idle : .failed
+        case .failed: .failed
+        }
+    }
+
+    static func words(_ process: AppProcessSnapshot) -> String {
+        switch process.status {
+        case .starting: return process.stopping ? "Stopping…" : "Starting…"
+        case .running:
+            if process.stopping { return "Stopping…" }
+            return ["Running", process.port.map { ":\($0)" }].compactMap { $0 }.joined(separator: " · ")
+        case .exited(let code): return "Exited (code \(code))"
+        case .failed(let why): return why
+        }
+    }
 }
 
 /// The small Quick action tag beside an app's name.

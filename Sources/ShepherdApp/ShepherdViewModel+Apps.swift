@@ -2,78 +2,103 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
-/// Run and Stop for an app (AppsSettings, AppsRunning boards): an app runs as a terminal tab
-/// under a thread, named for the app; a browser app's page opens in that thread's Browser once
-/// its address answers. Stop closes the tab, which ends the command.
+/// Run and Stop for an app (AppsSettings, AppsRunning boards). Shepherd runs it in the
+/// background (`AppProcesses`, owned by the server); no thread or terminal owns it. Its output
+/// shows as a read-only tab in a thread's terminal panel, and a browser app's page opens in that
+/// thread's Browser once its address answers.
 extension ShepherdViewModel {
-    /// The thread an app runs under: the selected thread when it is on this Mac and in the app's
-    /// space (any space for This Mac's apps), else the space's latest thread. Nil when the space
-    /// has none.
-    func appThread(for scope: AppScope) -> Agent? {
-        let visible = Set(state.spaces.filter { !$0.hidden }.map(\.id))
-        func eligible(_ agent: Agent) -> Bool {
-            guard visible.contains(agent.spaceID), design(drawnBy: agent) == nil else { return false }
-            if case .space(let id) = scope { return agent.spaceID == id }
-            return true
-        }
-        if selectedRemoteAgent == nil, let agent = selectedAgent, eligible(agent) { return agent }
-        return state.agents.last(where: eligible)
-    }
-
-    /// Why Run is off for `scope`, as its tooltip; nil when it can run.
-    func appRunUnavailable(_ scope: AppScope) -> String? {
-        guard appThread(for: scope) == nil else { return nil }
-        if case .space(let id) = scope, let space = state.spaces.first(where: { $0.id == id }) {
-            return "Start a thread in \(space.name) to run its apps"
-        }
-        return "Start a thread to run apps"
-    }
-
-    func runApp(_ app: AppDefinition, key: AppKey) {
-        guard apps.run(key) == nil, !apps.starting.contains(key) else { return }
-        guard let agent = appThread(for: key.scope) else { NSSound.beep(); return }
-        apps.starting.insert(key)
-        let root: String? = if case .space = key.scope { agentCwd(agent) } else { nil }
-        let directory = app.directory(root: root, home: apps.home)
-        let agentID = agent.id
-        openTerminalPane(for: agentID, cwd: directory, command: app.command, title: app.name, start: true) { [weak self] outcome in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.apps.starting.remove(key)
-                switch outcome {
-                case .opened(let info):
-                    self.apps.setRun(AppRun(agentID: agentID, paneID: info.id), for: key)
-                    if let url = app.url {
-                        self.showSidePane(.local(agentID), tab: .browser)
-                        self.browsers.session(for: agentID).wait(for: url)
+    /// Wires the server's app processes to Settings, the header and New thread. Called once.
+    func installApps() {
+        server.apps.onChange = { [weak self] snapshots in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.apps.adopt(snapshots)
+                    // A page waiting on an app that ended never answers: stop waiting.
+                    for (key, thread) in self.appPageWaits where snapshots[key]?.status.isLive != true {
+                        self.browsers.existing(thread)?.stopWaiting()
+                        self.appPageWaits[key] = nil
                     }
-                case .failed(_, let message):
-                    self.apps.problem = "Couldn’t run \(app.name): \(message)"
-                default:
-                    break
                 }
             }
         }
     }
 
-    /// Stop: closes the app's terminal tab and ends what it runs.
-    func stopApp(_ key: AppKey) {
-        guard let run = apps.run(key) else { return }
-        if let sessionID = state.tabs.lazy.compactMap({ $0.layout.leaf(withID: run.paneID) }).first?.sessionID {
-            server.killSession(sessionID)
-        }
-        _ = closeLocalPane(run.paneID)
-        apps.setRun(nil, for: key)
+    /// The thread on screen on this Mac when it is in `scope`'s space (any space for This Mac's
+    /// apps): its output and page show there.
+    func appThreadOnScreen(for scope: AppScope) -> Agent? {
+        guard selectedRemoteAgent == nil, destination == nil, let agent = selectedAgent, design(drawnBy: agent) == nil else { return nil }
+        if case .space(let id) = scope, agent.spaceID != id { return nil }
+        return agent
     }
 
-    /// Runs end with their tab: closed by hand, by Stop, or by its shell exiting.
-    func pruneAppRuns() {
-        guard !apps.runs.isEmpty else { return }
-        let live = Set(state.tabs.flatMap { $0.layout.leaves.map(\.id) })
-        apps.prune { live.contains($0) }
+    /// Where an app runs: a space's under the thread on screen when it is in that space (so a
+    /// worktree thread runs its own copy), else under the space's folder; This Mac's from home.
+    func appDirectory(_ app: AppDefinition, key: AppKey, thread: Agent?) -> String? {
+        switch key.scope {
+        case .mac: return app.directory(root: nil, home: apps.home)
+        case .space(let id):
+            guard let space = state.spaces.first(where: { $0.id == id }) else { return nil }
+            let root = thread.map(agentCwd) ?? HooksModel.expand(space.path, home: apps.home)
+            return app.directory(root: root, home: apps.home)
+        }
     }
+
+    /// Run: starts the app in the background. From a thread (`showOutput`), its output opens in
+    /// that thread's panel and its page in its Browser.
+    func runApp(_ app: AppDefinition, key: AppKey, showOutput: Bool = false) {
+        guard apps.process(key)?.status.isLive != true else { return }
+        let thread = appThreadOnScreen(for: key.scope)
+        guard let directory = appDirectory(app, key: key, thread: thread) else { NSSound.beep(); return }
+        server.apps.start(key, command: app.command, directory: directory, address: app.url) { [weak self] snapshot in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if case .failed(let why) = snapshot.status {
+                        self.apps.problem = "Couldn’t run \(app.name): \(why)"
+                        return
+                    }
+                    guard showOutput, let thread else { return }
+                    self.showAppOutput(key, title: app.name, in: thread)
+                    if let url = app.url {
+                        self.showSidePane(.local(thread.id), tab: .browser)
+                        self.browsers.session(for: thread.id).wait(for: url)
+                        self.appPageWaits[key] = thread.id
+                    }
+                }
+            }
+        }
+    }
+
+    /// Restart, after an app exited: the same command in the same folder.
+    func restartApp(_ key: AppKey) {
+        guard let process = apps.process(key), !process.status.isLive else { return }
+        let address = apps.apps(in: key.spaceID).first { $0.key == key }?.app.url
+        server.apps.start(key, command: process.command, directory: process.directory, address: address)
+    }
+
+    /// Stop: SIGTERM to the app's process group, SIGKILL after a grace period.
+    func stopApp(_ key: AppKey) {
+        server.apps.stop(key)
+    }
+
+    /// The app's output in `thread`'s terminal panel, on its own tab.
+    func showAppOutput(_ key: AppKey, title: String, in thread: Agent) {
+        terminalPanels.showApp(key, title: title, in: TerminalPanelKey(host: nil, tab: thread.tabID))
+    }
+
+    /// The header's running app: its output in the thread on screen.
+    func showAppOutput(_ key: AppKey) {
+        guard let thread = appThreadOnScreen(for: key.scope) else { NSSound.beep(); return }
+        showAppOutput(key, title: key.name, in: thread)
+    }
+}
+
+extension AppKey {
+    var spaceID: SpaceID? { if case .space(let id) = scope { id } else { nil } }
 }
 
 /// The quick actions a thread header or New thread offers for one space (AppsQuickAction,
@@ -82,9 +107,10 @@ struct QuickApps: Equatable {
     struct Item: Equatable, Identifiable {
         let key: AppKey
         let app: AppDefinition
-        let running: Bool
-        /// Why Run is off (no thread to run under); nil when it can run.
-        var unavailable: String?
+        /// What it is doing; nil before it first runs.
+        let status: AppStatus?
+        let port: Int?
+        var running: Bool { status?.isLive == true }
         var id: AppKey { key }
         /// "Browser tab", "Terminal", "Its own window".
         var place: String {
@@ -94,8 +120,8 @@ struct QuickApps: Equatable {
             case .window: "Its own window"
             }
         }
-        /// ":3000" beside a running browser app's name.
-        var port: String? { app.url?.port.map { ":\($0)" } }
+        /// ":3000" beside a running app's name.
+        var portLabel: String? { port.map { ":\($0)" } }
     }
 
     let space: String
@@ -109,7 +135,8 @@ extension ShepherdViewModel {
     func quickApps(in spaceID: SpaceID?) -> QuickApps? {
         guard let spaceID, let space = state.spaces.first(where: { $0.id == spaceID }), !space.hidden else { return nil }
         let items = apps.apps(in: spaceID).filter(\.app.quickAction).map {
-            QuickApps.Item(key: $0.key, app: $0.app, running: apps.run($0.key) != nil, unavailable: appRunUnavailable($0.key.scope))
+            let process = apps.process($0.key)
+            return QuickApps.Item(key: $0.key, app: $0.app, status: process?.status, port: process?.port)
         }
         return items.isEmpty ? nil : QuickApps(space: space.name, items: items)
     }
@@ -121,10 +148,9 @@ extension ShepherdViewModel {
         showSettings = true
     }
 
-    /// A quick action's Run: on the thread on screen when it is in the app's space (`appThread`).
-    func runQuickApp(_ key: AppKey) {
-        let space: SpaceID? = if case .space(let id) = key.scope { id } else { nil }
-        guard let app = apps.apps(in: space).first(where: { $0.key == key })?.app else { return }
-        runApp(app, key: key)
+    /// A quick action's Run (`showOutput` from a thread's header).
+    func runQuickApp(_ key: AppKey, showOutput: Bool = false) {
+        guard let app = apps.apps(in: key.spaceID).first(where: { $0.key == key })?.app else { return }
+        runApp(app, key: key, showOutput: showOutput)
     }
 }

@@ -48,26 +48,21 @@ extension SettingsPreviewTests {
             try await eventuallyOnMain("the apps to load") { apps.group(.space(space.id))?.apps.count == 4 }
         }
 
-        /// Runs `name` for real, with a stand-in command that stays up.
+        /// Runs `name` for real, in the background. A stand-in launcher prints what the board's
+        /// app prints and stays up: never this machine's shell, tools or names.
         func run(_ name: String, scope: AppScope) async throws {
             let key = AppKey(scope: scope, name: name)
             let app = try #require(vm.apps.apps(in: space.id).first { $0.key == key }?.app)
-            var standIn = app
-            // The shell's own prompt names this machine: clear it away so the terminal shows only
-            // the app's command, as the board does.
-            standIn.command = "clear; printf '$ %s\\n' '\(app.command)'; sleep 120"
-            vm.runApp(standIn, key: key)
-            let apps = vm.apps, vm = vm, server = workspace.server
-            try await eventuallyOnMain("\(name) to run", timeout: .seconds(20)) { apps.run(key) != nil }
-            let pane = try #require(apps.run(key)).paneID
-            var screen: [String] = []
-            try await eventuallyAsync("\(name)'s terminal to show only its command", timeout: .seconds(20)) {
-                guard let session = await MainActor.run(body: { vm.state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane) }.first?.sessionID })
-                else { return false }
-                screen = (await server.screenText(sessionID: session) ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                return screen == ["$ \(app.command)"]
-            }
-            #expect(!screen.joined().contains(ProcessInfo.processInfo.hostName.components(separatedBy: ".")[0]))
+            workspace.server.apps.setLauncher(["/bin/sh", "-c", """
+                case "$0" in
+                  "npm run dev") printf '> payments-web@0.4.0 dev\\n> next dev\\n\\n  ▲ Next.js 15.1\\n  - Local: http://localhost:3000\\n\\n ✓ Ready in 1.2s\\n GET /refunds 200 in 84ms\\n' ;;
+                  *) ;;
+                esac
+                exec sleep 120
+                """])
+            vm.runApp(app, key: key, showOutput: true)
+            let apps = vm.apps
+            try await eventuallyOnMain("\(name) to run", timeout: .seconds(20)) { apps.process(key)?.status == .running }
         }
     }
 
@@ -104,12 +99,29 @@ extension SettingsPreviewTests {
             RootView(vm: fixture.vm)
         }
         try await fixture.run("Web app", scope: .space(fixture.space.id))
-        let run = try #require(fixture.vm.apps.run(AppKey(scope: .space(fixture.space.id), name: "Web app")))
-        let tab = try #require(fixture.vm.state.tabs.first { $0.layout.leaf(withID: run.paneID) != nil })
-        let terminal = fixture.vm.sessions.session(for: try #require(tab.layout.leaf(withID: run.paneID)), in: tab)
-        try await Preview.render("apps-running", size: CGSize(width: 1600, height: 900), ready: { store.ready && terminal.phase == .live }) {
+        let apps = fixture.vm.apps
+        let key = AppKey(scope: .space(fixture.space.id), name: "Web app")
+        try await eventuallyOnMain("its output") { (apps.process(key)?.lineCount ?? 0) >= 8 }
+        try await Preview.render("apps-running", size: CGSize(width: 1600, height: 900), ready: { store.ready }) {
             RootView(vm: fixture.vm)
         }
+    }
+
+    /// An app that exited: Exited (code 1) and Restart, in Settings and under its output.
+    @Test func appsExited() async throws {
+        let fixture = try await AppsFixture()
+        defer { fixture.workspace.stop() }
+        let key = AppKey(scope: .space(fixture.space.id), name: "Storybook")
+        fixture.workspace.server.apps.setLauncher(["/bin/sh", "-c", "printf 'Error: port 6006 is already in use\\n'; exit 1"])
+        fixture.vm.runApp(try #require(fixture.vm.apps.apps(in: fixture.space.id).first { $0.key == key }?.app), key: key, showOutput: true)
+        let apps = fixture.vm.apps
+        try await eventuallyOnMain("Storybook to exit") { apps.process(key)?.status == .exited(1) }
+        let store = fixture.vm.threadStores.store(for: fixture.agent.id)
+        try await Preview.render("apps-exited", size: CGSize(width: 1440, height: 900), ready: { store.ready }) {
+            RootView(vm: fixture.vm)
+        }
+        fixture.vm.settingsSection = .apps
+        try await Preview.render("settings-apps-exited", size: CGSize(width: 1440, height: 900)) { SettingsView(vm: fixture.vm) }
     }
 
     @Test func newThreadApps() async throws {

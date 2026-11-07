@@ -72,7 +72,7 @@ extension ShepherdViewModel {
     /// ⇧⌘↩: the panel takes the layout and the thread folds away, or comes back. With no
     /// terminal there is nothing to maximize.
     func toggleTerminalMaximized() {
-        guard let target = terminalTarget, !target.tabs.isEmpty else { NSSound.beep(); return }
+        guard let target = terminalTarget, !panelTabs(target).isEmpty else { NSSound.beep(); return }
         terminalPanels.update(target.key) {
             $0.maximized = !$0.maximized || !$0.shown
             $0.shown = true
@@ -88,10 +88,15 @@ extension ShepherdViewModel {
         focusTerminal(tab.id, target: target)
     }
 
+    /// The panel's tabs: the layout's terminals, then any app output tabs.
+    func panelTabs(_ target: TerminalTarget) -> [TerminalPanelTab] {
+        terminalPanels.tabs(target.key, layout: target.layout, thread: target.thread)
+    }
+
     /// ⇧⌘] and ⇧⌘[: the next or previous tab, wrapping, while the panel shows more than one.
     func selectAdjacentTerminal(_ delta: Int) {
         guard let target = terminalTarget, terminalPanels.panel(target.key).shown,
-              let tab = TerminalPanel.adjacent(to: selectedTerminalTab(target), in: target.tabs, delta: delta) else { return }
+              let tab = TerminalPanel.adjacent(to: selectedTerminalTab(target), in: panelTabs(target), delta: delta) else { return }
         selectTerminalTab(tab, target: target)
     }
 
@@ -106,6 +111,10 @@ extension ShepherdViewModel {
 
     /// Closes a tab's terminal, as ⌘W does (never the thread's).
     func closeTerminalTab(_ tab: TerminalPanelTab, target: TerminalTarget) {
+        if terminalPanels.appKey(tab.id) != nil {
+            terminalPanels.closeApp(tab.id, in: target.key, terminals: target.tabs.count)
+            return
+        }
         guard tab.id != target.thread else { NSSound.beep(); return }
         if let remote = target.remote {
             Task {
@@ -146,6 +155,8 @@ extension ShepherdViewModel {
     }
 
     private func focusTerminal(_ pane: PaneID, target: TerminalTarget) {
+        // An app's output is a view, not a terminal: the keyboard stays where it is.
+        guard terminalPanels.appKey(pane) == nil else { return }
         if target.remote != nil { remoteFocusedPaneID = pane } else { focusedPaneID = pane }
     }
 }

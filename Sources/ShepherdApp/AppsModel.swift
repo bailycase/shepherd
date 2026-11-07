@@ -8,24 +8,6 @@ import ShepherdSessions
 // scripts a space could add, and which apps run now. Files are read off the main thread; the
 // page's groups are derived once per load, here, so views only draw them.
 
-/// Where an app is saved: for every space on this Mac, or in one space.
-enum AppScope: Hashable, Sendable {
-    case mac
-    case space(SpaceID)
-}
-
-/// One app as Settings and the thread header name it.
-struct AppKey: Hashable, Sendable {
-    var scope: AppScope
-    var name: String
-}
-
-/// A running app: the terminal tab it runs in, under a thread.
-struct AppRun: Equatable, Sendable {
-    var agentID: AgentID
-    var paneID: PaneID
-}
-
 @MainActor
 @Observable
 final class AppsModel {
@@ -57,10 +39,9 @@ final class AppsModel {
     private(set) var loaded = false
     @ObservationIgnored private var loading = false
     @ObservationIgnored private var reloadAgain = false
-    /// Apps running now, each in its terminal tab. Never persisted: terminals don't outlive a launch.
-    private(set) var runs: [AppKey: AppRun] = [:]
-    /// Apps whose terminal is opening: Run waits for it.
-    var starting: Set<AppKey> = []
+    /// What each app Shepherd has started is doing (`AppProcesses`, the one owner of app
+    /// processes). Never persisted: nothing restarts on the next launch.
+    private(set) var processes: [AppKey: AppProcessSnapshot] = [:]
     /// The Add or Edit sheet.
     var editor: AppEditor?
     /// The last change that failed, said on the page.
@@ -249,18 +230,12 @@ final class AppsModel {
         return result
     }
 
-    // MARK: Runs
+    // MARK: Processes
 
-    func run(_ key: AppKey) -> AppRun? { runs[key] }
+    func process(_ key: AppKey) -> AppProcessSnapshot? { processes[key] }
 
-    func setRun(_ run: AppRun?, for key: AppKey) {
-        if runs[key] != run { runs[key] = run }
-    }
-
-    /// Forgets runs whose terminal tab is gone (stopped, closed, or its shell exited).
-    func prune(livePanes: (PaneID) -> Bool) {
-        let gone = runs.filter { !livePanes($0.value.paneID) }.map(\.key)
-        for key in gone { runs[key] = nil }
+    func adopt(_ processes: [AppKey: AppProcessSnapshot]) {
+        if self.processes != processes { self.processes = processes }
     }
 }
 
@@ -353,8 +328,8 @@ final class AppEditor: Identifiable {
     var opensHelp: String {
         switch opens {
         case .browser: "Shepherd runs the command, waits for the address to answer, then opens it in a browser tab in the side pane. Its output goes to a tab in the terminal panel."
-        case .terminal: "Shepherd runs the command in a tab in the terminal panel, under the thread."
-        case .window: "Shepherd runs the command in a tab in the terminal panel; the app opens its own window."
+        case .terminal: "Shepherd runs the command in the background. Its output goes to a tab in the terminal panel."
+        case .window: "Shepherd runs the command in the background and the app opens its own window. Its output goes to a tab in the terminal panel."
         }
     }
 

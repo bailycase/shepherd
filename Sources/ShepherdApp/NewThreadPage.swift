@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSessions
 
 /// The New thread page (NavNewThread; ⌘N or the first destination): "What should the agent work
 /// on?", the composer with attach, the workplace chip (project · host, with the worktree option
@@ -88,7 +89,7 @@ struct NewThreadPage: View {
                     composer
                         .zIndex(1)
                     if draft.place?.host == nil, let apps = vm.quickApps(in: draft.place?.space) {
-                        NewThreadApps(apps: apps, run: { vm.runQuickApp($0) }, stop: { vm.stopApp($0) },
+                        NewThreadApps(apps: apps, run: { vm.runQuickApp($0) }, stop: { vm.stopApp($0) }, restart: { vm.restartApp($0) },
                                       edit: { vm.openAppsSettings() })
                     }
                 }
@@ -722,11 +723,13 @@ extension NewThreadState {
 }
 
 /// "Run in payments" and the space's quick actions under New thread's composer (AppsNewThread
-/// board): each runs under the space's latest thread; a running one stops.
+/// board): each runs in the background in the space's folder; a running one stops, and one that
+/// exited restarts.
 private struct NewThreadApps: View {
     let apps: QuickApps
     let run: (AppKey) -> Void
     let stop: (AppKey) -> Void
+    let restart: (AppKey) -> Void
     let edit: () -> Void
 
     var body: some View {
@@ -734,13 +737,23 @@ private struct NewThreadApps: View {
             Text("Run in \(apps.space)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
                 .padding(.trailing, SH.Space.xxs)
             ForEach(apps.items) { item in
-                Button { item.running ? stop(item.key) : run(item.key) } label: {
-                    Label(item.app.name, systemImage: item.running ? "stop.fill" : "play.fill").labelStyle(AppRunLabelStyle())
+                let (verb, glyph): (String, String) = switch item.status {
+                case .starting?, .running?: ("Stop", "stop.fill")
+                case .exited?: ("Restart", "arrow.clockwise")
+                default: ("Run", "play.fill")
+                }
+                Button {
+                    switch verb {
+                    case "Stop": stop(item.key)
+                    case "Restart": restart(item.key)
+                    default: run(item.key)
+                    }
+                } label: {
+                    Label(item.app.name, systemImage: glyph).labelStyle(AppRunLabelStyle())
                 }
                 .buttonStyle(.sh(.secondary, size: .s))
-                .disabled(!item.running && item.unavailable != nil)
-                .help(item.running ? "Stop \(item.app.name)" : item.unavailable ?? "Run \(item.app.name)")
-                .accessibilityLabel(item.running ? "Stop \(item.app.name)" : "Run \(item.app.name)")
+                .help("\(verb) \(item.app.name)")
+                .accessibilityLabel("\(verb) \(item.app.name)")
             }
             Button("Edit apps…", action: edit).buttonStyle(.shLink(color: Color.sh.textTertiary))
                 .padding(.leading, SH.Space.s)

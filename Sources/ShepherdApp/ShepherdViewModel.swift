@@ -371,6 +371,8 @@ final class ShepherdViewModel {
     let hooks: HooksModel
     /// Settings › Apps, and the apps running now.
     let apps: AppsModel
+    /// The thread whose Browser waits for each app's address.
+    @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
     /// Each remote host's hooks, made when first shown (`hooks(for:)`).
     @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
@@ -1165,6 +1167,7 @@ final class ShepherdViewModel {
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
         self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
+        installApps()
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes.
@@ -1396,7 +1399,6 @@ final class ShepherdViewModel {
             sidebarOpeningTurns.subtract(serverState.agents.filter { $0.status != .idle }.map(\.id))
         }
         state = serverState
-        pruneAppRuns()
         // A move keeps the selected thread and its existing layout visible in its new space.
         if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
             selectedSpaceID = agent.spaceID
