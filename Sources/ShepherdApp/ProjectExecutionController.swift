@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdSessions
 import ShepherdProtocol
 
 /// Executor-only ordinary worker creation. No owner placement, hidden Space or caller path.
