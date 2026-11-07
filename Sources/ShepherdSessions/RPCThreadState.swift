@@ -560,7 +560,9 @@ final class RPCThreadState {
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
     /// Whether the server has set them since the thread started.
     private(set) var turnChangesSet = false
-    /// The server held back a "done" report because the queue was about to go.
+    /// A done report the server has not applied: the queue was about to go, or pi's stdout had not
+    /// shown the run settle yet (the extension's socket can be a whole run ahead while a long
+    /// record decodes). `idleAfterQueue` applies it once pi is idle and nothing continues.
     var doneHeld = false
     /// pi is retrying a failed request (`auto_retry_start` until `auto_retry_end`).
     private(set) var retry: NativeThreadRetry?
@@ -768,7 +770,6 @@ final class RPCThreadState {
             runError = nil
             // A buffered start can arrive after Stop. Only newly authorized input clears it.
             settleAwaitingSteers = false
-            doneHeld = false
             if !items.isEmpty {
                 yieldGoalToQueue()
                 onUserInputWhileRunning?()

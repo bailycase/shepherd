@@ -962,6 +962,57 @@ struct QueueTests {
         try await eventually("done once the queue is empty") { agentStatus() == .done }
     }
 
+    /// The status extension's socket can run a whole run ahead of pi's stdout while a long record
+    /// decodes: B's done arrives while B's prompt is still unanswered and is held, and B's
+    /// `agent_start` is read after it. The held done outlives that start and lands when B settles.
+    @Test func aDoneThatOvertakesItsRunsStartLandsWhenTheRunSettles() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let armed = Locked(false)
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        h.server.beforeOffQueueDecode = {
+            guard armed.withValue({ armed in defer { armed = false }; return armed }) else { return }
+            entered.signal()
+            release.wait()
+        }
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_HISTORY_BYTES": String(1024 * 1024)])
+        let ready = try await pi.ready()
+        let status = try ExtensionClient(path: h.socketPath)
+        defer { status.closeConnection() }
+        func agentStatus() -> AgentStatus? { h.server.state.agents.first { $0.id == pi.agent.id }?.status }
+        func doneHeld() async throws -> Bool { try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.doneHeld == true } }
+
+        _ = try await pi.send("tools:0 first", from: ready)
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        _ = try await pi.snapshot("the first run to settle") { s in
+            !s.running && s.messages.contains { $0.blocks.first?.text == "Reply to tools:0 first" }
+        }
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
+        try await eventually("done after the first run") { agentStatus() == .done }
+
+        armed.withValue { $0 = true }
+        try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)!.refreshMessages() }
+        #expect(try await blocking { entered.wait(timeout: .now() + 30) == .success }, "a long history reached the decoder")
+
+        let second = UUID()
+        let b = Task { try await pi.send("tools:0 second", operationID: second, from: ready) }
+        _ = try await pi.waitForStdin("prompt", count: 2)
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
+        try await eventually("the done to be held") { try await doneHeld() }
+        #expect(agentStatus() == .working, "the second run's prompt is unanswered: the agent is not done")
+
+        release.signal()
+        #expect(try await b.value == .accepted(operationID: second))
+        _ = try await pi.snapshot("the second run to settle") { s in
+            !s.running && s.messages.contains { $0.blocks.first?.text == "Reply to tools:0 second" }
+        }
+        try await eventually("done once the second run settles") { agentStatus() == .done }
+        #expect(try await !doneHeld())
+    }
+
     /// Where a message came from outlives the app: after a relaunch the thread still shows the
     /// queue's parts with their own send times (pi's session holds only the joined message).
     @Test func originsSurviveARelaunch() async throws {
