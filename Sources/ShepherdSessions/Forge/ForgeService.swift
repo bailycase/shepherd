@@ -381,6 +381,15 @@ public final class ForgeService: @unchecked Sendable {
         return ForgeRepo(nameWithOwner: name, path: root)
     }
 
+    /// The newest pull request whose head is `branch` in `directory`'s repository (the thread's
+    /// branch card), any state; nil when there is none or gh can't say. A read, cached like the rest.
+    public func pullRequest(directory: String, branch: String) async -> PullRequestSummary? {
+        guard let repo = await repo(ofDirectory: directory),
+              case .success(let pulls) = await pulls(pullList(repo.nameWithOwner, ["--head=\(branch)", "--state=all"], limit: 1),
+                                                      repo: repo.nameWithOwner, links: Links()) else { return nil }
+        return pulls.first
+    }
+
     /// Each distinct GitHub repository among `directories`, in their order.
     func repos(_ directories: [String]) async -> [ForgeRepo] {
         // ponytail: the first 50 folders; a host with more threads than that rarely has more repositories.

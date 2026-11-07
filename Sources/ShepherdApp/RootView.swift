@@ -368,7 +368,7 @@ struct WorkspaceHeaderView: View {
                 threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,
                              branch: AgentBranchLabel(agent: agent), directory: vm.checkoutDirectory(of: agent.id),
                              showChanges: { vm.openReview(agentID: agent.id, path: nil) }, rename: { vm.agentRenameTarget = agent.id },
-                             pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil)
+                             pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil, branchCard: vm.branchCardHandle(for: agent))
                     // One toolbar per agent: switching replaces it at once instead of animating
                     // one agent's chip and pane button into another's.
                     .id(agent.id)
@@ -394,13 +394,13 @@ struct WorkspaceHeaderView: View {
     /// reruns only when what it shows changed.
     private func threadHeader(store: NativeThreadStore, owner: SidePaneOwner, project: String, title: String,
                               branch: AgentBranchLabel?, directory: String?, showChanges: @escaping () -> Void,
-                              rename: @escaping () -> Void, pin: SidebarRowID?) -> EquatableView<ThreadHeader> {
+                              rename: @escaping () -> Void, pin: SidebarRowID?, branchCard: BranchCardHandle? = nil) -> EquatableView<ThreadHeader> {
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
                             branch: branch, directory: directory,
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
-                            pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } })
+                            pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } }, branchCard: branchCard)
             .equatable()
     }
 }

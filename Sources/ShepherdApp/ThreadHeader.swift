@@ -6,7 +6,8 @@ import ShepherdRemote
 
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
 /// screen: "space / title", the branch chip only while a question replaces the composer,
-/// then the one side-pane button and the options menu (Refresh Thread, Rename…, Pin). Everything comes in as values, compared by
+/// then the one side-pane button, the options menu (Refresh Thread, Rename…, Pin) and the branch
+/// button with its card (BranchCard). Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
 /// ⌘J, the Terminal menu and the palette show it.
@@ -16,7 +17,7 @@ struct ThreadHeader: View, Equatable {
             && (a.showSidebar == nil) == (b.showSidebar == nil) && a.branch == b.branch && a.directory == b.directory
             && a.paneOpen == b.paneOpen && a.paneNews == b.paneNews && a.paneShortcut == b.paneShortcut
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
-            && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
+            && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && a.branchCard == b.branchCard && (a.togglePin == nil) == (b.togglePin == nil)
     }
 
     var store: NativeThreadStore
@@ -40,6 +41,9 @@ struct ThreadHeader: View, Equatable {
     /// automation's run, or the project tree on screen).
     var pinned: Bool?
     var togglePin: (() -> Void)?
+    /// The branch button and its card (BranchCard), last in the toolbar; nil for a thread whose
+    /// branch isn't known on this Mac.
+    var branchCard: BranchCardHandle?
 
     var body: some View {
         let _ = SHRenderProbe.tick("thread.header")
@@ -63,6 +67,7 @@ struct ThreadHeader: View, Equatable {
                     Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned), action: togglePin)
                 }
             }
+            if let branchCard { BranchCardButton(handle: branchCard) }
         }
     }
 }

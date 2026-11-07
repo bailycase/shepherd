@@ -310,6 +310,11 @@ private struct ChangesToolbar: View, Equatable {
         .padding(.leading, SH.Space.l)
         .padding(.trailing, 10)
         .frame(height: SHChangesMetrics.toolbarHeight)
+        .onChange(of: session.commitRequested && !session.isLoading, initial: true) { _, due in
+            guard due else { return }
+            session.commitRequested = false
+            if canCommit { commit() }
+        }
         .background(Color.sh.bgWindow)
         .overlay(alignment: .bottom) { SHHairline() }
     }

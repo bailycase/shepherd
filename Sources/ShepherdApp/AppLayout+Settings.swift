@@ -303,6 +303,10 @@ extension AppLayout {
     static let importCatalogDeadline: Duration = .seconds(20)
     /// The review's Commit… sheet, and the most its file list grows before it scrolls.
     static let commitSheetWidth: CGFloat = 520
+    /// The thread's branch card (BranchCard): its width, its rows' side inset and glyph column.
+    static let branchCardWidth: CGFloat = 300
+    static let branchCardInset: CGFloat = 14
+    static let branchCardGlyph: CGFloat = 16
     static let commitFileListMaxHeight: CGFloat = 232
     static let remoteWorktreeSheetWidth: CGFloat = 620
     /// A remote automation's details and runs, and how tall its run list grows before it scrolls.
