@@ -7,15 +7,6 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// What a new worktree branches from (Settings ▸ Worktrees).
-enum WorktreeBaseMode: String, CaseIterable {
-    /// The remote default branch (origin/<default>), fetched first when
-    /// enabled — a clean start matching the remote.
-    case fresh
-    /// The primary checkout's current branch — stacks on in-progress work.
-    case head
-}
-
 /// How an auto-merged finalize PR is merged (Settings ▸ Worktrees).
 enum WorktreeMergeMethod: String, CaseIterable {
     case merge, squash, rebase

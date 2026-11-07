@@ -720,41 +720,18 @@ final class TerminalSessionStore {
             }
             let cwd = AgentLaunch.resolvedCwd(pane.cwd)
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
-            try await server.projects.prepareProjectConfiguration(for: cwd)
-            // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
-            let (fresh, problem) = await AgentLaunch.prepare(for: agent, cwd: cwd, pi: server.pi, codemode: AppSettings.shared.codemode, requiredHistoryEntryID: requiredHistoryEntryID)
-            if requiredHistoryEntryID != nil, let problem { throw AgentStartFailure(message: problem.description) }
-            let parent = await server.projects.parentProject(of: cwd, state: state)
-            let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
-            // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
-            let command = try problem.map(AgentLaunch.refusedCommand)
-                ?? AgentLaunch.rpcCommand(for: agent, cwd: cwd, pi: server.pi, settings: AppSettings.shared.agentLaunch, sessionIsFresh: fresh, isAutomation: isAutomation,
-                                        project: state.projectContext(for: agent.id),
-                                        worktreeOwningSpace: StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree),
-                                        suggestFiles: suggestionFiles(isAutomation: isAutomation),
-                                        modelOverride: modelOverrides.removeValue(forKey: agent.id),
-                                        specKit: state.specKitLaunch(for: agent.id, cwd: cwd),
-                                        mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
-            // A forked transcript resumes: pi not finding it is a start problem, never a new session.
-            let resuming = fresh ? nil : agent.effectivePiSessionID
-            guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
-                  session.sessionID == nil,
-                  liveBinding(forPane: pane.id) == nil else {
-                throw TerminalSessionStoreError.paneUnavailable(pane.id)
+            var spawn = agentSpawn(agent, cwd: cwd, session: session)
+            spawn.isAutomation = isAutomation
+            spawn.requiredHistoryEntryID = requiredHistoryEntryID
+            spawn.specKit = true
+            spawn.stillWanted = { [unowned self] in
+                ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id)
+                    && session.sessionID == nil && liveBinding(forPane: pane.id) == nil
             }
-            let releaseCheckout = try reserveCheckoutForLaunch?(cwd)
-            defer { releaseCheckout?() }
-            let info = try await server.createSession(
-                params: CreateSessionParams(
-                    cwd: cwd,
-                    command: command.argv,
-                    cols: session.lastCols,
-                    rows: session.lastRows,
-                    env: command.env.isEmpty ? nil : command.env,
-                    runtime: .rpc
-                ),
-                resuming: resuming
-            )
+            let spawned: SessionInfo?
+            do { spawned = try await server.spawnAgent(spawn) }
+            catch let refused as AgentSpawnRefused { throw AgentStartFailure(message: refused.description) }
+            guard let info = spawned else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             createdSessionID = info.id
             aliveSessions.insert(info.id)
             // The host holds it until pi serves, so no snapshot shows the thread without it.
@@ -978,8 +955,7 @@ final class TerminalSessionStore {
             // from the agent record, resuming its pi session), everything else as a login
             // shell in the leaf cwd.
             let cwd = AgentLaunch.resolvedCwd(pane.cwd)
-            let command: SessionCommand
-            var resuming: String?
+            let info: SessionInfo
             if let agentID = pane.agentID,
                let agent = serverState?.agents.first(where: { $0.id == agentID }) {
                 guard session.isRPC, isRPCPane(pane, agent: agent) else {
@@ -992,46 +968,40 @@ final class TerminalSessionStore {
                 } else {
                     session.startupLocation = .other
                 }
-                try await server.projects.prepareProjectConfiguration(for: cwd)
+                var spawn = agentSpawn(agent, cwd: cwd, session: session)
                 // Respawn after relaunch: an agent that was never prompted has
-                // no session file yet, so seed one before pi looks for it.
-                let missing = ShepherdViewModel.folderExists(pane.cwd) ? nil
-                    : PiHomeProblem("folder missing: \(pane.cwd)")
-                var (fresh, problem) = (false, missing)
-                if missing == nil { (fresh, problem) = await AgentLaunch.prepare(for: agent, cwd: cwd, pi: server.pi, codemode: AppSettings.shared.codemode) }
-                let state = serverState ?? ShepherdState()
-                let parent = await server.projects.parentProject(of: cwd, state: state)
-                let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
-                command = try problem.map(AgentLaunch.refusedCommand)
-                    ?? AgentLaunch.rpcCommand(for: agent, cwd: cwd, pi: server.pi, settings: AppSettings.shared.agentLaunch, sessionIsFresh: fresh,
-                                            project: serverState?.projectContext(for: agent.id),
-                                            worktreeOwningSpace: StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree),
-                                            suggestFiles: suggestionFiles(isAutomation: false),
-                                            modelOverride: modelOverrides.removeValue(forKey: agent.id),
-                                            mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
-                if checksResume, !fresh { resuming = agent.effectivePiSessionID }
+                // no session file yet, so the spawn seeds one before pi looks for it.
+                spawn.problem = ShepherdViewModel.folderExists(pane.cwd) ? nil : PiHomeProblem("folder missing: \(pane.cwd)")
+                spawn.checksResume = checksResume
+                spawn.stillWanted = { [unowned self] in
+                    ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID)
+                        && session.sessionID == nil && liveBinding(forPane: session.paneID) == nil
+                }
+                guard let spawned = try await server.spawnAgent(spawn) else {
+                    throw TerminalSessionStoreError.paneUnavailable(session.paneID)
+                }
+                info = spawned
             } else {
-                command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
+                let command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
+                if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
+                guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID),
+                      session.sessionID == nil,
+                      liveBinding(forPane: session.paneID) == nil else {
+                    throw TerminalSessionStoreError.paneUnavailable(session.paneID)
+                }
+                let releaseCheckout = try reserveCheckoutForLaunch?(cwd)
+                defer { releaseCheckout?() }
+                info = try await server.createSession(
+                    params: CreateSessionParams(
+                        cwd: cwd,
+                        command: command.argv,
+                        cols: session.lastCols,
+                        rows: session.lastRows,
+                        env: command.env.isEmpty ? nil : command.env,
+                        runtime: session.isRPC ? .rpc : .pty
+                    )
+                )
             }
-            if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
-            guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID),
-                  session.sessionID == nil,
-                  liveBinding(forPane: session.paneID) == nil else {
-                throw TerminalSessionStoreError.paneUnavailable(session.paneID)
-            }
-            let releaseCheckout = try reserveCheckoutForLaunch?(cwd)
-            defer { releaseCheckout?() }
-            let info = try await server.createSession(
-                params: CreateSessionParams(
-                    cwd: cwd,
-                    command: command.argv,
-                    cols: session.lastCols,
-                    rows: session.lastRows,
-                    env: command.env.isEmpty ? nil : command.env,
-                    runtime: session.isRPC ? .rpc : .pty
-                ),
-                resuming: resuming
-            )
             createdSessionID = info.id
             aliveSessions.insert(info.id)
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID) else {
@@ -1142,24 +1112,16 @@ final class TerminalSessionStore {
         }
     }
 
-    /// The files an agent may suggest a line for as it launches (Settings ▸ Experiments ▸
-    /// Suggested instructions); none while the experiment is off for its kind of agent.
-    private func suggestionFiles(isAutomation: Bool) -> [InstructionFile] {
-        server.suggestions.snapshot().settings.files(for: isAutomation ? .automation : .thread)
-    }
-
-    /// Forked threads retain space ownership and cwd but not worktree-management metadata.
-    /// Verify Git's actual relationship off the main actor, never infer ownership from sibling names.
-    private static func ownedWorktreeWithoutMetadata(agent: Agent, cwd: String, state: ShepherdState) async -> Bool {
-        guard agent.worktreeBranch == nil, agent.worktreePath == nil,
-              let space = state.spaces.first(where: { $0.id == agent.spaceID }),
-              PiHome.canonical(space.path) != PiHome.canonical(cwd) else { return false }
-        let owner = PiHome.canonical(space.path)
-        return await Task.detached(priority: .userInitiated) {
-            var directory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: URL(fileURLWithPath: cwd).appendingPathComponent(".git").path,
-                                                 isDirectory: &directory), !directory.boolValue else { return false }
-            return (try? GitWorktree.containsCheckout(repo: owner, checkout: cwd)) == true
-        }.value
+    /// An agent's spawn from this store: the app's settings and MCP, the pane's grid, its checkout hold.
+    private func agentSpawn(_ agent: Agent, cwd: String, session: PaneSession) -> AgentSpawn {
+        var spawn = AgentSpawn(agent: agent, cwd: cwd, settings: AppSettings.shared.agentLaunch)
+        spawn.takeModelOverride = { [unowned self] in modelOverrides.removeValue(forKey: agent.id) }
+        spawn.cols = session.lastCols
+        spawn.rows = session.lastRows
+        spawn.mcp = { [mcpLaunch] parent, agent, cwd, state, verifiedWorktree in
+            try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree)
+        }
+        spawn.reserveCheckout = reserveCheckoutForLaunch
+        return spawn
     }
 }

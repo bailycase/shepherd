@@ -1,7 +1,6 @@
 import Foundation
 import CryptoKit
 import ShepherdProtocol
-import ShepherdSessions
 
 /// The New Agent sheet's "worktree" option and the space context menu's
 /// "New Worktree…": create a git worktree beside the checkout and start an
@@ -9,15 +8,16 @@ import ShepherdSessions
 /// mutate repository state" — explicit, user-initiated, and additive (a new
 /// branch + directory). The single subtractive counterpart is `remove`,
 /// reachable only through the confirmed Delete Worktree Agent dialog.
-enum GitWorktree {
-    struct Failure: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+public enum GitWorktree {
+    public struct Failure: LocalizedError {
+        public let message: String
+        public var errorDescription: String? { message }
+        public init(message: String) { self.message = message }
     }
 
     /// Cheap probe for showing the sheet row. `.git` may be a directory (a
     /// primary checkout) or a file (an existing worktree).
-    static func isRepo(_ path: String) -> Bool {
+    public static func isRepo(_ path: String) -> Bool {
         FileManager.default.fileExists(
             atPath: ((path as NSString).expandingTildeInPath as NSString)
                 .appendingPathComponent(".git")
@@ -27,7 +27,7 @@ enum GitWorktree {
     /// Where `add` will put the worktree: Shepherd's own
     /// `<support>/worktrees/<repo>-<hash>/<branch>`, so projects' parent folders
     /// stay clean. The hash of the repo path keeps same-named repos apart.
-    static func destination(repo: String, branch: String) -> String {
+    public static func destination(repo: String, branch: String) -> String {
         let repoPath = (repo as NSString).expandingTildeInPath
         let hash = SHA256.hash(data: Data(repoPath.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
         return ShepherdPaths.supportDirectory()
@@ -39,7 +39,7 @@ enum GitWorktree {
 
     /// The pre-support-folder sibling `<repo>-<branch>`, for agents created before
     /// worktrees moved that never recorded `worktreePath`.
-    static func existingDestination(repo: String, branch: String) -> String {
+    public static func existingDestination(repo: String, branch: String) -> String {
         let repoPath = (repo as NSString).expandingTildeInPath
         let legacy = ((repoPath as NSString).deletingLastPathComponent as NSString)
             .appendingPathComponent((repoPath as NSString).lastPathComponent + "-" + branch.replacingOccurrences(of: "/", with: "-"))
@@ -50,7 +50,7 @@ enum GitWorktree {
     /// A disposable, readable branch for the New Worktree sheet:
     /// `agent/<adjective>-<noun>-<4 digits>`. The suffix keeps repeat
     /// creations from colliding; the user can always type their own.
-    static func generatedBranch() -> String {
+    public static func generatedBranch() -> String {
         let adjectives = [
             "calm", "brave", "quiet", "amber", "bright", "clever", "eager", "gentle",
             "lucid", "mellow", "noble", "rapid", "solid", "swift", "vivid", "warm",
@@ -63,18 +63,24 @@ enum GitWorktree {
         return "agent/\(adjectives.randomElement()!)-\(nouns.randomElement()!)-\(number)"
     }
 
-    struct Identity: Equatable {
-        var repo: String
-        var path: String
-        var branch: String
-        var base: String?
+    public struct Identity: Equatable {
+        public var repo: String
+        public var path: String
+        public var branch: String
+        public var base: String?
+        public init(repo: String, path: String, branch: String, base: String?) {
+            self.repo = repo
+            self.path = path
+            self.branch = branch
+            self.base = base
+        }
     }
 
     /// Folder containing this repository's registered linked worktrees. Git
     /// is authoritative because worktrees may live somewhere other than the
     /// primary checkout's parent. Falls back to that parent before the first
     /// linked worktree exists.
-    static func importDirectory(repo: String) -> String {
+    public static func importDirectory(repo: String) -> String {
         let canonicalRepo = URL(fileURLWithPath: (repo as NSString).expandingTildeInPath)
             .resolvingSymlinksInPath().standardized.path
         if let output = try? run(["-C", canonicalRepo, "worktree", "list", "--porcelain", "-z"]),
@@ -91,7 +97,7 @@ enum GitWorktree {
     }
 
     /// Exact registered checkout membership, not a caller-controlled `.git` pointer or folder name.
-    static func containsCheckout(repo: String, checkout: String) throws -> Bool {
+    public static func containsCheckout(repo: String, checkout: String) throws -> Bool {
         let wanted = PiHome.canonical(checkout)
         let output = try run(["-C", PiHome.canonical(repo), "worktree", "list", "--porcelain", "-z"])
         return output.components(separatedBy: "\0").contains { field in
@@ -102,7 +108,7 @@ enum GitWorktree {
     /// Canonical primary checkout for any checkout in a repository. Git's
     /// common directory is more reliable than filesystem spelling alone on
     /// macOS runners where temporary paths may have aliases.
-    static func primaryCheckout(at path: String) throws -> String {
+    public static func primaryCheckout(at path: String) throws -> String {
         let checkout = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
             .resolvingSymlinksInPath().standardized.path
         let commonDir = try run([
@@ -115,7 +121,7 @@ enum GitWorktree {
     /// Read an existing linked worktree's primary checkout, branch, and best
     /// local base. A primary checkout is rejected because it belongs as a
     /// Space, not as a worktree Agent beneath itself.
-    static func identity(at path: String) throws -> Identity {
+    public static func identity(at path: String) throws -> Identity {
         let checkout = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
             .resolvingSymlinksInPath().standardized.path
         let commonDir = try run(["-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir"])
@@ -144,7 +150,7 @@ enum GitWorktree {
     /// otherwise set *that* as upstream and a bare `git push` inside the
     /// worktree would aim at the default branch. Returns the new worktree's
     /// absolute path.
-    static func add(repo: String, branch: String, from startPoint: String? = nil) throws -> String {
+    public static func add(repo: String, branch: String, from startPoint: String? = nil) throws -> String {
         let destination = destination(repo: repo, branch: branch)
         guard !FileManager.default.fileExists(atPath: destination) else {
             throw Failure(message: "\(destination) already exists")
@@ -165,7 +171,7 @@ enum GitWorktree {
     /// `git worktree add <dest> <branch>`; a remote branch ("origin/x") with no local copy gets one
     /// tracking it (`--track -b x <dest> origin/x`). git refuses a branch another worktree has.
     /// Returns the worktree's path and its local branch.
-    static func addExisting(repo: String, branch: String) throws -> (path: String, branch: String) {
+    public static func addExisting(repo: String, branch: String) throws -> (path: String, branch: String) {
         let repoPath = (repo as NSString).expandingTildeInPath
         let remote = branch.hasPrefix("origin/")
         let local = remote ? String(branch.dropFirst("origin/".count)) : branch
@@ -185,13 +191,13 @@ enum GitWorktree {
 
     /// Network git commands (fetch, set-head) give up after this long rather than hanging the
     /// worktree sheet on a dead network or a stalled remote.
-    static let networkTimeout: TimeInterval = 20
+    public static let networkTimeout: TimeInterval = 20
 
     /// The repo's default branch short name ("main"), from the local origin/HEAD symref. When
     /// that is missing it asks the remote (`git remote set-head origin --auto`) only if `network`
     /// is allowed, and otherwise falls back to a local origin/main or origin/master. Nil when
     /// there is no origin.
-    static func defaultBranch(repo: String, network: Bool = true) -> String? {
+    public static func defaultBranch(repo: String, network: Bool = true) -> String? {
         let repoPath = (repo as NSString).expandingTildeInPath
         func read() -> String? {
             guard let out = try? run(["-C", repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]) else {
@@ -211,7 +217,7 @@ enum GitWorktree {
     }
 
     /// Fetch a literal branch, never an option or a refspec; false on failure (offline, no remote).
-    static func fetch(repo: String, branch: String) -> Bool {
+    public static func fetch(repo: String, branch: String) -> Bool {
         let repoPath = (repo as NSString).expandingTildeInPath
         let ref = "refs/heads/\(branch)"
         guard (try? run(["-C", repoPath, "check-ref-format", ref])) != nil else { return false }
@@ -221,14 +227,14 @@ enum GitWorktree {
     /// A branch the user picked as the base honours Settings ▸ Worktrees ▸ Fetch before creating
     /// as the default does: `origin/<branch>` is fetched first, and a failed fetch leaves the cached
     /// ref. A local branch has nothing to fetch. Blocking (network); call off the main thread.
-    static func fetchPicked(repo: String, base: String, fetchFirst: Bool) {
+    public static func fetchPicked(repo: String, base: String, fetchFirst: Bool) {
         guard fetchFirst, base.hasPrefix("origin/") else { return }
         _ = fetch(repo: repo, branch: String(base.dropFirst("origin/".count)))
     }
 
     /// The current branch of the primary checkout ("feat/x"), or nil when
     /// detached.
-    static func currentBranch(repo: String) -> String? {
+    public static func currentBranch(repo: String) -> String? {
         guard let out = try? run(["-C", (repo as NSString).expandingTildeInPath, "branch", "--show-current"]) else {
             return nil
         }
@@ -237,13 +243,18 @@ enum GitWorktree {
     }
 
     /// The resolved start point for a new worktree, per the user's settings.
-    struct BaseResolution: Equatable {
+    public struct BaseResolution: Equatable {
         /// Passed to `add(from:)`; nil = git's HEAD default.
-        var startPoint: String?
+        public var startPoint: String?
         /// What the sheet's base field shows ("origin/main", "feat/x").
-        var display: String
+        public var display: String
         /// Freshness/provenance note for the sheet ("fetched just now").
-        var note: String
+        public var note: String
+        public init(startPoint: String?, display: String, note: String) {
+            self.startPoint = startPoint
+            self.display = display
+            self.note = note
+        }
     }
 
     /// Resolve the base per Settings ▸ Worktrees. `fresh` wants the remote
@@ -254,7 +265,7 @@ enum GitWorktree {
     /// as it is, fetched first like a picked branch. A branch that no longer exists is not
     /// replaced: `add` fails on it, so the thread never quietly starts somewhere else.
     /// Blocking (network); call off the main thread.
-    static func resolveBase(repo: String, mode: WorktreeBaseMode, fetchFirst: Bool, projectBase: String?) -> BaseResolution {
+    public static func resolveBase(repo: String, mode: WorktreeBaseMode, fetchFirst: Bool, projectBase: String?) -> BaseResolution {
         if let projectBase {
             let note = !projectBase.hasPrefix("origin/") ? "project default"
                 : !fetchFirst ? "project default · cached"
@@ -297,7 +308,7 @@ enum GitWorktree {
     /// uncommitted changes and 1 commit only on this branch"), nil when the
     /// worktree is clean and fully reconciled (or unreadable: a missing
     /// directory has nothing to lose).
-    static func unreconciledWork(worktree: String, branch: String) -> String? {
+    public static func unreconciledWork(worktree: String, branch: String) -> String? {
         guard let status = try? run(["-C", worktree, "status", "--porcelain"]) else { return nil }
         let dirty = status.split(separator: "\n").count
         // Commits on HEAD that no other local branch or remote ref reaches.
@@ -312,7 +323,7 @@ enum GitWorktree {
     }
 
     /// Destructive remote operations must not treat a failed probe as a clean checkout.
-    static func checkedUnreconciledWork(worktree: String, branch: String) throws -> String? {
+    public static func checkedUnreconciledWork(worktree: String, branch: String) throws -> String? {
         let status = try run(["-C", worktree, "status", "--porcelain"])
         let count = try run(["-C", worktree, "rev-list", "--count", "HEAD", "--not", "--remotes"])
         guard let unpushed = Int(count.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -327,7 +338,7 @@ enum GitWorktree {
 
     /// Why closing a merged pull request's worktree would lose work: uncommitted changes, or
     /// commits no remote has when HEAD isn't the pull request's head (`pushedHead`). Nil when safe.
-    static func closeBlocker(worktree: String, pushedHead: String) throws -> String? {
+    public static func closeBlocker(worktree: String, pushedHead: String) throws -> String? {
         let dirty = try run(["-C", worktree, "status", "--porcelain"]).split(separator: "\n").count
         if dirty > 0 { return "\(dirty) uncommitted change\(dirty == 1 ? "" : "s")" }
         let head = try run(["-C", worktree, "rev-parse", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -340,7 +351,7 @@ enum GitWorktree {
         return unpushed > 0 ? "\(unpushed) unpushed commit\(unpushed == 1 ? "" : "s")" : nil
     }
 
-    static func deletionFingerprint(worktree: String) throws -> String {
+    public static func deletionFingerprint(worktree: String) throws -> String {
         let identity = try identity(at: worktree)
         var digest = SHA256()
         func add(_ value: String) { digest.update(data: Data((value + "\0").utf8)) }
@@ -372,7 +383,7 @@ enum GitWorktree {
         return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    static func verifyIdentity(worktree: String, repo: String, branch: String) throws {
+    public static func verifyIdentity(worktree: String, repo: String, branch: String) throws {
         let current = try identity(at: worktree)
         let expectedRepo = try primaryCheckout(at: repo)
         guard current.repo == expectedRepo, current.branch == branch else {
@@ -382,7 +393,7 @@ enum GitWorktree {
 
     /// Remove the confirmed checkout and its original branch, if it still exists.
     /// A checkout switched after merging keeps its new branch.
-    static func remove(repo: String, branch: String, worktree: String? = nil, fingerprint: String? = nil, checkoutBranch: String? = nil) throws {
+    public static func remove(repo: String, branch: String, worktree: String? = nil, fingerprint: String? = nil, checkoutBranch: String? = nil) throws {
         let path = worktree ?? existingDestination(repo: repo, branch: branch)
         try verifyIdentity(worktree: path, repo: repo, branch: checkoutBranch ?? branch)
         if let fingerprint, try deletionFingerprint(worktree: path) != fingerprint {
@@ -421,4 +432,13 @@ enum GitWorktree {
         }
         return String(decoding: result.output, as: UTF8.self)
     }
+}
+
+/// What a new worktree branches from (Settings ▸ Worktrees).
+public enum WorktreeBaseMode: String, CaseIterable, Sendable {
+    /// The remote default branch (origin/<default>), fetched first when
+    /// enabled — a clean start matching the remote.
+    case fresh
+    /// The primary checkout's current branch — stacks on in-progress work.
+    case head
 }
