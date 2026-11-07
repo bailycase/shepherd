@@ -69,6 +69,7 @@ extension ShepherdViewModel {
             rowVisibility: { [weak self] in self?.mentionPictureVisibility($0, visible: $1, consumer: $2) },
             open: { [weak self] in self?.openDesignReference($0) },
             showBeside: { [weak self] in self?.showBoardBeside(.local(agentID), $0) },
+            settle: { _ = try await server.settleDesignBoardProposal(agentID: agentID, payloadID: $0, accept: $1) },
             attach: { [weak self] reference in
                 guard let self else { return }
                 try await self.attachDesignReference(reference, to: agentID)
@@ -182,6 +183,31 @@ extension ShepherdViewModel {
             guard let snapshot = try? await server.designSnapshot(id) else { return }
             rendering.boardPictures.request(id, snapshot: snapshot)
             rendering.thumbnails.update(id, snapshot: snapshot)
+        }
+    }
+
+    /// The board `owner`'s Design tab shows, as its card has it now (a drawn board settled from
+    /// the card shows so here too).
+    func paneBoard(_ owner: SidePaneOwner) -> DesignReferenceChips.Board? {
+        guard let shown = subagentInspector.boards[owner] else { return nil }
+        // Only the chips the thread already has: a view's read never makes them.
+        let chips: DesignReferenceChips? = switch owner {
+        case .local(let id): referenceChips[id]
+        case .remote(let ref): remoteReferenceChips[ref]
+        }
+        return shown.copy.flatMap { chips?.boards[$0] } ?? shown
+    }
+
+    /// The Design tab's Discard and Apply to design, on a board the agent drew.
+    func settlePaneBoard(_ owner: SidePaneOwner, _ board: DesignReferenceChips.Board, accept: Bool) {
+        guard let copy = board.copy else { return }
+        let chips: DesignReferenceChips? = switch owner {
+        case .local(let id): designReferenceChips(for: id)
+        case .remote(let ref): remoteDesignReferenceChips(for: ref)
+        }
+        guard let chips else { return }
+        Task {
+            if let failure = await chips.settle(copy, accept: accept) { remoteActionError = failure }
         }
     }
 

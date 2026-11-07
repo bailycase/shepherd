@@ -401,7 +401,7 @@ struct FixtureDesigns: Sendable {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions,
              .create, .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents,
              .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
-             .importBegin, .importChunk, .importFinish, .importCancel:
+             .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal:
             return .failure(Refusal(code: "fixture", message: "The fixture host changes nothing."))
         }
     }

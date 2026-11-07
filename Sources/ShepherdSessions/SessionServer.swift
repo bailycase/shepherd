@@ -4733,6 +4733,14 @@ public final class SessionServer: @unchecked Sendable {
             designGetRequest(id: id, agentID: agentID, reference: reference, what: what, client: client)
         case .designNote(let id, let agentID, let reference, let text):
             designNoteRequest(id: id, agentID: agentID, reference: reference, text: text, client: client)
+        case .designPropose(let id, let agentID, let reference, let source, let title):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+                return
+            }
+            answerOffQueue(id: id, client: client) { server in
+                .designReference(id: id, answer: try await server.proposeDesignBoard(agentID: agentID, reference: reference, source: source, title: title))
+            }
         }
     }
 

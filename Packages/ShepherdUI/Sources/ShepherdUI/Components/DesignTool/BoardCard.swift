@@ -100,6 +100,26 @@ public struct SHBoardCard<Actions: View>: View {
     }
 }
 
+/// A board the agent drew, before you add it (ThreadBoardDraft's "Draft", ThreadBoardChange's
+/// "Changed"): a lantern word on its tint.
+public struct SHBoardBadge: View {
+    let text: String
+
+    public init(_ text: String) { self.text = text }
+
+    public var body: some View {
+        Text(text)
+            .font(.sh(.caption, weight: .semibold))
+            .foregroundStyle(Color.sh.lanternText)
+            .lineLimit(1)
+            .padding(.horizontal, SH.Space.s)
+            .frame(height: SHBoardCardMetrics.badgeHeight)
+            .background(Color.sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+            .fixedSize()
+            .padding(.trailing, SH.Space.s)
+    }
+}
+
 /// A board's footer line, in its card and under the pane (ThreadBoardShown, ThreadBoardPane): the
 /// nib, "design › **board**" over its mono meta, and the actions on the right.
 public struct SHBoardFooterLine<Actions: View>: View {
@@ -223,6 +243,7 @@ public struct SHBoardPane<Actions: View>: View {
 
 public enum SHBoardCardMetrics {
     /// The pane's toolbar and footer (ThreadBoardPane).
+    public static let badgeHeight: CGFloat = 20
     public static let paneToolbar: CGFloat = 45
     public static let paneFooter: CGFloat = 52
     static let paneBars: CGFloat = paneToolbar + paneFooter
@@ -232,11 +253,12 @@ public enum SHBoardCardMetrics {
     public static let zoomRange: ClosedRange<CGFloat> = 0.1...4
     public static let zoomStep: CGFloat = 1.25
     public static let boardShadow: Double = 0.18
-    /// The scale that fits a board of `size` points inside `canvas`, less the pane's padding.
+    /// The scale that fits a board of `size` points inside `canvas`, less the pane's padding, and
+    /// never past its own size.
     public static func fitScale(_ size: CGSize?, in canvas: CGSize) -> CGFloat {
         guard let size, size.width > 0, size.height > 0 else { return 1 }
         let room = CGSize(width: canvas.width - 2 * panePadding, height: canvas.height - 2 * panePadding)
-        return min(max(min(room.width / size.width, room.height / size.height), zoomRange.lowerBound), zoomRange.upperBound)
+        return min(max(min(room.width / size.width, room.height / size.height, 1), zoomRange.lowerBound), zoomRange.upperBound)
     }
     /// One step in or out from `scale`, kept in `zoomRange`.
     public static func zoomed(_ scale: CGFloat, by steps: Int) -> CGFloat {
