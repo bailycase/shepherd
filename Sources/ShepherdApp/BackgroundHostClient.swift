@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -71,6 +72,53 @@ enum BackgroundHostClient {
         .appendingPathComponent("shepherd-client-\(getpid())", isDirectory: true)) -> SessionServer {
         SessionServer(socketPath: directory.appendingPathComponent("s.sock").path,
                       stateURL: directory.appendingPathComponent("state.json"))
+    }
+
+    /// Whether the app asks its host to drain: the host is an older build that takes `drain`.
+    /// An older host without it drains once it sees the new bundle on disk; one whose build
+    /// can't be compared is left alone.
+    static func asksToDrain(appBuild: String?, hostBuild: String?, capabilities: Set<String>) -> Bool {
+        guard capabilities.contains(RemoteProtocol.hostDrainCapability),
+              let app = appBuild.flatMap(Int.init), let host = hostBuild.flatMap(Int.init) else { return false }
+        return app > host
+    }
+
+    /// Whether the app, having lost its host, runs the workspace itself: only once the job is
+    /// turned off in Login Items and its socket is silent. An enabled job is restarting (a drain,
+    /// a crash) and the connection comes back on its own. An unregistered one is Quit and Stop
+    /// Agents, with this app on its way out; with no job (`SHEPHERD_BACKGROUND_HOST=1` against a
+    /// host run by hand) the app keeps reconnecting.
+    static func runsInProcess(afterLosing status: BackgroundService.Status?, answers: Bool) -> Bool {
+        status == .requiresApproval && !answers
+    }
+
+    @MainActor private static var relaunching = false
+
+    /// The app lost its host (`RemoteHostStore.onLocalHostLost`): checks the job and the socket
+    /// off main, and relaunches in process when the host is off for good.
+    static func hostLost(service: BackgroundService?, socket: String) {
+        Task.detached(priority: .utility) {
+            let status = service?.status()
+            guard runsInProcess(afterLosing: status, answers: RemoteHostClient.localSocketAnswers(socket)) else { return }
+            await MainActor.run { relaunchInProcess() }
+        }
+    }
+
+    /// Relaunches the app, which then owns the workspace in process (its start sees the job off),
+    /// and quits this copy, which owns nothing. The new copy comes forward only if this one was.
+    @MainActor static func relaunchInProcess() {
+        guard !relaunching else { return }
+        relaunching = true
+        ShepherdLog.info("background host is off; relaunching to run agents in process")
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.activates = NSApp.isActive
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            DispatchQueue.main.async {
+                if let error { return NSLog("Shepherd: relaunch failed: \(error)") }
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     /// The host's token: the remote one, which only this user can read.
