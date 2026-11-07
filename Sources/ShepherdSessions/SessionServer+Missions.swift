@@ -324,6 +324,23 @@ extension SessionServer {
 
     /// What became of a steer pi acknowledged: still queued, read (its user message is in the thread), or
     /// left unread when the run ended or stopped. An acknowledgement alone is never "consumed".
+    /// Server queue: push an alert about `agentID`. A mission's planner and stations stack under
+    /// the mission's title, the kind line naming who asks (NotifPhoneStacks); any other thread
+    /// stacks on its own under its name.
+    func sendPush(agentID: AgentID, kind: PushNotifications.Kind, preview: String?) {
+        let line = switch kind { case .needsAnswer: "Question"; case .error: "Turn failed"; case .done: "Turn finished" }
+        guard let mission = store.state.missions.first(where: { $0.run?.attempts.contains { $0.agentID == agentID } == true }),
+              let attempt = mission.run?.attempts.last(where: { $0.agentID == agentID }) else {
+            pushNotifications.send(agentID: agentID, kind: kind, title: store.state.agents.first { $0.id == agentID }?.name,
+                                   preview: preview, subtitle: line)
+            return
+        }
+        let station = attempt.stationID.flatMap { id in mission.draft.plan?.stations.first { $0.id == id } }
+        pushNotifications.send(agentID: agentID, kind: kind, title: mission.draft.title, preview: preview,
+                               group: "mission:\(mission.id.rawValue)",
+                               subtitle: station.map { "\($0.title) · \(line)" } ?? "Planner \(line.lowercased())")
+    }
+
     public func missionSteerOutcome(agentID: AgentID, operationID: UUID) async -> MissionSteerOutcome {
         (try? await enqueue {
             guard let thread = self.rpcThread(forAgent: agentID) else { return .threadClosed }
