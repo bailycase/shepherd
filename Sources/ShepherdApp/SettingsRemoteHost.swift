@@ -260,8 +260,10 @@ private struct RemoteSettingsSectionPage: View {
                                           options: HostSettings.WorktreeDeleteAction.allCases.map { ($0, HostSettingsPresentation.title($0)) })
                     }
                     .disabled(!v2)
+                    switchRow("Close threads when their pull request merges", s.closeOnMerge) { .closeOnMerge($0) }
+                        .disabled(!host.serves(RemoteProtocol.hostSettingsCloseOnMergeCapability))
                 }
-                if !v2 { NeedsNewer(host: host) }
+                if !v2 || !host.serves(RemoteProtocol.hostSettingsCloseOnMergeCapability) { NeedsNewer(host: host) }
             }
         case .extensions:
             SettingsPage(title: "Extensions", explanation: "What the agent loads on \(host.name): the extensions Shepherd bundles and the ones installed there.") {

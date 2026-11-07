@@ -44,6 +44,23 @@ struct RemoteHostSettingsTests {
                                     .change(.goalsEnabled(true)), .change(.goalsEnabled(false))])
     }
 
+    /// Close threads when their pull request merges, switched from a client through the listener.
+    @Test func aClientSwitchesCloseOnMerge() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let kept = Locked(HostSettings())
+        host.server.onRemoteHostSettings = { request, completion in
+            if case .change(let change) = request { kept.withValue { $0.apply(change) } }
+            completion(.success(kept.current))
+        }
+        let client = try await host.typed()
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.hostSettingsCloseOnMergeCapability))
+        #expect(!(try await client.hostSettings()).closeOnMerge, "off until switched on")
+        #expect(try await client.hostSettings(.change(.closeOnMerge(true))).closeOnMerge)
+        #expect(!(try await client.hostSettings(.change(.closeOnMerge(false)))).closeOnMerge)
+    }
+
     @Test func aHostsGUIThatCantApplyAChangeSaysWhy() async throws {
         let host = try RemoteHost()
         defer { host.stop() }

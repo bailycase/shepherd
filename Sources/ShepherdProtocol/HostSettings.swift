@@ -98,6 +98,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var deleteLocalBranch: Bool
     public var mergePRAutomatically: Bool
     public var mergeMethod: MergeMethod
+    /// Settings ▸ Worktrees ▸ Close threads when their pull request merges
+    /// (`hostSettingsCloseOnMergeCapability`). Older hosts omit it, which reads as off.
+    public var closeOnMerge: Bool
 
     /// Settings ▸ Experiments ▸ Design tool (`designToolExperimentCapability`). Older hosts omit
     /// it, which reads as false.
@@ -135,7 +138,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
-                mergeMethod: MergeMethod = .squash,
+                mergeMethod: MergeMethod = .squash, closeOnMerge: Bool = false,
                 designToolEnabled: Bool = false, missionsEnabled: Bool = false, missionsActive: Bool = false,
                 subagentDefaults: SubagentDefaults = SubagentDefaults(), worktreeDeleteAction: WorktreeDeleteAction = .ask,
                 skillsInSlashMenu: Bool = true, mcpProjectConfig: Bool = false,
@@ -160,6 +163,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.deleteLocalBranch = deleteLocalBranch
         self.mergePRAutomatically = mergePRAutomatically
         self.mergeMethod = mergeMethod
+        self.closeOnMerge = closeOnMerge
         self.designToolEnabled = designToolEnabled
         self.missionsEnabled = missionsEnabled
         self.missionsActive = missionsActive
@@ -179,7 +183,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, namingModel, compactAtPercent
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
-        case deleteLocalBranch, mergePRAutomatically, mergeMethod, bundledExtensions, installedExtensions
+        case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
         case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
@@ -206,6 +210,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         deleteLocalBranch = try c.decode(Bool.self, forKey: .deleteLocalBranch)
         mergePRAutomatically = try c.decode(Bool.self, forKey: .mergePRAutomatically)
         mergeMethod = try c.decode(MergeMethod.self, forKey: .mergeMethod)
+        closeOnMerge = try c.decodeIfPresent(Bool.self, forKey: .closeOnMerge) ?? false
         designToolEnabled = try c.decodeIfPresent(Bool.self, forKey: .designToolEnabled) ?? false
         missionsEnabled = try c.decodeIfPresent(Bool.self, forKey: .missionsEnabled) ?? false
         missionsActive = try c.decodeIfPresent(Bool.self, forKey: .missionsActive) ?? false
@@ -240,6 +245,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .deleteLocalBranch(let on): deleteLocalBranch = on
         case .mergePRAutomatically(let on): mergePRAutomatically = on
         case .mergeMethod(let method): mergeMethod = method
+        case .closeOnMerge(let on): closeOnMerge = on
         case .bundledExtension(let id, let on):
             if let index = bundledExtensions.firstIndex(where: { $0.id == id }) { bundledExtensions[index].on = on }
         case .updatePiDaily(let on): updatePiDaily = on
@@ -285,6 +291,8 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case deleteLocalBranch(Bool)
     case mergePRAutomatically(Bool)
     case mergeMethod(HostSettings.MergeMethod)
+    /// `RemoteProtocol.hostSettingsCloseOnMergeCapability`.
+    case closeOnMerge(Bool)
     /// Turns a bundled extension (`HostSettings.BundledExtension.id`) on or off.
     case bundledExtension(id: String, on: Bool)
     case updatePiDaily(Bool)
@@ -313,6 +321,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .missionsEnabled: RemoteProtocol.missionsExperimentCapability
         case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand:
             RemoteProtocol.hostSettingsV2Capability
+        case .closeOnMerge: RemoteProtocol.hostSettingsCloseOnMergeCapability
         default: nil
         }
     }

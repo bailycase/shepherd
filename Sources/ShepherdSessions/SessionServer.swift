@@ -663,6 +663,8 @@ public final class SessionServer: @unchecked Sendable {
     /// Main actor: who hosts automations (`serveAutomations`), and the unscoped runs starting
     /// now and those Stop cancelled while starting.
     @MainActor var automationHosting: AutomationHosting?
+    /// Main actor: each thread's pull request link (`servePullRequestLinks`); nil until served.
+    @MainActor public internal(set) var pullRequestLinks: PullRequestLinks?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
     @MainActor var cancelledAutomationRuns = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,

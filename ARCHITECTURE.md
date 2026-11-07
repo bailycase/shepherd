@@ -118,7 +118,7 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
 | Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |
-| Issues & PRs | `ShepherdSessions/Forge/`, `ShepherdApp/Forge/` |
+| Issues & PRs | `ShepherdSessions/Forge/`, `ShepherdApp/Forge/`; threads' pull request links and close on merge in `ShepherdSessions/PullRequestLinks.swift` |
 | Pi engine, launch, home | `PiLaunch.swift`, `PiEngine.swift`, `PiHome.swift`, [pi engine](docs/pi-engine.md) |
 
 ## Where new code belongs

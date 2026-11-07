@@ -24,18 +24,11 @@ final class ShepherdViewModel {
     /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
     /// over the same transport; none while the branch has no pull request.
     var branchPullRequests: [AgentID: ForgeStore] = [:]
-    @ObservationIgnored var branchPullRequestLookups: Set<AgentID> = []
-    /// Each local thread's link to its branch's pull request, as last looked up: the sidebar's
-    /// badge, the pane and Close threads when their pull request merges read it. Not persisted.
+    /// Each local thread's link to its branch's pull request, as the server last looked it up
+    /// (`PullRequestLinks.links`): the sidebar's badge and the pane read it.
     var pullRequestLinks: [AgentID: ThreadPullRequest] = [:]
-    /// Why a merged pull request's thread was kept open (running, uncommitted changes…).
+    /// Why a merged pull request's thread was kept open (`PullRequestLinks.closeNotes`).
     var pullRequestCloseNotes: [AgentID: String] = [:]
-    /// The pull request each thread was last seen with open this launch: only a merge seen
-    /// happening closes a thread, never one found merged after a restart.
-    @ObservationIgnored var pullRequestsSeenOpen: [AgentID: ForgeItemRef] = [:]
-    /// Threads the poll has looked up at least once this launch.
-    @ObservationIgnored var pullRequestsPolled: Set<AgentID> = []
-    @ObservationIgnored var pullRequestsClosing: Set<AgentID> = []
     @ObservationIgnored var pullRequestPoll: Task<Void, Never>?
     /// The branch's pull request in a checkout (`gh pr view`); tests replace it.
     @ObservationIgnored var branchPullRequestLookup: @MainActor (String) async -> ThreadPullRequest? = { cwd in
@@ -916,6 +909,7 @@ final class ShepherdViewModel {
         installDesignRenderHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
+        installPullRequestLinks()
         // Agents can see, message, and spawn peer threads.
         installAgentPeerControl()
         // Agents drive their thread's Browser page.

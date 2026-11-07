@@ -246,7 +246,7 @@ enum RemoteSamples {
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
         defaultServiceTier: .fast, namingModel: "anthropic/claude-haiku", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
-        worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase,
+        worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
         designToolEnabled: true, missionsEnabled: true, missionsActive: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
         worktreeDeleteAction: .removeWorktree, skillsInSlashMenu: false, mcpProjectConfig: true,
@@ -282,6 +282,7 @@ enum RemoteSamples {
         .designToolEnabled(true), .missionsEnabled(false),
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2, model: nil, thinking: nil, context: .fresh)),
         .worktreeDeleteAction(.keepWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
+        .closeOnMerge(true), .closeOnMerge(false),
     ]
     static let configRequests: [RemoteHostConfigRequest] = [
         .mcpEntry(name: "github"),
@@ -773,7 +774,7 @@ struct RemoteReplyTests {
         var object = try Wire.object(RemoteReply.hostSettings(id: 1, settings: S.hostSettings))
         var settings = try #require(object["settings"] as? [String: Any])
         for key in ["designToolEnabled", "missionsEnabled", "missionsActive", "subagentDefaults", "worktreeDeleteAction",
-                    "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands"] {
+                    "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands", "closeOnMerge"] {
             settings[key] = nil
         }
         object["settings"] = settings
@@ -785,6 +786,7 @@ struct RemoteReplyTests {
         #expect(decoded.subagentDefaults == HostSettings.SubagentDefaults())
         #expect(decoded.worktreeDeleteAction == .ask && decoded.skillsInSlashMenu && !decoded.mcpProjectConfig)
         #expect(decoded.slashCommands.isEmpty && decoded.hiddenSlashCommands.isEmpty)
+        #expect(!decoded.closeOnMerge, "an older host never closes threads on merge")
     }
 
     /// A provider's row never carries a credential: the wire has the state and its words only.
@@ -1076,7 +1078,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
-            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability,
+            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
@@ -1110,6 +1113,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")
+        #expect(RemoteProtocol.hostSettingsCloseOnMergeCapability == "hostSettings.closeOnMerge.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
         #expect(RemoteProtocol.missionsExperimentCapability == "experiments.missions.v1")

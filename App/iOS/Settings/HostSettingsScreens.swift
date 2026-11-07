@@ -153,14 +153,22 @@ struct WorktreesScreen: View {
                 SettingsFootnote("Shepherd never deletes the remote branch: merging the PR cleans it up on GitHub.")
             }
             .shAnimation(.disclosure, value: settings.mergePRAutomatically)
-            if host.serves(RemoteProtocol.hostSettingsV2Capability) {
+            let closeOnMerge = host.serves(RemoteProtocol.hostSettingsCloseOnMergeCapability)
+            if host.serves(RemoteProtocol.hostSettingsV2Capability) || closeOnMerge {
                 SettingsSection("Deleting") {
                     SHListCard {
-                        SettingsControlRow("Deleting a worktree agent",
-                                           note: "**Ask** shows the confirmation. A remembered removal still asks when the checkout has unreconciled work.") {
-                            SettingsPicker("Deleting a worktree agent", selection: settings.worktreeDeleteAction,
-                                           options: HostSettings.WorktreeDeleteAction.allCases,
-                                           title: HostSettingsPresentation.title) { post(.worktreeDeleteAction($0)) }
+                        if host.serves(RemoteProtocol.hostSettingsV2Capability) {
+                            SettingsControlRow("Deleting a worktree agent",
+                                               note: "**Ask** shows the confirmation. A remembered removal still asks when the checkout has unreconciled work.") {
+                                SettingsPicker("Deleting a worktree agent", selection: settings.worktreeDeleteAction,
+                                               options: HostSettings.WorktreeDeleteAction.allCases,
+                                               title: HostSettingsPresentation.title) { post(.worktreeDeleteAction($0)) }
+                            }
+                        }
+                        if closeOnMerge {
+                            SettingsSwitchRow("Close threads when their pull request merges",
+                                              note: "Deletes the thread, its worktree and its branch, here and on GitHub. A thread that is running, asking, or holds uncommitted or unpushed work stays open with a note.",
+                                              isOn: settings.closeOnMerge) { post(.closeOnMerge($0)) }
                         }
                     }
                 }
