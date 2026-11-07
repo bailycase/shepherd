@@ -93,7 +93,7 @@ struct AddSpaceSheet: View {
             VStack(alignment: .leading, spacing: SH.Space.m) {
                 label("Space name")
                 TextField("Space name", text: $model.name, prompt: Text("shepherd-landing"))
-                    .shField(focused: focused == .name).focused($focused, equals: .name)
+                    .shField(focused: focused == .name).focused($focused, equals: .name).accessibilityLabel("Space name")
                 HStack(alignment: .top, spacing: SH.Space.xxl) {
                     VStack(alignment: .leading, spacing: SH.Space.m) {
                         label("Host")
@@ -113,7 +113,7 @@ struct AddSpaceSheet: View {
                                          : "\(model.host?.name ?? "This host") adds a root space named after its folder.")
                 label("Space folder").padding(.top, SH.Space.m)
                 TextField("Space folder", text: $model.path, prompt: Text("~/code/shepherd-landing"))
-                    .shField(focused: focused == .path, mono: true).focused($focused, equals: .path)
+                    .shField(focused: focused == .path, mono: true).focused($focused, equals: .path).accessibilityLabel("Space folder")
                 HStack(spacing: SH.Space.l) {
                     Button("Choose a folder…") { model.browsing = true }.buttonStyle(.sh(.secondary)).disabled(model.host == nil)
                     hint("Or enter its path above.")
@@ -121,7 +121,7 @@ struct AddSpaceSheet: View {
                 if let parent = model.parentName {
                     VStack(alignment: .leading, spacing: SH.Space.xs) {
                         label("Inherited from \(parent)")
-                        hint("MCP servers, skills, slash commands, subagents, extensions and defaults. Child overrides stay separate.")
+                        hint("MCP servers, skills, slash commands, extensions and defaults. Child overrides stay separate.")
                         hint("The folder can be elsewhere on \(model.host?.name ?? "this host"). This does not move files.")
                     }.padding(.top, SH.Space.m)
                 }
