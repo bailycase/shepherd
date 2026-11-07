@@ -48,9 +48,38 @@ struct ThreadHostingTests {
 
         try await client.agentAction(agentID: id, action: .rename(name: "Build check"))
         #expect(h.server.state.agents.first { $0.id == id }?.name == "Build check")
-        await #expect(throws: RemoteHostClientError.self) { try await client.agentAction(agentID: id, action: .move(spaceID: SpaceID())) }
+        await #expect(throws: RemoteHostClientError.self, "no such space") { try await client.agentAction(agentID: id, action: .move(spaceID: SpaceID())) }
         try await client.agentAction(agentID: id, action: .deleteKeepingWorktree)
         #expect(!h.server.state.agents.contains { $0.id == id })
+    }
+
+    @Test func theAppMovesADormantThreadToAnotherSpaceAndItStaysDormant() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let source = Space(name: "acme-web", path: h.dir.path)
+        try await h.server.addSpace(source)
+        let folder = h.dir.appendingPathComponent("docs")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = Space(name: "acme-docs", path: folder.path, parentID: source.id, parentIsExplicit: true)
+        try await h.server.addSpace(destination)
+        let pane = LeafPane(cwd: source.path)
+        let tab = ShepherdCore.Tab(spaceID: source.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "Docs pass", spaceID: source.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+        try await h.server.addAgent(agent, withTab: tab)
+        let sessions = h.server.pi.sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: source.path))
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let header: [String: Any] = ["type": "session", "id": agent.effectivePiSessionID, "version": 3, "cwd": source.path]
+        try (JSONSerialization.data(withJSONObject: header) + Data("\n".utf8))
+            .write(to: sessions.appendingPathComponent("test_\(agent.effectivePiSessionID).jsonl"))
+        let client = try await connect(path, token)
+        defer { client.disconnect() }
+
+        try await client.agentAction(agentID: agent.id, action: .move(spaceID: destination.id))
+
+        #expect(h.server.state.agents.first { $0.id == agent.id }?.spaceID == destination.id)
+        #expect(h.server.state.tabs.first { $0.id == tab.id }?.spaceID == destination.id)
+        #expect(!StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue }, "a dormant thread stays dormant")
     }
 
     @Test func openingADormantThreadStartsItsPi() async throws {
