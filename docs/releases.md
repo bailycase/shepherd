@@ -112,7 +112,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     out, and an old copy of this workflow (which downloads `Shepherd.dmg`) never picks up a
     Shepherd Nightly build.
   - The build job runs `release.py verify-app` before signing: the bundle id, name, executable
-    and `SUFeedURL` must be the planned app's.
+    and `SUFeedURL` must be the planned app's, and so must the background host's LaunchAgent
+    (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, written by the "Background host
+    LaunchAgent" build phase with `scripts/host-launch-agent.sh`): its label, `BundleProgram`,
+    `--host` argument and associated bundle id. The plist is a sealed resource, so signing needs
+    nothing more for it.
   - `ChannelDelegate` computes the feed from the edition, so a Shepherd Nightly build reads its
     own feed even if its `SUFeedURL` were wrong.
 - **One EdDSA key** (`SPARKLE_PRIVATE_KEY`, `SUPublicEDKey`) signs both apps.
