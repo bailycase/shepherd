@@ -719,10 +719,26 @@ struct ListPerformanceTests {
         return SHRenderProbe.stop()
     }
 
-    /// A thread of sixty turns under its toolbar, loaded and at rest.
-    private func chromeThread(running: Bool) async throws -> FakeThread {
+    /// Waits until the thread has stopped building rows: what a change set off (the tail guard
+    /// putting a thread back on its tail, a late layout) has landed, so a count starts from rest.
+    private func atRest(_ window: OffscreenWindow, polls: Int = 30) async throws {
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        var built = 0, still = 0
+        try await eventuallyOnMain("the thread to stop building rows", timeout: .seconds(30)) {
+            ListPerf.settle(window)
+            let now = ["thread.rowBuilder", "thread.view", "composer.body"].reduce(0) { $0 + SHRenderProbe.count($1) }
+            still = now == built ? still + 1 : 0
+            built = now
+            return still >= polls
+        }
+    }
+
+    /// A thread of sixty turns under its toolbar, loaded and at rest. Running, it holds a streaming
+    /// reply, or with `streaming` false none yet: pi works and the thread ends in its wait line.
+    private func chromeThread(running: Bool, streaming: Bool = true) async throws -> FakeThread {
         var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120) + (running ? [ThreadFixture.user("u", "Go on")] : []),
-                                              provisional: running ? [ThreadFixture.streaming("Streaming")] : [], running: running,
+                                              provisional: running && streaming ? [ThreadFixture.streaming("Streaming")] : [], running: running,
                                               stats: NativeThreadStats(contextTokens: 42_000))
         snapshot.context = Self.context(42_000)
         let thread = FakeThread(snapshot, header: true)
@@ -935,6 +951,82 @@ struct ListPerformanceTests {
         edited.queue?.items[1].text = "And lint it, then format"
         let changed = try await counting(thread.window) { await thread.serve(edited) }
         #expect(changed["queue.row", default: 0] >= 1, "\(changed)")
+    }
+
+    /// pi works and nothing has streamed yet: the thread ends in its wait line ("Waiting for
+    /// response" and its clock). A hook's status and the request's first event change what it says,
+    /// and redraw that line alone, never the thread's body, its rows or the composer.
+    @Test func aWaitLineChangeRedrawsOnlyItsLine() async throws {
+        let thread = try await chromeThread(running: true, streaming: false)
+        defer { thread.close() }
+        #expect(thread.store.showsThinking && thread.store.liveRow == nil, "the thread ends in its wait line")
+        // The request is in flight before the changes begin: its clock is already on the line, so the line keeps its height.
+        let sent = Date().timeIntervalSince1970 * 1000 - 3000
+        var inFlight = thread.snapshot
+        inFlight.revision += 1
+        inFlight.liveRequest = NativeResponseTiming(sentAt: sent)
+        await thread.serve(inFlight)
+        try await atRest(thread.window)
+
+        let rows = try await counting(thread.window) {
+            for step in 1...6 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.hookStatus = step.isMultiple(of: 2) ? nil : "Checking the path"
+                next.liveRequest = NativeResponseTiming(sentAt: sent, firstEventAt: step.isMultiple(of: 2) ? sent + 900 : nil)
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        #expect(thread.store.liveWait == NativeLiveWait(phase: .started, since: sent), "\(thread.store.liveWait)")
+        #expect(rows["thread.waitLine", default: 0] >= 6, "the line changed with each snapshot: \(rows)")
+        for key in ["thread.view", "thread.column", "composer.body"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
+    /// A tool starting or ending flips the live "Thinking…" line (`showsThinking`). That costs the
+    /// thread no more than a streamed chunk does: the live row redraws, and the thread's body, the
+    /// rows around it and the composer stay as they were.
+    @Test func aToolBoundaryCostsTheThreadNoMoreThanAChunk() async throws {
+        let thread = try await chromeThread(running: true)
+        defer { thread.close() }
+        try await atRest(thread.window)
+
+        let chunks = try await counting(thread.window) {
+            for index in 1...6 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming("Streaming" + String(repeating: " more words", count: index * 4))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        try await atRest(thread.window)
+        let boundaries = try await counting(thread.window) {
+            for step in 1...6 {
+                let finished = step.isMultiple(of: 2)
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.bash(finished ? "complete" : "running")]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+                #expect(thread.store.showsThinking == finished, "step \(step): between tools only once the call has ended")
+            }
+        }
+
+        // Recorded on the base for the PR: the counts of both runs.
+        #expect(boundaries["thread.liveRow", default: 0] >= 6, "the live row followed each step: \(boundaries)")
+        for key in ["thread.view", "thread.column"] {
+            #expect(boundaries[key, default: 0] <= chunks[key, default: 0], "\(key): chunks \(chunks), tool boundaries \(boundaries)")
+        }
+        // See aStreamedChunkRedrawsNoComposerOrToolbar: CI's VM redraws the composer per chunk.
+        withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
+            #expect(boundaries["composer.body", default: 0] == 0, "\(boundaries)")
+        } when: {
+            !TimingTests.enabled
+        }
     }
 
     @Test(arguments: [false, true])

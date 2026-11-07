@@ -137,6 +137,25 @@ struct ThreadMotionTests {
         #expect(count > 0)
     }
 
+    /// A reply that opens with a running call is made after the thread caught up, and its first
+    /// part makes its entrance: the live row's first render is not a catch-up.
+    @Test func aNewRepliesFirstPartMakesItsEntrance() async throws {
+        let asked = ThreadFixture.history(4) + [ThreadFixture.user("u9", "Build it")]
+        let thread = FakeThread(ThreadFixture.snapshot(asked, running: true), dark: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the thread to catch up") { thread.store.catchUp != nil && thread.store.showsThinking }
+        ListPerf.settle(thread.window)
+
+        let count = await entrances {
+            await thread.serve(ThreadFixture.snapshot(asked, provisional: [ThreadFixture.bash("running")], running: true, revision: 2))
+            ListPerf.settle(thread.window)
+        }
+
+        #expect(thread.store.liveRow != nil, "the reply began")
+        #expect(count > 0)
+    }
+
     /// Text streaming into a reply appears at once: no row, part, or line animates per chunk.
     @Test func streamedTextAppearsAtOnce() async throws {
         let first = "Streaming a reply that keeps growing."

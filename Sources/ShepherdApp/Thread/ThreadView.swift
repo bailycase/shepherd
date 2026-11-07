@@ -132,11 +132,6 @@ struct ThreadView: View {
         let _ = rowIndex.update(rows, revision: store.rowStructureRevision, filter: origins.runtime)
         // Set with the rows: a turn that finishes with unchanged IDs ends its waiting line.
         let liveRowID = store.liveRowID
-        // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
-        // is written. Between tools the thread ends in "Thinking…", the live turn's last part (or
-        // on its own before the reply has a row). A question waits in the composer instead, and a
-        // pi that is starting says so there too, never here (`NativeThreadStore.showsThinking`).
-        let thinking = store.showsThinking
         // Until the thread has caught up since it came on screen (opening it, or the first pull
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
@@ -155,6 +150,8 @@ struct ThreadView: View {
                     // lazy, so nothing at the end of the thread is ever a guess the scroll view
                     // can be left past (the blank thread).
                     VStack(alignment: .leading, spacing: spacing) {
+                        // Counts the column's content (the rows' wrappers and its environment) being built again.
+                        let _ = SHRenderProbe.tick("thread.column")
                         notices
                         if rows.isEmpty {
                             if let project = projectSend?.emptyState { project() }
@@ -164,12 +161,12 @@ struct ThreadView: View {
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
                         LazyVStack(alignment: .leading, spacing: spacing) {
                             ForEach(rows.prefix(rows.count - eager.count)) { row in
-                                rowView(row, running: running, thinking: thinking, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                                rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                             }
                         }
                         .scrollTargetLayout()
                         ForEach(eager) { row in
-                            rowView(row, running: running, thinking: thinking, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                            rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
                         // A Project's accepted messages the transcript has not taken in: held, in flight, or not delivered.
                         // Not delivered (unknown, failed): the person's words with what became of them. Never retried for them.
@@ -182,7 +179,8 @@ struct ThreadView: View {
                         }
                         // Sends captured but not yet accepted: sending, refused (restore or discard) or of unknown outcome.
                         if projectSend == nil { ThreadSubmissions(store: store, input: input) }
-                        if thinking, liveRowID == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
+                        ThreadWaitLine(store: store, hasLiveRow: liveRowID != nil, active: active, parentCatchingUp: catchingUp,
+                                       project: projectActionCards != nil || workerStyle != nil)
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -397,7 +395,8 @@ struct ThreadView: View {
     /// A sent message rises into the thread; a reply's parts make their own entrances.
     /// A design comment's message draws its card, and the reply to it sits inside the card
     /// (DZCanvas); a comment whose card isn't known draws as the viewer's words.
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, arriving: Bool, settled: Bool) -> some View {
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, wait: NativeLiveWait, arriving: Bool,
+                                   settled: Bool) -> some View {
         let card = row.designComment.flatMap { commentCards?.cards[$0] }
         if row.isUser {
             let segments = userOrigins.segments(row.turn)
@@ -419,7 +418,7 @@ struct ThreadView: View {
             AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
                       subagentActions: subagentActions, startedAt: row.startedAt,
                       retry: retryAction(row, running: running), review: review, recordedTurn: row.recordedTurn,
-                      turnActions: turnActions, thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(), arriving: arriving,
+                      turnActions: turnActions, thinking: thinking, wait: wait, arriving: arriving,
                       settled: settled, footer: card == nil, cards: projectCardState(row))
                 .equatable()
                 .modifier(CommentAnswer(inCard: card != nil))
@@ -445,16 +444,17 @@ struct ThreadView: View {
     /// One view per row whatever it holds, so the lazy stack builds only the rows on screen: a
     /// row that could be nothing would make it evaluate every row of a long thread on each
     /// streamed chunk.
-    @ViewBuilder private func rowView(_ row: NativeThreadRow, running: Bool, thinking: Bool, arrived: Set<String>, settled: Bool,
+    @ViewBuilder private func rowView(_ row: NativeThreadRow, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
                                       historyRowID: String?) -> some View {
         let _ = SHRenderProbe.tick("thread.rowBuilder")
         ThreadRowLayer {
             if row.live, row.presentation == nil {
-                LiveRow(store: store) { live in
-                    turn(live, running: running, thinking: thinking, arriving: arrived.contains(live.id), settled: settled)
+                LiveRow(store: store, active: active, parentCatchingUp: catchingUp) { live, inputs in
+                    turn(live, running: running, thinking: inputs.thinking, wait: inputs.wait, arriving: arrived.contains(live.id), settled: inputs.settled)
                 }
             } else {
-                turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id), settled: settled)
+                // The list holds the streaming reply as a shell (`NativeThreadStore.listRows`), so a row with its content is never live.
+                turn(row, running: running, thinking: false, wait: NativeLiveWait(), arriving: arrived.contains(row.id), settled: settled)
             }
         }
         .id(row.id)
@@ -472,15 +472,65 @@ struct ThreadView: View {
         }
     }
 
-    /// The streaming reply's row: it reads the store's `liveRow` itself, so each streamed chunk
-    /// invalidates this one view and not the transcript that holds its shell (`listRows`).
+    /// What the streaming reply draws besides its content.
+    private struct LiveTurnInputs: Equatable {
+        var thinking: Bool
+        var wait: NativeLiveWait
+        var settled: Bool
+    }
+
+    /// The streaming reply's row: it reads the store's `liveRow` and `showsThinking` itself, so each
+    /// streamed chunk and each tool boundary invalidates this one view and not the transcript that
+    /// holds its shell (`listRows`).
+    ///
+    /// Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
+    /// is written. Between tools the turn ends in "Thinking…". A question waits in the composer
+    /// instead, and a pi that is starting says so there too, never here (`NativeThreadStore.showsThinking`).
     private struct LiveRow<Content: View>: View {
         let store: NativeThreadStore
-        @ViewBuilder let content: (NativeThreadRow) -> Content
+        let active: Bool
+        /// The transcript's verdict, for this view's first render: a new reply's row is made while the thread is on screen.
+        let parentCatchingUp: Bool
+        @ViewBuilder let content: (NativeThreadRow, LiveTurnInputs) -> Content
+        @State private var catchUp = CatchUpGate()
 
         var body: some View {
             let _ = SHRenderProbe.tick("thread.liveRow")
-            if let row = store.liveRow { content(row) }
+            let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion, parent: parentCatchingUp)
+            if let row = store.liveRow {
+                let thinking = store.showsThinking
+                let inputs = LiveTurnInputs(thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(), settled: active && !catchingUp)
+                content(row, inputs)
+                    // As the thread's own (see `body`).
+                    .transaction(value: CatchUpGate.Key(version: store.threadVersion, active: active)) {
+                        if catchingUp { $0.disablesAnimations = true }
+                    }
+            }
+        }
+    }
+
+    /// The wait line, "Thinking…" before the reply has a row. It reads `showsThinking` and `liveWait`
+    /// itself, so a change redraws this view and not the transcript. Empty, it takes no room in the column.
+    private struct ThreadWaitLine: View {
+        let store: NativeThreadStore
+        let hasLiveRow: Bool
+        let active: Bool
+        let parentCatchingUp: Bool
+        let project: Bool
+        @State private var catchUp = CatchUpGate()
+
+        var body: some View {
+            let _ = SHRenderProbe.tick("thread.waitLine")
+            let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion, parent: parentCatchingUp)
+            if !hasLiveRow, store.showsThinking {
+                Group {
+                    if project { ProjectLiveLine(startedAt: nil) } else { LiveWaitLine(wait: store.liveWait) }
+                }
+                .shArrival(active && !catchingUp)
+                .transaction(value: CatchUpGate.Key(version: store.threadVersion, active: active)) {
+                    if catchingUp { $0.disablesAnimations = true }
+                }
+            }
         }
     }
 
