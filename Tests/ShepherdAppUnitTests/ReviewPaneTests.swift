@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import SwiftUI
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// Two files: `a.go` with a context line, a removal, and an addition in each of two hunks, and a

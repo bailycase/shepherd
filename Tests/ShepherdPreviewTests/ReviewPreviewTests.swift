@@ -7,6 +7,7 @@ import ShepherdUI
 import SwiftUI
 import ShepherdTestSupport
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// The Commit… sheet, in light and dark (the Changes pane's own renders are `ChangesPreviewTests`):

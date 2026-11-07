@@ -2,6 +2,7 @@ import Foundation
 import ShepherdProtocol
 import ShepherdRemote
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// Unified diff text → files, hunks, and numbered lines. Running git is the integration tier;

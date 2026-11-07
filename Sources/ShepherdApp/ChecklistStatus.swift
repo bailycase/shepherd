@@ -1,4 +1,5 @@
 import ShepherdUI
+import ShepherdSessions
 
 /// How a row of a sheet's checklist reads (Finalize's prerequisite checks, its pipeline, the
 /// recommended repo settings): the state glyph, the word VoiceOver says, and the trailing detail.

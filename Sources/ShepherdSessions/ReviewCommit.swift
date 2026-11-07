@@ -3,7 +3,6 @@ import Foundation
 import Observation
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
 
 // A direct commit from review (docs/rules.md › Only these paths mutate repositories): the files the
 // reviewer ticked, with the message they confirmed, then optionally a push to the branch's
@@ -14,26 +13,26 @@ import ShepherdSessions
 // the sheet showed it (or a HEAD that moved) stops the commit before anything runs.
 
 /// What the review's checkout says about itself, and the reads the sheet needs.
-enum ReviewCommitGit {
-    typealias Runner = (String, String?) async -> LoginShell.Output
+public enum ReviewCommitGit {
+    public typealias Runner = (String, String?) async -> LoginShell.Output
 
-    struct Checkout: Equatable {
-        var root: String
-        var branch: String?
-        var head: String
+    public struct Checkout: Equatable, Sendable {
+        public var root: String
+        public var branch: String?
+        public var head: String
         /// The upstream as `remote/branch`, and its parts from the branch's config.
-        var upstream: String?
-        var upstreamRemote: String?
-        var upstreamMerge: String?
-        var remotes: [String]
+        public var upstream: String?
+        public var upstreamRemote: String?
+        public var upstreamMerge: String?
+        public var remotes: [String]
         /// `refs/remotes/<remote>/HEAD`'s target per remote, and the main/master branches known.
-        var remoteHeads: [String]
-        var busy: [String]
-        var unmerged: Bool
+        public var remoteHeads: [String]
+        public var busy: [String]
+        public var unmerged: Bool
 
         /// The remote a push without an upstream goes to: the upstream's, else origin, else the
         /// only one.
-        var pushRemote: String? {
+        public var pushRemote: String? {
             if let upstreamRemote, upstreamRemote != "." { return upstreamRemote }
             if remotes.contains("origin") { return "origin" }
             return remotes.count == 1 ? remotes[0] : nil
@@ -77,7 +76,7 @@ enum ReviewCommitGit {
     }
 
     /// One read of the checkout. POSIX sh, so the login shell and the tests' `sh` agree.
-    static let inspectScript = """
+    public static let inspectScript = """
         root=$(git rev-parse --show-toplevel) || exit 3
         cd "$root" || exit 3
         echo "root=$root"
@@ -103,7 +102,7 @@ enum ReviewCommitGit {
         if [ -n "$(git ls-files -u | head -n 1)" ]; then echo "unmerged=1"; fi
         """
 
-    static func parseCheckout(_ output: String) -> Checkout? {
+    public static func parseCheckout(_ output: String) -> Checkout? {
         var values: [String: [String]] = [:]
         for line in output.split(whereSeparator: \.isNewline) {
             guard let equals = line.firstIndex(of: "=") else { continue }
@@ -119,7 +118,7 @@ enum ReviewCommitGit {
                         busy: values["busy"] ?? [], unmerged: one("unmerged") != nil)
     }
 
-    @MainActor static func inspect(cwd: String, runner: Runner) async throws -> Checkout {
+    @MainActor public static func inspect(cwd: String, runner: Runner) async throws -> Checkout {
         let output = await runner(inspectScript, cwd)
         guard output.status == 0, let checkout = parseCheckout(output.stdout) else {
             throw ReviewCommitRefusal("Not a git repository: \(WorktreeFinalizer.failureDetail(output))")
@@ -129,7 +128,7 @@ enum ReviewCommitGit {
 
     /// What the sheet shows: the checkout, the review's files with their fingerprints, and a
     /// plain message written from the file list.
-    @MainActor static func info(cwd: String, agentWorking: Bool, draftsMessage: Bool, runner: @escaping Runner) async throws -> RemoteCommitInfo {
+    @MainActor public static func info(cwd: String, agentWorking: Bool, draftsMessage: Bool, runner: @escaping Runner) async throws -> RemoteCommitInfo {
         let checkout = try await inspect(cwd: cwd, runner: runner)
         let root = checkout.root
         let files = try await Task.detached {
@@ -148,7 +147,7 @@ enum ReviewCommitGit {
 
     /// The working tree's content at `paths`, as the host sees it: what a file is (or that it is
     /// gone) and its bytes. The commit runs only while every selected file still matches.
-    static func fingerprint(root: String, paths: [String]) -> String {
+    public static func fingerprint(root: String, paths: [String]) -> String {
         var digest = SHA256()
         func add(_ value: String) { digest.update(data: Data((value + "\0").utf8)) }
         let base = URL(fileURLWithPath: root, isDirectory: true)
@@ -170,14 +169,14 @@ enum ReviewCommitGit {
     }
 
     /// A path the commit may take: relative to the repository, inside it.
-    static func isSafePath(_ path: String) -> Bool {
+    public static func isSafePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
     // MARK: The message
 
     /// The diff of `paths` for the model: each file's header, then its hunks, cut at `limit`.
-    static func promptContext(_ files: [DiffFile], limit: Int = 16_000) -> String {
+    public static func promptContext(_ files: [DiffFile], limit: Int = 16_000) -> String {
         var text = ""
         for file in files {
             let status = ReviewFileStatus(file).letter
@@ -198,7 +197,7 @@ enum ReviewCommitGit {
         return String(text.prefix(limit))
     }
 
-    static func prompt(context: String) -> String {
+    public static func prompt(context: String) -> String {
         """
         Write a git commit message for the change below.
         Line 1: a summary in the imperative mood, at most 72 characters, with no trailing period.
@@ -213,7 +212,7 @@ enum ReviewCommitGit {
 
     /// A message drafted from the diff of `paths` by the model that drafts PR descriptions,
     /// else the plain one written from the file list.
-    @MainActor static func draftMessage(root: String, paths: [String], pi: PiSetup,
+    @MainActor public static func draftMessage(root: String, paths: [String], pi: PiSetup,
                                         runner: @escaping Runner) async -> (title: String, body: String, drafted: Bool) {
         let wanted = Set(paths)
         let files = (try? await Task.detached { try GitDiff.load(cwd: root, reference: nil) }.value) ?? []
@@ -235,15 +234,15 @@ enum ReviewCommitGit {
 /// for new files and, when it created a branch, returns to the branch it started on.
 @MainActor
 @Observable
-final class ReviewCommitter {
-    enum Step: Hashable {
+public final class ReviewCommitter {
+    public enum Step: Hashable, Sendable {
         case check
         case branch(String)
         case commit(Int)
         case push(String)
         case pullRequest(String?)
 
-        var label: String {
+        public var label: String {
             switch self {
             case .check: ReviewCommitStepLabel.check
             case .branch(let name): ReviewCommitStepLabel.branch(name)
@@ -254,21 +253,23 @@ final class ReviewCommitter {
         }
     }
 
-    typealias StepState = WorktreeFinalizer.StepState
-    typealias Phase = WorktreeFinalizer.Phase
+    public typealias StepState = WorktreeFinalizer.StepState
+    public typealias Phase = WorktreeFinalizer.Phase
 
-    private(set) var steps: [Step] = [.check]
-    private(set) var states: [Step: StepState] = [:]
-    private(set) var phase: Phase = .idle
-    private(set) var prURL: String?
-    private(set) var commitID: String?
+    public private(set) var steps: [Step] = [.check]
+    public private(set) var states: [Step: StepState] = [:]
+    public private(set) var phase: Phase = .idle
+    public private(set) var prURL: String?
+    public private(set) var commitID: String?
     /// What went wrong, and what is left as it was.
-    private(set) var failure: String?
+    public private(set) var failure: String?
 
-    @ObservationIgnored var runner: ReviewCommitGit.Runner = { await LoginShell.run($0, cwd: $1) }
+    @ObservationIgnored public var runner: ReviewCommitGit.Runner = { await LoginShell.run($0, cwd: $1) }
+
+    public init() {}
 
     /// The progress lines a remote client reads (`finalizeSteps`).
-    var progress: [String] {
+    public var progress: [String] {
         steps.map { step in
             let detail = switch states[step] ?? .pending {
             case .pending: "pending"
@@ -280,7 +281,7 @@ final class ReviewCommitter {
         }
     }
 
-    func run(_ options: RemoteCommitOptions, cwd: String, pullRequestBase: String? = nil) async {
+    public func run(_ options: RemoteCommitOptions, cwd: String, pullRequestBase: String? = nil) async {
         guard phase == .idle else { return }
         phase = .running
         states[.check] = .running

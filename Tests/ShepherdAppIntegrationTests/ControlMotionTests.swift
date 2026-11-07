@@ -4,6 +4,7 @@ import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 /// The shared controls' motion, read from off-screen frames: a segmented picker's pill slides

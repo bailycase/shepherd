@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import ShepherdTestSupport
 import Testing
+@testable import ShepherdSessions
 @testable import ShepherdApp
 
 @Suite("Shell panes", .integrationTimeLimit)

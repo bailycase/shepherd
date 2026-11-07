@@ -2,6 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 struct RemoteWorktreeSheet: View {
     var vm: ShepherdViewModel
