@@ -53,6 +53,7 @@ extension PreviewTests {
         try await show(fixture.draft.id, "mission-map-station", widths: [720], panes: side)
         try await show(fixture.running.id, "mission-run-station", widths: [720], panes: side)
         try await show(fixture.done.id, "mission-done-summary", widths: [720], panes: side)
+        try await show(fixture.patched.id, "mission-patch", widths: [1440, 720])
         try await show(fixture.draft.id, "mission-map-data", panes: MissionInitialPanes(wires: .data))
         try await show(fixture.draft.id, "mission-map-both", panes: MissionInitialPanes(wires: .both))
         // Review with a queued change, a draft on another line and the third requirement's evidence open.
@@ -276,7 +277,7 @@ extension PreviewTests {
 private struct MissionPreviewFixture {
     let spaces: [Space]
     let state: ShepherdState
-    let goal, planning, pausedPlanning, draft, running, review, done: Mission
+    let goal, planning, pausedPlanning, draft, running, review, done, patched: Mission
     let reviews: [MissionID: [MissionRepositoryReview]]
 
     init(dir: URL) throws {
@@ -375,6 +376,28 @@ private struct MissionPreviewFixture {
             attempt(place, .running, start: 840, tokens: 612_000),
         ], elapsed: 4320)
         review = mission("Checkout funnel events", .review, attempts: passed, elapsed: 9600)
+        // MXPatch: the map before your retention answer (a decision and the storage fog it hides), and the
+        // planner's patch that settles it with one analytics worker and its check.
+        let retention = MissionStation(kind: .decision, laneID: analytics, title: "retention", goal: "30d or 13 mo?")
+        let storage = MissionStation(kind: .research, laneID: analytics, title: "storage", goal: "storage layout, partitions, rollups")
+        var before = draftValue
+        before.plan?.stations = [audit, schema, buf, retention, storage, place, ordersTest, validator]
+        before.plan?.dependencies = plan.dependencies.filter { ![ingest.id, ingestTest.id].contains($0.source) && ![ingest.id, ingestTest.id].contains($0.target) } + [
+            MissionDependency(source: buf.id, target: retention.id), MissionDependency(source: retention.id, target: storage.id),
+            MissionDependency(source: storage.id, target: validator.id, kind: .data, artifact: "storage plan")]
+        before.plan?.estimate = MissionEstimate(tokens: 4_100_000, seconds: 3 * 3600 + 10 * 60)
+        var after = draftValue
+        after.plan?.stations = [audit, schema, buf, retention, ingest, ingestTest, place, ordersTest, validator]
+        after.plan?.dependencies = plan.dependencies + [MissionDependency(source: buf.id, target: retention.id), MissionDependency(source: retention.id, target: ingest.id)]
+        after.plan?.estimate = MissionEstimate(tokens: 4_800_000, seconds: 3 * 3600 + 40 * 60)
+        let retentionAsked = MissionChatMessage(role: .assistant, text: "Retention decides the storage layout.", question: "Raw events: 30 days or 13 months?", choices: ["30 days", "13 months"])
+        let answered = MissionChatMessage(role: .user, text: "13 months. Product wants year-over-year on the funnel. Partition monthly.", replyTo: retentionAsked.id)
+        var patchedValue = mission("Checkout funnel events", .map, draft: before, messages: [user, summary, retentionAsked, answered])
+        patchedValue.run?.patch = MissionPatch(proposedAt: now - 60, base: before, draft: after,
+            summary: "Thirteen months means monthly range partitions and a rollup table. One worker owns the consumer, the migration and the partitions so the sqlc queries stay coherent. It starts from the fork, so nothing that's already running restarts.",
+            question: retentionAsked.question, answer: answered.text, resolves: retention.id)
+        patchedValue.run?.decisions = [MissionDecisionRecord(station: "event-audit", answer: "registry", at: now - 660)]
+        patched = patchedValue
         done = mission("Checkout funnel events", .done, attempts: passed, elapsed: 10_680, published: true)
 
         let files = DiffFile.parse("""
@@ -421,12 +444,12 @@ private struct MissionPreviewFixture {
     /// Through the revision-checked mission service, as the app writes them.
     @MainActor func seed(_ workspace: PreviewWorkspace) async throws {
         try await workspace.server.putState(state)
-        for mission in [goal, planning, pausedPlanning, draft, running, review, done] {
+        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched] {
             var saved = try await workspace.server.createMission(id: mission.id, draft: mission.draft)
             if mission.approvedPlanRevision != nil { saved = try await workspace.server.approveMissionPlan(id: mission.id, expectedRevision: saved.revision) }
             if let run = mission.run { _ = try await workspace.server.setMissionRun(id: mission.id, expectedRevision: saved.revision, run: run) }
         }
         let vm = workspace.vm
-        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 7 }
+        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 8 }
     }
 }

@@ -9,7 +9,8 @@ import ShepherdSessions
 extension ShepherdViewModel {
     /// Quiet while you watch: the thing is on screen and Shepherd is in front.
     func isWatching(_ target: BannerTarget) -> Bool {
-        guard NSApp.isActive else { return false }
+        // No NSApp in a test process: nothing is in front.
+        guard NSApp?.isActive == true else { return false }
         switch target {
         case .agent(let id): return threadIsOnScreen && selectedAgentID == id && selectedRemoteAgent == nil
         case .remote(let ref): return threadIsOnScreen && selectedRemoteAgent == ref

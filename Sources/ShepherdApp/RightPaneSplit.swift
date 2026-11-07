@@ -17,6 +17,8 @@ final class RightPaneState {
     var tabs: [SidePaneOwner: SidePaneTab] = [:]
     /// Tabs the agent opened something in since you last showed them.
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
+    /// The board each pane's Design tab shows (ThreadBoardPane): the last one opened from a card.
+    var boards: [SidePaneOwner: DesignReferenceChips.Board] = [:]
     /// Panes over their whole layout (ChangesWide), the thread hidden under them.
     var maximized: Set<SidePaneOwner> = []
     /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),

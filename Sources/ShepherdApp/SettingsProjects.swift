@@ -7,14 +7,8 @@ struct ProjectsSettings: View {
     @Bindable var model: ProjectsModel
     /// Add project, or Add subproject with the parent's folder the picker opens in (so the folder
     /// chosen lands inside it). One value, so the sheet never opens without its folder.
-    @State private var adding: AddingProject?
+    @State private var adding: AddSpaceModel?
     @State private var addingChild: ChildProjectModel?
-
-    private struct AddingProject: Identifiable {
-        let host: ProjectsHost
-        var under: String?
-        var id: String { host.id + "\n" + (under ?? "") }
-    }
 
     var body: some View {
         Group {
@@ -45,21 +39,13 @@ struct ProjectsSettings: View {
             ChildProjectSheet(model: model, dismiss: { addingChild = nil })
         }
         .sheet(item: $adding) { adding in
-            let host = adding.host
-            RemoteDirectoryPicker(title: "Add space", actionTitle: "Add space", hostName: host.name,
-                                  startPath: adding.under ?? host.known.first?.directory ?? "", list: { path in
+            AddSpaceSheet(model: adding, list: { host, path in
                 if host.id == "local" { return try await LocalDirectoryLister.load(path: path) }
                 guard vm.remoteHosts.connections.first(where: { $0.id.uuidString == host.id })?.endpointID == host.endpointID else {
                     throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")
                 }
                 return try await vm.remoteHosts.listDir(hostID: UUID(uuidString: host.id)!, path: path)
-            }, choose: { path in
-                self.adding = nil
-                Task {
-                    do { try await vm.addSettingsProject(path: path, host: host) }
-                    catch { model.error = String(describing: error) }
-                }
-            }, cancel: { self.adding = nil })
+            }, dismiss: { self.adding = nil })
         }
     }
 
@@ -104,7 +90,7 @@ struct ProjectsSettings: View {
     }
 
     private var add: some View {
-        Button("Add space", systemImage: "plus") { adding = model.addHost.map { AddingProject(host: $0) } }
+        Button("Add space", systemImage: "plus") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } }
             .buttonStyle(.sh(.primary))
             .disabled(model.addHost == nil || model.addHost?.unavailable != nil)
     }
@@ -129,7 +115,7 @@ struct ProjectsSettings: View {
                                            if row.host.id == "local" {
                                                addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name)
                                            } else {
-                                               adding = AddingProject(host: row.host, under: row.project.directory)
+                                               adding = vm.addSpaceModel(host: row.host)
                                            }
                                        }, remove: row.host.id == "local" && row.project.projectID != nil
                                            ? { vm.requestSpaceDelete(row.project.projectID) } : nil,

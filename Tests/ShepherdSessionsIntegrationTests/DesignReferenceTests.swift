@@ -844,6 +844,9 @@ struct DesignReferenceIntegrationTests {
         #expect(summary.text.hasPrefix("design_get summary of \(g.ref)\nThe text between the design-data markers was read from a design's files"))
         #expect(summary.text.contains("element: A.dc.html#4:1/1 (Pay now)") && summary.text.contains("this copy is what the user sent"))
         #expect(summary.lookedAt?.aspects == [.summary])
+        // design_show's board card reads the same copy by the id the answer names.
+        let copy = try #require(summary.lookedAt?.payload)
+        #expect(await h.server.designReferencePayload(agentID: g.pi.agent.id, payloadID: copy)?.payload.reference.string == g.ref)
 
         guard case .designReference(2, let tokens) = try await answer(g.client, 2, agent: g.pi.agent.id, g.ref, "tokens") else {
             Issue.record("tokens were refused"); return
@@ -1249,5 +1252,102 @@ struct DesignReferenceIntegrationTests {
         _ = try await h.server.writeDesignBoard(designID, path: Self.board,
                                                 source: DesignTests.board(root: Self.card.replacingOccurrences(of: "Pay now", with: "Buy")))
         #expect(await h.server.designMentionCatalog().search("buy button").map(\.title) == ["button “Buy”"])
+    }
+}
+
+// MARK: - Boards a thread draws (ThreadBoardDraft, ThreadBoardChange)
+
+extension DesignReferenceIntegrationTests {
+    private func propose(_ client: ExtensionClient, _ id: Int, agent: AgentID, _ reference: String, source: String,
+                         title: String? = nil) async throws -> ExtensionReply {
+        try client.send(.designPropose(id: id, agentID: agent, reference: reference, source: source, title: title))
+        return try await client.reply()
+    }
+
+    /// A draft is kept beside the thread, drawn in the design's files where it would sit, and
+    /// reaches the canvas only when the user adds it; a second add is refused.
+    @Test func aDraftReachesTheCanvasOnlyWhenAdded() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let g = try await granted(h)
+        let asked = drawing(h)
+        let phone = DesignTests.board(root: #"<div style="width: 320px; height: 480px">Review your order</div>"#, size: (320, 480))
+        guard case .designReference(1, let answer) = try await propose(g.client, 1, agent: g.pi.agent.id, g.ref, source: phone,
+                                                                       title: "B · Pay on phone") else {
+            Issue.record("the draft was refused"); return
+        }
+        #expect(answer.text.contains("Drew B · Pay on phone (320 × 480) as a draft"))
+        let copy = try #require(answer.lookedAt?.payload)
+        let drawn = try #require(asked.current.last)
+        let path = DesignPath("B-Pay-on-phone.dc.html")!
+        #expect(drawn.boards.map(\.path) == [path] && drawn.files?.index.boards[path]?.x == 470, "drawn beside A, 80 apart")
+        let kept = try #require(await h.server.designReferencePayload(agentID: g.pi.agent.id, payloadID: copy)?.payload)
+        #expect(kept.proposal == .init(kind: .draft, x: 470, y: 0) && kept.picture != nil && kept.width == 320)
+        #expect(try await h.server.designs.snapshot(g.design).boards[path] == nil, "nothing on the canvas yet")
+
+        let added = try await h.server.settleDesignBoardProposal(agentID: g.pi.agent.id, payloadID: copy, accept: true)
+        #expect(added.proposal?.state == .added)
+        let snapshot = try await h.server.designs.snapshot(g.design)
+        #expect(snapshot.boards[path] != nil)
+        #expect(snapshot.index.boards[path].map { [$0.x, $0.y, $0.w, $0.h] } == [470, 0, 320, 480])
+        #expect(snapshot.index.boards[path]?.title == "B · Pay on phone")
+        await #expect(throws: DesignReferenceError("already_settled", "That board is already in the design.")) {
+            try await h.server.settleDesignBoardProposal(agentID: g.pi.agent.id, payloadID: copy, accept: false)
+        }
+    }
+
+    /// A change applies over the board only while it is the version the agent drew from;
+    /// Discard leaves the design alone; another design, or a board the checks refuse, is refused.
+    @Test func aChangeAppliesOnlyOverTheVersionItWasDrawnFrom() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let g = try await granted(h)
+        let narrower = DesignTests.board(root: Self.card.replacingOccurrences(of: "border-radius: 8px", with: "border-radius: 8px; width: 160px"))
+        guard case .designReference(1, let first) = try await propose(g.client, 1, agent: g.pi.agent.id, g.ref, source: narrower),
+              case .designReference(2, let second) = try await propose(g.client, 2, agent: g.pi.agent.id, g.ref, source: narrower),
+              let applied = first.lookedAt?.payload, let stale = second.lookedAt?.payload else {
+            Issue.record("the change was refused"); return
+        }
+        #expect(first.text.contains("Proposed a change to A · Funnel first (390 × 844) from revision"))
+        let revision = try await h.server.designs.snapshot(g.design).revision
+        _ = try await h.server.settleDesignBoardProposal(agentID: g.pi.agent.id, payloadID: applied, accept: true)
+        #expect(try await h.server.designs.board(g.design, path: Self.board).source == narrower)
+        #expect(try await h.server.designs.snapshot(g.design).revision > revision)
+        await #expect(throws: DesignReferenceError.self) {
+            try await h.server.settleDesignBoardProposal(agentID: g.pi.agent.id, payloadID: stale, accept: true)
+        }
+        let discarded = try await h.server.settleDesignBoardProposal(agentID: g.pi.agent.id, payloadID: stale, accept: false)
+        #expect(discarded.proposal?.state == .discarded)
+
+        let other = try await design(h, system: false)
+        guard case .error(3, "not_granted", _) = try await propose(g.client, 3, agent: g.pi.agent.id, reference(other).string, source: narrower),
+              case .error(4, "missing_support_script", _) = try await propose(g.client, 4, agent: g.pi.agent.id, g.ref, source: "<div></div>"),
+              case .error(5, "no_size", _) = try await propose(g.client, 5, agent: g.pi.agent.id, g.ref,
+                                                              source: narrower.replacingOccurrences(of: "$preview", with: "$nope"), title: "C") else {
+            Issue.record("a refusal went through"); return
+        }
+    }
+
+    /// A drawn board has no grant, so a restart keeps it with its thread; a host's client settles it.
+    @Test func aDrawnBoardOutlivesARestartAndAClientSettlesIt() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        drawing(r.host)
+        r.server.setDesignsServed(true)
+        let g = try await granted(r.host)
+        let phone = DesignTests.board(root: #"<div style="width: 320px; height: 480px">Pay</div>"#, size: (320, 480))
+        guard case .designReference(1, let answer) = try await propose(g.client, 1, agent: g.pi.agent.id, g.ref, source: phone, title: "B"),
+              let copy = answer.lookedAt?.payload else { Issue.record("the draft was refused"); return }
+        var grants: [AgentID: Set<UUID>] = [:]
+        for agent in r.server.state.agents { grants[agent.id] = Set(agent.designGrants.compactMap(\.payload)) }
+        r.server.designReferencePayloads.prune(keeping: grants)
+        #expect(copies(r.host, g.pi.agent.id).contains(copy.uuidString.lowercased()))
+
+        let client = try await r.raw(authenticated: false)
+        _ = try await client.hello(token: r.token, capabilities: RemoteProtocol.clientCapabilities)
+        try client.send(.design(id: 2, request: .settleBoardProposal(agentID: g.pi.agent.id, payloadID: copy, accept: false)))
+        let frames = try await client.frames { if case .design(2, _) = $0 { true } else if case .error(2, _, _) = $0 { true } else { false } }
+        guard case .design(_, .referenceKept(let payload, _, _))? = frames.last else { Issue.record("expected the copy, got \(frames)"); return }
+        #expect(payload.proposal?.state == .discarded)
     }
 }

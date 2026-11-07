@@ -1111,7 +1111,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
@@ -1128,7 +1128,7 @@ struct RemoteProtocolConstantTests {
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
-            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability,
+            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability, RemoteProtocol.designBoardsCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.
@@ -1150,6 +1150,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.projectsV2Capability))
         #expect(!RemoteProtocol.capabilities.contains(RemoteProtocol.projectsCapability))
         #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
+        #expect(RemoteProtocol.projectResourcesCapability == "projects.resources.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")

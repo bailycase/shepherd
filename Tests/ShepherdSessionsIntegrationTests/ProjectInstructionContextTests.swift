@@ -53,6 +53,25 @@ struct ProjectInstructionContextTests {
             Issue.record("Escaping file opened")
         } catch let error as ProjectFileError { #expect(error.code == "invalid_file") }
     }
+
+    /// The Settings form's global values come from Shepherd's pi home, and only the form's keys cross.
+    @Test func contextCarriesOnlyTheFormsGlobalSettings() async throws {
+        let scratch = try ScratchServer()
+        defer { scratch.stop() }
+        let home = scratch.dir.appendingPathComponent("home")
+        let root = home.appendingPathComponent("dev/repo")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let pi = PiSetup(engine: PiSetup.app.engine, home: scratch.dir.appendingPathComponent("pi"), userHome: home.path)
+        try FileManager.default.createDirectory(at: pi.home, withIntermediateDirectories: true)
+        try Data(#"{"defaultModel":"demo-model","defaultThinkingLevel":"low","retry":{"maxRetries":5},"apiKeys":{"demo":"secret"}}"#.utf8)
+            .write(to: pi.home.appendingPathComponent("settings.json"))
+        let store = ProjectSettingsStore(historyURL: scratch.dir.appendingPathComponent("history.json"), home: home,
+                                        sessions: scratch.dir.appendingPathComponent("sessions"), pi: pi)
+        let state = ShepherdState(spaces: [Space(name: "repo", path: root.path)])
+        guard case .context(let context) = try await store.request(.context(directory: root.path), state: state) else { Issue.record("Missing project context"); return }
+        let global = try #require(context.globalSettings.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] })
+        #expect(Set(global.keys) == ["defaultModel", "defaultThinkingLevel", "retry"])
+    }
 }
 
 @MainActor private final class OpenedProjectFile: Sendable { var path: String? }

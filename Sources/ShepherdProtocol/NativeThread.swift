@@ -785,6 +785,20 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// Role "custom", `shepherd.hook`: the hook row's facts (`NativeHookRecord`). The text block
     /// is its readable line, what a client without it draws. Absent from older hosts.
     public var hook: NativeHookRecord?
+    /// Tool results of `design_show`: the kept copy of a design piece (`DesignReferencePayload.id`)
+    /// the thread draws as a board card (ThreadBoardShown). Display only, never a grant: the card
+    /// reads the copy through the thread's own references. Absent from older hosts.
+    public var designBoard: UUID?
+
+    /// The tools whose result names a board card's copy in `details.board`.
+    public static let designBoardTools: Set<String> = ["design_show"]
+
+    /// The copy a board tool's `details` names, else nil (a failed call, another tool).
+    public static func designBoard(toolName: String?, details: JSONValue?, isError: Bool?) -> UUID? {
+        guard let toolName, designBoardTools.contains(toolName), isError != true,
+              let text = details?["board"]?.stringValue else { return nil }
+        return UUID(uuidString: text)
+    }
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
@@ -823,7 +837,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case entryID, role, customType, blocks, toolName, toolCallID, argumentsText, status, isError, truncated
         case timestamp, startedAt, thinkingSeconds, origin, operationID, compaction, question, provider, model
-        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand, hook
+        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand, hook, designBoard
     }
 
     public init(from decoder: Decoder) throws {
@@ -855,6 +869,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         argumentBytes = try? c.decodeIfPresent(Int.self, forKey: .argumentBytes)
         typedCommand = try? c.decodeIfPresent(String.self, forKey: .typedCommand)
         hook = try? c.decodeIfPresent(NativeHookRecord.self, forKey: .hook)
+        designBoard = try? c.decodeIfPresent(UUID.self, forKey: .designBoard)
     }
 }
 

@@ -203,7 +203,11 @@
     and a short final reply, error, or explicit question preview by default, with generic text when
     unavailable. The relay receives optional `title` (100 Unicode scalars) and `preview` (240),
     whitespace-normalized and credential-redacted before truncation; redaction cannot detect every
-    secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
+    secret. Thinking and tool logs are not preview sources. It also receives `group` (the APNs thread-id:
+    `mission:<id>` for a mission's planner and stations, else `thread:<agentID>`), `subtitle` (60),
+    `level` (`passive` for finished work, else `active`) and `relevance` (the Scheduled Summary
+    rank); a relay that answers 400 to them gets the same event without them, and only the old
+    fields until the host restarts. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
@@ -264,6 +268,11 @@
     The home folder remains excluded. No credential or global trust setting crosses the wire.
   - `projects.details.v1`: adds host-local metadata/context and editor opening to spaces.
     Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
+  - `projects.resources.v1`: adds `resources` (a space's skills, prompt templates, subagents and
+    extensions with the host's global ones, by name and description), `delete` (one space
+    resource file, only while it holds the text the client read) and `installSkills` (copies
+    skills from a repository into the space's `.pi/skills` on the host). `save` also takes those
+    resource paths. Both clients refuse these before sending to a host without the capability.
   - `logicalProjects` (`logicalProjects.v1`): NEW logical `Project` records on the owner,
     separate from `projects` below. `LogicalProjectsRequest`/`LogicalProjectsResult` serve list,
     get, idempotent create with atomic initial owner-local Space links, revision-checked edit,
@@ -334,8 +343,8 @@
     (`design.lifecycle.v1`), its systems' files and their Rename, Duplicate, Delete and Re-sync
     (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
     "Build one from a repo" in a host's space), references to the host's own designs in its
-    threads (`design.references.v1`), a Claude Design ZIP uploaded to import
-    (`design.import.v1`), and a
+    threads (`design.references.v1`), adding or discarding the boards those threads drew
+    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), and a
     pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
     experiment turns on or off).
     Answered by the server itself; boards render on the client

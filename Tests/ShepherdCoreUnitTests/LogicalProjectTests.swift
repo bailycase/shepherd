@@ -32,6 +32,10 @@ struct LogicalProjectTests {
         #expect(project.settings.canRequestSpaceLinks)
         #expect(!Project(name: "New").paused)
         #expect(project.paused)
+        #expect(!project.pausedByPerson, "an older record's stop is the runtime's: the next message restarts it")
+        var paused = Project(name: "Paused")
+        paused.paused = true; paused.pausedByPerson = true
+        #expect(try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(paused)).pausedByPerson)
         #expect(project.coordinatorAgentID == nil)
         #expect(project.ownerID == UUID(uuidString: Self.id.rawValue))
         let link = try JSONDecoder().decode(ProjectSpaceLink.self, from: Data("{\"spaceID\":\"\(Self.id)\",\"provenance\":\"user\",\"linkedAt\":1}".utf8))

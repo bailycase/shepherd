@@ -8,7 +8,7 @@ import Testing
 @Suite("Side pane")
 struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
-        #expect(SidePaneTab.allCases == [.changes, .browser, .pullRequest, .subagents, .files])
+        #expect(SidePaneTab.allCases == [.changes, .browser, .pullRequest, .subagents, .files, .design])
         #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser", "Files"],
                 "Subagents waits for a first run; Files is always shown")
         #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes", "Files"],
@@ -29,9 +29,19 @@ struct SidePaneTests {
     }
 
     @Test func theDigitsFollowTheBoardAndAHostWithoutTunnelsKeepsThem() {
-        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 4, 5], "Pull request took the free ⌃3; the others kept theirs")
-        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5"])
+        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 4, 5, 6], "Pull request took the free ⌃3; the others kept theirs")
+        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5", "⌃6"])
         #expect(SidePaneTab.files.digit == 5)
+    }
+
+    /// ThreadBoardPane: Design follows Browser only while a board is open in it, on ⌃6, with the nib.
+    @Test func designFollowsTheBrowserOnlyWhileABoardIsOpenInIt() throws {
+        #expect(SidePaneTab.tabs(browser: true, design: true) == [.changes, .browser, .design, .files, .subagents])
+        let items = SidePaneTabs.items(news: [], changedFiles: 2, design: true)
+        #expect(items.map(\.title) == ["Changes", "Browser", "Design", "Files"])
+        let tab = try #require(items.first { $0.id == "design" })
+        #expect(tab.systemImage == "pencil.tip" && tab.shortcut == "⌃6" && tab.count == nil)
+        #expect(!SidePaneTabs.items(news: [], changedFiles: 2).contains { $0.id == "design" })
     }
 
     @Test func theBrowserIsGlobeOnControlTwoAndCarriesPisDot() throws {

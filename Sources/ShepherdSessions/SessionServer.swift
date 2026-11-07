@@ -1140,6 +1140,10 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+        let skills = self.skills
+        projects.installSkills = { repo, paths, commit, destination in
+            try skills.installCopies(repo: repo, paths: paths, commit: commit, into: destination)
+        }
     }
 
     /// Serves the Design tool to remote clients (`designs.v1`) while `served` (Settings ▸
@@ -2829,6 +2833,10 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard !request.requiresDetails || offeredCapabilities.contains(RemoteProtocol.projectDetailsCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
+                return
+            }
+            guard !request.requiresResources || offeredCapabilities.contains(RemoteProtocol.projectResourcesCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to manage space resources."), to: client)
                 return
             }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
@@ -4733,6 +4741,14 @@ public final class SessionServer: @unchecked Sendable {
             designGetRequest(id: id, agentID: agentID, reference: reference, what: what, client: client)
         case .designNote(let id, let agentID, let reference, let text):
             designNoteRequest(id: id, agentID: agentID, reference: reference, text: text, client: client)
+        case .designPropose(let id, let agentID, let reference, let source, let title):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+                return
+            }
+            answerOffQueue(id: id, client: client) { server in
+                .designReference(id: id, answer: try await server.proposeDesignBoard(agentID: agentID, reference: reference, source: source, title: title))
+            }
         }
     }
 
@@ -5844,8 +5860,7 @@ public final class SessionServer: @unchecked Sendable {
         if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
            thread.pushQuestion != question {
             thread.pushQuestion = question
-            pushNotifications.send(agentID: agentID, kind: .needsAnswer,
-                title: store.state.agents[index].name, preview: question)
+            sendPush(agentID: agentID, kind: .needsAnswer, preview: question)
         } else if question == nil {
             thread?.pushQuestion = nil
         }
@@ -8623,8 +8638,7 @@ public final class SessionServer: @unchecked Sendable {
         if let agent = agentID(forSession: sessionID) {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false
-                pushNotifications.send(agentID: agent, kind: .error,
-                    title: store.state.agents.first(where: { $0.id == agent })?.name,
+                sendPush(agentID: agent, kind: .error,
                     preview: thread.pushAwaitingStart ? nil : thread.turnFailure?.message)
             }
             projectRuntimeExited(agentID: agent)
@@ -9003,8 +9017,7 @@ public final class SessionServer: @unchecked Sendable {
               thread.subagents.allSatisfy({ $0.isTerminal && $0.state != "paused" && !$0.needsAttention }) else { return }
         thread.pushRunArmed = false
         thread.pushQuestion = nil
-        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
-            title: store.state.agents.first(where: { $0.id == agentID })?.name,
+        sendPush(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
             preview: thread.turnFailure == nil ? thread.pushFinalText : thread.turnFailure?.message)
     }
 

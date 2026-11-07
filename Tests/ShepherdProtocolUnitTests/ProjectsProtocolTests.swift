@@ -15,7 +15,10 @@ struct ProjectsProtocolTests {
                       .context(directory: "/host/repo"), .open(directory: "/host/repo", file: "AGENTS.md"),
                       .read(directory: "/host/repo", file: ".shepherd/settings.json"),
                       .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: nil),
-                      .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old")])
+                      .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old"),
+                      .resources(directory: "/host/repo"), .delete(directory: "/host/repo", file: ".pi/prompts/review.md", expected: "old"),
+                      .installSkills(directory: "/host/repo", repo: "acme/skills", paths: ["skills/pdf"], commit: nil),
+                      .installSkills(directory: "/host/repo", repo: "https://example.invalid/skills.git", paths: [], commit: "main")])
     func eachRequestRoundTrips(_ request: RemoteProjectsRequest) throws {
         let value = RemoteRequest.projects(id: 7, request: request)
         #expect(try NDJSON.decode(RemoteRequest.self, from: NDJSON.encode(value)) == value)
@@ -27,10 +30,49 @@ struct ProjectsProtocolTests {
                       .listing(ProjectListing(projects: [ProjectSummary(directory: "/a", name: "a", displayPath: "~/a", summary: "AGENTS.md only", minimal: true)])),
                       .files([ProjectFile(path: "AGENTS.md", category: .instructions, exists: false)]),
                       .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: false), text: nil)),
-                      .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: true), text: ""))])
+                      .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: true), text: "")),
+                      .resources([ProjectResource(kind: .skill, name: "ledger-review", description: "Review ledgers.", path: ".pi/skills/ledger-review/SKILL.md"),
+                                  ProjectResource(kind: .agent, name: "scout", path: "/support/pi/agents/scout.md", displayPath: "Shepherd/pi/agents/scout.md",
+                                                  global: true, enabled: false, detail: "read · grep")])])
     func eachResultRoundTrips(_ result: RemoteProjectsResult) throws {
         let value = RemoteReply.projects(id: 9, result: result)
         #expect(try NDJSON.decode(RemoteReply.self, from: NDJSON.encode(value)) == value)
+    }
+}
+
+/// The space Resources tab's toggles write pi's own resource patterns, as `pi config` does.
+@Suite("Project resource patterns")
+struct ProjectResourcePatternsTests {
+    let base = "/code/payments/.pi"
+
+    @Test func aSpaceResourceTurnsOffWithAnExactExclusionAndBackOnByRemovingIt() {
+        let skill = "/code/payments/.pi/skills/pdf-tools/SKILL.md"
+        #expect(ProjectResourcePatterns.isEnabled(skill, entries: [], base: base))
+        let off = ProjectResourcePatterns.setting(false, path: skill, global: false, base: base, in: ["../shared/skills"])
+        #expect(off == ["../shared/skills", "-skills/pdf-tools/SKILL.md"])
+        #expect(!ProjectResourcePatterns.isEnabled(skill, entries: off, base: base))
+        // pi also matches a skill by its folder, and a glob exclusion; turning it on clears both kinds of override.
+        #expect(!ProjectResourcePatterns.isEnabled(skill, entries: ["-skills/pdf-tools"], base: base))
+        #expect(!ProjectResourcePatterns.isEnabled(skill, entries: ["!pdf-*"], base: base))
+        #expect(ProjectResourcePatterns.isEnabled(skill, entries: ["!pdf-*", "+skills/pdf-tools"], base: base))
+        #expect(ProjectResourcePatterns.setting(true, path: skill, global: false, base: base, in: off + ["-skills/pdf-tools"]) == ["../shared/skills"])
+    }
+
+    @Test func aResourceInTheOtherFolderIsNamedRelativeToTheSettingsFile() {
+        let prompt = "/code/payments/.shepherd/prompts/review.md"
+        let off = ProjectResourcePatterns.setting(false, path: prompt, global: false, base: base, in: [])
+        #expect(off == ["-../.shepherd/prompts/review.md"])
+        #expect(!ProjectResourcePatterns.isEnabled(prompt, entries: off, base: base))
+    }
+
+    @Test func aGlobalResourceIsOverriddenByItsFullPathOnlyWhereTheSpaceDiffers() {
+        let global = "/support/pi/extensions/workspace-shortcuts.ts"
+        let off = ProjectResourcePatterns.setting(false, path: global, global: true, inherited: true, base: base, in: [])
+        #expect(off == [global, "-" + global])
+        #expect(!ProjectResourcePatterns.isEnabled(global, entries: off, base: base, otherwise: true))
+        #expect(ProjectResourcePatterns.setting(true, path: global, global: true, inherited: true, base: base, in: off).isEmpty)
+        let on = ProjectResourcePatterns.setting(true, path: global, global: true, inherited: false, base: base, in: [])
+        #expect(ProjectResourcePatterns.isEnabled(global, entries: on, base: base, otherwise: false))
     }
 }
 

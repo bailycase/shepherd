@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 import ShepherdCore
 import ShepherdProtocol
@@ -65,6 +66,40 @@ struct ProjectPlacementFlowTests {
             return viewer
         }
         func stop() { owner.stop(); executor.stop() }
+    }
+
+    /// Run on another host (ProjectRunElsewhere): a local task's ⋯ menu opens the dialog over the owner's host list; Move links the
+    /// executor's same-named Space and starts the same task there through the owner's placement, under the dialog's one operation.
+    @Test func runOnAnotherHostStartsTheSameTaskOnTheChosenHost() async throws {
+        let r = try Rig(); defer { r.stop() }; try await r.start()
+        // The executor's own copy of the owner's repo, by name: not linked yet.
+        let twin = Space(name: r.spaceA.name, path: r.executor.dir.appendingPathComponent("twin").path)
+        try FileManager.default.createDirectory(atPath: twin.path, withIntermediateDirectories: true)
+        try await r.executor.server.addSpace(twin)
+        try await eventuallyOnMain("the owner sees the executor's twin space") {
+            r.owner.remoteHosts.connections.first?.state.spaces.contains { $0.id == twin.id } == true
+        }
+        try await r.assign("hello", remote: false)
+        let source = try #require(r.project.tasks.first)
+        let ref = LogicalProjectRef(home: .local, id: r.projectID)
+        await r.owner.vm.logicalProjects.refresh(.local)
+        r.owner.vm.beginRunningElsewhere(ref, task: source.id)
+        let draft = try #require(r.owner.vm.runningElsewhere)
+        AccessibilityNode.enable()
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 700), dark: true,
+            RunElsewhereSheet(vm: r.owner.vm, draft: Binding(get: { r.owner.vm.runningElsewhere ?? draft }, set: { r.owner.vm.runningElsewhere = $0 }),
+                              dismiss: { r.owner.vm.runningElsewhere = nil }))
+        defer { window.close() }
+        try await eventuallyOnMain("the executor is offered") { window.layout(); return window.controls().contains { $0.label == "Move to Executor" } }
+        #expect(AccessibilityNode.all(under: window.host).contains { ($0.label ?? "").hasPrefix("This Mac, online, Runs here now") }, "the current host is marked and not offered")
+        try window.press("Move to Executor")
+        try await eventuallyOnMain("the same task starts on the executor") {
+            r.owner.vm.runningElsewhere == nil
+                && r.project.tasks.contains { $0.operationID == draft.id && $0.destination == r.host && $0.spaceID == twin.id && $0.prompt == source.prompt }
+        }
+        #expect(r.project.linkedSpaces.contains { $0.spaceID == twin.id && $0.destination == r.host }, "the executor's twin was linked")
+        #expect(r.project.tasks.contains { $0.id == source.id }, "the original stays where it was")
+        #expect(r.owner.vm.logicalProjectPaneTask == r.project.tasks.first { $0.operationID == draft.id }?.id, "the pane opens the new thread")
     }
 
     @Test func oneOwnerCountsLocalAndRemoteReservationsAndNeverFallsBackToAnEqualSpaceID() async throws {

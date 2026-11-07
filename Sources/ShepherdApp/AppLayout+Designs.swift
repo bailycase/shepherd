@@ -14,6 +14,8 @@ extension AppLayout {
     /// A chip's picture is kept at most this many pixels on its long side (its preview draws it
     /// 316pt wide).
     static let referencePicturePixels: CGFloat = 640
+    /// A board card's picture in the thread (ThreadBoardShown): a thread column's width at 2x.
+    static let boardCardPicturePixels: CGFloat = 1800
     /// A picker row's board picture is kept this many pixels wide (drawn 40pt).
     static let referenceRowPicturePixels: CGFloat = 160
     /// An element's picture in a picker row: its thumbnail's size, in pixels at 2x.
@@ -33,9 +35,8 @@ extension AppLayout {
     /// The starting points: 10pt under their label, 10pt apart, three to a row.
     static let newDesignCardsLabelGap: CGFloat = 10
     static let newDesignCardsGap: CGFloat = 10
-    static let newDesignCardsPerRow: CGFloat = 3
-    /// A starting point's card: its three lines with their padding.
-    static let newDesignCardHeight: CGFloat = 84
+    /// Capture a page's address popover.
+    static let newDesignCapturePopoverWidth: CGFloat = 320
 
     // A design system's page (DZSystem); the section list and the swatches are `SHDesignMetrics`
     /// The content's padding, and between its sections.
