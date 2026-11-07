@@ -176,7 +176,16 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. Nothing else.
+is the confirmed Delete Worktree. The branch card's actions (`BranchGit.swift`, in the agent's own
+checkout, each on the person's click; branch names pass `check-ref-format` and never reach git as
+options): Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
+the base, then rebase or merge onto it; refused on a dirty tree; a conflict stops, and Abort runs
+`rebase --abort` or `merge --abort`), Switch branch (`switch`, a remote branch to a tracking local
+copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
+origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
+new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
+branch with a tracking local copy) or a named new one. Finalize's plan runs only the steps the person
+ticked. Nothing else.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split

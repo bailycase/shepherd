@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdUI
+import ShepherdProtocol
 import Testing
 @testable import ShepherdApp
 
@@ -47,5 +48,29 @@ struct BranchCardTests {
         #expect(others.map(\.branch) == ["agent/webhook-retries", "agent/fees", "agent/payout-ui", "baily/ledger-refactor"])
         #expect(others.map(\.detail) == ["asked you", "running", "1d", "3d"])
         #expect(others.map(\.state) == [.attention, .running, .idle, .idle])
+    }
+
+    @Test func thePickerListsLocalThenRemoteAndMarksBranchesInUse() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func at(_ days: Double) -> Double { now.timeIntervalSince1970 - days * 86_400 }
+        let list = BranchPickerList(branches: ChangesBranches(defaultBase: "origin/main", branches: [
+            ChangesBranch(name: "origin/sam/payout-ui", isRemote: true, committedAt: at(1)),
+            ChangesBranch(name: "origin/main", isRemote: true, committedAt: at(0)),
+            ChangesBranch(name: "origin/HEAD", isRemote: true, committedAt: at(0)),
+            ChangesBranch(name: "baily/ledger-refactor", isRemote: false, committedAt: at(3)),
+            ChangesBranch(name: "main", isRemote: false, isCurrent: true, committedAt: at(1)),
+            ChangesBranch(name: "agent/refund-events", isRemote: false, worktree: "/tmp/payments-refund", committedAt: at(0.5)),
+        ]), threads: ["/tmp/payments-refund": "Add refund events"])
+        let rows = list.rows(now: now)
+        #expect(rows.map(\.name) == ["agent/refund-events", "main", "baily/ledger-refactor", "origin/sam/payout-ui"])
+        #expect(rows.map(\.detail) == ["in use · Add refund events", "1d", "3d", "remote · 1d"])
+        #expect(rows.map(\.inUse) == [true, false, false, false] && rows[1].current)
+        #expect(list.rows(query: "LEDGER", now: now).map(\.name) == ["baily/ledger-refactor"])
+    }
+
+    @Test func menuAndSheetWords() {
+        #expect(BranchCardView.pushTitle(0) == "Push" && BranchCardView.pushTitle(1) == "Push 1 Commit" && BranchCardView.pushTitle(2) == "Push 2 Commits")
+        #expect(BranchUpdateSheet.conflictTitle(.init(kind: .rebase, step: 2, steps: 4, files: ["a", "b"])) == "Stopped at commit 2 of 4: 2 files conflict")
+        #expect(BranchUpdateSheet.conflictTitle(.init(kind: .merge, files: ["a"])) == "Stopped: 1 file conflict")
     }
 }

@@ -507,6 +507,8 @@ final class ShepherdViewModel {
         let space: Space
     }
     var finalizeRequest: FinalizeRequest?
+    /// The branch card's Update from the base, New branch and Rename branch sheets.
+    var branchSheet: BranchSheet?
 
     /// "Finalize Worktree…" on a worktree agent's context menu.
     func beginFinalizeWorktree(_ agentID: AgentID) {

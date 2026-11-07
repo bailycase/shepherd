@@ -551,6 +551,14 @@ final class WorktreeFinalizer {
         var autoMergePR = false
         /// gh merge method flag ("squash") when autoMergePR is on.
         var mergeMethod = "squash"
+        /// The Finalize plan's ticks (BranchFinalizePlan): an unticked step is skipped. Removing
+        /// covers the clean check, the worktree and the local branch.
+        var commit = true
+        var push = true
+        var pullRequest = true
+        var remove = true
+        /// The commit's message; the pull request's title when nil.
+        var commitMessage: String?
     }
 
     private(set) var states: [Step: StepState]
@@ -594,6 +602,7 @@ final class WorktreeFinalizer {
     private func perform(_ step: Step, ctx: Context) async -> StepState {
         switch step {
         case .commit:
+            guard ctx.commit else { return .skipped("not in the plan") }
             let status = await runner("git status --porcelain", ctx.worktree)
             guard status.status == 0 else { return .failed(detail(status)) }
             guard !status.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -603,17 +612,19 @@ final class WorktreeFinalizer {
                 return .failed("uncommitted changes, and auto-commit is off (Settings ▸ Worktrees) — commit in the worktree, then finalize")
             }
             let commit = await runner(
-                "git add -A && git commit -m \(shellQuoted(ctx.title))",
+                "git add -A && git commit -m \(shellQuoted(ctx.commitMessage ?? ctx.title))",
                 ctx.worktree
             )
             return commit.status == 0 ? .done("committed") : .failed(detail(commit))
         case .push:
+            guard ctx.push else { return .skipped("not in the plan") }
             let push = await runner(
                 "git push -u origin \(shellQuoted(ctx.branch))",
                 ctx.worktree
             )
             return push.status == 0 ? .done("pushed") : .failed(detail(push))
         case .pullRequest:
+            guard ctx.pullRequest else { return .skipped("not in the plan") }
             let body = ctx.body.trimmingCharacters(in: .whitespacesAndNewlines)
             var command = "gh pr create --head \(shellQuoted(ctx.branch)) --base \(shellQuoted(ctx.base)) "
                 + "--title \(shellQuoted(ctx.title))"
@@ -626,7 +637,7 @@ final class WorktreeFinalizer {
             prURL = url
             return .done(url ?? "created")
         case .mergePR:
-            guard ctx.autoMergePR else { return .skipped("off — Settings ▸ Worktrees") }
+            guard ctx.autoMergePR, ctx.pullRequest else { return .skipped("not in the plan") }
             // Auto-merge first: it respects branch protection and required
             // checks (merges when they pass). GitHub rejects enabling it on
             // a PR that is already mergeable with no requirements — then an
@@ -646,11 +657,13 @@ final class WorktreeFinalizer {
             // and the PR stays open for a human.
             return .skipped("not merged — PR left open (\(detail(direct)))")
         case .verifyClean:
+            guard ctx.remove else { return .skipped("worktree kept") }
             if let leftover = cleanCheck(ctx.worktree, ctx.branch) {
                 return .failed("\(leftover) — aborting before any cleanup")
             }
             return .done("clean")
         case .removeWorktree:
+            guard ctx.remove else { return .skipped("worktree kept") }
             do { try await beforeCleanup?() }
             catch { return .failed(String(describing: error)) }
             // No --force: the clean gate just proved it, and git's own
@@ -661,6 +674,7 @@ final class WorktreeFinalizer {
             )
             return remove.status == 0 ? .done("removed") : .failed(detail(remove))
         case .deleteBranch:
+            guard ctx.remove else { return .skipped("worktree kept") }
             guard ctx.deleteLocalBranch else {
                 return .skipped("kept — Settings ▸ Worktrees")
             }

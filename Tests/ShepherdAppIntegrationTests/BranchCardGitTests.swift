@@ -29,7 +29,7 @@ struct BranchCardGitTests {
         try "a\nB\nc\n".write(to: clone.appendingPathComponent("ledger.go"), atomically: true, encoding: .utf8)
 
         let read = BranchCardGitReader.read(cwd: clone.path, base: nil)
-        #expect(read == BranchCardGit(additions: 2, deletions: 1, base: "main", behind: 2))
+        #expect(read == BranchCardGit(additions: 2, deletions: 1, base: "main", behind: 2, ahead: 1))
         // A worktree's named base resolves the same way.
         #expect(BranchCardGitReader.read(cwd: clone.path, base: "main") == read)
     }
@@ -38,7 +38,7 @@ struct BranchCardGitTests {
         let repo = try makeScratchRepo(files: ["a.txt": "a\n"])
         defer { try? FileManager.default.removeItem(at: repo) }
         try "a\nb\n".write(to: repo.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
-        #expect(BranchCardGitReader.read(cwd: repo.path, base: nil) == BranchCardGit(additions: 1, deletions: 0, base: nil, behind: 0))
+        #expect(BranchCardGitReader.read(cwd: repo.path, base: nil) == BranchCardGit(additions: 1, deletions: 0, base: nil, behind: 0, ahead: 0))
     }
 }
 
@@ -71,5 +71,47 @@ struct BranchCardActionTests {
 
         handle.perform(.select(other.agent.id))
         #expect(vm.selectedAgentID == other.agent.id)
+    }
+
+    /// Switch and rename in a worktree thread's checkout also move the branch Shepherd records,
+    /// so Finalize acts on the branch the worktree is really on; Change base only records.
+    @Test func switchingAWorktreesBranchMovesItsRecord() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try makeScratchRepo(files: ["file.txt": "x\n"])
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try git(["switch", "-qc", "agent/refund-events"], in: repo)
+        try git(["branch", "baily/ledger-refactor"], in: repo)
+        let space = Fixture.space("payments", path: repo.path)
+        var mine = Fixture.agent("refunds", in: space)
+        mine.agent.worktreeBranch = "agent/refund-events"
+        mine.agent.worktreeBase = "main"
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [mine]))
+        let server = app.server
+        let id = mine.agent.id
+
+        vm.performBranchCard(.switchBranch("baily/ledger-refactor"), on: id)
+        try await eventuallyOnMain("the record follows the switch") {
+            server.state.agents.first?.worktreeBranch == "baily/ledger-refactor"
+        }
+        #expect(try git(["branch", "--show-current"], in: repo).hasPrefix("baily/ledger-refactor"))
+
+        vm.performBranchCard(.changeBase("origin/release"), on: id)
+        try await eventuallyOnMain("the base is recorded") { server.state.agents.first?.worktreeBase == "origin/release" }
+        #expect(try git(["branch", "--show-current"], in: repo).hasPrefix("baily/ledger-refactor"), "Change base runs no git")
+
+        vm.performBranchCard(.switchBranch("no-such-branch"), on: id)
+        try await eventuallyOnMain("a failed switch says why") { vm.actionError != nil }
+        #expect(server.state.agents.first?.worktreeBranch == "baily/ledger-refactor")
+    }
+
+    @Test func theServerRecordsOnlyAWorktreeThreadsBranch() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: NSTemporaryDirectory())
+        let plain = Fixture.agent("plain", in: space)
+        _ = try await app.start(with: Fixture.state(spaces: [space], agents: [plain]))
+        await #expect(throws: (any Error).self) { try await app.server.setAgentWorktree(plain.agent.id, branch: "x") }
+        #expect(app.server.state.agents.first?.worktreeBranch == nil)
     }
 }

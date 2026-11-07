@@ -7,9 +7,9 @@ import ShepherdSessions
 import ShepherdUI
 
 // The thread's branch card (BranchCard, BranchCardMenu boards): where the agent works, read when
-// the card opens. Reading only: git's status and GitHub's pull request. The menu offers the
-// existing Commit… (the Changes pane's commit sheet) and Finalize… flows; nothing here writes to a
-// repository.
+// the card opens (git's status and GitHub's pull request). Its menu runs the Changes pane's
+// Commit…, Finalize…, and the branch changes in `BranchGit` (Push, Update from the base, Switch,
+// New and Rename branch), each on the person's click; Change base only rewrites Shepherd's record.
 
 /// What the card shows before anything is read: the space, the branch, and the space's other
 /// branches.
@@ -38,6 +38,8 @@ struct BranchCardGit: Equatable, Sendable {
     var deletions = 0
     var base: String?
     var behind = 0
+    /// Commits Push sends: ahead of the upstream, or of the base before the first push.
+    var ahead = 0
 }
 
 struct BranchCardStatus: Equatable, Sendable {
@@ -47,6 +49,11 @@ struct BranchCardStatus: Equatable, Sendable {
 
 enum BranchCardAction: Equatable {
     case showChanges, commit, finalize, copyBranch, showInFinder
+    case push, update, newBranch, renameBranch
+    /// The card swaps itself for the Branch picker (the view handles these).
+    case pickBranch, pickBase
+    case switchBranch(String)
+    case changeBase(String)
     case openPull(ForgeItemRef)
     case select(AgentID)
 }
@@ -57,6 +64,8 @@ struct BranchCardHandle: Equatable {
     let card: @MainActor () -> BranchCardModel?
     let load: @MainActor (BranchCardModel) async -> BranchCardStatus
     let perform: @MainActor (BranchCardAction) -> Void
+    /// The checkout's branches for the Switch branch and Change base pickers.
+    let branches: @MainActor () async throws -> BranchPickerList
 
     static func == (a: Self, b: Self) -> Bool { a.agentID == b.agentID }
 }
@@ -81,6 +90,8 @@ enum BranchCardGitReader {
             status.base = baseName(ref)
             status.behind = git(["rev-list", "--count", "HEAD..\(ref)"]).flatMap { Int($0) } ?? 0
         }
+        status.ahead = (git(["rev-list", "--count", "@{upstream}..HEAD"]) ?? ref.flatMap { git(["rev-list", "--count", "\($0)..HEAD"]) })
+            .flatMap { Int($0) } ?? 0
         // ponytail: tracked files only (`git diff` skips untracked ones); the Changes pane has the full count.
         let from = ref.flatMap { git(["merge-base", $0, "HEAD"]) } ?? "HEAD"
         (status.additions, status.deletions) = shortstat(git(["diff", "--shortstat", from]) ?? "")
@@ -131,7 +142,22 @@ extension ShepherdViewModel {
         let id = agent.id
         return BranchCardHandle(agentID: id, card: { [weak self] in self?.branchCard(id) }, load: { [weak self] card in
             await self?.loadBranchCard(id, card) ?? BranchCardStatus(git: BranchCardGit())
-        }, perform: { [weak self] action in self?.performBranchCard(action, on: id) })
+        }, perform: { [weak self] action in self?.performBranchCard(action, on: id) }, branches: { [weak self] in
+            guard let self, let directory = self.checkoutDirectory(of: id) else { throw BranchGit.Failure(message: "This thread has no checkout.") }
+            return try await self.branchPickerList(cwd: directory)
+        })
+    }
+
+    /// A checkout's branches for a picker: `ChangesBranches` with each worktree's thread named.
+    func branchPickerList(cwd: String) async throws -> BranchPickerList {
+        let read = try await server.changes.branches(agentID: nil, cwd: (cwd as NSString).expandingTildeInPath)
+        let threads = Dictionary(state.agents.compactMap { agent in agent.worktreePath.map { (Self.standard($0), agent.name) } },
+                                 uniquingKeysWith: { first, _ in first })
+        return BranchPickerList(branches: read, threads: threads)
+    }
+
+    nonisolated static func standard(_ path: String) -> String {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardized.path
     }
 
     private func branchCard(_ id: AgentID) -> BranchCardModel? {
@@ -168,6 +194,52 @@ extension ShepherdViewModel {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: (directory as NSString).expandingTildeInPath)])
         case .openPull(let ref): openForgeItem(ref)
         case .select(let other): selectAgent(other)
+        case .pickBranch, .pickBase: break
+        case .update: branchSheet = .update(id)
+        case .newBranch: branchSheet = .newBranch(id)
+        case .renameBranch: branchSheet = .renameBranch(id)
+        case .push:
+            guard let card = branchCard(id), let cwd = card.directory else { return }
+            branchGit(id, "Couldn’t push \(card.branch)") { try BranchGit.push(cwd: cwd, branch: card.branch) }
+        case .switchBranch(let name):
+            guard let cwd = checkoutDirectory(of: id) else { return }
+            branchGit(id, "Couldn’t switch to \(name)", record: { local in (local, nil) }) { try BranchGit.switchBranch(cwd: cwd, to: name) }
+        case .changeBase(let base):
+            Task {
+                do { try await server.setAgentWorktree(id, base: base) }
+                catch { actionError = ActionError(title: "Couldn’t change the base", message: ActionError.describe(error)) }
+            }
+        }
+    }
+
+    /// One `BranchGit` change off the main thread: its failure in words, then the checkout read
+    /// again and, for a worktree, the branch Shepherd records for it (`record` → branch, base).
+    func branchGit<T: Sendable>(_ id: AgentID, _ failure: String, record: ((T) -> (String?, String?))? = nil,
+                                _ work: @escaping @Sendable () throws -> T) {
+        Task {
+            do {
+                let value = try await Task.detached(priority: .userInitiated, operation: work).value
+                if let record, state.agents.first(where: { $0.id == id })?.worktreeBranch != nil {
+                    let (branch, base) = record(value)
+                    try await server.setAgentWorktree(id, branch: branch, base: base)
+                }
+            } catch {
+                actionError = ActionError(title: failure, message: ActionError.describe(error))
+            }
+            checkouts?.refresh(id, priority: true)
+        }
+    }
+}
+
+/// A sheet the branch card opens over the window.
+enum BranchSheet: Identifiable, Equatable {
+    case update(AgentID), newBranch(AgentID), renameBranch(AgentID)
+
+    var id: String {
+        switch self {
+        case .update(let id): "update-\(id.rawValue)"
+        case .newBranch(let id): "new-\(id.rawValue)"
+        case .renameBranch(let id): "rename-\(id.rawValue)"
         }
     }
 }

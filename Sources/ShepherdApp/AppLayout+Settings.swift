@@ -307,6 +307,10 @@ extension AppLayout {
     static let branchCardWidth: CGFloat = 300
     static let branchCardInset: CGFloat = 14
     static let branchCardGlyph: CGFloat = 16
+    /// The branch card's sheets: Update from the base, New and Rename branch, the Finalize plan.
+    static let branchSheetWidth: CGFloat = 520
+    /// The new thread's ⚙ popover (BranchWhereItRuns).
+    static let whereItRunsWidth: CGFloat = 270
     static let commitFileListMaxHeight: CGFloat = 232
     static let remoteWorktreeSheetWidth: CGFloat = 620
     /// A remote automation's details and runs, and how tall its run list grows before it scrolls.
