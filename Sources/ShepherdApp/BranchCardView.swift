@@ -1,76 +1,126 @@
 import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 
-/// The toolbar's branch button and its card (BranchCard board): pressed while the card is open.
-struct BranchCardButton: View {
-    let handle: BranchCardHandle
-    @State private var open = false
-
-    var body: some View {
-        Button { open.toggle() } label: { Image(systemName: SHGlyph.gitBranch.symbolName) }
-            .buttonStyle(.shIcon(isOn: open))
-            .help("Branch")
-            .accessibilityLabel("Branch")
-            .popover(isPresented: $open, arrowEdge: .bottom) {
-                BranchCardPopover(handle: handle) { open = false }
-            }
-    }
-}
-
-/// The card as it opens: what the workspace knows at once, then git's and GitHub's reads. Switch
-/// branch and Change base replace it in place with the Branch picker.
-private struct BranchCardPopover: View {
-    let handle: BranchCardHandle
-    let close: () -> Void
-    @State private var card: BranchCardModel?
-    @State private var status: BranchCardStatus?
+/// The branch card over a thread's top right (BranchCard board), shown while the thread works
+/// in a git checkout. Where the transcript's column and the card both fit beside each other it is
+/// the whole card; narrower (the side pane open, a small window), it folds to one row that opens
+/// on hover or a click, so it never sits on the transcript's text. It reads only while its thread
+/// is on screen, and never takes focus.
+struct BranchCardOverlay: View {
+    let store: BranchCardStore
+    let branch: AgentBranchLabel
+    let active: Bool
+    @State private var wide = true
+    @State private var hovering = false
+    @State private var pinnedOpen = false
+    /// Switch branch and Change base show the Branch picker in the card's place.
     @State private var picking: Picking?
 
     enum Picking { case branch, base }
 
-    init(handle: BranchCardHandle, close: @escaping () -> Void) {
-        self.handle = handle
-        self.close = close
-        _card = State(initialValue: handle.card())
+    /// Read again when the branch or its changed files move, a turn ends, or the thread shows.
+    private struct ReadKey: Equatable {
+        let branch: AgentBranchLabel
+        let active: Bool
+        let request: Int
     }
 
     var body: some View {
-        if let card {
-            switch picking {
-            case .branch:
-                BranchPickerMenu(title: "Switch branch", selected: card.branch, load: handle.branches, choose: { name in
-                    finish(name.map(BranchCardAction.switchBranch))
-                }, newBranch: { finish(.newBranch) }, fetch: fetch, close: { picking = nil })
-            case .base:
-                BranchPickerMenu(title: "Change base", selected: status?.git.base.map { "origin/\($0)" }, load: handle.branches, choose: { name in
-                    finish(name.map(BranchCardAction.changeBase))
-                }, fetch: fetch, close: { picking = nil })
-            case nil:
-                BranchCardView(card: card, status: status) { action in
-                    switch action {
-                    case .pickBranch: picking = .branch
-                    case .pickBase: picking = .base
-                    default: finish(action)
+        Group {
+            if let card = store.card {
+                if let picking {
+                    picker(picking, card: card)
+                } else if wide || hovering || pinnedOpen {
+                    BranchCardView(card: card, status: store.status) { action in
+                        switch action {
+                        case .pickBranch: picking = .branch
+                        case .pickBase: picking = .base
+                        default:
+                            pinnedOpen = false
+                            store.handle.perform(action)
+                        }
                     }
+                    .shPopover()
+                } else {
+                    Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: store.status?.git) }
+                        .buttonStyle(.plain)
+                        .help("\(card.branch): show the branch card")
                 }
-                .task { status = await handle.load(card) }
+            }
+        }
+        .onHover { inside in
+            hovering = inside && !wide
+            if !inside { pinnedOpen = false }
+        }
+        .onExitCommand { picking = nil }
+        .padding(.top, SH.Space.m)
+        .padding(.trailing, SH.Space.l)
+        .focusable(false)
+        .shAnimation(.content, value: wide || hovering || pinnedOpen || picking != nil)
+        // The pane's width decides the form; only crossing the line redraws it.
+        .frame(maxWidth: .infinity, alignment: .topTrailing)
+        .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
+        .task(id: ReadKey(branch: branch, active: active, request: store.refreshRequest)) {
+            guard active else { return }
+            while !Task.isCancelled {
+                await store.refresh()
+                try? await Task.sleep(for: BranchCardStore.interval)
             }
         }
     }
+}
 
-    private var fetch: () async throws -> Void {
-        let directory = card?.directory
-        return {
+extension BranchCardOverlay {
+    @ViewBuilder fileprivate func picker(_ mode: Picking, card: BranchCardModel) -> some View {
+        let handle = store.handle
+        let directory = card.directory
+        let fetch: () async throws -> Void = {
             guard let directory else { return }
             try await Task.detached { try BranchGit.fetchAll(cwd: directory) }.value
         }
+        let finish: (BranchCardAction?) -> Void = { action in
+            picking = nil
+            pinnedOpen = false
+            if let action { handle.perform(action) }
+        }
+        switch mode {
+        case .branch:
+            BranchPickerMenu(title: "Switch branch", selected: card.branch, load: handle.branches,
+                             choose: { finish($0.map(BranchCardAction.switchBranch)) },
+                             newBranch: { finish(.newBranch) }, fetch: fetch, close: { picking = nil })
+        case .base:
+            BranchPickerMenu(title: "Change base", selected: store.status?.git.base.map { "origin/\($0)" }, load: handle.branches,
+                             choose: { finish($0.map(BranchCardAction.changeBase)) }, fetch: fetch, close: { picking = nil })
+        }
     }
+}
 
-    private func finish(_ action: BranchCardAction?) {
-        close()
-        if let action { handle.perform(action) }
+/// The folded card: the branch, its +/- and how far behind, on one row.
+struct BranchCardCompact: View {
+    let branch: String
+    let git: BranchCardGit?
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: SHGlyph.gitBranch.symbolName).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            Text(branch).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+            if let git {
+                SHDiffStat(added: git.additions, removed: git.deletions, font: .sh(.mono))
+                if git.behind > 0 {
+                    Text("↓\(git.behind)").font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
+                        .accessibilityLabel("\(git.behind) behind \(git.base ?? "base")")
+                }
+            }
+        }
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlS)
+        .frame(maxWidth: AppLayout.branchCardCompactMaxWidth)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

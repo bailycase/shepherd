@@ -65,7 +65,7 @@ struct BranchCardHandle: Equatable {
     let load: @MainActor (BranchCardModel) async -> BranchCardStatus
     let perform: @MainActor (BranchCardAction) -> Void
     /// The checkout's branches for the Switch branch and Change base pickers.
-    let branches: @MainActor () async throws -> BranchPickerList
+    var branches: @MainActor () async throws -> BranchPickerList = { throw BranchGit.Failure(message: "This thread has no checkout.") }
 
     static func == (a: Self, b: Self) -> Bool { a.agentID == b.agentID }
 }
@@ -134,12 +134,43 @@ extension BranchCardModel {
     }
 }
 
+/// One thread's branch card: what it last read, read again when the card shows, when the branch
+/// or its changed files move, when a turn ends, and every `interval` while it is on screen.
+@MainActor
+@Observable
+final class BranchCardStore {
+    static let interval: Duration = .seconds(30)
+
+    private(set) var card: BranchCardModel?
+    private(set) var status: BranchCardStatus?
+    /// Bumped to read again now (a turn ended).
+    private(set) var refreshRequest = 0
+    @ObservationIgnored let handle: BranchCardHandle
+
+    init(handle: BranchCardHandle) { self.handle = handle }
+
+    func requestRefresh() { refreshRequest &+= 1 }
+
+    func refresh() async {
+        let next = handle.card()
+        if next != card { card = next }
+        guard let next else { return }
+        let read = await handle.load(next)
+        if read != status { status = read }
+    }
+}
+
 @MainActor
 extension ShepherdViewModel {
-    /// The branch card for one of this Mac's agents; nil until its branch is known.
-    func branchCardHandle(for agent: Agent) -> BranchCardHandle? {
-        guard AgentBranchLabel(agent: agent) != nil else { return nil }
-        let id = agent.id
+    func branchCardStore(for id: AgentID) -> BranchCardStore {
+        if let store = branchCardStores[id] { return store }
+        let store = BranchCardStore(handle: branchCardHandle(for: id))
+        branchCardStores[id] = store
+        return store
+    }
+
+    /// The branch card's reads and actions for one of this Mac's agents.
+    func branchCardHandle(for id: AgentID) -> BranchCardHandle {
         return BranchCardHandle(agentID: id, card: { [weak self] in self?.branchCard(id) }, load: { [weak self] card in
             await self?.loadBranchCard(id, card) ?? BranchCardStatus(git: BranchCardGit())
         }, perform: { [weak self] action in self?.performBranchCard(action, on: id) }, branches: { [weak self] in
