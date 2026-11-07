@@ -48,6 +48,15 @@ public enum SessionHost {
             exit(EXIT_FAILURE)
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
+        // The app's way in (`host.sock`); a path too long for a unix socket leaves the app to
+        // run in process.
+        let support = server.supportDirectory
+        do {
+            try server.startLocalListener(path: support.appendingPathComponent("host.sock").path,
+                                          tokenURL: support.appendingPathComponent("remote-token"))
+        } catch {
+            ShepherdLog.error("host has no local socket: \(error)")
+        }
         Task { @MainActor in
             if let banners {
                 let observer = ThreadBanners(server: server, state: { server.state }, sink: banners(server))

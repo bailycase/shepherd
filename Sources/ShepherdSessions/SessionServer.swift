@@ -174,6 +174,9 @@ public final class SessionServer: @unchecked Sendable {
         /// It reads pushed design changes and capability changes.
         var knowsDesigns: Bool { clientCapabilities.contains(RemoteProtocol.designsCapability) }
 
+        /// Connected through the local socket (`host.sock`): the app itself, offered `local.v1`.
+        var isLocal = false
+
         init(fd: Int32, isRemote: Bool = false, peerPID: pid_t? = nil) {
             self.fd = fd
             self.isRemote = isRemote
@@ -730,6 +733,8 @@ public final class SessionServer: @unchecked Sendable {
     var executionDuration: TimeInterval = 600
     var executionCapacity = ProjectExecutionReceipt.maximumCount
     private let socketPath: String
+    /// The support folder the extension socket is in: where the local socket and token go.
+    public var supportDirectory: URL { URL(fileURLWithPath: socketPath).deletingLastPathComponent() }
     let store: StateStore
     // ponytail: serialize workspace writes during explicit folder IO; per-project reservations
     // can replace this if concurrent large transfers become necessary.
@@ -770,6 +775,12 @@ public final class SessionServer: @unchecked Sendable {
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
     private var remoteToken: String?
+    /// The local socket (`host.sock`) the app connects to a background host through, and its token.
+    private var localAcceptSource: DispatchSourceRead?
+    private var localSocketPath: String?
+    private var localToken: String?
+    /// This host's build, said in `helloOk` (nil: none to say, as in tests).
+    public var hostBuild: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     /// Which remote clients (by fd) stream each session's output. Registered
     /// in the same queue turn as the attach snapshot, so replay + live output
     /// are exact — the same guarantee the GUI attach path has.
@@ -997,6 +1008,7 @@ public final class SessionServer: @unchecked Sendable {
     /// What the host offers `client`: `files.v1` and `missions.v1` only to a client that listed it in `hello`. Server queue.
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
+            + (client.isLocal ? [RemoteProtocol.localCapability] : [])
     }
 
     /// Serves Missions to remote clients (`missions.v1`) while `served` (Settings ▸ Experiments ▸
@@ -1684,6 +1696,7 @@ public final class SessionServer: @unchecked Sendable {
             listenFD = -1
         }
         stopRemoteListenerOnQueue()
+        stopLocalListenerOnQueue()
         // Where delivered messages came from is written off the queue; a relaunch reads it.
         originStore.flush()
         runLog.flush()
@@ -2196,7 +2209,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopRemoteListenerOnQueue() {
-        for client in Array(clients.values) where client.isRemote {
+        for client in Array(clients.values) where client.isRemote && !client.isLocal {
             disconnect(client)
         }
         remoteAcceptSource?.cancel()
@@ -2223,6 +2236,83 @@ public final class SessionServer: @unchecked Sendable {
             throw SessionServerError.system(call: "chmod", errno: errno)
         }
         return token
+    }
+
+    // MARK: - Local socket (server queue)
+
+    /// Bind the local socket (`<support>/host.sock`, 0600) the app uses as a background host's
+    /// client: the remote protocol over a unix socket, offered `local.v1`. Only this user's
+    /// processes running this app's own code get past accept (`LocalPeer`); they then say `hello`
+    /// with the token at `tokenURL` (the remote token, created on first use). Off unless the host
+    /// entry starts it.
+    public func startLocalListener(path: String, tokenURL: URL) throws {
+        try queue.sync {
+            try requireStarted()
+            guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+            var addr = try Self.socketAddress(for: path)
+            localToken = try Self.loadOrCreateRemoteToken(at: tokenURL)
+            // Only the workspace's owner binds here, and this server holds the ownership lock: any
+            // socket file left is a dead host's.
+            unlink(path)
+            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
+            let bound = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            }
+            guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
+                let err = errno
+                close(fd)
+                unlink(path)
+                throw SessionServerError.system(call: "bind", errno: err)
+            }
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+            source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
+            source.setCancelHandler { close(fd) }
+            localAcceptSource = source
+            localSocketPath = path
+            source.activate()
+            ShepherdLog.info("local listener on \(path)")
+        }
+    }
+
+    private func stopLocalListenerOnQueue() {
+        for client in Array(clients.values) where client.isLocal { disconnect(client) }
+        localAcceptSource?.cancel()
+        localAcceptSource = nil
+        if let localSocketPath { unlink(localSocketPath) }
+        localSocketPath = nil
+        localToken = nil
+    }
+
+    private func acceptLocalPending(on listenFD: Int32) {
+        while true {
+            let fd = accept(listenFD, nil, nil)
+            if fd < 0 {
+                if errno == EINTR { continue }
+                if errno != EAGAIN && errno != EWOULDBLOCK { ShepherdLog.error("local accept failed: errno \(errno)") }
+                return
+            }
+            guard LocalPeer.isTrusted(fd) else {
+                ShepherdLog.warning("local client refused: not this app's code")
+                close(fd)
+                continue
+            }
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+            var one: Int32 = 1
+            _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+            let client = ExtensionConnection(fd: fd, isRemote: true)
+            client.isLocal = true
+            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+            source.setEventHandler { [weak self] in self?.handleReadable(fd: fd) }
+            source.setCancelHandler { close(fd) }
+            client.readSource = source
+            clients[fd] = client
+            source.activate()
+            ShepherdLog.info("local client connected (fd \(fd))")
+        }
     }
 
     private func acceptRemotePending(on listenFD: Int32) {
@@ -2283,7 +2373,7 @@ public final class SessionServer: @unchecked Sendable {
                 ), to: client)
                 return
             }
-            guard let expected = remoteToken, RemoteToken.matches(token, expected: expected) else {
+            guard let expected = client.isLocal ? localToken : remoteToken, RemoteToken.matches(token, expected: expected) else {
                 ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
                 sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
                 return
@@ -2293,7 +2383,8 @@ public final class SessionServer: @unchecked Sendable {
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities(to: client)
+                capabilities: offeredCapabilities(to: client),
+                hostBuild: hostBuild
             ), to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return

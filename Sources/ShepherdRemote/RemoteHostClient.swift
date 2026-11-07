@@ -79,6 +79,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
     private let capabilityLock = NSLock()
     private var storedCapabilities: Set<String> = []
+    /// The host's build, as its `helloOk` said (nil from an older host). Behind the same lock.
+    public private(set) var hostBuild: String? {
+        get { capabilityLock.lock(); defer { capabilityLock.unlock() }; return storedHostBuild }
+        set { capabilityLock.lock(); storedHostBuild = newValue; capabilityLock.unlock() }
+    }
+    private var storedHostBuild: String?
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
     // Written on the client queue; main checks it before invoking a captured delivery batch.
@@ -165,6 +171,39 @@ public final class RemoteHostClient: @unchecked Sendable {
         tunnels.link = self
     }
 
+    /// A client of the host on this Mac, through its local socket (`host.sock`) at `path`: the
+    /// remote protocol, offered `local.v1`. `connect`'s host and port are ignored.
+    public convenience init(localSocket path: String) {
+        self.init(socketOpen: { _, _ in try Self.openUnix(path) })
+    }
+
+    /// A connected unix socket at `path`, blocking.
+    static func openUnix(_ path: String) throws -> Int32 {
+        var addr = sockaddr_un()
+        let bytes = path.utf8CString
+        guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+            throw RemoteHostClientError.system(call: "connect", errno: ENAMETOOLONG)
+        }
+        addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        addr.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &addr.sun_path) { dst in bytes.withUnsafeBytes { dst.copyMemory(from: $0) } }
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw RemoteHostClientError.system(call: "socket", errno: errno) }
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else {
+            let err = errno
+            close(fd)
+            throw RemoteHostClientError.system(call: "connect", errno: err)
+        }
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        return fd
+    }
+
     // Allows the pending-open lifecycle to be checked without relying on DNS timing.
     init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32) {
         self.socketOpen = socketOpen
@@ -239,7 +278,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
                            capabilities: capabilities)
                 }
-                guard case .helloOk(_, _, let capabilities) = helloReply else {
+                guard case .helloOk(_, _, let capabilities, let build) = helloReply else {
                     if case .error(_, let code, let message) = helloReply {
                         throw RemoteHostClientError.rejected(code: code, message: message)
                     }
@@ -250,6 +289,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                         throw Task.isCancelled ? CancellationError() : RemoteHostClientError.disconnected
                     }
                     self.capabilities = Set(capabilities)
+                    self.hostBuild = build
                 }
                 let stateReply = try await request(connectionGeneration: attempt) { id in .stateFetch(id: id) }
                 guard case .state(_, let state) = stateReply else {
@@ -1383,7 +1423,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         func push(_ event: PushedEvent) { self.push(event, bytes: line.count) }
         switch reply {
-        case .fleetDigest(let id, _), .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
+        case .fleetDigest(let id, _), .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .forgeResult(let id, _), .instructions(let id, _),

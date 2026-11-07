@@ -147,6 +147,9 @@ public enum RemoteProtocol {
     public static let hooksCapability = "hooks.v1"
     /// The host serves `RemoteRequest.apps`: a space's apps, run and stopped there.
     public static let appsCapability = "apps.v1"
+    /// Offered only on the local socket (`host.sock`): the client is this Mac's own app, as a
+    /// background host's client. Never in `capabilities`, which every client may be offered.
+    public static let localCapability = "local.v1"
     /// The host takes the terminal panel's actions on an agent's terminal panes
     /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill
     /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`
@@ -1076,7 +1079,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case fleetDigest(id: Int, result: NativeFleetDigestResult)
     case uploadResult(id: Int, result: RemoteUploadResult)
     case creationOptions(id: Int, options: RemoteCreationOptions)
-    case helloOk(id: Int, protocolVersion: Int, capabilities: [String])
+    /// `hostBuild`: the host's build (`CFBundleVersion`); absent from an older host.
+    case helloOk(id: Int, protocolVersion: Int, capabilities: [String], hostBuild: String? = nil)
     /// Generic success for acked requests with no payload (paste).
     case agentResult(id: Int, result: RemoteAgentResult)
     case ok(id: Int)
@@ -1164,6 +1168,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case result, frame, executionKey, executionRevision
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
+        case hostBuild
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, attachment, options
         case snapshot, settings, status
         case designID, revision, commentsRevision
@@ -1219,7 +1224,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .helloOk(
                 id: try c.decode(Int.self, forKey: .id),
                 protocolVersion: try c.decode(Int.self, forKey: .protocolVersion),
-                capabilities: try c.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+                capabilities: try c.decodeIfPresent([String].self, forKey: .capabilities) ?? [],
+                hostBuild: try c.decodeIfPresent(String.self, forKey: .hostBuild)
             )
         case .uploadResult:
             self = .uploadResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteUploadResult.self, forKey: .result))
@@ -1355,11 +1361,12 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.nativeThread, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
-        case .helloOk(let id, let protocolVersion, let capabilities):
+        case .helloOk(let id, let protocolVersion, let capabilities, let hostBuild):
             try c.encode(Kind.helloOk, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(protocolVersion, forKey: .protocolVersion)
             try c.encode(capabilities, forKey: .capabilities)
+            try c.encodeIfPresent(hostBuild, forKey: .hostBuild)
         case .uploadResult(let id, let result):
             try c.encode(Kind.uploadResult, forKey: .type)
             try c.encode(id, forKey: .id)

@@ -664,6 +664,7 @@ struct RemoteReplyTests {
         .creationOptions(id: 52, options: RemoteCreationOptions(base: "origin/main", note: "cached", fetchFirst: false,
                                                                 model: "host/model", thinking: .high, serviceTier: .fast)),
         .helloOk(id: 1, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities),
+        .helloOk(id: 2, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.localCapability], hostBuild: "2611071"),
         .agentResult(id: 60, result: .ok),
         .ok(id: 12),
         .paneOpened(id: 14, paneID: S.pane),

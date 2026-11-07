@@ -6,6 +6,17 @@
   interfaces** (default 7433, or 7434 in Shepherd Nightly so both apps can serve; port 0 picks
   an ephemeral port, and the bound port is returned).
   Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there.
+- **Local socket:** `SessionServer.startLocalListener(path:tokenURL:)` binds `<support>/host.sock`
+  (mode 0600; the path must fit a unix socket's 104 bytes) for the app as a background host's
+  client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`) starts
+  it. At accept, before any frame is read, `LocalPeer` checks that the peer is this user's
+  (`getpeereid`) and that its code satisfies the host's own designated requirement (its audit
+  token through `SecCodeCopyGuestWithAttributes`, then `SecCodeCheckValidity`; an ad-hoc build's
+  requirement is its cdhash). pi and its agents run as the same user and can read the token, but
+  are signed as something else, so they are closed unanswered. Then `hello` with the same token
+  as TCP. Local clients alone are offered `local.v1` (`RemoteProtocol.localCapability`, never in
+  `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
+  host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands
