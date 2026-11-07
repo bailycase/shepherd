@@ -62,7 +62,14 @@ struct LocalClientTests {
             vm.selectedRemoteAgent.map { ref in host.server.state.agents.contains { $0.id == ref.agentID } } == true
         }
         let ref = try #require(vm.selectedRemoteAgent)
-        #expect((vm.sidebarLists.needsYou + vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents).contains { $0.id == .remote(ref) })
+        let row = try #require((vm.sidebarLists.needsYou + vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents)
+            .first { $0.id == .remote(ref) })
+        // The host on this Mac reads as This Mac: no host tag, one This Mac to start threads on,
+        // the Hosts page's This Mac card counts its threads, and it isn't a host to remove.
+        if case .tag = row.accessory { Issue.record("a thread of this Mac's host wears a host tag") }
+        #expect(NewThreadState.hosts(vm).map(\.name) == ["This Mac"])
+        #expect(vm.hostsPageModel(agentVersion: nil).cards.count == 1)
+        #expect(hosts.pairedConnections.isEmpty)
 
         // A send, as the composer sends it.
         try await eventuallyAsync("its pi to serve", timeout: .seconds(20)) {

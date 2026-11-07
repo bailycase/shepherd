@@ -35,12 +35,12 @@ struct RemoteSettings: View {
         SettingsPage(title: "Remote",
                      explanation: "Connect to agents on other Macs over your VPN, or let other Macs and Shepherd on your iPhone or iPad connect to this one.") {
             SettingsGroup(title: "Hosts") {
-                if store.connections.isEmpty {
+                if store.pairedConnections.isEmpty {
                     SettingsRow(title: "No remote hosts",
                                 subtitle: "Add a Mac running Shepherd below. Its agents appear in the sidebar under its name.") { EmptyView() }
                         .shTransition(.list)
                 }
-                ForEach(store.connections, id: \.id) { connection in
+                ForEach(store.pairedConnections, id: \.id) { connection in
                     RemoteHostRow(connection: connection) {
                         if editingID == connection.id { cancelEdit() }
                         store.removeHost(id: connection.id)

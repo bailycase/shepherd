@@ -10,10 +10,10 @@ import Testing
 @testable import ShepherdApp
 
 /// The app as the background host's client (`SHEPHERD_BACKGROUND_HOST=1`): its own workspace is
-/// empty, and the host on this Mac shows as a host, through its local socket.
+/// empty, and the host on this Mac reads as This Mac, through its local socket.
 extension PreviewTests {
     @Test func localClientWorkspace() async throws {
-        let workspace = try PreviewWorkspace()
+        let workspace = try PreviewWorkspace(ownsWorkspace: false)
         let host = try ScratchServer(dir: try makeScratchDirectory("host"))
         defer { workspace.stop(); host.stop() }
         host.server.serveThreads(ThreadHosting(defaults: {
@@ -35,7 +35,7 @@ extension PreviewTests {
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let vm = workspace.vm
-        let connection = vm.remoteHosts.addLocalHost(name: "demo-mac", socket: socket, token: token)
+        let connection = vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
         try await eventuallyOnMain("the host on this Mac to connect", timeout: .seconds(30)) {
             connection.phase == .connected && connection.state == host.server.state
         }
