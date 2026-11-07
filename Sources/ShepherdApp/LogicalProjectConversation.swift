@@ -10,7 +10,7 @@ import ShepherdUI
 // goes through the Project runtime. Before the first message there is no coordinator, so the page shows the Project's
 // context (the Empty overview) and the composer; the first send creates the conversation.
 
-/// The main column: the thread (or the empty overview) with the composer.
+/// The main column: the pause banner (while the person has it paused), then the thread (or the empty overview) with the composer.
 struct LogicalProjectConversation: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
@@ -19,6 +19,7 @@ struct LogicalProjectConversation: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if presentation.paused { ProjectPausedBanner(vm: vm, ref: ref, stopping: presentation.stopping) }
             // The coordinator's own thread: this Mac's for a local Project, the owner's for a remote one (read through the owner).
             if let agent = project.coordinatorAgentID {
                 ConversationThread(vm: vm, ref: ref, project: project, presentation: presentation, agent: agent)
@@ -27,6 +28,37 @@ struct LogicalProjectConversation: View {
             }
         }
         .background(Color.sh.bgWindow)
+    }
+}
+
+/// "Paused. Threads stopped at a safe point and nothing new starts. Messages wait until you resume." and Resume
+/// (ProjectLead-PausedV2). Until the owner has seen every thread stop, the line says so and Resume waits: the runtime refuses it.
+struct ProjectPausedBanner: View {
+    var vm: ShepherdViewModel
+    let ref: LogicalProjectRef
+    let stopping: Bool
+
+    var body: some View {
+        HStack(spacing: SHLeadMetrics.bannerGap) {
+            Image(systemName: "pause").font(.system(size: SHLeadMetrics.bannerGlyph)).foregroundStyle(Color.sh.textSecondary)
+                .accessibilityHidden(true)
+            Text(stopping ? "Paused. Stopping threads at a safe point. Messages wait until you resume."
+                          : "Paused. Threads stopped at a safe point and nothing new starts. Messages wait until you resume.")
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(Color.sh.textPrimary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Resume") { Task { _ = await vm.logicalProjects.setPaused(ref, false) } }
+                .buttonStyle(SHLeadSecondaryButton())
+                .disabled(vm.logicalProjects.busy.contains(ref) || stopping)
+        }
+        .padding(SHLeadMetrics.bannerPadding)
+        .frame(minHeight: SHLeadMetrics.bannerHeight)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
+        .padding(.horizontal, SHLeadMetrics.bannerInset)
+        .padding(.top, SHLeadMetrics.bannerTop)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -154,7 +186,7 @@ struct ConversationThread: View {
         let inline = Set((store.messages + store.rows.flatMap(\.turn.messages)).compactMap { $0.projectAction?.proposalID })
         let offers = project.spaceProposals.filter { $0.phase == .pending && !inline.contains($0.id) }
         return ProjectComposerSend(
-            placeholder: "Ask \(name) a question or start a task…",
+            placeholder: presentation.paused ? "Paused. Your message waits until you resume…" : "Ask \(name) a question or start a task…",
             carriesImages: vm.projectCarriesImages(ref.home),
             send: { [vm, ref, project] text, images in
                 // A local Project with no model of its own is pinned to the same default every thread and automation launches on
@@ -174,16 +206,16 @@ struct ConversationThread: View {
                     if !questions.isEmpty, let questionFailure = vm.logicalProjects.failure?.message {
                         SHInlineProblem(questionFailure).accessibilityLabel(questionFailure)
                     }
-                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task) }
+                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: presentation.paused) }
                     if let summary = presentation.summary {
                         ProjectSummaryStrip(vm: vm, ref: ref, summary: summary, rows: presentation.rows)
                     }
                 })
             } : nil,
-            held: { [store, project] in
+            held: { [store, project, paused = presentation.paused] in
                 // Consumed native operations: the thread's own user messages (saved or pending echoes) name the send that became them.
                 let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
-                return ProjectHeldMessages.held(messages: project.messages, consumed: consumed)
+                return ProjectHeldMessages.held(messages: project.messages, paused: paused, consumed: consumed)
             },
             runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }
                                    + project.retiredWakeups),
@@ -261,9 +293,13 @@ struct TaskQuestion: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
     let task: ProjectTaskRow
+    var paused = false
 
-    /// What happens to a reply, truthfully: the worker is blocked on this question (nothing is guessed).
-    static func footer(title: String) -> String { "Or just reply in chat. \(title) is waiting for your answer." }
+    /// What happens to a reply, truthfully: the worker is blocked on this question (nothing is guessed), and while the person has the
+    /// Project paused the owner holds an answer until Resume.
+    static func footer(title: String, paused: Bool = false) -> String {
+        paused ? "Or just reply in chat. Your answer waits until you resume." : "Or just reply in chat. \(title) is waiting for your answer."
+    }
 
     var body: some View {
         let store = vm.projectWorkerStore(ref.home, task.workerAgentID)
@@ -283,7 +319,7 @@ struct TaskQuestion: View {
         SHLeadQuestionCard(
                 question: prompt.question,
                 options: prompt.options.map { SHLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
-                footer: Self.footer(title: task.title),
+                footer: Self.footer(title: task.title, paused: paused),
                 enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref),
                 textPlaceholder: prompt.allowsText ? prompt.placeholder : nil,
                 submit: { words in

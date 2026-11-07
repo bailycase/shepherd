@@ -56,8 +56,9 @@ struct SidePaneView: View {
                     filesContent
                         .shTransition(.content)
                 case .design:
-                    if let board = vm.subagentInspector.boards[owner] {
-                        BoardPane(board: board, open: { vm.openBoardReference(owner, board.reference) })
+                    if let board = vm.paneBoard(owner) {
+                        BoardPane(board: board, open: { vm.openBoardReference(owner, board.reference) },
+                                  settle: { accept in vm.settlePaneBoard(owner, board, accept: accept) })
                             .id(board.reference.string + "/\(board.meta)")
                             .shTransition(.content)
                     }

@@ -576,6 +576,8 @@ final class ShepherdViewModel {
     static let logicalProjectPaneWidthKey = "shepherd.projectPaneWidth"
     /// The New thread sheet over a Project (assign a task into one of its Spaces).
     var assigningProjectTask: AssignProjectTaskDraft?
+    /// Run on another host, over a Project's task (ProjectRunElsewhere).
+    var runningElsewhere: RunElsewhereDraft?
     @ObservationIgnored let emptyProjectConversation = NativeThreadStore()
     @ObservationIgnored let emptyProjectInput = ThreadInput()
     @ObservationIgnored var madeProjectCookies: ProjectCookiesModel?

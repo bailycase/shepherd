@@ -89,6 +89,11 @@ final class MissionRuntimeFixture {
         try Data().write(to: root.appendingPathComponent("fail-validation"))
     }
 
+    /// The planner's next turn asks a question instead of drawing a map.
+    func askClarification() throws {
+        try Data().write(to: root.appendingPathComponent("ask-clarification"))
+    }
+
     func failFirstPRCreate() throws {
         try Data().write(to: root.appendingPathComponent("fail-first-pr-create"))
     }
@@ -211,7 +216,7 @@ final class MissionRuntimeFixture {
                     if kind == 'check': station['command'] = command
                     stations.append(station)
                 dependencies += [dict(source=worker, target=check, kind='data', artifact='implementation'), dict(source=check, target=validator, kind='data', artifact='tested implementation')]
-            reply = json.dumps(dict(summary='Two isolated edits, host checks and independent validators.', title='Update both repositories', requirements=['Both result.txt files contain after followed by a newline'], stations=stations, dependencies=dependencies))
+            reply = json.dumps(dict(summary='Two isolated edits, host checks and independent validators.', title='Update both repositories', requirements=['Both result.txt files contain after followed by a newline'], stations=stations, dependencies=dependencies, estimate=dict(tokens=20000, minutes=10)))
             if (root / 'ask-clarification').exists():
                 (root / 'ask-clarification').unlink()
                 reply = json.dumps(dict(summary='Confirm the scope before planning.', question='Should both repositories use the same result format?'))

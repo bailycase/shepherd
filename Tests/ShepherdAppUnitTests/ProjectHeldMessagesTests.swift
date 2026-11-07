@@ -24,6 +24,15 @@ struct ProjectHeldMessagesTests {
         #expect(held.map(\.note) == ["Waiting to send"])
     }
 
+    /// The person paused the Project: a queued message says it waits for Resume, and Up next carries the same Paused reason.
+    @Test func aMessageHeldByThePersonsPauseSaysItWaitsForResume() {
+        let queued = message("later", .queued)
+        let held = ProjectHeldMessages.held(messages: [queued], paused: true, consumed: [])
+        #expect(held.map(\.note) == ["Sends when the project resumes"])
+        #expect(ProjectHeldMessages.upNext(held).paused == "Sends when the project resumes")
+        #expect(ProjectHeldMessages.upNext(ProjectHeldMessages.held(messages: [queued], consumed: [])).paused == nil)
+    }
+
     /// Handed off (`delivering`) but pi's own pending row is not here yet: still Up next. Once the transcript holds the delivery's
     /// operation (the native pending row, then the saved message), it is the transcript's alone.
     @Test func aHandoffLeavesUpNextOnlyWhenTheTranscriptHoldsItsOperation() {

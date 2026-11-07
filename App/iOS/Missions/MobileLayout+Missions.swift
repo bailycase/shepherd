@@ -12,4 +12,6 @@ extension MobileLayout {
     static let homeMissions = 3
     /// The lines of a working agent's latest words a mission shows.
     static let missionLiveLines = 8
+    /// How much of the screen the patch sheet takes first, the mission still showing above it (MobilePatch).
+    static let missionPatchDetent: CGFloat = 0.76
 }

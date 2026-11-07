@@ -179,6 +179,16 @@ private struct LogicalProjectGeneralTab: View {
                 }
             }
             ProjectSettingsCard {
+                // The person's Pause (ProjectLead-PausedV2's way in). A stop the runtime made on its own is not this: it reads unpaused here.
+                let paused = project.paused && project.pausedByPerson
+                ProjectSettingsRow(title: paused ? "Paused" : "Pause project",
+                            subtitle: paused ? "Nothing new starts and automations skip their runs."
+                                : "Stops threads at a safe point and skips automation runs until you resume.") {
+                    ProjectSettingsButton(title: paused ? "Resume" : "Pause") {
+                        Task { _ = await model.setPaused(ref, !paused) }
+                    }
+                    .disabled(saving || (paused && project.interruptPending))
+                }
                 ProjectSettingsRow(title: "Delete project",
                             subtitle: "Removes the conversation, memory and automations. Threads stay in their spaces; branches and PRs are untouched.") {
                     ProjectSettingsButton(title: "Delete…", danger: true) {

@@ -7,8 +7,8 @@ import ShepherdRemote
 
 /// The branch card's Commit… (BranchCommit board): the checkout's changed files, all ticked; the
 /// message written from the file list, or generated from the diff on Generate from diff (the
-/// model Finalize drafts descriptions with); Amend the last commit while it isn't pushed; then
-/// Commit, or Commit & push through the card's Push (never forced). All in `BranchGit`.
+/// model Finalize drafts descriptions with); Amend the last commit; then Commit, or Commit & push
+/// through the card's Push (never forced, so off when amending a pushed commit). All in `BranchGit`.
 struct BranchCommitSheet: View {
     let vm: ShepherdViewModel
     let agentID: AgentID
@@ -22,6 +22,21 @@ struct BranchCommitSheet: View {
         var details: String
         /// Why Amend is off, else nil.
         var amendBlocked: String?
+        /// The remote-tracking ref that already has the last commit ("origin/agent/x").
+        var pushedTo: String?
+    }
+
+    /// Why Commit & push is off, else nil: no remote, or an amend of a commit a remote already has
+    /// (the push would need force, which Shepherd never does).
+    static func pushProblem(_ form: Form, amend: Bool) -> String? {
+        if form.info.pushRemote == nil { return "This checkout has no remote to push to." }
+        return amendedPushNote(form, amend: amend)
+    }
+
+    /// Under Amend: why it turns Commit & push off.
+    static func amendedPushNote(_ form: Form, amend: Bool) -> String? {
+        guard amend, let ref = form.pushedTo else { return nil }
+        return "Commit & push is off: the amended commit will differ from \(ref)."
     }
 
     @State private var form: Form?
@@ -34,31 +49,39 @@ struct BranchCommitSheet: View {
     @State private var running = false
     @State private var error: String?
 
-    init(vm: ShepherdViewModel, agentID: AgentID, cwd: String, staged: Form? = nil) {
+    init(vm: ShepherdViewModel, agentID: AgentID, cwd: String, staged: Form? = nil, amend: Bool = false) {
         self.vm = vm
         self.agentID = agentID
         self.cwd = cwd
         _form = State(initialValue: staged)
+        _amend = State(initialValue: amend)
     }
 
     var body: some View {
         SHDialog("Commit", message: subtitle, monoMessage: true, width: AppLayout.branchCommitSheetWidth) {
             content
         } status: {
-            if let text = error ?? problem { SHDialogStatus(text, isError: error != nil) }
+            if let text = error ?? problem {
+                SHDialogStatus(text, isError: error != nil)
+            }
         } actions: {
             Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
             Button("Commit") { commit(push: false) }.buttonStyle(.sh(.secondary)).disabled(problem != nil || running)
             Button("Commit & push") { commit(push: true) }
                 .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
-                .disabled(problem != nil || running || form?.info.pushRemote == nil)
-                .help(form?.info.pushRemote == nil ? "This checkout has no remote to push to" : "Push without force after committing")
+                .disabled(problem != nil || running || pushProblem != nil)
+                .help(pushProblem ?? "Push without force after committing")
         }
         .shAnimation(.content, value: drafting)
         .task {
             guard form == nil else { return }
             await read()
         }
+    }
+
+    private var pushProblem: String? {
+        guard let form else { return "" }
+        return Self.pushProblem(form, amend: amend)
     }
 
     private var subtitle: String? {
@@ -135,7 +158,7 @@ struct BranchCommitSheet: View {
                     .font(.sh(.caption))
                     .foregroundStyle(sh.textSecondary)
                     .disabled(form.wrappedValue.amendBlocked != nil)
-                if let reason = form.wrappedValue.amendBlocked {
+                if let reason = form.wrappedValue.amendBlocked ?? Self.amendedPushNote(form.wrappedValue, amend: amend) {
                     Text(reason).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                 }
             }
@@ -150,8 +173,9 @@ struct BranchCommitSheet: View {
         let cwd = cwd
         do {
             let info = try await ReviewCommitGit.info(cwd: cwd, agentWorking: false, draftsMessage: false) { await LoginShell.run($0, cwd: $1) }
-            let blocked = await Task.detached { BranchGit.amendBlocked(cwd: cwd) }.value
-            form = Form(info: info, selected: Set(info.files.map(\.id)), title: info.title, details: info.body, amendBlocked: blocked)
+            let (blocked, pushed) = await Task.detached { (BranchGit.amendBlocked(cwd: cwd), BranchGit.pushedTo(cwd: cwd)) }.value
+            form = Form(info: info, selected: Set(info.files.map(\.id)), title: info.title, details: info.body,
+                        amendBlocked: blocked, pushedTo: pushed)
         } catch {
             unavailable = ActionError.describe(error)
         }

@@ -73,6 +73,10 @@ public enum RemoteMissionAction: Codable, Hashable, Sendable {
     case runAgain
     /// Steers a working station's turn in its own session (waits, bounded, for the agent to read it).
     case steer(attemptID: UUID, text: String)
+    /// Applies or rejects exactly the map patch the client showed (`MissionRun.patch`'s id).
+    case applyPatch(patchID: UUID)
+    case rejectPatch(patchID: UUID)
+    case autoApplyPatches(on: Bool)
 }
 
 public enum RemoteMissionRequest: Codable, Hashable, Sendable {

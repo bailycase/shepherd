@@ -30,6 +30,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Claim the notification center delegate before any notification can arrive.
         UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().setNotificationCategories(PushActions.categories)
         return true
     }
 
@@ -95,13 +96,41 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let userInfo = response.notification.request.content.userInfo
-        guard let payload = PushPayload.from(userInfo) else { return }
-        await receive(payload)
+        let content = response.notification.request.content
+        guard let payload = PushPayload.from(content.userInfo) else { return }
+        let text = (response as? UNTextInputNotificationResponse)?.userText
+        await act(response.actionIdentifier, text: text, payload: payload, thread: content.threadIdentifier)
+    }
+
+    /// A tap or Open goes to the thread; Review and Open review to the changes; Reply… and
+    /// Approve act on the host, saying so in a notification when they couldn't.
+    @MainActor
+    func act(_ action: String, text: String?, payload: PushPayload, thread: String) async {
+        switch action {
+        case PushActions.reply, PushActions.approve:
+            guard let hosts = mobileHosts else { return }
+            do {
+                try await PushActions.perform(action, text: text, payload: payload, hosts: hosts)
+                if action == PushActions.approve { receive(payload, to: .missionReview) }
+            } catch {
+                let failure = (error as? GlanceFailure)?.message ?? error.localizedDescription
+                let content = UNMutableNotificationContent()
+                content.title = action == PushActions.reply ? "Your answer wasn’t sent" : "Not approved"
+                content.body = failure
+                content.threadIdentifier = thread
+                try? await UNUserNotificationCenter.current().add(
+                    UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+            }
+        case PushActions.review: receive(payload, to: .changes)
+        case PushActions.openReview: receive(payload, to: .missionReview)
+        default: receive(payload)
+        }
     }
 
     @MainActor
-    func receive(_ payload: PushPayload) {
+    func receive(_ payload: PushPayload, to destination: PushPayload.Destination = .thread) {
+        var payload = payload
+        payload.destination = destination
         pendingPayloads.append(payload)
         flushPending()
     }

@@ -138,7 +138,8 @@ struct BranchCardPreviewTests {
     }
 
     /// Commit… (BranchCommit): four of five changed files ticked, a generated message, and an
-    /// unpushed last commit Amend could replace.
+    /// unpushed last commit Amend could replace; then Amend ticked on a pushed commit, Commit &
+    /// push off with the line saying why.
     @Test func theCommitSheet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -146,7 +147,7 @@ struct BranchCardPreviewTests {
         defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
         try BranchGit.push(cwd: clone.path, branch: "agent/refund-events")
         let outbox = (1...30).map { "line \($0)" }.joined(separator: "\n") + "\n"
-        try git(["commit", "-q", "--allow-empty", "-m", "Add the refund event type"], in: clone)
+        try git(["commit", "-q", "--allow-empty", "-m", "Emit refund events from the ledger outbox"], in: clone)
         for (file, text) in [("ledger/outbox.go", outbox), ("ledger/codec.go", "codec\n"), ("ledger/refund.go", "refund\n"),
                              ("ledger/refund_test.go", "test\n"), ("scratch/notes.md", "")] {
             let url = clone.appendingPathComponent(file)
@@ -160,6 +161,13 @@ struct BranchCardPreviewTests {
                                           amendBlocked: BranchGit.amendBlocked(cwd: clone.path))
         try await Preview.render("branch-commit", size: CGSize(width: AppLayout.branchCommitSheetWidth, height: 500)) {
             BranchCommitSheet(vm: workspace.vm, agentID: AgentID(), cwd: clone.path, staged: form)
+        }
+        try BranchGit.push(cwd: clone.path, branch: "agent/refund-events")
+        var pushed = form
+        pushed.pushedTo = BranchGit.pushedTo(cwd: clone.path)
+        #expect(pushed.pushedTo == "origin/agent/refund-events")
+        try await Preview.render("branch-commit-amend-pushed", size: CGSize(width: AppLayout.branchCommitSheetWidth, height: 520)) {
+            BranchCommitSheet(vm: workspace.vm, agentID: AgentID(), cwd: clone.path, staged: pushed, amend: true)
         }
     }
 

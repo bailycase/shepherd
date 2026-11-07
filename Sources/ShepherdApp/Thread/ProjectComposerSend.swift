@@ -217,6 +217,8 @@ struct ProjectHeldMessage: Equatable, Identifiable {
     let text: String
     let note: String
     var phase: ProjectMessage.Phase = .queued
+    /// The person paused the Project, so a queued message waits for Resume.
+    var paused = false
     /// Its images' names; the bytes stay with the owner.
     var images: [NativeQueuedImage] = []
 
@@ -229,13 +231,14 @@ struct ProjectHeldMessage: Equatable, Identifiable {
 /// consumed operation identities. A message is represented once the native thread has a user message carrying its operation ID, or
 /// the native delivery ID the owner recorded for it. Worker reports (a `source`) are the runtime's own and are never drawn here.
 enum ProjectHeldMessages {
-    static func held(messages: [ProjectMessage], consumed: Set<UUID>) -> [ProjectHeldMessage] {
+    /// `paused`: the person paused the Project, so a queued message waits for Resume.
+    static func held(messages: [ProjectMessage], paused: Bool = false, consumed: Set<UUID>) -> [ProjectHeldMessage] {
         messages.compactMap { message in
             guard message.source == nil else { return nil }
             if consumed.contains(message.id) || message.nativeDeliveryID.map(consumed.contains) == true { return nil }
             let note: String
             switch message.phase {
-            case .queued: note = "Waiting to send"
+            case .queued: note = paused ? Self.waitsForResume : "Waiting to send"
             case .delivering: note = "Sending"
             case .unknown: note = "Delivery unconfirmed. Send it again to retry."
             case .failed:
@@ -245,7 +248,7 @@ enum ProjectHeldMessages {
                 note = reason.isEmpty ? "Not delivered. Send it again to retry." : "Not delivered. \(sentence) Send it again to retry."
             case .delivered: return nil
             }
-            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase,
+            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase, paused: paused,
                                       images: (message.images ?? []).map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) })
         }
     }
@@ -255,11 +258,16 @@ enum ProjectHeldMessages {
     /// pending row for the handoff, then the saved message), so it is drawn in exactly one place.
     static func upNext(_ held: [ProjectHeldMessage]) -> ProjectUpNext {
         let waiting = held.filter(\.waiting)
-        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) })
+        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) },
+                             paused: waiting.contains { $0.paused && $0.phase == .queued } ? Self.waitsForResume : nil)
     }
+
+    static let waitsForResume = "Sends when the project resumes"
 }
 
 /// The owner's waiting messages, shaped as the queue the composer's shared Up next stack draws (`QueueStackView(readOnly:)`).
 struct ProjectUpNext: Equatable {
     var queue: [NativeQueuedMessage] = []
+    /// The header's Paused tooltip while the paused Project holds them.
+    var paused: String?
 }

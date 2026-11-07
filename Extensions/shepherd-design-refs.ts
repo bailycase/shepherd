@@ -6,7 +6,9 @@
 //   user sends it. Everything the design's files say comes back fenced as data; pictures and
 //   pages come back as the copy's files, never megabytes over the socket.
 // - design_show(ref) draws the copy of a board or element in the thread as a card (ThreadBoardShown);
-//   its result's details name the copy, which the thread reads like a sent chip's.
+//   its result's details name the copy, which the thread reads like a sent chip's. With a source it
+//   shows a board the agent drew for that design instead (ThreadBoardDraft, ThreadBoardChange),
+//   kept by Shepherd until the user adds it to the design or discards it from the card.
 // - design_note(ref, text) leaves a short note on a board or element this thread was sent
 //   ("Implemented in #142 on agent/checkout-funnel."), shown on the canvas as the thread's pin.
 //
@@ -190,20 +192,27 @@ export default function shepherdDesignRefs(pi: ExtensionAPI) {
       label: "Design Show",
       description:
         "Show the user a board or element you were sent (a design-ref record's ref) as a picture in this thread, " +
-        "as it was when sent. Use it when the user asks what a design looks like instead of describing it.",
-      promptSnippet: "Show the user a design piece sent to this thread as a picture in the chat",
+        "as it was when sent. Use it when the user asks what a design looks like instead of describing it. " +
+        "With source (a whole .dc.html board, as a design's boards are written), show a board you drew instead: " +
+        "with title, a new board for ref's design; without, a change to ref's board. Neither reaches the design " +
+        "until the user adds or applies it from the thread.",
+      promptSnippet: "Show the user a design piece sent to this thread, or a board you drew for its design, as a picture in the chat",
       parameters: Type.Object({
-        ref: Type.String({ description: "The ref of a board or element design-ref record in this thread" }),
+        ref: Type.String({ description: "The ref of a design-ref record in this thread" }),
+        source: Type.Optional(Type.String({ description: "A board you drew: its whole .dc.html source, with $preview set" })),
+        title: Type.Optional(Type.String({ description: "A new board's title, e.g. \"B · Pay on phone\"" })),
       }),
       async execute(_toolCallId, params) {
         const ref = String(params.ref ?? "");
-        const reply = await request({ type: "designGet", reference: ref, what: "summary" });
+        const drawn = typeof params.source === "string";
+        const reply = drawn
+          ? await request({ type: "designPropose", reference: ref, source: params.source,
+            ...(typeof params.title === "string" ? { title: params.title } : {}) })
+          : await request({ type: "designGet", reference: ref, what: "summary" });
         const lookedAt = reply.answer?.lookedAt as { title?: string; payload?: string } | undefined;
         if (!lookedAt || typeof lookedAt.payload !== "string") throw new Error("Shepherd's design_show reply had no copy to show");
-        return {
-          content: [{ type: "text", text: `Showed ${lookedAt.title ?? ref} in the thread, as it was when sent.` }],
-          details: { board: lookedAt.payload },
-        };
+        const text = drawn ? String(reply.answer?.text ?? "") : `Showed ${lookedAt.title ?? ref} in the thread, as it was when sent.`;
+        return { content: [{ type: "text", text }], details: { board: lookedAt.payload } };
       },
     });
     pi.registerTool({
