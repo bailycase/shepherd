@@ -77,6 +77,10 @@ public enum RemoteMissionAction: Codable, Hashable, Sendable {
     case applyPatch(patchID: UUID)
     case rejectPatch(patchID: UUID)
     case autoApplyPatches(on: Bool)
+    /// The merge train over a published mission's PRs: in exactly this order, under exactly these rules.
+    case startTrain(order: [SpaceID], rules: MissionTrain.Rules)
+    case changeTrain(order: [SpaceID], rules: MissionTrain.Rules)
+    case pauseTrain, resumeTrain, skipSoak
 }
 
 public enum RemoteMissionRequest: Codable, Hashable, Sendable {

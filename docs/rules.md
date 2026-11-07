@@ -167,7 +167,13 @@ gates the next; the remote branch is never deleted), per-file Revert in the Chan
 Commit from review (`ReviewCommit.swift`: only the ticked files, refuses a dirty HEAD state, never
 force-pushes), Mission PR publication (`MissionController+Review.swift`: explicit approval binds the
 validation contract and worktree contents; commits through `ReviewCommit.swift`, pushes the exact
-approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), Mission
+approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), the Mission
+merge train (`MissionController+Train.swift`: only after publication, on the owner's Start with the order and rules
+it showed, from the Mac or a paired device over `missions.v1`; one PR at a time through the owner's gh:
+`pr update-branch` (a merge of the base, never a rebase), `pr merge --merge`, and `pr revert` only under the
+red-CI rule; under the lockfile rule a merge of the base in the mission's own worktree, the lockfile's
+regeneration command, a commit and a plain push of the mission branch; the owner's own staging and health
+commands in that worktree; a restart leaves it paused), Mission
 Spec Kit setup (the owner's click runs stock `specify init` or `specify integration` in the mission's own
 worktree; that approval and publication's may come from a paired device over the authenticated
 `missions.v1` connection, carrying the exact review or consent fingerprint the device showed, never

@@ -54,6 +54,7 @@ extension PreviewTests {
         try await show(fixture.running.id, "mission-run-station", widths: [720], panes: side)
         try await show(fixture.done.id, "mission-done-summary", widths: [720], panes: side)
         try await show(fixture.patched.id, "mission-patch", widths: [1440, 720])
+        try await show(fixture.merging.id, "mission-train", widths: [1600, 1100])
         try await show(fixture.draft.id, "mission-map-data", panes: MissionInitialPanes(wires: .data))
         try await show(fixture.draft.id, "mission-map-both", panes: MissionInitialPanes(wires: .both))
         // Review with a queued change, a draft on another line and the third requirement's evidence open.
@@ -277,7 +278,7 @@ extension PreviewTests {
 private struct MissionPreviewFixture {
     let spaces: [Space]
     let state: ShepherdState
-    let goal, planning, pausedPlanning, draft, running, review, done, patched: Mission
+    let goal, planning, pausedPlanning, draft, running, review, done, patched, merging: Mission
     let reviews: [MissionID: [MissionRepositoryReview]]
 
     init(dir: URL) throws {
@@ -398,6 +399,23 @@ private struct MissionPreviewFixture {
             question: retentionAsked.question, answer: answered.text, resolves: retention.id)
         patchedValue.run?.decisions = [MissionDecisionRecord(station: "event-audit", answer: "registry", at: now - 660)]
         patched = patchedValue
+        // MXTrain: contracts and analytics merged and soaked; orders had go.sum regenerated and waits on CI.
+        var mergingValue = mission("Checkout funnel events", .done, attempts: passed, elapsed: 10_320, published: true)
+        let rules = MissionTrain.Rules(between: .stagingSoak, soakMinutes: 10, staging: Dictionary(uniqueKeysWithValues: repos.map { ($0.id, "make deploy-staging") }),
+                                       health: [analytics: "make soak-report"])
+        var train = MissionTrain(order: [contracts, analytics, orders], rules: rules, startedAt: now - 1_500)
+        for car in 0..<2 { for step in train.cars[car].steps.indices { train.cars[car].steps[step] = .init(kind: train.cars[car].steps[step].kind, status: .done, at: now - Double(1_400 - car * 500 - step * 60)) } }
+        train.cars[1].steps[4].note = "errors              0.00%\nconsumer lag p95     40ms\nevents ingested     1,204"
+        train.cars[2].steps[0] = .init(kind: .update, status: .fixed, at: now - 180, note: "go.sum regenerated")
+        train.cars[2].steps[1] = .init(kind: .ci, status: .running, at: now - 120)
+        for entry in [(1_400.0, "contracts", "CI green", "train"), (1_300, "#300", "merged", "train"), (900, "#301", "merged", "train"),
+                      (240, "main", "go.sum bumped", "someone else"), (200, "#302", "conflict with main", "train"),
+                      (180, "rebase-fix", "go.sum regenerated", "auto · rule"), (170, "analytics-ingest", "healthy on staging", "soak")] {
+            train.record(.init(at: now - entry.0, subject: entry.1, text: entry.2, by: entry.3))
+        }
+        mergingValue.run?.train = train
+        for index in mergingValue.run!.checkouts.indices { mergingValue.run?.checkouts[index].base = "main" }
+        merging = mergingValue
         done = mission("Checkout funnel events", .done, attempts: passed, elapsed: 10_680, published: true)
 
         let files = DiffFile.parse("""
@@ -434,7 +452,7 @@ private struct MissionPreviewFixture {
                                     branch: checkout.branch, head: checkout.head, fingerprint: checkout.fingerprint!, files: files)
         }
         var reviews: [MissionID: [MissionRepositoryReview]] = [:]
-        for value in [running, review, done] { reviews[value.id] = byRepo }
+        for value in [running, review, done, merging] { reviews[value.id] = byRepo }
         self.reviews = reviews
         var state = ShepherdState()
         state.spaces = repos
@@ -444,12 +462,12 @@ private struct MissionPreviewFixture {
     /// Through the revision-checked mission service, as the app writes them.
     @MainActor func seed(_ workspace: PreviewWorkspace) async throws {
         try await workspace.server.putState(state)
-        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched] {
+        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched, merging] {
             var saved = try await workspace.server.createMission(id: mission.id, draft: mission.draft)
             if mission.approvedPlanRevision != nil { saved = try await workspace.server.approveMissionPlan(id: mission.id, expectedRevision: saved.revision) }
             if let run = mission.run { _ = try await workspace.server.setMissionRun(id: mission.id, expectedRevision: saved.revision, run: run) }
         }
         let vm = workspace.vm
-        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 8 }
+        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 9 }
     }
 }
