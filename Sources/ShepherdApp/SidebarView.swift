@@ -375,7 +375,7 @@ private struct RemoteRowMenu: View {
         }
         Button("Review Uncommitted Changes") { vm.openRemoteReview(ref, pullRequest: false) }
         Button("Review PR Changes") { vm.openRemoteReview(ref, pullRequest: true) }
-        Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent", role: .destructive) {
+        Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent…", role: .destructive) {
             vm.requestRemoteDelete(ref)
         }
     }

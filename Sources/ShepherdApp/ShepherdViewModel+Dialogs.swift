@@ -33,6 +33,20 @@ struct RemoteWorktreeSheetItem: Identifiable {
     var id: RemoteAgentRef { target }
 }
 
+/// A host's agent in the Delete agent dialog: the agent as its host last pushed it, and the host the
+/// dialog names.
+struct RemoteDeleteItem: Identifiable, Hashable {
+    let target: RemoteAgentRef
+    let agent: Agent
+    /// Nil for the background host on this Mac: its threads are This Mac's and take This Mac's words.
+    let hostName: String?
+    var id: RemoteAgentRef { target }
+
+    static func hostName(_ config: RemoteHostStore.HostConfig) -> String? {
+        config.localSocket == nil ? config.name : nil
+    }
+}
+
 /// `sheet(item:)` spellings of the dialog targets the menus, palette and sidebar set by id.
 /// The sheet receives the value it opened with, so its content never goes blank while it
 /// animates away, and a target that disappears (a deleted agent) dismisses its sheet.
@@ -79,6 +93,14 @@ extension ShepherdViewModel {
         action?()
     }
 
+    /// The remote Delete agent sheet is down. A target whose agent went while it was open (deleted
+    /// elsewhere) is cleared, so AppDialogs stops reading the hosts; a newer request's target, whose
+    /// agent is still there, stays.
+    func remoteDeleteDismissed() {
+        if remoteDeleteTarget != nil, remoteDeleteItem == nil { remoteDeleteTarget = nil }
+        runAfterDialogDismiss()
+    }
+
     var remoteRenameItem: SheetItem<RemoteAgentRef>? {
         get { remoteRenameTarget.map(SheetItem.init) }
         set { remoteRenameTarget = newValue?.value }
@@ -87,6 +109,18 @@ extension ShepherdViewModel {
     var remoteWorktreeItem: RemoteWorktreeSheetItem? {
         get { remoteWorktreeSheet.map { RemoteWorktreeSheetItem(target: $0, finalize: remoteWorktreeFinalize) } }
         set { remoteWorktreeSheet = newValue?.target }
+    }
+
+    /// Nil when nothing waits, or when the agent or its host is gone (which dismisses the dialog).
+    /// Reads the hosts only while a delete waits.
+    var remoteDeleteItem: RemoteDeleteItem? {
+        get {
+            guard let target = remoteDeleteTarget,
+                  let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }),
+                  let agent = connection.state.agents.first(where: { $0.id == target.agentID }) else { return nil }
+            return RemoteDeleteItem(target: target, agent: agent, hostName: RemoteDeleteItem.hostName(connection.config))
+        }
+        set { if remoteDeleteTarget != newValue?.target { remoteDeleteTarget = newValue?.target } }
     }
 
     var actionErrorItem: SheetItem<ActionError>? {
