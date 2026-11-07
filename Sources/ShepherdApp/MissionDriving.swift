@@ -66,6 +66,9 @@ extension MissionController: MissionDriving {
         case .refresh: try await refreshReview(id: id)
         case .revalidate: try await revalidate(id: id, revision: revision)
         case .runAgain: selectedID = try await runAgain(id: id)
+        case .applyPatch(let patch): try await applyPatch(id: id, revision: revision, patchID: patch)
+        case .rejectPatch(let patch): try await rejectPatch(id: id, revision: revision, patchID: patch)
+        case .autoApplyPatches(let on): try await setAutoApplyPatches(id: id, revision: revision, on: on)
         }
     }
 }
@@ -164,6 +167,9 @@ final class RemoteMissionDriver: MissionDriving {
         case .publish(let approval): wire = .publish(fingerprint: approval.fingerprint); shown = approval.revision
         case .revalidate: wire = .revalidate
         case .runAgain: wire = .runAgain
+        case .applyPatch(let patch): wire = .applyPatch(patchID: patch)
+        case .rejectPatch(let patch): wire = .rejectPatch(patchID: patch)
+        case .autoApplyPatches(let on): wire = .autoApplyPatches(on: on)
         }
         let made = try await remote { try await self.missions.perform(id, revision: shown, wire) }
         if let made { selectedID = made }

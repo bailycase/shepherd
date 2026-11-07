@@ -19,6 +19,8 @@ final class RightPaneState {
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
     /// The artifact each pane has open on its Artifacts tab, by its path; none shows the list.
     var artifact: [SidePaneOwner: String] = [:]
+    /// The board each pane's Design tab shows (ThreadBoardPane): the last one opened from a card.
+    var boards: [SidePaneOwner: DesignReferenceChips.Board] = [:]
     /// Panes over their whole layout (ChangesWide), the thread hidden under them.
     var maximized: Set<SidePaneOwner> = []
     /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),

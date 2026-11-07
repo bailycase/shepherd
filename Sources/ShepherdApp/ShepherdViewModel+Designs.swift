@@ -67,12 +67,12 @@ extension ShepherdViewModel {
         let inputs = DesignsPageInputs(designs: state.designs, spaces: state.spaces, firstBoards: firstBoards,
                                        filter: designsPageFilter, selection: designsPageSelection, systems: systems,
                                        swatches: swatches, hosts: remoteDesignSections, importing: designImporting, building: building,
-                                       minute: Int(now.timeIntervalSince1970 / 60))
+                                       comments: designCommentCounts, minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = designsPageCache, cached.inputs == inputs { return cached.model }
         var model = DesignsPageModel.make(designs: inputs.designs, spaces: inputs.spaces, firstBoards: inputs.firstBoards,
                                           filter: inputs.filter, selection: inputs.selection, now: now,
                                           systems: inputs.systems, swatches: inputs.swatches, importing: inputs.importing,
-                                          building: inputs.building)
+                                          building: inputs.building, comments: inputs.comments)
         model.hosts = inputs.hosts
         designsPageCache = (inputs, model)
         return model
@@ -91,6 +91,21 @@ extension ShepherdViewModel {
                   let snapshot = try? await server.designSnapshot(id), self.design(id) != nil else { continue }
             designRendering.thumbnails.update(id, snapshot: snapshot)
         }
+    }
+
+    /// Each design's open comments, for its card ("2 comments"). Read as the Designs page opens
+    /// and as designs change.
+    // ponytail: a comment added while the page is open shows on the next change or visit; push
+    // counts with `designCommentsChanged` if that matters.
+    func loadDesignCommentCounts() async {
+        var counts: [DesignID: Int] = [:]
+        for design in state.designs where !design.buildsSystem {
+            guard !Task.isCancelled else { return }
+            guard let file = try? await server.designComments(design.id) else { continue }
+            let open = file.comments.count { $0.resolvedAt == nil }
+            if open > 0 { counts[design.id] = open }
+        }
+        if counts != designCommentCounts { designCommentCounts = counts }
     }
 
     func designThumbnailVisibility(_ target: DesignTarget, visible: Bool) {
@@ -343,7 +358,8 @@ final class NewDesignState {
     private(set) var preparingImages = 0
     /// How dropped images are resized and read; a test holds it to see a send wait.
     @ObservationIgnored var prepareImages: ([NSItemProvider]) async -> [(URL, ImageFile?)] = { providers in
-        await ImageFile.read(await AppImageDrop.resolve(providers))
+        // A PDF (From a screenshot) goes as its first page.
+        await ImageFile.read(await AppImageDrop.resolve(providers).map { PageCapture.imageFile($0) })
     }
     /// Why Send waits for the images being read; nil when none are.
     var imagesPending: String? { preparingImages > 0 ? "Adding images…" : nil }
@@ -477,6 +493,28 @@ final class NewDesignState {
         attach(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
     }
 
+    /// The page Capture a page is drawing, by its host; nil when none is.
+    private(set) var capturing: String?
+
+    /// Capture a page: the page at `address` drawn off screen and attached to the brief.
+    func capture(_ address: String) {
+        guard capturing == nil else { return }
+        guard let url = PageCapture.address(address) else {
+            error = "Enter a web address, like https://staging.acme.dev."
+            return
+        }
+        capturing = url.host() ?? url.absoluteString
+        error = nil
+        Task {
+            defer { capturing = nil }
+            do {
+                attach(urls: [try await PageCapture.capture(url)])
+            } catch {
+                self.error = "Couldn't capture \(url.absoluteString): \(ShepherdViewModel.words(error))."
+            }
+        }
+    }
+
     /// What the line under the card says: a failed start, an upload under way, or an image left out.
     var notice: String? {
         if let uploading { return "Sending the project to the host… \(Int(uploading * 100))%" }
@@ -507,6 +545,7 @@ final class NewDesignState {
     /// Why Send is unavailable; nil when it can send.
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
+        if capturing != nil { return "Capturing the page…" }
         if brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the design first." }
         if let imagesPending { return imagesPending }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }

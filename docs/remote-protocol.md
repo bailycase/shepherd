@@ -111,7 +111,7 @@
   - a thread's Files (`files.v1`, offered only to a client that lists it in `hello`; both clients do):
     `RemoteAgentQuery.files(path:showHidden:)` lists a folder and `.fileRead(path:)` reads a file,
     each relative to the thread's own folder on the host (its layout's cwd, else its space), answered
-    by the server itself off its queue, only for an agent the client is sent. Read-only. Paths are
+    by the server itself off its queue, only for an agent the client is sent. Paths are
     relative (no leading `/` or `~`, no `.` or `..`); every component must stay inside the folder,
     and a symlinked folder that resolves to one above it is refused; the open descriptor is checked
     again (`ThreadFileSystem`, shared with the Mac's local Files pane). A listing scans at most
@@ -120,7 +120,12 @@
     of at most 256 KiB, one reply. Errors: `invalid_path`, `outside_root`, `not_found`,
     `not_directory`, `special_file`, `too_large`, `binary`, `read_failed`, and `unsupported` for a
     client that did not list it. No added/modified marks. A client of an older host says Files needs
-    a newer Shepherd there
+    a newer Shepherd there. Behind `files.write.v1` (host capability; served only to a client offered
+    `files.v1`), `.fileWrite(path:text:expected:)` saves an existing UTF-8 file in place, both texts
+    at most 256 KiB, only while the file still holds `expected` (the text the client edited from):
+    answered `.fileWrite(.saved)`, `.changed(text)` with the host's text and nothing written (the
+    Mac editor's conflict), or `.failed(message)`. It never creates a file. A client of a host
+    without it keeps Files read-only
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`)
   - `creationBranches(spaceID:)`, behind `agent.creation.branches.v1`: a space's branches for a
@@ -200,7 +205,11 @@
     and a short final reply, error, or explicit question preview by default, with generic text when
     unavailable. The relay receives optional `title` (100 Unicode scalars) and `preview` (240),
     whitespace-normalized and credential-redacted before truncation; redaction cannot detect every
-    secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
+    secret. Thinking and tool logs are not preview sources. It also receives `group` (the APNs thread-id:
+    `mission:<id>` for a mission's planner and stations, else `thread:<agentID>`), `subtitle` (60),
+    `level` (`passive` for finished work, else `active`) and `relevance` (the Scheduled Summary
+    rank); a relay that answers 400 to them gets the same event without them, and only the old
+    fields until the host restarts. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
@@ -331,8 +340,8 @@
     (`design.lifecycle.v1`), its systems' files and their Rename, Duplicate, Delete and Re-sync
     (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
     "Build one from a repo" in a host's space), references to the host's own designs in its
-    threads (`design.references.v1`), a Claude Design ZIP uploaded to import
-    (`design.import.v1`), and a
+    threads (`design.references.v1`), adding or discarding the boards those threads drew
+    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), and a
     pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
     experiment turns on or off).
     Answered by the server itself; boards render on the client

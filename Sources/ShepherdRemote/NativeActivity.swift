@@ -342,6 +342,8 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var endedAt: Double?
     /// The typed Project reference the owner attached to this call's result (never read from its text). nil for every other call.
     public var projectAction: NativeProjectAction?
+    /// design_show's kept copy, which the thread draws as a board card (`NativeThreadMessage.designBoard`).
+    public var designBoard: UUID?
     /// This call's explicit, redacted worker plan; display only, never Project authority.
     public var projectPlan: NativeProjectPlan?
     /// Saved output (text blocks joined): the source for Copy Output and the full-output sheet.
@@ -429,6 +431,7 @@ extension NativeActivityCall {
         self.startedAt = message.startedAt
         self.endedAt = running ? nil : message.timestamp
         self.projectAction = message.projectAction
+        self.designBoard = message.designBoard
         self.projectPlan = NativeProjectPlan(message)
         self.output = output
         self.outputHead = running ? [] : lines.prefix(Self.outputHeadLines).map(String.init)
@@ -634,6 +637,11 @@ extension NativeActivityCall {
             designRef = string("ref")
             designAspect = string("what").flatMap(DesignReferenceAspect.init(rawValue:))
             detail = designAspect.map(nativeDesignAspectWord) ?? firstLine
+        case "design_show":
+            kind = .other
+            label = "board"
+            designRef = string("ref")
+            detail = designRef ?? firstLine
         case "design_note":
             kind = .other
             label = "note"
@@ -753,9 +761,10 @@ public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivi
     var groups: [[NativeActivityCall]] = []
     for call in calls {
         // Each typed Project reference or explicit plan update owns its own card.
-        if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil, call.artifact == nil,
-           let last = groups.last?.last, last.state == .done, !last.stopped, last.artifact == nil,
-           last.projectAction == nil, last.projectPlan == nil, last.kind == call.kind,
+        // So does each board card.
+        if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil, call.designBoard == nil,
+           call.artifact == nil, let last = groups.last?.last, last.state == .done, !last.stopped, last.artifact == nil,
+           last.projectAction == nil, last.projectPlan == nil, last.designBoard == nil, last.kind == call.kind,
            (call.kind != .other && call.kind != .browser) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
         } else {

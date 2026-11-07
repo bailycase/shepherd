@@ -194,8 +194,11 @@ public struct ProjectContext: Codable, Hashable, Sendable {
     public var files: [File]
     public var resources: Int
     public var mcpServers: Int
-    public init(files: [File] = [], resources: Int = 0, mcpServers: Int = 0) {
-        self.files = files; self.resources = resources; self.mcpServers = mcpServers
+    /// The host's global pi settings as a JSON object, only the keys the Settings form shows: what an
+    /// unset space value follows. Nil from an older host.
+    public var globalSettings: String?
+    public init(files: [File] = [], resources: Int = 0, mcpServers: Int = 0, globalSettings: String? = nil) {
+        self.files = files; self.resources = resources; self.mcpServers = mcpServers; self.globalSettings = globalSettings
     }
 }
 

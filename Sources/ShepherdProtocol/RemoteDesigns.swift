@@ -29,7 +29,10 @@ extension RemoteProtocol {
     /// Every capability a host offers only while it serves designs.
     public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability,
                                                          designAgentCapability, designLifecycleCapability, designSystemsCapability,
-                                                         designReferencesCapability, designImportCapability]
+                                                         designReferencesCapability, designImportCapability, designBoardsCapability]
+    /// The host adds or applies, and discards, the boards its threads drew for its designs
+    /// (`RemoteDesignRequest.settleBoardProposal`). Offered with `designsCapability`.
+    public static let designBoardsCapability = "design.boards.v1"
     /// The host imports a Claude Design project's ZIP another device uploads
     /// (`RemoteDesignRequest.importBegin`…`importFinish`). Offered with `designsCapability`.
     public static let designImportCapability = "design.import.v1"
@@ -348,6 +351,9 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// What a "Looked at…" line says: `aspects` of the copy of `ref` the thread was sent
     /// (`designReferencesCapability`).
     case referenceLookedAt(agentID: AgentID, ref: String, aspects: [DesignReferenceAspect])
+    /// A board a host's thread drew (`DesignReferencePayload.Proposal`): add or apply it to the
+    /// design (`accept`), or discard it (`designBoardsCapability`). Answered with `referenceKept`.
+    case settleBoardProposal(agentID: AgentID, payloadID: UUID, accept: Bool)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
@@ -355,7 +361,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
              .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel: nil
         case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
-        case .referenceKept, .referencePicture, .referenceLookedAt: nil
+        case .referenceKept, .referencePicture, .referenceLookedAt, .settleBoardProposal: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
@@ -369,7 +375,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     public var writes: Bool {
         switch self {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
-             .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents,
+             .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .settleBoardProposal,
              .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
              .importBegin, .importChunk, .importFinish, .importCancel: true
         default: false
@@ -388,6 +394,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt:
             RemoteProtocol.designReferencesCapability
         case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
+        case .settleBoardProposal: RemoteProtocol.designBoardsCapability
         default: nil
         }
     }

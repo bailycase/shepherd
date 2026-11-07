@@ -76,7 +76,10 @@ struct MissionWorkspace: View {
         let limits = mission.draft.limits
         if !compact {
             if phase == .map || (phase == .planning && mission.stationAttempts.isEmpty) {
-                Text("budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
+                // The planner's estimate (a pending patch's, as MXPatch previews it) against the limits, else the limits.
+                let estimate = mission.run?.patch?.draft.plan?.estimate ?? mission.draft.plan?.estimate
+                Text(estimate.map { "est. \(MissionFormat.tokens($0.tokens)) of \(MissionFormat.tokens(limits.tokens)) · \(MissionFormat.duration($0.seconds)) of \(MissionFormat.duration(limits.seconds))" }
+                     ?? "budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
                     .shText(.mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             } else {
                 MissionMeters(mission: mission)
@@ -113,7 +116,8 @@ struct MissionWorkspace: View {
                     Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? SHGlyph.mission.symbolName : "play.fill")
                 }
                 .buttonStyle(.sh(.primary))
-                .keyboardShortcut(.return, modifiers: .command)
+                // A pending patch's Apply owns ⌘↩ (MXPatch).
+                .keyboardShortcut(mission.run?.patch == nil ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 .disabled(busy)
                 .shHelp(needsPlan ? "Continue planning" : mission.specKit != nil
                         ? "Approve each repository's spec, plan and tasks as they are now, then run /speckit.implement and /speckit.converge"

@@ -42,6 +42,8 @@ struct ActivityLinesView: View, Equatable {
                     // A Project tool's typed result: the task or Space card when it still resolves, else nothing (a gone task is
                     // never redrawn from its old receipt).
                     if let card = resolutions[index] { cards.card(card).shArrival(entering) }
+                } else if let board = burst.calls.first?.designBoard, burst.calls.count == 1 {
+                    BoardCardView(id: board) { ActivityLineView(burst: burst, review: review).equatable() }.shArrival(entering)
                 } else {
                     ActivityLineView(burst: burst, review: review).equatable().shArrival(entering)
                 }

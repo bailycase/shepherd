@@ -341,33 +341,58 @@ struct ProjectRuntimeTests {
         #expect(rig.host.server.state.projects.first == resolved)
     }
 
-    @Test func pauseInterruptsRefusesMessagesWhileStoppingAndTheNextMessageRestarts() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+    @Test func thePersonsPauseHoldsMessagesAcrossARestartAndOnlyResumeDeliversThem() async throws {
+        let rig = try Rig()
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "slow"))
         let coordinator = try #require(sent.coordinatorAgentID)
         try await eventually("coordinator running") { rig.agents.current[coordinator]?.stdin("prompt").count == 1 }
         let pi = try #require(rig.agents.current[coordinator])
         _ = try await pi.snapshot("coordinator active") { $0.running }
-        try await eventually("revision-fenced configuration Pause") {
+        try await eventually("revision-fenced Pause") {
             guard let before = rig.host.server.state.projects.first else { return false }
             return (try? await rig.host.server.logicalProjects(.setPaused(projectID: project.id, expectedRevision: before.revision, paused: true))) != nil
         }
+        #expect(rig.host.server.state.projects.first?.pausedByPerson == true)
         try await eventually("native abort acknowledgement") { rig.agents.current[coordinator]?.stdin("abort").count ?? 0 > 0 }
-        // While the threads are still stopping, a person's message is refused (busy), never queued behind the pause.
-        if let p = rig.host.server.state.projects.first, p.interruptPending {
-            do {
-                _ = try await rig.host.server.projectRuntime(project.id, expectedRevision: p.revision, request: .message(operationID: UUID(), text: "too soon"))
-                Issue.record("a message while stopping must be refused")
-            } catch let error as LogicalProjectsError { #expect(["project_busy", "stale_project"].contains(error.code)) }
-        }
-        #expect(rig.agents.current[coordinator]?.stdin("prompt").count == 1)
         try await eventually("safe pause acknowledgement") { rig.host.server.state.projects.first?.interruptPending == false }
-        // Once stopped, the next message restarts the Project and is delivered.
+        // A message while the person has it paused is kept, not delivered, and does not restart the Project.
         _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "after pause"))
+        let held = try #require(rig.host.server.state.projects.first)
+        #expect(held.paused && held.pausedByPerson)
+        #expect(held.messages.contains { $0.text == "after pause" && $0.phase == .queued })
+        #expect(rig.agents.current[coordinator]?.stdin("prompt").count == 1)
+
+        // A restart keeps it paused, with the message still waiting.
+        rig.host.server.onProjectRuntimeLaunch = nil
+        rig.host.stop(keepFiles: true)
+        let again = try Rig(dir: rig.host.dir); defer { again.stop() }
+        let saved = try #require(again.host.server.state.projects.first)
+        #expect(saved.paused && saved.pausedByPerson, "a paused Project stays paused across a restart")
+        #expect(saved.messages.contains { $0.text == "after pause" && $0.phase == .queued })
+        #expect(again.agents.current.isEmpty, "nothing starts while paused")
+
+        // Resume alone delivers it.
+        try await eventually("revision-fenced Resume") {
+            guard let before = again.host.server.state.projects.first else { return false }
+            return (try? await again.host.server.logicalProjects(.setPaused(projectID: project.id, expectedRevision: before.revision, paused: false))) != nil
+        }
+        #expect(again.host.server.state.projects.first.map { !$0.paused && !$0.pausedByPerson } == true)
+        try await eventually("the held message is delivered after Resume") { again.agents.current[coordinator]?.stdin("prompt").count == 1 }
+    }
+
+    @Test func aStopTheRuntimeMadeEndsWithThePersonsNextMessage() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let project = try await rig.create()
+        let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "first"))
+        let coordinator = try #require(sent.coordinatorAgentID)
+        try await eventually("coordinator prompted") { rig.agents.current[coordinator]?.stdin("prompt").count == 1 }
+        _ = try await rig.perform(project.id, .pause)
+        #expect(rig.host.server.state.projects.first?.pausedByPerson == false)
+        try await eventually("safe pause acknowledgement") { rig.host.server.state.projects.first?.interruptPending == false }
+        _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "go on"))
         #expect(rig.host.server.state.projects.first?.paused == false)
         try await eventually("the message restarts and is delivered") { rig.agents.current[coordinator]?.stdin("prompt").count == 2 }
-        #expect(rig.host.server.state.projects.first?.messages.contains { $0.text == "too soon" } == false, "a refused message is not kept")
     }
 
     @Test func restartSettlesInterruptedLocalWorkersWithoutPausingAndDeletionPreservesOrdinaryThreads() async throws {

@@ -47,7 +47,7 @@ struct BranchCardGitTests {
 @Suite("Branch card actions", .mainActorExclusive)
 @MainActor
 struct BranchCardActionTests {
-    @Test func theCardListsTheSpaceAndCommitOpensTheChangesCommit() async throws {
+    @Test func theCardListsTheSpaceAndCommitOpensItsSheet() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
@@ -66,8 +66,7 @@ struct BranchCardActionTests {
         #expect(card.others == [BranchCardOther(id: other.agent.id, branch: "agent/webhook-retries", state: .attention, detail: "asked you")])
 
         handle.perform(.commit)
-        #expect(vm.subagentInspector.open.contains(.local(mine.agent.id)) && vm.subagentInspector.tab(for: .local(mine.agent.id)) == .changes)
-        #expect(vm.reviewSessions.values.first { $0.agentID == mine.agent.id }?.commitRequested == true)
+        #expect(vm.branchSheet == .commit(mine.agent.id))
 
         handle.perform(.select(other.agent.id))
         #expect(vm.selectedAgentID == other.agent.id)

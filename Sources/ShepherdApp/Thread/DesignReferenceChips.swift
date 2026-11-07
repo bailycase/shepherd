@@ -46,6 +46,10 @@ final class DesignReferenceChips {
         var wantPictures: (MentionScope) -> Void = { _ in }
         var rowVisibility: (DesignMentionItem, Bool, String) -> Void = { _, _, _ in }
         var open: (DesignReference) -> Void = { _ in }
+        /// A board card's picture: the board opens beside the thread, in the pane's Design tab.
+        var showBeside: (Board) -> Void = { _ in }
+        /// Add to design or Apply to design (`true`), or Discard, on a board the agent drew.
+        var settle: (UUID, Bool) async throws -> Void = { _, _ in }
         var attach: (DesignReference) async throws -> Void = { _ in }
         var sendLatest: (DesignReference) async throws -> Void = { _ in }
         var startDesign: (() -> Void)? = nil
@@ -62,10 +66,34 @@ final class DesignReferenceChips {
         var gets: [String]
     }
 
+    /// A board card (ThreadBoardShown) once its copy is read.
+    struct Board: Equatable {
+        var design: String
+        var board: String
+        var meta: [String]
+        var note: String?
+        /// "Show v14" once the design moved on.
+        var showLatest: String?
+        /// The picture's size in points (the copy's picture is drawn at twice its size).
+        var size: CGSize?
+        var picture: SHReferenceImage?
+        var hasPicture: Bool
+        var reference: DesignReference
+        /// The kept copy it draws.
+        var copy: UUID? = nil
+        /// A board the agent drew (ThreadBoardDraft, ThreadBoardChange); nil for one it showed.
+        var proposal: DesignReferencePayload.Proposal? = nil
+        /// The line above it: "Drew a board", "B · Pay on phone · draft in Checkout redesign".
+        var lineLabel: String? = nil
+        var lineMeta: String? = nil
+    }
+
     let agentID: AgentID
     /// Where the picker's designs are, as it says so: this Mac, or a host's name.
     var place = MentionPickerContent.thisMac
     private(set) var sent: [UUID: Sent] = [:]
+    /// Board cards, by the copy they draw.
+    private(set) var boards: [UUID: Board] = [:]
     /// Composer chips' standing, by their reference's string.
     private(set) var pinned: [String: DesignReferenceFreshness] = [:]
     private(set) var lookedAt: [String: DesignReferenceLookedAt] = [:]
@@ -121,6 +149,54 @@ final class DesignReferenceChips {
         }
         next.freshness = await freshness
         if sent[id] != next { sent[id] = next }
+    }
+
+    /// Reads a board card's copy, its picture and how it stands now.
+    func loadBoard(_ id: UUID) async {
+        let key = "board/\(id)/\(generation)"
+        guard loading.insert(key).inserted else { return }
+        defer { loading.remove(key) }
+        async let freshness = io.freshness(id)
+        guard let kept = await io.payload(id) else { return }
+        let payload = kept.payload
+        // A board the agent drew isn't on the canvas to be compared with.
+        let standing = payload.proposal == nil ? await freshness : .current
+        let file = payload.picture ?? payload.boards?.first?.picture
+        var next = boards[id] ?? Board(design: payload.design, board: "", meta: [], hasPicture: file != nil, reference: payload.reference)
+        next.design = payload.design
+        next.board = payload.reference.board.map { payload.boardTitle ?? $0.stem }
+            ?? payload.boards?.first.map { $0.title ?? $0.board.stem } ?? payload.design
+        next.meta = DesignReferencePresentation.boardMeta(payload, freshness: standing)
+        next.note = payload.proposal.map { DesignReferencePresentation.boardNote($0, revision: payload.revision) }
+            ?? DesignReferencePresentation.boardNote(standing)
+        next.showLatest = DesignReferencePresentation.showLatest(standing)
+        next.proposal = payload.proposal
+        next.copy = id
+        let line = DesignReferencePresentation.boardLine(payload)
+        next.lineLabel = line?.label
+        next.lineMeta = line?.meta
+        if let width = file?.pixelWidth, let height = file?.pixelHeight {
+            next.size = CGSize(width: CGFloat(width) / 2, height: CGFloat(height) / 2)
+        } else if let width = payload.width, let height = payload.height {
+            next.size = CGSize(width: width, height: height)
+        }
+        if next.picture == nil, let file {
+            next.picture = await Self.picture(kept.folder.appendingPathComponent(file.name), id: "board/\(id)",
+                                              maxPixels: AppLayout.boardCardPicturePixels)
+        }
+        if boards[id] != next { boards[id] = next }
+    }
+
+    /// Add to design, Apply to design or Discard on a board the agent drew, then the card reads
+    /// its copy again. Nil when it went, else why not.
+    func settle(_ id: UUID, accept: Bool) async -> String? {
+        do {
+            try await io.settle(id, accept)
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? (error as? CustomStringConvertible)?.description ?? "\(error)"
+        }
+        await loadBoard(id)
+        return nil
     }
 
     /// Reads how a composer chip's pinned version stands against its design now.
@@ -214,8 +290,9 @@ final class DesignReferenceChips {
 
     /// Previews: what the host would answer.
     func seed(sent: [UUID: Sent] = [:], pinned: [String: DesignReferenceFreshness] = [:], lookedAt: [String: DesignReferenceLookedAt] = [:],
-              catalog: DesignMentionCatalog? = nil) {
+              catalog: DesignMentionCatalog? = nil, boards: [UUID: Board] = [:]) {
         self.sent.merge(sent) { $1 }
+        self.boards.merge(boards) { $1 }
         self.pinned.merge(pinned) { $1 }
         self.lookedAt.merge(lookedAt) { $1 }
         if let catalog {
@@ -327,11 +404,11 @@ final class DesignReferenceChips {
     }
 
     /// A kept picture, scaled for a chip and its preview (read off the main thread).
-    static func picture(_ url: URL, id: String) async -> SHReferenceImage? {
+    static func picture(_ url: URL, id: String, maxPixels: CGFloat = AppLayout.referencePicturePixels) async -> SHReferenceImage? {
         let image = await Task.detached(priority: .utility) { () -> CGImage? in
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
             let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                            kCGImageSourceThumbnailMaxPixelSize: AppLayout.referencePicturePixels,
+                                            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
                                             kCGImageSourceCreateThumbnailWithTransform: true]
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }.value

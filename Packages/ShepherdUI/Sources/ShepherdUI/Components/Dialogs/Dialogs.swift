@@ -17,16 +17,19 @@ public enum SHDialogMetrics {
 public struct SHDialog<Content: View, Status: View, Actions: View>: View {
     let title: String
     let message: String?
+    /// The message in mono, for a branch or a path ("agent/x · 4 of 5 files").
+    let monoMessage: Bool
     let width: CGFloat
     let content: Content
     let status: Status
     let actions: Actions
 
-    public init(_ title: String, message: String? = nil, width: CGFloat = SHDialogMetrics.width,
+    public init(_ title: String, message: String? = nil, monoMessage: Bool = false, width: CGFloat = SHDialogMetrics.width,
                 @ViewBuilder content: () -> Content, @ViewBuilder status: () -> Status,
                 @ViewBuilder actions: () -> Actions) {
         self.title = title
         self.message = message
+        self.monoMessage = monoMessage
         self.width = width
         self.content = content()
         self.status = status()
@@ -45,7 +48,7 @@ public struct SHDialog<Content: View, Status: View, Actions: View>: View {
                     .accessibilityAddTraits(.isHeader)
                 if let message {
                     Text(message)
-                        .shText(.body)
+                        .shText(monoMessage ? .code : .body)
                         .foregroundStyle(sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -80,6 +80,62 @@ public enum DesignReferencePresentation {
         return "Send v\(latest)"
     }
 
+    /// A board card's meta (ThreadBoardShown, ThreadBoardStale): the board's page, its size, and
+    /// the revision the agent showed, "shown at revision 13" once the design moved on.
+    /// A board the agent drew says where it stands instead: "not on the canvas yet", "proposed
+    /// from revision 13" (ThreadBoardDraft, ThreadBoardChange).
+    public static func boardMeta(_ payload: DesignReferencePayload, freshness: DesignReferenceFreshness) -> [String] {
+        var meta: [String] = []
+        if let page = payload.boardPageTitle ?? payload.pageTitle { meta.append(page) }
+        if let width = payload.width, let height = payload.height { meta.append("\(Int(width)) × \(Int(height))") }
+        switch (payload.proposal?.kind, payload.proposal?.state) {
+        case (nil, _), (_, nil): meta.append((freshness == .current ? "revision " : "shown at revision ") + "\(payload.revision)")
+        case (.draft, .pending): meta.append("not on the canvas yet")
+        case (.draft, .added): meta.append("added to the canvas")
+        case (.change, .pending): meta.append("proposed from revision \(payload.revision)")
+        case (.change, .added): meta.append("applied over revision \(payload.revision)")
+        case (_, .discarded): meta.append("discarded")
+        }
+        return meta
+    }
+
+    /// What a board the agent drew says under its footer.
+    public static func boardNote(_ proposal: DesignReferencePayload.Proposal, revision: UInt64) -> String {
+        switch (proposal.kind, proposal.state) {
+        case (.draft, .pending): "Drawn in this thread. It isn’t on the design’s canvas until you add it."
+        case (.change, .pending): "Proposed change to the board on the canvas. Adding it replaces revision \(revision)."
+        case (.draft, .added): "Added to the design’s canvas."
+        case (.change, .added): "Applied to the board on the canvas."
+        case (_, .discarded): "Discarded. The design didn’t change."
+        }
+    }
+
+    /// The line above a board the agent drew: "Drew a board" or "Changed a board", and its meta
+    /// ("B · Pay on phone · draft in Checkout redesign", "B · Pay on phone · from revision 13").
+    public static func boardLine(_ payload: DesignReferencePayload) -> (label: String, meta: String)? {
+        guard let proposal = payload.proposal else { return nil }
+        let board = payload.boardTitle ?? payload.reference.board?.stem ?? ""
+        return proposal.kind == .draft
+            ? ("Drew a board", board + " · draft in " + payload.design)
+            : ("Changed a board", board + " · from revision \(payload.revision)")
+    }
+
+    /// What a board card says under its footer when the design moved on or went; nil while current.
+    public static func boardNote(_ freshness: DesignReferenceFreshness) -> String? {
+        switch freshness {
+        case .current: nil
+        case .updatedSince: "The design moved on since the agent showed this. It shows what the agent saw."
+        case .deleted: "The design was deleted since the agent showed this. It shows what the agent saw."
+        case .hostOffline: "The design’s host is offline. It shows what the agent saw."
+        }
+    }
+
+    /// "Show v14": a board card's way to the board as it is now, once the design moved on.
+    public static func showLatest(_ freshness: DesignReferenceFreshness) -> String? {
+        guard case .updatedSince(let latest, _) = freshness else { return nil }
+        return "Show v\(latest)"
+    }
+
     /// The toast after a send that stays on the canvas: "Sent card “Checkout funnel” to Checkout
     /// page polish."
     public static func sent(_ piece: String, to thread: String) -> String {

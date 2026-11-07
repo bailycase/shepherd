@@ -121,6 +121,39 @@ struct RemoteFilesTests {
         #expect(Self.code(try await host.ask(.fileRead(path: "README.md"), agent: AgentID())) == "no_such_agent")
     }
 
+    @Test func savesOnlyOverTheTextTheClientEditedFrom() async throws {
+        let host = try await FilesHost()
+        defer { host.stop() }
+        let client = try await host.remote.typed()
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.filesWriteCapability))
+        let file = host.folder.appendingPathComponent("Sources/App.swift")
+
+        #expect(try await client.writeFile(agentID: host.agent, path: "Sources/App.swift", text: "let x = 2\n", expected: "let x = 1\n") == .saved)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "let x = 2\n")
+
+        // The file moved on since the client read it: nothing is written and the client gets the host's text.
+        #expect(try await client.writeFile(agentID: host.agent, path: "Sources/App.swift", text: "let x = 3\n", expected: "let x = 1\n")
+                == .changed("let x = 2\n"))
+        #expect(try String(contentsOf: file, encoding: .utf8) == "let x = 2\n")
+    }
+
+    @Test func aSaveNeverLeavesTheFolderOrCreatesAFile() async throws {
+        let host = try await FilesHost()
+        defer { host.stop() }
+        for path in ["escape.txt", "../files-outside/secret.txt", "missing.swift", "Sources", "big.txt"] {
+            guard case .agentResult(7, .fileWrite(.failed)) = try await host.ask(.fileWrite(path: path, text: "owned", expected: "secret\n")) else {
+                Issue.record("saving \(path) was not refused")
+                continue
+            }
+        }
+        #expect(try String(contentsOf: host.outside.appendingPathComponent("secret.txt"), encoding: .utf8) == "secret\n")
+        #expect(!FileManager.default.fileExists(atPath: host.folder.appendingPathComponent("missing.swift").path))
+        let older = RemoteProtocol.clientCapabilities.filter { $0 != RemoteProtocol.filesCapability }
+        #expect(Self.code(try await host.ask(.fileWrite(path: "README.md", text: "x", expected: "# Readme\n"), capabilities: older)) == "unsupported")
+        #expect(try String(contentsOf: host.folder.appendingPathComponent("README.md"), encoding: .utf8) == "# Readme\n")
+    }
+
     @Test func aClientWithoutTheCapabilityIsNeitherOfferedNorServedFiles() async throws {
         let host = try await FilesHost()
         defer { host.stop() }

@@ -205,6 +205,21 @@ struct DesignLifecycleWordsTests {
         #expect(coming?.menu == nil)
     }
 
+    /// A card's line counts its open comments and says when it is a phone design
+    /// (NavDesignsPlanned: "4 boards · 2 comments", "9 boards · phone").
+    @Test func cardsCountCommentsAndSayPhone() {
+        var checkout = Design(name: "Checkout funnel dashboard", createdAt: 2)
+        checkout.boardCount = 4
+        var onboarding = Design(name: "Onboarding flow", createdAt: 1)
+        onboarding.boardCount = 9
+        let boards = [checkout.id: DesignsPageModel.FirstBoard(size: CGSize(width: 1440, height: 900), version: 1),
+                      onboarding.id: DesignsPageModel.FirstBoard(size: CGSize(width: 390, height: 844), version: 1)]
+        let model = DesignsPageModel.make(designs: [checkout, onboarding], spaces: [], firstBoards: boards, filter: "", selection: nil,
+                                          now: Date(), comments: [checkout.id: 2])
+        #expect(model.cards.map(\.detail) == ["4 boards · 2 comments", "9 boards · phone"])
+        #expect(DesignsPageModel.detail(boards: 1, comments: 1, phone: true) == "1 board · 1 comment · phone")
+    }
+
     /// A built-in says so; a system an import brought names its design.
     @Test func systemCardsSayWhereTheyCameFrom() {
         let design = Design(name: "Checkout funnel", createdAt: 1)

@@ -8,7 +8,7 @@ import Testing
 @Suite("Side pane")
 struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
-        #expect(SidePaneTab.allCases == [.changes, .browser, .pullRequest, .artifacts, .subagents, .files])
+        #expect(SidePaneTab.allCases == [.changes, .browser, .pullRequest, .artifacts, .subagents, .files, .design])
         #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser", "Files"],
                 "Artifacts and Subagents wait for a first file and a first run; Files is always shown")
         #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes", "Files"],
@@ -19,9 +19,9 @@ struct SidePaneTests {
         #expect(SidePaneTab.tabs(browser: false) == [.changes, .artifacts, .files, .subagents])
     }
 
-    @Test func artifactsIsThePageGlyphOnControlSixAndCountsItsFiles() throws {
+    @Test func artifactsIsThePageGlyphOnControlSevenAndCountsItsFiles() throws {
         let tab = try #require(SidePaneTabs.items(news: [], changedFiles: nil, artifacts: 3).first { $0.id == "artifacts" })
-        #expect(tab.title == "Artifacts" && tab.count == 3 && tab.shortcut == "⌃6" && tab.systemImage == SHGlyph.artifact.symbolName)
+        #expect(tab.title == "Artifacts" && tab.count == 3 && tab.shortcut == "⌃7" && tab.systemImage == SHGlyph.artifact.symbolName)
         #expect(SidePaneTabs.items(news: [], changedFiles: nil, artifacts: nil).allSatisfy { $0.id != "artifacts" }, "no file, no tab")
     }
 
@@ -35,9 +35,19 @@ struct SidePaneTests {
     }
 
     @Test func theDigitsFollowTheBoardAndAHostWithoutTunnelsKeepsThem() {
-        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 6, 4, 5], "Artifacts came back on the next free digit; the others kept theirs")
-        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃6", "⌃4", "⌃5"])
+        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 7, 4, 5, 6], "Artifacts came back on the next free digit; the others kept theirs")
+        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃7", "⌃4", "⌃5", "⌃6"])
         #expect(SidePaneTab.files.digit == 5)
+    }
+
+    /// ThreadBoardPane: Design follows Browser only while a board is open in it, on ⌃6, with the nib.
+    @Test func designFollowsTheBrowserOnlyWhileABoardIsOpenInIt() throws {
+        #expect(SidePaneTab.tabs(browser: true, design: true) == [.changes, .browser, .design, .artifacts, .files, .subagents])
+        let items = SidePaneTabs.items(news: [], changedFiles: 2, design: true)
+        #expect(items.map(\.title) == ["Changes", "Browser", "Design", "Files"])
+        let tab = try #require(items.first { $0.id == "design" })
+        #expect(tab.systemImage == "pencil.tip" && tab.shortcut == "⌃6" && tab.count == nil)
+        #expect(!SidePaneTabs.items(news: [], changedFiles: 2).contains { $0.id == "design" })
     }
 
     @Test func theBrowserIsGlobeOnControlTwoAndCarriesPisDot() throws {

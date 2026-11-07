@@ -58,6 +58,13 @@ struct SidePaneView: View {
                 case .files:
                     filesContent
                         .shTransition(.content)
+                case .design:
+                    if let board = vm.paneBoard(owner) {
+                        BoardPane(board: board, open: { vm.openBoardReference(owner, board.reference) },
+                                  settle: { accept in vm.settlePaneBoard(owner, board, accept: accept) })
+                            .id(board.reference.string + "/\(board.meta)")
+                            .shTransition(.content)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -128,7 +135,8 @@ private struct SidePaneTabBar: View {
                                           browser: tabs.contains(.browser), browserTip: browserTip,
                                           artifacts: store.artifacts.isEmpty ? nil : store.artifacts.count,
                                           subagents: SidePaneTabs.subagents(store.subagents),
-                                          pullRequest: tabs.contains(.pullRequest) ? pullRequest?.selection?.number : nil),
+                                          pullRequest: tabs.contains(.pullRequest) ? pullRequest?.selection?.number : nil,
+                                          design: tabs.contains(.design)),
                        selection: tab.rawValue,
                        select: { id in SidePaneTab(rawValue: id).map { vm.showSidePane(owner, tab: $0) } },
                        closeShortcut: vm.keybindings.display(.toggleRightPane),
@@ -182,11 +190,12 @@ enum SidePaneTabs {
     /// `subagents` is the thread's run count and status; nil while it has none (no tab).
     /// `pullRequest` is the branch's pull request's number; nil while it has none (no tab).
     static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: SHSidePaneTabTip? = nil,
-                      artifacts: Int? = nil, subagents: (count: Int, status: AgentState)? = nil, pullRequest: Int? = nil) -> [SHSidePaneTab] {
-        SidePaneTab.tabs(browser: browser, pullRequest: pullRequest != nil).compactMap { tab in
+                      artifacts: Int? = nil, subagents: (count: Int, status: AgentState)? = nil, pullRequest: Int? = nil,
+                      design: Bool = false) -> [SHSidePaneTab] {
+        SidePaneTab.tabs(browser: browser, pullRequest: pullRequest != nil, design: design).compactMap { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
-            case .browser, .pullRequest: nil
+            case .browser, .pullRequest, .design: nil
             case .files: nil
             case .artifacts: artifacts
             case .subagents: subagents?.count

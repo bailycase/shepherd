@@ -60,19 +60,35 @@ struct ProjectsControlTests {
             #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) hit area is \(String(describing: control.frame))")
             try await eventuallyOnMain("the category to load") { model.category == category && !model.fileLoading }
             if category == .pi {
-                #expect(model.projectCodemode == .inherit)
-                for (label, expected) in [("Off", false as Bool?), ("On", true as Bool?), ("Use global default", nil as Bool?)] {
+                let file = root.appendingPathComponent(".shepherd/settings.json")
+                func saved() throws -> [String: Any] {
+                    try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+                }
+                func save(_ what: String) async throws {
                     window.layout()
-                    let choice = try window.press(label, role: ControlRole.radioButton)
+                    try ControlPress.press("Save changes", under: window.host)
+                    try await eventuallyOnMain(what) { !model.saving && !model.dirty }
+                }
+                #expect(model.projectCodemode == .inherit)
+                for (label, expected) in [("Off", false as Bool?), ("On", true as Bool?), ("Follow global", nil as Bool?)] {
+                    window.layout()
+                    let choice = try ControlPress.press(label, role: ControlRole.radioButton, in: "Codemode", under: window.host)
                     #expect(ControlPress.undersized([choice], minimum: .desktop).isEmpty)
                     #expect(model.dirty)
-                    window.layout()
-                    try window.press("Save")
-                    try await eventuallyOnMain("codemode saved") { !model.saving && !model.dirty }
-                    let contents = try Data(contentsOf: root.appendingPathComponent(".shepherd/settings.json"))
-                    let settings = try #require(JSONSerialization.jsonObject(with: contents) as? [String: Any])
-                    #expect(PiCodemode.projectOverride(in: settings) == expected)
+                    try await save("codemode saved")
+                    #expect(PiCodemode.projectOverride(in: try saved()) == expected)
                 }
+                // The form writes the file's keys: a space tool selection, one tool off, then back to global.
+                window.layout()
+                try ControlPress.press("Space selection", role: ControlRole.radioButton, in: "Built-in tools", under: window.host)
+                window.layout()
+                try ControlPress.press("bash", role: ControlRole.checkBox, under: window.host)
+                try await save("tools saved")
+                #expect(try saved()["defaultTools"] as? [String] == ["read", "edit", "write"])
+                window.layout()
+                try ControlPress.press("Reset Built-in tools to global", under: window.host)
+                try await save("tools reset")
+                #expect(try saved()["defaultTools"] == nil)
             }
         }
         window.layout()
