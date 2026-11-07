@@ -6,13 +6,15 @@ import ShepherdRemote
 import ShepherdUI
 
 /// A tab of the side pane beside a thread (FileOpenSplit board for Files).
-/// Subagents takes ⌃4 and Files ⌃5; ⌃3 was the removed Artifacts tab. The digit is fixed per tab (not derived
+/// Pull request takes ⌃3 (the removed Artifacts tab's), Subagents ⌃4 and Files ⌃5. The digit is fixed per tab (not derived
 /// from CaseIterable index) so adding or removing a tab never shifts existing chords.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case changes
     /// A thread's Browser (PaneBrowser): a local thread's, or a remote one's whose host carries
     /// tunnels (`browser.tunnel.v1`).
     case browser
+    /// The thread branch's pull request (PRPane, PRPaneMerged), while the branch has one.
+    case pullRequest
     /// Every subagent of the thread, this turn's and the earlier ones (SubagentList).
     case subagents
     /// The space's file browser (FileOpenSplit board): read-only tree and viewer.
@@ -22,6 +24,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "Changes"
         case .browser: "Browser"
+        case .pullRequest: "Pull request"
         case .subagents: "Subagents"
         case .files: "Files"
         }
@@ -31,24 +34,26 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
+        case .pullRequest: ForgeSymbol.pullRequest
         case .subagents: SHGlyph.gitBranch.symbolName
         case .files: SHGlyph.document.symbolName
         }
     }
 
-    /// The tabs a thread's pane shows: Changes, Browser, Files (always, for local; the tab itself
-    /// shows unavailable for remote), and Subagents once it has a run.
+    /// The tabs a thread's pane shows: Changes, Pull request while the branch has one, Browser,
+    /// Files (always, for local; the tab itself shows unavailable for remote), and Subagents once it has a run.
     /// `SidePaneTabs.items` and `ShepherdViewModel.sidePaneTabs(for:)` drop conditional ones while they have nothing.
-    static func tabs(browser: Bool) -> [SidePaneTab] {
-        browser ? [.changes, .browser, .files, .subagents] : [.changes, .files, .subagents]
+    static func tabs(browser: Bool, pullRequest: Bool = false) -> [SidePaneTab] {
+        [.changes] + (pullRequest ? [.pullRequest] : []) + (browser ? [.browser] : []) + [.files, .subagents]
     }
 
-    /// Fixed chord digits: ⌃1 Changes, ⌃2 Browser, ⌃4 Subagents, ⌃5 Files.
+    /// Fixed chord digits: ⌃1 Changes, ⌃2 Browser, ⌃3 Pull request, ⌃4 Subagents, ⌃5 Files.
     /// A tab keeps its digit regardless of which tabs are visible.
     var digit: Int {
         switch self {
         case .changes: 1
         case .browser: 2
+        case .pullRequest: 3
         case .subagents: 4
         case .files: 5
         }
@@ -60,6 +65,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "Agent opened a review in Changes"
         case .browser: "Agent opened a page in Browser"
+        // Nothing marks it either: the branch's pull request is looked up, not opened by pi.
+        case .pullRequest: "The branch has a pull request"
         // Nothing marks this tab as news: the dot is pi opening something, and a subagent opens nothing in the pane.
         case .subagents: "Agent started a subagent"
         // Files is user-driven; the agent never opens it.
@@ -140,7 +147,7 @@ extension ShepherdViewModel {
         switch shown {
         case .changes: ensureReview(owner)
         case .files: ensureFileTree(owner)
-        case .browser, .subagents: break
+        case .browser, .subagents, .pullRequest: break
         }
     }
 
@@ -258,7 +265,8 @@ extension ShepherdViewModel {
             hasRuns = remoteThreadStores.existing(for: ref)?.subagents.isEmpty == false
             browser = remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true
         }
-        return SidePaneTab.tabs(browser: browser).filter { $0 != .subagents || hasRuns }
+        let pullRequest = if case .local(let id) = owner { branchPullRequests[id] != nil } else { false }
+        return SidePaneTab.tabs(browser: browser, pullRequest: pullRequest).filter { $0 != .subagents || hasRuns }
     }
 
     /// The header button's state for `owner` (`SidePaneTab.button`).

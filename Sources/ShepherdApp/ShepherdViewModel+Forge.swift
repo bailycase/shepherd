@@ -63,12 +63,14 @@ extension ShepherdViewModel {
     }
 
     /// Fix with agent on a failing check, with its log's tail.
-    func forgeFixCheck(_ check: ForgeCheck) {
-        guard let detail = forgeStore.pullRequest else { return }
+    /// `store` is the page's: the destination's, or a side pane's (`branchPullRequests`).
+    func forgeFixCheck(_ check: ForgeCheck, store: ForgeStore? = nil) {
+        let store = store ?? forgeStore
+        guard let detail = store.pullRequest else { return }
         Task {
-            let log = await forgeStore.loadLog(check)
-            _ = await runForgeBriefNow(ForgeBriefs.fixCheckPrompt(detail, check: check, log: log, repoPath: forgeStore.path(of: detail.ref.repo)),
-                                       name: "Fix \(check.displayName)", done: "Asked an agent to fix \(check.displayName)")
+            let log = await store.loadLog(check)
+            _ = await runForgeBriefNow(ForgeBriefs.fixCheckPrompt(detail, check: check, log: log, repoPath: store.path(of: detail.ref.repo)),
+                                       name: "Fix \(check.displayName)", done: "Asked an agent to fix \(check.displayName)", store: store)
         }
     }
 
@@ -85,16 +87,17 @@ extension ShepherdViewModel {
     }
 
     /// The Changes tab's Send to agent: its line comments, as review feedback.
-    func forgeSendLineComments(_ session: ReviewSession) {
-        guard let detail = forgeStore.pullRequest, !session.comments.isEmpty else { return }
+    func forgeSendLineComments(_ session: ReviewSession, store: ForgeStore? = nil) {
+        let store = store ?? forgeStore
+        guard let detail = store.pullRequest, !session.comments.isEmpty else { return }
         let comments = session.comments.enumerated().map { index, comment in
             ForgeLineComment(id: index, author: detail.viewer ?? "me", path: comment.filePath, line: comment.lineNumber,
                              diffHunk: comment.marker + comment.content, body: comment.text, createdAt: comment.createdAt)
         }
         session.isSubmitting = true
         Task {
-            let sent = await runForgeBriefNow(ForgeBriefs.feedbackPrompt(detail, comments: comments, repoPath: forgeStore.path(of: detail.ref.repo)),
-                                              name: nil, done: "Sent \(comments.count) comment\(comments.count == 1 ? "" : "s") to the agent")
+            let sent = await runForgeBriefNow(ForgeBriefs.feedbackPrompt(detail, comments: comments, repoPath: store.path(of: detail.ref.repo)),
+                                              name: nil, done: "Sent \(comments.count) comment\(comments.count == 1 ? "" : "s") to the agent", store: store)
             session.isSubmitting = false
             if sent { session.comments = [] }
         }
@@ -102,29 +105,31 @@ extension ShepherdViewModel {
 
     /// Comment on GitHub: the line comments as one review from the viewer. A removed line is
     /// commented on the old side.
-    func forgePostLineComments(_ session: ReviewSession) {
-        guard let ref = forgeStore.pullRequest?.ref, !session.comments.isEmpty else { return }
+    func forgePostLineComments(_ session: ReviewSession, store: ForgeStore? = nil) {
+        let store = store ?? forgeStore
+        guard let ref = store.pullRequest?.ref, !session.comments.isEmpty else { return }
         let comments = session.comments.map {
             ForgeDraftComment(path: $0.filePath, line: $0.lineNumber, right: $0.marker != "-", body: $0.text)
         }
         session.isSubmitting = true
         Task {
-            let posted = await forgeStore.perform(.postReview(ref: ref, verdict: .comment, body: "", comments: comments))
+            let posted = await store.perform(.postReview(ref: ref, verdict: .comment, body: "", comments: comments))
             session.isSubmitting = false
             if posted {
                 session.comments = []
-                forgeStore.notice = ForgeNotice(text: "Posted \(comments.count) comment\(comments.count == 1 ? "" : "s") on GitHub", agentID: nil)
+                store.notice = ForgeNotice(text: "Posted \(comments.count) comment\(comments.count == 1 ? "" : "s") on GitHub", agentID: nil)
             }
         }
     }
 
     /// Merge (PRReviewMerge's options); Remove the worktree goes through the confirmed Delete
     /// Worktree path once the merge went through now.
-    func forgeMerge() {
-        guard let detail = forgeStore.pullRequest else { return }
-        let options = forgeStore.mergeOptions
+    func forgeMerge(store: ForgeStore? = nil) {
+        let store = store ?? forgeStore
+        guard let detail = store.pullRequest else { return }
+        let options = store.mergeOptions
         Task {
-            let merged = await forgeStore.perform(.merge(ref: detail.ref, method: options.method, whenReady: options.whenReady,
+            let merged = await store.perform(.merge(ref: detail.ref, method: options.method, whenReady: options.whenReady,
                                                          deleteBranch: options.deleteBranch))
             if merged, !options.whenReady, options.removeWorktree, let thread = detail.summary.thread, thread.worktreePath != nil {
                 requestWorktreeDelete(thread.agentID)
@@ -133,8 +138,8 @@ extension ShepherdViewModel {
     }
 
     /// Remove worktree (a merged or closed pull request's thread): the confirmed Delete Worktree path.
-    func forgeRemoveWorktree() {
-        guard let thread = forgeStore.pullRequest?.summary.thread, thread.worktreePath != nil else { return }
+    func forgeRemoveWorktree(store: ForgeStore? = nil) {
+        guard let thread = (store ?? forgeStore).pullRequest?.summary.thread, thread.worktreePath != nil else { return }
         requestWorktreeDelete(thread.agentID)
     }
 
@@ -146,13 +151,14 @@ extension ShepherdViewModel {
 
     /// Sends the brief to its thread or starts one, then says so over the page.
     @discardableResult
-    func runForgeBriefNow(_ brief: ForgeBrief, name: String?, done: String) async -> Bool {
+    func runForgeBriefNow(_ brief: ForgeBrief, name: String?, done: String, store: ForgeStore? = nil) async -> Bool {
+        let store = store ?? forgeStore
         do {
             let id = try await deliverForgeBrief(brief, name: name)
-            forgeStore.notice = ForgeNotice(text: done, agentID: id)
+            store.notice = ForgeNotice(text: done, agentID: id)
             return true
         } catch {
-            forgeStore.actionError = ForgeError(.failed, (error as? CustomStringConvertible)?.description ?? "\(error)")
+            store.actionError = ForgeError(.failed, (error as? CustomStringConvertible)?.description ?? "\(error)")
             return false
         }
     }
