@@ -654,7 +654,8 @@ struct ThreadView: View {
 /// it current never re-renders the view.
 @MainActor
 final class CatchUpGate {
-    private var drawn = Int.min
+    /// The version this view last drew; nil until its first render.
+    private var drawn: Int?
 
     /// What a view keys its `transaction(value:)` on, so that only the update in which it drew
     /// a catch-up (or flipped on screen) is touched, never its subviews' later updates.
@@ -664,9 +665,12 @@ final class CatchUpGate {
     }
 
     /// `caughtUpAt` is the version the store had when it caught up (nil until then), and
-    /// `version` its version now.
-    func catchingUp(caughtUpAt: Int?, version: Int) -> Bool {
+    /// `version` its version now. A view made in the middle of a session (each new reply's live
+    /// row) passes its parent's verdict: its first render is not the thread's catch-up, so it
+    /// moves as its parent does. Without a parent, a gate that has not drawn is catching up.
+    func catchingUp(caughtUpAt: Int?, version: Int, parent: Bool? = nil) -> Bool {
         defer { drawn = version }
+        guard let drawn else { return parent ?? true }
         guard let caughtUpAt else { return true }
         return caughtUpAt > drawn
     }
