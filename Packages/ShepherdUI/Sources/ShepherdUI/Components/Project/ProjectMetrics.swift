@@ -190,6 +190,9 @@ public enum SHLeadMetrics {
     public static let composerFieldHeight: CGFloat = 56
     public static let composerBottom: CGFloat = 16
 
+    /// Run on another host (ProjectRunElsewhere): a 520pt dialog.
+    public static let runElsewhereWidth: CGFloat = 520
+
     // MARK: Right pane (Threads)
 
     /// The pane's header tabs: 28pt buttons 2pt apart (Threads 8pt in, then Files, Automations, New thread).

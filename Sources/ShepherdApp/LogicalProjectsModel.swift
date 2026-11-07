@@ -33,6 +33,7 @@ extension ShepherdViewModel {
         if selectedLogicalProject != nil { selectedLogicalProject = nil }
         if newLogicalProject != nil { newLogicalProject = nil }
         if assigningProjectTask != nil { assigningProjectTask = nil }
+        if runningElsewhere != nil { runningElsewhere = nil }
         if logicalProjectPaneTask != nil { logicalProjectPaneTask = nil }
         if logicalProjectPaneFile != nil { logicalProjectPaneFile = nil }
     }
