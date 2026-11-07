@@ -5,7 +5,9 @@
 - **Listener:** `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on **all
   interfaces** (default 7433, or 7434 in Shepherd Nightly so both apps can serve; port 0 picks
   an ephemeral port, and the bound port is returned).
-  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there.
+  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there. Under the
+  background service the host opens it (`ShepherdHost.serveSettings`), so it stays reachable
+  while the app is quit, with the same token.
 - **Local socket:** `SessionServer.startLocalListener(path:tokenURL:)` binds `<support>/host.sock`
   (mode 0600; the path must fit a unix socket's 104 bytes) for the app as a background host's
   client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`) starts
