@@ -138,43 +138,13 @@ struct RunElsewhereSheet: View {
         let rows = hosts
         let target = chosen
         let fromName = task.map { task in rows.first { $0.reference == task.destination }?.name ?? vm.ownerName(of: draft.ref.home) } ?? ""
-        DialogSheet(
-            title: "Run on another host",
-            subtitle: task.map { "\($0.title) · now on \(fromName)" + (spaceName.map { " in \($0)" } ?? "") },
-            width: SHLeadMetrics.runElsewhereWidth,
-            status: draft.failure ?? (options == nil ? "Asking \(vm.ownerName(of: draft.ref.home)) where it can run…" : nil),
-            actions: [
-                DialogAction("Cancel", kind: .cancel) { if !draft.moving { dismiss() } },
-                DialogAction(draft.moving ? "Moving…" : "Move to \(target?.name ?? "…")", kind: .prominent,
-                             isEnabled: !draft.moving && target != nil && task != nil) { move() },
-            ]
-        ) {
-            VStack(alignment: .leading, spacing: SH.Space.l) {
-                SHGroupCard {
-                    ForEach(rows) { row in
-                        Button { draft.target = row.reference; draft.failure = nil } label: {
-                            SHChoiceRow(row.name, detail: row.detail, selected: row.id == target?.id, dimmed: !row.selectable) {
-                                ZStack(alignment: .bottomTrailing) {
-                                    Image(systemName: "desktopcomputer").foregroundStyle(Color.sh.textSecondary)
-                                    SHStatusDot(row.online ? .done : .failed)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!row.selectable || draft.moving)
-                        .accessibilityLabel("\(row.name), \(row.online ? "online" : "offline"), \(row.detail)")
-                    }
-                }
-                ModeCard(title: "Push the branch and continue there", detail: RunElsewhereHosts.pushUnavailable, selected: false, enabled: false)
-                ModeCard(title: "Start over there", detail: RunElsewhereHosts.startOverDetail(host: target?.name ?? "the host you choose", space: spaceName),
-                         selected: true, enabled: true)
-                Text(RunElsewhereHosts.footnote).shText(.caption).foregroundStyle(Color.sh.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, SHDialogMetrics.inset)
-            .padding(.bottom, SH.Space.l)
-        }
-        .task(id: draft.ref) { options = await vm.logicalProjects.hostOptions(draft.ref.home) ?? [] }
+        RunElsewhereDialog(subtitle: task.map { "\($0.title) · now on \(fromName)" + (spaceName.map { " in \($0)" } ?? "") },
+                           rows: rows, chosen: target?.id, spaceName: spaceName,
+                           status: draft.failure ?? (options == nil ? "Asking \(vm.ownerName(of: draft.ref.home)) where it can run…" : nil),
+                           moving: draft.moving, canMove: task != nil,
+                           pick: { draft.target = $0.reference; draft.failure = nil },
+                           cancel: { if !draft.moving { dismiss() } }, move: move)
+            .task(id: draft.ref) { options = await vm.logicalProjects.hostOptions(draft.ref.home) ?? [] }
     }
 
     /// Links the target's same-named Space if the Project has not yet, then assigns the same task there under this dialog's operation.
@@ -186,10 +156,10 @@ struct RunElsewhereSheet: View {
         draft.failure = nil
         Task {
             let model = vm.logicalProjects
-            var ok = true
-            if model.project(ref)?.linkedSpaces.contains(where: { $0.spaceID == space && $0.destination == reference }) != true {
-                ok = await model.link(ref, space: space, host: host)
-            }
+            // Running work moves the owner's workspace under a save, so a refused link (which re-read the owner) is tried again.
+            @MainActor func linked() -> Bool { model.project(ref)?.linkedSpaces.contains { $0.spaceID == space && $0.destination == reference } == true }
+            for _ in 0..<3 where !linked() { _ = await model.link(ref, space: space, host: host) }
+            var ok = linked()
             if ok {
                 ok = await model.run(ref, .assign(operationID: operation, spaceID: space, title: task.title, prompt: task.prompt,
                                                   host: host, model: task.model, thinking: task.thinking))
@@ -203,6 +173,60 @@ struct RunElsewhereSheet: View {
                 vm.logicalProjectPaneTask = started.id
             }
             dismiss()
+        }
+    }
+}
+
+/// The dialog itself, from plain values (ProjectRunElsewhere): the hosts, the two ways to move, the footnote, Cancel and Move.
+struct RunElsewhereDialog: View {
+    let subtitle: String?
+    let rows: [RunElsewhereHost]
+    let chosen: String?
+    let spaceName: String?
+    let status: String?
+    let moving: Bool
+    let canMove: Bool
+    let pick: (RunElsewhereHost) -> Void
+    let cancel: () -> Void
+    let move: () -> Void
+
+    var body: some View {
+        let target = rows.first { $0.id == chosen }
+        DialogSheet(
+            title: "Run on another host",
+            subtitle: subtitle,
+            width: SHLeadMetrics.runElsewhereWidth,
+            status: status,
+            actions: [
+                DialogAction("Cancel", kind: .cancel, action: cancel),
+                DialogAction(moving ? "Moving…" : "Move to \(target?.name ?? "…")", kind: .prominent,
+                             isEnabled: !moving && target != nil && canMove, action: move),
+            ]
+        ) {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                SHGroupCard {
+                    ForEach(rows) { row in
+                        Button { pick(row) } label: {
+                            SHChoiceRow(row.name, detail: row.detail, selected: row.id == chosen, dimmed: !row.selectable) {
+                                ZStack(alignment: .bottomTrailing) {
+                                    Image(systemName: "desktopcomputer").foregroundStyle(Color.sh.textSecondary)
+                                    SHStatusDot(row.online ? .done : .failed)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!row.selectable || moving)
+                        .accessibilityLabel("\(row.name), \(row.online ? "online" : "offline"), \(row.detail)")
+                    }
+                }
+                ModeCard(title: "Push the branch and continue there", detail: RunElsewhereHosts.pushUnavailable, selected: false, enabled: false)
+                ModeCard(title: "Start over there", detail: RunElsewhereHosts.startOverDetail(host: target?.name ?? "the host you choose", space: spaceName),
+                         selected: true, enabled: true)
+                Text(RunElsewhereHosts.footnote).shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, SHDialogMetrics.inset)
+            .padding(.bottom, SH.Space.l)
         }
     }
 }
