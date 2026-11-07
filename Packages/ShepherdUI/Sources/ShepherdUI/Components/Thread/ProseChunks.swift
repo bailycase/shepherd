@@ -24,19 +24,23 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
     }
 
     public var body: some View {
+        let split = max(0, elements.count - Self.eagerTail)
         VStack(alignment: .leading, spacing: 0) {
-            if elements.count > 1 {
+            if split > 0 {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(elements.dropLast(), id: id) { element in
+                    ForEach(elements.prefix(split), id: id) { element in
                         content(element).padding(.top, gap(element))
                     }
                 }
             }
-            if let last = elements.last {
-                content(last).padding(.top, gap(last)).id(last[keyPath: id])
+            ForEach(elements.dropFirst(split), id: id) { element in
+                content(element).padding(.top, gap(element))
             }
         }
     }
+
+    /// The chunks at the end that are laid out for real.
+    static var eagerTail: Int { 2 }
 
     private func gap(_ element: Element) -> CGFloat {
         guard let first = elements.first, element[keyPath: id] != first[keyPath: id] else { return 0 }
