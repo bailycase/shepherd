@@ -57,22 +57,11 @@ struct SpaceSettingsFormView: View {
 
     /// ProjectChildSettings' banner: where unset values come from, and a way to the parent.
     private func inheritance(_ parent: String) -> some View {
-        HStack(spacing: SH.Space.l) {
-            SHGlyph.Settings.subagents.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Inherited from \(parent)").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                Text("Local overrides win. Reset removes only \(project.project.name)’s override.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-            }
-            Spacer(minLength: 0)
-            if let row = model.rows.first(where: { $0.host.id == project.host.id && $0.project.name == parent && $0.id != project.id }) {
-                Button("Open \(parent)") { Task { await model.navigate(.close); if model.selected == nil { await model.open(row) } } }
-                    .buttonStyle(.sh(.ghost)).disabled(model.saving)
-            }
-        }.padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
-            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+        let row = model.rows.first(where: { $0.host.id == project.host.id && $0.project.name == parent && $0.id != project.id })
+        return SpaceInheritanceBanner(title: "Inherited from \(parent)", message: SpaceInheritanceBanner.childMessage(project.project.name),
+                                      open: row.map { row in ("Open \(parent)", { Task { await model.navigate(.close); if model.selected == nil { await model.open(row) } } }) },
+                                      disabled: model.saving)
             .padding(.bottom, SH.Space.l)
-            .accessibilityElement(children: .contain).accessibilityLabel("Inherited from \(parent)")
     }
 
     private var statusText: String {
@@ -260,5 +249,34 @@ struct SpaceSettingsLeaveDialog: View {
                 .shadow(color: Color.sh.scrim, radius: SH.Space.xxxl, y: SH.Space.xl)
         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal)
             .accessibilityLabel(reload ? "Confirm reload" : "Confirm leaving")
+    }
+}
+
+/// The boards' inheritance banner (ProjectChildSettings, ProjectChildMCP, ProjectChildSkills,
+/// ProjectParentMCP): where a child's values come from, with a way to the parent, or a parent's
+/// note that its child spaces share them.
+struct SpaceInheritanceBanner: View {
+    let title: String
+    let message: String
+    var open: (label: String, action: () -> Void)? = nil
+    var disabled = false
+
+    static func childMessage(_ space: String) -> String { "Local overrides win. Reset removes only \(space)’s override." }
+
+    var body: some View {
+        HStack(spacing: SH.Space.l) {
+            SHGlyph.Settings.subagents.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text(title).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                Text(message).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            }
+            Spacer(minLength: 0)
+            if let open {
+                Button(open.label, action: open.action).buttonStyle(.sh(.ghost)).disabled(disabled)
+            }
+        }.padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+            .accessibilityElement(children: .contain).accessibilityLabel(title)
     }
 }
