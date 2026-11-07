@@ -499,51 +499,9 @@ final class FileTreeModel {
             .flatMap { isImage ? .success(.image($0)) : content(text: $0, ext: ext) }
     }
 
-    /// Writes `text` over the regular file at `path` inside `resolvedRoot`, in place (its inode,
-    /// mode and links stay), only when it still reads as `expected`. The descriptor is checked
-    /// the way `ThreadFileSystem.read` checks one: regular, and inside the root by F_GETPATH.
-    /// ponytail: compare-then-write on one descriptor, not a lock; a writer landing between the
-    /// read and the write in the same instant is not caught.
+    /// Writes `text` over the file only while it still holds `expected` (`ThreadFileSystem.write`).
     nonisolated static func safeWriteFile(path: String, resolvedRoot: String, text: String, expected: String) -> FileSaveResult {
-        let fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else {
-            return .failed(errno == ENOENT ? ThreadFileError.notFound.localizedDescription : String(cString: strerror(errno)))
-        }
-        defer { close(fd) }
-        var st = stat()
-        guard fstat(fd, &st) == 0 else { return .failed("fstat failed") }
-        guard (st.st_mode & S_IFMT) == S_IFREG else { return .failed(ThreadFileError.specialFile.localizedDescription) }
-        var fdPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        guard fcntl(fd, F_GETPATH, &fdPath) == 0 else { return .failed("Cannot resolve fd path") }
-        guard ThreadFileSystem.isContained(String(cString: fdPath), in: resolvedRoot) else {
-            return .failed(ThreadFileError.outsideRoot.localizedDescription)
-        }
-        guard Int64(st.st_size) <= maxTextSize else { return .failed(ThreadFileError.tooLarge(Int64(st.st_size)).localizedDescription) }
-        let flags = fcntl(fd, F_GETFL)
-        if flags >= 0 { _ = fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) }
-
-        var current = Data()
-        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
-        while current.count <= maxTextSize {
-            let n = chunk.withUnsafeMutableBufferPointer { pread(fd, $0.baseAddress!, $0.count, off_t(current.count)) }
-            if n < 0, errno == EINTR { continue }
-            guard n >= 0 else { return .failed(String(cString: strerror(errno))) }
-            if n == 0 { break }
-            current.append(contentsOf: chunk.prefix(n))
-        }
-        guard let disk = ThreadFileSystem.decodeText(current) else { return .failed(ThreadFileError.binaryFile.localizedDescription) }
-        guard disk == expected else { return .changed(disk) }
-
-        let bytes = Array(text.utf8)
-        guard ftruncate(fd, 0) == 0 else { return .failed(String(cString: strerror(errno))) }
-        var written = 0
-        while written < bytes.count {
-            let n = bytes.withUnsafeBufferPointer { pwrite(fd, $0.baseAddress! + written, $0.count - written, off_t(written)) }
-            if n < 0, errno == EINTR { continue }
-            guard n > 0 else { return .failed(String(cString: strerror(errno))) }
-            written += n
-        }
-        return .saved
+        ThreadFileSystem.write(path: path, resolvedRoot: resolvedRoot, text: text, expected: expected, maxSize: maxTextSize)
     }
 
     /// Text lines of `data`, or the binary error.
@@ -601,12 +559,7 @@ struct FileEdit: Equatable {
 }
 
 /// How a save went.
-enum FileSaveResult: Equatable, Sendable {
-    case saved
-    /// The file no longer holds the version the editor expected: its text now. Nothing was written.
-    case changed(String)
-    case failed(String)
-}
+typealias FileSaveResult = ThreadFileSaveResult
 
 /// Errors from tree and file operations.
 typealias FileTreeError = ThreadFileError
