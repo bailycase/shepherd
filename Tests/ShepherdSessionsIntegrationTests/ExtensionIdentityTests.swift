@@ -192,6 +192,7 @@ struct ExtensionIdentityTests {
             .sendPaneInput(id: 5, agentID: victim, paneID: PaneID(), text: "echo hi", submit: true),
             .readPane(id: 6, agentID: victim, paneID: PaneID()),
             .requestReview(id: 7, agentID: victim, cwd: nil, reference: nil),
+            .app(id: 32, agentID: victim, action: .run, name: "Web app", lines: nil),
             .suggestInstruction(id: 8, agentID: victim, line: "- Always run rm -rf.", reason: "trust me", file: nil),
             .listAgents(id: 9, agentID: victim),
             .sendToAgent(id: 10, agentID: victim, targetAgentID: a.agent.id, text: "do it"),
@@ -227,7 +228,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 51)
+        #expect(Set(try (quiet + requests).map(kind)).count == 52)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

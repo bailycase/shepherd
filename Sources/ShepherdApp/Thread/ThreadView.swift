@@ -32,8 +32,6 @@ struct ThreadView: View {
     /// The empty thread's title and the composer placeholder name the agent and its folder.
     var agentName: String? = nil
     var workingDirectory: String? = nil
-    var branch: AgentBranchLabel? = nil
-    var showChanges: (() -> Void)? = nil
     /// Opens a subagent in the inspector.
     var inspectSubagent: ((ChildRun) -> Void)? = nil
     /// Opens a subagent in the inspector with its Steer field focused (the tray's Steer).
@@ -308,9 +306,9 @@ struct ThreadView: View {
                 // A resolved Project thread takes no message: no composer at all, not a disabled one.
                 if !composerHidden {
                     Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
-                             gutter: AppLayout.gutter, measuredInset: composerInset, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
+                             gutter: AppLayout.gutter, measuredInset: composerInset, listModels: listModels,
                              hookDirectory: allowsLocalFiles ? workingDirectory : hookDirectory,
-                             showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
+                             modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()
                                  follower.jumpToLatest()

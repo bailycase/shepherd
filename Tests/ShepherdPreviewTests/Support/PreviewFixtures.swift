@@ -42,7 +42,8 @@ final class PreviewWorkspace {
             yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi),
             // Hooks read the scratch folder's home, never this machine's.
             hooks: hooks ?? HooksModel(home: scratch.dir.appendingPathComponent("hooks-home").path,
-                                       support: scratch.dir.appendingPathComponent("hooks-support"))
+                                       support: scratch.dir.appendingPathComponent("hooks-support")),
+            apps: AppsModel(home: scratch.dir.appendingPathComponent("apps-home").path)
         )
         // The boards' footer, never this machine's user and name.
         vm.sidebarFooterIdentity = ("Alex", SidebarDerivation.footerDetail(computerName: "demo-mac"))

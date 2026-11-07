@@ -78,6 +78,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Blocking request/reply: opens a native diff review pane; the reply
     /// carries the user's formatted review text.
     case requestReview(id: Int, agentID: AgentID, cwd: String?, reference: String?)
+    /// The app tools (`app_list`, `app_run`, `app_stop`, `app_logs`): the apps of the agent's
+    /// own space and This Mac's that let agents start them. `name` names one (not for list);
+    /// `lines` is how many output lines `logs` returns. Answered by `ExtensionReply.appResult`.
+    case app(id: Int, agentID: AgentID, action: AppToolAction, name: String?, lines: Int?)
 
     // MARK: Suggested instructions (request/reply)
 
@@ -234,9 +238,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case server, challenge, report
         case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp
         case seq, mark, at, expiresAt
+        case action, lines
     }
 
     private enum Kind: String, Codable {
+        case app
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent, responseTiming, nativeQueueBoundary
         case helloChildren, childCommandResult, childScope, prepareProjectConfiguration
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
@@ -371,6 +377,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 paneID: try c.decode(PaneID.self, forKey: .paneID)
+            )
+        case .app:
+            self = .app(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                action: try c.decode(AppToolAction.self, forKey: .action),
+                name: try c.decodeIfPresent(String.self, forKey: .name),
+                lines: try c.decodeIfPresent(Int.self, forKey: .lines)
             )
         case .requestReview:
             self = .requestReview(
@@ -730,6 +744,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(paneID, forKey: .paneID)
+        case .app(let id, let agentID, let action, let name, let lines):
+            try c.encode(Kind.app, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(name, forKey: .name)
+            try c.encodeIfPresent(lines, forKey: .lines)
         case .requestReview(let id, let agentID, let cwd, let reference):
             try c.encode(Kind.requestReview, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1286,6 +1307,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case paneContent(id: Int, paneID: PaneID, lines: [String])
     /// The user's formatted review text from a native diff-review pane.
     case reviewResult(id: Int, text: String)
+    /// What an app tool did or found, as the text the tool returns.
+    case appResult(id: Int, text: String)
     /// Saved automations with their live run state.
     case automations(id: Int, automations: [AutomationInfo])
     /// The fleet, for agent_list / agent_spawn replies.
@@ -1365,7 +1388,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     private enum Kind: String, Codable {
         case parentInput, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult
         case projectResult
-        case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
+        case ok, error, panes, paneOpened, paneContent, reviewResult, appResult, automations, agents, message
         case suggestion
         case designList, design, designBoard, designWritten, designEdited, designComments, designComment
         case designBatchEdited, designSearchResult, designCheckpoints, designRendered, designExported, designExtracted
@@ -1441,6 +1464,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 text: try c.decode(String.self, forKey: .text)
             )
+        case .appResult:
+            self = .appResult(id: try c.decode(Int.self, forKey: .id), text: try c.decode(String.self, forKey: .text))
         case .automations:
             self = .automations(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1632,6 +1657,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.reviewResult, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
+        case .appResult(let id, let text):
+            try c.encode(Kind.appResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(text, forKey: .text)
         case .automations(let id, let automations):
             try c.encode(Kind.automations, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1742,4 +1771,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encodeIfPresent(image, forKey: .image)
         }
     }
+}
+
+/// What an app tool asks (`ExtensionMessage.app`).
+public enum AppToolAction: String, Codable, Sendable, CaseIterable {
+    case list, run, stop, logs
 }
