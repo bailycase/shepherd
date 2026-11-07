@@ -422,6 +422,9 @@ public struct FleetModel: Equatable, Sendable {
     /// Threads and automation runs going now: the overview's Running now.
     public var runningCount: Int { running.count + automationsRunning.count }
 
+    /// Nothing for the overview's columns: no question, nothing running, nothing finished.
+    public var overviewIsEmpty: Bool { needsYou.isEmpty && runningCount == 0 && finished.isEmpty }
+
     /// "4 need you · 6 running · 3 hosts".
     public var summary: String {
         var parts: [String] = []

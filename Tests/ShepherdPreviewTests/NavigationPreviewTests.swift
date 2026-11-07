@@ -236,6 +236,39 @@ extension PreviewTests {
         }
     }
 
+    /// Threads linked to their branch's pull request: the number after the title in its state's
+    /// color (open, draft, merged, closed), and a merged one kept open in the attention color.
+    @Test func sidebarPullRequestBadges() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "payments", path: workspace.dir.path)
+        let rows: [(String, AgentStatus, PullRequestState?, Int)] = [
+            ("Add refund events", .working, .open, 31),
+            ("Retry failed webhooks", .done, .draft, 33),
+            ("Partial refunds rounding", .idle, .merged, 34),
+            ("Ledger outbox codec", .idle, .merged, 29),
+            ("Drop legacy export", .idle, .closed, 27),
+            ("Fix pay button jump", .idle, nil, 0),
+        ]
+        var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
+        let now = Date().timeIntervalSince1970 * 1000
+        for (index, row) in rows.enumerated() {
+            var (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1)
+            agent.lastActiveAt = now - Double(index) * 60_000
+            agents.append(agent); tabs.append(tab)
+        }
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
+        let vm = workspace.vm
+        for (agent, row) in zip(agents, rows) {
+            guard let state = row.2 else { continue }
+            vm.pullRequestLinks[agent.id] = ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: "acme/payments", number: row.3), state: state)
+        }
+        vm.pullRequestCloseNotes[agents[3].id] = "2 uncommitted changes"
+        try await Preview.render("sidebar-pull-request-badges", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 520)) {
+            SidebarView(vm: vm)
+        }
+    }
+
     /// An agent whose pi stopped before it served, among healthy ones: "can't start" in red,
     /// with the red dot (Sidebar, Thread › Can't start).
     @Test func sidebarCannotStart() async throws {

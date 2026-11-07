@@ -359,6 +359,52 @@ public enum ForgePresentation {
         return (event.actor, text)
     }
 
+    // MARK: The side pane's Pull request tab (PRPane, PRPaneMerged)
+
+    /// The footer's line: what stands in the way of an open one ("Changes requested · 1 check
+    /// failing"), where a merged one went and what it left here.
+    public static func paneStatus(_ detail: PullRequestDetail) -> (text: String, tone: ForgeTone) {
+        let base = detail.summary.baseRef
+        switch detail.state {
+        case .merged:
+            guard detail.summary.thread?.worktreePath != nil else { return ("Merged into \(base)", .merged) }
+            return ("Merged into \(base) · the worktree for \(detail.summary.headRef) is still on disk", .merged)
+        case .closed: return ("Closed without merging", .failed)
+        case .open, .draft:
+            var parts: [String] = []
+            if detail.state == .draft { parts.append("Draft") }
+            if detail.reviewers.contains(where: { $0.state == .changesRequested }) { parts.append("Changes requested") }
+            let failing = detail.checks.filter { $0.state == .failing }.count
+            if failing > 0 { parts.append("\(failing) check\(failing == 1 ? "" : "s") failing") }
+            if detail.mergeable == .conflicting { parts.append("Merge conflicts") }
+            if detail.summary.reviewDecision == .reviewRequired, !detail.reviewers.contains(where: { $0.state == .changesRequested }) {
+                parts.append("Needs an approving review")
+            }
+            if parts.isEmpty { return ("Ready to merge", .done) }
+            return (parts.joined(separator: " · "), .failed)
+        }
+    }
+
+    /// The rail's checks once all passed (PRPaneMerged): "All 4 passed" and the longest run.
+    /// Nil while any is not passed: the rail lists them instead.
+    public static func allPassed(_ checks: [ForgeCheck]) -> (text: String, duration: String?)? {
+        let counted = checks.filter { $0.state != .skipped }
+        guard !counted.isEmpty, counted.allSatisfy({ $0.state == .passed }) else { return nil }
+        return ("All \(counted.count) passed", counted.compactMap(\.duration).max().map(duration))
+    }
+
+    /// Send feedback to agent: what reviews that requested changes or commented asked, each
+    /// review's words as one comment on the pull request and its line comments as they are.
+    public static func reviewFeedback(_ detail: PullRequestDetail) -> [ForgeLineComment] {
+        detail.events.flatMap { event -> [ForgeLineComment] in
+            guard case .reviewed(let state, let body, let comments) = event.kind,
+                  state == .changesRequested || state == .commented else { return [] }
+            let words = body.isEmpty ? [] : [ForgeLineComment(id: 0, author: event.actor, path: "the pull request", line: nil,
+                                                               diffHunk: "", body: body, createdAt: event.at)]
+            return words + comments
+        }
+    }
+
     /// "src/ledger/outbox.go · line 103".
     public static func location(_ comment: ForgeLineComment) -> String {
         comment.line.map { "\(comment.path) · line \($0)" } ?? comment.path

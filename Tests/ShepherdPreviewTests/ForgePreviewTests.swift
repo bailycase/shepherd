@@ -275,4 +275,34 @@ extension PreviewTests {
             SidebarView(vm: vm).frame(width: Self.forgeSidebar)
         }
     }
+
+    /// The side pane's Pull request tab (PRPane, PRPaneMerged) beside #31's thread: the branch's
+    /// pull request found (the lookup stands in for `gh pr view`), then read through the fake gh.
+    @Test(arguments: [false, true])
+    func forgeSidePane(merged: Bool) async throws {
+        let runner = Self.forgeRunner { line, output in
+            guard merged, line.hasPrefix("gh pr view 31"), !line.contains("isCrossRepository") else { return output }
+            return output.replacingOccurrences(of: #""state":"OPEN","isDraft":false"#, with: #""state":"MERGED","isDraft":false"#)
+                .replacingOccurrences(of: #""mergeCommit":null"#, with: #""mergeCommit":{"oid":"7d41c0a9"}"#)
+        }
+        let workspace = try await forgeWorkspace(runner)
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let agentID = try #require(vm.state.agents.first).id
+        vm.branchPullRequestLookup = { _ in ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: ForgeFixtures.repo, number: 31), state: .open) }
+        vm.refreshBranchPullRequest(agentID)
+        try await eventuallyOnMain("the pane's pull request") { vm.branchPullRequests[agentID]?.pullRequest != nil }
+        let store = try #require(vm.branchPullRequests[agentID])
+        store.now = { Self.forgeNow }
+        #expect(vm.sidePaneTabs(for: .local(agentID)).contains(.pullRequest))
+        // The boards' 801pt pane, and a narrow one whose rail follows the column.
+        for width: CGFloat in merged ? [801] : [801, 440] {
+            try await Preview.render("forge-side-pane\(merged ? "-merged" : "")\(width < 801 ? "-narrow" : "")",
+                                     size: CGSize(width: width, height: 900), ready: { store.pullRequest != nil }) {
+                SidePaneView(vm: vm, owner: .local(agentID), tab: .pullRequest, news: [], review: nil,
+                             store: vm.threadStores.store(for: agentID))
+                .frame(width: width, height: 900)
+            }
+        }
+    }
 }

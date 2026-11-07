@@ -67,6 +67,27 @@ final class ShepherdViewModel {
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [server] in await server.forge($0) })
+    /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
+    /// over the same transport; none while the branch has no pull request.
+    var branchPullRequests: [AgentID: ForgeStore] = [:]
+    @ObservationIgnored var branchPullRequestLookups: Set<AgentID> = []
+    /// Each local thread's link to its branch's pull request, as last looked up: the sidebar's
+    /// badge, the pane and Close threads when their pull request merges read it. Not persisted.
+    var pullRequestLinks: [AgentID: ThreadPullRequest] = [:]
+    /// Why a merged pull request's thread was kept open (running, uncommitted changes…).
+    var pullRequestCloseNotes: [AgentID: String] = [:]
+    /// The pull request each thread was last seen with open this launch: only a merge seen
+    /// happening closes a thread, never one found merged after a restart.
+    @ObservationIgnored var pullRequestsSeenOpen: [AgentID: ForgeItemRef] = [:]
+    /// Threads the poll has looked up at least once this launch.
+    @ObservationIgnored var pullRequestsPolled: Set<AgentID> = []
+    @ObservationIgnored var pullRequestsClosing: Set<AgentID> = []
+    @ObservationIgnored var pullRequestPoll: Task<Void, Never>?
+    /// The branch's pull request in a checkout (`gh pr view`); tests replace it.
+    @ObservationIgnored var branchPullRequestLookup: @MainActor (String) async -> ThreadPullRequest? = { cwd in
+        let output = await LoginShell.run("gh pr view --json \(ThreadPullRequest.fields)", cwd: cwd, timeout: 20)
+        return output.status == 0 ? ThreadPullRequest(json: output.stdout) : nil
+    }
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
     /// The host whose missions the Missions page shows; nil is This Mac.
@@ -1162,6 +1183,7 @@ final class ShepherdViewModel {
             }
         }
         installMissingSpaceWatch()
+        installPullRequestPoll()
         installProjectRuntime()
         installProjectExecution()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
@@ -1276,6 +1298,7 @@ final class ShepherdViewModel {
             NotificationCenter.default.removeObserver(becomeActiveObserver)
         }
         missingSpaceWatch?.cancel()
+        pullRequestPoll?.cancel()
     }
 
     /// Chord→intent classification for the navigation fast path. Pure and
@@ -1516,6 +1539,10 @@ final class ShepherdViewModel {
             }
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
+            // A turn that ended may have opened, pushed to or merged the branch's pull request.
+            if old == .working, status == .done || status == .idle, checkouts != nil {
+                Task { await refreshPullRequestLink(id) }
+            }
             // A session (re)start reports idle; the server still remembers the failure until a
             // turn starts, so the row keeps reading failed.
             let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])

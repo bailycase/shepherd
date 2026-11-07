@@ -8,7 +8,7 @@ import Testing
 @Suite("Side pane")
 struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
-        #expect(SidePaneTab.allCases == [.changes, .browser, .subagents, .files])
+        #expect(SidePaneTab.allCases == [.changes, .browser, .pullRequest, .subagents, .files])
         #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser", "Files"],
                 "Subagents waits for a first run; Files is always shown")
         #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes", "Files"],
@@ -19,9 +19,18 @@ struct SidePaneTests {
         #expect(SidePaneTab.tabs(browser: false) == [.changes, .files, .subagents])
     }
 
+    @Test func pullRequestFollowsChangesWithItsNumberOnlyWhileTheBranchHasOne() throws {
+        #expect(SidePaneTab.tabs(browser: true, pullRequest: true) == [.changes, .pullRequest, .browser, .files, .subagents])
+        let items = SidePaneTabs.items(news: [], changedFiles: 5, pullRequest: 31)
+        #expect(items.map(\.title) == ["Changes", "Pull request", "Browser", "Files"])
+        let tab = try #require(items.first { $0.id == "pullRequest" })
+        #expect(tab.badge == "#31" && tab.count == nil && tab.shortcut == "⌃3")
+        #expect(!SidePaneTabs.items(news: [], changedFiles: 5).contains { $0.id == "pullRequest" })
+    }
+
     @Test func theDigitsFollowTheBoardAndAHostWithoutTunnelsKeepsThem() {
-        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 4, 5], "removing Artifacts left ⌃3 free rather than shifting chords")
-        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃4", "⌃5"])
+        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 4, 5], "Pull request took the free ⌃3; the others kept theirs")
+        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5"])
         #expect(SidePaneTab.files.digit == 5)
     }
 

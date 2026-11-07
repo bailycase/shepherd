@@ -46,6 +46,20 @@ struct FleetOverviewTests {
         #expect(row.now == now)
     }
 
+    /// The overview is its empty state only while every column is empty: idle threads alone fill none.
+    @Test(arguments: [
+        ([AgentStatus](), true),
+        ([.idle], true),
+        ([.idle, .working], false),
+        ([.done], false),
+        ([.blocked], false),
+    ] as [([AgentStatus], Bool)])
+    func theOverviewIsEmptyWhenNothingWaitsRunsOrFinished(statuses: [AgentStatus], empty: Bool) {
+        let agents = statuses.enumerated().map { FleetTests.agent("a\($0.offset)", $0.element) }
+        let model = FleetModel(hosts: [FleetTests.host(FleetTests.studio, "Studio", agents: agents)], digests: [:])
+        #expect(model.overviewIsEmpty == empty)
+    }
+
     @Test func aRunningThreadCarriesItsSubagentsIntoItsRowAndASettledOneDoesNot() {
         let digest = FleetTests.digest(FleetTests.snapshot(running: true, subagents: [
             Fixture.run("worker"), Fixture.run("reviewer", state: "paused", needsAttention: true),

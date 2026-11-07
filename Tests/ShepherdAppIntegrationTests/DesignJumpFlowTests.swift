@@ -117,6 +117,65 @@ struct DesignJumpFlowTests {
         #expect(again.highlight == 1, "the highlight skips the board on screen")
     }
 
+    /// A jump lands with a toast (JumpLanded): its Back, pressed, puts the canvas's view and
+    /// selection back as they were; ⌘[ does the same; a pan takes the toast away.
+    @Test func backReturnsTheCanvasToWhereItWas() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.back() }
+        }
+    }
+
+    private static func back() async throws {
+        let opened = try await open()
+        defer { opened.app.stop(); opened.window.close() }
+        let vm = opened.vm
+        let screen = vm.designScreen(opened.design.id)
+        screen.select("A.dc.html")
+        let before = screen.viewport
+        let phone = try #require(DesignPath("A-phone.dc.html"))
+
+        func jump() throws {
+            vm.openDesignJump(opened.design.id)
+            let row = try #require(vm.designJump?.rows.first { $0.kind == .board(phone) })
+            vm.runDesignJump(row)
+        }
+
+        try jump()
+        #expect(screen.focusBoard == phone && screen.viewport != before, "the jump picks the board and moves the canvas")
+        #expect(screen.jumpBack?.title == "A · phone")
+        try await eventuallyOnMain("the toast's Back") { opened.window.layout(); return opened.window.controls().contains { $0.label == "Back" } }
+        let back = try opened.window.press("Back")
+        #expect(ControlPress.undersized([back], minimum: .desktop).isEmpty, "Back's hit area is \(String(describing: back.frame))")
+        #expect(screen.viewport == before && screen.focusBoard == DesignPath("A.dc.html"), "Back puts the canvas where it was")
+        #expect(screen.jumpBack == nil, "Back closes the toast")
+
+        // ⌘[ through the canvas's own key watcher.
+        try jump()
+        opened.window.layout()
+        let watcher = try #require(Self.watcher(in: opened.window.window.contentView))
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                                  windowNumber: opened.window.window.windowNumber, context: nil,
+                                                  characters: "[", charactersIgnoringModifiers: "[", isARepeat: false, keyCode: 33))
+        #expect(watcher.handle(event), "⌘[ is the canvas's while the toast shows")
+        #expect(screen.viewport == before && screen.focusBoard == DesignPath("A.dc.html"))
+        opened.window.layout()
+        #expect(!watcher.handle(event), "with no toast ⌘[ is left alone")
+
+        // A pan takes the toast away and leaves the canvas where it is.
+        try jump()
+        let landed = screen.viewport
+        screen.viewport.offset.x += 40
+        #expect(screen.jumpBack == nil)
+        #expect(screen.viewport != before && screen.viewport.offset.x == landed.offset.x + 40)
+    }
+
+    private static func watcher(in view: NSView?) -> DesignCanvasKeys.Watcher? {
+        guard let view else { return nil }
+        if let watcher = view as? DesignCanvasKeys.Watcher { return watcher }
+        for sub in view.subviews { if let found = watcher(in: sub) { return found } }
+        return nil
+    }
+
     /// All designs lists the other design; its row opens it.
     @Test func allDesignsOpensAnotherDesign() async {
         await #expect(processExitsWith: .success) {
