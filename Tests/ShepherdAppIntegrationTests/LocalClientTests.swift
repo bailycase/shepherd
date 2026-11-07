@@ -36,6 +36,30 @@ struct LocalClientTests {
         return (vm, hosts, idle, connection, clientDir, defaults)
     }
 
+    @Test func aNewerAppAsksItsHostToDrainAndHearsWhenItsHostIsGone() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.hostBuild = "1201"
+        let asked = Locked(0)
+        host.server.onDrainRequest = { asked.withValue { $0 += 1 } }
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
+        hosts.appBuild = "1202"
+        var lost = 0
+        hosts.onLocalHostLost = { lost += 1 }
+        let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
+        defer { hosts.removeHost(id: connection.id) }
+        try await eventuallyOnMain("the app to connect") { connection.phase == .connected }
+        try await eventuallyOnMain("the older host to be asked to drain") { asked.current == 1 }
+
+        host.stop()
+        try await eventuallyOnMain("the app to hear its host is gone") { lost >= 1 }
+    }
+
     @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysItsWindowIsClosed() async throws {
         _ = NSApplication.shared
         let host = try ScratchServer()

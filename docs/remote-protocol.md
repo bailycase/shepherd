@@ -17,7 +17,8 @@
   as TCP. Local clients alone are offered `local.v1` (`RemoteProtocol.localCapability`, never in
   `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
   host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. A host that drains
-  offers local clients `host.drain.v1` and takes `drain` (answered `ok`, refused to TCP clients):
+  offers local clients `host.drain.v1` and takes `drain` (answered `ok`, refused to TCP clients),
+  which an app with a higher build number sends once connected (`BackgroundHostClient.asksToDrain`):
   it keeps serving and exits once no agent is working, blocked or starting, or after two hours
   (`HostDrain`). It drains on its own when its bundle's `CFBundleVersion` on disk changes or the
   bundle is gone (`BundleVersionWatch`). With no app, the host

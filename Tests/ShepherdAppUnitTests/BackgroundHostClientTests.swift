@@ -1,5 +1,6 @@
 import Darwin
 import Testing
+import ShepherdProtocol
 @testable import ShepherdApp
 import ShepherdSessions
 
@@ -30,5 +31,24 @@ struct BackgroundHostClientTests {
         #expect(throws: SessionServerError.self) {
             try BackgroundHostClient.choose(answers: { false }, own: { throw SessionServerError.system(call: "listen", errno: EACCES) }, wait: {})
         }
+    }
+
+    @Test func aNewerAppAsksAnOlderHostThatDrainsToDrain() {
+        let drains: Set<String> = [RemoteProtocol.hostDrainCapability]
+        #expect(BackgroundHostClient.asksToDrain(appBuild: "1202", hostBuild: "1201", capabilities: drains))
+        #expect(!BackgroundHostClient.asksToDrain(appBuild: "1201", hostBuild: "1201", capabilities: drains), "same build")
+        #expect(!BackgroundHostClient.asksToDrain(appBuild: "1200", hostBuild: "1201", capabilities: drains),
+                "an older app connects with what it understands")
+        #expect(!BackgroundHostClient.asksToDrain(appBuild: "1202", hostBuild: "1201", capabilities: []),
+                "an older host drains once it sees the new bundle")
+        #expect(!BackgroundHostClient.asksToDrain(appBuild: "1202", hostBuild: nil, capabilities: drains))
+    }
+
+    @Test func onlyAJobTurnedOffInLoginItemsSendsTheAppInProcess() {
+        #expect(BackgroundHostClient.runsInProcess(afterLosing: .requiresApproval, answers: false))
+        #expect(!BackgroundHostClient.runsInProcess(afterLosing: .requiresApproval, answers: true), "a host still answers")
+        #expect(!BackgroundHostClient.runsInProcess(afterLosing: .enabled, answers: false), "launchd restarts an enabled job")
+        #expect(!BackgroundHostClient.runsInProcess(afterLosing: .notRegistered, answers: false), "Quit and Stop Agents")
+        #expect(!BackgroundHostClient.runsInProcess(afterLosing: nil, answers: false), "no job: a host run by hand")
     }
 }

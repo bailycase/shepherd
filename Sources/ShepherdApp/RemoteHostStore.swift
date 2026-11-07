@@ -252,6 +252,11 @@ final class RemoteHostStore {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
+    /// The background host on this Mac dropped its connection, or a reconnect to it failed (it
+    /// stopped, drained, or was turned off in Login Items). The store reconnects either way.
+    @ObservationIgnored var onLocalHostLost: (() -> Void)?
+    /// This app's build, compared with the background host's (`BackgroundHostClient.asksToDrain`).
+    @ObservationIgnored var appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     @ObservationIgnored var onProjectExecutorConnected: ((ProjectHostReference) -> Void)?
     @ObservationIgnored var onProjectExecutionChanged: ((ProjectHostReference, ProjectExecutionKey) -> Void)?
     /// A design a host serves changed (one on screen here): its files' revision, its comments',
@@ -444,6 +449,10 @@ final class RemoteHostStore {
                 connection.connectMissions(client)
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
+                if connection.isThisMac, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
+                                                                          capabilities: client.capabilities) {
+                    Task { do { try await client.drain() } catch { NSLog("Shepherd: background host didn't drain: \(error)") } }
+                }
                 self.onHostConnected?(connection.id)
                 self.onProjectExecutorConnected?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID))
             } catch {
@@ -455,6 +464,7 @@ final class RemoteHostStore {
                 let failure = RemoteHostFailure(error)
                 connection.phase = .failed(failure)
                 if failure.retries { self.scheduleReconnect(connection) }
+                if connection.isThisMac { self.onLocalHostLost?() }
             }
         }
     }
@@ -536,6 +546,7 @@ final class RemoteHostStore {
             connection.panes.removeAll()
             if self.connections.contains(where: { $0 === connection }) {
                 self.scheduleReconnect(connection)
+                if connection.isThisMac { self.onLocalHostLost?() }
             }
         }
     }
