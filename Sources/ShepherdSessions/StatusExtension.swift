@@ -1,12 +1,16 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdSessions
 
 /// Command spec for an app-spawned session.
-struct SessionCommand {
-    var argv: [String]
-    var env: [String: String]
+public struct SessionCommand {
+    public var argv: [String]
+    public var env: [String: String]
+
+    public init(argv: [String], env: [String: String]) {
+        self.argv = argv
+        self.env = env
+    }
 }
 
 /// What an agent's pi is launched with for MCP (Settings ▸ Pi ▸ Bundled extensions ▸ MCP
@@ -14,31 +18,21 @@ struct SessionCommand {
 /// secrets the servers' entries refer to in its environment, and, while Settings ▸ MCP servers ▸
 /// Also use a repo's .mcp.json is on, the extension that registers the repo's servers. An agent in a
 /// subproject also gets its parent's `.shepherd/mcp.json` servers (`sharingParent`).
-struct MCPLaunch: Equatable {
+public struct MCPLaunch: Equatable {
     /// `-e` arguments: pi's built-ins by name, then the repo extension's file.
-    var extensions: [String]
-    var environment: [String: String]
+    public var extensions: [String]
+    public var environment: [String: String]
 
-    static let builtIns = ["builtin:mcp", "builtin:tool-search"]
-
-    /// What an agent launches with under these settings: nil while Settings ▸ Pi ▸ MCP servers
-    /// is off. `install` writes the repo extension and returns its path.
-    @MainActor
-    static func forAgents(settings: AppSettings, store: MCPStore,
-                          install: () throws -> String = MCPProjectExtension.installedPath) rethrows -> MCPLaunch? {
-        guard settings.piMCPExtension else { return nil }
-        var extensions = builtIns
-        var environment = store.launchEnvironment()
-        if settings.mcpProjectConfig {
-            extensions.append(try install())
-            environment["SHEPHERD_EXT_MCP_PROJECT"] = "1"
-        }
-        return MCPLaunch(extensions: extensions, environment: environment)
+    public init(extensions: [String], environment: [String: String]) {
+        self.extensions = extensions
+        self.environment = environment
     }
+
+    public static let builtIns = ["builtin:mcp", "builtin:tool-search"]
 
     /// Worktree MCP follows the registered owning space, not folder ancestry. This only
     /// names an MCP source; it never approves the checkout's executable project resources.
-    func sharingProject(_ parent: String?, agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false,
+    public func sharingProject(_ parent: String?, agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false,
                         install: () throws -> String = MCPParentExtension.installedPath) rethrows -> MCPLaunch {
         guard let owner = StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) else {
             return try sharingParent(parent, install: install)
@@ -53,7 +47,7 @@ struct MCPLaunch: Equatable {
     /// This launch for an agent in a subproject of `parent` (Settings ▸ Projects, parents and
     /// subprojects): the extension that registers the parent's `.shepherd/mcp.json` servers, and the
     /// folder it reads them from. Unchanged for a top-level project.
-    func sharingParent(_ parent: String?, install: () throws -> String = MCPParentExtension.installedPath) rethrows -> MCPLaunch {
+    public func sharingParent(_ parent: String?, install: () throws -> String = MCPParentExtension.installedPath) rethrows -> MCPLaunch {
         guard let parent else { return self }
         var launch = self
         launch.extensions.append(try install())
@@ -65,9 +59,9 @@ struct MCPLaunch: Equatable {
 /// The per-agent pi status extension: bundled TypeScript source installed to
 /// Application Support and passed to pi via `-e`, reporting agent lifecycle
 /// status to the app's extension socket.
-enum StatusExtension {
+public enum StatusExtension {
     /// The registered Space for a managed or Git-verified worktree, never a same-named sibling.
-    static func worktreeOwningSpace(agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false) -> String? {
+    public static func worktreeOwningSpace(agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false) -> String? {
         guard agent.worktreeBranch != nil || agent.worktreePath != nil || verifiedWorktree,
               let space = state.spaces.first(where: { $0.id == agent.spaceID }),
               !PiLaunch.isHomeFolder(space.path, userHome: NSHomeDirectory()),
@@ -79,7 +73,7 @@ enum StatusExtension {
 
     /// Write the extension source to Application Support (idempotent) and
     /// return its filesystem path.
-    static func installedPath() throws -> String {
+    public static func installedPath() throws -> String {
         let dir = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try EmbeddedExtensions.install("shepherd-lines.mjs", at: dir.appendingPathComponent("shepherd-lines.mjs"))
@@ -97,7 +91,7 @@ enum StatusExtension {
     /// (`PiLaunch.agent` builds the line). The opening prompt is not passed positionally; RPC
     /// mode ignores positional messages, so the app sends it as the first `prompt` command
     /// instead. Throws when the agent's session folder would resolve outside the home.
-    static func command(
+    public static func command(
         home: PiHome,
         cwd: String,
         agentID: AgentID,
@@ -227,5 +221,5 @@ enum StatusExtension {
         if specKit != nil { env["SHEPHERD_CLI_DENIED"] = "1" }
         return SessionCommand(argv: line.argv, env: env)
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-status.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-status.ts") }
 }

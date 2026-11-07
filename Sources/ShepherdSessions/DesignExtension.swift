@@ -1,5 +1,4 @@
 import Foundation
-import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs the design agent's pi extension (`shepherd-design.ts`: design_read, board_write,
@@ -8,8 +7,8 @@ import ShepherdProtocol
 /// design skill it hands pi, both from embedded
 /// literals into the support directory. Only an agent that draws a design loads them
 /// (`SHEPHERD_DESIGN_ID`), or an ordinary thread explicitly targeting designs (`SHEPHERD_DESIGN_TOOLS`); the user's `~/.pi/agent` is never touched.
-enum DesignExtension {
-    static func installedPath() throws -> String {
+public enum DesignExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try EmbeddedExtensions.install("shepherd-lines.mjs", at: directory.appendingPathComponent("shepherd-lines.mjs"))
@@ -20,7 +19,7 @@ enum DesignExtension {
 
     /// `<support>/design-skill/`: `SKILL.md` and `format.md`, rewritten whenever they differ
     /// from the literals.
-    static func installedSkillDirectory() throws -> String {
+    public static func installedSkillDirectory() throws -> String {
         let directory = ShepherdPaths.supportDirectory().appendingPathComponent("design-skill", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try writeIfChanged(skillSource, to: directory.appendingPathComponent("SKILL.md"))
@@ -34,7 +33,7 @@ enum DesignExtension {
             try data.write(to: url, options: .atomic)
         }
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-design.ts") }
-    static var skillSource: String { EmbeddedExtensions.source("design-skill/SKILL.md") }
-    static var formatSource: String { EmbeddedExtensions.source("design-skill/format.md") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-design.ts") }
+    public static var skillSource: String { EmbeddedExtensions.source("design-skill/SKILL.md") }
+    public static var formatSource: String { EmbeddedExtensions.source("design-skill/format.md") }
 }

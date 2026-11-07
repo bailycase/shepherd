@@ -1,3 +1,4 @@
+import ShepherdSessions
 import Foundation
 import Testing
 import ShepherdCore

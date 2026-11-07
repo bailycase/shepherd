@@ -1,5 +1,4 @@
 import Foundation
-import ShepherdSessions
 import ShepherdProtocol
 
 /// Installs the per-session pi extension that keeps the old, bulky parts of a long run out of what
@@ -9,8 +8,8 @@ import ShepherdProtocol
 /// directory. It is inert without `SHEPHERD_EXT_CONTEXT`, which the app sets while Settings ▸
 /// Agents ▸ Trim old tool output is on, and it changes only the request: the thread, the session
 /// file and every result in them stay whole.
-enum ContextExtension {
-    static func installedPath() throws -> String {
+public enum ContextExtension {
+    public static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("shepherd-context.ts")
@@ -20,5 +19,5 @@ enum ContextExtension {
         }
         return url.path
     }
-    static var extensionSource: String { EmbeddedExtensions.source("shepherd-context.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-context.ts") }
 }

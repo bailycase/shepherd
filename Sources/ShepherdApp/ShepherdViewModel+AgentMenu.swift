@@ -1,3 +1,4 @@
+import ShepherdSessions
 import AppKit
 import Foundation
 import ShepherdCore
@@ -76,7 +77,7 @@ extension ShepherdViewModel {
     /// The agent's session file and the directory pi runs in; nil for an agent no longer listed.
     private func sessionSource(_ id: AgentID) -> (sessionID: String, cwd: String, agent: Agent)? {
         guard let agent = state.agents.first(where: { $0.id == id }) else { return nil }
-        return (agent.effectivePiSessionID, TerminalSessionStore.resolvedCwd(agentCwd(agent)), agent)
+        return (agent.effectivePiSessionID, AgentLaunch.resolvedCwd(agentCwd(agent)), agent)
     }
 
     /// Fork Thread: the whole conversation so far, copied into a new pi session, becomes a new

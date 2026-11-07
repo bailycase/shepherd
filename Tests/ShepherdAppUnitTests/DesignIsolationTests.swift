@@ -1,3 +1,4 @@
+import ShepherdSessions
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -29,7 +30,7 @@ struct DesignIsolationTests {
     @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])
     func onlyAThreadLaunchesWithThePanesExtension(drawsDesign: Bool, enabled: Bool, wants: Bool) {
         let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
-        #expect(TerminalSessionStore.wantsPanes(for: agent, enabled: enabled) == wants)
+        #expect(AgentLaunch.wantsPanes(for: agent, enabled: enabled) == wants)
     }
 
     /// review_diff readies the Changes tab of a thread's side pane: a design's agent has none, so it
@@ -38,7 +39,7 @@ struct DesignIsolationTests {
     @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])
     func onlyAThreadLaunchesWithTheReviewExtension(drawsDesign: Bool, enabled: Bool, wants: Bool) {
         let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
-        #expect(TerminalSessionStore.wantsReview(for: agent, enabled: enabled) == wants)
+        #expect(AgentLaunch.wantsReview(for: agent, enabled: enabled) == wants)
     }
 
     /// The browser tools drive a thread's own page: a design's agent never gets them, and the
@@ -46,7 +47,7 @@ struct DesignIsolationTests {
     @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])
     func onlyAThreadLaunchesWithTheBrowserExtension(drawsDesign: Bool, enabled: Bool, wants: Bool) {
         let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
-        #expect(TerminalSessionStore.wantsBrowser(for: agent, enabled: enabled) == wants)
+        #expect(AgentLaunch.wantsBrowser(for: agent, enabled: enabled) == wants)
     }
 
     /// design_get and design_note are a thread's, and only while the Design tool and the setting
@@ -57,7 +58,7 @@ struct DesignIsolationTests {
     ])
     func onlyAThreadLaunchesWithDesignReferences(drawsDesign: Bool, enabled: Bool, designTool: Bool, wants: Bool) {
         let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
-        #expect(TerminalSessionStore.wantsDesignReferences(for: agent, enabled: enabled, designTool: designTool) == wants)
+        #expect(AgentLaunch.wantsDesignReferences(for: agent, enabled: enabled, designTool: designTool) == wants)
     }
 
     @Test func agentListShowsThreadsAndNoDesignsAgent() {
