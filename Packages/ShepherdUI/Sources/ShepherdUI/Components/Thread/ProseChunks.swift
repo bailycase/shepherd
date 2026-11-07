@@ -13,18 +13,22 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
     let elements: [Element]
     let id: KeyPath<Element, ID>
     let continuesList: KeyPath<Element, Bool>
+    let lazyPrefix: Bool
     let content: (Element) -> Content
 
-    public init(_ elements: [Element], id: KeyPath<Element, ID>, continuesList: KeyPath<Element, Bool>,
+    /// `lazyPrefix` false lays every chunk out for real: for a host whose own scroll view cannot
+    /// place a lazy stack nested in its lazy rows (iOS 27.0's bottom anchor draws a long reply blank).
+    public init(_ elements: [Element], id: KeyPath<Element, ID>, continuesList: KeyPath<Element, Bool>, lazyPrefix: Bool = true,
                 @ViewBuilder content: @escaping (Element) -> Content) {
         self.elements = elements
         self.id = id
         self.continuesList = continuesList
+        self.lazyPrefix = lazyPrefix
         self.content = content
     }
 
     public var body: some View {
-        let split = max(0, elements.count - Self.eagerTail)
+        let split = lazyPrefix ? max(0, elements.count - Self.eagerTail) : 0
         VStack(alignment: .leading, spacing: 0) {
             if split > 0 {
                 LazyVStack(alignment: .leading, spacing: 0) {

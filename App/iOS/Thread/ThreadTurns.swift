@@ -268,11 +268,18 @@ struct ProseView: View, Equatable {
 
     var body: some View {
         let last = prose.chunks.last?.id
-        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList) { chunk in
+        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList, lazyPrefix: Self.lazyChunks) { chunk in
             ProseChunkView(chunk: chunk, writingFence: writingFence && chunk.id == last).equatable()
         }
         .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
     }
+
+    /// The chunks before the last two build as they scroll into view from iOS 27.1, whose transcript follows its tail
+    /// explicitly. iOS 27.0 anchors the bottom natively, and with a lazy stack nested in its lazy rows (whose height it
+    /// estimates) a reply of five or more chunks lands blank at the tail: there every chunk is laid out for real.
+    static let lazyChunks: Bool = {
+        if #available(iOS 27.1, *) { true } else { false }
+    }()
 
     static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [SHProseBlock] {
         blocks.map { block in
