@@ -135,10 +135,10 @@ struct MissionLocksPage<Route: View>: View {
                 let mine = entry.mission.id == mission.id
                 HStack(spacing: SH.Space.l) {
                     Text("\(index + 1)").shText(.micro).foregroundStyle(Color.sh.textTertiary).frame(width: SH.Space.xl, alignment: .leading)
-                    Text(entry.mission.draft.title).shText(.headline).lineLimit(1).frame(width: AppLayout.missionLockQueueTitle, alignment: .leading)
+                    Text(entry.mission.draft.title).shText(.headline).lineLimit(1).frame(maxWidth: AppLayout.missionLockQueueTitle, alignment: .leading)
                     Text(detail(entry, mine: mine, file: lock.overlap.first ?? "")).shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                     Spacer(minLength: SH.Space.m)
-                    Text(meta(entry.state)).shText(.micro).foregroundStyle(Color.sh.textTertiary)
+                    Text(meta(entry.state)).shText(.micro).foregroundStyle(Color.sh.textTertiary).lineLimit(1).fixedSize()
                 }
                 .padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.l)
                 .background(mine ? Color.sh.bgRaised : Color.clear)
@@ -281,7 +281,7 @@ private struct MissionLocksTimeline: View {
             HStack(spacing: SH.Space.s) { shape.strokeBorder(Color.sh.lantern, style: StrokeStyle(lineWidth: 1, dash: AppLayout.missionDataDash)).frame(width: SH.Space.l, height: SH.Space.m); Text("held") }
             HStack(spacing: SH.Space.s) { shape.strokeBorder(Color.sh.running, style: StrokeStyle(lineWidth: 1, dash: AppLayout.missionDataDash)).frame(width: SH.Space.l, height: SH.Space.m); Text("planned") }
         }
-        .shText(.caption).foregroundStyle(Color.sh.textSecondary)
+        .shText(.caption).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
     }
 }
 
