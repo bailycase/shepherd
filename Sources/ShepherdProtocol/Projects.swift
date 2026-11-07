@@ -241,9 +241,25 @@ public struct ProjectContext: Codable, Hashable, Sendable {
     /// The host's global pi settings as a JSON object, only the keys the Settings form shows: what an
     /// unset space value follows. Nil from an older host.
     public var globalSettings: String?
-    public init(files: [File] = [], resources: Int = 0, mcpServers: Int = 0, globalSettings: String? = nil) {
+    /// The nearest parent space (a folder that holds this one) and the inheritable defaults its
+    /// ancestors set (`SpaceInheritedDefaults.keys`), merged root first. Nil without one, and from an older host.
+    public var parentName: String?
+    public var parentSettings: [String: String]?
+    public init(files: [File] = [], resources: Int = 0, mcpServers: Int = 0, globalSettings: String? = nil,
+                parentName: String? = nil, parentSettings: [String: String]? = nil) {
         self.files = files; self.resources = resources; self.mcpServers = mcpServers; self.globalSettings = globalSettings
+        self.parentName = parentName; self.parentSettings = parentSettings
     }
+}
+
+/// What a child space's new agents take from its parent spaces when its own settings leave it unset.
+/// Only these keys inherit: pi has no settings layer between a project and the user, so Shepherd
+/// passes them as launch flags (`--model`, `--thinking`).
+public struct SpaceInheritedDefaults: Codable, Hashable, Sendable {
+    public static let keys = ["defaultProvider", "defaultModel", "defaultThinkingLevel"]
+    public var model: String?
+    public var thinking: String?
+    public init(model: String?, thinking: String?) { self.model = model; self.thinking = thinking }
 }
 
 public struct ProjectFileError: Error, CustomStringConvertible, Sendable {

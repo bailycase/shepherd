@@ -82,6 +82,13 @@ struct ProjectSettingsDetail: View {
                     Text("Spaces").frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
                 }.buttonStyle(.shRow(focusColor: .sh.running)).accessibilityLabel("Back to Spaces").disabled(model.saving || cookies.clearing)
                 SHGlyph.Settings.next.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+                // A child space's breadcrumb names its parent (ProjectChildSettings), which opens it.
+                if let parent = model.rows.first(where: { $0.host.id == project.host.id && $0.project.directory == project.project.parent }) {
+                    Button { Task { await model.navigate(.close); if model.selected == nil { await model.open(parent) } } } label: {
+                        Text(parent.project.name).frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
+                    }.buttonStyle(.shRow(focusColor: .sh.running)).accessibilityLabel("Open parent space \(parent.project.name)").disabled(model.saving || cookies.clearing)
+                    SHGlyph.Settings.next.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+                }
                 Text(project.project.name).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }.font(.shSans(AppLayout.projectFileSize)).foregroundStyle(Color.sh.textSecondary)
                 .frame(height: AppLayout.projectBreadcrumbHeight)
