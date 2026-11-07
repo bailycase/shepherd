@@ -74,6 +74,7 @@ extension MissionController: MissionDriving {
         case .pauseTrain: try await pauseTrain(id: id, revision: revision)
         case .resumeTrain: try await resumeTrain(id: id, revision: revision)
         case .skipSoak: try await skipSoak(id: id, revision: revision)
+        case .laneLock(let lane, let choice): try await chooseLock(id: id, lane: lane, choice: choice)
         }
     }
 }
@@ -180,6 +181,7 @@ final class RemoteMissionDriver: MissionDriving {
         case .pauseTrain: wire = .pauseTrain
         case .resumeTrain: wire = .resumeTrain
         case .skipSoak: wire = .skipSoak
+        case .laneLock(let lane, let choice): wire = .laneLock(spaceID: lane, choice: choice)
         }
         let made = try await remote { try await self.missions.perform(id, revision: shown, wire) }
         if let made { selectedID = made }

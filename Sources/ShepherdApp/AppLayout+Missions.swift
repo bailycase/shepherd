@@ -70,6 +70,13 @@ extension AppLayout {
 
     static let missionBudgetRefresh: TimeInterval = 1
 
+    // Path locks (MXLocks)
+    static let missionLockColumns: [SHTableColumns.Column] = [.fixed(166), .flex(1.2), .flex(1.2), .flex(0.9)]
+    static let missionLockQueueTitle: CGFloat = 270
+    static let missionLockRowLabel: CGFloat = 150
+    static let missionLockRow: CGFloat = 56
+    static let missionLockBar: CGFloat = 16
+
     // Merge train (MXTrain)
     static let missionTrainCardWidth: CGFloat = 236
     static let missionTrainNumber: CGFloat = 18

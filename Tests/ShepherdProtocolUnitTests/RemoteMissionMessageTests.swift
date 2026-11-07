@@ -28,6 +28,7 @@ enum RemoteMissionSamples {
         .applyPatch(patchID: attempt), .rejectPatch(patchID: attempt), .autoApplyPatches(on: true),
         .startTrain(order: [space], rules: MissionTrain.Rules(between: .stagingSoak, staging: [space: "make deploy-staging"], health: [space: "make health"])),
         .changeTrain(order: [space], rules: MissionTrain.Rules()), .pauseTrain, .resumeTrain, .skipSoak,
+        .laneLock(spaceID: space, choice: .stack),
     ]
     static let requests: [RemoteMissionRequest] = [
         .list, .get(missionID: mission.id), .startOptions,

@@ -231,6 +231,7 @@ final class MissionRuntimeFixture {
                 for key, kind, goal in [(worker, 'worker', 'Write after followed by a newline to result.txt'), (check, 'check', 'Check actual file bytes'), (validator, 'validator', 'Independently inspect file and host check')]:
                     station = dict(id=key, kind=kind, lane=lane, title=key, goal=goal, doneWhen=['result.txt contains after'])
                     if kind == 'check': station['command'] = command
+                    if kind == 'worker': station['paths'] = ['result.txt']
                     stations.append(station)
                 dependencies += [dict(source=worker, target=check, kind='data', artifact='implementation'), dict(source=check, target=validator, kind='data', artifact='tested implementation')]
             reply = json.dumps(dict(summary='Two isolated edits, host checks and independent validators.', title='Update both repositories', requirements=['Both result.txt files contain after followed by a newline'], stations=stations, dependencies=dependencies, estimate=dict(tokens=20000, minutes=10)))

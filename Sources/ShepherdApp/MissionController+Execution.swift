@@ -23,8 +23,11 @@ extension MissionController {
                 }
                 try await prepareReview(id, runID: runID); return
             }
+            // A repository another mission holds (MXLocks) starts nothing until it's free, stacked or run anyway.
+            let held = try await refreshLocks(id, runID: runID)
             let ready = plan.stations.filter { station in
                 !completed.contains(station.id) && plan.dependencies.filter { $0.target == station.id }.allSatisfy { completed.contains($0.source) }
+                    && !(station.laneID.map(held.contains) ?? false)
             }
             var locks: Set<SpaceID> = [], wave: [MissionStation] = []
             let ordered = ready.filter { $0.kind == .worker } + ready.filter { $0.kind != .worker }
@@ -38,6 +41,10 @@ extension MissionController {
                 locks.formUnion(needed); wave.append(station)
                 if wave.count == plan.limits.concurrentStations { break }
             }
+            if wave.isEmpty, !held.isEmpty {
+                try await Task.sleep(for: Self.lockPoll)
+                continue
+            }
             guard !wave.isEmpty else {
                 throw MissionError("mission_decision", "A decision blocks the route. Add the decision to the Goal conversation and approve the revised map.")
             }
@@ -46,6 +53,9 @@ extension MissionController {
                 var values: [(MissionStation, Bool)] = []
                 for try await value in group { values.append(value) }
                 return values
+            }
+            for (station, passed) in results where passed && station.kind == .worker {
+                try await checkWrites(id, runID: runID, station: station)
             }
             for (station, passed) in results where !passed {
                 let current = try record(id, runID: runID)
