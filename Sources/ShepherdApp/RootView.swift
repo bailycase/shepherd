@@ -366,7 +366,7 @@ struct WorkspaceHeaderView: View {
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
                 threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,
-                             branch: AgentBranchLabel(agent: agent), directory: vm.checkoutDirectory(of: agent.id),
+                             branch: nil, directory: nil,
                              showChanges: { vm.openReview(agentID: agent.id, path: nil) }, rename: { vm.agentRenameTarget = agent.id },
                              pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil, apps: vm.quickApps(in: agent.spaceID))
                     // One toolbar per agent: switching replaces it at once instead of animating

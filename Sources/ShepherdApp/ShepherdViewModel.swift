@@ -532,6 +532,10 @@ final class ShepherdViewModel {
         let space: Space
     }
     var finalizeRequest: FinalizeRequest?
+    /// The branch card's Update from the base, New branch and Rename branch sheets.
+    var branchSheet: BranchSheet?
+    /// Each local thread's branch card, made when its card first shows.
+    @ObservationIgnored var branchCardStores: [AgentID: BranchCardStore] = [:]
 
     /// "Finalize Worktree…" on a worktree agent's context menu.
     func beginFinalizeWorktree(_ agentID: AgentID) {
@@ -1523,6 +1527,8 @@ final class ShepherdViewModel {
         pruneDesigns()
         pruneFileTrees()
         pruneSidebarPins()
+        let live = Set(state.agents.map(\.id))
+        branchCardStores = branchCardStores.filter { live.contains($0.key) }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }
 
@@ -1539,6 +1545,8 @@ final class ShepherdViewModel {
             }
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
+            // A turn ending reads the branch card again (commits, a push, the PR's checks).
+            if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
             // A turn that ended may have opened, pushed to or merged the branch's pull request.
             if old == .working, status == .done || status == .idle, checkouts != nil {
                 Task { await refreshPullRequestLink(id) }

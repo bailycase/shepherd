@@ -147,11 +147,14 @@ final class NewThreadState {
     var referenceChips: DesignReferenceChips?
     /// A new project (chosen, or the fallback when the chosen one is gone) drops the worktree base
     /// picked in the last one: a branch of one repository means nothing in another.
-    private(set) var place: NewThreadPlace? { didSet { if place != oldValue { worktreeBase = nil } } }
+    private(set) var place: NewThreadPlace? { didSet { if place != oldValue { worktreeBase = nil; worktreeBranch = nil } } }
     var worktree = false
     /// The branch a new worktree on this Mac starts from, picked in the workplace menu; nil lets
     /// Settings ▸ Worktrees decide. A host's projects keep the base the host resolves.
     var worktreeBase: String?
+    /// The new worktree's branch, from the ⚙ popover's Branch picker (BranchWhereItRuns,
+    /// BranchPicker); nil makes a new branch with a generated name from the base.
+    var worktreeBranch: NewThreadBranch?
     /// The model, thinking and speed the thread starts with; a blank model is the target's default.
     private(set) var model = ""
     private(set) var thinking: ThinkingLevel = .medium
@@ -445,6 +448,7 @@ final class NewThreadState {
         let submittedReferences = references
         let submittedWorktree = worktree
         let submittedBase = worktreeBase
+        let submittedBranch = worktreeBranch
         let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinkingLevel(vm)
@@ -500,18 +504,30 @@ final class NewThreadState {
                     config.serviceTier = tier
                     if useWorktree {
                         let repo = directory
-                        let branch = GitWorktree.generatedBranch()
+                        let picked = submittedBranch
                         let mode = vm.settings.worktreeBaseMode
                         let fetch = vm.settings.worktreeFetchBeforeCreate
                         let chosen = submittedBase
-                        let (path, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
-                            // A picked branch is the start point as it is; otherwise Settings resolves one.
+                        let (path, branch, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String, String) in
+                            // A picked base is the start point as it is; otherwise Settings resolves one.
+                            let start: (point: String?, display: String)
                             if let chosen {
                                 GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetch)
-                                return (try GitWorktree.add(repo: repo, branch: branch, from: chosen), chosen)
+                                start = (chosen, chosen)
+                            } else {
+                                let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
+                                start = (resolution.startPoint, resolution.display)
                             }
-                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
-                            return (try GitWorktree.add(repo: repo, branch: branch, from: resolution.startPoint), resolution.display)
+                            switch picked {
+                            case .existing(let name):
+                                let added = try GitWorktree.addExisting(repo: repo, branch: name)
+                                return (added.path, added.branch, start.display)
+                            case .named(let name):
+                                return (try GitWorktree.add(repo: repo, branch: name, from: start.point), name, start.display)
+                            case nil:
+                                let branch = GitWorktree.generatedBranch()
+                                return (try GitWorktree.add(repo: repo, branch: branch, from: start.point), branch, start.display)
+                            }
                         }.value
                         config.workingDirectory = path
                         config.worktreeBranch = branch
@@ -527,11 +543,27 @@ final class NewThreadState {
                 references.removeAll { sent.contains($0.id) }
                 if worktree == submittedWorktree { useProjectDefaults(vm) }
                 if worktreeBase == submittedBase { worktreeBase = nil }
+                if worktreeBranch == submittedBranch { worktreeBranch = nil }
             } catch RemoteHostClientError.rejected(_, let message) {
                 self.error = message
             } catch {
                 self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             }
+        }
+    }
+}
+
+/// A new worktree's branch picked in the ⚙ popover: one that exists (local, or "origin/x"), or a
+/// new one by name.
+enum NewThreadBranch: Equatable, Sendable {
+    case existing(String)
+    case named(String)
+
+    /// The Branch row's value: "new from main" stands for nil.
+    var title: String {
+        switch self {
+        case .existing(let name): name
+        case .named(let name): "new: \(name)"
         }
     }
 }

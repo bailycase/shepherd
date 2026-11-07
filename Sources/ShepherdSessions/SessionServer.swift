@@ -6411,6 +6411,24 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// The branch card's Rename branch…, Switch branch… and Change base…: what Shepherd records for
+    /// a worktree agent's branch and base, so Finalize pushes, targets and deletes the branch the
+    /// worktree is really on. Only a worktree agent has them; nil leaves a field as it is.
+    public func setAgentWorktree(_ agentID: AgentID, branch: String? = nil, base: String? = nil) async throws {
+        try await mutateStateOffQueue { state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            guard state.agents[index].worktreeBranch != nil else { throw SessionServerError.conflict("Not a worktree thread") }
+            if let branch = branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
+                state.agents[index].worktreeBranch = branch
+            }
+            if let base = base?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
+                state.agents[index].worktreeBase = base
+            }
+        }
+    }
+
     public func reorderAgent(_ agentID: AgentID, onto target: AgentID) async throws {
         try await mutateStateOffQueue { state in
             let agents = state.agents

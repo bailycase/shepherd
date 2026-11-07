@@ -75,6 +75,23 @@ struct ForgeServiceTests {
         #expect(comments[0].diffHunk.split(separator: "\n").count == ForgeLimits.hunkLines)
     }
 
+    /// The branch card asks for the newest pull request from its branch, in any state.
+    @Test func aBranchsPullRequestIsTheNewestWithThatHead() async throws {
+        let seen = Locked<[ForgeCommand]>([])
+        let service = try Self.service(seen, answer: { arguments in
+            let line = arguments.joined(separator: " ")
+            if line.hasPrefix("gh pr list") {
+                guard line.contains("--head=agent/refund-events --state=all --limit=1") else { return ("[]", 0, "") }
+                return (ForgeFixtures.open, 0, "")
+            }
+            return ForgeFixtures.answer(arguments)
+        })
+        let pull = try #require(await service.pullRequest(directory: ForgeFixtures.root, branch: "agent/refund-events"))
+        #expect(pull.ref == Self.pr31 && pull.state == PullRequestState.open && pull.headRef == "agent/refund-events")
+        #expect(await service.pullRequest(directory: ForgeFixtures.root, branch: "agent/none") == nil)
+        #expect(seen.withValue { $0 }.contains { $0.arguments.contains("--repo=acme/payments") })
+    }
+
     @Test func aDraftConflictedPullRequestSaysSo() throws {
         var detail = try ForgeParse.pullRequestDetail(view: Data(ForgeFixtures.pullView31.utf8), timeline: nil, lineComments: nil,
                                                       repoSettings: nil, repo: Self.repo, viewer: nil)

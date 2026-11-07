@@ -6,8 +6,8 @@ import ShepherdRemote
 import ShepherdSessions
 
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
-/// screen: "space / title", the branch chip only while a question replaces the composer,
-/// then the one side-pane button and the options menu (Refresh Thread, Rename…, Pin). Everything comes in as values, compared by
+/// screen: "space / title", then the one side-pane button, the options menu (Refresh Thread,
+/// Rename…, Pin), and another host's thread's branch chip. Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
 /// ⌘J, the Terminal menu and the palette show it.
@@ -53,10 +53,6 @@ struct ThreadHeader: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("thread.header")
         SHThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
-            // A question takes the composer's place, so its checkout menu moves back here.
-            if let branch {
-                QuestionBranchMenu(store: store, branch: branch, directory: directory, showChanges: showChanges)
-            }
         } trailing: {
             ThreadGoalHeader(store: store)
             if let apps {
@@ -75,20 +71,11 @@ struct ThreadHeader: View, Equatable {
                     Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned), action: togglePin)
                 }
             }
-        }
-    }
-}
-
-/// Observe question changes here, not in the toolbar that hosts the fallback.
-private struct QuestionBranchMenu: View {
-    let store: NativeThreadStore
-    let branch: AgentBranchLabel
-    let directory: String?
-    let showChanges: (() -> Void)?
-
-    var body: some View {
-        if !store.dialogs.isEmpty {
-            BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            // A thread whose branch this Mac can't read a card for (another host's) keeps the plain
+            // chip here; this Mac's threads draw the branch card beside their transcript.
+            if let branch {
+                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            }
         }
     }
 }

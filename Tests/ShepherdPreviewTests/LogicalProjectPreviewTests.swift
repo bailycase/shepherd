@@ -532,8 +532,7 @@ extension LogicalProjectPreviewTests {
                     .frame(width: 720)
                 ThreadView(store: ordinary.store, active: true, isFocused: false, request: ordinary.request, agentName: "Review the composer",
                            workingDirectory: "~/Developer/Shepherd",
-                           branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
-                           showChanges: {}, listModels: { catalog }, modelSettingsOpen: true)
+                           listModels: { catalog }, modelSettingsOpen: true)
                     .frame(width: 720)
             }
             .padding(SH.Space.l)

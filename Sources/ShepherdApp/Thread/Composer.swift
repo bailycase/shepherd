@@ -39,11 +39,8 @@ struct Composer: View {
     var measuredInset: ComposerInset? = nil
     /// Another host's catalog; nil for this Mac's (`ModelCatalog.loadLocal`).
     var listModels: (() async -> ModelCatalog)?
-    var branch: AgentBranchLabel? = nil
-    var directory: String? = nil
     /// The thread's folder on its host, for the hook glyph (a remote thread has no `directory`).
     var hookDirectory: String? = nil
-    var showChanges: (() -> Void)? = nil
     /// A preview can open the same settings popover used by the app.
     var modelSettingsOpen = false
     /// This thread's key in the command center: ⇧⌘M's model picker and the thinking menu come
@@ -753,7 +750,7 @@ struct Composer: View {
         } field: {
             field.shEntrance(.content)
         } controls: {
-            ComposerControls(model: controlsModel, actions: controlsActions, store: store, directory: directory, showChanges: showChanges,
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store,
                              dismissal: dismissal).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
@@ -905,8 +902,6 @@ struct Composer: View {
             modelEnabled: modelSettable, modelsOpen: menu == .models || menu == .settings,
             thinking: shownThinking, thinkingShown: thinkingAvailable, thinkingEnabled: thinkingSettable,
             speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
-            // A Project's conversation and its threads show no branch: the Project's work is placed in its Spaces by the runtime.
-            branch: projectSend != nil || workerStyle != nil ? nil : branch,
             startingShown: startingShown, busy: store.busy, stops: stops, sendMenu: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context,
             actionEnabled: stops ? active && store.supports("abort") : canSend,
@@ -1261,7 +1256,6 @@ struct ComposerControlsModel: Equatable {
     var speed: ServiceTier
     var speedShown: Bool
     var speedEnabled: Bool
-    var branch: AgentBranchLabel?
     var startingShown: Bool
     var busy: Bool
     /// The one action is Stop: pi works and the composer has no input.
@@ -1301,15 +1295,13 @@ struct ComposerControls: View, Equatable {
     let actions: ComposerControlsActions
     /// Handed to the ring, which reads its meter; the row itself reads nothing from it.
     let store: NativeThreadStore
-    var directory: String? = nil
-    var showChanges: (() -> Void)? = nil
     /// Marks the controls that open a menu, so a click on one is its own and never a click away.
     /// A constant of the composer, outside `==`.
     var dismissal: ComposerMenuDismissal? = nil
 
     @Environment(\.shComposerSize) private var size
 
-    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store && a.directory == b.directory }
+    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
 
     var body: some View {
         ComposerControlsMinimum {
@@ -1352,9 +1344,6 @@ struct ComposerControls: View, Equatable {
             Spacer(minLength: SH.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).shTransition(.content) }
             if let hooks = model.hooks { HookComposerGlyph(indicator: hooks, open: actions.hooks) }
-            if let branch = model.branch {
-                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
-            }
         }
         .shAnimation(.content, value: model.startingShown)
     }
