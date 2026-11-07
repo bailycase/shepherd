@@ -50,6 +50,62 @@ struct SlashLoginTests {
         #expect(SlashLogin.argumentQuery(draft) == nil)
     }
 
+    /// The rule the bounded search replaced, word for word: the first space anywhere in the draft.
+    private static func wholeDraftQuery(_ draft: String) -> (verb: SlashLogin.Verb, partial: String)? {
+        guard draft.hasPrefix("/"), !draft.contains("\n"), let space = draft.firstIndex(of: " ") else { return nil }
+        guard let verb = SlashLogin.Verb(rawValue: draft[draft.index(after: draft.startIndex)..<space].lowercased()) else { return nil }
+        let partial = String(draft[draft.index(after: space)...])
+        guard !partial.contains(where: \.isWhitespace) else { return nil }
+        return (verb, partial.lowercased())
+    }
+
+    /// A fixed sequence, so a failure names the same draft every run.
+    private struct SplitMix64: RandomNumberGenerator {
+        var state: UInt64
+        mutating func next() -> UInt64 {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+    }
+
+    @Test func argumentQueryMatchesTheWholeDraftScan() {
+        // Random drafts almost never spell a verb, so the words that matter are also set out: every
+        // verb, near miss and case, each with every joiner and tail.
+        let alphabet = ["/", "l", "L", "o", "g", "i", "n", "u", "t", "a", "A", " ", "\n", "\r\n", "\t"]
+        var generator = SplitMix64(state: 0x5EED)
+        var drafts = (0..<20_000).map { _ in
+            String((0..<Int.random(in: 0...12, using: &generator)).map { _ in alphabet[Int.random(in: 0..<alphabet.count, using: &generator)] }.joined())
+        }
+        let verbs = ["login", "logout", "LogIn", "LOGOUT", "LOGİN", "logi", "log", "logoutt", "loginn", "logoutxyz", "l", "", "review"]
+        let joiners = [" ", "  ", "\n", "\t", "\r\n", "", " \n", "\u{00A0}"]
+        let tails = ["", "a", "Ant", "k", "kimi", "OPENAI", "日本", "a b", "a\n", "\nb", " ", "a ", "\u{00A0}x", "open ai"]
+        for lead in ["/", "", " /", "//", "/\u{301}"] {
+            for verb in verbs {
+                for joiner in joiners {
+                    drafts += tails.map { lead + verb + joiner + $0 }
+                }
+            }
+        }
+        var differing: [String] = []
+        var opened = 0
+        for draft in drafts {
+            let found = SlashLogin.argumentQuery(draft)
+            let scanned = Self.wholeDraftQuery(draft)
+            if found?.verb != scanned?.verb || found?.partial != scanned?.partial { differing.append(draft) }
+            if scanned != nil { opened += 1 }
+        }
+        #expect(opened > 25, "the corpus reaches the provider list")
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
+    }
+
+    @Test func theLongestVerbIsSix() {
+        #expect(SlashLogin.Verb.allCases.map(\.rawValue.count).max() == SlashLogin.Verb.longest)
+        #expect(SlashLogin.Verb.longest == 6)
+    }
+
     @Test func theCommandsAreShepherdsOwnTaggedOpensSettings() {
         #expect(SlashLogin.commands.map(\.name) == ["login", "logout"])
         #expect(SlashLogin.commands.allSatisfy { $0.source == SlashLogin.source && $0.arguments == "[provider]" })
