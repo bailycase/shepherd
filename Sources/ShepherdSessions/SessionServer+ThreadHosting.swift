@@ -91,19 +91,42 @@ extension SessionServer {
         onRemotePaneRequest = panes
         // A client opened a thread whose pi has not started since the host did.
         onNativeThreadDemand = { [weak self] agentID in
-            Task { @MainActor in
-                guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
-                var spawn = AgentSpawn(agent: agent, cwd: "", settings: hosting.launch())
-                spawn.mcp = hosting.mcp
-                do {
-                    _ = try await self.respawnAgent(spawn)
-                } catch let failed as PaneBindingFailed {
-                    self.killSession(failed.sessionID)
-                } catch {
-                    ShepherdLog.warning("start of \(agentID) on demand failed: \(error)")
-                }
-            }
+            Task { @MainActor in await self?.startThreadPi(agentID, hosting: hosting) }
         }
+    }
+
+    /// Starts a thread's pi with the host's launch settings; a failure is logged.
+    @MainActor
+    private func startThreadPi(_ agentID: AgentID, hosting: ThreadHosting) async {
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
+        var spawn = AgentSpawn(agent: agent, cwd: "", settings: hosting.launch())
+        spawn.mcp = hosting.mcp
+        do {
+            _ = try await respawnAgent(spawn)
+        } catch let failed as PaneBindingFailed {
+            killSession(failed.sessionID)
+        } catch {
+            ShepherdLog.warning("start of \(agentID) failed: \(error)")
+        }
+    }
+
+    /// Moves a thread to another space as the app's drag does (`moveThread` stops its pi). A pi
+    /// that ran starts again in the new space, or in the old one when the move failed after
+    /// stopping it; a thread that was dormant stays dormant until a client opens it.
+    @MainActor
+    private func moveRequestedThread(_ agentID: AgentID, to spaceID: SpaceID, hosting: ThreadHosting) async throws {
+        let sessionID = state.agents.first { $0.id == agentID }.flatMap { agent in
+            state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
+        }
+        let wasAlive = if let sessionID { await sessionInfo(sessionID: sessionID)?.isAlive == true } else { false }
+        do {
+            guard try await moveThread(agentID, to: spaceID) else { return }
+        } catch {
+            // Only a pi the move had already stopped starts again.
+            if wasAlive, let sessionID, await sessionInfo(sessionID: sessionID)?.isAlive != true { await startThreadPi(agentID, hosting: hosting) }
+            throw error
+        }
+        if wasAlive { await startThreadPi(agentID, hosting: hosting) }
     }
 
     /// A client's new thread, in a new worktree when it names a branch.
@@ -138,15 +161,14 @@ extension SessionServer {
         return try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: defaults.serviceTier, mcp: hosting.mcp)
     }
 
-    /// A client's action on one of its threads. Moving a thread to another space is the app's
-    /// for now.
+    /// A client's action on one of its threads.
     @MainActor
     func perform(_ action: RemoteAgentAction, on agentID: AgentID, hosting: ThreadHosting) async throws {
         switch action {
         case .rename(let name): try await renameAgent(agentID, to: name)
         case .reorder(let target): try await reorderAgent(agentID, onto: target)
         case .deleteKeepingWorktree: try await deleteAgent(agentID)
-        case .move: throw RemoteCreateAgentError("Open Shepherd to move a thread to another space.")
+        case .move(let spaceID): try await moveRequestedThread(agentID, to: spaceID, hosting: hosting)
         case .renameTerminal(let paneID, let title):
             let (tab, _) = try terminal(paneID, of: agentID)
             let name = title?.trimmingCharacters(in: .whitespacesAndNewlines)

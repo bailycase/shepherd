@@ -18,7 +18,7 @@
   `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
   host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
-  actions but Move, a dormant thread's pi on demand, and terminals' shells. It answers host settings
+  actions (Move as the app's drag), a dormant thread's pi on demand, and terminals' shells. It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts). It answers
   worktree info, setup, finalize and delete, commit from review (the same `WorktreeQueries` the app
