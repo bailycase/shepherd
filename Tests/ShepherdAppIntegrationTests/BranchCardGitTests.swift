@@ -60,7 +60,7 @@ struct BranchCardActionTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [mine, other]))
         vm.selectAgent(mine.agent.id)
 
-        let handle = try #require(vm.branchCardHandle(for: mine.agent))
+        let handle = vm.branchCardHandle(for: mine.agent.id)
         let card = try #require(handle.card())
         #expect(card.space == "payments" && card.branch == "agent/refund-events" && card.worktree)
         #expect(card.others == [BranchCardOther(id: other.agent.id, branch: "agent/webhook-retries", state: .attention, detail: "asked you")])
@@ -71,5 +71,30 @@ struct BranchCardActionTests {
 
         handle.perform(.select(other.agent.id))
         #expect(vm.selectedAgentID == other.agent.id)
+    }
+
+    /// The inline card's store reads the checkout and the space, and a turn ending asks it to read again.
+    @Test func theCardReadsOnItsOwnAndAgainWhenATurnEnds() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try makeScratchRepo(files: ["file.txt": "a\n"])
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try "a\nb\n".write(to: repo.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+        let space = Fixture.space("payments", path: repo.path)
+        var mine = Fixture.agent("refunds", in: space, status: .working)
+        mine.agent.worktreeBranch = "main"
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [mine]))
+        let store = vm.branchCardStore(for: mine.agent.id)
+        #expect(vm.branchCardStore(for: mine.agent.id) === store, "one store per thread")
+
+        await store.refresh()
+        #expect(store.card?.branch == "main" && store.card?.space == "payments")
+        #expect(store.status?.git.additions == 1)
+
+        let before = store.refreshRequest
+        vm.sessions.onAgentStatus?(mine.agent.id, .idle, nil)
+        #expect(store.refreshRequest == before + 1)
+        vm.sessions.onAgentStatus?(mine.agent.id, .idle, nil)
+        #expect(store.refreshRequest == before + 1, "only a turn ending asks")
     }
 }

@@ -122,6 +122,9 @@ struct AgentLayoutModel: Equatable {
         let piSessionID: String
         /// Waiting for the first launch's copy, or not signed in: the line or card at its end.
         var authNotice: ThreadAuthNotice? = nil
+        /// Where it works, for the branch card beside the transcript; nil outside a git checkout
+        /// and for a design's chat.
+        var branch: AgentBranchLabel? = nil
     }
 
     let tab: Tab
@@ -206,7 +209,7 @@ struct AgentLayoutModel: Equatable {
             let thread = agentsByTab[tab.id].flatMap { agent in
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
-                                  authNotice: notice(agent)) }
+                                  authNotice: notice(agent), branch: agent.designID == nil ? AgentBranchLabel(agent: agent) : nil) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
@@ -489,6 +492,7 @@ struct PaneTreeView: View {
             agentName: thread?.agentName ?? "",
             piSessionID: thread?.piSessionID,
             authNotice: thread?.authNotice,
+            branch: thread?.branch,
             inspectingRunID: thread == nil ? nil : model.inspectingRunID,
             threadAgentID: thread == nil ? model.thread?.agentID : nil
         )
@@ -509,6 +513,7 @@ struct PaneLeafModel: Equatable {
     var piSessionID: String? = nil
     /// The line or card at the end of the thread (`ThreadAuthNotice`).
     var authNotice: ThreadAuthNotice? = nil
+    var branch: AgentBranchLabel? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
     /// For a terminal pane, the agent whose thread its selection can be added to.
@@ -565,6 +570,13 @@ struct PaneLeafView: View, Equatable {
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
                 .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
+                // The branch card floats over the thread's top right: never in its layout, so it
+                // can't shift or remount the transcript.
+                .overlay(alignment: .topTrailing) {
+                    if let branch = model.branch {
+                        BranchCardOverlay(store: vm.branchCardStore(for: agentID), branch: branch, active: model.isVisible)
+                    }
+                }
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),

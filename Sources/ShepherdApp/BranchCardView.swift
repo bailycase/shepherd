@@ -1,45 +1,89 @@
 import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 
-/// The toolbar's branch button and its card (BranchCard board): pressed while the card is open.
-struct BranchCardButton: View {
-    let handle: BranchCardHandle
-    @State private var open = false
+/// The branch card over a thread's top right (BranchCard board), shown while the thread works
+/// in a git checkout. Where the transcript's column and the card both fit beside each other it is
+/// the whole card; narrower (the side pane open, a small window), it folds to one row that opens
+/// on hover or a click, so it never sits on the transcript's text. It reads only while its thread
+/// is on screen, and never takes focus.
+struct BranchCardOverlay: View {
+    let store: BranchCardStore
+    let branch: AgentBranchLabel
+    let active: Bool
+    @State private var wide = true
+    @State private var hovering = false
+    @State private var pinnedOpen = false
+
+    /// Read again when the branch or its changed files move, a turn ends, or the thread shows.
+    private struct ReadKey: Equatable {
+        let branch: AgentBranchLabel
+        let active: Bool
+        let request: Int
+    }
 
     var body: some View {
-        Button { open.toggle() } label: { Image(systemName: SHGlyph.gitBranch.symbolName) }
-            .buttonStyle(.shIcon(isOn: open))
-            .help("Branch")
-            .accessibilityLabel("Branch")
-            .popover(isPresented: $open, arrowEdge: .bottom) {
-                BranchCardPopover(handle: handle) { open = false }
+        Group {
+            if let card = store.card {
+                if wide || hovering || pinnedOpen {
+                    BranchCardView(card: card, status: store.status) { action in
+                        pinnedOpen = false
+                        store.handle.perform(action)
+                    }
+                    .shPopover()
+                } else {
+                    Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: store.status?.git) }
+                        .buttonStyle(.plain)
+                        .help("\(card.branch): show the branch card")
+                }
             }
+        }
+        .onHover { inside in
+            hovering = inside && !wide
+            if !inside { pinnedOpen = false }
+        }
+        .padding(.top, SH.Space.m)
+        .padding(.trailing, SH.Space.l)
+        .focusable(false)
+        .shAnimation(.content, value: wide || hovering || pinnedOpen)
+        // The pane's width decides the form; only crossing the line redraws it.
+        .frame(maxWidth: .infinity, alignment: .topTrailing)
+        .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
+        .task(id: ReadKey(branch: branch, active: active, request: store.refreshRequest)) {
+            guard active else { return }
+            while !Task.isCancelled {
+                await store.refresh()
+                try? await Task.sleep(for: BranchCardStore.interval)
+            }
+        }
     }
 }
 
-/// The card as it opens: what the workspace knows at once, then git's and GitHub's reads.
-private struct BranchCardPopover: View {
-    let handle: BranchCardHandle
-    let close: () -> Void
-    @State private var card: BranchCardModel?
-    @State private var status: BranchCardStatus?
-
-    init(handle: BranchCardHandle, close: @escaping () -> Void) {
-        self.handle = handle
-        self.close = close
-        _card = State(initialValue: handle.card())
-    }
+/// The folded card: the branch, its +/- and how far behind, on one row.
+struct BranchCardCompact: View {
+    let branch: String
+    let git: BranchCardGit?
 
     var body: some View {
-        if let card {
-            BranchCardView(card: card, status: status) { action in
-                close()
-                handle.perform(action)
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: SHGlyph.gitBranch.symbolName).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            Text(branch).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+            if let git {
+                SHDiffStat(added: git.additions, removed: git.deletions, font: .sh(.mono))
+                if git.behind > 0 {
+                    Text("↓\(git.behind)").font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
+                        .accessibilityLabel("\(git.behind) behind \(git.base ?? "base")")
+                }
             }
-            .task { status = await handle.load(card) }
         }
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlS)
+        .frame(maxWidth: AppLayout.branchCardCompactMaxWidth)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

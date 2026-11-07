@@ -507,6 +507,8 @@ final class ShepherdViewModel {
         let space: Space
     }
     var finalizeRequest: FinalizeRequest?
+    /// Each local thread's branch card, made when its card first shows.
+    @ObservationIgnored var branchCardStores: [AgentID: BranchCardStore] = [:]
 
     /// "Finalize Worktree…" on a worktree agent's context menu.
     func beginFinalizeWorktree(_ agentID: AgentID) {
@@ -1489,6 +1491,8 @@ final class ShepherdViewModel {
         pruneDesigns()
         pruneFileTrees()
         pruneSidebarPins()
+        let live = Set(state.agents.map(\.id))
+        branchCardStores = branchCardStores.filter { live.contains($0.key) }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }
 
@@ -1505,6 +1509,8 @@ final class ShepherdViewModel {
             }
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
+            // A turn ending reads the branch card again (commits, a push, the PR's checks).
+            if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
             // A session (re)start reports idle; the server still remembers the failure until a
             // turn starts, so the row keeps reading failed.
             let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])
