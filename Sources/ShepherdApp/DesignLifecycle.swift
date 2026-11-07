@@ -374,16 +374,6 @@ struct ImportAgainWords: Hashable {
     }
 }
 
-/// What the first message to an imported design's agent says (ImportDone: it reads everything
-/// and changes nothing until asked).
-enum DesignImportBrief {
-    static func text(file: String) -> String {
-        "This design was imported from Claude Design (\(file)), with its pages, notes and layout as they were. Read its boards, "
-            + "notes and design system, run design_check, and tell me in a few sentences what you found (anything off-system "
-            + "included). Change nothing until I ask, and end by asking what to work on first."
-    }
-}
-
 /// Whether a dropped or chosen file can be a Claude Design project: a folder, or a `.zip`.
 enum DesignImportSource {
     static func accepts(_ url: URL) -> Bool {

@@ -545,7 +545,7 @@ extension ShepherdViewModel {
             adopt(server.state)
             designsPageSelection = design.id
             await loadDesignSystems()
-            _ = try await startDesignAgent(design, brief: DesignImportBrief.text(file: preview.file), images: [])
+            _ = try await startDesignAgent(design, brief: DesignBrief.imported(file: preview.file), images: [])
         } catch let failure as DesignImportFailure {
             designImporting = nil
             await server.cancelDesignImport(preview.id)
@@ -554,37 +554,6 @@ extension ShepherdViewModel {
             designImporting = nil
             await server.cancelDesignImport(preview.id)
             remoteActionError = "Couldn't open \(preview.title): \(error)"
-        }
-    }
-
-    /// Another device's uploaded ZIP (`RemoteDesignRequest.importFinish`): imported as this Mac's
-    /// Import does, with nothing opened here. Without anyone here to ask, it decides as
-    /// conservatively as it can: boards that can't be read refuse it (nothing is imported), and a
-    /// project already in Designs comes in as a copy under the next name.
-    func importRemoteDesign(from url: URL) async throws -> RemoteDesignCreated {
-        let preview: DesignImportPreview
-        do {
-            preview = try await server.prepareDesignImport(from: url)
-        } catch let failure as DesignImportFailure {
-            throw RemoteDesignImportFailure("import_failed", failure.message)
-        }
-        do {
-            guard preview.unreadable.isEmpty else {
-                throw RemoteDesignImportFailure("import_unreadable", "\(DeleteDesignWords.count(preview.unreadable.count, "board")) of it can't be read, "
-                    + "so nothing was imported. Import it on the host to choose what to do.")
-            }
-            let again = state.designs.contains { $0.importedFrom.map(preview.origin.isSameProject) == true }
-            let name = again ? DesignNaming.importName(preview.title, taken: state.designs.map(\.name)) : nil
-            let design = try await server.finishDesignImport(preview, name: name)
-            adopt(server.state)
-            await loadDesignSystems()
-            let agent = try? await startDesignAgent(design, brief: DesignImportBrief.text(file: preview.file), images: [], select: false)
-            return RemoteDesignCreated(designID: design.id, agentID: agent)
-        } catch {
-            await server.cancelDesignImport(preview.id)
-            if let failure = error as? RemoteDesignImportFailure { throw failure }
-            if let failure = error as? DesignImportFailure { throw RemoteDesignImportFailure("import_failed", failure.message) }
-            throw RemoteDesignImportFailure("import_failed", Self.words(error))
         }
     }
 

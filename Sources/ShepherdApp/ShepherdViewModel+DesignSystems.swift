@@ -13,8 +13,7 @@ import ShepherdSessions
 
 extension ShepherdViewModel {
     /// The words a system build's agent starts from.
-    static let systemBuildBrief = "Build a design system from this space: read its tokens file, its component templates and a "
-        + "few pages (read only), write the system with system_write, and tell me what doesn't match."
+    static let systemBuildBrief = DesignBrief.systemBuild
 
     var designSystemReader: DesignSystemReader {
         let server = server
@@ -116,26 +115,6 @@ extension ShepherdViewModel {
                 remoteActionError = "Couldn't build a design system from \(space.name): \(error)"
             }
         }
-    }
-
-    /// Another device's "Build one from a repo" (`RemoteDesignRequest.buildSystem`): as this Mac's,
-    /// with nothing opened here. A space with a build already answers that one (and its agent,
-    /// started if it is gone).
-    func buildRemoteDesignSystem(_ spaceID: SpaceID) async throws -> RemoteDesignCreated {
-        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { throw AgentStartFailure(message: "That space is gone.") }
-        if let existing = state.designs.first(where: { $0.buildsSystem && $0.sourceSpaceID == spaceID }) {
-            let agent = state.agents.first { $0.id == existing.agentID } ?? state.agents.first { $0.designID == existing.id }
-            if let agent { return RemoteDesignCreated(designID: existing.id, agentID: agent.id) }
-            return RemoteDesignCreated(designID: existing.id, agentID: try? await startDesignAgent(existing, brief: nil, images: [], select: false))
-        }
-        guard !startingSystemBuilds.contains(spaceID) else { throw AgentStartFailure(message: "Its build is starting. Try again in a moment.") }
-        startingSystemBuilds.insert(spaceID)
-        defer { startingSystemBuilds.remove(spaceID) }
-        let design = Design(name: space.name, createdAt: SessionServer.nowMilliseconds(), buildsSystem: true, sourceSpaceID: space.id)
-        _ = try await server.createDesign(design)
-        adopt(server.state)
-        let agent = try? await startDesignAgent(design, brief: Self.systemBuildBrief, images: [], select: false)
-        return RemoteDesignCreated(designID: design.id, agentID: agent)
     }
 
     /// Re-sync: the system's stylesheets read again from its project.

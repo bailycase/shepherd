@@ -220,28 +220,6 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Another device's New design (`RemoteDesignRequest.create`): made as this Mac's is, with
-    /// nothing selected or opened here. An agent that fails to start is started when the design
-    /// is next opened, so the design is answered either way.
-    func createRemoteDesign(_ request: RemoteDesignCreate) async throws -> RemoteDesignCreated {
-        let design = try await makeDesign(brief: request.brief, system: request.systemNamespace)
-        let agent = try? await startDesignAgent(design, brief: request.brief, images: [], select: false)
-        return RemoteDesignCreated(designID: design.id, agentID: agent)
-    }
-
-    /// Another device opens a design whose agent is gone here (`RemoteDesignRequest.ensureAgent`):
-    /// a fresh one starts as Open starts it, with nothing selected here. One start at a time.
-    func ensureRemoteDesignAgent(_ id: DesignID) async throws -> AgentID {
-        guard let design = design(id), !design.buildsSystem else { throw SessionServerError.noSuchDesign(id) }
-        if let agent = state.agents.first(where: { $0.id == design.agentID }) ?? state.agents.first(where: { $0.designID == id }) {
-            return agent.id
-        }
-        guard !startingDesignAgents.contains(id) else { throw AgentStartFailure(message: "Its agent is starting. Try again in a moment.") }
-        startingDesignAgents.insert(id)
-        defer { startingDesignAgents.remove(id) }
-        return try await startDesignAgent(design, brief: nil, images: [], select: false)
-    }
-
     /// The design record and folder, with `system` installed before any agent starts, so its
     /// first turn reads it among the design's systems.
     private func makeDesign(brief: String, system: String?) async throws -> Design {

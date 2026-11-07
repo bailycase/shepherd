@@ -82,6 +82,27 @@ struct ThreadHostingTests {
         #expect(!StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue }, "a dormant thread stays dormant")
     }
 
+    @Test func theAppMakesADesignAndItsAgentStartsInTheDesignsFolder() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        h.server.setDesignsServed(true)
+        let client = try await connect(path, token)
+        defer { client.disconnect() }
+        try await eventuallyOnMain("the host to serve designs") { client.capabilities.contains(RemoteProtocol.designsCapability) }
+
+        guard case .created(let designID, let agentID?) = try await client.design(.create(RemoteDesignCreate(brief: "A pricing page for acme-web"))) else {
+            Issue.record("expected a design with its agent"); return
+        }
+        let agent = try #require(h.server.state.agents.first { $0.id == agentID })
+        #expect(agent.designID == designID && h.server.state.designs.first { $0.id == designID }?.agentID == agentID)
+        let folder = try #require(h.server.designs.folder(for: designID))
+        #expect(h.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == folder.path)
+        try await eventuallyOnMain("the stub pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == agentID.rawValue } }
+        // Open on it answers the running agent rather than starting another.
+        #expect(try await client.design(.ensureAgent(designID: designID)) == .agent(agentID))
+    }
+
     @Test func openingADormantThreadStartsItsPi() async throws {
         try StubPi.installAsEngine()
         let (h, path, token) = try host()

@@ -671,6 +671,9 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var startingAutomationRuns = Set<AutomationID>()
     /// Main actor: terminal panes whose shell `startTerminal` is starting now.
     @MainActor var startingTerminals = Set<PaneID>()
+    /// Designs whose agent is starting, and spaces whose system build is, by this Mac or for a client.
+    @MainActor public var startingDesignAgents = Set<DesignID>()
+    @MainActor public var startingSystemBuilds = Set<SpaceID>()
     @MainActor var cancelledAutomationRuns = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
