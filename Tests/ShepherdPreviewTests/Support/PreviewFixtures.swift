@@ -24,14 +24,14 @@ final class PreviewWorkspace {
     /// Settings ▸ Pi shows `yourPi` (a fixture: never this machine's pi, nor a read of the scratch one).
     init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
          yourPi: YourPiSurvey = PreviewYourPi.imported, hooks: HooksModel? = nil,
-         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
+         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge, ownsWorkspace: Bool = true) throws {
         try PreviewEnvironment.install()
         scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog, forgeRunner: forgeRunner)
         settings = AppSettings(store: defaults)
         // Never ask a real model to write a PR description while rendering the finalize sheet.
         settings.worktreeGeneratePRDescription = false
         vm = ShepherdViewModel(
-            server: scratch.server, settings: settings, keybindings: KeybindingsStore(store: defaults),
+            server: scratch.server, ownsWorkspace: ownsWorkspace, settings: settings, keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
             remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
             // Only the agents a preview mounts get a pi, and those get the stub.

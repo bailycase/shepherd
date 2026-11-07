@@ -172,9 +172,10 @@ final class NewThreadState {
     @ObservationIgnored private var defaultsRequest = UUID()
     @ObservationIgnored private var defaultsHost: UUID??
 
-    /// Every host a thread can start on: This Mac, and each connected host.
+    /// Every host a thread can start on: This Mac, and each connected host. In client mode the
+    /// background host is This Mac, and the app's own empty workspace isn't offered.
     static func hosts(_ vm: ShepherdViewModel) -> [NewThreadPlaces.Host] {
-        [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)]
+        (vm.ownsWorkspace ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
             + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
                 NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden })
             }

@@ -71,6 +71,8 @@ final class RemoteHostStore {
     final class Connection: Identifiable {
         /// Editable in Settings; the store reconnects after a change.
         fileprivate(set) var config: HostConfig
+        /// The background host on this Mac (client mode), shown as This Mac.
+        var isThisMac: Bool { config.localSocket != nil }
         var phase: Phase = .disconnected {
             didSet {
                 if oldValue == .connected, phase != .connected { lastSeen = Date() }
@@ -319,12 +321,15 @@ final class RemoteHostStore {
         }
     }
 
+    /// The hosts the user added: every connection but the background host on this Mac.
+    var pairedConnections: [Connection] { connections.filter { !$0.isThisMac } }
+
     /// The background host on this Mac, through its local socket at `socket`; not persisted.
     @discardableResult
     func addLocalHost(name: String, socket: String, token: String) -> Connection {
         let connection = Connection(config: HostConfig(name: name, host: "", port: 0, token: token, localSocket: socket),
                                     designCache: designCache)
-        connections.append(connection)
+        connections.insert(connection, at: 0)
         connect(connection)
         return connection
     }
