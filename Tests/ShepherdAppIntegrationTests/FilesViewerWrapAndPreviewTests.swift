@@ -13,7 +13,7 @@ struct FilesViewerWrapAndPreviewTests {
     // MARK: - Helpers
 
     private func editor(in view: NSView) -> NSTextView? {
-        if let text = view as? NSTextView, !text.isEditable, text.isSelectable { return text }
+        if let text = view as? NSTextView, text.usesFindBar, text.isSelectable { return text }
         for child in view.subviews {
             if let found = editor(in: child) { return found }
         }

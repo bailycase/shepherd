@@ -29,14 +29,14 @@ struct FilesPreviewTests {
         return (root, model)
     }
 
-    private func highlightingReady() -> Bool {
+    private func highlightingReady(prefix: String = "import Foundation") -> Bool {
         @MainActor func editor(in view: NSView) -> NSTextView? {
-            if let text = view as? NSTextView, !text.isEditable, text.isSelectable { return text }
+            if let text = view as? NSTextView, text.usesFindBar, text.isSelectable { return text }
             return view.subviews.lazy.compactMap { editor(in: $0) }.first
         }
         for window in NSApplication.shared.windows {
             guard let host = window.contentView, let text = editor(in: host), let storage = text.textStorage,
-                  text.string.hasPrefix("import Foundation"), text.visibleRect.minX == 0 else { continue }
+                  text.string.hasPrefix(prefix), text.visibleRect.minX == 0 else { continue }
             var colors = Set<String>()
             window.effectiveAppearance.performAsCurrentDrawingAppearance {
                 storage.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
@@ -110,6 +110,94 @@ struct FilesPreviewTests {
 
         // Preview.render already captures both light and dark appearances.
         try await Preview.render("files-markdown-preview", size: CGSize(width: 700, height: 500)) {
+            FilesTab(model: model)
+        }
+    }
+
+    /// The PaneFiles board's state: an agent change taken in, unsaved edits on top, the agent
+    /// editing another open file.
+    private func editingFixture() async throws -> (URL, FileTreeModel, URL) {
+        let root = try makeScratchDirectory().appendingPathComponent("acme-web")
+        let components = root.appendingPathComponent("src/components")
+        try FileManager.default.createDirectory(at: components, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src/styles"), withIntermediateDirectories: true)
+        for name in ["OrderSummary.tsx", "PromoList.tsx"] {
+            try "export {}\n".write(to: components.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        try "export function PromoField() {}\n".write(to: components.appendingPathComponent("PromoField.tsx"), atomically: true, encoding: .utf8)
+        try ":root { --pay: #2f6; }\n".write(to: root.appendingPathComponent("src/styles/tokens.css"), atomically: true, encoding: .utf8)
+        try "# acme-web\n".write(to: root.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        let checkout = components.appendingPathComponent("Checkout.tsx")
+        let before = """
+        export function Checkout({ cart }: Props) {
+          const [promoOpen, setPromoOpen] = useState(false);
+          const pay = usePayment(cart.id);
+
+          return (
+            <form className="checkout" onSubmit={pay.submit}>
+              <ContactFields />
+              <CardFields />
+              <PromoField onApply={cart.applyPromo} />
+              <OrderSummary cart={cart} />
+              <div className="checkout-actions">
+                <Button className="pay" size="lg">
+                  {payLabel}
+                </Button>
+              </div>
+            </form>
+          );
+        }
+
+        // Keeps the button still while the promo field animates.
+        const actionsHeight = 44;
+
+        """
+        try before.write(to: checkout, atomically: true, encoding: .utf8)
+        let model = FileTreeModel(rootPath: root.path)
+        await model.loadRoot()
+        await model.expand(path: root.appendingPathComponent("src").path)
+        await model.expand(path: components.path)
+        await model.select(path: components.appendingPathComponent("PromoField.tsx").path)
+        await model.select(path: root.appendingPathComponent("src/styles/tokens.css").path)
+        await model.select(path: checkout.path)
+        // The agent's change, taken in by the clean editor.
+        let agent = before.replacingOccurrences(of: "      <PromoField onApply={cart.applyPromo} />\n", with: """
+              {promoOpen ? (
+                <PromoField onApply={cart.applyPromo} />
+              ) : (
+                <LinkButton onClick={openPromo}>Have a promo code?</LinkButton>
+              )}
+
+        """)
+        try agent.write(to: checkout, atomically: true, encoding: .utf8)
+        await model.checkDisk()
+        // The person's edit on top, not saved yet.
+        model.setText(agent.replacingOccurrences(of: """
+                <Button className="pay" size="lg">
+                  {payLabel}
+        """, with: """
+                <Button className="pay" size="lg" disabled={pay.pending}>
+                  {pay.pending ? <Spinner /> : payLabel}
+        """), for: checkout.path)
+        return (root.deletingLastPathComponent(), model, checkout)
+    }
+
+    @Test func paneFilesEditing() async throws {
+        let (root, model, _) = try await editingFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await Preview.render("files-editing", size: CGSize(width: 760, height: 700),
+                                 ready: { highlightingReady(prefix: "export function") }) {
+            FilesTab(model: model, agentPath: "src/components/PromoField.tsx")
+        }
+    }
+
+    @Test func paneFilesConflict() async throws {
+        let (root, model, checkout) = try await editingFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "// rewritten by the agent\n".write(to: checkout, atomically: true, encoding: .utf8)
+        await model.checkDisk()
+        try await Preview.render("files-conflict", size: CGSize(width: 760, height: 700),
+                                 ready: { highlightingReady(prefix: "export function") }) {
             FilesTab(model: model)
         }
     }
