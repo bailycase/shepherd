@@ -67,12 +67,12 @@ extension ShepherdViewModel {
         let inputs = DesignsPageInputs(designs: state.designs, spaces: state.spaces, firstBoards: firstBoards,
                                        filter: designsPageFilter, selection: designsPageSelection, systems: systems,
                                        swatches: swatches, hosts: remoteDesignSections, importing: designImporting, building: building,
-                                       minute: Int(now.timeIntervalSince1970 / 60))
+                                       comments: designCommentCounts, minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = designsPageCache, cached.inputs == inputs { return cached.model }
         var model = DesignsPageModel.make(designs: inputs.designs, spaces: inputs.spaces, firstBoards: inputs.firstBoards,
                                           filter: inputs.filter, selection: inputs.selection, now: now,
                                           systems: inputs.systems, swatches: inputs.swatches, importing: inputs.importing,
-                                          building: inputs.building)
+                                          building: inputs.building, comments: inputs.comments)
         model.hosts = inputs.hosts
         designsPageCache = (inputs, model)
         return model
@@ -91,6 +91,21 @@ extension ShepherdViewModel {
                   let snapshot = try? await server.designSnapshot(id), self.design(id) != nil else { continue }
             designRendering.thumbnails.update(id, snapshot: snapshot)
         }
+    }
+
+    /// Each design's open comments, for its card ("2 comments"). Read as the Designs page opens
+    /// and as designs change.
+    // ponytail: a comment added while the page is open shows on the next change or visit; push
+    // counts with `designCommentsChanged` if that matters.
+    func loadDesignCommentCounts() async {
+        var counts: [DesignID: Int] = [:]
+        for design in state.designs where !design.buildsSystem {
+            guard !Task.isCancelled else { return }
+            guard let file = try? await server.designComments(design.id) else { continue }
+            let open = file.comments.count { $0.resolvedAt == nil }
+            if open > 0 { counts[design.id] = open }
+        }
+        if counts != designCommentCounts { designCommentCounts = counts }
     }
 
     func designThumbnailVisibility(_ target: DesignTarget, visible: Bool) {
