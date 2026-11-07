@@ -6,19 +6,41 @@ import ShepherdUI
 
 extension ShepherdViewModel {
     /// Serves this Mac's MCP servers, subagent profiles and provider sign-ins to remote clients
-    /// (Settings on the iPhone and the iPad), read-only: what Settings ▸ MCP, Subagents and
-    /// Sign-in show, projected without any secret. Installed once at startup.
-    func installHostInventory() {
-        server.onRemoteHostInventory = { [weak self] request, completion in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    completion(.failure(RemoteCreateAgentError("Host is shutting down")))
-                    return
-                }
-                Task { @MainActor in
-                    do { completion(.success(try await self.hostInventory(request))) }
-                    catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
-                }
+    /// (Settings on the iPhone and the iPad), read-only and to change: what Settings ▸ MCP,
+    /// Subagents and Sign-in show and do. Installed once at startup.
+    func installHostConfiguration() {
+        HostStores(mcp: mcp, subagents: { [weak self, pi = server.pi] in self?.subagentDefinitions ?? SubagentDefinitionsModel(pi: pi) }, piAuth: piAuth, yourPi: yourPi,
+                   remoteSignIns: remoteSignIns).serve(on: server)
+    }
+}
+
+/// The stores Settings ▸ MCP, Subagents and Sign-in read and change, served to remote clients
+/// (`RemoteRequest.hostInventory` and `.hostConfig`) by the app or by the headless host.
+@MainActor
+struct HostStores {
+    let mcp: MCPStore
+    /// Made on first use; the app's view model makes it lazily.
+    let subagents: @MainActor () -> SubagentDefinitionsModel
+    let piAuth: PiAuthStore
+    let yourPi: YourPiModel
+    let remoteSignIns: RemoteSignIns
+
+    var subagentDefinitions: SubagentDefinitionsModel { subagents() }
+
+    /// Installs both handlers on `server`. Secrets a client sends go to the Keychain or pi's
+    /// auth.json and are never in a reply or a log.
+    func serve(on server: SessionServer) {
+        server.onRemoteHostInventory = { request, completion in
+            Task { @MainActor in
+                do { completion(.success(try await hostInventory(request))) }
+                catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
+            }
+        }
+        server.onRemoteHostConfig = { request, completion in
+            Task { @MainActor in
+                do { completion(.success(try await hostConfig(request))) }
+                catch let error as RemoteCreateAgentError { completion(.failure(error)) }
+                catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
             }
         }
     }

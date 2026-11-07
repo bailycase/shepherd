@@ -3,27 +3,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-extension ShepherdViewModel {
-    /// Lets remote clients change this Mac's MCP servers, subagent profiles and provider sign-ins
-    /// (`RemoteRequest.hostConfig`), through the same stores Settings uses. Secrets a client sends
-    /// go to the Keychain or pi's auth.json and are never in a reply or a log. Installed once.
-    func installHostConfig() {
-        server.onRemoteHostConfig = { [weak self] request, completion in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    completion(.failure(RemoteCreateAgentError("Host is shutting down")))
-                    return
-                }
-                Task { @MainActor in
-                    do { completion(.success(try await self.hostConfig(request))) }
-                    catch let error as RemoteCreateAgentError { completion(.failure(error)) }
-                    catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
-                }
-            }
-        }
-    }
-
-    private func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
+extension HostStores {
+    func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
         switch request {
         case .mcpEntry(let name):
             mcp.reload()

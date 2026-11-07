@@ -20,7 +20,8 @@
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, and terminals' shells. It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
-  (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts). It answers
+  (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
+  `hostInventory` and `hostConfig` through the same `HostStores` the app serves. It answers
   worktree info, setup, finalize and delete, commit from review (the same `WorktreeQueries` the app
   serves in process), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
