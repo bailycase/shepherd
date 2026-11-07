@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
@@ -134,6 +135,32 @@ struct BranchCardPreviewTests {
             }
         }
         try BranchGit.abort(cwd: clone.path, .rebase)
+    }
+
+    /// Commit… (BranchCommit): four of five changed files ticked, a generated message, and an
+    /// unpushed last commit Amend could replace.
+    @Test func theCommitSheet() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let (origin, clone) = try clone()
+        defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
+        try BranchGit.push(cwd: clone.path, branch: "agent/refund-events")
+        let outbox = (1...30).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        try git(["commit", "-q", "--allow-empty", "-m", "Add the refund event type"], in: clone)
+        for (file, text) in [("ledger/outbox.go", outbox), ("ledger/codec.go", "codec\n"), ("ledger/refund.go", "refund\n"),
+                             ("ledger/refund_test.go", "test\n"), ("scratch/notes.md", "")] {
+            let url = clone.appendingPathComponent(file)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        let info = try await ReviewCommitGit.info(cwd: clone.path, agentWorking: false, draftsMessage: false) { await LoginShell.run($0, cwd: $1) }
+        let form = BranchCommitSheet.Form(info: info, selected: Set(info.files.map(\.id).filter { !$0.hasPrefix("scratch/") }),
+                                          title: "Emit refund events from the ledger outbox",
+                                          details: "Adds RefundEvent with a JSON codec and covers encode and decode in refund_test.go.",
+                                          amendBlocked: BranchGit.amendBlocked(cwd: clone.path))
+        try await Preview.render("branch-commit", size: CGSize(width: AppLayout.branchCommitSheetWidth, height: 500)) {
+            BranchCommitSheet(vm: workspace.vm, agentID: AgentID(), cwd: clone.path, staged: form)
+        }
     }
 
     @Test func theNameSheets() async throws {
