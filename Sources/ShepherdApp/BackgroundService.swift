@@ -72,3 +72,15 @@ struct BackgroundService {
         return status()
     }
 }
+
+extension BackgroundService.Status {
+    /// What a paired device reads (`HostSettings.backgroundService`): agents keep running when
+    /// Shepherd is quit, or stop because the job is off in Login Items; nil when there is no job.
+    var keepsAgentsRunning: Bool? {
+        switch self {
+        case .enabled: true
+        case .requiresApproval: false
+        case .notRegistered, .notFound: nil
+        }
+    }
+}

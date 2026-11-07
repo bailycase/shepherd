@@ -247,7 +247,7 @@ enum RemoteSamples {
         defaultServiceTier: .fast, namingModel: "anthropic/claude-haiku", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
-        designToolEnabled: true, missionsEnabled: true, missionsActive: true,
+        backgroundService: true, designToolEnabled: true, missionsEnabled: true, missionsActive: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
         worktreeDeleteAction: .removeWorktree, skillsInSlashMenu: false, mcpProjectConfig: true,
         slashCommands: [NativeCommand(name: "review", description: "Review a diff", source: "extension")], hiddenSlashCommands: ["review"],
@@ -812,7 +812,7 @@ struct RemoteReplyTests {
         var object = try Wire.object(RemoteReply.hostSettings(id: 1, settings: S.hostSettings))
         var settings = try #require(object["settings"] as? [String: Any])
         for key in ["designToolEnabled", "missionsEnabled", "missionsActive", "subagentDefaults", "worktreeDeleteAction",
-                    "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands", "closeOnMerge"] {
+                    "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands", "closeOnMerge", "backgroundService"] {
             settings[key] = nil
         }
         object["settings"] = settings
@@ -825,6 +825,7 @@ struct RemoteReplyTests {
         #expect(decoded.worktreeDeleteAction == .ask && decoded.skillsInSlashMenu && !decoded.mcpProjectConfig)
         #expect(decoded.slashCommands.isEmpty && decoded.hiddenSlashCommands.isEmpty)
         #expect(!decoded.closeOnMerge, "an older host never closes threads on merge")
+        #expect(decoded.backgroundService == nil, "an older host doesn't say whether agents outlive a quit")
     }
 
     /// A provider's row never carries a credential: the wire has the state and its words only.
@@ -1116,7 +1117,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
-            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability,
+            RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
@@ -1152,6 +1153,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")
         #expect(RemoteProtocol.hostSettingsCloseOnMergeCapability == "hostSettings.closeOnMerge.v1")
+        #expect(RemoteProtocol.hostSettingsBackgroundServiceCapability == "hostSettings.backgroundService.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
         #expect(RemoteProtocol.missionsExperimentCapability == "experiments.missions.v1")

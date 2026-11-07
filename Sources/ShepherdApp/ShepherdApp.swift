@@ -323,7 +323,9 @@ public enum ShepherdHost {
             spawn.mcp = mcp
             return spawn
         }, configure: { server in
-            HostSettingsMapping.serve(on: server, settings: settings)
+            // The host is the service: it says so from launchd's own status of its job.
+            let service = BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            HostSettingsMapping.serve(on: server, settings: settings) { service.status().keepsAgentsRunning }
             serveSettings(settings, on: server)
             // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
             let subagents = SubagentDefinitionsModel(pi: server.pi)

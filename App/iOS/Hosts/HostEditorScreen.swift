@@ -41,6 +41,10 @@ struct HostEditorScreen: View {
                     if !host.phase.isConnected {
                         Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(host.id) }
                     }
+                    if host.phase.isConnected, host.supports(RemoteProtocol.hostSettingsBackgroundServiceCapability),
+                       let line = HostSettingsPresentation.backgroundService(settings(of: host.id), host: host.name) {
+                        Text(line).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    }
                 }
                 if host.phase.isConnected, host.supports(RemoteProtocol.hostUpdateCapability) {
                     MobileHostUpdateSection(host: host)
@@ -110,6 +114,13 @@ struct HostEditorScreen: View {
         }
         .onAppear(perform: load)
         .onDisappear { token = "" }
+        .task { if hostID != nil { await SettingsStore.of(hosts).watch() } }
+    }
+
+    /// The host's settings, once Settings has read them.
+    private func settings(of id: UUID) -> HostSettings? {
+        let store = SettingsStore.of(hosts)
+        return store.hosts.first { $0.id == id }.flatMap(store.hostSettings.settings(of:))
     }
 
     private func load() {

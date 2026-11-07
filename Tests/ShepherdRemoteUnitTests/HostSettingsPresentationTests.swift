@@ -98,4 +98,13 @@ struct HostSettingsPresentationTests {
         #expect(HostSettingsPresentation.updateTone(.init(version: "1", build: "1", channel: "m", phase: .available)) == .attention)
         #expect(HostSettingsPresentation.updateTone(.init(version: "1", build: "1", channel: "m", phase: .failed)) == .failed)
     }
+
+    @Test func aHostSaysWhetherItsAgentsOutliveAQuit() {
+        #expect(HostSettingsPresentation.backgroundService(HostSettings(backgroundService: true), host: "Studio")
+            == "Studio keeps agents running when Shepherd is quit.")
+        #expect(HostSettingsPresentation.backgroundService(HostSettings(backgroundService: false), host: "Studio")?
+            .hasPrefix("Studio stops its agents when Shepherd is quit.") == true)
+        #expect(HostSettingsPresentation.backgroundService(HostSettings(), host: "Studio") == nil, "a host with no service says nothing")
+        #expect(HostSettingsPresentation.backgroundService(nil, host: "Studio") == nil)
+    }
 }

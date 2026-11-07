@@ -147,4 +147,14 @@ public enum HostSettingsPresentation {
         + "Safe interrupted turns resume after restart; uncertain tool or message delivery stays paused for review. "
         + "Open terminals and work without safe recovery must be stopped first."
     }
+
+    /// A host's form: what happens to its agents when Shepherd is quit there
+    /// (`HostSettings.backgroundService`); nil when the host doesn't say.
+    public static func backgroundService(_ settings: HostSettings?, host: String) -> String? {
+        switch settings?.backgroundService {
+        case true?: "\(host) keeps agents running when Shepherd is quit."
+        case false?: "\(host) stops its agents when Shepherd is quit. Turn on Shepherd in Login Items on the Mac to keep them running."
+        case nil: nil
+        }
+    }
 }

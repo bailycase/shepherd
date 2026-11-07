@@ -8,7 +8,9 @@ extension ShepherdViewModel {
     /// Settings ▸ Agents, Worktrees and Pi set, and one change at a time, applied as the Mac's own
     /// Settings would. Installed once at startup.
     func installHostSettings() {
-        HostSettingsMapping.serve(on: server, settings: settings)
+        HostSettingsMapping.serve(on: server, settings: settings) { [weak self] in
+            self?.backgroundServiceStatus?.keepsAgentsRunning
+        }
     }
 }
 
@@ -35,8 +37,10 @@ enum HostSettingsMapping {
     /// Serves `server`'s clients `settings` (Settings on the iPhone and the iPad, and the app as the
     /// background host's client): what Settings ▸ Agents, Worktrees and Pi set, and one change at
     /// a time, applied as the Mac's own Settings would. Installed once, by the app or by the
-    /// headless host.
-    static func serve(on server: SessionServer, settings app: AppSettings) {
+    /// headless host. `backgroundService` is whether this Mac keeps agents running when Shepherd
+    /// is quit (`HostSettings.backgroundService`).
+    static func serve(on server: SessionServer, settings app: AppSettings,
+                      backgroundService: @escaping @MainActor () -> Bool? = { nil }) {
         server.onRemoteHostSettings = { [weak server] request, completion in
             MainActor.assumeIsolated {
                 guard let server else {
@@ -49,13 +53,14 @@ enum HostSettingsMapping {
                     completion(.failure(RemoteCreateAgentError(refusal)))
                     return
                 }
-                let answer = settings(
+                var answer = settings(
                     from: app,
                     shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
                     piVersion: server.pi.engine.version,
                     missionsActive: missionsActive,
                     slashCommands: server.slashCommandCatalog
                 )
+                answer.backgroundService = backgroundService()
                 let piHome = server.pi.home
                 Task.detached(priority: .userInitiated) {
                     // pi's settings.json is read off the main actor.

@@ -257,6 +257,9 @@ final class FixtureHost: @unchecked Sendable {
                 mutation("nativeThread." + Self.kind(command))
                 return [.nativeThread(id: id, result: .failure(code: "fixture", message: refused))]
             }
+        case .hostUpdate(let id, .status):
+            // A host's form reads its update status; Check and Install stay mutations.
+            return [.hostUpdate(id: id, status: HostUpdateStatus(version: "0.4.2", build: "1201", channel: "nightly", phase: .upToDate))]
         case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
              .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _, _, _),
              .agentAction(let id, _, _), .upload(let id, _), .hostUpdate(let id, _):
@@ -376,6 +379,9 @@ final class FixtureHost: @unchecked Sendable {
             return [.error(id: id, code: ForgeError.Code.unsupported.rawValue, message: refused)]
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
+            return []
+        case .designRelayAnswer:
+            // Only the Mac app answers a background host's drawing; a phone never sends it.
             return []
         case .pushRegistration(let id, _):
             note("pushRegistration")
