@@ -18,7 +18,7 @@ struct KeybindingsTests {
         (.toggleTerminal, "⌘J"), (.maximizeTerminal, "⇧⌘↩"),
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
-        (.alternateSend, "⌘↩"), (.cycleThinkingLevel, "⇧⇥"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
+        (.alternateSend, "⌘↩"), (.cycleThinkingLevel, "⇧⇥"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"), (.designJumpBack, "⌘["),
         (.focusAddressBar, "⌘L"), (.selectElement, "⇧⌘C"), (.browserNewTab, "⌘T"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {

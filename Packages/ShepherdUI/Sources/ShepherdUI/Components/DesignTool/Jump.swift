@@ -59,6 +59,60 @@ public enum SHJumpMetrics {
     public static let footerTextSize: CGFloat = 11.5
     /// Rows the card shows before its list scrolls.
     public static let maxVisibleRows = 9
+
+    // The toast after a jump lands (JumpLanded): 36pt high, 14pt in before the words and 8 after
+    // the chord, 10pt apart, radius 10, the words in 12.5 and the chord in mono 10.5 (6pt in),
+    // 24pt above the canvas's bottom.
+    public static let backHeight: CGFloat = 36
+    public static let backPaddingLeading: CGFloat = 14
+    public static let backPaddingTrailing: CGFloat = SH.Space.m
+    public static let backSpacing: CGFloat = 10
+    public static let backRadius: CGFloat = 10
+    public static let backTextSize: CGFloat = 12.5
+    public static let backChordSize: CGFloat = 10.5
+    public static let backChordPadding: CGFloat = SH.Space.s
+    public static let backBottom: CGFloat = SH.Space.xxl
+}
+
+/// The toast after a jump lands (JumpLanded): "Jumped to <board>", a running-blue Back, and its
+/// chord. Raised on the popover's line and shadow; it closes by itself, so it has no close.
+public struct SHJumpBackToast: View {
+    let title: String
+    let shortcut: String?
+    let back: () -> Void
+
+    public init(title: String, shortcut: String?, back: @escaping () -> Void) {
+        self.title = title
+        self.shortcut = shortcut
+        self.back = back
+    }
+
+    public var body: some View {
+        let M = SHJumpMetrics.self
+        HStack(spacing: M.backSpacing) {
+            Text("Jumped to \(Text(title).fontWeight(.semibold))")
+                .font(.shSans(M.backTextSize))
+                .foregroundStyle(Color.sh.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Button("Back", action: back)
+                .buttonStyle(.sh(.ghost, size: .s, tint: Color.sh.running))
+                .shHelp("Back to where you were", shortcut: shortcut)
+            if let shortcut {
+                Text(shortcut)
+                    .font(.shMono(M.backChordSize))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .padding(.trailing, M.backChordPadding)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.leading, M.backPaddingLeading)
+        .padding(.trailing, M.backPaddingTrailing)
+        .frame(height: M.backHeight)
+        .shPopover(radius: M.backRadius)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .contain)
+    }
 }
 
 /// The toolbar's "Jump to a board…" field over a design: a button that opens the card, with the

@@ -117,7 +117,7 @@ extension ShepherdViewModel {
         switch item.kind {
         case .board(let path):
             designJumpRecents.opened(path, in: model.design, at: Date().timeIntervalSince1970)
-            designScreen(model.design).reveal(board: path, element: nil)
+            designScreen(model.design).jump(to: path, title: item.title)
         case .design(let id):
             openDesign(id)
         }

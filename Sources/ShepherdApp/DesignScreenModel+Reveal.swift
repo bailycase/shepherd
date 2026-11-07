@@ -6,6 +6,18 @@ import ShepherdUI
 // "Open in design" (a thread's reference chip, its preview): the piece's board picked and brought
 // into view, its element selected once the board draws.
 
+/// Where the canvas was before a Jump landed, and the board it landed on.
+struct DesignJumpBack: Equatable {
+    let id = UUID()
+    let title: String
+    let page: String?
+    let viewport: SHCanvasViewport
+    let picks: [DesignScreenModel.Pick]
+
+    /// How long the toast stays without a touch.
+    static let lifetime: Duration = .seconds(6)
+}
+
 extension DesignScreenModel {
     // MARK: Open in design
 
@@ -55,6 +67,31 @@ extension DesignScreenModel {
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
+    }
+
+    // MARK: Jump and Back
+
+    /// A Jump's landing (JumpLanded): the board picked and in view, as a reveal does, with where
+    /// the canvas was kept for Back.
+    func jump(to board: DesignPath, title: String) {
+        let before = DesignJumpBack(title: title, page: page, viewport: viewport, picks: picks)
+        reveal(board: board, element: nil)
+        // Kept once the canvas has moved: a reveal still waiting on the snapshot would clear it.
+        if pendingReveal == nil { jumpBack = before }
+    }
+
+    /// Back: the page, viewport and selection the canvas had before the jump.
+    func goBackFromJump() {
+        guard let back = jumpBack else { return }
+        if let page = back.page { showPage(page) }
+        setSelection(back.picks)
+        viewport = back.viewport
+        jumpBack = nil
+    }
+
+    /// The toast's own time ran out.
+    func dismissJumpBack(_ id: UUID) {
+        if jumpBack?.id == id { jumpBack = nil }
     }
 
     /// Brings a board's frame into the middle of the canvas, fitted when it is larger than the

@@ -70,6 +70,7 @@ struct DesignCanvasPane: View {
         .overlay {
             if let vm { DesignReferenceToastLayer(vm: vm, designID: screen.designID) }
         }
+        .overlay { DesignJumpBackLayer(screen: screen) }
         .background {
             if referencing {
                 DesignCanvasKeys(active: screen.isActive && screen.presented == nil,
@@ -78,7 +79,8 @@ struct DesignCanvasPane: View {
                                      return vm.threadStores.existing(for: agent)?.hasDraft == true
                                  },
                                  implement: { screen.implementSelection(designName: designName) },
-                                 copy: { screen.copySelectionReference(designName: designName) })
+                                 copy: { screen.copySelectionReference(designName: designName) },
+                                 back: screen.jumpBack == nil ? nil : { screen.goBackFromJump() })
             }
         }
         .overlay {
