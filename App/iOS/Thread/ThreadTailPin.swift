@@ -38,11 +38,16 @@ final class ThreadTailPin {
     private var scrolling = false
     /// A reading since the last turn changed the viewport, so the landing it asks for is a resize's.
     private var resized = false
+    /// When the last reading or quiet try came: a stalled tail is left alone for `quietWait` from then.
+    private var lastSeen = ContinuousClock.now
 
     /// A scroll-geometry reading, and the follower's answer to it. A resize takes a turn even when
-    /// no landing is wanted, so its flag does not carry into a later landing's count.
+    /// no landing is wanted, so its flag does not carry into a later landing's count. A stalled
+    /// tail takes no turn for a reading that only moved it: output, an ask and the quiet watch have
+    /// their own.
     func reading(distance: Double, wants: Bool, resized: Bool, land: @escaping Land) {
         self.land = land
+        lastSeen = ContinuousClock.now
         self.resized = self.resized || resized
         repin.reading(distance: distance, wants: wants, resized: resized)
         if !scrolling, repin.takeInPass() {
@@ -51,7 +56,7 @@ final class ThreadTailPin {
             SHRenderProbe.tick("thread.tailLandingInPass")
             land(resizing)
         }
-        if !scrolling, repin.pending || self.resized { schedule() }
+        if !scrolling, (repin.pending && !repin.stalled) || self.resized { schedule() }
         watch()
     }
 
@@ -121,18 +126,28 @@ final class ThreadTailPin {
         watch()
     }
 
-    /// While stalled and left alone, one try after `quietWait`, then again a little later.
+    /// While stalled, one task waits out the quiet: it sleeps until `quietWait` has passed since the
+    /// last reading, wakes to find a later one moved the time, and sleeps again, so a thread that
+    /// keeps scrolling costs no task per frame. Then the tail gets one try, and the wait doubles.
     private func watch() {
-        quiet?.cancel()
-        quiet = nil
-        guard repin.stalled, repin.quietTries < NativeTailRepin.maxQuietTries else { return }
-        let wait = repin.quietWait
+        guard repin.stalled, repin.quietTries < NativeTailRepin.maxQuietTries else {
+            quiet?.cancel()
+            quiet = nil
+            return
+        }
+        guard quiet == nil else { return }
         quiet = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: wait)
+            while let due = self?.quietDue, due > ContinuousClock.now {
+                try? await Task.sleep(until: due, clock: .continuous)
+                if Task.isCancelled { return }
+            }
             guard !Task.isCancelled, let self else { return }
             quiet = nil
+            lastSeen = ContinuousClock.now
             repin.quietPassed()
             schedule()
         }
     }
+
+    private var quietDue: ContinuousClock.Instant { lastSeen.advanced(by: repin.quietWait) }
 }
