@@ -60,6 +60,20 @@ public struct NativeProse: Equatable, Sendable {
         return count
     }
 
+    /// What the views of every chunk hold (`NativeMountedCost`).
+    public var cost: Int { chunks.reduce(0) { $0 + $1.cost } }
+
+    /// What the views of a reply hold once built: the chunks a view lays out for real (`eagerTail`), all of them
+    /// for a reply that is not giant.
+    public var eagerCost: Int { chunks.suffix(eagerTail).reduce(0) { $0 + $1.cost } }
+
+    /// The chunk just before the eager tail, which a lazy stack builds first when the reader scrolls up from the
+    /// end. Nothing for a reply that is not giant.
+    public var lazyEdgeCost: Int {
+        let index = chunks.count - eagerTail - 1
+        return chunks.indices.contains(index) ? chunks[index].cost : 0
+    }
+
     /// The blocks as parsed: parts in order, the stretches of one list rejoined into it.
     public var blocks: [NativeMarkdownBlock] {
         var blocks: [NativeMarkdownBlock] = []
@@ -175,11 +189,14 @@ public struct NativeProseChunk: Equatable, Identifiable, Sendable {
         let parts: [NativeProsePart]
         let blocks: [NativeMarkdownBlock]
         let weight: Int
+        /// What the views of its blocks hold (`NativeMountedCost`), worked out once, in the parse.
+        let cost: Int
 
         init(parts: [NativeProsePart], weight: Int) {
             self.parts = parts
             self.blocks = parts.map(\.block)
             self.weight = weight
+            self.cost = self.blocks.reduce(0) { $0 + NativeMountedCost.block($1) }
         }
     }
 
@@ -195,6 +212,8 @@ public struct NativeProseChunk: Equatable, Identifiable, Sendable {
     public var parts: [NativeProsePart] { storage.parts }
     public var blocks: [NativeMarkdownBlock] { storage.blocks }
     public var weight: Int { storage.weight }
+    /// What the views of its blocks hold (`NativeMountedCost`).
+    public var cost: Int { storage.cost }
     /// The first part carries on a list the chunk before it ended in.
     public var continuesList: Bool { storage.parts.first?.continuation ?? false }
 
