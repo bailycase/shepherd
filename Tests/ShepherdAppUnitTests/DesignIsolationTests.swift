@@ -65,7 +65,7 @@ struct DesignIsolationTests {
         var (state, thread, drawer) = workspace()
         let coordinator = Agent(name: "Private coordinator", spaceID: thread.spaceID, tabID: TabID(), coordinatorFor: ProjectID())
         state.agents.append(coordinator)
-        let infos = ShepherdViewModel.peerInfos(in: state, sender: thread.id)
+        let infos = SessionServer.peerInfos(in: state, sender: thread.id)
         #expect(infos.map(\.id) == [thread.id])
         #expect(infos.first?.isSelf == true)
         #expect(!infos.contains { $0.id == drawer.id })

@@ -826,8 +826,9 @@ public final class SessionServer: @unchecked Sendable {
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
     /// Each RPC session's start (`PiStartRecord`), from its spawn until it exits.
     private var startRecords: [SessionID: PiStartRecord] = [:]
-    /// RPC sessions whose exit kept their agent, until another
-    /// session is bound to their pane: their thread answers with why, instead of pi.
+    /// RPC sessions whose exit kept their agent (any exit of an agent's pi while the agent
+    /// exists), until another session is bound to their pane: their thread answers with why,
+    /// instead of pi.
     private var keptStarts: [SessionID: KeptStart] = [:]
     private struct KeptStart {
         /// nil for a stop Shepherd asked for.
@@ -1902,14 +1903,14 @@ public final class SessionServer: @unchecked Sendable {
             unavailable("The agent has no thread.")
             return
         }
-        // A pi that stopped before it served: its agent waits, and says why (or that Retry is
-        // starting it again).
+        // A pi that stopped, before it served or on its own after: its agent waits, and says why (or
+        // that Retry is starting it again).
         if let sessionID = leaf.sessionID, let kept = keptStarts[sessionID], sessions[sessionID]?.isAlive != true {
             if !kept.retrying, let problem = kept.problem {
                 if case .snapshot = request {
                     completion(.result(.snapshot(value: Self.startProblemSnapshot(problem, piSessionID: agent.effectivePiSessionID))))
                 } else {
-                    unavailable("pi stopped before it started.")
+                    unavailable(problem.kind == .stopped ? "The agent stopped. Retry to start it again." : "pi stopped before it started.")
                 }
             } else {
                 completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
@@ -4458,6 +4459,11 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .setAgentStatus(let agentID, let status):
+            // A report read from a pi that has since stopped must not put its kept agent back to work.
+            if status != .idle, agentWaitsForRetry(agentID) {
+                ShepherdLog.info("dropped a late \(status) status for agent \(agentID): its pi stopped")
+                break
+            }
             applyAgentStatus(agentID: agentID, status: status)
         case .nativeQueueBoundary(let id, let agentID, let piSessionID, let expiresAt):
             let now = Date().timeIntervalSince1970 * 1000
@@ -4553,24 +4559,9 @@ public final class SessionServer: @unchecked Sendable {
             routeProjectRequest(.refresh, agentID: agentID, requestID: id, client: client)
         case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
             routeProjectRequest(.child(parentPath: parentPath, path: path, name: name, create: create), agentID: agentID, requestID: id, client: client)
-        case .prepareProjectConfiguration(let id, _, let cwd):
-            guard cwd.hasPrefix("/"), cwd.utf8.count <= 4096, !cwd.contains("\0") else {
-                reply(.error(id: id, code: "invalid", message: "An absolute project directory is required."), to: client)
-                return
-            }
-            Task { [weak self, weak client, projects] in
-                let result: ExtensionReply
-                do {
-                    try await projects.prepareProjectConfiguration(for: cwd)
-                    result = .ok(id: id)
-                } catch {
-                    result = .error(id: id, code: "config_migration", message: "Project configuration migration failed. The original .pi configuration is unchanged. Check the project's files and retry.")
-                }
-                self?.queue.async { [weak self, weak client] in
-                    guard let self, let client, self.clients[client.fd] === client else { return }
-                    self.reply(result, to: client)
-                }
-            }
+        case .prepareProjectConfiguration(let id, _, _):
+            // Spaces need no approval any more; agents started by an older build still ask first.
+            reply(.ok(id: id), to: client)
         case .listAgents(let id, let agentID):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -6024,7 +6015,7 @@ public final class SessionServer: @unchecked Sendable {
         let oldProjects = ProjectSettingsStore.directories(in: before)
         let newProjects = ProjectSettingsStore.directories(in: state)
         if before.spaces != state.spaces || !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
-            projects.remember(before, approve: false)
+            projects.remember(before)
             projects.remember(state)
         }
         runLog.record(from: before, to: state)
@@ -6185,7 +6176,7 @@ public final class SessionServer: @unchecked Sendable {
             state.tabs[index].layout = state.tabs[index].layout.updatingLeaf(paneID) { $0.sessionID = sessionID }
         }, didCommit: { before in
             let previous = before.tabs.first(where: { $0.id == tabID })?.layout.leaf(withID: paneID)?.sessionID
-            // A pi started again in place of one that stopped before it served takes over the
+            // A pi started again in place of one that stopped takes over the
             // opening prompt that one never read.
             if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous),
                let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
@@ -6694,8 +6685,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Each automation's run whose agent still exists, from any thread without waiting for the
-    /// server queue: a state broadcast or awaited mutation is always reflected in it. The local
+    /// Each automation's latest run while it is open, or ended unsettled with its agent kept (its
+    /// pi stopped on its own, its thread stays), from any thread without waiting for the server
+    /// queue: a state broadcast or awaited mutation is always reflected in it. The local
     /// GUI reads whether a run is live (`AutomationRun.isLive`) from it.
     public var openAutomationRuns: [AutomationID: AutomationRun] {
         runLog.openRuns
@@ -7892,20 +7884,14 @@ public final class SessionServer: @unchecked Sendable {
     /// warning that it found no such session, and will start a new one under its id, then stops it
     /// before it writes anything, and its agent waits (`NativeStartProblem.Kind.resumedAsNew`).
     public func createSession(params: CreateSessionParams, resuming: String? = nil) async throws -> SessionInfo {
-        if params.runtime == .rpc {
-            try await projects.prepareProjectConfiguration(for: params.cwd)
-            if let owner = params.env?["SHEPHERD_RESOURCE_OWNING_SPACE"] {
-                try await projects.prepareProjectConfiguration(for: owner)
-            }
-        }
         return try await enqueue {
             try self.makeSessionOnQueue(params: params, resuming: resuming)
         }
     }
 
-    /// Starting an agent's pi again after it stopped before it served (Retry): its thread says it
-    /// is starting until the new pi is bound to the pane (`updatePaneSession`), which takes the
-    /// opening prompt the stopped pi never read.
+    /// Starting an agent's pi again after it stopped, before it served or on its own after
+    /// (Retry): its thread says it is starting until the new pi is bound to the pane
+    /// (`updatePaneSession`), which takes the opening prompt the stopped pi never read.
     public func retryStart(sessionID: SessionID) async {
         await enqueueValue { self.keptStarts[sessionID]?.retrying = true }
     }
@@ -8512,8 +8498,14 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.pty?.killForegroundCommand() ?? false }
     }
 
+    /// Kills a session's process. A kill of an agent's own pi is Shepherd's stop (its agent stays,
+    /// with no problem to show), like `stopKeepingAgent`; the deletion paths retire the agent
+    /// first and call `killSessionOnQueue`, so they are unaffected.
     public func killSession(_ sessionID: SessionID) {
-        queue.async { self.killSessionOnQueue(sessionID) }
+        queue.async {
+            if self.agentID(forSession: sessionID) != nil { self.startRecords[sessionID]?.requestStop() }
+            self.killSessionOnQueue(sessionID)
+        }
     }
 
     private func killSessionOnQueue(_ sessionID: SessionID) {
@@ -8655,7 +8647,8 @@ public final class SessionServer: @unchecked Sendable {
             diagnosticDuration("agent.stop", since: started)
         }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
-        if let agent = agentID(forSession: sessionID) {
+        let agent = agentID(forSession: sessionID)
+        if let agent {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false
                 sendPush(agentID: agent, kind: .error,
@@ -8666,11 +8659,24 @@ public final class SessionServer: @unchecked Sendable {
             designMergeAgentExited(agentID: agent)
         }
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
-        if let record = startRecords.removeValue(forKey: sessionID), record.keepsAgent {
-            let problem = record.problem(exitCode: code)
-            keptStarts[sessionID] = KeptStart(problem: problem, openingPrompt: sessions[sessionID]?.thread?.unreadOpeningPrompt)
-            ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
-            if let problem, let agent = agentID(forSession: sessionID) { recordAgentFailure(agentID: agent, problem.title) }
+        // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
+        // removes it from state before its pi is killed, so a deletion still retires. A pi no
+        // pane is bound to keeps its agent only for the exits `keepsUnboundAgent` names.
+        if let record = startRecords.removeValue(forKey: sessionID), agent != nil || record.keepsUnboundAgent {
+            let thread = sessions[sessionID]?.thread
+            let problem = record.problem(exitCode: code, signal: thread?.session.exitSignal)
+            keptStarts[sessionID] = KeptStart(problem: problem, openingPrompt: thread?.unreadOpeningPrompt)
+            if let problem, problem.kind == .stopped, let agent {
+                ShepherdLog.warning("rpc session \(sessionID) stopped on its own after it served (\(problem.signal.map { "signal \($0)" } ?? "code \(code.map(String.init) ?? "-")")); its agent stays: \(problem.lines.last ?? "")")
+                // The queue and the turn wait for Retry: nothing continues on its own, now or at a launch.
+                if let thread { checkpointAgentRecovery(sessionID: sessionID, thread: thread, holding: true) }
+                settleAgentAfterExit(agent, problem: problem)
+            } else {
+                ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
+            }
+            if let problem, let agent { recordAgentFailure(agentID: agent, problem.title) }
+            // A thread on screen pulls the problem now, not at its next poll.
+            threadRevised(sessionID: sessionID)
             notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code, keepsAgent: true, startProblem: problem))
             return
         }
@@ -8689,6 +8695,35 @@ public final class SessionServer: @unchecked Sendable {
         }
         output.exitPending = true
         output.exitCode = code
+    }
+
+    /// Server queue: an agent whose pi stopped on its own is idle, asks nothing, and its open
+    /// automation run is over (failed, with why). Written as `applyAgentStatus` writes a status, but
+    /// past its held done (the dead thread still reads running) and its goal rule (idle becomes
+    /// working for an active goal).
+    private func settleAgentAfterExit(_ agentID: AgentID, problem: NativeStartProblem) {
+        applyAgentQuestion(agentID: agentID, question: nil)
+        var changed = false
+        if let index = store.state.agents.firstIndex(where: { $0.id == agentID }), store.state.agents[index].status != .idle {
+            let before = store.state
+            let moved = AgentStatus.movesRecents(from: before.agents[index].status, to: .idle)
+            let now = Self.nowMilliseconds()
+            store.updateLive {
+                $0.agents[index].status = .idle
+                if moved { $0.agents[index].lastActiveAt = now }
+            }
+            runLog.record(from: before, to: store.state)
+            changed = true
+        }
+        // A Project task's run follows the task, not the worker's pi.
+        if !store.state.isProjectWorker(agentID), runLog.agentStopped(agentID, failure: problem.title) { changed = true }
+        guard changed else { return }
+        let committedState = store.state
+        broadcastRemoteState(committedState)
+        hopToMain { [weak self] in
+            self?.onAgentStatus?(agentID, .idle, nil)
+            self?.onStateChanged?(committedState)
+        }
     }
 
     /// Keep the exit callback behind all output that was read before the
@@ -8780,6 +8815,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: the agent whose own pane runs this session. Streaming asks on every
     /// revision, so the lookup is rebuilt once per committed state rather than scanned.
+    /// Server queue: the agent's bound pi stopped and its thread waits for Retry (not yet starting again).
+    private func agentWaitsForRetry(_ agentID: AgentID) -> Bool {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+              let sessionID = store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: paneID)?.sessionID,
+              let kept = keptStarts[sessionID], !kept.retrying else { return false }
+        return sessions[sessionID]?.isAlive != true
+    }
+
     private func agentID(forSession sessionID: SessionID) -> AgentID? {
         if sessionAgents?.version != store.version {
             let tabs = Dictionary(store.state.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -8849,6 +8892,8 @@ public final class SessionServer: @unchecked Sendable {
     /// Routine checkpoints never encode image queues on the server queue. A changing producer
     /// retries at most eight times; a disk failure waits for a future explicit change, not a loop.
     private func checkpointAgentRecoveryAsync(sessionID: SessionID, thread: RPCThreadState) -> Bool {
+        // A held checkpoint is final: it waits for Retry and nothing replaces it.
+        guard !thread.recoveryHeld else { return true }
         // Explicit cancellation is a write-ahead fence, not a replaceable presentation update.
         if thread.stopRequested || (thread.restoringRecovery && thread.unreadOpeningPrompt != nil) {
             return checkpointAgentRecovery(sessionID: sessionID, thread: thread)
@@ -8884,6 +8929,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Admission callbacks run in the same queue turn as rename, before anything can supersede it.
     private func stageAgentRecovery(sessionID: SessionID, thread: RPCThreadState, candidate: AgentRecoveryStore.Checkpoint?,
                                     cancellation: Progress? = nil, authorized: @escaping () -> Bool, completion: @escaping (Bool) -> Void) {
+        guard !thread.recoveryHeld else { completion(false); return }
         guard let id = recoveryAgentID(sessionID: sessionID), allowsAgentRecovery(id, thread: thread) else { completion(authorized()); return }
         guard let index = recoveryAgentIndex(id), authorized(), isStarted else { completion(false); return }
         let baseline = thread.recoveryCheckpoint(sessionID: store.state.agents[index].effectivePiSessionID)
@@ -8918,7 +8964,7 @@ public final class SessionServer: @unchecked Sendable {
                     defer { _ = unlink(staged.url.path) }
                     guard self.isStarted, self.logicalProjectEpoch == lifecycle,
                           self.sessions[sessionID]?.thread === thread, self.recoveryAgentID(sessionID: sessionID) == id,
-                          self.allowsAgentRecovery(id, thread: thread), thread.generation == generation,
+                          self.allowsAgentRecovery(id, thread: thread), !thread.recoveryHeld, thread.generation == generation,
                           thread.recoveryEpoch == epoch, authorized(),
                           thread.recoveryCheckpoint(sessionID: baseline?.sessionID ?? candidate.sessionID) == baseline else {
                         completion(false); return
@@ -8940,28 +8986,44 @@ public final class SessionServer: @unchecked Sendable {
         } catch { completion(false) }
     }
 
+    /// `holding`: pi stopped on its own. The checkpoint this writes is the one a Stop would, but
+    /// the queue and pending sends stay and the turn is not continued: inactive, paused, without
+    /// an operation, and `heldAfterExit`. The thread then writes nothing more (`recoveryHeld`),
+    /// so a request that failed with the exit, or a staged write that lands late, can't put the
+    /// live (still active) checkpoint back. Retry restores it paused. A held save that fails leaves
+    /// the previous file, as a failed Stop's does: a later launch may then continue the turn.
     @discardableResult
-    func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState, force: Bool = false) -> Bool {
-        guard let id = recoveryAgentID(sessionID: sessionID) else { return true }
+    func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState, force: Bool = false, holding: Bool = false) -> Bool {
+        defer { if holding { thread.recoveryHeld = true } }
+        guard !thread.recoveryHeld, let id = recoveryAgentID(sessionID: sessionID) else { return true }
         do {
             // Bootstrap must not overwrite saved work with initial idle state. Stop is an
             // explicit cancellation even when the old history has not become readable yet.
             if thread.restoringRecovery, thread.unreadOpeningPrompt == nil {
-                guard thread.stopRequested, var deferred = thread.recoveryAtLaunch else { return true }
+                guard thread.stopRequested || holding, var deferred = thread.recoveryAtLaunch else { return true }
                 deferred.active = false
                 deferred.paused = true
-                deferred.pending = []
+                if !holding { deferred.pending = [] }
                 deferred.operationID = nil
                 deferred.token = nil
                 deferred.fence = nil
+                if holding { deferred.heldAfterExit = true }
                 try agentRecovery.save(deferred, for: id, force: force)
                 thread.recoveryAtLaunch = deferred
                 return true
             }
             let index = recoveryAgentIndex(id)
             let currentSession = index.map { store.state.agents[$0].effectivePiSessionID }
-            let checkpoint = allowsAgentRecovery(id, thread: thread)
+            var checkpoint = allowsAgentRecovery(id, thread: thread)
                 ? thread.recoveryCheckpoint(sessionID: currentSession ?? id.rawValue) : nil
+            if holding, checkpoint != nil {
+                checkpoint?.active = false
+                checkpoint?.paused = true
+                checkpoint?.operationID = nil
+                checkpoint?.token = nil
+                checkpoint?.fence = nil
+                checkpoint?.heldAfterExit = true
+            }
             if let checkpoint, thread.piSessionID != nil, currentSession != checkpoint.sessionID {
                 // Recovery cannot publish before state.json accepts the session identity.
                 // Ordinary extension reports stage; this admission gate remains synchronous.
@@ -8982,7 +9044,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func restoreAgentRecovery(sessionID: SessionID) {
-        guard let thread = sessions[sessionID]?.thread, thread.restoringRecovery,
+        guard let thread = sessions[sessionID]?.thread, !thread.recoveryHeld, thread.restoringRecovery,
               thread.isServable, !thread.historyUnread else { return }
         var restored = false
         defer {

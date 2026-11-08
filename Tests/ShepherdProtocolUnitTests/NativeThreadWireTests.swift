@@ -415,11 +415,15 @@ struct NativeThreadWireTests {
 
     // MARK: Start problems
 
-    /// Every cause, with and without an exit code, as a host answers an agent whose pi stopped
-    /// before it served.
+    /// Every cause, with an exit code, a signal and neither, as a host answers an agent whose pi
+    /// stopped before it served or on its own after.
     static let startProblems: [NativeStartProblem] = NativeStartProblem.Kind.allCases.map {
         NativeStartProblem(kind: $0, exitCode: 1, lines: ["No models available."])
-    } + [NativeStartProblem(kind: .resumedAsNew), NativeStartProblem(kind: .exited, exitCode: 127, lines: [])]
+    } + [
+        NativeStartProblem(kind: .resumedAsNew), NativeStartProblem(kind: .exited, exitCode: 127, lines: []),
+        NativeStartProblem(kind: .stopped, signal: 9, lines: ["FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory"]),
+        NativeStartProblem(kind: .exited, signal: 15),
+    ]
 
     @Test(arguments: startProblems)
     func aStartProblemRoundTripsOnItsSnapshot(_ problem: NativeStartProblem) throws {
@@ -439,8 +443,22 @@ struct NativeThreadWireTests {
         #expect(try Self.snapshot(adding: ["startProblem": [String: Any]()]).startProblem == NativeStartProblem(kind: .exited))
     }
 
+    /// A signal from a newer host that an older reader can't use decodes to nothing, not an error;
+    /// a host that names none sends no key.
+    @Test func aStoppedProblemsSignalDecodesLeniently() throws {
+        let stopped = try Self.snapshot(adding: ["startProblem": ["kind": "stopped", "signal": 9, "lines": ["boom"]]])
+        #expect(stopped.startProblem == NativeStartProblem(kind: .stopped, signal: 9, lines: ["boom"]))
+        for bad: Any in ["nine", [9], 2.5, NSNull()] {
+            let problem = try Self.snapshot(adding: ["startProblem": ["kind": "stopped", "signal": bad]]).startProblem
+            #expect(problem == NativeStartProblem(kind: .stopped), "signal \(bad)")
+        }
+        let encoded = try Wire.object(NativeStartProblem(kind: .stopped, exitCode: 3))
+        #expect(encoded["signal"] == nil && encoded["exitCode"] as? Int == 3)
+        #expect(try Wire.object(NativeStartProblem(kind: .stopped, signal: 6))["signal"] as? Int == 6)
+    }
+
     @Test func startProblemSpellingsAreStable() {
-        #expect(NativeStartProblem.Kind.allCases.map(\.rawValue) == ["notSignedIn", "extensionFailed", "engineMissing", "homeUnsafe", "resumedAsNew", "folderMissing", "exited"])
+        #expect(NativeStartProblem.Kind.allCases.map(\.rawValue) == ["notSignedIn", "extensionFailed", "engineMissing", "homeUnsafe", "resumedAsNew", "folderMissing", "exited", "stopped"])
     }
 
     /// Hosts and clients of different versions compare these; they must never be renamed.

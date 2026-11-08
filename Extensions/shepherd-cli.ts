@@ -40,7 +40,6 @@ export function cliRelayAllowed(name) {
 }
 
 export async function expandCliPrompt(text, ctx) {
-  if (!ctx.isProjectTrusted()) throw Error("Approve the project before dispatching Pi subprocesses");
   if (!text.startsWith("/")) return text;
   const agentDir = getAgentDir();
   const settings = SettingsManager.create(ctx.cwd, agentDir, { projectTrusted: true });
@@ -83,7 +82,6 @@ export function registerCliBash(pi, { bridge, dispatch, bashOperations }) {
           admitted = true;
           const work = (async () => {
             try {
-              if (!ctx.isProjectTrusted()) throw Error("Approve this project before running Pi subprocesses");
               const request = JSON.parse(line);
               if (fs.realpathSync(request.cwd) !== fs.realpathSync(ctx.cwd)) throw Error("Pi subprocesses must run in the calling project directory");
               if (typeof request.prompt !== "string" || !request.prompt.trim() || request.prompt.length > 16384) throw Error("Invalid Pi subprocess prompt");

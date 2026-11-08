@@ -63,16 +63,13 @@ struct YourPiImportTests {
         // auth.json is private, in a private folder.
         #expect(try Self.mode(setup.home.directory.appendingPathComponent("auth.json")) == 0o600)
         #expect(try Self.mode(setup.home.directory) == 0o700)
-        // Custom providers as bytes, the default model, trust without the home folder.
+        // Custom providers as bytes and the default model; their trust decisions stay theirs.
         #expect(try Data(contentsOf: setup.home.directory.appendingPathComponent("models.json")) == Data(YourPiFixture.models.utf8))
         #expect(report.customProviders == ["local-llm"])
         let settings = try setup.json("settings.json")
         #expect(settings["defaultProvider"] as? String == "anthropic" && settings["defaultModel"] as? String == "claude-fixture-4")
         #expect(report.defaultModel == "anthropic/claude-fixture-4")
-        let trust = try setup.json("trust.json")
-        #expect(trust[setup.userHome] == nil, "the home folder is never trusted as a project")
-        #expect(trust[setup.dir.appendingPathComponent("work").path] as? Bool == true && trust["/fixture/untrusted"] as? Bool == false)
-        #expect(report.trustedFolders == 2 && report.droppedTrust == [setup.userHome])
+        #expect(!FileManager.default.fileExists(atPath: setup.home.directory.appendingPathComponent("trust.json").path), "Spaces need no approval, so trust.json isn't copied")
         // Instructions, skills, prompts and extensions are copied into the home as files, and
         // Shepherd's settings name none of theirs.
         #expect(report.copied(.instructions).map(\.name) == ["AGENTS.md"])
@@ -176,8 +173,6 @@ struct YourPiImportTests {
         }
         try setup.importer().reimport(.defaultModel)
         #expect(try setup.json("settings.json")["defaultModel"] as? String == "claude-fixture-4")
-        try setup.importer().reimport(.trust)
-        #expect(try setup.json("trust.json")[setup.userHome] == nil)
         #expect(try YourPiFixture.tree(setup.yours) == before)
 
         let copied = try Data(contentsOf: setup.home.directory.appendingPathComponent("models.json"))
@@ -388,7 +383,6 @@ struct YourPiImportTests {
         #expect(report.first && report.from == nil && !report.broughtOver)
         #expect(try FileManager.default.contentsOfDirectory(atPath: setup.home.directory.path) == [YourPiImport.stateName])
         #expect(setup.importer(yourPi: false).state()?.from == nil)
-        #expect(throws: YourPiFileError.self) { try setup.importer(yourPi: false).reimport(.trust) }
     }
 
     /// Settings ▸ Pi's view of both sides: each provider's login in Shepherd's pi and theirs, and
@@ -401,7 +395,7 @@ struct YourPiImportTests {
         #expect(!setup.importer().survey().canStartAgents, "nothing in Shepherd's pi and no key in the environment")
         #expect(fresh.logins.first { $0.provider == "anthropic" } == .init(provider: "anthropic", yours: .subscription))
         #expect(fresh.logins.first { $0.provider == "xai" } == .init(provider: "xai", environment: ["XAI_API_KEY"]))
-        #expect(fresh.customProviders == ["local-llm"] && fresh.defaultModel == "anthropic/claude-fixture-4" && fresh.trustedFolders == 2)
+        #expect(fresh.customProviders == ["local-llm"] && fresh.defaultModel == "anthropic/claude-fixture-4")
         #expect(fresh.copies.isEmpty && fresh.extensions.isEmpty, "nothing copied yet")
 
         _ = setup.importer().copyOnce()
@@ -409,7 +403,6 @@ struct YourPiImportTests {
         #expect(copied.copied && copied.canStartAgents)
         #expect(copied.logins.first { $0.provider == "groq" } == .init(provider: "groq", shepherd: .apiKey(.command), yours: .apiKey(.command)))
         #expect(copied.shepherdCustomProviders == ["local-llm"] && copied.shepherdDefaultModel == "anthropic/claude-fixture-4")
-        #expect(copied.shepherdTrustedFolders == 1)
         #expect(copied.extensions.map(\.copy.name) == ["yours"] && copied.extensions.allSatisfy { !$0.on })
         #expect(copied.instructionLines == 3)
         Self.expectNoSecret(in: [String(describing: fresh), String(describing: copied)])
@@ -444,7 +437,7 @@ struct YourPiImportTests {
         var survey = importer.survey()
         #expect(survey.freshness["login:anthropic"] == .sameAsYourPi && survey.freshness["login:openai"] == .sameAsYourPi)
         #expect(survey.freshness["customProviders"] == .sameAsYourPi)
-        #expect(survey.freshness["defaultModel"] == .sameAsYourPi && survey.freshness["trust"] == .sameAsYourPi)
+        #expect(survey.freshness["defaultModel"] == .sameAsYourPi)
         #expect(survey.copiedLogins.isSuperset(of: ["anthropic", "openai", "groq"]))
         #expect(survey.keys["openai"] == PiKeyDisplay(masked: "sk-FAKE-••••0001"))
         #expect(survey.keys["google"] == PiKeyDisplay(variables: ["GEMINI_API_KEY"]))

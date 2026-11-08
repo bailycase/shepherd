@@ -54,12 +54,11 @@ private let rowStates: [(String, String, SHProviderStatus, Bool, String)] = [
             SHSheetCard {
                 SHImportStepRow("Logins", detail: "Anthropic, OpenAI Codex, Kimi", count: "3 subscriptions", state: .done)
                 SHImportStepRow("Default model", count: "claude-opus", state: .now)
-                SHImportStepRow("Trusted folders", state: .pending)
                 SHImportStepRow("Extensions", detail: "Listed, switched off", count: "3 found", state: .done)
                 SHImportStepRow("Logins and API keys", detail: "auth.json isn’t valid JSON", state: .failed)
             }
             SHImportSummary([.init("logins", count: 3), .init("API keys", count: 2), .init("custom providers"),
-                             .init("default model", value: "claude-opus"), .init("trusted folders", count: 4)])
+                             .init("default model", value: "claude-opus")])
             SHSheetCard {
                 SHImportSignInRow("OpenAI Codex", badge: "Cx", detail: "Your pi isn’t signed in to it") {}
                 SHImportSignInRow("Kimi", badge: "Ki", detail: "Your pi’s sign-in couldn’t be copied", signedIn: true) {}

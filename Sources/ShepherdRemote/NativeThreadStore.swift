@@ -159,7 +159,7 @@ public final class NativeThreadStore {
     /// not a snapshot pi served: nothing can be done with it yet, and pi's first snapshot
     /// replaces it in place (its entries carry the ids pi's will).
     public private(set) var previewing = false { didSet { bothVersions() } }
-    /// The agent's pi stopped before it served (`NativeThreadSnapshot.startProblem`), and why: the
+    /// The agent's pi stopped, before it served or on its own after (`NativeThreadSnapshot.startProblem`), and why: the
     /// host keeps the agent, and the composer says so with Retry. Not ready, not starting, and not an error; the thread keeps what it drew.
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
@@ -1644,13 +1644,23 @@ public final class NativeThreadStore {
         }
     }
 
-    /// The host says the agent's pi stopped before it served: nothing waits for it, and the thread
+    /// The host says the agent's pi stopped, before it served or on its own after: nothing waits for it, and the thread
     /// keeps what it drew (a preview from disk, or what it last showed).
     private func noteStartProblem(_ problem: NativeStartProblem) {
         if ready { ready = false }
         endStarting()
         if loadError != nil {
             loadError = nil
+            derive()
+        }
+        // A pi that stopped mid-turn left the last live snapshot: its running call and half-written
+        // reply ended with it, so they read stopped, not running.
+        if var last = snapshot, last.running || last.provisional.contains(where: { Self.isLiveStatus($0.status) }) {
+            for index in last.provisional.indices where Self.isLiveStatus(last.provisional[index].status) {
+                last.provisional[index].status = "aborted"
+            }
+            last.running = false
+            snapshot = last
             derive()
         }
         if settledRunning {
@@ -1663,6 +1673,8 @@ public final class NativeThreadStore {
         if startProblem != problem { startProblem = problem }
         caughtUp()
     }
+
+    private static func isLiveStatus(_ status: String?) -> Bool { status == "running" || status == "streaming" }
 
     private func clearStartProblem() {
         if startProblem != nil { startProblem = nil }

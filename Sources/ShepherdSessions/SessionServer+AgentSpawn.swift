@@ -114,7 +114,6 @@ extension SessionServer {
         let agent = spawn.agent, cwd = spawn.cwd
         spawningAgents += 1
         defer { spawningAgents -= 1 }
-        try await projects.prepareProjectConfiguration(for: cwd)
         var (fresh, problem) = (false, spawn.problem)
         if problem == nil {
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.

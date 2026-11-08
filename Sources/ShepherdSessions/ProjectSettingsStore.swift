@@ -15,7 +15,6 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let historyURL: URL
     private let mcp: ProjectMCPService?
     private let pi: PiSetup?
-    private var registeredDirectories: Set<String> = []
     private let home: URL
     private let sessions: URL
     private let systems: URL?
@@ -32,37 +31,6 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     public func migrateExistingProjectConfiguration(in state: ShepherdState) { remember(state) }
 
     /// Drain registration approvals before Pi loads resources. Never approve an arbitrary cwd.
-    public func prepareProjectConfiguration(for cwd: String) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                continuation.resume(with: Result { try approveRegisteredDirectories(for: cwd) })
-            }
-        }
-    }
-
-    private func approveRegisteredDirectories(for cwd: String? = nil) throws {
-        guard let pi else { return }
-        let canonicalCwd = cwd.map(PiHome.canonical)
-        let pending = registeredDirectories.filter { path in
-            var directory: ObjCBool = false
-            return !PiHome.isInside(PiHome.canonical(pi.userHome), path)
-                && (canonicalCwd.map { PiHome.isInside($0, path) } ?? true)
-                && FileManager.default.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue
-        }
-        guard !pending.isEmpty else { return }
-        if let problem = pi.prepare() { throw ProjectFileError("pi", problem.message) }
-        let notes = try PiSettingsFile(url: pi.home.appendingPathComponent("trust.json")).update { decisions in
-            for path in pending {
-                guard PiHome.canonical(path) == path else {
-                    throw ProjectFileError("trust", "A space folder changed while saving approval. Reload the space and try again.")
-                }
-                decisions[path] = true
-            }
-            return []
-        }
-        guard notes.isEmpty else { throw ProjectFileError("trust", notes.joined(separator: "\n")) }
-    }
-
     /// `excluded`: what a child space turns off of its parent's MCP servers and skills; absent in
     /// older files and for a space that turns nothing off.
     private struct Entry: Codable { var directory: String; var name: String; var excluded: SpaceInheritanceExclusions? = nil }
@@ -78,13 +46,8 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     /// Called before and after workspace mutations so deletion cannot erase a directory.
-    public func remember(_ state: ShepherdState, approve: Bool = true) {
+    public func remember(_ state: ShepherdState) {
         queue.async { [self] in
-            if approve {
-                registeredDirectories = Set(state.spaces.filter { !$0.hidden }.map { PiHome.canonical(absolute($0.path)) })
-                do { try approveRegisteredDirectories() }
-                catch { ShepherdLog.warning("Space approval could not be saved: \(error)") }
-            }
             do { try load(); try rememberEntries(Self.directories(in: state)) }
             catch { ShepherdLog.warning("Project history could not be saved: \(error)") }
         }
@@ -104,7 +67,6 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 return .mcp(try await mcp.request(directory: directory, file: file, text: "", action: action, owner: owner))
             default: break
             }
-            try await prepareProjectConfiguration(for: directory)
             let canonicalDirectory = PiHome.canonical(directory)
             let value = try await self.request(.read(directory: directory, file: file), state: state)
             guard case .text(let text) = value else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
@@ -179,7 +141,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                     case .delete(let directory, let file, let expected):
                         let root = try root(directory)
                         guard let kind = ProjectConfiguration.resourceKind(file) else {
-                            throw ProjectFileError("invalid_file", "Only a space's skills, prompt templates and extensions can be removed.")
+                            throw ProjectFileError("invalid_file", "Only a space's skills, prompt templates, subagents and extensions can be removed.")
                         }
                         try remove(root: root, file: file, expected: expected)
                         return .text(ProjectFileText(file: ProjectFile(path: file, category: kind == .extension ? .extensions : .skills, exists: false), text: nil))
@@ -633,7 +595,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
         if let kind = ProjectConfiguration.resourceKind(file) {
             var info = stat()
-            // Prompt templates live in the Resources tab beside skills.
+            // Prompt templates and subagents live in the Resources tab beside skills.
             return ProjectFile(path: file, category: kind == .extension ? .extensions : .skills,
                                exists: lstat(root.appendingPathComponent(file).path, &info) == 0)
         }

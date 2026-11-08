@@ -43,19 +43,16 @@ struct ProjectResourcesTests {
         #expect(explain.global && !explain.enabled, "the global settings' exclusion turns it off")
         #expect(list.contains { $0.global && $0.name == "useful-tests" && $0.enabled })
 
-        // A new prompt template passes the allowlist; a subagent profile (never loaded from a space) and
-        // anything outside the resource shapes don't.
+        // A new prompt template and subagent pass the allowlist; nothing outside the resource shapes does.
         _ = try await projects.request(.save(directory: directory, file: ".pi/prompts/review.md", text: "Review.\n", expected: nil), state: state)
-        await #expect(throws: ProjectFileError.self) {
-            _ = try await projects.request(.save(directory: directory, file: ".pi/agents/ledger-reviewer.md",
-                                                 text: "---\nname: ledger-reviewer\ndescription: Check.\n---\n\nCheck.\n", expected: nil), state: state)
-        }
+        _ = try await projects.request(.save(directory: directory, file: ".pi/agents/ledger-reviewer.md",
+                                             text: "---\nname: ledger-reviewer\ndescription: Check.\n---\n\nCheck.\n", expected: nil), state: state)
         await #expect(throws: ProjectFileError.self) {
             _ = try await projects.request(.save(directory: directory, file: ".pi/prompts/nested/x.md", text: "x", expected: nil), state: state)
         }
         list = try await resources()
         #expect(list.contains { $0.kind == .prompt && $0.name == "review" && !$0.global })
-        #expect(!list.contains { $0.kind == .agent && !$0.global })
+        #expect(list.contains { $0.kind == .agent && $0.name == "ledger-reviewer" && !$0.global })
 
         // Removal is fenced on the text the client read; a skill's emptied folder goes too.
         await #expect(throws: ProjectFileError.self) {

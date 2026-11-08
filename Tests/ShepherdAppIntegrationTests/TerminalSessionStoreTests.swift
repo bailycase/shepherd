@@ -169,8 +169,8 @@ struct TerminalSessionStoreTests {
     }
 
     /// An RPC agent's pane binds its pi without a Ghostty surface, grid wait, or attach; the
-    /// binding survives surface rebuilds and cold parking; pi exiting still closes the pane.
-    @Test func anRPCAgentPaneBindsWithoutASurfaceAndClosesWhenPiExits() async throws {
+    /// binding survives surface rebuilds and cold parking; pi exiting stops the pane and keeps its agent.
+    @Test func anRPCAgentPaneBindsWithoutASurfaceAndStopsWhenPiExits() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -178,7 +178,9 @@ struct TerminalSessionStoreTests {
         try await app.server.putState(Fixture.state(spaces: [space], agents: [agent]))
         let store = TerminalSessionStore(server: app.server)
         var exited: PaneID?
+        var stopped: [(AgentID, NativeStartProblem?, Bool)] = []
         store.onPaneSessionExited = { exited = $0 }
+        store.onAgentStopped = { stopped.append(($0, $1, $2)) }
 
         let session = store.session(for: agent.piPane, in: agent.tab)
 
@@ -197,8 +199,11 @@ struct TerminalSessionStoreTests {
         _ = try? await app.server.nativeThread(agentID: agent.agent.id, request: .send(
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: "die", delivery: .followUp))
 
-        try await eventuallyOnMain("pi's exit to close the pane") { exited == agent.piPane.id }
-        #expect(session.phase == .exited(3))
+        try await eventuallyOnMain("pi's exit to stop the pane") { session.phase == .stopped }
+        #expect(exited == nil, "an agent's pane never closes on its pi's exit")
+        #expect(stopped.count == 1 && stopped.first?.0 == agent.agent.id && stopped.first?.2 == true)
+        #expect(stopped.first?.1?.kind == .stopped && stopped.first?.1?.exitCode == 3)
+        #expect(store.session(for: agent.piPane, in: agent.tab) === session)
     }
 
     /// A watched agent's revisions reach the store's callback.

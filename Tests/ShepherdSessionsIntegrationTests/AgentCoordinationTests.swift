@@ -204,7 +204,7 @@ struct AgentCoordinationTests {
 
     // MARK: - Deletion
 
-    /// A headless server has nobody to ask, so nothing is deleted.
+    /// A server that serves no peers (`serveAgentPeers`) has nobody to ask, so nothing is deleted.
     @Test func aDeletionWithoutTheAppIsUnsupportedAndDeletesNothing() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

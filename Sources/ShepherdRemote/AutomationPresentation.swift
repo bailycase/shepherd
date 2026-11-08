@@ -256,6 +256,10 @@ public struct AutomationsModel: Equatable, Sendable {
             } else if live {
                 (status, tone) = ("Running", .running)
                 clock = current.map { .elapsed(since: Date(timeIntervalSince1970: $0.startedAt)) }
+            } else if let current, let ended = current.endedAt {
+                // Its pi stopped on its own: the run is over though its thread stays.
+                (status, tone) = (current.result == .failed ? "Failed" : Self.word(current.result).capitalizedFirst, Self.tone(current.result))
+                clock = .ago(Date(timeIntervalSince1970: ended))
             } else {
                 (status, tone) = ("Finished", .done)
                 clock = current.flatMap { $0.settledAt }.map { .ago(Date(timeIntervalSince1970: $0)) }

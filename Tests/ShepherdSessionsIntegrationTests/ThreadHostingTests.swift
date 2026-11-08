@@ -53,6 +53,42 @@ struct ThreadHostingTests {
         #expect(!h.server.state.agents.contains { $0.id == id })
     }
 
+    /// An agent's agent_* tools on the background host: list its peers, spawn one, delete one.
+    /// Before the host served peers they all answered `agent peers unavailable (unsupported)`.
+    @Test func anAgentListsSpawnsAndDeletesPeersOnTheHost() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        try await h.server.addSpace(space)
+        var agents: [Agent] = []
+        for name in ["lead", "worker"] {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: agents.count, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+            try await h.server.addAgent(agent, withTab: tab)
+            agents.append(agent)
+        }
+        let (lead, worker) = (agents[0], agents[1])
+        let caller = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+
+        try caller.send(.listAgents(id: 1, agentID: lead.id))
+        guard case .agents(1, let peers) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        #expect(Set(peers.map(\.id)) == [lead.id, worker.id] && peers.first { $0.isSelf }?.id == lead.id)
+
+        try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build"))
+        guard case .agents(2, let spawned) = try await caller.reply(), let id = spawned.first?.id else {
+            Issue.record("agent_spawn not served"); return
+        }
+        #expect(h.server.state.agents.first { $0.id == id }?.spaceID == space.id)
+        try await eventuallyOnMain("the spawned pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
+
+        try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
+        guard case .agentResult(3, let result) = try await caller.reply(), result.code == nil else { Issue.record("agent_delete not served"); return }
+        #expect(!h.server.state.agents.contains { $0.id == worker.id })
+    }
+
     @Test func theAppMovesADormantThreadToAnotherSpaceAndItStaysDormant() async throws {
         try StubPi.installAsEngine()
         let (h, path, token) = try host()
@@ -120,6 +156,54 @@ struct ThreadHostingTests {
         try await eventuallyOnMain("its pi to start and bind", timeout: .seconds(20)) {
             h.server.state.tabs.first?.layout.leaf(withID: threadPane.id)?.sessionID != nil
         }
+    }
+
+    /// A hosted thread (no app consumer: Shepherd Nightly's background host) whose pi is killed
+    /// from outside keeps its agent and says it stopped. It reads idle, so a draining host is not
+    /// held for it, and opening it again never starts another pi: only Retry does.
+    @Test func aHostedThreadWhosePiStopsOnItsOwnWaitsAndNeverRestarts() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        func dormant(_ name: String) -> (Agent, Tab) {
+            let agentID = AgentID()
+            let pane = LeafPane(cwd: h.dir.path, agentID: agentID)
+            let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            return (Agent(id: agentID, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id), tab)
+        }
+        let (stopped, stoppedTab) = dormant("worker"), (control, controlTab) = dormant("control")
+        try await h.server.putState(ShepherdState(spaces: [space], tabs: [stoppedTab, controlTab], agents: [stopped, control]))
+        let client = try await connect(path, token)
+        defer { client.disconnect() }
+        func launches(_ agent: Agent) -> Int { StubPi.launches().filter { $0.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue }.count }
+        @Sendable func snapshot(_ agent: Agent) async throws -> NativeThreadSnapshot? { try await client.nativeThread(agentID: agent.id, request: .snapshot()).snapshotValue }
+
+        // Opening a dormant thread starts its pi.
+        _ = try? await snapshot(stopped)
+        try await eventually("its pi to serve", timeout: .seconds(20)) { @Sendable in (try? await snapshot(stopped))?.piSessionID.isEmpty == false }
+        // Polls that arrive while the first pi starts can each ask for one; once it serves, none do.
+        let started = launches(stopped)
+        #expect(started >= 1)
+        let reporter = try ExtensionClient(path: h.socketPath)
+        defer { reporter.closeConnection() }
+        try reporter.send(.setAgentStatus(agentID: stopped.id, status: .working))
+        try await eventuallyOnMain("the thread to read working") { h.server.state.agents.first { $0.id == stopped.id }?.status == .working }
+        #expect(!h.server.quietForDrain)
+
+        let pid = try await h.server.enqueue { @Sendable in try #require(h.server.rpcThread(forAgent: stopped.id)).session.processIdentifier }
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the client to read that it stopped") { @Sendable in
+            (try? await snapshot(stopped))?.startProblem == NativeStartProblem(kind: .stopped, signal: 9)
+        }
+        try await eventuallyOnMain("the thread to read idle") { h.server.state.agents.first { $0.id == stopped.id }?.status == .idle }
+        #expect(h.server.quietForDrain, "a stopped thread does not hold the host's drain")
+
+        for _ in 0..<3 { #expect(try await snapshot(stopped)?.startProblem?.kind == .stopped) }
+        // A thread opened after them starts: whatever demand the stopped one raised has been served by now.
+        _ = try? await snapshot(control)
+        try await eventuallyOnMain("the other thread's pi to launch") { launches(control) == 1 }
+        #expect(launches(stopped) == started, "no pi starts for a thread that stopped on its own")
     }
 
     @Test func theAppOpensStartsRenamesReadsAndClosesATerminal() async throws {
