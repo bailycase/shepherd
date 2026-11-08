@@ -879,8 +879,7 @@ struct ListPerformanceTests {
         }
     }
 
-    /// A streamed chunk redraws the thread and its streaming row, never the composer, its
-    /// chips, or the toolbar.
+    /// A streamed chunk redraws its streaming row, never the composer, its chips, or the toolbar.
     @Test func aStreamedChunkRedrawsNoComposerOrToolbar() async throws {
         let thread = try await chromeThread(running: true)
         defer { thread.close() }
@@ -986,10 +985,10 @@ struct ListPerformanceTests {
         }
     }
 
-    /// A tool starting or ending flips the live "Thinking…" line (`showsThinking`). That costs the
-    /// thread no more than a streamed chunk does: the live row redraws, and the thread's body, the
-    /// rows around it and the composer stay as they were.
-    @Test func aToolBoundaryCostsTheThreadNoMoreThanAChunk() async throws {
+    /// A tool starting or ending flips the live "Thinking…" line (`showsThinking`). The live row
+    /// redraws, and the thread's body, the rows around it and the composer stay as they were, as
+    /// they do for a streamed chunk (the control).
+    @Test func aToolBoundaryRedrawsOnlyTheLiveRow() async throws {
         let thread = try await chromeThread(running: true)
         defer { thread.close() }
         try await atRest(thread.window)
@@ -1016,10 +1015,10 @@ struct ListPerformanceTests {
             }
         }
 
-        // Recorded on the base for the PR: the counts of both runs.
         #expect(boundaries["thread.liveRow", default: 0] >= 6, "the live row followed each step: \(boundaries)")
         for key in ["thread.view", "thread.column"] {
-            #expect(boundaries[key, default: 0] <= chunks[key, default: 0], "\(key): chunks \(chunks), tool boundaries \(boundaries)")
+            #expect(chunks[key, default: 0] == 0, "\(key), the control: chunks \(chunks)")
+            #expect(boundaries[key, default: 0] == 0, "\(key): tool boundaries \(boundaries)")
         }
         // See aStreamedChunkRedrawsNoComposerOrToolbar: CI's VM redraws the composer per chunk.
         withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
