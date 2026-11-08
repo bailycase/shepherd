@@ -183,6 +183,8 @@ struct ExtensionSocketTests {
         try client.send(.setAgentName(agentID: manual.agent.id, name: "Refactor sidebar"))
         try client.send(.setAgentStatus(agentID: manual.agent.id, status: .working))
         try await eventually("the barrier report") { h.server.state.agents.last?.status == .working }
+        // Names land through the batched metadata writes, which can trail the status barrier under load.
+        try await eventually("the name lands") { h.server.state.agents.first?.nameIsFinal == true }
 
         let agents = h.server.state.agents
         #expect(agents.first?.name == "Fix plan mode over SSH")
@@ -217,6 +219,7 @@ struct ExtensionSocketTests {
         try client.send(.setAgentName(agentID: worker.agent.id, name: "Later B", sessionID: "session-b"))
         try client.send(.setAgentStatus(agentID: worker.agent.id, status: .idle))
         try await eventually("the current name barrier") { h.server.state.agents.first?.status == .idle }
+        try await eventually("the current name lands") { h.server.state.agents.first?.nameIsFinal == true }
         #expect(h.server.state.agents.first?.name == "Current B")
         #expect(h.server.state.agents.first?.nameIsFinal == true)
         #expect(try h.persisted().agents.first?.name == "Current B")
