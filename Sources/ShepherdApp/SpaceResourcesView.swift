@@ -45,10 +45,9 @@ struct SpaceResourcesView: View {
                 SpaceInheritanceBanner(title: "Inherited from \(parent.name)", message: SpaceInheritanceBanner.childMessage(project.project.name),
                                        open: openParent.map { ("Open \(parent.name)", $0) }, disabled: model.saving)
             }
-            // Departure: the boards draw no kind switcher inside the Resources tab. Subagents are hidden:
-            // the runtime loads only Shepherd-owned profiles, so a space's would do nothing.
+            // Departure: the boards draw no kind switcher inside the Resources tab.
             SHSegmentedPicker("Resource kind", selection: $model.kind,
-                              options: ProjectResource.Kind.allCases.filter { $0 != .agent }.map { ($0, $0.title) })
+                              options: ProjectResource.Kind.allCases.map { ($0, $0.title) })
                 .shControlScale(.settings).fixedSize()
             HStack(alignment: .top, spacing: SH.Space.xl) {
                 SettingsHeader(title: model.kind.title, explanation: model.kind == .skill && model.parent != nil

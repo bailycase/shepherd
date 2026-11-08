@@ -473,12 +473,8 @@ enum PreviewYourPi {
                                         PiCustomProvider(id: "ollama", baseURL: "http://localhost:11434")]
         survey.defaultModel = "openai-codex/gpt-5.3-codex"
         survey.shepherdDefaultModel = "anthropic/claude-opus"
-        survey.trustedFolders = 4
-        survey.trustedFolderPaths = ["/Users/you/code/shepherd", "/Users/you/code/billing", "/Users/you/code/site", "/Users/you/code/notes"]
-        survey.shepherdTrustedFolders = 4
         survey.freshness = ["login:anthropic": .sameAsYourPi, "login:openai-codex": .newerInYourPi, "login:kimi-coding": .changedHere,
-                            "login:openai": .sameAsYourPi, "customProviders": .sameAsYourPi, "defaultModel": .newerInYourPi,
-                            "trust": .sameAsYourPi]
+                            "login:openai": .sameAsYourPi, "customProviders": .sameAsYourPi, "defaultModel": .newerInYourPi]
         survey.yourSignInsChanged = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 24))
         survey.copies = copies
         survey.instructionLines = 38
@@ -515,7 +511,6 @@ enum PreviewYourPi {
         report.copied = copies + (0..<10).map { YourPiCopy(kind: .skills, name: "s\($0)", source: "/s\($0)", destination: "skills/s\($0)") }
             + ["explain", "tidy"].map { YourPiCopy(kind: .prompts, name: $0, source: "/\($0).md", destination: "prompts/\($0).md") }
         report.defaultModel = "anthropic/claude-opus"
-        report.trustedFolders = 4
         return report
     }()
 

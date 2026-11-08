@@ -8,82 +8,6 @@ import ShepherdTestSupport
 
 @Suite("Project settings files", .integrationTimeLimit)
 struct ProjectSettingsTests {
-    @Test func registeredSpacesAreTrustedOnRestoreAndAddWithoutTrustingHistoryHomeOrSiblings() async throws {
-        let root = try makeScratchDirectory("auto-trust"), fm = FileManager.default
-        let support = root.appendingPathComponent("support")
-        let userHome = root.appendingPathComponent("home")
-        let restored = userHome.appendingPathComponent("restored")
-        let added = userHome.appendingPathComponent("added")
-        let registered = userHome.appendingPathComponent("registered")
-        let sibling = userHome.appendingPathComponent("sibling")
-        let reserved = userHome.appendingPathComponent("reserved")
-        for directory in [support.appendingPathComponent("pi"), restored, added, registered, sibling, reserved] {
-            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
-        let pi = PiSetup(engine: PiSetup.app.engine, home: support.appendingPathComponent("pi"), userHome: userHome.path)
-        let trustURL = pi.home.appendingPathComponent("trust.json")
-        let original = [PiHome.canonical(restored.path): false, PiHome.canonical(sibling.path): false]
-        try JSONEncoder().encode(original).write(to: trustURL)
-        let state = ShepherdState(spaces: [
-            Space(name: "restored", path: restored.path, sidebarHidden: true),
-            Space(name: "home", path: userHome.path),
-            Space(name: "ancestor", path: root.path),
-            Space(name: "reserved", path: reserved.path, hidden: true),
-        ])
-        try JSONEncoder().encode(state).write(to: support.appendingPathComponent("state.json"))
-        let host = try ScratchServer(dir: support, pi: pi)
-        defer { host.stop(); try? fm.removeItem(at: root) }
-        try await host.server.projects.prepareProjectConfiguration(for: sibling.path)
-        func decisions() throws -> [String: Bool] {
-            try JSONDecoder().decode([String: Bool].self, from: Data(contentsOf: trustURL))
-        }
-        #expect(try decisions() == [PiHome.canonical(restored.path): true, PiHome.canonical(sibling.path): false])
-        try await host.server.addSpace(Space(name: "added", path: added.path))
-        try await host.server.projects.prepareProjectConfiguration(for: added.path)
-        #expect(try decisions()[PiHome.canonical(added.path)] == true)
-        let result = try await host.server.registerProject(path: registered.path, name: "registered")
-        #expect(result.created)
-        try await host.server.projects.prepareProjectConfiguration(for: registered.path)
-        #expect(try decisions()[PiHome.canonical(registered.path)] == true)
-        let alias = userHome.appendingPathComponent("alias")
-        try fm.createSymbolicLink(at: alias, withDestinationURL: registered)
-        #expect(try await host.server.registerProject(path: alias.path, name: "alias").created == false)
-        #expect(try decisions()[alias.path] == nil)
-        // History is retained independently of registration, but never grants approval.
-        host.server.projects.remember(ShepherdState(spaces: [Space(name: "history", path: sibling.path)]), approve: false)
-        try await host.server.projects.prepareProjectConfiguration(for: sibling.path)
-        #expect(try decisions()[PiHome.canonical(sibling.path)] == false)
-        #expect(try decisions().count == 4)
-        // A later Pi import must not silently undo a registered space's approval.
-        var imported = try decisions()
-        imported[PiHome.canonical(restored.path)] = false
-        try JSONEncoder().encode(imported).write(to: trustURL)
-        try await host.server.projects.prepareProjectConfiguration(for: restored.path)
-        #expect(try decisions()[PiHome.canonical(restored.path)] == true)
-    }
-
-    @Test func automaticApprovalPreservesMalformedTrustFilesAndRetriesAfterRepair() async throws {
-        let root = try makeScratchDirectory("trust-retry")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let project = root.appendingPathComponent("project")
-        let pi = PiSetup(engine: PiSetup.app.engine, home: root.appendingPathComponent("pi"), userHome: root.appendingPathComponent("home").path)
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: pi.home, withIntermediateDirectories: true)
-        let trust = pi.home.appendingPathComponent("trust.json")
-        try "{broken".write(to: trust, atomically: true, encoding: .utf8)
-        let host = try ScratchServer(dir: root, pi: pi)
-        defer { host.stop() }
-        try await host.server.addSpace(Space(name: "project", path: project.path))
-        let store = host.server.projects
-        try await store.prepareProjectConfiguration(for: pi.userHome)
-        try await store.prepareProjectConfiguration(for: root.appendingPathComponent("unrelated").path)
-        await #expect(throws: ProjectFileError.self) { try await store.prepareProjectConfiguration(for: project.path) }
-        #expect(try String(contentsOf: trust, encoding: .utf8) == "{broken")
-        try "{}".write(to: trust, atomically: true, encoding: .utf8)
-        try await store.prepareProjectConfiguration(for: project.path)
-        #expect(try JSONDecoder().decode([String: Bool].self, from: Data(contentsOf: trust)) == [PiHome.canonical(project.path): true])
-    }
-
     @Test func projectFilesAreScopedConflictCheckedAndRetainedAfterWorkspaceDeletion() async throws {
         let directory = try makeScratchDirectory("srv")
         // Project listing imports old pi sessions: do not share earlier suites' session home.
@@ -154,9 +78,6 @@ struct ProjectSettingsTests {
         let original = #"{"mcpServers":{"tools":{"command":"tools","enabled":false,"future":"keep"}}}"#
         try Data(original.utf8).write(to: config.appendingPathComponent("mcp.json"))
         try Data("instructions".utf8).write(to: project.appendingPathComponent("AGENTS.md"))
-        let trust = support.appendingPathComponent("pi/trust.json")
-        let denial = try JSONEncoder().encode([project.path: false])
-        try denial.write(to: trust)
         let state = ShepherdState(spaces: [Space(name: "existing", path: project.path)])
         try JSONEncoder().encode(state).write(to: support.appendingPathComponent("state.json"))
         let pi = PiSetup(engine: PiSetup.app.engine, home: support.appendingPathComponent("pi"), userHome: root.appendingPathComponent("home").path)
@@ -173,9 +94,6 @@ struct ProjectSettingsTests {
         let current = RemoteHostClient()
         defer { current.disconnect() }
         _ = try await current.connect(host: "127.0.0.1", port: port, token: token, clientName: "current")
-        try await host.server.projects.prepareProjectConfiguration(for: root.appendingPathComponent("unrelated").path)
-        let approvedTrust = try Data(contentsOf: trust)
-        #expect(try JSONDecoder().decode([String: Bool].self, from: approvedTrust)[PiHome.canonical(project.path)] == true)
         let ledger = support.appendingPathComponent("project-config-migration.json")
         let pending = Data("obsolete migration ledger".utf8)
         try pending.write(to: ledger)
@@ -197,7 +115,6 @@ struct ProjectSettingsTests {
             #expect(try await old.next() == .error(id: id, code: "update_required", message: "Update Shepherd on this client to edit this host's project configuration."))
         }
         #expect(try Data(contentsOf: ledger) == pending)
-        #expect(try Data(contentsOf: trust) == approvedTrust)
         #expect(try String(contentsOf: config.appendingPathComponent("mcp.json"), encoding: .utf8) == original)
         #expect(try String(contentsOf: project.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "instructions")
         #expect(!fm.fileExists(atPath: project.appendingPathComponent(".shepherd").path))
@@ -211,7 +128,6 @@ struct ProjectSettingsTests {
         try old.send(.projects(id: 101, request: .mcp(directory: project.path, file: ".shepherd/mcp.json", action: .approveProject)))
         guard case .error(101, "update_required", _) = try await old.next() else { Issue.record("Old editor bypassed the fence"); return }
         #expect(try String(contentsOf: config.appendingPathComponent("mcp.json"), encoding: .utf8) == original)
-        #expect(try Data(contentsOf: trust) == approvedTrust)
     }
 
     @Test func aRemoteClientEditsOnlyTheNamedHostProjectAndOldHostsRequireAnUpdate() async throws {

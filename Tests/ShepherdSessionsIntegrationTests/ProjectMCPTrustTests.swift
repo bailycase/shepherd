@@ -6,31 +6,10 @@ import ShepherdRemote
 import ShepherdTestSupport
 @testable import ShepherdSessions
 
-@Suite("Project MCP approval through real Pi RPC", .integrationTimeLimit,
+@Suite("Space configuration loads through real Pi RPC with no approval", .integrationTimeLimit,
        .enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a staged engine"))
 struct ProjectMCPTrustTests {
-    @Test func approvalRejectsAFolderRetargetedAfterValidation() async throws {
-        let engine = try #require(EngineSmoke.engine)
-        let root = try makeScratchDirectory("trust-swap")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let files = FileManager.default
-        let project = root.appendingPathComponent("project")
-        let other = root.appendingPathComponent("other")
-        let userHome = root.appendingPathComponent("home")
-        for directory in [project, other, userHome] { try files.createDirectory(at: directory, withIntermediateDirectories: true) }
-        let canonical = PiHome.canonical(project.path)
-        try files.moveItem(at: project, to: root.appendingPathComponent("original"))
-        try files.createSymbolicLink(at: project, withDestinationURL: other)
-        let setup = PiSetup(engine: .bundled(engine), home: root.appendingPathComponent("support/pi"), userHome: userHome.path)
-        let service = ProjectMCPService(pi: setup)
-        await #expect(throws: ProjectFileError.self) {
-            _ = try await service.request(directory: project.path, file: ".shepherd/mcp.json", text: "{}", action: .approveProject,
-                                          owner: nil, canonicalDirectory: canonical)
-        }
-        #expect(!files.fileExists(atPath: setup.home.appendingPathComponent("trust.json").path))
-    }
-
-    @Test func registeredSpacesLoadResourcesWithoutSeparateApprovalButHomeAndSiblingsStayBlocked() async throws {
+    @Test func anyFolderLoadsItsConfigurationButTheHomeFolderNeverDoes() async throws {
         let engine = try #require(EngineSmoke.engine)
         let fixture = try await RealPi.launch(engine: engine)
         defer { fixture.stop() }
@@ -98,31 +77,25 @@ struct ProjectMCPTrustTests {
             snapshot.messages.filter { $0.toolName == tool }.flatMap(\.blocks).map(\.text).joined()
         }
 
-        #expect(try await approval(.credentials).projectTrusted == true, "Registration approves even a missing native MCP file")
-        try "{}".write(to: config.appendingPathComponent("mcp.json"), atomically: true, encoding: .utf8)
-        #expect(try await approval(.credentials).projectTrusted == true)
         try JSONSerialization.data(withJSONObject: mcp).write(to: config.appendingPathComponent("mcp.json"))
-        #expect(try await approval(.credentials).projectTrusted == true)
-        #expect(!files.fileExists(atPath: marker.path), "Automatic approval loads no project extensions")
-        let trustData = try Data(contentsOf: home.directory.appendingPathComponent("trust.json"))
-        let trust = try #require(try JSONSerialization.jsonObject(with: trustData) as? [String: Bool])
-        #expect(trust == [PiHome.canonical(project.path): true], "No parent, sibling or global approval")
-        let approved = try await probeTools(thread())
-        #expect(output(approved, tool: "tool_search").contains("mcp__probe__echo"))
-        #expect(output(approved, tool: "codemode").contains("echo: approved scratch project"))
-        #expect(files.fileExists(atPath: marker.path))
+        #expect(try await approval(.credentials).projectTrusted == true, "Older clients are told every space is approved")
+        #expect(!files.fileExists(atPath: home.directory.appendingPathComponent("trust.json").path), "No approval is written")
+        let loaded = try await probeTools(thread())
+        #expect(output(loaded, tool: "tool_search").contains("mcp__probe__echo"))
+        #expect(output(loaded, tool: "codemode").contains("echo: approved scratch project"))
+        #expect(files.fileExists(atPath: marker.path), "The space's own extension runs")
         let calls = try String(contentsOf: log, encoding: .utf8)
         #expect(calls.contains("tools/list") && calls.contains("tools/call"))
 
-        // A fresh project is still undecided, even after another project's approval.
+        // Any other folder loads its own configuration too: there is no approval step.
         let sibling = root.appendingPathComponent("sibling")
         try files.createDirectory(at: sibling.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: mcp).write(to: sibling.appendingPathComponent(".shepherd/mcp.json"))
         let other = try await probeTools(thread(in: sibling))
-        #expect(output(other, tool: "codemode").contains("\"mcpNames\":[]"))
+        #expect(output(other, tool: "tool_search").contains("mcp__probe__echo"))
 
-        // Even a saved home approval plus Pi's global "always" default cannot override
-        // Shepherd's --no-approve protection. All files here are isolated scratch data.
+        // The home folder's `.pi`/`.shepherd` is pi's own global config, never a project: even a saved home
+        // approval plus Pi's global "always" default cannot override --no-approve. All files are scratch data.
         try files.createDirectory(at: userHome.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: mcp).write(to: userHome.appendingPathComponent(".shepherd/mcp.json"))
         try JSONSerialization.data(withJSONObject: [project.path: true, PiHome.canonical(userHome.path): true])
@@ -132,6 +105,5 @@ struct ProjectMCPTrustTests {
         try JSONSerialization.data(withJSONObject: settings).write(to: home.settings)
         let inHome = try await probeTools(thread(in: userHome))
         #expect(output(inHome, tool: "codemode").contains("\"mcpNames\":[]"))
-        await #expect(throws: ProjectFileError.self) { try await approval(.approveProject, directory: userHome) }
     }
 }

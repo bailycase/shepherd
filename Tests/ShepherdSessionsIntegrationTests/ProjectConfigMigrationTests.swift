@@ -21,7 +21,6 @@ struct ProjectConfigMigrationTests {
             try Data(value.utf8).write(to: file)
             let projects = store()
             projects.migrateExistingProjectConfiguration(in: state)
-            try await projects.prepareProjectConfiguration(for: project.path)
             guard case .text(let text) = try await projects.request(.read(directory: project.path, file: ".pi/settings.json"), state: state) else { Issue.record("Expected Pi settings"); return }
             #expect(text.text == value)
             #expect(!fm.fileExists(atPath: project.appendingPathComponent(".shepherd").path))

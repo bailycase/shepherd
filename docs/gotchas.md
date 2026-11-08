@@ -16,8 +16,9 @@
   (and Re-import) copies the user's own skills there; everything else Settings ▸ Skills keeps
   (skills that are off, just removed, git caches, records) is in the support directory's
   `skills/`. Nothing of Shepherd's writes `~/.agents/skills` or `~/.pi`.
-- **pi's trust prompt:** interactive pi asks to trust project `.pi/` directories, but `-e` loads
-  our extensions without one. Never write anything into the user's pi (`~/.pi/agent/`, or
+- **pi's trust prompt:** Shepherd has none. Every agent launches with `--approve`, so a space's
+  `.shepherd/` and `.pi/` config, extensions and subagents always load; the home folder (pi's own
+  global config) launches with `--no-approve`. Never write anything into the user's pi (`~/.pi/agent/`, or
   wherever their `PI_CODING_AGENT_DIR` points), lock folders included: everything Shepherd
   writes for pi is in its own home, `<support>/pi`. `PiSessionFile` writes only session files
   there, which pi treats as data. Settings ▸ Instructions keeps its root files in

@@ -238,30 +238,6 @@ public enum YourPiFiles {
         return nil
     }
 
-    // MARK: trust.json
-
-    /// trust.json's decisions (`path: true|false`; null means none), without any that would trust
-    /// `home` as a project: a `true` for `home` or a folder above it. Those come back as `dropped`.
-    public static func trust(_ data: Data, home: String) throws -> (decisions: [String: Bool], dropped: [String]) {
-        let root = try object(data, file: "trust.json")
-        let canonicalHome = PiHome.canonical(home)
-        var decisions: [String: Bool] = [:]
-        var dropped: [String] = []
-        for (path, value) in root {
-            if value is NSNull { continue }
-            guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
-                throw YourPiFileError("trust.json's decision for a folder isn't true, false or null")
-            }
-            let trusted = number.boolValue
-            if trusted, PiHome.isInside(canonicalHome, PiHome.canonical(path)) {
-                dropped.append(path)
-                continue
-            }
-            decisions[path] = trusted
-        }
-        return (decisions, dropped.sorted())
-    }
-
     // MARK: Sources
 
     /// `source` with a URL's user and password removed (`https://user:token@host/…` becomes

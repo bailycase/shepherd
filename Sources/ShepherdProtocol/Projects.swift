@@ -235,7 +235,7 @@ public struct ProjectMCPResult: Codable, Hashable, Sendable {
     public var authorizationURL: String?
     public var signedIn: [String]
     public var message: String?
-    /// Eligibility to load project resources, never a live thread connection. Nil on old hosts.
+    /// Always true from current hosts (spaces need no approval); kept for older clients.
     public var projectTrusted: Bool?
     public init(id: UUID? = nil, phase: Phase = .done, authorizationURL: String? = nil,
                 signedIn: [String] = [], message: String? = nil, projectTrusted: Bool? = nil) {
