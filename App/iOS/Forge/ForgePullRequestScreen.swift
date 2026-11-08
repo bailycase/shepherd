@@ -190,7 +190,7 @@ struct ForgePullRequestContent: View {
         if model.body.isEmpty {
             Text("No description.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
         } else {
-            ProseView(blocks: model.body).equatable()
+            ProseView(prose: model.body).equatable()
         }
         if !model.activity.isEmpty {
             ForgeSectionHead(title: "Activity")

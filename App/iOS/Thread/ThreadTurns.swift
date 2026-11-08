@@ -262,10 +262,6 @@ struct ProseView: View, Equatable {
         self.writingFence = writingFence
     }
 
-    init(blocks: [NativeMarkdownBlock]) {
-        self.init(prose: NativeProse(blocks))
-    }
-
     var body: some View {
         let last = prose.chunks.last?.id
         SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList, lazyPrefix: Self.lazyChunks) { chunk in

@@ -37,10 +37,12 @@ struct Prose: View, Equatable {
         self.writingFence = writingFence
     }
 
+    /// Chunks `blocks` here, on every call: a view that redraws keeps a `NativeProse` and passes that.
     init(blocks: [NativeMarkdownBlock], maxWidth: CGFloat = AppLayout.proseMaxWidth, writingFence: Bool = false) {
         self.init(prose: NativeProse(blocks), maxWidth: maxWidth, writingFence: writingFence)
     }
 
+    /// Parses `text` here, on every call.
     init(text: String, maxWidth: CGFloat = AppLayout.proseMaxWidth) {
         self.init(prose: NativeProse(nativeMarkdownParse(text)), maxWidth: maxWidth)
     }
