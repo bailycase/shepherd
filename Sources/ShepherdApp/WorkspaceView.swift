@@ -797,6 +797,7 @@ private struct RemoteAgentLayoutView: View {
     let tab: Tab
 
     var body: some View {
+        let _ = SHRenderProbe.tick("layout.remoteLayout")
         let threadPaneID = tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: connection.state.agents) != nil }?.id
         let owner = SidePaneOwner.remote(ref)
         let panes = vm.subagentInspector
@@ -862,6 +863,7 @@ private struct RemotePaneTreeView: View {
         let panel = vm.terminalPanels.panel(key)
         let target = ShepherdViewModel.TerminalTarget(key: key, layout: node, thread: thread, remote: ref, focused: vm.remoteFocusedPaneID)
         return GeometryReader { geo in
+            let _ = SHRenderProbe.tick("layout.remotePaneTree")
             let selected = TerminalPanel.selected(TerminalPanel.tabs(in: node, thread: thread), chosen: panel.chosenTab,
                                                   focused: vm.remoteFocusedPaneID)
             let geometry = terminalPanelGeometry(for: node, thread: thread, selected: selected, shown: panel.shown,
