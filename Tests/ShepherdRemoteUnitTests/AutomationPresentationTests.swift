@@ -121,6 +121,20 @@ struct AutomationPresentationTests {
         #expect(AutomationRun.isLive(agentStatus: status, run: runs[Self.key("a")]?.last) == row.live)
     }
 
+    /// A run whose pi stopped on its own ended failed but kept its idle agent: the row says it
+    /// failed rather than finished, and the automation can run again.
+    @Test func aRunWhosePiStoppedOnItsOwnReadsFailedWhileItsThreadStays() throws {
+        let stopped = Self.run(0, .failed, ended: 30, agent: "run")
+        let model = AutomationsModel(hosts: [Self.host([Self.automation("a", agent: "run")], agents: [("run", .idle)])],
+                                     runs: [Self.key("a"): [stopped]])
+        let row = try #require(model.rows.first)
+        #expect(row.status == "Failed" && row.tone == .failed)
+        #expect(row.clock == .ago(Date(timeIntervalSince1970: Self.t0 + 30)))
+        #expect(!row.live && row.abilities.run && !row.abilities.stop)
+        #expect(row.run == FleetRef(host: Self.studio, agent: AgentID(rawValue: "run")), "it still opens its thread")
+        #expect(model.live.isEmpty)
+    }
+
     @Test(arguments: [
         (true, [AutomationRun]?.none, "On", AutomationTone.stopped),
         (false, nil, "Off", .off),
