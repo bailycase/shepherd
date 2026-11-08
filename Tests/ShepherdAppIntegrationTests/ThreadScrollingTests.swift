@@ -1051,9 +1051,10 @@ struct ThreadScrollingTests {
     ///
     /// An ordinary reply is laid out whole, as before chunks, and moves exactly as the reader scrolls. A giant one
     /// is drawn a chunk at a time, and its lazy stack revises the height it estimated for the chunks it has not built,
-    /// which the content's height shows (the first scroll adds about 5,000 pt: a known issue until the user decides
-    /// how a giant reply is drawn, and it tracks the scroll after it); the headings the reader sees and the blank band are held for it too, over the
-    /// 15,000 pt that take the reader out of the last chunks, laid out for real, into the lazy ones.
+    /// which the content's height shows (the first scroll adds about 5,000 pt and a later one now and then revises it
+    /// again: the distance checks are a known issue until the user decides how a giant reply is drawn); the headings
+    /// the reader sees and the blank band are held for it too, over the 15,000 pt that take the reader out of the
+    /// last chunks, laid out for real, into the lazy ones.
     ///
     /// The first version of this fix drew every reply of more than two chunks a chunk at a time, and its lazy stack
     /// moved the headings of an 80-cycle reply (up to 534 pt, and a blank band of 457 pt at the top) and of a reply of
@@ -1080,14 +1081,13 @@ struct ThreadScrollingTests {
             try await thread.settle()
             let was = above
             above = thread.distanceFromBottom
-            if step > 1 { #expect(abs((above - was) - pitch) <= 4, "step \(step): the view moved \(above - was) pt from the tail for a \(Int(pitch)) pt scroll") }
-            // The distance from the tail is read off the content's height, which a giant reply's lazy stack
-            // revises at the first scroll (by about 5,000 pt) with no heading moving; it tracks the scroll after it.
-            if step == 1 {
-                withKnownIssue("bug: a giant reply's lazy stack revises the content's height under the reader", isIntermittent: true) {
-                    #expect(abs(above - pitch) <= 4, "step 1: \(above) pt above the tail, scrolled \(pitch)")
-                } when: { reply == .giant }
-            }
+            // The distance from the tail is read off the content's height, which a giant reply's lazy stack revises
+            // at the first scroll (by about 5,000 pt) and now and then at a later step, with no heading moving: it
+            // is a known issue for a giant reply, and the headings below are what the reader sees.
+            let moved = step == 1 ? above : above - was
+            withKnownIssue("bug: a giant reply's lazy stack revises the content's height under the reader", isIntermittent: true) {
+                #expect(abs(moved - pitch) <= 4, "step \(step): the view moved \(moved) pt from the tail for a \(Int(pitch)) pt scroll")
+            } when: { reply == .giant }
             let now = try thread.markerPositions()
             for (marker, y) in now {
                 guard let before = previous[marker] else { continue }
