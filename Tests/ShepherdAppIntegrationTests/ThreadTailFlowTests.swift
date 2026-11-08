@@ -37,12 +37,14 @@ struct ThreadTailFlowTests {
     nonisolated static let sizes = [short, tall]
 
     /// How much rows differ: every `every`th turn ends in an answer of `paragraphs` paragraphs
-    /// and two code blocks, so a row can be taller than the window by many times.
+    /// and two code blocks, so a row can be taller than the window by many times. `tables` ends it
+    /// in `paragraphs` small tables instead: chunks of a reply close at 16 KB of weight, which a
+    /// table reaches in about 600 pt, the shortest a chunk gets.
     enum Mix: Sendable, CustomTestStringConvertible {
-        case moderate, giant
-        var paragraphs: Int { self == .giant ? 100 : 30 }
-        var every: Int { self == .giant ? 5 : 7 }
-        var testDescription: String { self == .giant ? "rows of 9,000 pt" : "rows of 3,000 pt" }
+        case moderate, giant, tables
+        var paragraphs: Int { switch self { case .moderate: 30; case .giant: 100; case .tables: 40 } }
+        var every: Int { switch self { case .moderate: 7; case .giant, .tables: 5 } }
+        var testDescription: String { switch self { case .moderate: "rows of 3,000 pt"; case .giant: "rows of 9,000 pt"; case .tables: "rows of 40 tables" } }
     }
 
     // MARK: Host
@@ -127,12 +129,22 @@ struct ThreadTailFlowTests {
         }
     }
 
+    /// `count` tables of four columns and four rows.
+    static func tables(_ count: Int, _ n: Int) -> String {
+        (0..<count).map { t in
+            "| Step | Calls | Result | Note |\n|---|---|---|---|\n"
+                + (0..<4).map { "| s\(n)-\(t)-\($0) | \($0 * 3) | ok | row \($0) of table \(t) |" }.joined(separator: "\n")
+        }.joined(separator: "\n\n")
+    }
+
     static func history(turns: Int, mix: Mix) -> [NativeThreadMessage] {
         (0..<turns).flatMap { n -> [NativeThreadMessage] in
             var out = Fx.turn(n)
             if n % mix.every == 3, let last = out.indices.last {
-                out[last] = Fx.reply("a\(n)", Fx.prose(mix.paragraphs, n) + "\n\n" + Fx.code(n) + "\n\n" + Fx.prose(12, n) + "\n\n" + Fx.code(n + 5),
-                                     at: Fx.base + Double(n) * 60_000 + 5000)
+                let text = mix == .tables
+                    ? tables(mix.paragraphs, n)
+                    : Fx.prose(mix.paragraphs, n) + "\n\n" + Fx.code(n) + "\n\n" + Fx.prose(12, n) + "\n\n" + Fx.code(n + 5)
+                out[last] = Fx.reply("a\(n)", text, at: Fx.base + Double(n) * 60_000 + 5000)
             }
             return out
         }

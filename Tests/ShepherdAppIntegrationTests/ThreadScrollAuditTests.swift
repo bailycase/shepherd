@@ -30,8 +30,12 @@ struct ThreadScrollAuditTests {
         var testDescription: String { "\(Int(size.width))x\(Int(size.height)), \(mix.testDescription)" }
     }
 
-    /// Both window sizes over rows of 3,000 pt, and the short window over rows of 9,000.
-    nonisolated static let cases = T.sizes.map { Case(size: $0, mix: .moderate) } + [Case(size: T.short, mix: .giant)]
+    /// Both window sizes over rows of 3,000 pt, over rows of 9,000 and over rows of tables. The moderate rows
+    /// hold two chunks or fewer, all laid out for real; the others reach the lazy chunks of a long reply, and
+    /// the tables make the shortest chunks (about 600 pt), which the tall window and the panel closing can
+    /// reveal more of than the last two chunks cover.
+    nonisolated static let cases = T.sizes.map { Case(size: $0, mix: .moderate) } + T.sizes.map { Case(size: $0, mix: .giant) }
+        + T.sizes.map { Case(size: $0, mix: .tables) }
 
     /// A running turn whose reply grows by `steps` chunks, with a tool call every third one.
     static func stream(_ deck: T.Deck, from first: Int = 0, steps: Int, tag: String) async throws {
