@@ -219,7 +219,7 @@ struct SidebarSource: Equatable {
     var waiting: Set<AgentID> = []
     /// When each of This Mac's agents entered its status: a running row's elapsed time.
     var statusSince: [AgentID: Date] = [:]
-    /// Each automation's open run (`AutomationRun.isLive`).
+    /// Each automation's latest run while it is open, or ended unsettled with its agent kept (`AutomationRun.isLive`).
     var openRuns: [AutomationID: AutomationRun] = [:]
     /// This Mac's triggered run threads nobody opened since they settled or asked.
     var unreadRuns: Set<AgentID> = []

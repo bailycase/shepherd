@@ -6695,8 +6695,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Each automation's run whose agent still exists, from any thread without waiting for the
-    /// server queue: a state broadcast or awaited mutation is always reflected in it. The local
+    /// Each automation's latest run while it is open, or ended unsettled with its agent kept (its
+    /// pi stopped on its own, its thread stays), from any thread without waiting for the server
+    /// queue: a state broadcast or awaited mutation is always reflected in it. The local
     /// GUI reads whether a run is live (`AutomationRun.isLive`) from it.
     public var openAutomationRuns: [AutomationID: AutomationRun] {
         runLog.openRuns

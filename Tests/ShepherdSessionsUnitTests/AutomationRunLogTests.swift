@@ -80,19 +80,24 @@ struct AutomationRunLogTests {
         Self.replay([Self.state(agent: nil), Self.state(agent: .working)], log: log)
         #expect(log.openRuns[Self.automation.id]?.result == .running)
 
+        // The server's order: the agent goes idle, then its run ends.
         let stopped = Self.start.addingTimeInterval(30)
+        log.record(from: Self.state(agent: .working), to: Self.state(agent: .idle), now: stopped)
         log.agentStopped(id, failure: "The agent stopped unexpectedly (signal 9).", now: stopped)
         let run = try #require(log.runs[Self.automation.id]?.last)
         #expect(run.result == .failed && run.failure == "The agent stopped unexpectedly (signal 9).")
         #expect(run.endedAt == stopped.timeIntervalSince1970 && run.settledAt == nil)
         #expect(run.unread && run.agentID == id, "the run still opens its thread")
-        #expect(log.openRuns[Self.automation.id] == nil)
+        #expect(log.runs[Self.automation.id]?.count == 1)
+        // The ended run stays published while its agent exists, so a GUI reading it there sees
+        // it is over rather than finding no run and taking the idle thread for a starting one.
+        #expect(log.openRuns[Self.automation.id] == run)
         #expect(!AutomationRun.isLive(agentStatus: .idle, run: run))
         #expect(run.result.isLive == AutomationRun.isLive(agentStatus: .idle, run: run))
 
-        // The server then moves the agent to idle: the ended run is neither reopened nor changed.
-        log.record(from: Self.state(agent: .working), to: Self.state(agent: .idle), now: stopped)
-        #expect(log.runs[Self.automation.id] == [run])
+        // The agent then goes away: the run is closed with its agent cleared, and no longer published.
+        log.record(from: Self.state(agent: .idle), to: Self.state(agent: nil), now: stopped.addingTimeInterval(5))
+        #expect(log.openRuns[Self.automation.id] == nil)
     }
 
     @Test func aRunThatAlreadySettledStaysSettledWhenItsPiStopsLater() throws {

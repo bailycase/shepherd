@@ -38,9 +38,10 @@ final class AutomationRunLog: @unchecked Sendable {
         publish()
     }
 
-    /// Each automation's run still open (its agent exists), from any thread without waiting
-    /// for the server queue. Published before the state that moved it is broadcast, so a GUI
-    /// adopting that state finds its run here.
+    /// Each automation's latest run while it is open, or ended unsettled with its agent kept (its
+    /// pi stopped on its own, its thread stays), from any thread without waiting for the server
+    /// queue. Published before the state that moved it is broadcast, so a GUI adopting that state
+    /// finds its run here.
     var openRuns: [AutomationID: AutomationRun] {
         openLock.withLock { published }
     }
@@ -76,9 +77,13 @@ final class AutomationRunLog: @unchecked Sendable {
             let previous = before[automation.id]?.agentID
             var list = next[automation.id] ?? []
             if previous != automation.agentID {
-                if let previous, let index = list.lastIndex(where: { $0.agentID == previous && $0.endedAt == nil }) {
-                    let status = oldAgents[previous]?.status
-                    list[index] = Self.closed(list[index], status: status, at: time, result: nil)
+                if let previous, let index = list.lastIndex(where: { $0.agentID == previous }) {
+                    if list[index].endedAt == nil {
+                        list[index] = Self.closed(list[index], status: oldAgents[previous]?.status, at: time, result: nil)
+                    } else {
+                        // Its pi stopped on its own and it ended then: only the thread it kept goes now.
+                        list[index].agentID = nil
+                    }
                 }
                 if let agentID = automation.agentID {
                     let status = agents[agentID]?.status ?? .idle
@@ -305,7 +310,9 @@ final class AutomationRunLog: @unchecked Sendable {
     private func publish() {
         var open: [AutomationID: AutomationRun] = [:]
         for (id, list) in runs {
-            if let run = list.last, run.endedAt == nil { open[id] = run }
+            // An ended run that never settled and keeps its agent is one whose pi stopped on its own
+            // (`agentStopped`): published so the GUI sees the thread is over, not starting.
+            if let run = list.last, run.endedAt == nil || (run.agentID != nil && run.settledAt == nil) { open[id] = run }
         }
         openLock.withLock { published = open }
     }
