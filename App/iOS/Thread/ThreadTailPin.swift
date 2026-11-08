@@ -24,8 +24,8 @@ struct TailReading: Equatable {
 /// geometry's action only records, and one main-actor task per run-loop turn asks `NativeTailRepin`
 /// whether landing still helps. The exception is a pin's first few landings, which run in the pass
 /// that asks for them (`NativeTailRepin.takeInPass`): a transcript that mounts draws those passes'
-/// frames, and they belong at the tail. That is a fixed number of landings in passes per pin, so a
-/// layout that asks again inside its own passes cannot spin there. A tail that will not settle stops
+/// frames, and they belong at the tail. That is a fixed number of landings in passes per thread the pin
+/// shows, so a layout that asks again inside its own passes cannot spin there. A tail that will not settle stops
 /// being chased, and a quiet watch gives it a try now and then. Not observed: nothing draws from it.
 @MainActor
 final class ThreadTailPin {
@@ -86,23 +86,30 @@ final class ThreadTailPin {
     }
 
     /// The transcript now shows another thread (the session changed, or a reused view got a new ref):
-    /// what the pin knew of the old one is no use. The landing closure stays for the next reading to
-    /// replace, and so do the mount's landings in passes, spent or not.
+    /// what the pin knew of the old one is no use, and the new one gets its own landings in passes,
+    /// `inPassLimit` of them, like a mount. A session or a ref changes by an event, never by a layout
+    /// pass, so a layout that asks again cannot refill them. The landing closure stays for the next
+    /// reading to replace.
     func reset() {
+        forget(refillingPass: true)
+    }
+
+    /// The transcript left the screen: nothing lands through a proxy that may outlive it. Its landings
+    /// in passes stay spent: whatever hides and shows the view again is not a new thread.
+    func stop() {
+        forget(refillingPass: false)
+        repin.reader(scrolling: false, touching: false)
+        land = nil
+        scrolling = false
+    }
+
+    private func forget(refillingPass: Bool) {
         turn?.cancel()
         quiet?.cancel()
         turn = nil
         quiet = nil
-        repin.newThread()
+        repin.newThread(refillingPass: refillingPass)
         resized = false
-    }
-
-    /// The transcript left the screen: nothing lands through a proxy that may outlive it.
-    func stop() {
-        reset()
-        repin.reader(scrolling: false, touching: false)
-        land = nil
-        scrolling = false
     }
 
     private func schedule() {
@@ -126,13 +133,6 @@ final class ThreadTailPin {
         watch()
     }
 
-    /// While stalled, one task waits out the quiet: it sleeps until `quietWait` has passed since the
-    /// last reading, wakes to find a later one moved the time, and sleeps again, so a thread that
-    /// keeps scrolling costs no task per frame. Then the tail gets one try, and the wait doubles.
-    private func watch() {
-        guard repin.stalled, repin.quietTries < NativeTailRepin.maxQuietTries else {
-            quiet?.cancel()
-            quiet = nil
     /// Reports the pin giving up, from a turn or from a pass: after a stall in a pass, readings take
     /// no turn and every later turn starts stalled, so nothing else would see it.
     private func noteStall(since stalled: Bool) {
@@ -141,6 +141,13 @@ final class ThreadTailPin {
         SHRenderProbe.tick("thread.tailStalled")
     }
 
+    /// While stalled, one task waits out the quiet: it sleeps until `quietWait` has passed since the
+    /// last reading, wakes to find a later one moved the time, and sleeps again, so a thread that
+    /// keeps scrolling costs no task per frame. Then the tail gets one try, and the wait doubles.
+    private func watch() {
+        guard repin.stalled, repin.quietTries < NativeTailRepin.maxQuietTries else {
+            quiet?.cancel()
+            quiet = nil
             return
         }
         guard quiet == nil else { return }

@@ -496,7 +496,7 @@ struct ScrollFollowerRepinTests {
         func take() -> Bool { repin.take() }
         #expect(repin.stalled)
         let landed = repin.landings
-        repin.newThread()
+        repin.newThread(refillingPass: false)
         #expect(!repin.stalled)
         #expect(repin.misses == 0)
         #expect(!repin.pending)
@@ -512,30 +512,65 @@ struct ScrollFollowerRepinTests {
         var repin = NativeTailRepin()
         func takeInPass() -> Bool { repin.takeInPass() }
         repin.reading(distance: 600, wants: true, resized: false)
-        repin.newThread()
+        repin.newThread(refillingPass: true)
         #expect(!repin.pending)
         #expect(!takeInPass())
         repin.reading(distance: 600, wants: true, resized: false)
         #expect(takeInPass())
     }
 
-    @Test func aNewThreadDoesNotRefillThePass() {
+    /// A reused view's next thread draws its first frame like a mount's: at the tail.
+    @Test func aNewThreadRefillsThePass() {
         var repin = NativeTailRepin()
         func takeInPass() -> Bool { repin.takeInPass() }
         for _ in 0..<NativeTailRepin.inPassLimit {
             repin.reading(distance: 0, wants: true, resized: false)
             #expect(takeInPass())
         }
-        repin.newThread()
         repin.reading(distance: 600, wants: true, resized: false)
         #expect(!takeInPass())
+        repin.newThread(refillingPass: true)
+        #expect(repin.landings == 0)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(takeInPass())
+    }
+
+    /// A view that leaves the screen and comes back is not a new thread: a layout may be what moves it.
+    @Test func leavingTheScreenDoesNotRefillThePass() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        for _ in 0..<NativeTailRepin.inPassLimit {
+            repin.reading(distance: 0, wants: true, resized: false)
+            #expect(takeInPass())
+        }
+        repin.newThread(refillingPass: false)
+        #expect(repin.landings == NativeTailRepin.inPassLimit)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(!takeInPass())
+    }
+
+    /// The bound is `inPassLimit` per thread: a layout that keeps asking while threads change only by
+    /// events lands in its passes that many times for each, never more.
+    @Test func aLayoutThatKeepsAskingStaysBoundedPerThread() {
+        var repin = NativeTailRepin()
+        var inPass = 0
+        let threads = 3
+        for thread in 0..<threads {
+            if thread > 0 { repin.newThread(refillingPass: true) }
+            for i in 0..<200 {
+                repin.reading(distance: i.isMultiple(of: 2) ? 3_000 : 3_200, wants: true, resized: true)
+                if repin.takeInPass() { inPass += 1 }
+                _ = repin.take()
+            }
+        }
+        #expect(inPass == threads * NativeTailRepin.inPassLimit)
     }
 
     @Test func aNewThreadLeavesTheReadersScrollAlone() {
         var repin = NativeTailRepin()
         func take() -> Bool { repin.take() }
         repin.reader(scrolling: true, touching: false)
-        repin.newThread()
+        repin.newThread(refillingPass: true)
         repin.reading(distance: 600, wants: true, resized: false)
         #expect(!take())
         #expect(!repin.wantsTurn)

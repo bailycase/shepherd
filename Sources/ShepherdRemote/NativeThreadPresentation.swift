@@ -848,8 +848,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     public private(set) var quietWait: Duration = NativeTailRepin.quiet
     /// Tries the quiet has given since the stall.
     public private(set) var quietTries = 0
-    /// Landings this pin has made, ever, in a pass or after one: a new thread or a rest does not clear
-    /// them (`takeInPass`).
+    /// Landings this pin has made for the thread it shows, in a pass or after one: a rest does not clear
+    /// them, and only a new thread refills them (`takeInPass`, `newThread(refillingPass:)`).
     public private(set) var landings = 0
 
     private var run = 0
@@ -936,7 +936,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// (one of them at rest, where it moves nothing but keeps the tail anchored while the composer
     /// settles) before the view stays there; a landing a turn later shows the rows' top for a frame.
     /// Every later landing waits for `take()`, so a layout that asks again inside its own passes
-    /// (ios-duo-1) lands inside them `inPassLimit` times per pin, whatever it does.
+    /// (ios-duo-1) lands inside them at most `inPassLimit` times per thread the pin shows, whatever it
+    /// does. A pass that gets the tail no nearer can stall the pin here, as a turn's landing can.
     public mutating func takeInPass() -> Bool {
         guard landings < Self.inPassLimit, asking, !scrolling else { return false }
         asking = false
@@ -946,13 +947,18 @@ public struct NativeTailRepin: Equatable, Sendable {
     }
 
     /// The thread under the pin changed (the session, or a reused view's ref). What the old one did, a
-    /// stall, its misses, a landing it wanted, says nothing of the new one. The reader's scroll and the
-    /// landings made stay: the view is the same and so are its landings in a pass.
-    public mutating func newThread() {
+    /// stall, its misses, a landing it wanted, says nothing of the new one. The reader's scroll stays:
+    /// the view is the same.
+    ///
+    /// `refillingPass` gives the new thread its own `inPassLimit` landings in passes, as a mount has:
+    /// its first frames belong at the tail too. Pass it only for a change that no layout drives, a
+    /// session or a ref, so a layout that asks again inside its passes cannot refill what it spends;
+    /// a view that leaves the screen keeps its count.
+    public mutating func newThread(refillingPass: Bool) {
         var next = NativeTailRepin()
         next.scrolling = scrolling
         next.touching = touching
-        next.landings = landings
+        next.landings = refillingPass ? 0 : landings
         self = next
     }
 
