@@ -419,9 +419,31 @@ struct DesignReferenceThreadTests {
     @Test func aCaretTheDraftOutgrewReadsAsNone() {
         let caret = ComposerCaret()
         let long = "Build this in the checkout page"
-        caret.selection = TextSelection(insertionPoint: long.endIndex)
+        caret.range = NSRange(location: long.utf16.count, length: 0)
         #expect(caret.selection(in: long) != nil)
         #expect(caret.selection(in: "Build") == nil, "a draft replaced from outside the field leaves no caret to read")
+        #expect(caret.range == NSRange(location: long.utf16.count, length: 0), "reading the caret never rewrites it")
+    }
+
+    /// The field keeps the caret as UTF-16 offsets; ⌫ converts them on demand, and an offset reads
+    /// as the same place in a draft of any script.
+    @Test(arguments: [
+        ("naïve draft", 6, "naïve "),
+        ("日本語 draft", 4, "日本語 "),
+        ("ship 🚀 now", 8, "ship 🚀 "),
+        ("e\u{301}clair", 0, ""),
+    ] as [(String, Int, String)])
+    func aCaretInOffsetsReadsAsTheSamePlaceInTheDraft(draft: String, offset: Int, before: String) throws {
+        let caret = ComposerCaret()
+        caret.range = NSRange(location: offset, length: 0)
+        let selection = try #require(caret.selection(in: draft))
+        guard case .selection(let indices) = selection.indices else { Issue.record("not a single selection"); return }
+        #expect(indices.isEmpty && draft[..<indices.lowerBound] == before)
+        #expect(ComposerCaret.takesBackChip(draft: draft, selection: selection) == before.isEmpty)
+    }
+
+    @Test func aFieldThatNeverReportedACaretReadsAsNone() {
+        #expect(ComposerCaret().selection(in: "Build this") == nil)
     }
 
     /// RefChipHover and RefChipUpdated open the preview 8pt above the chip; it opens below only
