@@ -722,6 +722,9 @@ IOS_GROUP = "group.com.bailycase.shepherd.ios"
 # The widget extension inside the app, its App ID, and the entitlements it requests: it reads the
 # app's glance snapshot through IOS_GROUP, so a seal without the group ships empty widgets.
 IOS_WIDGETS = ("PlugIns/Shepherd Widgets.appex", IOS.bundle_id + ".widgets", "App/Widgets/ShepherdWidgets.entitlements")
+# The notification content extension and its App ID. It draws what the push carries and requests
+# no entitlements: a seal or profile that grants it the app group gives it more than it needs.
+IOS_NOTIFICATION_CONTENT = ("PlugIns/Shepherd Notification Content.appex", IOS.bundle_id + ".notification-content")
 
 
 def _ios_grouped(entitlements: dict) -> bool:
@@ -731,23 +734,26 @@ def _ios_grouped(entitlements: dict) -> bool:
 
 def prepare_ios_signing(path: str) -> None:
     """Supply the entitlement requests lost by CODE_SIGNING_ALLOWED=NO; no private identity.
-    The widget extension is sealed first: sealing the app covers what is inside it."""
+    The extensions are sealed first: sealing the app covers what is inside it."""
     repository = Path(__file__).resolve().parent.parent
     widgets = os.path.join(path, IOS_WIDGETS[0])
+    content = os.path.join(path, IOS_NOTIFICATION_CONTENT[0])
     app = _ios_plist((repository / "App/iOS/ShepherdIOS.entitlements").read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production"))
     if app.get("aps-environment") != "production":
         raise ValueError("archive must request production push entitlements")
-    for bundle, entitlements in ((widgets, _ios_plist((repository / IOS_WIDGETS[2]).read_bytes())), (path, app)):
-        if not _ios_grouped(entitlements):
-            raise ValueError("archive must request the glance app group")
+    # (bundle, what it requests, whether it is in the glance group)
+    for bundle, entitlements, grouped in ((widgets, _ios_plist((repository / IOS_WIDGETS[2]).read_bytes()), True),
+                                          (content, {}, False), (path, app, True)):
+        if _ios_grouped(entitlements) != grouped:
+            raise ValueError("archive must request the glance app group only for the app and its widgets")
         with tempfile.TemporaryDirectory(prefix="shepherd-ios-signing-") as root:
             requested = Path(root) / "entitlements.plist"
             requested.write_bytes(plistlib.dumps(entitlements))
             _ios_command("codesign", "--force", "--sign", "-", "--entitlements", str(requested),
                          "--generate-entitlement-der", bundle)
         actual = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", bundle))
-        if not _ios_grouped(actual):
-            raise ValueError("sealed archive lacks the glance app group")
+        if _ios_grouped(actual) != grouped:
+            raise ValueError("sealed archive has the glance app group where it shouldn't, or lacks it")
     if actual.get("aps-environment") != "production":
         raise ValueError("sealed archive lacks production push entitlements")
 
@@ -796,6 +802,17 @@ def verify_ios_ipa(path: str, build: str) -> None:
                 raise ValueError(f"{label} has missing or incorrect application-identifier")
             if not _ios_grouped(entitlements):
                 raise ValueError(f"{label} lacks the glance app group")
+        content = apps[0] / IOS_NOTIFICATION_CONTENT[0]
+        signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", str(content)))
+        profile = _ios_plist(_ios_command("security", "cms", "-D", "-i", str(content / "embedded.mobileprovision")))
+        for label, entitlements in (("notification content signature", signed),
+                                    ("notification content profile", profile.get("Entitlements"))):
+            if not isinstance(entitlements, dict):
+                raise ValueError(f"{label} entitlements are missing or malformed")
+            if entitlements.get("application-identifier") != f"{team}.{IOS_NOTIFICATION_CONTENT[1]}":
+                raise ValueError(f"{label} has missing or incorrect application-identifier")
+            if _ios_grouped(entitlements) or "aps-environment" in entitlements:
+                raise ValueError(f"{label} grants more than the extension needs")
 
 
 # TestFlight retirement. Every TestFlight run uploads a build and nothing else expires the old ones, so

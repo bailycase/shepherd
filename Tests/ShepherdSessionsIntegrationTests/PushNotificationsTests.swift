@@ -275,7 +275,7 @@ struct PushNotificationsTests {
         #expect(Set(first[1].keys) == ["eventID", "agentID", "kind", "title", "preview"], "the same event in the old shape")
         #expect(first[1]["eventID"] as? String == first[0]["eventID"] as? String)
         try queue.sync {
-            #expect(pushes.relayIsLegacy)
+            #expect(pushes.relay == .legacy)
             pushes.send(agentID: agent, kind: .needsAnswer)
         }
         try queue.sync {}
@@ -288,6 +288,62 @@ struct PushNotificationsTests {
         #expect(bodies.current[3]["kind"] as? String == "done", "an older relay knows no review")
         #expect(bodies.current[3]["mission"] == nil)
         #expect(PushNotifications.presentation(.error) == ("active", 0.6))
+    }
+
+    @Test func aRelayWithoutDetailGetsTheRestAndAnOversizedDetailIsLeftOut() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.detail")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let bodies = Locked<[(size: Int, json: [String: Any])]>([])
+        let detail = PushDetail(read: "The outbox opens its own connection. api_key=sk-made-up", options: ["Yes", "No"])
+        try queue.sync {
+            try pushes.register(registration())
+            pushes.transport = { request, finished in
+                let json = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append((request.httpBody!.count, json)) }
+                // The relay #3 deployed: it knows the stack fields but not `detail`.
+                finished(json["detail"] == nil ? 202 : 400)
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .needsAnswer, title: "Refunds in the ledger", subtitle: "Question", detail: detail)
+        }
+        try queue.sync {}
+        var sent = bodies.current
+        #expect(sent.count == 2)
+        let first = try #require(sent[0].json["detail"] as? [String: Any])
+        #expect(first["read"] as? String == "The outbox opens its own connection. [redacted]")
+        #expect(first["options"] as? [String] == ["Yes", "No"])
+        #expect(sent[1].json["detail"] == nil && sent[1].json["group"] != nil, "the same event, keeping the stack fields")
+        #expect(sent[1].json["eventID"] as? String == sent[0].json["eventID"] as? String)
+        try queue.sync {
+            #expect(pushes.relay == .rich)
+            pushes.send(agentID: AgentID(), kind: .error, detail: detail)
+        }
+        try queue.sync {}
+        sent = bodies.current
+        #expect(sent.count == 3 && sent[2].json["detail"] == nil, "from then on, no detail and no second try")
+
+        // A newer relay: a detail that would push the body past 2048 bytes is left out, not cut.
+        let fresh = PushNotifications(file: dir.appendingPathComponent("fresh.json"), queue: queue)
+        let wide = String(repeating: "界", count: 200)
+        let big = PushDetail(read: wide, repos: (0..<6).map { PushDetail.Repo(name: "\($0)" + String(repeating: "界", count: 39)) })
+        try queue.sync {
+            try fresh.register(registration())
+            fresh.transport = { request, finished in
+                let json = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append((request.httpBody!.count, json)) }
+                finished(202)
+                return {}
+            }
+            fresh.send(agentID: AgentID(), kind: .review, title: wide, preview: wide, detail: big)
+            fresh.send(agentID: AgentID(), kind: .error, title: "Refunds in the ledger", detail: detail)
+        }
+        try queue.sync {}
+        sent = bodies.current
+        #expect(sent.count == 5)
+        #expect(sent[3].json["detail"] == nil && sent[3].size <= 2048)
+        #expect(sent[4].json["detail"] != nil)
     }
 
     @Test func aMissionsAgentsStackUnderTheMissionAndSayWhoAsks() async throws {
@@ -348,6 +404,9 @@ struct PushNotificationsTests {
         #expect(approval["id"] as? String == mission.id.rawValue)
         #expect((approval["revision"] as? NSNumber)?.uint64Value == reviewed.revision)
         #expect(approval["fingerprint"] as? String == "fp-1")
+        // The long-press preview's repositories, in order (NotifPhoneReview).
+        let repos = try #require((sent["detail"] as? [String: Any])?["repos"] as? [[String: Any]])
+        #expect(repos.compactMap { $0["name"] as? String } == ["contracts", "orders-svc"])
     }
 
     @Test func eachPhoneGetsOnlyWhatItsSettingsAskForAndKeepsThemAcrossRestarts() throws {

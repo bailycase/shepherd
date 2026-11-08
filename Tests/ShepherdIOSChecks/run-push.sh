@@ -11,7 +11,7 @@ cp App/iOS/Hosts/MobileHosts.swift "$work/MobileHosts.swift"
 printf '\nextension MobileHost { func enablePushFixture() { capabilities.insert(RemoteProtocol.pushNotificationsCapability) } }\n' >> "$work/MobileHosts.swift"
 # The iOS target also compiles the Mac composer's mention picker (Shepherd.xcodeproj).
 sources=("$work/MobileHosts.swift" Sources/ShepherdApp/Thread/ComposerMentions.swift)
-while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' ! -path 'App/iOS/Hosts/MobileHosts.swift' | sort)
+while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance App/NotificationContent -name '*.swift' ! -path 'App/NotificationContent/NotificationViewController.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' ! -path 'App/iOS/Hosts/MobileHosts.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
     -target arm64-apple-ios27.0-simulator -swift-version 5 -D DEBUG -Onone -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \
