@@ -99,6 +99,48 @@ struct DesignReferenceThreadTests {
         #expect(ComposerMention.token(in: draft) == nil)
     }
 
+    /// The rule the walk back replaced, word for word: the last "@" anywhere in the draft.
+    private static func wholeDraftMention(in draft: String) -> (before: String, text: String)? {
+        guard let at = draft.lastIndex(of: "@") else { return nil }
+        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+        let text = draft[draft.index(after: at)...]
+        guard !text.contains(where: \.isNewline), text.count <= ComposerMention.maxLength,
+              text.first?.isWhitespace != true else { return nil }
+        return (String(draft[..<at]), String(text))
+    }
+
+    @Test func theMentionWalkFindsWhatTheWholeDraftScanFound() {
+        let symbols = ["a", "/", "$", "@", " ", "\n", "é", "e\u{301}", "\r\n", "\u{00A0}", "🚀"]
+        var drafts = [""], level = [""]
+        for _ in 1...4 {
+            level = level.flatMap { draft in symbols.map { draft + $0 } }
+            drafts += level
+        }
+        // Past the corpus: an "@" with 159, 160 and 161 Characters after it, plain and joined
+        // (a Character of two scalars, one of four bytes, one of eight), with a line break at either end or
+        // in the middle, and after words.
+        let limit = ComposerMention.maxLength
+        for count in [limit - 1, limit, limit + 1] {
+            for unit in ["x", "e\u{301}", "🚀", "🇫🇷"] {
+                let run = String(repeating: unit, count: count)
+                let broken = String(repeating: unit, count: count / 2) + "\n" + String(repeating: unit, count: count - count / 2 - 1)
+                for text in [run, "\n" + run, run + "\n", broken, " " + run] {
+                    drafts += ["@" + text, "see @" + text, "see\n@" + text, "me@" + text]
+                }
+            }
+        }
+        var differing: [String] = []
+        for draft in drafts {
+            let walked = ComposerMention.token(in: draft)
+            let scanned = Self.wholeDraftMention(in: draft)
+            if walked?.before != scanned?.before || walked?.text != scanned?.text
+                || walked?.draft(with: "Z") != scanned.map({ $0.before + "@Z" }) {
+                differing.append(draft)
+            }
+        }
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(3).map { String(reflecting: $0.prefix(24)) })")
+    }
+
     @Test func theWordsOfAMentionSpellItsScope() {
         let catalog = Self.catalog
         #expect(MentionScope.spelled(by: "Checkout funnel dashboard › ", in: catalog) == .design(Self.checkout, name: "Checkout funnel dashboard"))
@@ -231,6 +273,25 @@ struct DesignReferenceThreadTests {
         #expect(ComposerReferencePaste.extract("shepherd-design-ref://not a ref", previous: "") == nil)
         #expect(ComposerReferencePaste.extract(reference.string + " and more", previous: reference.string) == nil,
                 "a reference already in the words is left as it was")
+    }
+
+    /// A paste is told from a keystroke by the Characters it added, whatever their bytes: a
+    /// reference over a selection of wide text is a paste, a flag and a space over a letter is not.
+    @Test func aPasteIsTheCharactersItAdded() throws {
+        let reference = try #require(DesignReference(designID: Self.checkout, board: Self.a))
+        let word = reference.string
+        let width = word.count
+        let rows: [(String, previous: String, draft: String, chip: Bool)] = [
+            ("over ASCII, two Characters more", String(repeating: "x", count: width - 2), word, true),
+            ("over ASCII, one Character more", String(repeating: "x", count: width - 1), word, false),
+            ("over CJK, two Characters more", String(repeating: "日", count: width - 2), word, true),
+            ("over CJK, one Character more", String(repeating: "日", count: width - 1), word, false),
+            ("a flag and a space over a letter", "X" + word, "🇫🇷 " + word, false),
+            ("two letters and a space over a letter", "X" + word, "ab " + word, true),
+        ]
+        for (label, previous, draft, chip) in rows {
+            #expect((ComposerReferencePaste.extract(draft, previous: previous) != nil) == chip, "\(label)")
+        }
     }
 
     // MARK: The chip and the agent's line
