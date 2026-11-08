@@ -123,14 +123,15 @@ enum TailFixture {
 }
 
 /// Fails the run when the main queue stops answering: a thread asks it for a heartbeat every 50 ms.
+/// It catches a spin the queue cannot leave, as the base's landing loop inside one commit was; a
+/// loop of tasks keeps answering the heartbeats, and the landing counts and `settle()`'s 3 s cap
+/// catch that instead.
 final class MainQueueWatchdog: @unchecked Sendable {
     private let lock = NSLock()
     private var answered = ProcessInfo.processInfo.systemUptime
-    private static var shared: MainQueueWatchdog?
 
     static func start(limit: Double) {
         let watchdog = MainQueueWatchdog()
-        shared = watchdog
         Thread.detachNewThread {
             while true {
                 DispatchQueue.main.async { watchdog.answer() }
