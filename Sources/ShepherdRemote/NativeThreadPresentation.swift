@@ -942,11 +942,8 @@ public struct NativeTailRepin: Equatable, Sendable {
             freshBudget()
             return landing(measured)
         }
+        // `pending` is set only by a reading beyond the slack, and a reading within it rests.
         guard pending else { return false }
-        if let gap, gap <= NativeScrollFollower.repinSlack {
-            rest()
-            return false
-        }
         if !stalled, measured, let setOut, let gap, !output, !resized, gap >= setOut { misses += 1 }
         if misses >= Self.limit || run >= Self.maxRun { stalled = true }
         if stalled, !output, !quiet { return false }
