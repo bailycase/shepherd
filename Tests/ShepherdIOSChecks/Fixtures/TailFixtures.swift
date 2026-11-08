@@ -94,7 +94,8 @@ enum TailFixture {
             let stalled = counts["thread.tailStalled", default: 0]
             let pane = navigator.sidePane.isOpen ? "open" : "closed"
             let gutter = FollowFixture.threadScrollView()?.traitCollection.horizontalSizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter
-            let tail = FollowFixture.tail { $0 <= gutter + 1 }
+            // The pin leaves a tail within repinSlack of the marker where it is.
+            let tail = FollowFixture.tail { $0 <= gutter + NativeScrollFollower.repinSlack }
             let distance = Int((tail?.distance ?? .infinity).rounded())
             let ink = FollowFixture.transcriptInk()
             let percent = Int((ink * 100).rounded())
