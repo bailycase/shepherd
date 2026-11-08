@@ -531,7 +531,7 @@ struct NativeThreadTests {
 
     // MARK: - Lifecycle
 
-    @Test func aDeadAgentIsUnavailableAndStaysQueryableUntilRetired() async throws {
+    @Test func aDeadAgentSaysWhyAndStaysQueryableUntilRetired() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
@@ -540,11 +540,12 @@ struct NativeThreadTests {
 
         try await eventually("the exit callback") { callbacks.exited(pi.sessionID) }
         #expect(callbacks.exitCode(pi.sessionID) == .some(3))
-        let error = await #expect(throws: RemoteHostClientError.self) { _ = try await pi.request(.snapshot()) }
-        guard case .rejected("native_unavailable", _)? = error else { Issue.record("expected native_unavailable, got \(String(describing: error))"); return }
+        let stopped = try await pi.request(.snapshot()).snapshotValue
+        #expect(stopped?.startProblem?.kind == .stopped && stopped?.startProblem?.exitCode == 3)
         #expect(await h.server.sessionInfo(sessionID: pi.sessionID)?.isAlive == false)
         await h.server.retireSession(sessionID: pi.sessionID)
         #expect(await h.server.sessionInfo(sessionID: pi.sessionID) == nil)
+        #expect(try await pi.request(.snapshot()).snapshotValue?.startProblem?.kind == .stopped, "it still says why once retired")
     }
 
     @Test func anAgentWithoutAnRPCSessionIsUnavailable() async throws {

@@ -916,9 +916,10 @@ struct QueueTests {
 
     // MARK: - Lifetimes
 
-    /// pi exiting mid-run takes its queue with it: the thread is unavailable, and nothing is
-    /// left waiting on a pi that is gone.
-    @Test func piExitingWithAQueueLeavesTheThreadUnavailable() async throws {
+    /// pi exiting mid-run (a crash the steer caused, here) keeps its agent and its queue: the file holds
+    /// the queue paused and inactive, nothing is admitted at the next start, and the thread says it
+    /// stopped. A request that failed with the exit stages no write over it.
+    @Test func piExitingWithAQueueHoldsTheQueueForRetry() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
@@ -927,8 +928,23 @@ struct QueueTests {
         _ = try await pi.send("tools:0 queued", from: s)
         _ = try? await pi.send("die", delivery: .steer, from: s)
         try await eventually("the exit") { callbacks.exited(pi.sessionID) }
-        let error = await #expect(throws: RemoteHostClientError.self) { _ = try await pi.request(.snapshot()) }
-        guard case .rejected("native_unavailable", _)? = error else { Issue.record("expected native_unavailable, got \(String(describing: error))"); return }
+        let exit = try #require(callbacks.sessionExits.current[pi.sessionID])
+        #expect(exit.keepsAgent && exit.code == 3)
+        #expect(exit.startProblem == NativeStartProblem(kind: .stopped, exitCode: 3, lines: ["stub-pi: dying"]))
+
+        try await eventually("no recovery write in flight") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        let saved = try #require(try AgentRecoveryStore(directory: h.dir.appendingPathComponent("agent-recovery")).checkpoint(for: pi.agent.id))
+        #expect(saved.items.map(\.entry.text) == ["tools:0 queued"])
+        #expect(!saved.active && saved.paused && saved.heldAfterExit == true)
+        #expect(await h.server.agentsNeedingStartupRecovery().isEmpty)
+
+        let error = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await pi.send("anything", from: s)
+        }
+        guard case .rejected("native_unavailable", let message)? = error else { Issue.record("expected native_unavailable, got \(String(describing: error))"); return }
+        #expect(message == "The agent stopped. Retry to start it again.")
+        let snapshot = try await pi.request(.snapshot()).snapshotValue
+        #expect(snapshot?.startProblem?.kind == .stopped)
     }
 
     /// Between queued turns pi settles for a moment; the agent is not done (no "Agent finished")

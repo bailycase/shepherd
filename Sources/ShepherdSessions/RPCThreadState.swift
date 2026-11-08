@@ -142,6 +142,9 @@ final class RPCThreadState {
     var recoveryWritePending = false
     var recoveryWriteAttempts = 0
     var recoveryEpoch: UInt64 = 0
+    /// Server queue: pi stopped on its own and the server holds this thread's checkpoint paused
+    /// for Retry (`SessionServer.checkpointAgentRecovery(holding:)`). No later write replaces it.
+    var recoveryHeld = false
     var recoveryPreparations: [UUID: (operation: UUID?, completion: (Bool) -> Void)] = [:]
     var recoveryAttempts = 0
     var restoringRecovery = true

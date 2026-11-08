@@ -229,7 +229,7 @@ final class ShepherdViewModel {
     /// Agents whose last turn ended in an error: done, but their sidebar row reads failed. An
     /// agent restored idle with `Agent.lastFailure` reads failed too, until a turn starts.
     var failedTurns: Set<AgentID> = []
-    /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
+    /// Agents whose pi stopped (before it served or on its own after), waiting for Retry: their sidebar row reads "can't
     /// start". Ephemeral: a relaunch starts every pi again.
     var cannotStart: Set<AgentID> = []
     /// This Mac's agents whose pi can't start because nothing signs in for their model: the

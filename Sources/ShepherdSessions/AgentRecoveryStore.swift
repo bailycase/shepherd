@@ -18,6 +18,9 @@ final class AgentRecoveryStore {
         var operationID: UUID?
         var token: String?
         var fence: String?
+        /// Held after pi stopped on its own: the queue waits, paused, for Retry. Older files decode
+        /// it as nil and older binaries ignore it; written only when set.
+        var heldAfterExit: Bool?
     }
 
     private let directory: URL

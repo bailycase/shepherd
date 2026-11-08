@@ -211,7 +211,7 @@ struct SidebarSource: Equatable {
     var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
-    /// This Mac's agents whose pi stopped before it served, waiting for Retry.
+    /// This Mac's agents whose pi stopped (before it served or on its own after), waiting for Retry.
     var cannotStart: Set<AgentID> = []
     /// Of those, the ones that stopped because nothing signs in for their model: Needs you.
     var notSignedIn: Set<AgentID> = []
@@ -219,7 +219,7 @@ struct SidebarSource: Equatable {
     var waiting: Set<AgentID> = []
     /// When each of This Mac's agents entered its status: a running row's elapsed time.
     var statusSince: [AgentID: Date] = [:]
-    /// Each automation's open run (`AutomationRun.isLive`).
+    /// Each automation's latest run while it is open, or ended unsettled with its agent kept (`AutomationRun.isLive`).
     var openRuns: [AutomationID: AutomationRun] = [:]
     /// This Mac's triggered run threads nobody opened since they settled or asked.
     var unreadRuns: Set<AgentID> = []
