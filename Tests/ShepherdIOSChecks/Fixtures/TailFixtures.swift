@@ -15,7 +15,9 @@ import ShepherdUI
 /// or in landscape on an iPad; where there is no side pane it says so.
 enum TailFixture {
     static let toggles = 10
-    /// Landings with the content moving by itself one toggle may make: the pin stops after this many.
+    /// Landings with the content moving by itself that one toggle may make: this screen's empirical
+    /// ceiling (the merge base lands 22 to 29 times per open, the fix at most 4). The repin itself
+    /// guarantees less: a tail that nears on every turn but never rests lands up to `maxRun` times.
     static let landingCeiling = 2 * NativeTailRepin.limit + 1
     /// A drawn transcript is mostly text on a background; a blank one has no ink.
     static let inkFloor = 0.02

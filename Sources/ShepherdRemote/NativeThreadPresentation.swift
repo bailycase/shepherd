@@ -817,9 +817,10 @@ public struct NativeScrollProbe: Equatable, Sendable {
 /// belongs at its tail, but a lazy stack that keeps re-estimating answers every landing with a new
 /// layout, and the iPhone Duo's main thread spun in one Core Animation commit for minutes
 /// (ios-duo-1). A landing that leaves the tail no nearer than the one before is a miss and `limit`
-/// misses stop the landings, except for changes that move the viewport (`resized`: the width, the
-/// composer, the keyboard, the side pane's animation) and for output, which are followed for as long
-/// as they last; the reader, a send or a tail at rest start them again.
+/// misses stall the pin. A turn that brought output or moved the viewport (`resized`: the width, the
+/// composer, the keyboard, the side pane's animation) is never a miss, so those are followed while
+/// they last, up to `maxRun` landings in a row. A stall ends at a tail at rest, the end of the
+/// reader's scroll or an ask.
 ///
 /// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:touching:)`,
 /// `quietPassed`), then call `take()` once to learn whether to land.
@@ -832,7 +833,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     public static let quiet: Duration = .milliseconds(100)
     public static let maxQuietTries = 5
 
-    /// The landings stopped; output, the reader, a send, a rest or the quiet's tries start them again.
+    /// The landings stopped. A tail at rest, the end of the reader's scroll or an ask start them
+    /// again; output and the quiet's tries each give one landing and leave it stalled.
     public private(set) var stalled = false
     /// Landings that left the tail no nearer, since it last rested.
     public private(set) var misses = 0
@@ -909,9 +911,10 @@ public struct NativeTailRepin: Equatable, Sendable {
         if !scrolling { freshBudget() }
     }
 
-    /// Whether a turn could land now: an ask no finger holds back, or, with the reader's scroll
-    /// over, a landing wanted or output, an ask or a quiet try waiting. The caller schedules a turn
-    /// when this holds after any event, and not otherwise.
+    /// Whether a turn should run now that the reader's scroll changed phase: an ask no finger holds
+    /// back, or, with the scroll over, a landing wanted or output, an ask or a quiet try waiting.
+    /// The other events schedule their own turns: a reading that asks, or that resized the viewport
+    /// (its turn clears the resize), output, an ask, the quiet's try. `take()` decides what each lands.
     public var wantsTurn: Bool {
         if scrolling { return turnAsked && !touching }
         return pending || turnAsked || turnOutput || turnQuiet

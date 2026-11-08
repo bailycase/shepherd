@@ -36,7 +36,8 @@ final class ThreadTailPin {
     /// A reading since the last turn changed the viewport, so the landing it asks for is a resize's.
     private var resized = false
 
-    /// A scroll-geometry reading, and the follower's answer to it.
+    /// A scroll-geometry reading, and the follower's answer to it. A resize takes a turn even when
+    /// no landing is wanted, so its flag does not carry into a later landing's count.
     func reading(distance: Double, wants: Bool, resized: Bool, land: @escaping Land) {
         self.land = land
         self.resized = self.resized || resized
