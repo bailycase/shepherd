@@ -13,17 +13,12 @@ extension ProjectsModel {
                   mcpTrustRequestID == requestID, self.selected?.id == identity, self.selected?.host.endpointID == selected.host.endpointID,
                   selectedFile?.path == file.path, saved == contents else { return }
             mcpSignedIn = Set(result.signedIn)
-            mcpProjectTrusted = result.projectTrusted
             mcpTrustError = result.message
-            if mcp.native, result.projectTrusted == false, mcpTrustError == nil {
-                mcpTrustError = "Add this folder as a space to load its configuration. If it is already added, update Shepherd on its host. Home folders remain excluded."
-            }
             deriveMCP()
         } catch {
             guard mcpTrustRequestID == requestID, self.selected?.id == identity, self.selected?.host.endpointID == selected.host.endpointID,
                   selectedFile?.path == file.path, saved == contents else { return }
-            mcpProjectTrusted = nil
-            mcpTrustError = "Couldn't check space approval. Check again before starting a new thread."
+            mcpTrustError = nil
         }
     }
 

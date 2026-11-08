@@ -47,42 +47,6 @@ const live = (pid) => { try { process.kill(pid, 0); return true; } catch { retur
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const assistant = (content) => ({ role: "assistant", content, api: "openai-completions", provider: "fixture", model: "fixture", usage, stopReason: "stop", timestamp: Date.now() });
 
-test("project preparation keeps first-line validation, character cap, and fragmented CRLF replies", async () => {
-  const dir = fs.mkdtempSync("/tmp/sh-prep-");
-  const sockets = new Set();
-  let reply = "";
-  const server = net.createServer(socket => {
-    sockets.add(socket); socket.on("close", () => sockets.delete(socket)); socket.on("error", () => {});
-    socket.once("data", () => {
-      const bytes = Buffer.from(reply), split = Math.max(1, bytes.indexOf(Buffer.from("😀")) + 1);
-      socket.write(bytes.subarray(0, split));
-      setImmediate(() => socket.end(bytes.subarray(split)));
-    });
-  });
-  const socketPath = path.join(dir, "s");
-  await new Promise(resolve => server.listen(socketPath, resolve));
-  const prepare = () => mod.prepareProjectConfiguration(dir, { SHEPHERD_SOCKET: socketPath, SHEPHERD_AGENT_ID: "fixture" });
-  try {
-    reply = '{"type":"ok","id":1,"note":"é😀"}\r\nignored\n';
-    await prepare();
-    for (const invalid of ["\n", "not-json\n", "x".repeat(1_048_577)]) {
-      reply = invalid;
-      await assert.rejects(prepare(), /Invalid project migration reply/);
-    }
-    reply = '{"type":"ok","id":99}\n';
-    await assert.rejects(prepare(), /Project migration was refused/);
-    const head = '{"type":"ok","id":1,"pad":"', tail = '"}\n';
-    reply = head + "é".repeat(1_048_576 - head.length - tail.length) + tail;
-    await prepare(); // Character cap, not UTF-8 bytes, including the LF.
-    reply = head + "é".repeat(1_048_577 - head.length - tail.length) + tail;
-    await assert.rejects(prepare(), /Invalid project migration reply/);
-  } finally {
-    for (const socket of sockets) socket.destroy();
-    await new Promise(resolve => server.close(resolve));
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("LF framing preserves fragmented UTF-8 and Unicode separators; malformed/oversize input fails boundedly", () => {
   const events = [], errors = [];
   const read = mod.jsonLines((e) => events.push(e), (e) => errors.push(e.message));
@@ -398,66 +362,6 @@ test("unchanged children are deduplicated but heartbeat until the list clears", 
 });
 
 // Direct starts past the limit fail; a workflow's items wait for a slot instead (runs.all must not fail one).
-for (const viaWorkflow of [false, true]) test(viaWorkflow ? "a workflow item waits out delayed project preparation instead of failing on the admission limit"
-  : "delayed project preparation preserves fresh child admission limits", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-admission-")), saved = { ...process.env };
-  const provider = fixtureServer();
-  await new Promise((resolve) => provider.server.listen(0, "127.0.0.1", resolve));
-  let h, host;
-  const sockets = new Set(), gates = [];
-  try {
-    process.env.HOME = dir; process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
-    process.env.PI_OFFLINE = "1"; process.env.SHEPHERD_CHILD_CONCURRENCY = "1";
-    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
-    process.env.SHEPHERD_SOCKET = path.join(dir, "s.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
-    delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
-    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
-    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
-      baseUrl: `http://127.0.0.1:${provider.server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
-      models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
-    } } }));
-    let requests = 0;
-    host = net.createServer((socket) => {
-      sockets.add(socket); socket.on("error", () => {});
-      socket.on("data", mod.jsonLines((frame) => {
-        if (frame.type !== "prepareProjectConfiguration") return;
-        const answer = () => socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
-        if (++requests <= 2) gates.push(answer); else answer();
-      }, assert.fail));
-    });
-    await new Promise((resolve) => host.listen(process.env.SHEPHERD_SOCKET, resolve));
-    h = await harness(dir);
-    if (viaWorkflow) {
-      const pending = h.tool("shepherd_workflow", { async: false, mission: false,
-        workflowScript: 'return runs.all([{ key: "one", agent: "scout", task: "one" }, { key: "two", agent: "scout", task: "two" }]);' });
-      await until(() => gates.length === 2);
-      gates.forEach((answer) => answer());
-      const workflow = await pending;
-      assert.equal(workflow.state, "complete", JSON.stringify(workflow));
-      assert.deepEqual(workflow.output.map((item) => [item.key, item.ok]), [["one", true], ["two", true]], JSON.stringify(workflow.output));
-      return;
-    }
-    const pending = Promise.allSettled(["one", "two"].map((task) => h.call("start", { task, role: "scout", mission: false })));
-    await until(() => gates.length === 2);
-    gates.forEach((answer) => answer());
-    const results = await pending;
-    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
-    const rejected = results.find((result) => result.status === "rejected");
-    assert.match(rejected.reason.message, /children are already active/);
-    const accepted = results.find((result) => result.status === "fulfilled").value;
-    assert.equal((await h.settled(accepted.id)).state, "complete");
-    assert.equal(provider.requests.length, 1, "only the admitted child launches and calls the fixture provider");
-    assert.equal(h.entries.filter((entry) => entry.customType === "shepherd-child").length, 1);
-  } finally {
-    await h?.shutdown(); for (const socket of sockets) socket.destroy();
-    if (host) await new Promise((resolve) => host.close(resolve));
-    await new Promise((resolve) => provider.server.close(resolve));
-    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
-    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("an older workflow ending leaves a newer workflow's mission lifecycle alone", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-mission-overlap-")), saved = { ...process.env };
   let h;
@@ -476,47 +380,6 @@ test("an older workflow ending leaves a newer workflow's mission lifecycle alone
     assert.deepEqual([after.workflow.id, after.workflow.state, after.status], [newer.id, "stopped", "needs_decision"]);
   } finally {
     await h?.shutdown();
-    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
-    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("migration fences reject starts and resumes without spawning after parent shutdown", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-fence-")), saved = { ...process.env };
-  let h, server;
-  const sockets = new Set();
-  try {
-    process.env.HOME = dir; process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
-    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
-    process.env.SHEPHERD_SOCKET = path.join(dir, "s.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
-    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
-    let requests = 0, held, mode = "refuse";
-    server = net.createServer((socket) => {
-      sockets.add(socket); socket.on("error", () => {});
-      socket.on("data", mod.jsonLines((frame) => {
-        if (frame.type !== "prepareProjectConfiguration") return;
-        requests++;
-        if (requests === 1) socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
-        else if (mode === "refuse") socket.write(JSON.stringify({ type: "error", id: frame.id, message: "migration refused" }) + "\n");
-        else held = () => socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
-      }, assert.fail));
-    });
-    await new Promise((resolve) => server.listen(process.env.SHEPHERD_SOCKET, resolve));
-    h = await harness(dir);
-    await assert.rejects(h.call("start", { task: "never spawn", role: "scout", mission: false }), /migration refused/);
-    const [run] = await h.call("result", {});
-    assert.equal(run.state, "failed");
-    const sessionFile = h.entries.find((entry) => entry.customType === "shepherd-child" && entry.data.id === run.id).data.sessionFile;
-    assert(!fs.existsSync(path.join(path.dirname(sessionFile), "writer")), "refused start never acquires a writer or process");
-    mode = "hold";
-    const resumed = h.call("resume", { id: run.id, message: "still never spawn" });
-    await until(() => held);
-    await h.shutdown(); held();
-    await assert.rejects(resumed, /Parent session ended/);
-    assert(!fs.existsSync(path.join(path.dirname(sessionFile), "writer")), "late migration reply cannot spawn after shutdown");
-  } finally {
-    await h?.shutdown(); for (const socket of sockets) socket.destroy();
-    if (server) await new Promise((resolve) => server.close(resolve));
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -358,7 +358,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
                           "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
         case .projects: ["Filter spaces", "All hosts", "Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
-        case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
+        case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
                    "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
         case .extensions: ["Terminals and agent tools", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
         case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
@@ -403,7 +403,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                    "Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
                    "Logins": ["re-import", "auth.json", "sign-ins"],
                    "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
-                   "Trusted folders": ["trust.json", "space trust", "re-import"],
                    "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
                    "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
                    "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]

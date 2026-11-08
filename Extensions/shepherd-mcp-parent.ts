@@ -5,12 +5,9 @@
 // pi.registerMcpServer. The subproject's own MCP files and the user's `mcp.json` are pi's own configuration, which wins
 // over a registered server of the same name, so the subproject's own entry overrides the parent's.
 //
-// Only from a parent pi trusts: its servers run commands. pi's own check passes a subproject with no project resources (it
-// has nothing to trust), so the parent's decision is read from pi's trust store, which a saved decision on a folder above
-// also answers. The home folder is never a parent: its `.pi` is the user's own pi. It runs no server, speaks no MCP and
-// writes nothing. For an owned worktree, the host instead names SHEPHERD_MCP_OWNING_SPACE and binds it to the exact
-// SHEPHERD_MCP_WORKTREE_CWD. This authorization is only for that space's MCP file, never checkout extensions or settings.
-// The checkout's independent trust decision still controls its own config and same-named overrides.
+// A space's configuration always loads (adding a space is the decision to run it). The home folder is never a parent:
+// its `.pi` is the user's own pi. It runs no server, speaks no MCP and writes nothing. For an owned worktree, the host
+// names SHEPHERD_MCP_OWNING_SPACE and binds it to the exact SHEPHERD_MCP_WORKTREE_CWD.
 //
 // A subproject also loads the parent's skills (its `.shepherd`, `.pi` and `.agents` skill folders) through resources_discover,
 // after its own, so the subproject's own skill of the same name wins. SHEPHERD_PARENT_EXCLUDE, JSON `{"mcp":[…],"skills":[…]}`,
@@ -20,19 +17,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { getAgentDir, ProjectTrustStore, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-/** Whether pi trusts `parent` with its project resources (a saved decision, else pi's global default of "always"), and
- *  the user hasn't refused the subproject itself. */
-function trusted(parent: string, cwd: string, ownedWorktree = false): boolean {
-  const real = fs.realpathSync(parent);
-  if (real === fs.realpathSync(os.homedir())) return false;
-  const store = new ProjectTrustStore(getAgentDir());
-  if (!ownedWorktree && store.get(fs.realpathSync(cwd)) === false) return false;
-  const decision = store.get(real);
-  if (decision !== null) return decision;
-  return SettingsManager.create(real, getAgentDir(), { projectTrusted: false }).getDefaultProjectTrust() === "always";
+/** A parent's servers and skills apply unless it is the home folder (pi's own global config). */
+function trusted(parent: string, _cwd?: string, _ownedWorktree = false): boolean {
+  return fs.realpathSync(parent) !== fs.realpathSync(os.homedir());
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

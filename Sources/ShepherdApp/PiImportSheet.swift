@@ -164,10 +164,6 @@ struct PiImportSheetState: Identifiable, Equatable {
                 if !finished || report.defaultModel != nil {
                     add("Default model", count: report.defaultModel.map(NativeModelChoices.shortName))
                 }
-            case .trustedFolders:
-                if !finished || report.trustedFolders > 0 {
-                    add("Trusted folders", count: YourPiText.count(report.trustedFolders, "folder"))
-                }
             case .files:
                 let files = report.copied.filter { $0.kind != .extensions }
                 if !finished || !files.isEmpty {
@@ -220,9 +216,6 @@ struct PiImportSheetState: Identifiable, Equatable {
         if !report.customProviders.isEmpty { parts.append(.init("custom providers")) }
         if let model = report.defaultModel {
             parts.append(.init("default model", value: stage == .done ? NativeModelChoices.shortName(model) : nil))
-        }
-        if report.trustedFolders > 0 {
-            parts.append(.init(report.trustedFolders == 1 ? "trusted folder" : "trusted folders", count: report.trustedFolders))
         }
         let skills = report.copied(.skills).count, prompts = report.copied(.prompts).count
         let instructions = !report.copied(.instructions).isEmpty

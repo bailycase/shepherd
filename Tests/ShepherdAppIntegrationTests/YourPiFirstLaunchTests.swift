@@ -104,14 +104,13 @@ struct YourPiFirstLaunchTests {
         let sheet = try #require(vm.yourPi.importSheet)
         #expect(sheet.report.first && sheet.survey.canStartAgents && sheet.missing.isEmpty && !sheet.stage.holdsAgents)
         let rows = sheet.rows
-        #expect(rows.map(\.title) == ["Logins", "API keys", "Custom providers", "Default model", "Trusted folders",
+        #expect(rows.map(\.title) == ["Logins", "API keys", "Custom providers", "Default model",
                                        "Instructions, skills and prompts", "Extensions"])
         #expect(rows.allSatisfy { $0.state == .done })
         #expect(rows[0] == .init(id: "logins", title: "Logins", detail: "Anthropic, OpenAI Codex", count: "2 subscriptions", state: .done))
         #expect(rows[1] == .init(id: "apiKeys", title: "API keys", detail: "Google, Groq, OpenAI", count: "3 keys", state: .done))
         #expect(rows[2].count == "1 provider" && rows[3].count == "claude-fixture-4")
-        #expect(rows[4].count == "1 folder", "the home folder's trust is never copied")
-        #expect(rows[5].count == "AGENTS.md · 1 · 2" && rows[6].count == "1 found")
+        #expect(rows[4].count == "AGENTS.md · 1 · 2" && rows[5].count == "1 found")
         for secret in YourPiFixture.secrets { #expect(!String(describing: sheet).contains(secret)) }
         // Copied into Shepherd's home, subscription sign-ins included; theirs untouched.
         let auth = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.home.appendingPathComponent("auth.json"))) as? [String: Any])

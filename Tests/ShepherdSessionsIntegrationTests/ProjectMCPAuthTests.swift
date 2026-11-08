@@ -58,7 +58,7 @@ struct ProjectMCPAuthTests {
         let text = #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#
         _ = try await client.projects(.save(directory: root.path, file: ".shepherd/mcp.json", text: text, expected: nil))
         #expect(client.capabilities.contains(RemoteProtocol.projectMCPCapability))
-        #expect(client.capabilities.contains(RemoteProtocol.projectTrustCapability))
+        #expect(!client.capabilities.contains(RemoteProtocol.projectTrustCapability), "Spaces need no approval")
         guard case .mcp(let result) = try await client.projects(.mcp(directory: root.path, file: ".shepherd/mcp.json", action: .credentials)) else { Issue.record("Expected MCP credentials"); return }
         #expect(result.signedIn.isEmpty && result.id == nil && result.authorizationURL == nil)
         await #expect(throws: RemoteHostClientError.self) {
@@ -115,12 +115,8 @@ struct ProjectMCPAuthTests {
             return value
         }
         if file != ".mcp.json" {
-            #expect(try await action(.credentials).projectTrusted == true)
-            #expect(try await action(.approveProject).projectTrusted == true)
-            #expect(try await action(.credentials).projectTrusted == true)
-            await #expect(throws: RemoteHostClientError.self) {
-                _ = try await client.projects(.mcp(directory: directory.path, file: file, action: .approveProject))
-            }
+            #expect(try await action(.credentials).projectTrusted == true, "Older clients are told every space is approved")
+            #expect(!client.capabilities.contains(RemoteProtocol.projectTrustCapability), "Approval is no longer offered")
         }
         let started = try await action(.login(server: "issues"))
         let id = try #require(started.id)

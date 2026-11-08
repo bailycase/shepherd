@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings ▸ Spaces on iPhone and iPad (home track): the folders a host keeps as spaces, with
-// their configuration files and whether their resources are approved, read-only, over the
+// their configuration files, read-only, over the
 // existing space-file API (`projects.v2`, `projects.mcp.v1`). Not the Projects experiment's
 // logical Projects: these are folders on the host.
 
@@ -106,14 +106,13 @@ struct SpacesScreen: View {
     private static let mostSpaces = 512
 }
 
-/// One space: its path, the configuration files it holds, and whether its resources are approved.
+/// One space: its path and the configuration files it holds.
 struct SpaceScreen: View {
     let directory: String
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @State private var files: [ProjectFile]?
     @State private var context: ProjectContext?
-    @State private var trusted: Bool??
     @State private var problem: String?
 
     var body: some View {
@@ -138,13 +137,7 @@ struct SpaceScreen: View {
                             SHListRow("Skills, extensions and MCP servers",
                                       subtitle: resources == 0 && servers == 0 ? "None" : "\(resources) resource\(resources == 1 ? "" : "s") · \(servers) MCP server\(servers == 1 ? "" : "s")",
                                       subtitleMono: false, chevron: false)
-                            if let word = HostInventoryPresentation.trustWord(trusted ?? nil) {
-                                SHListRow("Approval", subtitle: word, subtitleMono: false,
-                                          subtitleTone: trusted == false ? .attention : nil,
-                                          leading: .state(trusted == true ? .done : .attention), chevron: false)
-                            }
                         }
-                        SettingsFootnote("Executable resources load only once the space is approved on the Mac.")
                     }
                     ForEach(ProjectFile.Category.allCases, id: \.self) { category in
                         let held = files.filter { $0.category == category && $0.exists }
@@ -192,11 +185,6 @@ struct SpaceScreen: View {
             files = inventory
             if host.serves(RemoteProtocol.projectDetailsCapability), case .context(let found) = try await client.projects(.context(directory: directory)) {
                 context = found
-            }
-            if host.serves(RemoteProtocol.projectMCPCapability),
-               let mcp = inventory.first(where: { $0.category == .mcp && $0.path.hasSuffix("/mcp.json") }),
-               case .mcp(let result) = try await client.projects(.mcp(directory: directory, file: mcp.path, action: .credentials)) {
-                trusted = .some(result.projectTrusted)
             }
         } catch {
             problem = settingsProblem(error)

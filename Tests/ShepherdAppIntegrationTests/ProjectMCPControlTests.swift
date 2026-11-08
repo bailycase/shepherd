@@ -77,7 +77,7 @@ struct ProjectMCPControlTests {
         #expect(servers["tools"]?["disabled"] == nil)
         #expect(servers["tools"]?["future"] as? String == "keep")
         #expect(document["owner"] as? String == "keep")
-        #expect(approvals == 0 && model.mcpProjectTrusted == true)
+        #expect(approvals == 0)
     }
 
     private static func checkTrust() async throws {
@@ -108,7 +108,7 @@ struct ProjectMCPControlTests {
                                      ProjectMCPSettings(model: model, initiallyExpanded: "docs"))
         defer { window.close() }
         func hasText(_ text: String) -> Bool { window.elements().contains { $0.label?.contains(text) == true || $0.value?.contains(text) == true } }
-        #expect(model.mcpSignedIn == ["docs"] && model.mcpProjectTrusted == true)
+        #expect(model.mcpSignedIn == ["docs"] && model.mcpTrustError == nil)
         #expect(window.element("Trust this space…") == nil)
         #expect(!hasText("Space configuration approved"))
         #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
@@ -118,7 +118,7 @@ struct ProjectMCPControlTests {
         try await eventuallyOnMain("approval failure remains visible") { hasText("Couldn't check space approval.") }
         checkingFails = false
         try window.press("Reload")
-        try await eventuallyOnMain("reload retries credentials") { model.mcpProjectTrusted == true && model.mcpTrustError == nil }
+        try await eventuallyOnMain("reload retries credentials") { model.mcpTrustError == nil }
         #expect(writes == 0, "No separate approval request or confirmation is needed")
     }
 

@@ -51,8 +51,8 @@ test("a trusted owning Space supplies callable slash prompts and skills without 
   });
 });
 
-test("an untrusted owner, missing or mismatched worktree grant, coordinator and native child inherit no resources", { timeout: 120000 }, async t => {
-  for (const variant of [{ trusted: false }, { grant: false }, { mismatch: true },
+test("a missing or mismatched worktree grant, coordinator and native child inherit no resources", { timeout: 120000 }, async t => {
+  for (const variant of [{ grant: false }, { mismatch: true },
     { extraEnv: { SHEPHERD_PROJECT_COORDINATOR: "1" } }, { extraEnv: { SHEPHERD_CHILD: "1" } }]) {
     await withPi(t, options(variant), async pi => {
       const names = (await pi.commands()).map(c => c.name);
