@@ -339,7 +339,8 @@ struct ThreadTranscript: View {
                 // following, keep the tail above the composer through every change. This runs
                 // inside the layout pass, so it only records: the pin lands after it.
                 let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: nativeTail) }
-                tailPin.reading(distance: new.probe.distance - tailGap, wants: wants, resized: new.resized(from: old), land: lander(proxy))
+                tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: tailGap), wants: wants,
+                                resized: new.resized(from: old), land: lander(proxy))
             }
             .onScrollPhaseChange { old, phase, context in
                 if phase == .interacting { historyPaging.beginScroll() }

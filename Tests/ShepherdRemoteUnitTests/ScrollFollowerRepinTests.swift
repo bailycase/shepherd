@@ -130,6 +130,36 @@ struct ScrollFollowerRepinTests {
         #expect(!repin.stalled)
     }
 
+    // MARK: The distance a landing is measured from
+
+    private static func probe(content: Double, distance: Double) -> NativeScrollProbe {
+        NativeScrollProbe(content: content, offset: content - distance - 540 - 60, container: 540, insetTop: 60, insetBottom: 120)
+    }
+
+    @Test func aLandedViewReadsZeroFromTheMarker() {
+        let landed = Self.probe(content: 20_000, distance: 16)
+        #expect(NativeTailRepin.distance(of: landed, belowMarker: 16) == 0)
+        #expect(NativeTailRepin.distance(of: Self.probe(content: 20_000, distance: 616), belowMarker: 16) == 600)
+        #expect(NativeTailRepin.distance(of: Self.probe(content: 20_000, distance: -8), belowMarker: 16) == -24)
+    }
+
+    /// Content that overflows by less than the padding lands at its top, short of the marker.
+    @Test func aThreadThatOverflowsByLessThanItsPaddingRests() {
+        for overflow in [6.0, 10, 14] {
+            let landed = Self.probe(content: 540 + overflow, distance: overflow)
+            #expect(NativeTailRepin.distance(of: landed, belowMarker: 16) == 0)
+            var repin = NativeTailRepin()
+            let landings = Self.replay(&repin, Array(repeating: Turn(gap: NativeTailRepin.distance(of: landed, belowMarker: 16)), count: 20))
+            #expect(landings == 0)
+            #expect(!repin.pending)
+            #expect(!repin.stalled)
+        }
+    }
+
+    @Test func aThreadThatFitsReadsNegative() {
+        #expect(NativeTailRepin.distance(of: Self.probe(content: 400, distance: -140), belowMarker: 16) == -140)
+    }
+
     // MARK: Turns
 
     @Test func readingsInOneTurnLandOnce() {

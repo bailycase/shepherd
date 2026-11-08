@@ -862,9 +862,9 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// itself changed since the reading before. A reading on the tail ends the chase.
     ///
     /// `distance` is measured from where a landing leaves the view (the bottom marker), not from
-    /// the end of the content: a view that sits on the marker reads 0 and rests. The caller takes
-    /// off what the thread keeps below the marker (its bottom padding); without that, a view that
-    /// landed reads short of 0 for good, never rests, and a stall never clears.
+    /// the end of the content: a view that sits on the marker reads 0 and rests. Take it from
+    /// `distance(of:belowMarker:)`; a raw probe distance reads short of 0 for good on a view that
+    /// landed, which never rests, and a stall never clears.
     public mutating func reading(distance: Double, wants: Bool, resized: Bool) {
         let gap = abs(distance)
         self.gap = gap
@@ -875,6 +875,14 @@ public struct NativeTailRepin: Equatable, Sendable {
         } else if wants {
             pending = true
         }
+    }
+
+    /// A probe's distance from the bottom marker, which a landing brings to the viewport's bottom.
+    /// `gap` is what the thread keeps below the marker (its bottom padding). A thread that overflows
+    /// its viewport by less than that cannot bring the marker down that far: it lands at its top,
+    /// and reads 0 there.
+    public static func distance(of probe: NativeScrollProbe, belowMarker gap: Double) -> Double {
+        probe.distance - min(gap, max(0, probe.content - probe.container))
     }
 
     /// Output reached the tail: this turn's landing is never a miss, the run starts over, and a
