@@ -17,7 +17,8 @@ struct NativeMountedCostTests {
     }
 
     /// A reply of `cycles` cycles of a Swift, a Python and a diff fence and a 3x3 table, the shape of a
-    /// 100 KB reply of the QA model (92 cycles, 117 KB). Its fences are 300 to 450 bytes, on the 1 KB floor.
+    /// 100 KB reply of the QA model (82 cycles, 103 KB, 246 fences and 82 tables). Its fences are 300 to 450 bytes,
+    /// on the 1 KB floor.
     static func bigReply(cycles: Int) -> String {
         var text = ""
         for n in 1...cycles {
@@ -104,7 +105,7 @@ struct NativeMountedCostTests {
     }
 
     @Test func textCostsAQuarterOfAFencesRatePerByte() {
-        #expect(Cost.textByte * 4 == Cost.fenceByte)
+        #expect(Cost.textByte == Cost.fenceByte / 4)
         #expect(Cost.block(.paragraph(String(repeating: "x", count: 1000))) == 1000 * Cost.textByte)
         #expect(Cost.block(.heading(level: 2, text: "Plan")) == 4 * Cost.textByte)
         #expect(Cost.block(.paragraph("é")) == 2 * Cost.textByte, "UTF-8 bytes")
@@ -168,19 +169,19 @@ struct NativeMountedCostTests {
     }
 
     @Test func aReplyBelowTheGateCostsAllItsChunksAndEagerlyToo() {
-        let reply = Self.prose(cycles: 92)
+        let reply = Self.prose(cycles: 82)
         #expect(!reply.isGiant && reply.eagerTail == reply.chunks.count, "a 100 KB reply is laid out whole")
         #expect(reply.eagerCost == reply.cost)
         #expect(reply.lazyEdgeCost == 0, "there are no chunks the lazy stack could build")
-        // 273 fences on the floor and 91 tables of 12 cells: about 559,104 units of weight. Measured, a mounted reply of
-        // this shape held about 250 MB (Release: the soak, then the calibration run).
+        // 246 fences on the floor and 82 tables of 12 cells. Measured on the Release QA app, a thread of four such replies
+        // held 998 MiB more once shown: about 249.5 MiB a reply, the soak's 250 MB.
         let weight = reply.chunks.reduce(0) { $0 + $1.weight }
-        #expect(abs(weight - 559_104) <= 559_104 / 20, "the fixture is the reply the model was fitted on")
+        #expect(weight == 246 * 1024 + 82 * 12 * 256, "the fixture is the reply the model was fitted on")
         #expect(abs(reply.cost - Self.measuredBigHundred) <= Self.measuredBigHundred * 3 / 100)
     }
 
-    /// What a mounted 100 KB reply of fences and tables held, in bytes.
-    static let measuredBigHundred = 250_000_000
+    /// What a mounted 100 KB reply of fences and tables held, in bytes (the calibration: 998 MiB for four).
+    static let measuredBigHundred = 998 * 1024 * 1024 / 4
 
     @Test func aGiantReplyCostsItsEagerTailWhateverItsLength() {
         let small = Self.prose(cycles: 368)
@@ -193,7 +194,7 @@ struct NativeMountedCostTests {
         let chunk = small.chunks.dropLast().map(\.cost).max() ?? 0
         #expect(abs(large.eagerCost - small.eagerCost) <= chunk, "the tail costs the same however long the reply grows, to a chunk (the last is part full)")
         // At the gate a reply stops costing all of its chunks and costs its tail.
-        let below = Self.prose(cycles: 92), above = Self.prose(cycles: 140)
+        let below = Self.prose(cycles: 82), above = Self.prose(cycles: 140)
         #expect(!below.isGiant && below.eagerCost == below.cost)
         #expect(above.isGiant && above.eagerCost < above.cost / 3)
     }
@@ -206,9 +207,9 @@ struct NativeMountedCostTests {
     }
 
     @Test func tenSmallRepliesCostAboutAsMuchAsOneOf100KB() {
-        let small = Self.prose(cycles: 9)
+        let small = Self.prose(cycles: 8)
         #expect(!small.isGiant && small.eagerCost == small.cost)
-        let hundred = Self.prose(cycles: 92)
+        let hundred = Self.prose(cycles: 82)
         let ten = 10 * small.cost
         #expect(abs(ten - hundred.cost) <= hundred.cost / 10, "cost follows the text, not how it is chunked")
     }

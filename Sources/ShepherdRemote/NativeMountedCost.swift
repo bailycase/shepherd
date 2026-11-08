@@ -1,37 +1,43 @@
 import Foundation
 
-/// An estimate, in bytes, of what the views built from a thread's rows hold in memory (the Mac's: a
-/// reply is laid out whole below `NativeProse.Limits.giantBytes`, and a giant one lays out its eager tail,
-/// `NativeProse.eagerTail`; iOS lays out every chunk and does not use this). It is what an agent's hidden
-/// layout keeps mounted, which no byte count of the thread's store comes near: a fence holds a text field
-/// with its own text system, a table measures each cell, and a reply of a hundred kilobytes of code and
-/// tables held about 250 MB.
+/// An estimate, in bytes, of what the views built from a thread's rows hold in memory. It is the Mac's: a reply
+/// is laid out whole below `NativeProse.Limits.giantBytes` and a giant one lays out its eager tail
+/// (`NativeProse.eagerTail`), while iOS lays out every chunk and does not use this. It is what an agent's hidden
+/// layout keeps mounted, which no byte count of the thread's store comes near: a fence holds a text field with
+/// its own text system, and a table measures and draws every cell.
 ///
 /// The unit is `NativeMarkdownBlock.proseWeight` (a floor per fence, table cell and image), costed per kind:
 /// - a fence: `fenceFloor` up to a kilobyte of code, then `fenceByte` for each byte above it;
-/// - a table cell or an image: `tableWeight` or `imageWeight` per unit of weight;
+/// - a table: `tableWeight` per unit of weight, 256 to a cell at least;
+/// - an image: `imageWeight` per unit of weight;
 /// - text (paragraph, heading, list item, quote, footnote, a closed disclosure's summary): `textByte` a byte;
 /// - a Mermaid diagram: `mermaid`, mostly in its WebContent process, counted for what it costs the system;
 /// - any other line of a row (an activity burst, a thought, a note, an error, a steer): `line`;
 /// - a row: `rowBase` and its items.
 ///
-/// Calibration (Release, QA host F, 2026-11-08): see `Calibration` below. The fence, table and text constants
-/// are fitted to it; the line, row and Mermaid constants are estimates and say so.
+/// Calibration (Release QA app, host F, 2026-11-08; footprint with the purgeable graphics pool taken off,
+/// 5 s after the thread is shown, one app start per run). Measured: four replies of 100 KB of fences and
+/// tables (247 fences of 350 bytes and 82 tables of 12 cells each): 998, 999 and 996 MiB, 11,529 more
+/// NSViews; four replies of 100 KB of fences alone (282 fences each): 532 MiB, 5,669 NSViews. That is
+/// 483 bytes per unit of weight for a fence on its floor, and (from the difference) 554 for a table cell.
+/// What the design guessed from the soak (448 for both) was 7 and 19 percent low. Not measured, and
+/// still the design's estimates: the rate of a fence above its floor, text, images, lines, rows and Mermaid.
 ///
 /// Costs are computed with the parse (a chunk's) and in the store's `derive` (a row's), never in a view body.
 public enum NativeMountedCost {
     // MARK: Constants
 
+    /// A byte of a fence above the floor, and a unit of weight on it. Measured on the floor; the slope above it
+    /// is the floor's own rate until a run of one long fence sets it.
+    public static let fenceByte = 483
     /// A fence of up to 1 KB of code (the weight floor).
-    public static let fenceFloor = 448 * NativeMarkdownBlock.codeFloor
-    /// Each byte of a fence beyond the floor.
-    public static let fenceByte = 448
-    /// A unit of weight of a table (a cell's floor is 256 units).
-    public static let tableWeight = 448
-    /// A unit of weight of an image.
+    public static let fenceFloor = fenceByte * NativeMarkdownBlock.codeFloor
+    /// A unit of weight of a table (a cell's floor is 256 units). Measured by difference.
+    public static let tableWeight = 554
+    /// A unit of weight of an image (an estimate).
     public static let imageWeight = 448
-    /// A byte of text. A quarter of a fence's: text is one view per block, a fence a text system.
-    public static let textByte = 112
+    /// A byte of text: a quarter of a fence's, text being one view per block and a fence a text system (an estimate).
+    public static let textByte = fenceByte / 4
     /// A Mermaid diagram: a web view and its process. Mostly out of this process (an estimate).
     public static let mermaid = 64 * 1024 * 1024
     /// One more line in a row: a burst, a thought, a note, an error, a steer, a subagent line (an estimate).
