@@ -1113,7 +1113,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
@@ -1153,6 +1153,7 @@ struct RemoteProtocolConstantTests {
         #expect(!RemoteProtocol.capabilities.contains(RemoteProtocol.projectsCapability))
         #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
         #expect(RemoteProtocol.projectResourcesCapability == "projects.resources.v1")
+        #expect(RemoteProtocol.projectInheritanceCapability == "projects.inheritance.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")

@@ -30,7 +30,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Claim the notification center delegate before any notification can arrive.
         UNUserNotificationCenter.current().delegate = self
-        UNUserNotificationCenter.current().setNotificationCategories(PushActions.categories)
+        UNUserNotificationCenter.current().setNotificationCategories(PushButtons.categories)
         return true
     }
 
@@ -98,6 +98,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     ) async {
         let content = response.notification.request.content
         guard let payload = PushPayload.from(content.userInfo) else { return }
+        // An option button answers with its option, the way Reply… answers with the words.
+        if let option = PushButtons.optionText(response.actionIdentifier, userInfo: content.userInfo) {
+            await act(PushButtons.reply, text: option, payload: payload, thread: content.threadIdentifier)
+            return
+        }
         let text = (response as? UNTextInputNotificationResponse)?.userText
         await act(response.actionIdentifier, text: text, payload: payload, thread: content.threadIdentifier)
     }
@@ -107,22 +112,24 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     @MainActor
     func act(_ action: String, text: String?, payload: PushPayload, thread: String) async {
         switch action {
-        case PushActions.reply, PushActions.approve:
+        case PushButtons.reply, PushButtons.approve:
             guard let hosts = mobileHosts else { return }
             do {
                 try await PushActions.perform(action, text: text, payload: payload, hosts: hosts)
-                if action == PushActions.approve { receive(payload, to: .missionReview) }
+                if action == PushButtons.approve { receive(payload, to: .missionReview) }
             } catch {
                 let failure = (error as? GlanceFailure)?.message ?? error.localizedDescription
                 let content = UNMutableNotificationContent()
-                content.title = action == PushActions.reply ? "Your answer wasn’t sent" : "Not approved"
+                content.title = action == PushButtons.reply ? "Your answer wasn’t sent" : "Not approved"
                 content.body = failure
                 content.threadIdentifier = thread
                 try? await UNUserNotificationCenter.current().add(
                     UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
             }
-        case PushActions.review: receive(payload, to: .changes)
-        case PushActions.openReview: receive(payload, to: .missionReview)
+        case PushButtons.review: receive(payload, to: .changes)
+        case PushButtons.openReview: receive(payload, to: .missionReview)
+        case PushButtons.openMission where thread.hasPrefix("mission:"):
+            receive(payload, to: .mission(String(thread.dropFirst("mission:".count))))
         default: receive(payload)
         }
     }

@@ -63,7 +63,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         guard notes.isEmpty else { throw ProjectFileError("trust", notes.joined(separator: "\n")) }
     }
 
-    private struct Entry: Codable { var directory: String; var name: String }
+    /// `excluded`: what a child space turns off of its parent's MCP servers and skills; absent in
+    /// older files and for a space that turns nothing off.
+    private struct Entry: Codable { var directory: String; var name: String; var excluded: SpaceInheritanceExclusions? = nil }
 
     public init(historyURL: URL, home: URL, sessions: URL, systems: URL? = nil,
                 globalDirectories: @escaping @Sendable () -> [URL] = { [] },
@@ -160,7 +162,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                             project.mcpServers = sharedMCP(entry.directory)
                             // Organization never grants config or MCP inheritance across unrelated folders.
                             if let parent = folderParent {
-                                project.inheritedMCP = sharedMCP(parent).filter { !project.mcpServers.contains($0) }
+                                project.inheritedMCP = sharedMCP(parent).filter { !project.mcpServers.contains($0) && entry.excluded?.mcp.contains($0) != true }
                                 if !project.inheritedMCP.isEmpty {
                                     project.inheritedFromName = history.first { $0.directory == parent }?.name ?? URL(fileURLWithPath: parent).lastPathComponent
                                 }
@@ -183,6 +185,19 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         return .text(ProjectFileText(file: ProjectFile(path: file, category: kind == .extension ? .extensions : .skills, exists: false), text: nil))
                     case .context(let directory):
                         return .context(try context(root: root(directory)))
+                    case .inheritance(let directory, let excluded):
+                        let root = try root(directory)
+                        guard let index = history.firstIndex(where: { $0.directory == directory }) else {
+                            throw ProjectFileError("unknown_project", "This directory is not a known project.")
+                        }
+                        let clean = SpaceInheritanceExclusions(mcp: Array(Set(excluded.mcp)).sorted(), skills: Array(Set(excluded.skills)).sorted())
+                        guard (clean.mcp + clean.skills).allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }), clean.mcp.count + clean.skills.count <= 512 else {
+                            throw ProjectFileError("invalid", "Inherited server and skill names must be 1 to 128 bytes.")
+                        }
+                        let original = history
+                        history[index].excluded = clean.isEmpty ? nil : clean
+                        do { try saveHistory() } catch { history = original; throw error }
+                        return .context(try context(root: root))
                     case .mcp:
                         preconditionFailure("MCP is handled after file validation above.")
                     case .open:
@@ -207,20 +222,6 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         return .text(ProjectFileText(file: try allowed(file, root: root), text: text, modifiedAt: modified(root: root, file: file)))
                     }
                 })
-            }
-        }
-    }
-
-    /// The project `cwd` is a subproject of, for an agent starting there: the outermost project
-    /// folder that holds it (`ProjectNesting`), or nil. Its project MCP servers are shared with
-    /// the agent (`shepherd-mcp-parent.ts`). Reads the history on this store's worker, never the
-    /// caller's queue.
-    public func parentProject(of cwd: String, state: ShepherdState) async -> String? {
-        await withCheckedContinuation { continuation in
-            queue.async { [self] in
-                try? load()
-                try? rememberEntries(Self.directories(in: state))
-                continuation.resume(returning: ProjectNesting.parent(of: absolute(cwd), among: parentCandidates()))
             }
         }
     }
@@ -321,10 +322,30 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             }
         }
         if changed {
-            do {
-                try FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(history).write(to: historyURL, options: .atomic)
-            } catch { history = original; throw error }
+            do { try saveHistory() } catch { history = original; throw error }
+        }
+    }
+
+    private func saveHistory() throws {
+        try FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(history).write(to: historyURL, options: .atomic)
+    }
+
+    /// The space an agent starting in `cwd` inherits MCP servers and skills from: the outermost
+    /// project folder that holds it (`ProjectNesting`), shared by `shepherd-mcp-parent.ts`. With it,
+    /// what the child space holding `cwd` (the innermost known folder at or above it, below the
+    /// parent) turns off. Reads the history on this store's worker, never the caller's queue.
+    public func inheritance(of cwd: String, state: ShepherdState) async -> (parent: String, excluded: SpaceInheritanceExclusions)? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                try? load()
+                try? rememberEntries(Self.directories(in: state))
+                let here = absolute(cwd)
+                guard let parent = ProjectNesting.parent(of: here, among: parentCandidates()) else { continuation.resume(returning: nil); return }
+                let child = history.filter { $0.directory != parent && ($0.directory == here || here.hasPrefix($0.directory + "/")) && $0.directory.hasPrefix(parent + "/") }
+                    .max { $0.directory.count < $1.directory.count }
+                continuation.resume(returning: (parent, child?.excluded ?? SpaceInheritanceExclusions()))
+            }
         }
     }
 
@@ -499,7 +520,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
         let parent = parentSettings(of: root.path)
         return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count, globalSettings: globalFormSettings(),
-                              parentName: parent?.name, parentSettings: parent?.settings)
+                              parentName: parent?.name, parentSettings: parent?.settings,
+                              inheritsFrom: ProjectNesting.parent(of: root.path, among: parentCandidates()),
+                              excluded: history.first { $0.directory == root.path }?.excluded ?? SpaceInheritanceExclusions())
     }
 
     /// The global values the space Settings form compares against, from Shepherd's pi home. Only the

@@ -816,7 +816,10 @@ public final class NativeThreadStore {
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
-        let live = rows.first(where: \.live)
+        // From the full list: a derive that rebuilt no row (a queue overlay, an identical page)
+        // leaves the live turn out of `rows`, and its row must stay.
+        assert(liveReply.map { self.rows.indices.contains($0) } ?? true)
+        let live = liveReply.flatMap { self.rows.indices.contains($0) ? self.rows[$0] : nil }
         if liveRow != live { liveRow = live }
         let editing = Self.editingPath(live)
         if editingPath != editing { editingPath = editing }

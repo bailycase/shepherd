@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		17000000000000000000B001 /* Shepherd Notification Content.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 17000000000000000000A201 /* Shepherd Notification Content.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		17000000000000000000B201 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 17000000000000000000C001 /* ShepherdUI */; };
 		16000000000000000000B001 /* Shepherd Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 16000000000000000000A201 /* Shepherd Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		16000000000000000000B201 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 16000000000000000000C001 /* ShepherdUI */; };
 		16000000000000000000B202 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 16000000000000000000C002 /* ShepherdCore */; };
@@ -32,6 +34,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		17000000000000000000E901 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5E000000000000000000F000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 17000000000000000000F001;
+			remoteInfo = "Shepherd Notification Content";
+		};
 		16000000000000000000E901 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 5E000000000000000000F000 /* Project object */;
@@ -49,6 +58,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				16000000000000000000B001 /* Shepherd Widgets.appex in Embed Foundation Extensions */,
+				17000000000000000000B001 /* Shepherd Notification Content.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -67,6 +77,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		17000000000000000000A201 /* Shepherd Notification Content.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Shepherd Notification Content.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		16000000000000000000A201 /* Shepherd Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Shepherd Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E000000000000000000A007 /* pi-engine */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ".build/pi-engine/Resources/pi-engine"; sourceTree = SOURCE_ROOT; };
 		15000000000000000000A201 /* Shepherd iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shepherd iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -81,6 +92,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		17000000000000000000D1E0 /* Exceptions for "NotificationContent" folder in "Shepherd Notification Content" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 17000000000000000000F001 /* Shepherd Notification Content */;
+		};
+		17000000000000000000D1E1 /* Exceptions for "NotificationContent" folder in "Shepherd iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				NotificationViewController.swift,
+			);
+			target = 15000000000000000000F001 /* Shepherd iOS */;
+		};
 		16000000000000000000D1E0 /* Exceptions for "Widgets" folder in "Shepherd Widgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -99,6 +125,15 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		17000000000000000000D100 /* NotificationContent */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				17000000000000000000D1E0 /* Exceptions for "NotificationContent" folder in "Shepherd Notification Content" target */,
+				17000000000000000000D1E1 /* Exceptions for "NotificationContent" folder in "Shepherd iOS" target */,
+			);
+			path = NotificationContent;
+			sourceTree = "<group>";
+		};
 		16000000000000000000D100 /* Widgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -123,6 +158,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		17000000000000000000E002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				17000000000000000000B201 /* ShepherdUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		16000000000000000000E002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -177,6 +220,7 @@
 				15000000000000000000D100 /* iOS */,
 				16000000000000000000D100 /* Widgets */,
 				16000000000000000000D200 /* Glance */,
+				17000000000000000000D100 /* NotificationContent */,
 				5E000000000000000000A001 /* ShepherdLauncher.swift */,
 				5E000000000000000000A002 /* Info.plist */,
 				5E000000000000000000A003 /* AppIcon.icon */,
@@ -193,6 +237,7 @@
 				5E000000000000000000A201 /* Shepherd.app */,
 				15000000000000000000A201 /* Shepherd iOS.app */,
 				16000000000000000000A201 /* Shepherd Widgets.appex */,
+				17000000000000000000A201 /* Shepherd Notification Content.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -200,6 +245,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		17000000000000000000F001 /* Shepherd Notification Content */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 17000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd Notification Content" */;
+			buildPhases = (
+				17000000000000000000E001 /* Sources */,
+				17000000000000000000E002 /* Frameworks */,
+				17000000000000000000E003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				17000000000000000000D100 /* NotificationContent */,
+			);
+			name = "Shepherd Notification Content";
+			packageProductDependencies = (
+				17000000000000000000C001 /* ShepherdUI */,
+			);
+			productName = "Shepherd Notification Content";
+			productReference = 17000000000000000000A201 /* Shepherd Notification Content.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		16000000000000000000F001 /* Shepherd Widgets */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 16000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd Widgets" */;
@@ -238,10 +306,12 @@
 			);
 			dependencies = (
 				16000000000000000000E902 /* PBXTargetDependency */,
+				17000000000000000000E902 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				15000000000000000000D100 /* iOS */,
 				16000000000000000000D200 /* Glance */,
+				17000000000000000000D100 /* NotificationContent */,
 			);
 			name = "Shepherd iOS";
 			packageProductDependencies = (
@@ -325,11 +395,19 @@
 				5E000000000000000000F001 /* Shepherd */,
 				15000000000000000000F001 /* Shepherd iOS */,
 				16000000000000000000F001 /* Shepherd Widgets */,
+				17000000000000000000F001 /* Shepherd Notification Content */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		17000000000000000000E003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		16000000000000000000E003 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -405,6 +483,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		17000000000000000000E001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		16000000000000000000E001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -431,6 +516,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		17000000000000000000E902 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 17000000000000000000F001 /* Shepherd Notification Content */;
+			targetProxy = 17000000000000000000E901 /* PBXContainerItemProxy */;
+		};
 		16000000000000000000E902 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 16000000000000000000F001 /* Shepherd Widgets */;
@@ -439,6 +529,87 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		17000000000000000000F311 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4J6D7M7D79;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/NotificationContent/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bailycase.shepherd.ios.notification-content;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		17000000000000000000F312 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4J6D7M7D79;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/NotificationContent/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bailycase.shepherd.ios.notification-content;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		17000000000000000000F313 /* Nightly */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4J6D7M7D79;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/NotificationContent/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bailycase.shepherd.ios.notification-content;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Nightly;
+		};
 		16000000000000000000F311 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -845,6 +1016,16 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		17000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd Notification Content" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				17000000000000000000F311 /* Debug */,
+				17000000000000000000F312 /* Release */,
+				17000000000000000000F313 /* Nightly */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		16000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd Widgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -914,6 +1095,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		17000000000000000000C001 /* ShepherdUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ShepherdUI;
+		};
 		16000000000000000000C001 /* ShepherdUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ShepherdUI;

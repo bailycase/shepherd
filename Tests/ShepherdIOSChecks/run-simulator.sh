@@ -103,7 +103,7 @@ PLIST
 full_screen=true; if [[ "$windows" == true ]]; then full_screen=false; fi
 sed -i '' -e "s|<MULTIPLE_WINDOWS/>|<$windows/>|" -e "s|<FULL_SCREEN/>|<$full_screen/>|" "$app/Info.plist"
 sources=()
-while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
+while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance App/NotificationContent -name '*.swift' ! -path 'App/NotificationContent/NotificationViewController.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
     -Onone -D DEBUG -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \

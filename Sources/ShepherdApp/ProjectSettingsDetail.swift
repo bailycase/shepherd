@@ -41,7 +41,8 @@ struct ProjectSettingsDetail: View {
                     if model.category == .mcp {
                         editorColumn
                     } else if showsResources {
-                        SpaceResourcesView(model: model.resources, project: project)
+                        SpaceResourcesView(model: model.resources, project: project,
+                                           openParent: model.inheritanceParent == nil ? nil : { Task { await model.openInheritanceParent() } })
                     } else if showsForm {
                         SpaceSettingsFormView(model: model, project: project)
                     } else if narrow {
