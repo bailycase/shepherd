@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 
 /// The script an agent's browser tools run in the thread's page. It lives in
 /// Shepherd's own content world (`BrowserSession.world`), which the page can't see or call, and

@@ -52,6 +52,10 @@ final class MissionController {
     @ObservationIgnored var publishedLive: [MissionID: RemoteMissionLive] = [:]
     /// Each running merge train's loop (MXTrain). Never restarted on its own.
     @ObservationIgnored var trainJobs: [MissionID: Task<Void, Never>] = [:]
+    /// Mission templates on this Mac and in the repositories' default branches (MXTemplates), as last read.
+    var templates: [MissionTemplate] = []
+    /// The template New mission starts from, until it creates the mission.
+    var startTemplate: MissionTemplate?
 
     init(vm: ShepherdViewModel) { self.vm = vm; server = vm.server }
     var records: [Mission] { vm?.state.missions ?? [] }
@@ -85,11 +89,15 @@ final class MissionController {
         guard selected.allSatisfy({ space in branches[space.id].map { branchChoices[space.id]?.contains($0) == true } == true }) else {
             throw MissionError("mission_base", "Choose the starting branch for every repository. Each gets a new mission worktree.")
         }
-        let draft = MissionDraft(title: String(goal.prefix(100)), goal: goal,
+        var draft = MissionDraft(title: String(goal.prefix(100)), goal: goal,
                                  plan: MissionPlan(lanes: selected.map { MissionLane(spaceID: $0.id, name: $0.name, baseBranch: branches[$0.id]) }))
+        // A template is a map: its mission runs on the map runner, which plans from it.
+        let template = startTemplate
+        startTemplate = nil
+        draft.template = template?.id
         let mission = try await server.createMission(draft: draft)
         var run = MissionRun(model: model, messages: [.init(role: .user, text: goal)])
-        if (backend ?? newMissionBackend) == .specKit { run.specKit = MissionSpecKitRun(lanes: selected.map { MissionSpecKitLane(spaceID: $0.id) }) }
+        if template == nil, (backend ?? newMissionBackend) == .specKit { run.specKit = MissionSpecKitRun(lanes: selected.map { MissionSpecKitLane(spaceID: $0.id) }) }
         _ = try await server.setMissionRun(id: mission.id, expectedRevision: mission.revision, run: run)
         selectedID = mission.id
         try await plan(id: mission.id)

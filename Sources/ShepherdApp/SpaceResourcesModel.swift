@@ -20,7 +20,11 @@ final class SpaceResourcesModel {
         var detail: String
         var enabled: Bool
         var canToggle: Bool
-        var local: Bool { !resource.global }
+        /// The parent space a skill is inherited from (ProjectChildSkills), and for a space skill, the
+        /// parent whose skill of the same name it overrides.
+        var inheritedFrom: String? = nil
+        var overrides: String? = nil
+        var local: Bool { !resource.global && inheritedFrom == nil }
     }
 
     /// The board's editor dialog (ProjectResourceEditor): one resource's fields.
@@ -91,6 +95,13 @@ final class SpaceResourcesModel {
     @ObservationIgnored private(set) var saved: [String: String?] = [:]
     /// The draft: a file's new text, or nil to remove it, by path.
     private(set) var writes: [String: String?] = [:]
+    /// The parent space whose skills this child inherits, its skills, and the ones this space turned
+    /// off (`ProjectsModel.setInherited`, saved at once, not with the draft).
+    private(set) var parent: (name: String, directory: String)?
+    private(set) var parentSkills: [ProjectResource] = []
+    var excludedSkills: [String] = [] { didSet { if excludedSkills != oldValue { derive() } } }
+    var canExcludeInherited = false { didSet { if canExcludeInherited != oldValue { derive() } } }
+    @ObservationIgnored var setInherited: @MainActor (_ skill: String, _ on: Bool) async -> Void = { _, _ in }
     private(set) var settingsPath = ".shepherd/settings.json"
     private(set) var settingsSaved: String?
     private(set) var settingsDraft = ""
@@ -106,8 +117,8 @@ final class SpaceResourcesModel {
 
     /// Reads the resources and the space settings file pi uses (`settingsPath`: the first of
     /// `.shepherd/settings.json` and `.pi/settings.json` that exists). `keep` keeps the draft.
-    func load(directory: String, settingsPath: String, keep: Bool = false, send: @escaping Send) async {
-        self.send = send; self.directory = directory; self.settingsPath = settingsPath
+    func load(directory: String, settingsPath: String, parent: (name: String, directory: String)? = nil, keep: Bool = false, send: @escaping Send) async {
+        self.send = send; self.directory = directory; self.settingsPath = settingsPath; self.parent = parent
         if !keep { writes = [:]; saved = [:]; editor = nil; removing = nil; install = nil; confirmingDiscard = false }
         loading = true; message = nil; conflict = false
         defer { loading = false }
@@ -117,6 +128,10 @@ final class SpaceResourcesModel {
                 throw ProjectFileError("protocol", "Unexpected space resources reply.")
             }
             loaded = list
+            // Only skills inherit; a parent that can't be read shares nothing here.
+            if let parent, case .resources(let inherited)? = try? await send(.resources(directory: parent.directory)) {
+                parentSkills = inherited.filter { !$0.global && $0.kind == .skill }
+            } else { parentSkills = [] }
             if !keep || settingsDraft == (settingsSaved ?? "") { settingsDraft = settings.text ?? "" }
             settingsSaved = settings.text
             loadedOnce = true
@@ -129,7 +144,7 @@ final class SpaceResourcesModel {
 
     func reloadKeepingDraft() async {
         guard let send else { return }
-        await load(directory: directory, settingsPath: settingsPath, keep: true, send: send)
+        await load(directory: directory, settingsPath: settingsPath, parent: parent, keep: true, send: send)
     }
 
     func reset() { writes = [:]; saved = [:]; settingsDraft = settingsSaved ?? ""; editor = nil; removing = nil; install = nil; confirmingDiscard = false; message = nil; conflict = false; derive() }
@@ -159,18 +174,33 @@ final class SpaceResourcesModel {
                                                  entries: entries, base: settingsBase, otherwise: item.global ? item.enabled : true)
     }
 
+    /// A skill's folder name, which pi and `shepherd-mcp-parent.ts` know it by.
+    static func skillFolder(_ path: String) -> String { ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent }
+
     func derive() {
-        let all = items.filter { $0.kind == kind }
-        spaceCount = all.filter { !$0.global }.count
+        let own = items.filter { $0.kind == kind }
+        // The parent's skills a space skill of the same folder name doesn't override, after the space's own.
+        let spaceSkills = Set(own.filter { !$0.global && $0.kind == .skill }.map { Self.skillFolder($0.path) })
+        let parentNames = Set(parentSkills.map { Self.skillFolder($0.path) })
+        let inherited = kind == .skill ? parentSkills.filter { !spaceSkills.contains(Self.skillFolder($0.path)) } : []
+        let all = own.filter { !$0.global } + inherited + own.filter(\.global)
+        let fromParent = Set(inherited.map(\.path))
+        spaceCount = own.filter { !$0.global }.count
         inheritedCount = all.count - spaceCount
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = all.filter { item in
-            (scope == .all || (scope == .space) != item.global)
-                && (query.isEmpty || "\(item.name) \(item.description) \(item.displayPath)".localizedCaseInsensitiveContains(query))
-        }.map { item in
-            Row(id: item.id, resource: item, displayName: item.kind == .prompt ? "/" + item.name : item.name,
-                detail: item.kind == .agent ? item.detail : item.kind == .prompt ? "Prompt template" : item.displayPath,
-                enabled: enabled(item), canToggle: !(item.global && item.kind == .agent))
+        let next = all.compactMap { item -> Row? in
+            let isParent = !item.global && fromParent.contains(item.path) && !spaceSkills.contains(Self.skillFolder(item.path))
+            guard scope == .all || (scope == .space) == (!item.global && !isParent),
+                  query.isEmpty || "\(item.name) \(item.description) \(item.displayPath)".localizedCaseInsensitiveContains(query) else { return nil }
+            if isParent {
+                let folder = Self.skillFolder(item.path)
+                return Row(id: "parent:" + item.path, resource: item, displayName: item.name, detail: item.displayPath,
+                           enabled: !excludedSkills.contains(folder), canToggle: canExcludeInherited, inheritedFrom: parent?.name)
+            }
+            return Row(id: item.id, resource: item, displayName: item.kind == .prompt ? "/" + item.name : item.name,
+                       detail: item.kind == .agent ? item.detail : item.kind == .prompt ? "Prompt template" : item.displayPath,
+                       enabled: enabled(item), canToggle: !(item.global && item.kind == .agent),
+                       overrides: !item.global && item.kind == .skill && parentNames.contains(Self.skillFolder(item.path)) ? parent?.name : nil)
         }
         if next != rows { rows = next }
     }
@@ -208,6 +238,7 @@ final class SpaceResourcesModel {
 
     func toggle(_ row: Row, on: Bool) async {
         guard row.canToggle else { return }
+        if row.inheritedFrom != nil { await setInherited(Self.skillFolder(row.resource.path), on); return }
         let item = row.resource
         if let key = item.kind.settingsKey {
             var object = settingsObject
@@ -229,6 +260,25 @@ final class SpaceResourcesModel {
                 setWrite(item.path, profile.text)
             } catch { message = String(describing: error) }
         }
+    }
+
+    /// Override here: the parent's skill, copied into this space's `.pi/skills` as a draft, where it
+    /// wins by name. Reset to inherited removes that copy.
+    func overrideInherited(_ row: Row) async {
+        guard let parent, row.inheritedFrom != nil, let send else { return }
+        let path = ".pi/skills/\(Self.skillFolder(row.resource.path))/SKILL.md"
+        do {
+            guard case .text(let value) = try await send(.read(directory: parent.directory, file: row.resource.path)), let text = value.text else {
+                throw ProjectFileError("missing", "\(row.resource.name) is no longer in \(parent.name).")
+            }
+            _ = try await self.text(path)
+            setWrite(path, text)
+        } catch { message = String(describing: error) }
+    }
+
+    func resetToInherited(_ row: Row) async {
+        guard row.overrides != nil, row.local else { return }
+        do { _ = try await text(row.resource.path); setWrite(row.resource.path, nil) } catch { message = String(describing: error) }
     }
 
     func askRemove(_ row: Row) async {
@@ -359,7 +409,7 @@ final class SpaceResourcesModel {
             _ = try await send(.installSkills(directory: directory, repo: state.repository.trimmingCharacters(in: .whitespacesAndNewlines),
                                               paths: state.selected.sorted(), commit: revision.isEmpty ? nil : revision))
             install = nil
-            await load(directory: directory, settingsPath: settingsPath, keep: true, send: send)
+            await load(directory: directory, settingsPath: settingsPath, parent: parent, keep: true, send: send)
         } catch { install?.error = String(describing: error); install?.busy = false }
     }
 
@@ -386,7 +436,7 @@ final class SpaceResourcesModel {
                 settingsSaved = settingsDraft
             }
             saved = [:]
-            await load(directory: directory, settingsPath: settingsPath, keep: true, send: send)
+            await load(directory: directory, settingsPath: settingsPath, parent: parent, keep: true, send: send)
         } catch {
             conflict = (error as? ProjectFileError)?.code == "conflict" || "\(error)".contains("changed elsewhere")
             message = conflict ? "Space resources changed elsewhere. Reload the latest version before saving." : "Could not save. Your changes are still here. \(error)"
@@ -400,6 +450,6 @@ final class SpaceResourcesModel {
         let reload = reloading
         reloading = false
         reset()
-        if reload || conflict, let send { await load(directory: directory, settingsPath: settingsPath, send: send) }
+        if reload || conflict, let send { await load(directory: directory, settingsPath: settingsPath, parent: parent, send: send) }
     }
 }

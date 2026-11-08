@@ -13,6 +13,7 @@ struct ProjectsHost: Equatable, Identifiable {
     var supportsMCP = true
     var supportsProjectTrust = true
     var supportsResources = true
+    var supportsInheritance = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -154,6 +155,8 @@ final class ProjectsModel {
         }
     }
     private(set) var mcp = ProjectMCPConfiguration()
+    /// The parent space's servers a child inherits (`loadParentMCP`); nil without a parent.
+    var parentMCP: ProjectMCPConfiguration?
 
     // The Settings tab's form (SpaceSettingsForm), derived from the draft and the host's global values.
     @ObservationIgnored private(set) var formSettings: [String: Any]?
@@ -188,8 +191,12 @@ final class ProjectsModel {
     }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
-    private(set) var context = ProjectContext() {
-        didSet { if context.globalSettings != oldValue.globalSettings || context.parentSettings != oldValue.parentSettings { deriveForm() } }
+    var context = ProjectContext() {
+        didSet {
+            if context.globalSettings != oldValue.globalSettings || context.parentSettings != oldValue.parentSettings { deriveForm() }
+            resources.excludedSkills = context.excluded?.skills ?? []
+            resources.canExcludeInherited = canExcludeInherited
+        }
     }
     struct ReadRow: Equatable, Identifiable {
         var id: String; var label: String; var scope: String; var selected: Bool
@@ -318,7 +325,7 @@ final class ProjectsModel {
         showingBrowser = false; showingHooks = false; showingSettingsJSON = false; resources.reset()
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
-        context = ProjectContext(); readRows = []; peers = []
+        context = ProjectContext(); readRows = []; peers = []; parentMCP = nil
         do {
             guard case .files(let files) = try await request(row.host, .files(directory: row.project.directory)) else { throw ProjectFileError("protocol", "Unexpected space files reply.") }
             guard token == generation, selected?.id == row.id else { return }
@@ -344,7 +351,9 @@ final class ProjectsModel {
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
             return try await self.lookUpSkills(host, repo)
         }
-        await resources.load(directory: selected.project.directory, settingsPath: settings?.path ?? ".shepherd/settings.json", keep: keep) { [weak self] request in
+        resources.setInherited = { [weak self] skill, on in await self?.setInherited(skill: skill, on: on) }
+        let parent = context.inheritsFrom.map { (name: inheritanceParentName ?? $0, directory: $0) }
+        await resources.load(directory: selected.project.directory, settingsPath: settings?.path ?? ".shepherd/settings.json", parent: parent, keep: keep) { [weak self] request in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
             return try await self.request(host, request)
         }
@@ -393,6 +402,8 @@ final class ProjectsModel {
             if category == .mcp {
                 deriveMCP()
                 fileLoading = false // Credential metadata must not hold an already-loaded file's controls disabled.
+                await loadParentMCP()
+                guard token == generation else { return }
                 await refreshMCPCredentials()
                 guard token == generation else { return }
             }
@@ -504,7 +515,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit space settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its spaces."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, supportsResources: connection.supportsProjectResources, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, supportsResources: connection.supportsProjectResources, supportsInheritance: connection.supportsProjectInheritance, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 

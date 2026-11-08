@@ -101,7 +101,7 @@ extension MissionController {
         guard let run = mission.run, let checkout = run.checkouts.first else { throw MissionError("mission_scope", "Choose a repository.") }
         let before = try await collectReviews(id)
         let text = try await runAgent(id, runID: runID, station: nil, checkout: checkout,
-                                      prompt: planningPrompt(mission), title: "Plan: \(mission.draft.title)")
+                                      prompt: planningPrompt(mission) + templatePrompt(mission), title: "Plan: \(mission.draft.title)")
         let after = try await collectReviews(id)
         guard before.map(\.fingerprint) == after.map(\.fingerprint) else {
             throw MissionError("mission_planner_changed_files", "The planner changed a worktree during read-only intake. Inspect its thread and changes before continuing; nothing was launched or published.")

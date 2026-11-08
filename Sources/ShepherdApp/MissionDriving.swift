@@ -22,6 +22,10 @@ protocol MissionDriving: AnyObject, Observable {
     var branchChoices: [SpaceID: [String]] { get }
     var defaultBranches: [SpaceID: String] { get }
     var specKitReports: [MissionID: [SpaceID: SpecKitPreflight]] { get }
+    /// Mission templates (MXTemplates), and the one New mission starts from.
+    var templates: [MissionTemplate] { get }
+    var startTemplate: MissionTemplate? { get set }
+    func loadTemplates() async
     /// The sidebar's New mission asked for the start page.
     var startRequested: Bool { get set }
     func refreshModels() async
@@ -75,6 +79,7 @@ extension MissionController: MissionDriving {
         case .resumeTrain: try await resumeTrain(id: id, revision: revision)
         case .skipSoak: try await skipSoak(id: id, revision: revision)
         case .laneLock(let lane, let choice): try await chooseLock(id: id, lane: lane, choice: choice)
+        case .saveTemplate(let name, let summary, let team): try await saveTemplate(id: id, name: name, summary: summary, team: team)
         }
     }
 }
@@ -110,6 +115,10 @@ final class RemoteMissionDriver: MissionDriving {
     var branchChoices: [SpaceID: [String]] { missions.startOptions?.branchChoices ?? [:] }
     var defaultBranches: [SpaceID: String] { missions.startOptions?.defaultBranches ?? [:] }
     var specKitReports: [MissionID: [SpaceID: SpecKitPreflight]] { missions.specKit.mapValues(\.reports) }
+    /// A host's templates stay on that host; its page lists none here.
+    var templates: [MissionTemplate] { [] }
+    var startTemplate: MissionTemplate?
+    func loadTemplates() async {}
 
     func refreshModels() async {
         do { try await missions.loadStartOptions() } catch { self.error = RemoteMissions.describe(error) }
@@ -182,6 +191,7 @@ final class RemoteMissionDriver: MissionDriving {
         case .resumeTrain: wire = .resumeTrain
         case .skipSoak: wire = .skipSoak
         case .laneLock(let lane, let choice): wire = .laneLock(spaceID: lane, choice: choice)
+        case .saveTemplate: throw MissionError("mission_template", "Save templates on the Mac that ran the mission.")
         }
         let made = try await remote { try await self.missions.perform(id, revision: shown, wire) }
         if let made { selectedID = made }
