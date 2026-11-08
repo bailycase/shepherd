@@ -337,7 +337,8 @@ struct ThreadTranscript: View {
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
                 // Insets and row wrapping can settle separately from scroll offsets. While
                 // following, keep the tail above the composer through every change. This runs
-                // inside the layout pass, so it only records: the pin lands after it.
+                // inside the layout pass, so it records and the pin lands after it; only a
+                // mount's first few landings run here, so its first frames are already at the tail.
                 let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: nativeTail) }
                 tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: tailGap), wants: wants,
                                 resized: new.resized(from: old), land: lander(proxy))

@@ -9,8 +9,9 @@ import ShepherdUI
 /// opened and closed ten times in a row (`withSHAnimation(.pane)`, as the toolbar button does).
 /// Where the pane toggle rebuilds the detail column, the new transcript mounts on the long reply
 /// and lands on its tail inside the layout pass; the audit saw that spin the main thread
-/// (ios-duo-1). After each toggle it checks that the landings stayed few, the pin did not give
-/// up, the reply ends above the composer and the transcript draws (from iOS 27.1: see `inkChecked`).
+/// (ios-duo-1). After each toggle it checks that the landings stayed few, at most `inPassLimit` of them
+/// ran inside a layout pass (the mount's first ones), the pin did not give up, the reply ends above the
+/// composer and the transcript draws (from iOS 27.1: see `inkChecked`).
 /// A watchdog thread fails the run if the main queue stops answering. Run it posed open on the Duo,
 /// or in landscape on an iPad; where there is no side pane it says so.
 enum TailFixture {
@@ -19,6 +20,8 @@ enum TailFixture {
     /// ceiling (the merge base lands 22 to 29 times per open, the fix at most 4). The repin itself
     /// guarantees less: a tail that nears on every turn but never rests lands up to `maxRun` times.
     static let landingCeiling = 2 * NativeTailRepin.limit + 1
+    /// A toggle mounts the transcript once, and a pin lands inside a layout pass `inPassLimit` times per mount.
+    static let inPassCeiling = NativeTailRepin.inPassLimit
     /// A drawn transcript is mostly text on a background; a blank one has no ink.
     static let inkFloor = 0.02
     /// iOS 27.0 strands the transcript past its rows after a width change, on about 1 open in 5
@@ -91,6 +94,7 @@ enum TailFixture {
             let counts = SHRenderProbe.stop()
             let content = counts["thread.tailLanding", default: 0]
             let resized = counts["thread.tailLandingResized", default: 0]
+            let inPass = counts["thread.tailLandingInPass", default: 0]
             let stalled = counts["thread.tailStalled", default: 0]
             let pane = navigator.sidePane.isOpen ? "open" : "closed"
             let gutter = FollowFixture.threadScrollView()?.traitCollection.horizontalSizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter
@@ -99,8 +103,9 @@ enum TailFixture {
             let distance = Int((tail?.distance ?? .infinity).rounded())
             let ink = FollowFixture.transcriptInk()
             let percent = Int((ink * 100).rounded())
-            measured.append("toggle \(toggle) (pane \(pane)): \(content) landings with the content moving, \(resized) with the width, \(stalled) stalls, \(distance)pt above the tail, \(percent)% ink")
+            measured.append("toggle \(toggle) (pane \(pane)): \(content) landings with the content moving, \(resized) with the width, \(inPass) in a layout pass, \(stalled) stalls, \(distance)pt above the tail, \(percent)% ink")
             verdicts.append((content <= landingCeiling && stalled == 0, "toggle \(toggle): at most \(landingCeiling) landings with the content moving, none stalled"))
+            verdicts.append((inPass <= inPassCeiling, "toggle \(toggle): at most \(inPassCeiling) landings inside a layout pass"))
             verdicts.append((tail?.valid == true, "toggle \(toggle): the reply ends above the composer"))
             if inkChecked { verdicts.append((ink >= inkFloor, "toggle \(toggle): the transcript draws")) }
         }

@@ -823,7 +823,8 @@ public struct NativeScrollProbe: Equatable, Sendable {
 /// reader's scroll or an ask.
 ///
 /// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:touching:)`,
-/// `quietPassed`), then call `take()` once to learn whether to land.
+/// `quietPassed`), then call `take()` once to learn whether to land. The pin's first few landings may
+/// come from `takeInPass()` instead, in the layout pass that asked; they are the only ones allowed there.
 public struct NativeTailRepin: Equatable, Sendable {
     /// Misses that stop the landings.
     public static let limit = 4
@@ -832,6 +833,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// How long a stalled tail is left alone before it gets one try, doubling per try.
     public static let quiet: Duration = .milliseconds(100)
     public static let maxQuietTries = 5
+    /// Landings a pin may make inside layout passes, counted from its first (`takeInPass`).
+    public static let inPassLimit = 8
 
     /// The landings stopped. A tail at rest, the end of the reader's scroll or an ask start them
     /// again; output and the quiet's tries each give one landing and leave it stalled.
@@ -844,6 +847,9 @@ public struct NativeTailRepin: Equatable, Sendable {
     public private(set) var quietWait: Duration = NativeTailRepin.quiet
     /// Tries the quiet has given since the stall.
     public private(set) var quietTries = 0
+    /// Landings this pin has made, ever, in a pass or after one: a new thread or a rest does not clear
+    /// them (`takeInPass`).
+    public private(set) var landings = 0
 
     private var run = 0
     /// The last reading's distance from the tail, and whether one came since the last landing.
@@ -857,6 +863,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     private var turnOutput = false
     private var turnAsked = false
     private var turnQuiet = false
+    /// The latest reading's `wants`, until a pass lands for it.
+    private var asking = false
 
     public init() {}
 
@@ -870,6 +878,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     public mutating func reading(distance: Double, wants: Bool, resized: Bool) {
         let gap = abs(distance)
         self.gap = gap
+        asking = wants
         fresh = true
         if resized { turnResized = true }
         if gap <= NativeScrollFollower.repinSlack {
@@ -920,6 +929,21 @@ public struct NativeTailRepin: Equatable, Sendable {
         return pending || turnAsked || turnOutput || turnQuiet
     }
 
+    /// Whether to land now, inside the layout pass of the reading that asked, instead of at the next
+    /// turn. Only a pin's first `inPassLimit` landings may. A transcript that mounts draws its first
+    /// frames out of those passes, and a lazy stack that has not realized its tail needs a few landings
+    /// (one of them at rest, where it moves nothing but keeps the tail anchored while the composer
+    /// settles) before the view stays there; a landing a turn later shows the rows' top for a frame.
+    /// Every later landing waits for `take()`, so a layout that asks again inside its own passes
+    /// (ios-duo-1) lands inside them `inPassLimit` times per pin, whatever it does.
+    public mutating func takeInPass() -> Bool {
+        guard landings < Self.inPassLimit, asking, !scrolling else { return false }
+        asking = false
+        if pending { return take() }
+        landings += 1
+        return true
+    }
+
     /// A stalled tail saw no reading for `quietWait`: it gets one try, and the wait doubles.
     public mutating func quietPassed() {
         guard stalled, quietTries < Self.maxQuietTries else { return }
@@ -953,6 +977,7 @@ public struct NativeTailRepin: Equatable, Sendable {
 
     private mutating func landing(_ measured: Bool) -> Bool {
         pending = false
+        landings += 1
         if measured { setOut = gap }
         return true
     }

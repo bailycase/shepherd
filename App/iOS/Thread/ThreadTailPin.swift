@@ -20,10 +20,13 @@ struct TailReading: Equatable {
     }
 }
 
-/// Lands the transcript on its tail after the layout pass that asked, never inside it: the
-/// scroll geometry's action only records, and one main-actor task per run-loop turn asks
-/// `NativeTailRepin` whether landing still helps. A tail that will not settle stops being
-/// chased, and a quiet watch gives it a try now and then. Not observed: nothing draws from it.
+/// Lands the transcript on its tail after the layout pass that asked, not inside it: the scroll
+/// geometry's action only records, and one main-actor task per run-loop turn asks `NativeTailRepin`
+/// whether landing still helps. The exception is a pin's first few landings, which run in the pass
+/// that asks for them (`NativeTailRepin.takeInPass`): a transcript that mounts draws those passes'
+/// frames, and they belong at the tail. That is a fixed number of landings in passes per pin, so a
+/// layout that asks again inside its own passes cannot spin there. A tail that will not settle stops
+/// being chased, and a quiet watch gives it a try now and then. Not observed: nothing draws from it.
 @MainActor
 final class ThreadTailPin {
     typealias Land = @MainActor (_ resized: Bool) -> Void
@@ -42,7 +45,13 @@ final class ThreadTailPin {
         self.land = land
         self.resized = self.resized || resized
         repin.reading(distance: distance, wants: wants, resized: resized)
-        if !scrolling, repin.pending || resized { schedule() }
+        if !scrolling, repin.takeInPass() {
+            let resizing = self.resized
+            self.resized = false
+            SHRenderProbe.tick("thread.tailLandingInPass")
+            land(resizing)
+        }
+        if !scrolling, repin.pending || self.resized { schedule() }
         watch()
     }
 

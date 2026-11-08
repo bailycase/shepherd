@@ -370,4 +370,91 @@ struct ScrollFollowerRepinTests {
         repin.reading(distance: 3_000, wants: true, resized: false)
         #expect(take())
     }
+
+    // MARK: The first landings, in the layout pass
+
+    @Test func aFreshPinLandsInThePassThatAsks() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        func take() -> Bool { repin.take() }
+        repin.reading(distance: 27_400, wants: true, resized: false)
+        #expect(takeInPass())
+        #expect(repin.landings == 1)
+        #expect(!repin.pending)
+        #expect(!take())
+    }
+
+    /// A follower that asks at the tail moves nothing, but while a mount settles its landing keeps the
+    /// tail anchored; it counts against the pin's limit all the same.
+    @Test func anAskAtRestLandsInThePassAndCounts() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        repin.reading(distance: 0, wants: true, resized: false)
+        #expect(takeInPass())
+        #expect(repin.landings == 1)
+        #expect(!takeInPass())
+    }
+
+    /// The P0's layout asked again inside every pass it caused. Whatever it asks, passes land `inPassLimit` times.
+    @Test func aLayoutThatKeepsAskingLandsInItsPassesLimitedTimes() {
+        var repin = NativeTailRepin()
+        var inPass = 0, deferred = 0
+        for i in 0..<200 {
+            repin.reading(distance: i.isMultiple(of: 2) ? 3_000 : 3_200, wants: true, resized: true)
+            if repin.takeInPass() { inPass += 1 }
+            if repin.take() { deferred += 1 }
+        }
+        #expect(inPass == NativeTailRepin.inPassLimit)
+        #expect(deferred > 0)
+        #expect(repin.landings == inPass + deferred)
+    }
+
+    /// A pass that gets the tail no nearer is a miss like a turn's, and stalls the pin before the limit.
+    @Test func passesThatMakeNoHeadwayStall() {
+        var repin = NativeTailRepin()
+        var inPass = 0
+        for i in 0..<200 {
+            repin.reading(distance: i.isMultiple(of: 2) ? 3_000 : 3_200, wants: true, resized: false)
+            if repin.takeInPass() { inPass += 1 }
+        }
+        #expect(repin.stalled)
+        #expect(inPass == 2 * NativeTailRepin.limit - 1)
+        #expect(inPass < NativeTailRepin.inPassLimit)
+    }
+
+    @Test func aPinThatHasLandedEnoughTakesNoPassAfterwards() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        func take() -> Bool { repin.take() }
+        for _ in 0..<NativeTailRepin.inPassLimit {
+            repin.asked()
+            #expect(take())
+        }
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(!takeInPass())
+        #expect(repin.pending)
+        #expect(take())
+    }
+
+    @Test func aReadingThatAsksNothingTakesNoPass() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        repin.reading(distance: 600, wants: false, resized: false)
+        #expect(!takeInPass())
+        repin.reading(distance: 0, wants: false, resized: false)
+        #expect(!takeInPass())
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(takeInPass())
+    }
+
+    @Test func noLandingInThePassWhileTheReaderScrolls() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        repin.reader(scrolling: true, touching: true)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(!takeInPass())
+        repin.reader(scrolling: false, touching: false)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(takeInPass())
+    }
 }
