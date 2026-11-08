@@ -106,6 +106,17 @@ public enum MarkdownFixtures {
         }.joined(separator: "\n\n")
     }
 
+    /// `count` tables of eight columns and two rows of cells a few bytes long, numbered from `first`: about 130 pt
+    /// tall each, and a chunk (16 KB of weight, 256 per cell) holds three of them, so chunks are the shortest they
+    /// get, about 400 pt, while the text is short too (about 230 bytes a table).
+    public static func wideTables(count: Int, from first: Int = 0) -> String {
+        (first..<first + count).map { t in
+            let header = "| " + (0..<8).map { "Col \($0)" }.joined(separator: " | ") + " |"
+            let rows = (0..<2).map { r in "| " + (0..<8).map { "t\(t)r\(r)c\($0)" }.joined(separator: " | ") + " |" }
+            return ([header, "|" + String(repeating: "---|", count: 8)] + rows).joined(separator: "\n")
+        }.joined(separator: "\n\n")
+    }
+
     /// A reply ending in a table of `rows` rows, three columns each.
     public static func largeTable(rows: Int) -> String {
         var lines = ["Every call this session made:", "", "| # | Tool | Result |", "|--:|---|---|"]
