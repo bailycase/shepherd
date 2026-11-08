@@ -625,7 +625,7 @@ struct AgentThreadPane: View {
     var inspectedRunID: String? = nil
     var review: ((String) -> Void)? = nil
     var turnActions: TurnChangesActions? = nil
-    /// Retry for a pi that stopped before it served (true: start a new conversation).
+    /// Retry for a pi that stopped, before it served or on its own after (true: start a new conversation).
     var restartPi: ((Bool) -> Void)? = nil
     /// The line or card at the end of the thread, and what its buttons do.
     var authNotice: ThreadAuthNotice? = nil
@@ -636,7 +636,7 @@ struct AgentThreadPane: View {
 
     var body: some View {
         // The placeholder cross-fades in when pi dies; connecting → live changes nothing here, nor
-        // does a pi that stopped before it served: its thread says why.
+        // does a pi that stopped: its thread says why.
         ZStack {
             switch session.phase {
             case .connecting, .live, .stopped:

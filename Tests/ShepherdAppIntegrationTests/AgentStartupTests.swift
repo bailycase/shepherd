@@ -720,8 +720,9 @@ struct AgentStartupTests {
         #expect(server.state.agents.map(\.id) == [id] && vm.state.agents.map(\.id) == [id])
     }
 
-    /// Only a pi that was serving and went away is a lost connection.
-    @Test func aLiveThreadWhosePiDiesShowsTheLostConnection() async throws {
+    /// A pi that was serving and went away stopped: the thread says so (it is not a lost connection
+    /// to reconnect), and its agent waits for Retry.
+    @Test func aLiveThreadWhosePiDiesSaysItStopped() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -735,11 +736,12 @@ struct AgentStartupTests {
 
         await store.send(text: "die")
 
-        try await eventuallyAsync("the lost connection to show", timeout: .seconds(20)) {
+        try await eventuallyAsync("the stop to show", timeout: .seconds(20)) {
             await store.refresh()
-            return store.loadError != nil
+            return store.startProblem != nil
         }
-        #expect(!store.starting)
+        #expect(store.startProblem?.kind == .stopped && store.startProblem?.exitCode == 3)
+        #expect(store.loadError == nil && !store.starting)
     }
 
     /// A remote client watching a host's agent start sees the same quiet start, and its send

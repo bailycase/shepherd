@@ -39,7 +39,7 @@ final class TerminalSessionStore {
             case live
             case failed(String)
             case exited(Int32?)
-            /// An agent's pi stopped before it served (or Shepherd stopped it): the agent stays,
+            /// An agent's pi stopped (before it served, on its own after, or Shepherd stopped it): the agent stays,
             /// its thread says why, and Retry starts pi again.
             case stopped
         }
@@ -264,9 +264,9 @@ final class TerminalSessionStore {
     /// Fired when a pane's process exits, after the local session is marked
     /// exited and before it is dropped from the store.
     var onPaneSessionExited: ((PaneID) -> Void)?
-    /// Fired when an agent's pi stops before it served (or Shepherd stopped it), with why (nil for a
-    /// stop Shepherd asked for): the agent stays, waiting for Retry. Fired again with nil and false
-    /// when Retry starts it.
+    /// Fired when an agent's pi stops (before it served, on its own after, or Shepherd stopped it),
+    /// with why (nil for a stop Shepherd asked for): the agent stays, waiting for Retry. Fired again
+    /// with nil and false when Retry starts it.
     var onAgentStopped: ((AgentID, NativeStartProblem?, Bool) -> Void)?
     /// Fired the moment an agent's pi begins serving its thread
     /// (`SessionServer.onNativeThreadServable`).
@@ -461,13 +461,13 @@ final class TerminalSessionStore {
         }
         handledExits.insert(sessionID)
         ShepherdDiagnostics.shared.record(.processExited, code: exit.code)
-        if let problem = exit.startProblem {
+        if let problem = exit.startProblem, problem.kind != .stopped {
             let session = sessions[paneID]
             ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code, details: .init(
                 startupKind: problem.kind, trigger: session?.startupTrigger, location: session?.startupLocation))
         }
-        // Read before the view model retires the agent: a pi that exits while it boots frees its
-        // place in the launch queue now, not when its hold runs out.
+        // Read before the pane session goes: a pi that exits while it boots frees its place in the
+        // launch queue now, not when its hold runs out.
         let agent = serverState?.agents.first { $0.paneID == paneID }
         paneBySession.removeValue(forKey: sessionID)
         detachedSessionIDs.remove(sessionID)
@@ -492,7 +492,7 @@ final class TerminalSessionStore {
     /// The model an agent's next start takes, whatever its session says (Use another model).
     var modelOverrides: [AgentID: String] = [:]
 
-    /// Retry for an agent whose pi stopped before it served: starts its pi again in the same pane.
+    /// Retry for an agent whose pi stopped, before it served or on its own after: starts its pi again in the same pane.
     /// `newConversation` (a pi that didn't find the conversation it was resuming) starts it
     /// without that check, as pi would on its own.
     func retryStart(_ agentID: AgentID, newConversation: Bool = false) {

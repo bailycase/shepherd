@@ -452,6 +452,68 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// pi ran out of memory after it served (node's FATAL ERROR, signal 6): the thread keeps its
+    /// history, says the agent stopped unexpectedly with pi's last words, and offers Retry. The
+    /// draft nobody sent is still in the composer.
+    @Test func threadStoppedUnexpectedly() async throws {
+        let fixture = ThreadFixture(Self.cannotStart(Self.outOfMemory))
+        defer { fixture.store.stop() }
+        var fromDisk = ActivityThreads.idle
+        fromDisk.generation = PiSessionPreview.generation
+        fromDisk.stats = nil
+        fromDisk.commands = nil
+        fixture.store.preview(fromDisk)
+        fixture.store.draft = "Now add the tests"
+        try await Preview.render("thread-stopped-unexpectedly", size: CGSize(width: 1180, height: 900), ready: {
+            fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread()
+        }
+    }
+
+    /// A remote viewer's banner for the same stop: no actions, and it says to retry on the host.
+    @Test func threadStoppedUnexpectedlyRemote() async throws {
+        let fixture = ThreadFixture(Self.cannotStart(Self.outOfMemory))
+        defer { fixture.store.stop() }
+        var fromDisk = ActivityThreads.idle
+        fromDisk.generation = PiSessionPreview.generation
+        fromDisk.stats = nil
+        fromDisk.commands = nil
+        fixture.store.preview(fromDisk)
+        fixture.store.hostName = "horizon"
+        try await Preview.render("thread-stopped-unexpectedly-remote", size: CGSize(width: 1180, height: 900), ready: {
+            fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread(restartPi: nil)
+        }
+    }
+
+    /// pi was killed from outside mid-turn: the last live snapshot (a push still running, a reply
+    /// half written) stays under the banner, and nothing on screen reads as still working.
+    @Test func threadStoppedMidTurn() async throws {
+        var live = ActivityThreads.running(.call)
+        live.provisional.append(ActivityThreads.assistant("provisional:assistant:9", "Pushed. Now checking that CI picks up the", at: ActivityThreads.now - 1_000,
+                                                          status: "streaming"))
+        let fixture = ThreadFixture(live)
+        defer { fixture.store.stop() }
+        var stopped = false
+        try await Preview.render("thread-stopped-mid-turn", size: CGSize(width: 1180, height: 900), ready: {
+            if fixture.store.ready, !fixture.store.rows.isEmpty, !stopped {
+                // The host's next answer: pi is gone.
+                stopped = true
+                fixture.snapshot = Self.cannotStart(NativeStartProblem(kind: .stopped, signal: 9))
+                Task { await fixture.store.refresh() }
+            }
+            return stopped && fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread()
+        }
+    }
+
+    private static let outOfMemory = NativeStartProblem(kind: .stopped, signal: 6, lines: [
+        "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory",
+    ])
+
     /// Failed test runs stay red; a turn that failed as a whole ends in SHTurnError with Retry.
     @Test func threadActivityFailed() async throws {
         try await render("thread-activity-failed", ActivityThreads.failed)

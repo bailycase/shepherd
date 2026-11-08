@@ -3,7 +3,7 @@ import Testing
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 
 /// Automations served by `SessionServer` with no app (`headlessAutomationHosting`): an enabled
@@ -91,6 +91,45 @@ struct AutomationHostingTests {
         try await eventuallyOnMain("the run to go") {
             !h.server.state.agents.contains { $0.id == run } && h.server.state.automations.first?.agentID == nil
         }
+    }
+
+    /// A run whose pi stops on its own ends as failed, with why. Its thread stays and says so, and
+    /// the automation is free: Run now replaces the stopped run as it replaces a settled one.
+    @Test func aManualRunWhosePiStopsOnItsOwnEndsFailedAndRunNowStartsTheNext() async throws {
+        try StubPi.installAsEngine()
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let automation = Automation(name: "watch CI", prompt: "Watch CI", cwd: h.dir.path, enabled: true)
+        try await h.server.addAutomation(automation)
+        serve(h)
+        await h.server.autoStartAutomations()
+        let run = try #require(h.server.state.automations.first?.agentID)
+        let agent = try #require(h.server.state.agents.first { $0.id == run })
+        let session = try #require(paneSession(agent, on: h))
+        try await eventually("the run's thread to serve", timeout: .seconds(20)) { @Sendable in await h.server.threadServes(sessionID: session) }
+        let reporter = try ExtensionClient(path: h.socketPath)
+        defer { reporter.closeConnection() }
+        try reporter.send(.setAgentStatus(agentID: run, status: .working))
+        try await eventuallyOnMain("the run to work") { h.server.state.agents.first { $0.id == run }?.status == .working }
+        await #expect(throws: (any Error).self, "a live run refuses a second") { try await h.server.startAutomation(automation.id) }
+
+        let pid = try await h.server.enqueue { @Sendable in try #require(h.server.rpcThread(forAgent: run)).session.processIdentifier }
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the run to end") { @Sendable in await h.server.automationRuns(automation.id).last?.result == .failed }
+        let ended = try #require(await h.server.automationRuns(automation.id).last)
+        #expect(ended.failure == "The agent stopped unexpectedly (signal 9).")
+        #expect(ended.endedAt != nil && ended.unread && ended.agentID == run, "the run keeps its agent, so it opens its thread")
+        #expect(h.server.state.agents.contains { $0.id == run } && h.server.state.automations.first?.agentID == run)
+        #expect(h.server.state.agents.first { $0.id == run }?.status == .idle)
+        let thread = try await h.server.nativeThread(agentID: run, request: .snapshot()).snapshotValue
+        #expect(thread?.startProblem?.kind == .stopped && thread?.startProblem?.signal == 9)
+
+        try await h.server.startAutomation(automation.id)
+        let next = try #require(h.server.state.automations.first?.agentID)
+        #expect(next != run)
+        try await eventuallyOnMain("the stopped run's thread to go") { !h.server.state.agents.contains { $0.id == run } }
+        let runs = await h.server.automationRuns(automation.id)
+        #expect(runs.count == 2 && runs.last?.agentID == next && runs.last?.result == .running)
     }
 
     @Test func automationRequestsAreAnsweredWithoutTheApp() async throws {

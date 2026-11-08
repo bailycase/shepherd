@@ -357,6 +357,12 @@ enum ThreadFixture {
                             status: "streaming", truncated: false)
     }
 
+    /// A bash call with no output yet, as the live reply holds it.
+    static func bash(_ status: String) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: "t-b1", role: "toolResult", blocks: [], toolName: "bash", toolCallID: "b1",
+                            argumentsText: "{\"command\":\"swift build\"}", status: status, truncated: false)
+    }
+
     /// `count` messages, alternating a question and its answer.
     static func history(_ count: Int, prefix: String = "m") -> [NativeThreadMessage] {
         (0..<count).map { i in i % 2 == 0 ? user("\(prefix)\(i)", "Question \(i / 2)") : assistant("\(prefix)\(i)", "Answer \(i / 2). " + answer) }

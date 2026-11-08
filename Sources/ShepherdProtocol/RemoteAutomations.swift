@@ -112,13 +112,14 @@ public struct AutomationRun: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// Whether a run whose agent still exists is going: working, waiting on you, or pi still
-    /// starting (idle before any turn settled; `run` is the one the host kept for that agent, nil
-    /// while unknown). A settled run only waits to be read, so running the automation again
-    /// replaces it. The host decides Run now by this, and clients offer it by the same rule.
+    /// starting (idle before any turn settled or the run ended; `run` is the one the host kept
+    /// for that agent, nil while unknown). A settled run only waits to be read, and so does one
+    /// whose pi stopped on its own (it ended), so running the automation again replaces it. The
+    /// host decides Run now by this, and clients offer it by the same rule.
     public static func isLive(agentStatus: AgentStatus, run: AutomationRun?) -> Bool {
         switch agentStatus {
         case .working, .blocked: true
-        case .idle: run?.settledAt == nil
+        case .idle: run.map { $0.settledAt == nil && $0.endedAt == nil } ?? true
         case .done: false
         }
     }

@@ -6,7 +6,8 @@ import ShepherdRemote
 /// The runs of each automation, kept by the server so a remote client can read how the last
 /// ones went after their agents are gone (`automation-runs.json` in the support directory,
 /// newest `limit` per automation). A run opens when an automation gains an agent and closes
-/// when it loses it; in between it follows the agent's status. Confined to the server queue,
+/// when it loses it, or when its pi stops on its own (the agent stays); in between it follows the
+/// agent's status. Confined to the server queue,
 /// except `openRuns`; writes go to disk off it, in order.
 final class AutomationRunLog: @unchecked Sendable {
     static let limit = 30
@@ -37,9 +38,10 @@ final class AutomationRunLog: @unchecked Sendable {
         publish()
     }
 
-    /// Each automation's run still open (its agent exists), from any thread without waiting
-    /// for the server queue. Published before the state that moved it is broadcast, so a GUI
-    /// adopting that state finds its run here.
+    /// Each automation's latest run while it is open, or ended unsettled with its agent kept (its
+    /// pi stopped on its own, its thread stays), from any thread without waiting for the server
+    /// queue. Published before the state that moved it is broadcast, so a GUI adopting that state
+    /// finds its run here.
     var openRuns: [AutomationID: AutomationRun] {
         openLock.withLock { published }
     }
@@ -75,9 +77,13 @@ final class AutomationRunLog: @unchecked Sendable {
             let previous = before[automation.id]?.agentID
             var list = next[automation.id] ?? []
             if previous != automation.agentID {
-                if let previous, let index = list.lastIndex(where: { $0.agentID == previous && $0.endedAt == nil }) {
-                    let status = oldAgents[previous]?.status
-                    list[index] = Self.closed(list[index], status: status, at: time, result: nil)
+                if let previous, let index = list.lastIndex(where: { $0.agentID == previous }) {
+                    if list[index].endedAt == nil {
+                        list[index] = Self.closed(list[index], status: oldAgents[previous]?.status, at: time, result: nil)
+                    } else {
+                        // Its pi stopped on its own and it ended then: only the thread it kept goes now.
+                        list[index].agentID = nil
+                    }
                 }
                 if let agentID = automation.agentID {
                     let status = agents[agentID]?.status ?? .idle
@@ -172,6 +178,33 @@ final class AutomationRunLog: @unchecked Sendable {
         runs[automationID] = Array(list.suffix(Self.limit))
         publish()
         save()
+    }
+
+    /// The agent's pi stopped on its own: each run of it that had not settled ends as failed with
+    /// `failure`. The agent stays (`agentID` is kept, so the run still opens its thread), and
+    /// neither Run now nor a trigger waits on a run that is over. A run that already settled
+    /// stays finished. True when a run changed.
+    @discardableResult
+    func agentStopped(_ agentID: AgentID, failure: String, now: Date = Date()) -> Bool {
+        let time = now.timeIntervalSince1970
+        var changed = false
+        for (id, list) in runs {
+            runs[id] = list.map { run in
+                guard run.agentID == agentID, run.endedAt == nil, run.settledAt == nil else { return run }
+                changed = true
+                var run = run
+                run.result = .failed
+                run.failure = String(failure.prefix(500))
+                run.endedAt = time
+                run.unread = true
+                return run
+            }
+        }
+        if changed {
+            publish()
+            save()
+        }
+        return changed
     }
 
     /// A run that never started (its thread or worktree couldn't be made).
@@ -277,7 +310,9 @@ final class AutomationRunLog: @unchecked Sendable {
     private func publish() {
         var open: [AutomationID: AutomationRun] = [:]
         for (id, list) in runs {
-            if let run = list.last, run.endedAt == nil { open[id] = run }
+            // An ended run that never settled and keeps its agent is one whose pi stopped on its own
+            // (`agentStopped`): published so the GUI sees the thread is over, not starting.
+            if let run = list.last, run.endedAt == nil || (run.agentID != nil && run.settledAt == nil) { open[id] = run }
         }
         openLock.withLock { published = open }
     }

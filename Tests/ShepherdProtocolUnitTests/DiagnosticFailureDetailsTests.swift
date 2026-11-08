@@ -15,7 +15,7 @@ struct DiagnosticFailureDetailsTests {
         let stages: [NativeStartProblem.Kind: DiagnosticFailureDetails.StartupStage] = [
             .notSignedIn: .initialization, .extensionFailed: .initialization,
             .engineMissing: .launch, .homeUnsafe: .preflight, .folderMissing: .preflight,
-            .resumedAsNew: .resume, .exited: .unknown
+            .resumedAsNew: .resume, .exited: .unknown, .stopped: .unknown
         ]
         for kind in NativeStartProblem.Kind.allCases {
             let details = DiagnosticFailureDetails(startupKind: kind)
