@@ -135,6 +135,11 @@ struct ThreadView: View {
         // Until the thread has caught up since it came on screen (opening it, or the first pull
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
+        // Until it has caught up, the live reply's state is read here too: the pull that catches a thread up on
+        // a tool boundary changes nothing else, and it must redraw this view so its gate draws that catch-up.
+        // After it, the live row and the wait line read them and tool boundaries stay out of this body.
+        let _ = store.catchUp == nil ? [store.liveRow != nil, store.showsThinking, store.liveWait == NativeLiveWait()] : []
+        let drawnVersion = store.threadVersion
         let settled = active && !catchingUp
         let _ = shownSignpost.render(active: active, settled: settled)
         let arrived = arrivals.update(rowIndex.ids, session: store.sessionKey, active: active, catchingUp: catchingUp)
@@ -179,7 +184,7 @@ struct ThreadView: View {
                         }
                         // Sends captured but not yet accepted: sending, refused (restore or discard) or of unknown outcome.
                         if projectSend == nil { ThreadSubmissions(store: store, input: input) }
-                        ThreadWaitLine(store: store, hasLiveRow: liveRowID != nil, active: active, parentCatchingUp: catchingUp,
+                        ThreadWaitLine(store: store, hasLiveRow: liveRowID != nil, active: active, parentCatchingUp: catchingUp, drawn: drawnVersion,
                                        project: projectActionCards != nil || workerStyle != nil)
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
@@ -517,6 +522,8 @@ struct ThreadView: View {
         let hasLiveRow: Bool
         let active: Bool
         let parentCatchingUp: Bool
+        /// The thread's version when it last drew: the line redraws, and its gate records, whenever the thread does.
+        let drawn: Int
         let project: Bool
         @State private var catchUp = CatchUpGate()
 
