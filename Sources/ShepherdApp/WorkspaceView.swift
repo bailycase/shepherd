@@ -968,7 +968,8 @@ private struct RemotePaneLeafView: View {
             if let agent {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
                                       isFocused: active && !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
-                                      active: active, cwd: leaf.cwd)
+                                      active: active, cwd: leaf.cwd, inspectingRunID: vm.subagentInspector.remoteRuns[ref],
+                                      supportsChanges: connection.supportsChanges, designReferences: vm.remoteDesignReferenceChips(for: ref))
                     // This Mac's background host checks out on this machine: its threads get the
                     // branch card, as the app's own do.
                     .modifier(BranchCardDock(store: connection.isThisMac ? vm.branchCardStore(for: agent.id) : nil,
@@ -1014,7 +1015,8 @@ private struct RemotePaneLeafView: View {
 }
 
 /// A remote agent's thread. Same view as a local agent's, with requests sent to the host; its
-/// right pane docks beside the whole layout (`RemoteAgentLayoutView`).
+/// right pane docks beside the whole layout (`RemoteAgentLayoutView`). It reads no view model
+/// state in its body: what it needs comes in as values, and the closures read the model when called.
 struct RemoteAgentThreadPane: View {
     var vm: ShepherdViewModel
     let ref: RemoteAgentRef
@@ -1025,13 +1027,18 @@ struct RemoteAgentThreadPane: View {
     var active = true
     /// The thread's folder on the host: the hook glyph counts that host's hooks there.
     var cwd: String? = nil
+    /// The subagent the side pane inspects: the composer gives it the keyboard.
+    var inspectingRunID: String? = nil
+    /// The host answers Changes: the thread's turns offer review, undo and redo.
+    var supportsChanges = false
+    /// References to the host's designs, where it takes them; nil for a design's own chat.
+    var designReferences: DesignReferenceChips? = nil
 
     var body: some View {
-        let inspecting = vm.subagentInspector.remoteRuns[ref]
         ThreadView(
             store: vm.remoteThreadStores.store(for: ref),
             active: active,
-            isFocused: isFocused && inspecting == nil,
+            isFocused: isFocused && inspectingRunID == nil,
             request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
             commandKey: ThreadCommandCenter.key(remote: ref),
             agentName: agentName,
@@ -1046,9 +1053,9 @@ struct RemoteAgentThreadPane: View {
                 vm.subagentInspector.remoteRuns[ref] = run.runID
                 vm.subagentInspector.steerRun = run.runID
             },
-            inspectedRunID: inspecting,
+            inspectedRunID: inspectingRunID,
             review: { path in vm.openRemoteReview(ref, path: path) },
-            turnActions: vm.remoteHosts.connections.first(where: { $0.id == ref.hostID })?.supportsChanges == true ? TurnChangesActions(
+            turnActions: supportsChanges ? TurnChangesActions(
                 review: { turnID, path in vm.openTurnReview(.remote(ref), turnID: turnID, path: path) },
                 undo: { await vm.undoTurn(.remote(ref), turnID: $0) },
                 redo: { await vm.redoTurn(.remote(ref), turnID: $0) }) : nil,
@@ -1060,7 +1067,7 @@ struct RemoteAgentThreadPane: View {
             designChat: designChat, hookDirectory: cwd, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
         // References to the host's own designs, where it takes them.
-        .environment(\.designReferences, designChat ? nil : vm.remoteDesignReferenceChips(for: ref))
+        .environment(\.designReferences, designReferences)
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))
     }
