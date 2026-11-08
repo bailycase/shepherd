@@ -1137,11 +1137,18 @@ struct ListPerformanceTests {
         }
     }
 
-    /// A finished reply of 300 cycles (a paragraph, a swift fence, a table and a list each: about
-    /// 1,200 blocks) opens at its tail. Only the chunks in view and the last one are built: before,
-    /// every fence and table of the reply was.
+    /// A reply of `cycles` cycles (a paragraph, a swift fence, a table and a list each: four blocks) that is giant
+    /// (`NativeProse.isGiant`, 128 KB of text from about 380 cycles): the only kind drawn a chunk at a time.
+    private static func giantReply(cycles: Int = 500) -> String {
+        let text = MarkdownFixtures.longReply(cycles: cycles)
+        #expect(NativeProse(nativeMarkdownParse(text)).isGiant, "\(cycles) cycles are a giant reply")
+        return text
+    }
+
+    /// A finished giant reply of 500 cycles (about 2,000 blocks) opens at its tail. Only the chunks in
+    /// view and its tail are built: before, every fence and table of the reply was.
     @Test func aLongReplyBuildsOnlyTheChunksOnScreen() async throws {
-        let text = MarkdownFixtures.longReply(cycles: 300)
+        let text = Self.giantReply()
         let blocks = nativeMarkdownBlocks(text).count
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
         // Counting from before the window opens: the thread may load in its first frames.
@@ -1154,21 +1161,22 @@ struct ListPerformanceTests {
         let counts = SHRenderProbe.stop()
 
         #expect(counts["thread.agentTurn", default: 0] > 0, "the thread was built: \(counts)")
-        // A 900x800 window shows two or three cycles; the lazy stack builds some ahead, and the last chunk is built whole.
+        // A 900x800 window shows two or three cycles; the lazy stack builds some ahead, and the tail (three
+        // chunks of about five cycles) is built whole.
         withKnownIssue("older SwiftUI builds more of a lazy stack than is on screen", isIntermittent: true) {
             #expect(counts["code.nativeCreated", default: 0] <= 40, "\(counts)")
             #expect(counts["prose.table", default: 0] <= 40, "\(counts)")
             #expect(counts["prose.chunk", default: 0] <= 12, "\(counts)")
         } when: { ListPerf.olderLazyStacks }
-        #expect(counts["code.nativeCreated", default: 0] <= 100, "300 fences in the reply: \(counts)")
-        #expect(counts["prose.table", default: 0] <= 100, "300 tables in the reply: \(counts)")
+        #expect(counts["code.nativeCreated", default: 0] <= 100, "500 fences in the reply: \(counts)")
+        #expect(counts["prose.table", default: 0] <= 100, "500 tables in the reply: \(counts)")
     }
 
-    /// Scrolling through a long reply from its top to its tail builds the chunks it passes and lets
+    /// Scrolling through a giant reply from its top to its tail builds the chunks it passes and lets
     /// go of the ones far behind: a creation count cannot show that, so this counts the native
-    /// fields SwiftUI dismantled against the ones it built (about 300 built, about 25 alive at once).
+    /// fields SwiftUI dismantled against the ones it built (about 500 built, about 25 alive at once).
     @Test func aLongReplyLetsGoOfChunksScrolledFarAway() async throws {
-        let text = MarkdownFixtures.longReply(cycles: 300)
+        let text = Self.giantReply()
         let blocks = nativeMarkdownBlocks(text).count
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
         SHRenderProbe.start()
@@ -1212,8 +1220,8 @@ struct ListPerformanceTests {
         #expect(Self.nativeFields(in: thread.window.host) <= 40, "fields alive in the window")
     }
 
-    /// A reply grown in five serves of 40 cycles, following its tail, keeps only its tail built:
-    /// the chunks it streamed past are let go, counted both ways.
+    /// A reply grown in five serves of 100 cycles, following its tail, keeps only its tail built once it is
+    /// giant (from the fourth serve): the chunks it streamed past are let go, counted both ways.
     @Test func streamingALongReplyBuildsOnlyItsTail() async throws {
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
         SHRenderProbe.start()
@@ -1227,13 +1235,14 @@ struct ListPerformanceTests {
         try await thread.waitUntilReady()
         var text = ""
         for serve in 0..<5 {
-            text += (serve == 0 ? "" : "\n\n") + MarkdownFixtures.longReply(cycles: 40, from: serve * 40)
+            text += (serve == 0 ? "" : "\n\n") + MarkdownFixtures.longReply(cycles: 100, from: serve * 100)
             var next = thread.snapshot
             next.revision += 1
             next.provisional = [ThreadFixture.streaming(text)]
             await thread.serve(next)
             try await settleReply(thread, blocks: nativeMarkdownParse(text, streaming: true).blocks.count)
         }
+        #expect(NativeProse(nativeMarkdownParse(text, streaming: true)).isGiant, "the reply ended giant")
         let counts = SHRenderProbe.counts
         let created = counts["code.nativeCreated", default: 0], dismantled = counts["code.nativeDismantled", default: 0]
         #expect(created - dismantled <= 40, "fields alive by count: created \(created), dismantled \(dismantled)")
