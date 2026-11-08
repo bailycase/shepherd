@@ -62,6 +62,64 @@ struct ComposerSkillChipTests {
         #expect(draft.text == "fix /skill:debug now")
     }
 
+    /// Losing the keyboard ends editing: the cell takes the editor's words, and the draft still shows its skill as a chip.
+    @Test func aChipSurvivesTheFieldLosingTheKeyboard() async throws {
+        final class Draft { var text = "fix /skill:debug now"; var focused = true }
+        let draft = Draft()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), placeholder: "Message",
+                                          label: "Message", focus: Binding(get: { draft.focused }, set: { draft.focused = $0 }),
+                                          attach: { _ in }))
+        }
+        render()
+        try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        let field = try #require(editor.delegate as? ComposerTextField.Field)
+        #expect(editor.string == "fix \u{FFFC} now")
+
+        draft.focused = false
+        render()
+        try await eventuallyOnMain("the field to give up the keyboard") { field.currentEditor() == nil }
+        render()
+        try await eventuallyOnMain("the idle cell to hold the chip") {
+            window.layout()
+            return field.attributedStringValue.attribute(.attachment, at: 4, effectiveRange: nil) is SHSkillChipAttachment
+        }
+        #expect(draft.text == "fix /skill:debug now")
+    }
+
+    /// AppKit reloads the editor from the cell when editing begins. A field that loses the keyboard and takes it
+    /// back before the next render must still repair the chip the reload may have dropped, and keep the skill.
+    @Test func aChipSurvivesLosingAndRetakingTheKeyboardInOneTurn() async throws {
+        final class Draft { var text = "fix /skill:debug now"; var focused = true }
+        let draft = Draft()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), placeholder: "Message",
+                                          label: "Message", focus: Binding(get: { draft.focused }, set: { draft.focused = $0 }),
+                                          attach: { _ in }))
+        }
+        render()
+        try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        let field = try #require(editor.delegate as? ComposerTextField.Field)
+        #expect(editor.string == "fix \u{FFFC} now")
+
+        #expect(window.window.makeFirstResponder(nil))
+        #expect(window.window.makeFirstResponder(field))
+        try await eventuallyOnMain("the editor to show the chip again") {
+            render()
+            return editor.textStorage?.attribute(.attachment, at: 4, effectiveRange: nil) is SHSkillChipAttachment
+        }
+        #expect(draft.text == "fix /skill:debug now")
+
+        editor.insertText("x", replacementRange: NSRange(location: (editor.string as NSString).length, length: 0))
+        #expect(draft.text == "fix /skill:debug nowx")
+    }
+
     @Test func rangesMapAcrossAChip() throws {
         let font = NSFont.systemFont(ofSize: 13)
         func chips(_ text: String) -> NSAttributedString? {

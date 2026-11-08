@@ -203,6 +203,7 @@ struct ComposerTextField: NSViewRepresentable {
         private(set) var chipsStyle = 0
         /// What the field holds, as the draft spells it: each skill chip as its "/skill:name".
         var draftText: String {
+            SHRenderProbe.tick("text.composerFieldCopied")
             if currentEditor() != nil, let storage = editor.textStorage { return SHSkillChips.text(of: storage) }
             return SHSkillChips.text(of: attributedStringValue)
         }
