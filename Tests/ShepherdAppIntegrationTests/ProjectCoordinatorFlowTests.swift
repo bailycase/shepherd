@@ -86,7 +86,7 @@ struct ProjectCoordinatorFlowTests {
         #expect(launch.env["SHEPHERD_PROJECT_CONTEXT"]?.contains("Use the existing tests.") == false, "Instructions and memory refresh from the owner each turn, not the launch environment")
         #expect(vm.selectedAgentID == nil)
         #expect(app.server.state.agents.first { $0.id == coordinator }?.coordinatorFor == id)
-        #expect(!ShepherdViewModel.peerInfos(in: app.server.state, sender: coordinator).contains { $0.id == coordinator }, "A live coordinator must not leak its private cwd through agent_list")
+        #expect(!SessionServer.peerInfos(in: app.server.state, sender: coordinator).contains { $0.id == coordinator }, "A live coordinator must not leak its private cwd through agent_list")
         #expect(vm.projectCoordinator.conversationStore(agentID: coordinator) === vm.threadStores.store(for: coordinator))
         try await eventuallyAsync("coordinator message committed") { app.server.state.projects.first?.messages.first?.phase == .delivered }
         try await eventuallyAsync("coordinator settled") {
