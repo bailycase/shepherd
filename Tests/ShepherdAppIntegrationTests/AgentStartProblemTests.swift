@@ -135,6 +135,8 @@ struct AgentStartProblemTests {
         store.draft = "also check the logs"
         let launches = { StubPi.launches().filter { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue }.count }
         let launched = launches()
+        let conversation = try #require(store.snapshot?.piSessionID)
+        #expect(!conversation.isEmpty)
 
         let pid = try await server.enqueue { @Sendable in try #require(server.rpcThread(forAgent: id)).session.processIdentifier }
         #expect(kill(pid, SIGKILL) == 0)
@@ -156,6 +158,7 @@ struct AgentStartProblemTests {
         #expect(store.startProblem == nil && store.starting, "Retry takes the banner away at once")
         try await eventuallyOnMain("pi to serve after Retry", timeout: .seconds(20)) { store.ready }
         #expect(pane.phase == .live && !vm.cannotStart.contains(id))
+        #expect(store.snapshot?.piSessionID == conversation, "Retry resumes the same conversation")
         #expect(store.messages.map(\.entryID) == history)
         try await eventuallyOnMain("the queue to come back") { store.queue.count == 1 }
         #expect(store.queue.first?.text == "tools:0 queued" && store.queuePaused)
