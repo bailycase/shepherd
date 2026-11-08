@@ -665,6 +665,36 @@ struct AgentRecoveryTests {
         #expect(restored.stdin("prompt").isEmpty && restored.stdin("resume_session").isEmpty)
     }
 
+    /// A pi that served but stops before the saved work was restored (its history could not be read)
+    /// holds that saved checkpoint: the queue stays, paused, and the turn is not continued.
+    @Test func aPiThatStopsBeforeItsSavedWorkWasRestoredHoldsThatCheckpoint() async throws {
+        let h = try ScratchServer.fresh()
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        let idle = try await workingWithAQueue(h, pi, status)
+        status.closeConnection()
+        let saved = try #require(try store(h).checkpoint(for: pi.agent.id))
+        h.stop(keepFiles: true)
+
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        let callbacks = Callbacks(restarted.server)
+        let held = try await resume(pi, on: restarted, env: ["STUB_PI_HISTORY_FAILURE_GATE": h.dir.appendingPathComponent("never-ready").path])
+        _ = try await held.snapshot { $0.clips?.history == true }
+        try await restarted.server.enqueue {
+            let thread = try #require(restarted.server.rpcThread(forAgent: pi.agent.id))
+            #expect(thread.restoringRecovery && thread.recoveryAtLaunch == saved, "the saved work is not restored yet")
+        }
+
+        let pid = try await piPID(restarted, held)
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the exit") { callbacks.exited(held.sessionID) }
+        try await eventually("the held checkpoint") { try store(restarted).checkpoint(for: pi.agent.id)?.heldAfterExit == true }
+        expectHeld(try store(restarted).checkpoint(for: pi.agent.id), sessionID: idle.piSessionID, items: ["stay queued"])
+        #expect(await restarted.server.agentsNeedingStartupRecovery().isEmpty)
+        #expect(held.stdin("prompt").isEmpty && held.stdin("resume_session").isEmpty)
+    }
+
     /// A send pi never answered fails when pi goes, which stages a recovery write; and a staged
     /// write that lands after the exit is refused, then retried in place. None of it may put the
     /// live checkpoint, still active, over the held one.
