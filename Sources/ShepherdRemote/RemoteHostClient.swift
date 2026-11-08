@@ -685,6 +685,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         switch query {
         case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: RemoteProtocol.worktreeSetupCapability
         case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
+        case .setWorktree: RemoteProtocol.worktreeRecordCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
         case .devServers: RemoteProtocol.browserTunnelCapability

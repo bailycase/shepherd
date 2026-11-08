@@ -40,7 +40,8 @@ extension ShepherdViewModel {
                     switch query {
                     case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription,
                          .commitInfo, .commitMessage, .commit,
-                         .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile:
+                         .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile,
+                         .setWorktree: // the server answers it before this handler
                         return
                     case .children:
                         result = .children(self.children(of: agentID))

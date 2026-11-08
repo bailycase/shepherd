@@ -241,5 +241,5 @@ struct BranchSheetView: View {
         }
     }
 
-    private func agent(_ id: AgentID) -> Agent? { vm.state.agents.first { $0.id == id } }
+    private func agent(_ id: AgentID) -> Agent? { vm.state.agents.first { $0.id == id } ?? vm.thisMacAgent(id)?.agent }
 }
