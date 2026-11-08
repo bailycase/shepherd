@@ -24,6 +24,34 @@ struct MissionRuntimeTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aRevisedMapWaitsAsAPatchUntilTheOwnerAppliesOrRejectsIt() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.patchScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func theMergeTrainMergesInOrderAndPausesOnRedCIOrACodeConflict() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.trainScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aMissionWaitsForPathsAnotherHoldsAndAWorkerWritingElsewherePauses() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.locksScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aFinishedMissionSavesAsATemplateHereOrThroughAPRAndANewMissionStartsFromIt() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.templateScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func stopKillsAnInFlightHostCheckAndItsChildWithoutAcceptingLateEvidence() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.stopScenario() }
@@ -350,6 +378,182 @@ struct MissionRuntimeTests {
         let gh = try String(contentsOf: fixture.ghLog, encoding: .utf8)
         #expect(gh.split(separator: "\n").filter { $0.hasPrefix("pr create ") }.count == 2)
         try fixture.expectSourcesUnchanged()
+    }
+
+    static func patchScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        let id = try await fixture.create()
+        let controller = fixture.controller!
+        let first = try controller.record(id).draft
+
+        // Feedback on a drawn map: the revision waits beside it; nothing about the map changes.
+        try await controller.plan(id: id, feedback: "Keep the same shape.")
+        try await fixture.wait(id, phase: .map)
+        let held = try controller.record(id)
+        let patch = try #require(held.run?.patch)
+        #expect(held.draft == first)
+        #expect(patch.applies(to: first) && !patch.clearsFog)
+        #expect(held.pill.label == "Patch ready")
+        try await controller.rejectPatch(id: id, revision: held.revision, patchID: patch.id)
+        #expect(try controller.record(id).run?.patch == nil)
+        #expect(try controller.record(id).draft == first)
+
+        // Applying makes it the map and clears any approval; an edit after the proposal makes it stale.
+        try await controller.plan(id: id, feedback: "Again.")
+        try await fixture.wait(id, phase: .map)
+        var mission = try controller.record(id)
+        let second = try #require(mission.run?.patch)
+        var edited = mission.draft
+        edited.title = "Renamed by the owner"
+        try await controller.saveDraft(id: id, revision: mission.revision, draft: edited)
+        mission = try controller.record(id)
+        await #expect(throws: MissionError.self) { try await controller.applyPatch(id: id, revision: mission.revision, patchID: second.id) }
+        try await controller.rejectPatch(id: id, revision: mission.revision, patchID: second.id)
+        try await controller.plan(id: id, feedback: "Once more.")
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        let third = try #require(mission.run?.patch)
+        try await controller.applyPatch(id: id, revision: mission.revision, patchID: third.id)
+        mission = try controller.record(id)
+        #expect(mission.draft == third.draft && mission.run?.patch == nil && mission.approvedPlanRevision == nil)
+
+        // With auto-apply on, a patch that settles your answer and fits the budget applies on its own.
+        try await controller.setAutoApplyPatches(id: id, revision: mission.revision, on: true)
+        try fixture.askClarification()
+        try await controller.plan(id: id, feedback: "One more question?")
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        #expect(mission.run?.pendingQuestion != nil)
+        try await controller.answer(id: id, revision: mission.revision, text: "Yes, the same format.")
+        try await fixture.wait(id, phase: .map)
+        mission = try controller.record(id)
+        #expect(mission.run?.patch == nil)
+        #expect(mission.run?.decisions?.last?.answer == "Yes, the same format.")
+        #expect(mission.draft.plan?.estimate == MissionEstimate(tokens: 20_000, seconds: 600))
+        try fixture.expectUnpublished(id)
+    }
+
+    static func trainScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        MissionController.trainPoll = .milliseconds(50)
+        let controller = fixture.controller!
+        let id = try await fixture.create()
+        try await fixture.review(id)
+        var mission = try controller.record(id)
+        try await controller.publish(id: id, revision: mission.revision, fingerprint: try #require(mission.run?.reviewFingerprint))
+        try await fixture.wait(id, phase: .done)
+        mission = try controller.record(id)
+        let lanes = fixture.spaces.map(\.id)
+        let log = fixture.ghLog
+
+        // A conflict with lockfiles on "pause and ask" stops at the first car's update.
+        try fixture.mark("conflict-once")
+        try await controller.startTrain(id: id, revision: mission.revision, order: lanes, rules: MissionTrain.Rules(between: .soak, soakMinutes: 0, lockfiles: .pause))
+        try await eventuallyOnMain("a conflict pauses the train", timeout: .seconds(30)) { (try? controller.record(id).run?.train?.status) == .paused && controller.trainJobs[id] == nil }
+        var train = try #require(controller.record(id).run?.train)
+        #expect(train.cars[0].steps[0].status == .failed && train.notice?.contains("conflicts") == true)
+
+        // Red CI pauses at CI, before anything merges.
+        try fixture.mark("red-ci")
+        try await controller.resumeTrain(id: id, revision: controller.record(id).revision)
+        try await eventuallyOnMain("red CI pauses the train", timeout: .seconds(30)) { (try? controller.record(id).run?.train?.status) == .paused && controller.trainJobs[id] == nil }
+        train = try #require(controller.record(id).run?.train)
+        #expect(train.merged == 0 && train.notice?.contains("CI failed") == true)
+        #expect(try !String(contentsOf: log, encoding: .utf8).contains("pr merge"))
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("red-ci"))
+
+        // A second start is refused; Resume merges both in order through the soak.
+        await #expect(throws: MissionError.self) {
+            try await controller.startTrain(id: id, revision: controller.record(id).revision, order: lanes, rules: MissionTrain.Rules())
+        }
+        try await controller.resumeTrain(id: id, revision: controller.record(id).revision)
+        try await eventuallyOnMain("train finishes", timeout: .seconds(30)) { (try? controller.record(id).run?.train?.status) == .done }
+        train = try #require(controller.record(id).run?.train)
+        #expect(train.merged == 2 && train.cars.allSatisfy(\.finished))
+        #expect(train.log.contains { $0.text == "merged" } && train.log.last?.text == "all 2 merged")
+        let calls = try String(contentsOf: log, encoding: .utf8).split(separator: "\n").filter { $0.hasPrefix("pr merge") }
+        #expect(calls.count == 2)
+        #expect(try controller.record(id).pill.label == "Merged")
+    }
+
+    static func locksScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        MissionController.lockPoll = .milliseconds(50)
+        let controller = fixture.controller!
+        // A holds result.txt in both repositories while its first check runs.
+        let a = try await fixture.create()
+        try await fixture.holdFirstCheck(a)
+        try await fixture.launch(a)
+        _ = try await fixture.waitForCommand()
+        let b = try await fixture.create()
+        try await fixture.launch(b)
+        try await eventuallyOnMain("B waits for both repositories", timeout: .seconds(30)) {
+            (try? controller.record(b).run?.held?.count) == 2
+        }
+        var waiting = try controller.record(b)
+        #expect(waiting.run?.held?.values.allSatisfy { $0.holder == a && $0.overlap == ["result.txt"] && $0.blocks } == true)
+        #expect(waiting.stationAttempts.isEmpty, "a held repository starts nothing")
+        #expect(waiting.pill.label == "Running · 2 lanes held")
+        #expect(controller.records.queue(fixture.spaces[0].id, paths: ["result.txt"]).map(\.mission.id) == [a, b])
+
+        // A stops: its paths are free, and B runs to review.
+        try await controller.stop(id: a, revision: controller.record(a).revision)
+        try await fixture.wait(b, phase: .review)
+        waiting = try controller.record(b)
+        #expect(waiting.run?.held == nil)
+
+        // A worker that writes outside its declared paths pauses the mission.
+        let c = try await fixture.create()
+        var mission = try controller.record(c)
+        var draft = mission.draft
+        for index in draft.plan!.stations.indices where draft.plan!.stations[index].kind == .worker { draft.plan!.stations[index].paths = ["docs/**"] }
+        try await controller.saveDraft(id: c, revision: mission.revision, draft: draft)
+        try await fixture.launch(c)
+        try await fixture.wait(c, phase: .paused)
+        mission = try controller.record(c)
+        #expect(mission.run?.notice?.contains("wrote outside the paths") == true)
+    }
+
+    static func templateScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        let controller = fixture.controller!
+        let id = try await fixture.create()
+        try await fixture.review(id)
+        var mission = try controller.record(id)
+        try await controller.publish(id: id, revision: mission.revision, fingerprint: try #require(mission.run?.reviewFingerprint))
+        try await fixture.wait(id, phase: .done)
+
+        // Just me: a file on this Mac, listed with one run.
+        try await controller.saveTemplate(id: id, name: "Update result files", summary: "Both repositories write after.", team: nil)
+        let local = try #require(controller.templates.first { $0.id == "update-result-files" })
+        #expect(local.team == nil && local.runs == 1 && local.plan.stations.count == 6)
+        #expect(FileManager.default.fileExists(atPath: MissionController.localTemplates.appendingPathComponent("update-result-files.json").path))
+
+        // Team: a branch with .shepherd/maps/<id>.yml pushed to origin and a PR; Shepherd's worktree for it goes.
+        try await controller.saveTemplate(id: id, name: "Team result files", summary: "", team: fixture.spaces[0].id)
+        let pushed = try git(["show", "refs/heads/shepherd/map-team-result-files:.shepherd/maps/team-result-files.yml"], in: fixture.remotes[0])
+        #expect(try JSONDecoder().decode(MissionTemplate.self, from: Data(pushed.utf8)).name == "Team result files")
+        #expect(try String(contentsOf: fixture.ghLog, encoding: .utf8).contains("pr create --base main --head shepherd/map-team-result-files"))
+        try await eventuallyOnMain("the template's worktree goes") {
+            !((try? git(["worktree", "list"], in: fixture.repos[0])) ?? "").contains("shepherd/map-team-result-files")
+        }
+        // Once it merges, it's listed from the repository.
+        try git(["push", fixture.remotes[0].path, "refs/heads/shepherd/map-team-result-files:refs/heads/main"], in: fixture.remotes[0])
+        try git(["fetch", "origin"], in: fixture.repos[0])
+        await controller.loadTemplates()
+        #expect(controller.templates.first { $0.id == "team-result-files" }?.team == fixture.spaces[0].name)
+
+        // Starting from a template: the mission names it and the planner reads it.
+        controller.startTemplate = local
+        let next = try await fixture.create()
+        mission = try controller.record(next)
+        #expect(mission.draft.template == local.id && controller.startTemplate == nil)
+        // calls.jsonl holds the prompt JSON-escaped.
+        #expect(try String(contentsOf: fixture.calls, encoding: .utf8).contains("mission template \\\"Update result files\\\""))
     }
 
     static func retryScenario() async throws {

@@ -273,10 +273,12 @@ final class ProjectsPreviewWorld {
     let remote: ScratchServer
     let vm: ShepherdViewModel
 
-    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false) async throws {
+    /// `supportPi` puts Shepherd's pi home where the app keeps it, under the home's Application Support.
+    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false, supportPi: Bool = false) async throws {
         let dir = try makeScratchDirectory("prv-projects")
         let home = dir.appendingPathComponent("home")
-        let pi = PiSetup(engine: PiSetup.app.engine, home: dir.appendingPathComponent("pi"), userHome: home.path)
+        let pi = PiSetup(engine: PiSetup.app.engine, home: supportPi ? home.appendingPathComponent("Library/Application Support/Shepherd/pi") : dir.appendingPathComponent("pi"),
+                         userHome: home.path)
         local = try ScratchServer(dir: dir, pi: pi)
         let remoteDir = try makeScratchDirectory("prv-proj-host")
         let remoteHome = remoteDir.appendingPathComponent("home")

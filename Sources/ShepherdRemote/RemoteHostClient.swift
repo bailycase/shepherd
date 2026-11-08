@@ -689,6 +689,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .terminals: RemoteProtocol.terminalActivityCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
+        case .fileWrite: RemoteProtocol.filesWriteCapability
         case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         case .changesRevertFile: RemoteProtocol.changesRevertCapability
@@ -754,6 +755,18 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected file reply")
         }
         return data
+    }
+
+    /// Saves `text` over a file of the thread's folder on the host only while it still holds `expected`
+    /// (`filesWriteCapability`): `.changed` with the host's text when it moved on.
+    public func writeFile(agentID: AgentID, path: String, text: String, expected: String) async throws -> ThreadFileSaveResult {
+        guard capabilities.contains(RemoteProtocol.filesWriteCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Saving files needs a newer Shepherd on the host.")
+        }
+        guard case .fileWrite(let result) = try await filesQuery(agentID: agentID, query: .fileWrite(path: path, text: text, expected: expected)) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected save reply")
+        }
+        return result
     }
 
     private func filesQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
@@ -1151,6 +1164,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         guard !request.requiresDetails || capabilities.contains(RemoteProtocol.projectDetailsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to read space context and open its editor.")
+        }
+        guard !request.requiresResources || capabilities.contains(RemoteProtocol.projectResourcesCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage space resources.")
+        }
+        guard !request.requiresInheritance || capabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills.")
         }
         let reply = try await self.request { .projects(id: $0, request: request) }
         switch reply {

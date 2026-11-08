@@ -1,20 +1,22 @@
+import CoreGraphics
 import Foundation
+import ShepherdProtocol
 
-/// The scripts the Browser puts in every page. The picker and
+/// The scripts the Browser puts in every page (the Mac's, and the iPad's picker and shim). The picker and
 /// the network count run in Shepherd's own content world (`BrowserHost.world`), which the page
 /// can't see or call, and post to a handler only that world has. Two things only the page's own
 /// world can read: what its `console` says, and a React dev build's fibers (JS properties on the
 /// page's DOM nodes are per world). So a small shim runs there: it wraps `console` and reports
 /// errors to a console-only handler, and answers the picker's source question through a DOM
 /// attribute. It holds no handler for picks: a page can at most forge a console line.
-enum BrowserScripts {
+public enum BrowserScripts {
     /// The page world's handler for console lines.
-    static let consoleHandler = "shepherdConsole"
+    public static let consoleHandler = "shepherdConsole"
     /// Shepherd's world's handler for picks, moves, cancels and the network count.
-    static let pickerHandler = "shepherdBrowser"
+    public static let pickerHandler = "shepherdBrowser"
 
     /// In the page's world, at document start.
-    static let pageShim = #"""
+    public static let pageShim = #"""
     (() => {
       if (window.__shepherdShim) return;
       Object.defineProperty(window, '__shepherdShim', { value: true });
@@ -81,7 +83,7 @@ enum BrowserScripts {
     """#
 
     /// In Shepherd's world, at document end.
-    static let picker = #"""
+    public static let picker = #"""
     (() => {
       if (window.__shepherdBrowser) return;
       const post = (message) => { try { window.webkit.messageHandlers.shepherdBrowser.postMessage(message); } catch (e) {} };
@@ -251,4 +253,24 @@ enum BrowserScripts {
       }) });
     })();
     """#
+
+    /// A pick the picker posted (`kind: "pick"`): the element on `page`, and where it is (CSS pixels in the page's
+    /// viewport). Nil for anything malformed.
+    public static func pick(_ body: [String: Any], page: String) -> (element: BrowserElement, rect: CGRect)? {
+        guard let selector = body["selector"] as? String, !selector.isEmpty, let label = body["label"] as? String,
+              let rect = rect(body["rect"]) else { return nil }
+        let source = (body["source"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let element = BrowserElement(page: page, selector: selector, label: label, source: source,
+                                     width: Int(rect.width.rounded()), height: Int(rect.height.rounded()),
+                                     html: body["html"] as? String).clamped
+        return (element, rect)
+    }
+
+    /// A rect the picker posted (`{x, y, width, height}`), finite and not negative in size.
+    public static func rect(_ value: Any?) -> CGRect? {
+        guard let value = value as? [String: Any], let x = (value["x"] as? NSNumber)?.doubleValue, let y = (value["y"] as? NSNumber)?.doubleValue,
+              let width = (value["width"] as? NSNumber)?.doubleValue, let height = (value["height"] as? NSNumber)?.doubleValue,
+              width.isFinite, height.isFinite, x.isFinite, y.isFinite else { return nil }
+        return CGRect(x: x, y: y, width: max(0, width), height: max(0, height))
+    }
 }

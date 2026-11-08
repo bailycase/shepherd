@@ -123,7 +123,9 @@ extension SessionServer {
             if spawn.requiredHistoryEntryID != nil, let problem { throw AgentSpawnRefused(problem: problem) }
         }
         let state = self.state
-        let parent = await projects.parentProject(of: cwd, state: state)
+        let inheritance = await projects.inheritance(of: cwd, state: state)
+        let parent = inheritance?.parent
+        let inherited = await projects.launchDefaults(for: cwd)
         let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
         // RPC mode ignores a positional prompt; an opening prompt goes to the session afterwards.
         let command = try problem.map(AgentLaunch.refusedCommand)
@@ -134,7 +136,13 @@ extension SessionServer {
                                       suggestFiles: suggestions.snapshot().settings.files(for: spawn.isAutomation ? .automation : .thread),
                                       modelOverride: spawn.takeModelOverride(),
                                       specKit: spawn.specKit ? state.specKitLaunch(for: agent.id, cwd: cwd) : nil,
-                                      mcp: { try spawn.mcp(parent, agent, cwd, state, verifiedWorktree) })
+                                      inherited: inherited,
+                                      mcp: {
+                                          // Parent skills come through the same extension, so a child space gets them with MCP off too.
+                                          let launch = try spawn.mcp(parent, agent, cwd, state, verifiedWorktree)
+                                              ?? (parent == nil ? nil : MCPLaunch(extensions: spawn.settings.deferTools ? ["builtin:tool-search"] : [], environment: [:]).sharingParent(parent))
+                                          return launch?.excluding(inheritance?.excluded ?? SpaceInheritanceExclusions())
+                                      })
         // A forked transcript resumes: pi not finding it is a start problem, never a new session.
         let resuming = spawn.checksResume && !fresh ? agent.effectivePiSessionID : nil
         guard spawn.stillWanted() else { return nil }

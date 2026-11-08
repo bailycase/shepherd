@@ -62,6 +62,11 @@ struct AppDialogs: ViewModifier {
                         .dialogSheetFrame()
                 }
             }
+            .sheet(item: $vm.runningElsewhere) { shown in
+                RunElsewhereSheet(vm: vm, draft: Binding(get: { vm.runningElsewhere ?? shown }, set: { if vm.runningElsewhere != nil { vm.runningElsewhere = $0 } }),
+                                  dismiss: { vm.runningElsewhere = nil })
+                    .dialogSheetFrame()
+            }
             .sheet(item: Binding(get: { vm.projectsEnabled ? vm.newLogicalProject : nil }, set: { vm.newLogicalProject = $0 })) { shown in
                 // A dismissing sheet writes its last value back; only write while a draft exists, so turning Projects off (which clears it) stays cleared.
                 NewProjectSheet(vm: vm, draft: Binding(get: { vm.newLogicalProject ?? shown }, set: { if vm.newLogicalProject != nil { vm.newLogicalProject = $0 } }),
@@ -107,7 +112,16 @@ struct AppDialogs: ViewModifier {
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.agentDeleteAgent, onDismiss: vm.runAfterDialogDismiss) { agent in
-                AgentDeleteDialog(vm: vm, agent: agent)
+                AgentDeleteDialog(agent: agent, settings: vm.settings, cancel: { vm.agentDeleteTarget = nil }) {
+                    let id = agent.id
+                    vm.afterDialogDismiss = { vm.deleteAgent(id) }
+                    vm.agentDeleteTarget = nil
+                }
+            }
+            // A host's agent: the same dialog, naming its host; the host deletes it once the sheet is down.
+            .sheet(item: $vm.remoteDeleteItem, onDismiss: vm.remoteDeleteDismissed) { item in
+                AgentDeleteDialog(agent: item.agent, host: item.hostName, settings: vm.settings,
+                                  cancel: { vm.remoteDeleteTarget = nil }) { vm.confirmRemoteDelete(item.target) }
             }
             .sheet(item: $vm.automationDeleteAutomation, onDismiss: vm.runAfterDialogDismiss) { automation in
                 DialogSheet(
@@ -294,31 +308,34 @@ struct WorktreeDeleteDialog: View {
 }
 
 /// Delete Agent: confirmed unless remembered. It stops the agent's run and drops the thread from the sidebar,
-/// and nothing in the app brings it back.
+/// and nothing in the app brings it back. A host's agent goes from its host, so its thread closes on every device.
 struct AgentDeleteDialog: View {
-    var vm: ShepherdViewModel
     let agent: Agent
+    /// The host's name, for a host's agent; nil for This Mac's.
+    var host: String? = nil
+    let settings: AppSettings
+    let cancel: () -> Void
+    let delete: () -> Void
 
     var body: some View {
         DialogSheet(
             title: "Delete agent",
-            subtitle: Self.subtitle(agent),
+            subtitle: Self.subtitle(agent, host: host),
             actions: [
-                DialogAction("Cancel", kind: .cancel) { vm.agentDeleteTarget = nil },
-                DialogAction("Delete", kind: .destructive) {
-                    let id = agent.id
-                    vm.afterDialogDismiss = { vm.deleteAgent(id) }
-                    vm.agentDeleteTarget = nil
-                },
+                DialogAction("Cancel", kind: .cancel, action: cancel),
+                DialogAction("Delete", kind: .destructive, action: delete),
             ],
             dontAskAgain: .deleteAgent,
-            settings: vm.settings
+            settings: settings
         )
     }
 
-    static func subtitle(_ agent: Agent) -> String {
+    static func subtitle(_ agent: Agent, host: String? = nil) -> String {
         let stops = agent.status == .idle ? "Removes" : "Stops and removes"
-        return "\(stops) “\(agent.name)”. Its conversation stays on disk, but the thread leaves the sidebar and cannot be reopened here."
+        guard let host else {
+            return "\(stops) “\(agent.name)”. Its conversation stays on disk, but the thread leaves the sidebar and cannot be reopened here."
+        }
+        return "\(stops) “\(agent.name)” on \(host). Its conversation stays on \(host), but the thread closes on every device and cannot be reopened."
     }
 }
 

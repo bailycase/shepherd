@@ -22,6 +22,10 @@ struct MissionWorkspace: View {
     /// The same actions, awaited: true only when the controller accepted it (composers clear on that).
     var send: (MissionUIAction) async -> Bool = { _ in false }
     let action: (MissionUIAction) -> Void
+    /// The host's other missions: who holds this one's repositories (MXLocks).
+    var others: [Mission] = []
+    /// The template this mission started from (MXTemplateStart).
+    var template: MissionTemplate?
     @State private var page: MissionWorkspacePage?
 
     private var phase: MissionRun.Phase { mission.phase }
@@ -35,7 +39,7 @@ struct MissionWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             MissionHeader(title: mission.draft.title, pill: mission.pill, steps: steps, chrome: chrome, back: back,
-                          select: { page = $0 == .run && MissionWorkspacePage.review.available(for: mission) ? .review : $0 }) { compact in
+                          select: { page = $0 == .run && !mission.trainShown && MissionWorkspacePage.review.available(for: mission) ? .review : $0 }) { compact in
                 trailing(compact: compact)
             }
             if [.paused, .stopped].contains(phase), let notice = mission.run?.notice {
@@ -51,11 +55,22 @@ struct MissionWorkspace: View {
             Group {
                 switch displayed {
                 case .goal:
-                    MissionGoalView(mission: mission, output: output, specKitReports: specKitReports, busy: busy, openThread: openThread, send: send, action: action,
+                    MissionGoalView(mission: mission, output: output, specKitReports: specKitReports, busy: busy, openThread: openThread, send: send, action: action, template: template,
                                     showMap: { page = .map })
                 case .map, .done:
                     MissionMapPage(mission: mission, done: displayed == .done, models: models, reviews: reviews,
-                                   busy: busy, editable: editable, openThread: openThread, action: action)
+                                   busy: busy, editable: editable, openThread: openThread, action: action,
+                                   showTrain: mission.trainShown ? { page = .run } : nil)
+                case .run where mission.trainShown:
+                    MissionTrainPage(mission: mission, reviews: reviews, busy: busy, action: action) {
+                        MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
+                                       threads: threads)
+                    }
+                case .run where mission.locksShown:
+                    MissionLocksPage(mission: mission, others: others, busy: busy, action: action) {
+                        MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
+                                       threads: threads)
+                    }
                 case .run:
                     MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
                                    threads: threads)
@@ -76,7 +91,10 @@ struct MissionWorkspace: View {
         let limits = mission.draft.limits
         if !compact {
             if phase == .map || (phase == .planning && mission.stationAttempts.isEmpty) {
-                Text("budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
+                // The planner's estimate (a pending patch's, as MXPatch previews it) against the limits, else the limits.
+                let estimate = mission.run?.patch?.draft.plan?.estimate ?? mission.draft.plan?.estimate
+                Text(estimate.map { "est. \(MissionFormat.tokens($0.tokens)) of \(MissionFormat.tokens(limits.tokens)) · \(MissionFormat.duration($0.seconds)) of \(MissionFormat.duration(limits.seconds))" }
+                     ?? "budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
                     .shText(.mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             } else {
                 MissionMeters(mission: mission)
@@ -113,11 +131,21 @@ struct MissionWorkspace: View {
                     Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? SHGlyph.mission.symbolName : "play.fill")
                 }
                 .buttonStyle(.sh(.primary))
-                .keyboardShortcut(.return, modifiers: .command)
+                // A pending patch's Apply owns ⌘↩ (MXPatch).
+                .keyboardShortcut(mission.run?.patch == nil ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 .disabled(busy)
                 .shHelp(needsPlan ? "Continue planning" : mission.specKit != nil
                         ? "Approve each repository's spec, plan and tasks as they are now, then run /speckit.implement and /speckit.converge"
                         : "Approve this map and start work", shortcut: "⌘↩")
+            }
+        case .done:
+            // MXTrain: the train's own Pause and Resume, beside the meters.
+            switch mission.run?.train?.status {
+            case .running?:
+                Button { action(.pauseTrain) } label: { Label("Pause train", systemImage: "pause.fill") }.buttonStyle(.sh(.secondary)).disabled(busy)
+            case .paused?:
+                Button { action(.resumeTrain) } label: { Label("Resume train", systemImage: "play.fill") }.buttonStyle(.sh(.primary)).disabled(busy)
+            default: EmptyView()
             }
         default: EmptyView()
         }
@@ -301,6 +329,8 @@ enum MissionWorkspacePage: String, CaseIterable {
         if phase == .map && preferred == nil && mission.specKit != nil && mission.approvedPlanRevision == nil
             && (!mission.specKitConsented || mission.specKitNext != nil) { return .goal }
         if let preferred, preferred.available(for: mission) { return preferred }
+        // A started train that hasn't finished is the mission's work now.
+        if mission.trainShown, let train = mission.run?.train, train.status != .done { return .run }
         if [.paused, .stopped].contains(phase) {
             if mission.run?.reviewFingerprint != nil && Self.review.available(for: mission) { return .review }
             if !mission.stationAttempts.isEmpty { return .run }
@@ -316,7 +346,7 @@ enum MissionWorkspacePage: String, CaseIterable {
         case .map: mission.draft.plan?.stations.isEmpty == false && mission.run?.pendingQuestion == nil ? 1 : 0
         case .paused, .stopped: mission.stationAttempts.isEmpty ? (mission.draft.plan?.stations.isEmpty == false ? 1 : 0) : 2
         case .running, .review, .publishing: 2
-        case .done: 3
+        case .done: mission.run?.train.map { $0.status == .done } ?? true ? 3 : 2
         }
     }
 
@@ -342,6 +372,7 @@ struct MissionGoalView: View {
     let openThread: (AgentID) -> Void
     var send: (MissionUIAction) async -> Bool = { _ in false }
     let action: (MissionUIAction) -> Void
+    var template: MissionTemplate?
     let showMap: () -> Void
     @State private var reply = ""
     /// A reply or an answer on its way: the composer and the choices wait, and keep the words until it lands.
@@ -393,7 +424,7 @@ struct MissionGoalView: View {
     }
 
     private var brief: some View {
-        MissionBrief(mission: mission, specKitReports: specKitReports, busy: busy, editable: canReply, action: action, showMap: showMap)
+        MissionBrief(mission: mission, specKitReports: specKitReports, busy: busy, editable: canReply, action: action, showMap: showMap, template: template)
     }
 
     private func conversation(narrow: Bool) -> some View {
@@ -658,6 +689,7 @@ struct MissionBrief: View {
     let editable: Bool
     let action: (MissionUIAction) -> Void
     let showMap: () -> Void
+    var template: MissionTemplate?
     @State private var editing: BriefField?
     @State private var text = ""
     @State private var title = ""
@@ -675,7 +707,8 @@ struct MissionBrief: View {
                         Text("Mission brief").shText(.title).accessibilityAddTraits(.isHeader)
                         HStack(spacing: SH.Space.s) {
                             if mission.phase == .planning { ProgressView().progressViewStyle(.shSpinner(size: 10)) }
-                            Text(editable ? "built by the planner as you talk · click a section to change it" : "built by the planner as you talk")
+                            Text(template != nil ? "started from a template · click a section to change it"
+                                 : editable ? "built by the planner as you talk · click a section to change it" : "built by the planner as you talk")
                                 .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         }
                     }.padding(SH.Space.xl)
@@ -683,6 +716,7 @@ struct MissionBrief: View {
                     section(.destination, "Destination", meta: "from your message") {
                         MissionProse(mission.draft.goal)
                     }
+                    if let template { MissionBriefTemplate(mission: mission, template: template) }
                     lanes
                     section(.context, "Context", meta: mission.draft.context.isEmpty ? nil : "\(mission.draft.context.count) found") {
                         if mission.draft.context.isEmpty {

@@ -99,6 +99,48 @@ struct DesignReferenceThreadTests {
         #expect(ComposerMention.token(in: draft) == nil)
     }
 
+    /// The rule the walk back replaced, word for word: the last "@" anywhere in the draft.
+    private static func wholeDraftMention(in draft: String) -> (before: String, text: String)? {
+        guard let at = draft.lastIndex(of: "@") else { return nil }
+        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+        let text = draft[draft.index(after: at)...]
+        guard !text.contains(where: \.isNewline), text.count <= ComposerMention.maxLength,
+              text.first?.isWhitespace != true else { return nil }
+        return (String(draft[..<at]), String(text))
+    }
+
+    @Test func theMentionWalkFindsWhatTheWholeDraftScanFound() {
+        let symbols = ["a", "/", "$", "@", " ", "\n", "é", "e\u{301}", "\r\n", "\u{00A0}", "🚀"]
+        var drafts = [""], level = [""]
+        for _ in 1...4 {
+            level = level.flatMap { draft in symbols.map { draft + $0 } }
+            drafts += level
+        }
+        // Past the corpus: an "@" with 159, 160 and 161 Characters after it, plain and joined
+        // (a Character of two scalars, one of four bytes, one of eight), with a line break at either end or
+        // in the middle, and after words.
+        let limit = ComposerMention.maxLength
+        for count in [limit - 1, limit, limit + 1] {
+            for unit in ["x", "e\u{301}", "🚀", "🇫🇷"] {
+                let run = String(repeating: unit, count: count)
+                let broken = String(repeating: unit, count: count / 2) + "\n" + String(repeating: unit, count: count - count / 2 - 1)
+                for text in [run, "\n" + run, run + "\n", broken, " " + run] {
+                    drafts += ["@" + text, "see @" + text, "see\n@" + text, "me@" + text]
+                }
+            }
+        }
+        var differing: [String] = []
+        for draft in drafts {
+            let walked = ComposerMention.token(in: draft)
+            let scanned = Self.wholeDraftMention(in: draft)
+            if walked?.before != scanned?.before || walked?.text != scanned?.text
+                || walked?.draft(with: "Z") != scanned.map({ $0.before + "@Z" }) {
+                differing.append(draft)
+            }
+        }
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(3).map { String(reflecting: $0.prefix(24)) })")
+    }
+
     @Test func theWordsOfAMentionSpellItsScope() {
         let catalog = Self.catalog
         #expect(MentionScope.spelled(by: "Checkout funnel dashboard › ", in: catalog) == .design(Self.checkout, name: "Checkout funnel dashboard"))
@@ -233,6 +275,25 @@ struct DesignReferenceThreadTests {
                 "a reference already in the words is left as it was")
     }
 
+    /// A paste is told from a keystroke by the Characters it added, whatever their bytes: a
+    /// reference over a selection of wide text is a paste, a flag and a space over a letter is not.
+    @Test func aPasteIsTheCharactersItAdded() throws {
+        let reference = try #require(DesignReference(designID: Self.checkout, board: Self.a))
+        let word = reference.string
+        let width = word.count
+        let rows: [(String, previous: String, draft: String, chip: Bool)] = [
+            ("over ASCII, two Characters more", String(repeating: "x", count: width - 2), word, true),
+            ("over ASCII, one Character more", String(repeating: "x", count: width - 1), word, false),
+            ("over CJK, two Characters more", String(repeating: "日", count: width - 2), word, true),
+            ("over CJK, one Character more", String(repeating: "日", count: width - 1), word, false),
+            ("a flag and a space over a letter", "X" + word, "🇫🇷 " + word, false),
+            ("two letters and a space over a letter", "X" + word, "ab " + word, true),
+        ]
+        for (label, previous, draft, chip) in rows {
+            #expect((ComposerReferencePaste.extract(draft, previous: previous) != nil) == chip, "\(label)")
+        }
+    }
+
     // MARK: The chip and the agent's line
 
     @Test func aChipsWordsComeFromWhatTheHostKept() {
@@ -248,6 +309,74 @@ struct DesignReferenceThreadTests {
         #expect(DesignReferenceChips.changes(.updatedSince(latest: 26, changes: ["padding 24px → 20px"]), version: 23)
             == SHReferenceChanges(title: "Changed since v23 · now v26", lines: ["padding 24px → 20px"]))
         #expect(DesignReferenceChips.changes(.current, version: 23) == nil)
+    }
+
+    /// ThreadBoardShown and ThreadBoardStale: a board card reads the copy the agent showed, its
+    /// picture at half its pixels, and says so once the design moved on; "Show v14" and "Open in
+    /// design" open the board as it is now and as it was.
+    @Test func aBoardCardReadsTheCopyAndSaysWhenTheDesignMovedOn() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("board-card-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 112, pixelsHigh: 82, bitsPerSample: 8, samplesPerPixel: 4,
+                                                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        try #require(rep.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent("A@2x.png"))
+        let reference = DesignReference(designID: Self.checkout, board: Self.a, revision: 13)!
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "t"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 13, capturedAt: 0, width: 560, height: 410,
+                                             picture: .init(name: "A@2x.png", bytes: 1, pixelWidth: 112, pixelHeight: 82))
+        payload.boardPageTitle = "Checkout"
+        var freshness = DesignReferenceFreshness.current
+        var opened: [DesignReference] = []
+        let chips = DesignReferenceChips(agentID: AgentID(rawValue: "t"), io: DesignReferenceChips.IO(
+            payload: { $0 == payload.id ? (payload, folder) : nil }, freshness: { _ in freshness }, open: { opened.append($0) }))
+
+        await chips.loadBoard(payload.id)
+        let shown = try #require(chips.boards[payload.id])
+        #expect(shown.design == "Checkout redesign" && shown.board == "A · Funnel first")
+        #expect(shown.meta == ["Checkout", "560 × 410", "revision 13"] && shown.note == nil && shown.showLatest == nil)
+        #expect(shown.size == CGSize(width: 56, height: 41) && shown.picture != nil)
+
+        freshness = .updatedSince(latest: 14, changes: ["padding 24px → 20px"])
+        chips.designsChanged()
+        await chips.loadBoard(payload.id)
+        let stale = try #require(chips.boards[payload.id])
+        #expect(stale.meta.last == "shown at revision 13" && stale.showLatest == "Show v14")
+        #expect(stale.note == "The design moved on since the agent showed this. It shows what the agent saw.")
+        chips.io.open(stale.reference.unpinned)
+        chips.io.open(stale.reference)
+        #expect(opened.map(\.revision) == [nil, 13])
+
+        await chips.loadBoard(UUID())
+        #expect(chips.boards.count == 1, "a copy the thread no longer has draws no card")
+    }
+
+    /// ThreadBoardDraft: a drawn board is never stale, its card offers Discard and Add to design,
+    /// and settling it reads the copy again; a refusal comes back as words for the card.
+    @Test func aDrawnBoardSettlesFromItsCard() async throws {
+        let reference = DesignReference(designID: Self.checkout, board: DesignPath("B.dc.html")!, revision: 13)!
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "t"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "B · Pay on phone", revision: 13, capturedAt: 0, width: 320, height: 480)
+        payload.proposal = .init(kind: .draft)
+        let kept = Locked(payload)
+        var settled: [Bool] = []
+        let chips = DesignReferenceChips(agentID: AgentID(rawValue: "t"), io: DesignReferenceChips.IO(
+            payload: { $0 == payload.id ? (kept.current, URL(fileURLWithPath: "/nonexistent")) : nil },
+            freshness: { _ in .deleted },
+            settle: { _, accept in
+                settled.append(accept)
+                if accept { throw DesignReferenceError("board_changed", "B changed since the agent drew this.") }
+                kept.withValue { $0.proposal?.state = .discarded }
+            }))
+        await chips.loadBoard(payload.id)
+        let card = try #require(chips.boards[payload.id])
+        #expect(card.proposal?.state == .pending && card.copy == payload.id && card.note?.hasPrefix("Drawn in this thread") == true)
+        #expect(card.meta.last == "not on the canvas yet" && card.showLatest == nil, "a draft isn't on the canvas to be stale")
+        #expect(card.lineLabel == "Drew a board" && card.lineMeta == "B · Pay on phone · draft in Checkout redesign")
+
+        #expect(await chips.settle(payload.id, accept: true) == "B changed since the agent drew this.")
+        #expect(await chips.settle(payload.id, accept: false) == nil)
+        #expect(settled == [true, false] && chips.boards[payload.id]?.proposal?.state == .discarded)
     }
 
     /// RefAtElements: an element's row on screen asks for its own picture, with its board and the

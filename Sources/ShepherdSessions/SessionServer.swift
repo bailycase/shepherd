@@ -1140,6 +1140,10 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+        let skills = self.skills
+        projects.installSkills = { repo, paths, commit, destination in
+            try skills.installCopies(repo: repo, paths: paths, commit: commit, into: destination)
+        }
     }
 
     /// Serves the Design tool to remote clients (`designs.v1`) while `served` (Settings ▸
@@ -1508,6 +1512,11 @@ public final class SessionServer: @unchecked Sendable {
                         state.projectExecutions[i].revision += 1
                         state.projectExecutions[i].outcome = "Executor restarted; no work was resumed or replayed."
                     }
+                    // A merge train never resumes on its own: it comes back paused, its step as it was.
+                    for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
+                        state.missions[i].run?.train?.pause("Shepherd restarted. The train waits for you; nothing merged since.")
+                        state.missions[i].revision += 1
+                    }
                     for i in state.missions.indices where state.missions[i].run?.phase.active == true {
                         state.missions[i].run?.transition(to: .paused, at: Date().timeIntervalSince1970,
                             notice: "Shepherd restarted. Nothing resumed. Inspect the retained work before continuing.")
@@ -1637,6 +1646,14 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        if isStarted, store.state.missions.contains(where: { $0.run?.train?.status == .running }) {
+            try? mutateState { state in
+                for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
+                    state.missions[i].run?.train?.pause("Shepherd closed. The train waits for you; nothing merges until you resume it.")
+                    state.missions[i].revision += 1
+                }
+            }
+        }
         if isStarted, store.state.missions.contains(where: { $0.run?.phase.active == true }) {
             // Save the active clock before shutdown; offline time is not mission execution time.
             try? mutateState { state in
@@ -2831,6 +2848,14 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
                 return
             }
+            guard !request.requiresResources || offeredCapabilities.contains(RemoteProtocol.projectResourcesCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to manage space resources."), to: client)
+                return
+            }
+            guard !request.requiresInheritance || offeredCapabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills."), to: client)
+                return
+            }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
                 send(.error(id: id, code: "update_required", message: "Project approval is unavailable on this host."), to: client)
                 return
@@ -3097,9 +3122,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// A thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `files.v1`): only for a client that
-    /// listed the capability and is sent the agent (`remoteState`), inside the folder the thread runs in, read off
-    /// the server's queue.
+    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`): only for
+    /// a client that listed `files.v1` and is sent the agent (`remoteState`), inside the folder the thread runs in, off
+    /// the server's queue. A save writes only over the text the client edited from.
     private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
         guard offeredCapabilities(to: client).contains(RemoteProtocol.filesCapability) else {
             send(.error(id: id, code: "unsupported", message: "Files needs a newer Shepherd on this device."), to: client)
@@ -3126,6 +3151,8 @@ public final class SessionServer: @unchecked Sendable {
                 case .success(let data): reply = .agentResult(id: id, result: .fileData(data))
                 case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
                 }
+            case .fileWrite(let path, let text, let expected):
+                reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
             default: return
             }
             self?.queue.async {
@@ -4731,6 +4758,14 @@ public final class SessionServer: @unchecked Sendable {
             designGetRequest(id: id, agentID: agentID, reference: reference, what: what, client: client)
         case .designNote(let id, let agentID, let reference, let text):
             designNoteRequest(id: id, agentID: agentID, reference: reference, text: text, client: client)
+        case .designPropose(let id, let agentID, let reference, let source, let title):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+                return
+            }
+            answerOffQueue(id: id, client: client) { server in
+                .designReference(id: id, answer: try await server.proposeDesignBoard(agentID: agentID, reference: reference, source: source, title: title))
+            }
         }
     }
 
@@ -5842,8 +5877,10 @@ public final class SessionServer: @unchecked Sendable {
         if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
            thread.pushQuestion != question {
             thread.pushQuestion = question
-            pushNotifications.send(agentID: agentID, kind: .needsAnswer,
-                title: store.state.agents[index].name, preview: question)
+            // Its options become buttons under the push (NotifPhoneRich's per-question actions).
+            let prompt = thread.dialogs.first.map(NativeQuestionPrompt.init(dialog:))
+            sendPush(agentID: agentID, kind: .needsAnswer, preview: question,
+                     detail: prompt.flatMap { $0.blocked == nil ? PushDetail.question(options: $0.options.map(\.title)) : nil })
         } else if question == nil {
             thread?.pushQuestion = nil
         }
@@ -8087,8 +8124,8 @@ public final class SessionServer: @unchecked Sendable {
             let piDirectory = pi.home
             let cwd = params.cwd
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
-            // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
-            // agent is done even though its status report was held for the queue.
+            // pi is idle and nothing continues (the run a done was held across has settled, or the
+            // queue did not go after all): the agent is done even though its report was held.
             thread.onIdleAfterQueue = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
                       server.store.state.agents.first(where: { $0.id == agentID })?.status == .working else { return }
@@ -8621,8 +8658,7 @@ public final class SessionServer: @unchecked Sendable {
         if let agent = agentID(forSession: sessionID) {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false
-                pushNotifications.send(agentID: agent, kind: .error,
-                    title: store.state.agents.first(where: { $0.id == agent })?.name,
+                sendPush(agentID: agent, kind: .error,
                     preview: thread.pushAwaitingStart ? nil : thread.turnFailure?.message)
             }
             projectRuntimeExited(agentID: agent)
@@ -9001,8 +9037,7 @@ public final class SessionServer: @unchecked Sendable {
               thread.subagents.allSatisfy({ $0.isTerminal && $0.state != "paused" && !$0.needsAttention }) else { return }
         thread.pushRunArmed = false
         thread.pushQuestion = nil
-        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
-            title: store.state.agents.first(where: { $0.id == agentID })?.name,
+        sendPush(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
             preview: thread.turnFailure == nil ? thread.pushFinalText : thread.turnFailure?.message)
     }
 

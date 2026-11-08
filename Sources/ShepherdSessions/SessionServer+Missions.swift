@@ -324,6 +324,29 @@ extension SessionServer {
 
     /// What became of a steer pi acknowledged: still queued, read (its user message is in the thread), or
     /// left unread when the run ended or stopped. An acknowledgement alone is never "consumed".
+    /// Server queue: push an alert about `agentID`. A mission's planner and stations stack under
+    /// the mission's title, the kind line naming who asks (NotifPhoneStacks); any other thread
+    /// stacks on its own under its name.
+    func sendPush(agentID: AgentID, kind: PushNotifications.Kind, preview: String?, detail: PushDetail? = nil) {
+        let line = switch kind {
+        case .needsAnswer: "Question"
+        case .error: "Turn failed"
+        case .done: "Turn finished"
+        case .review: "Ready to review"
+        }
+        guard let mission = store.state.missions.first(where: { $0.run?.attempts.contains { $0.agentID == agentID } == true }),
+              let attempt = mission.run?.attempts.last(where: { $0.agentID == agentID }) else {
+            pushNotifications.send(agentID: agentID, kind: kind, title: store.state.agents.first { $0.id == agentID }?.name,
+                                   preview: preview, subtitle: line, detail: detail)
+            return
+        }
+        let station = attempt.stationID.flatMap { id in mission.draft.plan?.stations.first { $0.id == id } }
+        pushNotifications.send(agentID: agentID, kind: kind, title: mission.draft.title, preview: preview,
+                               group: "mission:\(mission.id.rawValue)",
+                               subtitle: station.map { "\($0.title) · \(line)" } ?? "Planner \(line.lowercased())",
+                               missionID: mission.id.rawValue, detail: detail)
+    }
+
     public func missionSteerOutcome(agentID: AgentID, operationID: UUID) async -> MissionSteerOutcome {
         (try? await enqueue {
             guard let thread = self.rpcThread(forAgent: agentID) else { return .threadClosed }
@@ -423,7 +446,33 @@ extension SessionServer {
 
     private func storeMission(_ mission: Mission) throws {
         try mission.validate()
+        let before = store.state.missions.first { $0.id == mission.id }?.run?.phase
         try mutateState { state in state.missions = state.missions.map { $0.id == mission.id ? mission : $0 } }
+        if before != .review { pushReviewReady(mission) }
+        if before?.active == true { pushBlocked(mission) }
+    }
+
+    /// Server queue: a run that paused itself (a limit reached, a stuck lane, an error) is blocked
+    /// work; a person's own Pause is not.
+    func pushBlocked(_ mission: Mission) {
+        guard let run = mission.run, run.phase == .paused, run.notice != MissionRun.pausedByPerson,
+              let planner = run.plannerID else { return }
+        pushNotifications.send(agentID: planner, kind: .error, title: mission.draft.title, preview: run.notice,
+                               group: "mission:\(mission.id.rawValue)", subtitle: "Blocked",
+                               topic: .blocked, missionID: mission.id.rawValue, detail: .blocked(mission))
+    }
+
+    /// Server queue: a mission that just reached review asks for approval on the phone, carrying
+    /// exactly the revision and fingerprint Approve publishes (NotifPhoneReview).
+    func pushReviewReady(_ mission: Mission) {
+        guard let run = mission.run, run.phase == .review, let fingerprint = run.reviewFingerprint,
+              let planner = run.plannerID else { return }
+        let count = run.checkouts.count
+        pushNotifications.send(agentID: planner, kind: .review, title: mission.draft.title,
+            preview: count == 1 ? "1 pull request is ready to merge." : "\(count) pull requests merge in this order.",
+            group: "mission:\(mission.id.rawValue)", subtitle: "Ready to review",
+            mission: .init(id: mission.id.rawValue, revision: mission.revision, fingerprint: fingerprint),
+            detail: .review(mission))
     }
 
     private func missionForMutation(_ id: MissionID, expectedRevision: UInt64) throws -> Mission {

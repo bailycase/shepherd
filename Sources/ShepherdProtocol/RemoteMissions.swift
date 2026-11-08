@@ -73,6 +73,16 @@ public enum RemoteMissionAction: Codable, Hashable, Sendable {
     case runAgain
     /// Steers a working station's turn in its own session (waits, bounded, for the agent to read it).
     case steer(attemptID: UUID, text: String)
+    /// Applies or rejects exactly the map patch the client showed (`MissionRun.patch`'s id).
+    case applyPatch(patchID: UUID)
+    case rejectPatch(patchID: UUID)
+    case autoApplyPatches(on: Bool)
+    /// The merge train over a published mission's PRs: in exactly this order, under exactly these rules.
+    case startTrain(order: [SpaceID], rules: MissionTrain.Rules)
+    case changeTrain(order: [SpaceID], rules: MissionTrain.Rules)
+    case pauseTrain, resumeTrain, skipSoak
+    /// What a repository another mission holds does: wait, stack on the holder's branch, or run anyway.
+    case laneLock(spaceID: SpaceID, choice: MissionLaneLock.Choice)
 }
 
 public enum RemoteMissionRequest: Codable, Hashable, Sendable {

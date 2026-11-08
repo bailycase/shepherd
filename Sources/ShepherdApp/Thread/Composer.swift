@@ -265,7 +265,7 @@ struct Composer: View {
     private var commandQuery: String? {
         guard let token = commandToken, !menuCommands.isEmpty, !token.isSkill(in: store.commands) else { return nil }
         let query = (token.sigil == "$" ? "skill:" + token.text : token.text).lowercased()
-        guard token.before.isEmpty || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
+        guard token.startsDraft || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
         return query
     }
     /// The commands the slash menu lists for the draft, as `body` last derived them: every key
@@ -400,7 +400,7 @@ struct Composer: View {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
-                                       readOnly: projectUpNext != nil)
+                                       readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
                     }
                 }
                 // A lifted row floats over the card too.

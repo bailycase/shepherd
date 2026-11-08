@@ -146,6 +146,15 @@ public final class LogicalProjectsModel {
         }
     }
 
+    /// The person's Pause or Resume, on the owner: Pause stops threads at a safe point and holds messages; Resume is refused until
+    /// the owner has acknowledged the stop.
+    /// Running work moves the revision often, so a stale refusal (which re-read the owner) is tried once more against the new one.
+    public func setPaused(_ ref: LogicalProjectRef, _ paused: Bool) async -> Bool {
+        let request: (Project) -> LogicalProjectsRequest = { .setPaused(projectID: ref.id, expectedRevision: $0.revision, paused: paused) }
+        if await mutate(ref, request) { return true }
+        return failure?.stale == true ? await mutate(ref, request) : false
+    }
+
     public func resolve(_ ref: LogicalProjectRef, task: ProjectTaskID) async -> Bool { await run(ref, .resolve(taskID: task)) }
 
     /// A runtime request against the revision shown. A refusal re-reads the owner and keeps the person's words.

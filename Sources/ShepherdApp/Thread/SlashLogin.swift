@@ -9,6 +9,9 @@ import ShepherdUI
 enum SlashLogin {
     enum Verb: String, Equatable, CaseIterable {
         case login, logout
+
+        /// The longest raw value, which bounds how far into a draft its verb can reach.
+        static let longest = 6
     }
 
     /// A `/login …` or `/logout …` the composer won't send.
@@ -55,9 +58,15 @@ enum SlashLogin {
 
     /// "/login " or "/login ant" while it is being typed: the verb, and the argument so far.
     static func argumentQuery(_ draft: String) -> (verb: Verb, partial: String)? {
-        guard draft.hasPrefix("/"), !draft.contains("\n"), let space = draft.firstIndex(of: " ") else { return nil }
-        guard let verb = Verb(rawValue: draft[draft.index(after: draft.startIndex)..<space].lowercased()) else { return nil }
-        let partial = String(draft[draft.index(after: space)...])
+        // The cheapest tests first: a draft whose first word is no verb costs the verb's length,
+        // not the draft's.
+        guard draft.hasPrefix("/") else { return nil }
+        let word = draft.dropFirst()
+        guard let space = word.prefix(Verb.longest + 1).firstIndex(of: " "),
+              let verb = Verb(rawValue: word[..<space].lowercased()) else { return nil }
+        // A line break is whitespace and the verb holds none, so this check covers it. It reads a
+        // view of the argument and stops at the first space, so prose costs a word, not a copy.
+        let partial = draft[draft.index(after: space)...]
         guard !partial.contains(where: \.isWhitespace) else { return nil }
         return (verb, partial.lowercased())
     }

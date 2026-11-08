@@ -9,6 +9,14 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings", routes: [.settings(.root)], tab: .settings),
             FixtureScreen(name: "appearance", routes: [.settings(.appearance)], tab: .settings),
             FixtureScreen(name: "notifications", routes: [.settings(.notifications)], tab: .settings),
+            // NotifSettings: Send me, Which device, and each mission still going.
+            FixtureScreen(name: "notifications-missions", hosts: MissionsFixtureData.hosts(), routes: [.settings(.notifications)],
+                          tab: .settings, prepare: { app in
+                for host in app.hosts.hosts where host.servesMissions { await host.missions.refresh() }
+                await app.push.setPreferences(RemotePushPreferences(missions: [MissionsFixtureData.question.rawValue: .onlyBlocked,
+                                                                               MissionsFixtureData.running.rawValue: .onlyFailures]),
+                                              hosts: app.hosts.hosts)
+            }),
             FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),
             FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),

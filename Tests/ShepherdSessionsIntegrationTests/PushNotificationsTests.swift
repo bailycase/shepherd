@@ -74,7 +74,7 @@ struct PushNotificationsTests {
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer " + String(repeating: "a", count: 64))
             let data = try #require(request.httpBody)
             let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-            #expect(Set(body.keys) == ["eventID", "agentID", "kind"])
+            #expect(Set(body.keys) == ["eventID", "agentID", "kind", "group", "level", "relevance"])
             #expect(body["kind"] as? String == "needsAnswer")
         }
         try await eventually("hung transports cancelled at the ten second bound", timeout: .seconds(12)) { cancelled.current == 16 }
@@ -91,8 +91,8 @@ struct PushNotificationsTests {
             let pushes = host.server.pushNotifications
             try pushes.register(registration())
             pushes.transport = { request, finished in
-                let body = (try? JSONDecoder().decode([String: String].self, from: request.httpBody!)) ?? [:]
-                bodies.withValue { $0.append(body) }
+                let body = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append(body.compactMapValues { $0 as? String }) }
                 finished(nil)
                 return {}
             }
@@ -246,6 +246,234 @@ struct PushNotificationsTests {
         #expect(callbacks.current.count == 16, "revocation never retries")
     }
 
+    @Test func alertsCarryTheirStackLoudnessAndSummaryRankAndFallBackForAnOlderRelay() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.rich")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let bodies = Locked<[[String: Any]]>([])
+        let agent = AgentID()
+        try queue.sync {
+            try pushes.register(registration())
+            pushes.transport = { request, finished in
+                let body = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append(body) }
+                // The deployed relay refuses fields it doesn't know.
+                finished(body["group"] == nil ? 202 : 400)
+                return {}
+            }
+            pushes.send(agentID: agent, kind: .done, title: "Investigate SwiftUI live preview", preview: "Done.",
+                        subtitle: "Turn finished")
+        }
+        try queue.sync {} // the refusal's callback hops onto the queue
+        let first = bodies.current
+        #expect(first.count == 2)
+        #expect(first[0]["group"] as? String == "thread:\(agent.rawValue)")
+        #expect(first[0]["subtitle"] as? String == "Turn finished")
+        #expect(first[0]["level"] as? String == "passive")
+        #expect(first[0]["relevance"] as? Double == 0.2)
+        #expect(Set(first[1].keys) == ["eventID", "agentID", "kind", "title", "preview"], "the same event in the old shape")
+        #expect(first[1]["eventID"] as? String == first[0]["eventID"] as? String)
+        try queue.sync {
+            #expect(pushes.relay == .legacy)
+            pushes.send(agentID: agent, kind: .needsAnswer)
+        }
+        try queue.sync {}
+        #expect(bodies.current.count == 3, "an older relay gets the old shape at once, never twice")
+        #expect(bodies.current[2]["group"] == nil)
+        #expect(PushNotifications.presentation(.needsAnswer) == ("active", 0.8))
+        try queue.sync {
+            pushes.send(agentID: agent, kind: .review, mission: .init(id: "m", revision: 2, fingerprint: "fp"))
+        }
+        #expect(bodies.current[3]["kind"] as? String == "done", "an older relay knows no review")
+        #expect(bodies.current[3]["mission"] == nil)
+        #expect(PushNotifications.presentation(.error) == ("active", 0.6))
+    }
+
+    @Test func aRelayWithoutDetailGetsTheRestAndAnOversizedDetailIsLeftOut() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.detail")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let bodies = Locked<[(size: Int, json: [String: Any])]>([])
+        let detail = PushDetail(read: "The outbox opens its own connection. api_key=sk-made-up", options: ["Yes", "No"])
+        try queue.sync {
+            try pushes.register(registration())
+            pushes.transport = { request, finished in
+                let json = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append((request.httpBody!.count, json)) }
+                // The relay #3 deployed: it knows the stack fields but not `detail`.
+                finished(json["detail"] == nil ? 202 : 400)
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .needsAnswer, title: "Refunds in the ledger", subtitle: "Question", detail: detail)
+        }
+        try queue.sync {}
+        var sent = bodies.current
+        #expect(sent.count == 2)
+        let first = try #require(sent[0].json["detail"] as? [String: Any])
+        #expect(first["read"] as? String == "The outbox opens its own connection. [redacted]")
+        #expect(first["options"] as? [String] == ["Yes", "No"])
+        #expect(sent[1].json["detail"] == nil && sent[1].json["group"] != nil, "the same event, keeping the stack fields")
+        #expect(sent[1].json["eventID"] as? String == sent[0].json["eventID"] as? String)
+        try queue.sync {
+            #expect(pushes.relay == .rich)
+            pushes.send(agentID: AgentID(), kind: .error, detail: detail)
+        }
+        try queue.sync {}
+        sent = bodies.current
+        #expect(sent.count == 3 && sent[2].json["detail"] == nil, "from then on, no detail and no second try")
+
+        // A newer relay: a detail that would push the body past 2048 bytes is left out, not cut.
+        let fresh = PushNotifications(file: dir.appendingPathComponent("fresh.json"), queue: queue)
+        let wide = String(repeating: "界", count: 200)
+        let big = PushDetail(read: wide, repos: (0..<6).map { PushDetail.Repo(name: "\($0)" + String(repeating: "界", count: 39)) })
+        try queue.sync {
+            try fresh.register(registration())
+            fresh.transport = { request, finished in
+                let json = (try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]
+                bodies.withValue { $0.append((request.httpBody!.count, json)) }
+                finished(202)
+                return {}
+            }
+            fresh.send(agentID: AgentID(), kind: .review, title: wide, preview: wide, detail: big)
+            fresh.send(agentID: AgentID(), kind: .error, title: "Refunds in the ledger", detail: detail)
+        }
+        try queue.sync {}
+        sent = bodies.current
+        #expect(sent.count == 5)
+        #expect(sent[3].json["detail"] == nil && sent[3].size <= 2048)
+        #expect(sent[4].json["detail"] != nil)
+    }
+
+    @Test func aMissionsAgentsStackUnderTheMissionAndSayWhoAsks() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        _ = try record(host.server, payloads: payloads)
+        let planner = AgentID(), worker = AgentID()
+        let station = MissionStation(kind: .worker, laneID: nil, title: "orders", goal: "Write the event")
+        var run = MissionRun(model: "test/model", phase: .running)
+        run.attempts = [MissionAttempt(agentID: planner, status: .running),
+                        MissionAttempt(stationID: station.id, agentID: worker, status: .failed)]
+        let mission = Mission(draft: MissionDraft(title: "Checkout funnel events", goal: "Every order joins the funnel",
+                                                  plan: MissionPlan(lanes: [], stations: [station])), run: run)
+        host.server.queue.sync {
+            host.server.store.updateLive { $0.missions = [mission] }
+            host.server.sendPush(agentID: planner, kind: .needsAnswer, preview: "Which key joins a refund to the funnel?")
+            host.server.sendPush(agentID: worker, kind: .error, preview: "orders is stuck after 3 tries")
+        }
+        let sent = payloads.current
+        #expect(sent.count == 2)
+        #expect(sent.allSatisfy { $0["group"] == "mission:\(mission.id.rawValue)" && $0["title"] == "Checkout funnel events" })
+        #expect(sent[0]["subtitle"] == "Planner question")
+        #expect(sent[1]["subtitle"] == "orders · Turn failed")
+    }
+
+    @Test func aMissionReachingReviewAsksForApprovalOnceWithWhatApprovePublishes() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: Any]]>([])
+        try host.server.queue.sync {
+            try host.server.pushNotifications.register(registration())
+            host.server.pushNotifications.transport = { request, finished in
+                payloads.withValue { $0.append((try? JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]) ?? [:]) }
+                finished(202)
+                return {}
+            }
+        }
+        var run = MissionRun(model: "test/model", phase: .running)
+        run.attempts = [MissionAttempt(agentID: AgentID(), status: .running)]
+        run.checkouts = ["contracts", "orders-svc"].map {
+            MissionCheckout(spaceID: SpaceID(), repo: $0, path: "/tmp/\($0)", branch: "mission/\($0)", base: "main", head: "abc")
+        }
+        let mission = Mission(draft: MissionDraft(title: "Checkout funnel events", goal: "Every order joins the funnel"), run: run)
+        host.server.queue.sync { host.server.store.updateLive { $0.missions = [mission] } }
+        let reviewed = try await host.server.updateMissionRun(id: mission.id, runID: run.id) {
+            $0.phase = .review
+            $0.reviewFingerprint = "fp-1"
+        }
+        try await eventually("review alert") { payloads.current.count == 1 }
+        let sent = payloads.current[0]
+        #expect(sent["kind"] as? String == "review")
+        #expect(sent["title"] as? String == "Checkout funnel events")
+        #expect(sent["subtitle"] as? String == "Ready to review")
+        #expect(sent["preview"] as? String == "2 pull requests merge in this order.")
+        #expect(sent["group"] as? String == "mission:\(mission.id.rawValue)")
+        let approval = try #require(sent["mission"] as? [String: Any])
+        #expect(approval["id"] as? String == mission.id.rawValue)
+        #expect((approval["revision"] as? NSNumber)?.uint64Value == reviewed.revision)
+        #expect(approval["fingerprint"] as? String == "fp-1")
+        // The long-press preview's repositories, in order (NotifPhoneReview).
+        let repos = try #require((sent["detail"] as? [String: Any])?["repos"] as? [[String: Any]])
+        #expect(repos.compactMap { $0["name"] as? String } == ["contracts", "orders-svc"])
+    }
+
+    @Test func eachPhoneGetsOnlyWhatItsSettingsAskForAndKeepsThemAcrossRestarts() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.preferences")
+        let file = dir.appendingPathComponent("push.json")
+        let pushes = PushNotifications(file: file, queue: queue)
+        let sent = Locked<[String]>([])
+        let idle = Locked<TimeInterval>(0)
+        let older = registration()
+        let quiet = RemotePushRegistration(id: UUID().uuidString, sendToken: String(repeating: "b", count: 64),
+            preferences: RemotePushPreferences(topics: [.questions, .blocked, .failures], awayOnly: true,
+                                               missions: ["refunds": .onlyBlocked]))
+        try queue.sync {
+            try pushes.register(older)
+            try pushes.register(quiet)
+            pushes.idleSeconds = { idle.current }
+            pushes.transport = { request, finished in
+                sent.withValue { $0.append(String(request.value(forHTTPHeaderField: "Authorization")!.suffix(1))) }
+                finished(202)
+                return {}
+            }
+        }
+        func send(_ kind: PushNotifications.Kind, topic: RemotePushPreferences.Topic? = nil, mission: String? = nil) -> [String] {
+            sent.withValue { $0 = [] }
+            queue.sync { pushes.send(agentID: AgentID(), kind: kind, topic: topic, missionID: mission) }
+            return sent.current.sorted()
+        }
+        #expect(send(.needsAnswer) == ["a"], "away-only: the Mac is in use, so only the older phone hears it")
+        idle.withValue { $0 = RemotePushPreferences.awayAfter }
+        #expect(send(.needsAnswer) == ["a", "b"])
+        #expect(send(.done) == ["a"], "Finished work is off")
+        #expect(send(.needsAnswer, mission: "refunds") == ["a"], "this mission sends only blocked work")
+        #expect(send(.error, topic: .blocked, mission: "refunds") == ["a", "b"])
+        #expect(send(.error, mission: "other") == ["a", "b"])
+        let restored = PushNotifications(file: file, queue: queue)
+        #expect(restored.registrations[UUID(uuidString: quiet.id)!.uuidString]?.preferences == quiet.preferences)
+    }
+
+    @Test func aMissionThatPausesItselfIsBlockedButAPersonsPauseIsNot() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        _ = try record(host.server, payloads: payloads)
+        var run = MissionRun(model: "test/model", phase: .running)
+        run.attempts = [MissionAttempt(agentID: AgentID(), status: .running)]
+        let mission = Mission(draft: MissionDraft(title: "Refunds in the ledger", goal: "Refunds join the ledger"), run: run)
+        host.server.queue.sync { host.server.store.updateLive { $0.missions = [mission] } }
+        _ = try await host.server.updateMissionRun(id: mission.id, runID: run.id) {
+            $0.transition(to: .paused, at: 1, notice: "Time limit reached. Increase the limit explicitly before resuming.")
+        }
+        try await eventually("blocked alert") { payloads.current.count == 1 }
+        #expect(payloads.current[0]["subtitle"] == "Blocked")
+        #expect(payloads.current[0]["preview"] == "Time limit reached. Increase the limit explicitly before resuming.")
+        #expect(payloads.current[0]["group"] == "mission:\(mission.id.rawValue)")
+        var again = MissionRun(model: "test/model", phase: .running)
+        again.attempts = [MissionAttempt(agentID: AgentID(), status: .running)]
+        let paused = Mission(draft: MissionDraft(title: "Nightly migrations dry run", goal: "Dry run"), run: again)
+        host.server.queue.sync { host.server.store.updateLive { $0.missions.append(paused) } }
+        _ = try await host.server.updateMissionRun(id: paused.id, runID: again.id) {
+            $0.transition(to: .paused, at: 1, notice: MissionRun.pausedByPerson)
+        }
+        try host.server.queue.sync {}
+        #expect(payloads.current.count == 1)
+    }
+
     private func record(_ server: SessionServer, payloads: Locked<[[String: String]]>? = nil) throws -> Locked<[String]> {
         let events = Locked<[String]>([])
         try server.queue.sync {
@@ -253,7 +481,7 @@ struct PushNotificationsTests {
             server.pushNotifications.transport = { request, finished in
                 let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
                 events.withValue { $0.append(body?["kind"] as? String ?? "invalid") }
-                payloads?.withValue { $0.append(body as? [String: String] ?? [:]) }
+                payloads?.withValue { $0.append(body?.compactMapValues { $0 as? String } ?? [:]) }
                 finished(nil)
                 return {}
             }

@@ -25,6 +25,10 @@ enum RemoteMissionSamples {
         .specKitConsent(spaceID: space, fingerprint: "abc", continuePlanning: true), .specKitSetUp(spaceID: space),
         .acceptConvergence(attemptID: attempt), .save(draft: mission.draft), .launch, .pause, .stop, .changes(text: "Rename it"),
         .publish(fingerprint: "f00d"), .revalidate, .runAgain, .steer(attemptID: attempt, text: "Use the new API"),
+        .applyPatch(patchID: attempt), .rejectPatch(patchID: attempt), .autoApplyPatches(on: true),
+        .startTrain(order: [space], rules: MissionTrain.Rules(between: .stagingSoak, staging: [space: "make deploy-staging"], health: [space: "make health"])),
+        .changeTrain(order: [space], rules: MissionTrain.Rules()), .pauseTrain, .resumeTrain, .skipSoak,
+        .laneLock(spaceID: space, choice: .stack),
     ]
     static let requests: [RemoteMissionRequest] = [
         .list, .get(missionID: mission.id), .startOptions,

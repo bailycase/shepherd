@@ -85,7 +85,8 @@ public final class DesignReferencePayloadStore: @unchecked Sendable {
     }
 
     /// Startup: every agent's folder but `agents`' goes, and every copy no grant names (a capture
-    /// that never finished, or a send the app quit during).
+    /// that never finished, or a send the app quit during), except a board the agent drew, which
+    /// no grant names: it stays with its thread.
     func prune(keeping grants: [AgentID: Set<UUID>]) {
         queue.async {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: self.directory.path)) ?? []
@@ -97,7 +98,7 @@ public final class DesignReferencePayloadStore: @unchecked Sendable {
                     continue
                 }
                 let copies = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-                for copy in copies where UUID(uuidString: copy).map({ !kept.contains($0) }) ?? true {
+                for copy in copies where UUID(uuidString: copy).map({ !kept.contains($0) && self.loadOnQueue(agentID: agent, payload: $0)?.proposal == nil }) ?? true {
                     try? FileManager.default.removeItem(at: folder.appendingPathComponent(copy))
                 }
             }

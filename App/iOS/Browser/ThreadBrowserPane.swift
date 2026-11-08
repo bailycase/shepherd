@@ -20,6 +20,8 @@ extension MobileLayout {
     /// The line under the page: its top and bottom padding.
     static let browserFootTop: CGFloat = 10
     static let browserFootBottom: CGFloat = 14
+    /// A picked element's popover keeps this far from the element and the card's edges.
+    static let browserPopoverGap: CGFloat = 12
 }
 
 /// The thread's Browser, for the side pane: the page fills what the pane gives it.
@@ -62,6 +64,8 @@ private enum BrowserPhase: Equatable {
 private struct BrowserPageView: View {
     let page: BrowserPage
     let host: MobileHost
+    @Environment(ThreadStores.self) private var threads
+    @Environment(MobileNavigator.self) private var navigator
     @FocusState private var editing: Bool
     @State private var address = ""
 
@@ -167,6 +171,15 @@ private struct BrowserPageView: View {
             .disabled(page.url == nil || !served)
             .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
             .accessibilityLabel(page.isLoading ? "Stop loading" : "Reload")
+            // Select an element (iPadPaneBrowser): the next tap in the page picks what is under it. The phone's board has none.
+            if navigator.layout == .pad {
+                Button { page.toggleSelecting() } label: { Image(systemName: shElementGlyph) }
+                    .buttonStyle(.shIcon(isOn: page.selecting, size: MobileLayout.browserBarButton))
+                    .disabled(page.url == nil || !served)
+                    .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
+                    .accessibilityLabel(page.selecting ? "Stop selecting" : "Select an element")
+                    .accessibilityAddTraits(page.selecting ? .isSelected : [])
+            }
         }
         .padding(.leading, SH.Space.l)
         .padding(.trailing, SH.Space.xs)
@@ -237,9 +250,56 @@ private struct BrowserPageView: View {
             BrowserWaiting(page: page, url: url)
         case .page:
             BrowserWebView(page: page)
+                .overlay { BrowserPickOverlay(page: page, add: addPicked) }
         case .nothingOpen:
             BrowserNothingOpen(page: page) { editing = true }
         }
+    }
+}
+
+extension BrowserPageView {
+    /// Add to message: the picked element joins the thread's composer as a chip, at most five a message.
+    func addPicked() {
+        guard let element = page.picked else { return }
+        if threads.store(for: page.ref).attach(element: element) {
+            page.dismissPick()
+        } else {
+            page.notice = "A message takes at most \(BrowserElement.maxPerMessage) page elements. Send or remove one first."
+        }
+    }
+}
+
+/// A picked element's popover over the page (iPadPaneBrowser): beside the element, Add to message and Copy selector; a tap
+/// anywhere else closes it. The page's CSS pixels are points here.
+private struct BrowserPickOverlay: View {
+    let page: BrowserPage
+    let add: () -> Void
+    @State private var popoverSize = CGSize(width: SHBrowserMetrics.popoverWidth, height: SH.Height.touch * 2)
+
+    var body: some View {
+        GeometryReader { geo in
+            if let rect = page.pickedRect, let picked = page.picked {
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { page.dismissPick() }
+                        .accessibilityHidden(true)
+                    SHElementPopover(source: picked.sourceShort, add: add, copy: {
+                        UIPasteboard.general.string = picked.selector
+                        page.dismissPick()
+                    })
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { popoverSize = $0 }
+                    .offset(placement(rect, area: geo.size))
+                    .shTransition(.overlay, edge: .leading)
+                }
+            }
+        }
+    }
+
+    private func placement(_ rect: CGRect, area: CGSize) -> CGSize {
+        let origin = BrowserPopoverPlacement.origin(for: rect, pageOrigin: .zero, zoom: 1, popover: popoverSize, area: area,
+                                                    gap: MobileLayout.browserPopoverGap)
+        return CGSize(width: origin.x, height: origin.y)
     }
 }
 

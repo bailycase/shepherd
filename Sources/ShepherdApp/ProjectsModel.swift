@@ -12,6 +12,8 @@ struct ProjectsHost: Equatable, Identifiable {
     var supportsDetails = true
     var supportsMCP = true
     var supportsProjectTrust = true
+    var supportsResources = true
+    var supportsInheritance = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -92,6 +94,14 @@ final class ProjectsModel {
     var showingBrowser = false
     /// The space's Hooks tab (HooksSpace board): a view of Settings › Hooks, not a space file.
     var showingHooks = false
+    /// The Settings tab shows the raw `settings.json` editor instead of the form (Edit JSON…).
+    var showingSettingsJSON = false
+    /// The Resources tab's lists and editors (`.skills` is the Resources tab).
+    let resources = SpaceResourcesModel()
+    /// The skills in a repository, from the space's host (Add from repo's preview).
+    @ObservationIgnored var lookUpSkills: @MainActor (ProjectsHost, String) async throws -> RepoSkills = { _, _ in
+        throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.")
+    }
     var selectedFile: ProjectFile?
     var savedNotice: String {
         if category == .mcp { return "Saved to the space folder. MCP changes apply to new threads." }
@@ -105,6 +115,7 @@ final class ProjectsModel {
     var draft = "" { didSet {
         tokenText = InstructionsText.sizeNote(draft)
         deriveCodemode()
+        deriveForm()
         if category == .mcp { deriveMCP() }
     } }
     enum CodemodeChoice: String { case inherit, on, off }
@@ -144,6 +155,35 @@ final class ProjectsModel {
         }
     }
     private(set) var mcp = ProjectMCPConfiguration()
+    /// The parent space's servers a child inherits (`loadParentMCP`); nil without a parent.
+    var parentMCP: ProjectMCPConfiguration?
+
+    // The Settings tab's form (SpaceSettingsForm), derived from the draft and the host's global values.
+    @ObservationIgnored private(set) var formSettings: [String: Any]?
+    @ObservationIgnored private(set) var formInherited: [String: Any] = SpaceSettingsForm.piDefaults
+    @ObservationIgnored private(set) var formParent: (name: String, settings: [String: Any])?
+    private(set) var formGroups: [SpaceSettingsForm.Group] = []
+    private(set) var formTools: [String] = []
+    private(set) var formInvalid = false
+    /// `provider/model` ids the Startup model menu offers, from `loadModels`.
+    var formModels: [String] = [] { didSet { if formModels != oldValue { deriveForm() } } }
+    @ObservationIgnored var loadModels: @MainActor (ProjectsHost) async -> [String] = { _ in [] }
+    /// The last save found the file changed elsewhere: saving waits for Reload latest.
+    private(set) var conflict = false
+
+    func deriveForm() {
+        guard selectedFile?.category == .pi else { formSettings = nil; if !formGroups.isEmpty { formGroups = [] }; return }
+        let global = context.globalSettings.flatMap(SpaceSettingsForm.parse) ?? [:]
+        formInherited = SpaceSettingsForm.merged(SpaceSettingsForm.piDefaults, global)
+        formParent = context.parentName.map { ($0, (context.parentSettings ?? [:]) as [String: Any]) }
+        formSettings = SpaceSettingsForm.parse(draft)
+        let object = formSettings ?? [:]
+        let groups = formSettings == nil ? [] : SpaceSettingsForm.groups(object, inherited: formInherited, parent: formParent, models: formModels)
+        if groups != formGroups { formGroups = groups }
+        let tools = SpaceSettingsForm.selectedTools(object, inherited: formInherited)
+        if tools != formTools { formTools = tools }
+        formInvalid = SpaceSettingsForm.invalid(object)
+    }
 
     func deriveMCP() {
         mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".shepherd/mcp.json", host: selected?.host.name ?? "This Mac",
@@ -151,7 +191,13 @@ final class ProjectsModel {
     }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
-    private(set) var context = ProjectContext()
+    var context = ProjectContext() {
+        didSet {
+            if context.globalSettings != oldValue.globalSettings || context.parentSettings != oldValue.parentSettings { deriveForm() }
+            resources.excludedSkills = context.excluded?.skills ?? []
+            resources.canExcludeInherited = canExcludeInherited
+        }
+    }
     struct ReadRow: Equatable, Identifiable {
         var id: String; var label: String; var scope: String; var selected: Bool
     }
@@ -167,7 +213,8 @@ final class ProjectsModel {
     private(set) var saving = false
     var fileError: String?
     var notice: String?
-    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category), browser, hooks }
+    /// `reload`: Settings' Reload latest after a conflict, discarding the draft once the file reads again.
+    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category), browser, hooks, reload }
     var pending: Pending?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadGeneration = 0
@@ -275,23 +322,41 @@ final class ProjectsModel {
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
-        showingBrowser = false; showingHooks = false
+        showingBrowser = false; showingHooks = false; showingSettingsJSON = false; resources.reset()
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
-        context = ProjectContext(); readRows = []; peers = []
+        context = ProjectContext(); readRows = []; peers = []; parentMCP = nil
         do {
             guard case .files(let files) = try await request(row.host, .files(directory: row.project.directory)) else { throw ProjectFileError("protocol", "Unexpected space files reply.") }
             guard token == generation, selected?.id == row.id else { return }
             self.files = files
             if case .context(let context) = try? await request(row.host, .context(directory: row.project.directory)), token == generation { self.context = context }
+            Task { let models = await loadModels(row.host); if selected?.id == row.id { formModels = models } }
             guard token == generation, selected?.id == row.id else { return }
             if let file = preferredFile { await read(file) } else { fileLoading = false }
         } catch { if token == generation { fileError = String(describing: error); fileLoading = false } }
     }
 
     func navigate(_ action: Pending) async {
-        guard !saving else { return }
-        if dirty { pending = action } else { await apply(action) }
+        guard !saving, !resources.saving else { return }
+        if dirty || category == .skills && resources.dirty { pending = action } else { await apply(action) }
+    }
+
+    /// The Resources tab's files: the space settings file pi reads is the first that exists.
+    func loadResources(keep: Bool = false) async {
+        guard let selected, selected.unavailable == nil else { return }
+        let settings = files.first { $0.category == .pi && $0.exists } ?? files.first { $0.category == .pi }
+        let host = selected.host
+        resources.lookUpSkills = { [weak self] repo in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            return try await self.lookUpSkills(host, repo)
+        }
+        resources.setInherited = { [weak self] skill, on in await self?.setInherited(skill: skill, on: on) }
+        let parent = context.inheritsFrom.map { (name: inheritanceParentName ?? $0, directory: $0) }
+        await resources.load(directory: selected.project.directory, settingsPath: settings?.path ?? ".shepherd/settings.json", parent: parent, keep: keep) { [weak self] request in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            return try await self.request(host, request)
+        }
     }
 
     func discard() async {
@@ -303,17 +368,21 @@ final class ProjectsModel {
 
     private func apply(_ action: Pending) async {
         closeMCPSignIn()
+        if category == .skills { resources.reset() }
+        switch action { case .reload, .file: break; default: showingSettingsJSON = false }
         switch action {
         case .close:
             showingBrowser = false; showingHooks = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
         case .file(let file): showingBrowser = false; showingHooks = false; await read(file)
         case .category(let category):
             showingBrowser = false; showingHooks = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
-            if let file = preferredFile { await read(file) }
+            if category == .skills { await loadResources() } else if let file = preferredFile { await read(file) }
         case .browser:
             showingBrowser = true; showingHooks = false; draft = saved ?? ""
         case .hooks:
             showingBrowser = false; showingHooks = true; draft = saved ?? ""
+        case .reload:
+            if let selectedFile { await read(selectedFile) }
         }
     }
 
@@ -325,7 +394,7 @@ final class ProjectsModel {
         guard let selected, selected.unavailable == nil else { return }
         generation += 1
         let token = generation
-        selectedFile = file; fileLoaded = false; fileLoading = true; fileError = nil; notice = nil
+        selectedFile = file; fileLoaded = false; fileLoading = true; fileError = nil; notice = nil; conflict = false
         do {
             guard case .text(let value) = try await request(selected.host, .read(directory: selected.project.directory, file: file.path)) else { throw ProjectFileError("protocol", "Unexpected space file reply.") }
             guard token == generation else { return }
@@ -333,6 +402,8 @@ final class ProjectsModel {
             if category == .mcp {
                 deriveMCP()
                 fileLoading = false // Credential metadata must not hold an already-loaded file's controls disabled.
+                await loadParentMCP()
+                guard token == generation else { return }
                 await refreshMCPCredentials()
                 guard token == generation else { return }
             }
@@ -408,7 +479,7 @@ final class ProjectsModel {
 
     func save() async {
         guard fileLoaded, !saving, let selected, selected.unavailable == nil, let file = selectedFile else { return }
-        saving = true; fileError = nil; notice = nil
+        saving = true; fileError = nil; notice = nil; conflict = false
         let token = generation, text = draft
         do {
             guard case .text(let value) = try await request(selected.host, .save(directory: selected.project.directory, file: file.path, text: text, expected: saved)) else { throw ProjectFileError("protocol", "Unexpected space save reply.") }
@@ -419,7 +490,9 @@ final class ProjectsModel {
             if case .context(let context) = try? await request(selected.host, .context(directory: selected.project.directory)), token == generation { self.context = context; deriveReadRows() }
             await compareHosts(token: token, text: value.text, file: file, selected: selected)
             if category == .mcp, token == generation { await refreshMCPCredentials() }
-        } catch { if token == generation { fileError = String(describing: error) } }
+        } catch {
+            if token == generation { fileError = String(describing: error); conflict = (error as? ProjectFileError)?.code == "conflict" }
+        }
         saving = false
     }
 }
@@ -442,7 +515,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit space settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its spaces."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, supportsResources: connection.supportsProjectResources, supportsInheritance: connection.supportsProjectInheritance, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 
@@ -453,6 +526,19 @@ extension ShepherdViewModel {
             if host.id == "local" { return try await self.server.projects.request(request, state: self.server.state) }
             guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown space host.") }
             return try await self.remoteHosts.projects(hostID: id, endpointID: host.endpointID, request: request)
+        }
+        model.lookUpSkills = { [weak self] host, repo in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            let client: (any SkillsClient)? = host.id == "local" ? self.localSkills : self.remoteHosts.connections.first { $0.id.uuidString == host.id }?.skillsClient
+            guard let client, case .repo(let found) = try await client.skills(.lookUp(repo: repo)) else {
+                throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.")
+            }
+            return found
+        }
+        model.loadModels = { [weak self] host in
+            // Only this Mac's catalog is at hand; another host's space offers its current and global model.
+            guard host.id == "local", let server = self?.server else { return [] }
+            return await Task.detached(priority: .userInitiated) { server.modelListing().models }.value
         }
         madeProjects = model
         return model
@@ -520,6 +606,22 @@ extension ShepherdViewModel {
         }
         if let error = projects.error { throw ProjectFileError("refresh_failed", error) }
         return result
+    }
+
+    /// Add space's model: this Mac registers the folder under its name, then records the parent;
+    /// another host adds a root space named after its folder.
+    func addSpaceModel(host: ProjectsHost, parentID: SpaceID? = nil) -> AddSpaceModel {
+        AddSpaceModel(hosts: projects.hosts, rows: projects.rows, hostID: host.id, parentID: parentID) { [weak self] model in
+            guard let self, let host = model.host else { return }
+            let typed = model.path.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Another host's home isn't this Mac's: its "~" is left for that host to expand.
+            guard host.id == "local" else { try await self.addSettingsProject(path: typed, host: host); return }
+            let path = (typed as NSString).expandingTildeInPath
+            let added = try await self.handleProjectRequest(.register(path: path, name: model.name.trimmingCharacters(in: .whitespacesAndNewlines)))
+            if let parent = model.parentID, let space = added.space {
+                _ = try await self.handleProjectRequest(.edit(projectID: space.id, request: ProjectEdit(parentProjectID: parent.rawValue)))
+            }
+        }
     }
 
     func addSettingsProject(path: String, host: ProjectsHost) async throws {

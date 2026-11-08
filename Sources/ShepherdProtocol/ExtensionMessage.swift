@@ -203,6 +203,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// (`no_piece`), text that is empty or too long (`invalid_note`), a thread writing too many
     /// (`rate_limited`), a design that is gone, and a design's agent (`not_a_thread`).
     case designNote(id: Int, agentID: AgentID, reference: String, text: String)
+    /// An ordinary thread's `design_show(ref, source, title?)`: a board it drew for a design it
+    /// was sent a piece of, kept as a copy the thread shows (ThreadBoardDraft, ThreadBoardChange)
+    /// and never written into the design until the user adds or applies it. With `title`, a new
+    /// board beside `reference`'s; without, a change to `reference`'s board. Answered with
+    /// `designReference` (its `lookedAt.payload` names the copy); refused for a design it holds
+    /// no piece of (`not_granted`), a source `DesignBoardCheck` refuses, and a design's agent.
+    case designPropose(id: Int, agentID: AgentID, reference: String, source: String, title: String?)
 
     // MARK: Browser (request/reply)
 
@@ -253,7 +260,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
         case designSystemRead, designSystemWrite, designProposeComments
-        case designGet, designNote
+        case designGet, designNote, designPropose
         case helloBrowser, browser
         case registerProject, refreshProjects, addChildProject, editProject, deleteProject, projectRuntime, projectPublish
     }
@@ -608,6 +615,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 reference: try c.decode(String.self, forKey: .reference),
                 text: try c.decode(String.self, forKey: .text)
             )
+        case .designPropose:
+            self = .designPropose(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                reference: try c.decode(String.self, forKey: .reference),
+                source: try c.decode(String.self, forKey: .source),
+                title: try c.decodeIfPresent(String.self, forKey: .title)
+            )
         case .helloBrowser:
             self = .helloBrowser(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .browser:
@@ -960,6 +975,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(reference, forKey: .reference)
             try c.encode(text, forKey: .text)
+        case .designPropose(let id, let agentID, let reference, let source, let title):
+            try c.encode(Kind.designPropose, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(reference, forKey: .reference)
+            try c.encode(source, forKey: .source)
+            try c.encodeIfPresent(title, forKey: .title)
         case .helloBrowser(let agentID):
             try c.encode(Kind.helloBrowser, forKey: .type)
             try c.encode(agentID, forKey: .agentID)

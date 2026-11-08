@@ -167,7 +167,13 @@ gates the next; the remote branch is never deleted), per-file Revert in the Chan
 Commit from review (`ReviewCommit.swift`: only the ticked files, refuses a dirty HEAD state, never
 force-pushes), Mission PR publication (`MissionController+Review.swift`: explicit approval binds the
 validation contract and worktree contents; commits through `ReviewCommit.swift`, pushes the exact
-approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), Mission
+approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), the Mission
+merge train (`MissionController+Train.swift`: only after publication, on the owner's Start with the order and rules
+it showed, from the Mac or a paired device over `missions.v1`; one PR at a time through the owner's gh:
+`pr update-branch` (a merge of the base, never a rebase), `pr merge --merge`, and `pr revert` only under the
+red-CI rule; under the lockfile rule a merge of the base in the mission's own worktree, the lockfile's
+regeneration command, a commit and a plain push of the mission branch; the owner's own staging and health
+commands in that worktree; a restart leaves it paused), Mission
 Spec Kit setup (the owner's click runs stock `specify init` or `specify integration` in the mission's own
 worktree; that approval and publication's may come from a paired device over the authenticated
 `missions.v1` connection, carrying the exact review or consent fingerprint the device showed, never
@@ -176,7 +182,8 @@ a shared design's own repository under `<designs>/.git/<id>/`, the Changes engin
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
 Undo and Redo of a turn (the turn's files only; refused when any changed since), Save in the Files
 tab (`FileTreeModel.save`: the person's Save, Save chord or Overwrite; one existing local text file inside
-the thread's folder, written in place only while it still holds the version the editor expected), Add child project
+the thread's folder, written in place only while it still holds the version the editor expected; a paired
+device's Save reaches the host's server as `fileWrite`, `ThreadFileSystem.save`, under the same rule), Add child project
 (one empty directory), an explicit project folder transfer, and Issues & PRs' GitHub changes
 (`Forge/ForgeService.swift`, each on the person's click, through their gh with `--repo` from `/`, so
 no local checkout or branch is touched; bodies go on stdin): comment, review, merge (method, merge
@@ -185,7 +192,11 @@ deletion of a merged pull request's head branch on GitHub (never a fork's), conv
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
 is the confirmed Delete Worktree. The branch card's actions (`BranchGit.swift`, in the agent's own
 checkout, each on the person's click; branch names pass `check-ref-format` and never reach git as
-options): Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
+options): Commit (`commit --only` of the ticked files, new ones intent-to-add first and taken back
+if the commit fails; refused while a rebase or merge is stopped), Amend the last commit (`commit
+--amend`; refused with no commit or while a rebase or merge is stopped; once a remote-tracking ref
+has the commit, Commit & push is off and the card's Push is refused, never forced, with how to
+replace it by hand), Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
 the base, then rebase or merge onto it; refused on a dirty tree; a conflict stops, and Abort runs
 `rebase --abort` or `merge --abort`), Switch branch (`switch`, a remote branch to a tracking local
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from

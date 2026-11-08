@@ -560,7 +560,9 @@ final class RPCThreadState {
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
     /// Whether the server has set them since the thread started.
     private(set) var turnChangesSet = false
-    /// The server held back a "done" report because the queue was about to go.
+    /// A done report the server has not applied: the queue was about to go, or pi's stdout had not
+    /// shown the run settle yet (the extension's socket can be a whole run ahead while a long
+    /// record decodes). `idleAfterQueue` applies it once pi is idle and nothing continues.
     var doneHeld = false
     /// pi is retrying a failed request (`auto_retry_start` until `auto_retry_end`).
     private(set) var retry: NativeThreadRetry?
@@ -768,7 +770,6 @@ final class RPCThreadState {
             runError = nil
             // A buffered start can arrive after Stop. Only newly authorized input clears it.
             settleAwaitingSteers = false
-            doneHeld = false
             if !items.isEmpty {
                 yieldGoalToQueue()
                 onUserInputWhileRunning?()
@@ -935,7 +936,8 @@ final class RPCThreadState {
                 if stoppedCalls.count >= Self.timingLimit, let any = stoppedCalls.first { stoppedCalls.remove(any) }
                 stoppedCalls.insert(id)
             }
-            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction)
+            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction,
+                       designBoard: result?.designBoard)
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
@@ -2283,14 +2285,12 @@ final class RPCThreadState {
     }
 
     private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String,
-                            projectAction: NativeProjectAction? = nil, argumentBytes: Int? = nil) {
+                            projectAction: NativeProjectAction? = nil, designBoard: UUID? = nil, argumentBytes: Int? = nil) {
         let index = live.firstIndex { $0.kind == .tool(id) }
         let previous = index.map { live[$0].value }
-        var value = Self.project(
-            entryID: "provisional:tool:\(id)",
-            message: RPCMessage(role: "toolResult", content: content, toolName: name, toolCallId: id, isError: isError, projectAction: projectAction),
-            args: args
-        )
+        var message = RPCMessage(role: "toolResult", content: content, toolName: name, toolCallId: id, isError: isError, projectAction: projectAction)
+        message.designBoard = designBoard
+        var value = Self.project(entryID: "provisional:tool:\(id)", message: message, args: args)
         if value.argumentsText == nil { value.argumentsText = previous?.argumentsText }
         value.status = status
         // Only while the model writes the call: once it runs, its arguments are whole.
@@ -3185,6 +3185,7 @@ final class RPCThreadState {
         }
         var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [], customType: message.customType)
         result.projectAction = message.projectAction
+        result.designBoard = message.designBoard
         if message.role == "custom", message.customType == "shepherd.hook" { result.hook = NativeHookRecord(details: message.details) }
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }

@@ -4,12 +4,15 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// A thread's Files (DuoSidePaneTabs, Files card): the thread's folder on its host, read-only, over `files.v1`. A filter over the
-/// expanded folders, a lazy tree, and a tapped file read in place of the tree with a back to it. A host without `files.v1` keeps the
-/// tab and says it needs a newer Shepherd. The side pane mounts this; `ThreadFilesScreen` pushes it on compact width.
+/// A thread's Files (DuoSidePaneTabs, Files card; iPadPaneFiles): the thread's folder on its host over `files.v1`. Wide enough
+/// (the iPad's pane), the tree sits beside open files that edit and save over `files.write.v1` (`ThreadFilesSplit`); narrower, a
+/// filter over the expanded folders, a lazy tree, and a tapped file read in place of the tree with a back to it. A host without
+/// `files.v1` keeps the tab and says it needs a newer Shepherd. The side pane mounts this; `ThreadFilesScreen` pushes it on compact width.
 struct ThreadFilesPane: View {
     let thread: AgentRef
     @Environment(MobileHosts.self) private var hosts
+    @Environment(ThreadStores.self) private var threads
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let host = hosts.host(thread.host)
@@ -19,19 +22,53 @@ struct ThreadFilesPane: View {
         } else if let host, host.phase == .connected, !host.supports(RemoteProtocol.filesCapability) {
             ThreadFilesMessage(text: "Files needs a newer Shepherd on \(name).")
         } else {
-            let worktree = host?.agent(thread.agent)?.worktreeBranch != nil
+            let agent = host?.agent(thread.agent)
             let model = ThreadFilesStores.shared.model(for: thread, hosts: hosts)
-            ThreadFilesContent(model: model,
-                               footer: "Read-only. The thread’s \(worktree ? "worktree" : "folder") on \(name). Tap a file to read it here.")
-                .onAppear { ThreadFilesStores.shared.appeared(thread, model: model) }
-                .onDisappear { ThreadFilesStores.shared.disappeared(thread, model: model) }
-                // A new connection retries failures. A request is shared: one disappearing
-                // window must not cancel the load another window is still waiting for.
-                .task(id: host?.session) {
-                    await model.loadIfNeeded()
+            let agentPath = Self.relative(threads.store(for: thread).editingPath, folder: host.flatMap { Self.folder(agent, in: $0.state) })
+            let saves = host?.supports(RemoteProtocol.filesWriteCapability) == true
+            GeometryReader { proxy in
+                if proxy.size.width >= MobileLayout.filesSplitMinWidth {
+                    ThreadFilesSplit(model: model, place: place(agent, host: host, name: name), editable: saves, agentPath: agentPath)
+                } else {
+                    // A narrow iPad pane (the sidebar beside it) still edits, a file in place of the tree; the phone reads.
+                    let edits = saves && navigator.layout == .pad
+                    let folder = agent?.worktreeBranch != nil ? "worktree" : "folder"
+                    ThreadFilesContent(model: model, editable: edits,
+                                       footer: edits ? "The thread’s \(folder) on \(name). Tap a file to edit it here."
+                                           : "Read-only. The thread’s \(folder) on \(name). Tap a file to read it here.")
                 }
-                .id(thread)
+            }
+            .onAppear { ThreadFilesStores.shared.appeared(thread, model: model) }
+            .onDisappear { ThreadFilesStores.shared.disappeared(thread, model: model) }
+            // A new connection retries failures. A request is shared: one disappearing
+            // window must not cancel the load another window is still waiting for.
+            .task(id: host?.session) {
+                await model.loadIfNeeded()
+            }
+            // The agent's edit ended (or moved to another file): the open file takes what it wrote.
+            .onChange(of: agentPath) { Task { await model.checkDisk() } }
+            .id(thread)
         }
+    }
+
+    private func place(_ agent: Agent?, host: MobileHost?, name: String) -> ThreadFilesPlace {
+        let space = host?.state.spaces.first { $0.id == agent?.spaceID }?.name
+        return ThreadFilesPlace(space: space ?? "Files", branch: agent?.worktreeBranch, host: name)
+    }
+
+    /// The folder the host serves the thread's files from: its layout's cwd, else its space's.
+    static func folder(_ agent: Agent?, in state: ShepherdState) -> String? {
+        guard let agent else { return nil }
+        return state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? state.spaces.first { $0.id == agent.spaceID }?.path
+    }
+
+    /// The agent's edit path as the tree names it: relative to `folder`, as the call names it when it already is.
+    static func relative(_ path: String?, folder: String?) -> String? {
+        guard let path else { return nil }
+        guard path.hasPrefix("/") else { return (path as NSString).standardizingPath }
+        guard let folder else { return nil }
+        let prefix = folder.hasSuffix("/") ? folder : folder + "/"
+        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : nil
     }
 }
 
@@ -50,12 +87,14 @@ struct ThreadFilesScreen: View {
 /// The tree, or the file open in its place.
 struct ThreadFilesContent: View {
     @Bindable var model: ThreadFilesModel
+    var editable = false
     let footer: String
     @FocusState private var filtering: Bool
 
     var body: some View {
         if let path = model.openPath {
-            ThreadFileView(path: path, content: model.content, back: { model.close() }, retry: { Task { await model.open(path) } })
+            ThreadFileView(path: path, content: model.content, back: { model.close() }, retry: { Task { await model.open(path) } },
+                           editing: editable ? model : nil)
         } else {
             VStack(spacing: 0) {
                 SHTouchSearchField("Filter files", text: $model.filter, focus: $filtering)
@@ -164,6 +203,8 @@ struct ThreadFileView: View {
     let content: ThreadFilesModel.Content
     let back: () -> Void
     let retry: () -> Void
+    /// In place of the read-only text, the iPad's editor of this model, when the host saves.
+    var editing: ThreadFilesModel? = nil
 
     var body: some View {
         let sh = Color.sh
@@ -187,10 +228,14 @@ struct ThreadFileView: View {
             .padding(.horizontal, SH.Space.s)
             .padding(.vertical, SH.Space.xs)
             .overlay(alignment: .bottom) { SHHairline() }
-            switch content {
-            case .loading: SHFileNotice(.loading)
-            case .text(let text): SHFileSource(text)
-            case .failed(let message): SHFileNotice(.failed(message), retry: retry)
+            if let editing {
+                ThreadFileEditor(model: editing, path: path, editable: true).id(path)
+            } else {
+                switch content {
+                case .loading: SHFileNotice(.loading)
+                case .text(let text): SHFileSource(text)
+                case .failed(let message): SHFileNotice(.failed(message), retry: retry)
+                }
             }
         }
         .background(sh.bgWindow)

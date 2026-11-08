@@ -89,6 +89,16 @@ final class MissionRuntimeFixture {
         try Data().write(to: root.appendingPathComponent("fail-validation"))
     }
 
+    /// The planner's next turn asks a question instead of drawing a map.
+    func askClarification() throws {
+        try Data().write(to: root.appendingPathComponent("ask-clarification"))
+    }
+
+    /// The train's next `gh pr update-branch` reports a conflict; `red-ci` makes every PR's checks fail.
+    func mark(_ name: String) throws {
+        try Data().write(to: root.appendingPathComponent(name))
+    }
+
     func failFirstPRCreate() throws {
         try Data().write(to: root.appendingPathComponent("fail-first-pr-create"))
     }
@@ -158,6 +168,18 @@ final class MissionRuntimeFixture {
               exit 1
             fi
             printf 'https://github.invalid/fixture/repo/pull/1\\n' ;;
+          # The merge train: each repository's PR state lives in a file keyed by the checkout it runs in.
+          'pr update-branch')
+            if [ -f \(shellQuoted(root.appendingPathComponent("conflict-once").path)) ]; then
+              rm -- \(shellQuoted(root.appendingPathComponent("conflict-once").path))
+              echo 'Cannot update PR branch due to conflicts' >&2; exit 1
+            fi ;;
+          'pr checks')
+            if [ -f \(shellQuoted(root.appendingPathComponent("red-ci").path)) ]; then echo fail; else echo pass; fi ;;
+          'pr view')
+            if [ -f "\(root.path)/merged-$(pwd | cksum | cut -d' ' -f1)" ]; then echo MERGED; else echo OPEN; fi ;;
+          'pr merge') touch "\(root.path)/merged-$(pwd | cksum | cut -d' ' -f1)" ;;
+          'run list') printf 'success\\n' ;;
 
           *) echo 'unexpected gh command' >&2; exit 90 ;;
         esac
@@ -209,9 +231,10 @@ final class MissionRuntimeFixture {
                 for key, kind, goal in [(worker, 'worker', 'Write after followed by a newline to result.txt'), (check, 'check', 'Check actual file bytes'), (validator, 'validator', 'Independently inspect file and host check')]:
                     station = dict(id=key, kind=kind, lane=lane, title=key, goal=goal, doneWhen=['result.txt contains after'])
                     if kind == 'check': station['command'] = command
+                    if kind == 'worker': station['paths'] = ['result.txt']
                     stations.append(station)
                 dependencies += [dict(source=worker, target=check, kind='data', artifact='implementation'), dict(source=check, target=validator, kind='data', artifact='tested implementation')]
-            reply = json.dumps(dict(summary='Two isolated edits, host checks and independent validators.', title='Update both repositories', requirements=['Both result.txt files contain after followed by a newline'], stations=stations, dependencies=dependencies))
+            reply = json.dumps(dict(summary='Two isolated edits, host checks and independent validators.', title='Update both repositories', requirements=['Both result.txt files contain after followed by a newline'], stations=stations, dependencies=dependencies, estimate=dict(tokens=20000, minutes=10)))
             if (root / 'ask-clarification').exists():
                 (root / 'ask-clarification').unlink()
                 reply = json.dumps(dict(summary='Confirm the scope before planning.', question='Should both repositories use the same result format?'))

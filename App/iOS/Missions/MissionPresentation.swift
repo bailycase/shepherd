@@ -58,8 +58,17 @@ struct MissionRowModel: Identifiable, Equatable {
         let phase = mission.run?.phase ?? .map
         let waiting = mission.run?.pendingQuestion != nil && phase == .map
             || phase == .map && mission.run?.specKit?.lanes.contains { $0.convergence?.accepted == false } == true
-        state = waiting ? .attention : AgentState(phase)
-        label = waiting ? "Needs you" : phase.mobileLabel
+        let patched = mission.run?.patch != nil && !phase.active
+        let train = phase == .done ? mission.run?.train : nil
+        state = waiting || patched || train?.status == .paused || (phase == .running && mission.run?.held?.values.contains(where: \.blocks) == true) ? .attention : train?.status == .running ? .running : AgentState(phase)
+        let held = phase == .running ? (mission.run?.held ?? [:]).values.filter(\.blocks).count : 0
+        label = waiting ? "Needs you" : patched ? "Patch ready" : held > 0 ? "Running · \(held) lane\(held == 1 ? "" : "s") held" : train.map { train in
+            switch train.status {
+            case .running: "Merging · \(train.merged) of \(train.cars.count)"
+            case .paused: "Train paused"
+            case .done: "Merged"
+            }
+        } ?? phase.mobileLabel
         let lanes = (mission.draft.plan?.lanes ?? []).map(\.name).joined(separator: ", ")
         detail = mission.run?.pendingQuestion ?? ([host.name] + (lanes.isEmpty ? [] : [lanes])).joined(separator: " · ")
         route = (mission.draft.plan?.stations ?? []).map { station in

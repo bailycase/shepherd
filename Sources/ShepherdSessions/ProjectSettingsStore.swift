@@ -21,6 +21,8 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let systems: URL?
     private let globalDirectories: @Sendable () -> [URL]
     private let openEditor: (@MainActor @Sendable (URL) async throws -> Void)?
+    /// Copies skills from a repository into a folder (`SkillsStore.installCopies`), off this store's worker.
+    public var installSkills: (@Sendable (_ repo: String, _ paths: [String], _ commit: String?, _ destination: URL) throws -> Void)?
     /// The editor's bundle identifier (Settings ▸ Advanced; nil or empty: the file's default app), read when a file opens.
     @MainActor public var editor: @MainActor () -> String? = { nil }
     private var history: [Entry] = []
@@ -61,7 +63,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         guard notes.isEmpty else { throw ProjectFileError("trust", notes.joined(separator: "\n")) }
     }
 
-    private struct Entry: Codable { var directory: String; var name: String }
+    /// `excluded`: what a child space turns off of its parent's MCP servers and skills; absent in
+    /// older files and for a space that turns nothing off.
+    private struct Entry: Codable { var directory: String; var name: String; var excluded: SpaceInheritanceExclusions? = nil }
 
     public init(historyURL: URL, home: URL, sessions: URL, systems: URL? = nil,
                 globalDirectories: @escaping @Sendable () -> [URL] = { [] },
@@ -119,6 +123,23 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             if let openEditor { try await openEditor(reference) } else { try await Self.openEditor(reference, store: self) }
             return .opened
         }
+        if case .installSkills(let directory, let repo, let paths, let commit) = request {
+            guard let installSkills else { throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.") }
+            let destination: URL = try await withCheckedThrowingContinuation { continuation in
+                queue.async { [self] in
+                    continuation.resume(with: Result {
+                        try load()
+                        let root = try root(directory)
+                        // Create .pi/skills without following a link, so the copy lands in the space.
+                        try withParent(root: root, file: ".pi/skills/skill", create: true) { _, _ in }
+                        return root.appendingPathComponent(".pi/skills", isDirectory: true)
+                    })
+                }
+            }
+            // ponytail: the folder is checked, then copied into by path; a link swapped in between is not re-checked.
+            try await Task.detached(priority: .userInitiated) { try installSkills(repo, paths, commit, destination) }.value
+            return try await self.request(.files(directory: directory), state: state)
+        }
         return try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(with: Result {
@@ -141,7 +162,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                             project.mcpServers = sharedMCP(entry.directory)
                             // Organization never grants config or MCP inheritance across unrelated folders.
                             if let parent = folderParent {
-                                project.inheritedMCP = sharedMCP(parent).filter { !project.mcpServers.contains($0) }
+                                project.inheritedMCP = sharedMCP(parent).filter { !project.mcpServers.contains($0) && entry.excluded?.mcp.contains($0) != true }
                                 if !project.inheritedMCP.isEmpty {
                                     project.inheritedFromName = history.first { $0.directory == parent }?.name ?? URL(fileURLWithPath: parent).lastPathComponent
                                 }
@@ -151,8 +172,32 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                                                        nextOffset: end < history.count ? end : nil))
                     case .files(let directory):
                         return .files(try inventory(root: root(directory)))
+                    case .resources(let directory):
+                        return .resources(try resources(root: root(directory)))
+                    case .installSkills:
+                        preconditionFailure("Installing is handled before the worker above.")
+                    case .delete(let directory, let file, let expected):
+                        let root = try root(directory)
+                        guard let kind = ProjectConfiguration.resourceKind(file) else {
+                            throw ProjectFileError("invalid_file", "Only a space's skills, prompt templates and extensions can be removed.")
+                        }
+                        try remove(root: root, file: file, expected: expected)
+                        return .text(ProjectFileText(file: ProjectFile(path: file, category: kind == .extension ? .extensions : .skills, exists: false), text: nil))
                     case .context(let directory):
                         return .context(try context(root: root(directory)))
+                    case .inheritance(let directory, let excluded):
+                        let root = try root(directory)
+                        guard let index = history.firstIndex(where: { $0.directory == directory }) else {
+                            throw ProjectFileError("unknown_project", "This directory is not a known project.")
+                        }
+                        let clean = SpaceInheritanceExclusions(mcp: Array(Set(excluded.mcp)).sorted(), skills: Array(Set(excluded.skills)).sorted())
+                        guard (clean.mcp + clean.skills).allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }), clean.mcp.count + clean.skills.count <= 512 else {
+                            throw ProjectFileError("invalid", "Inherited server and skill names must be 1 to 128 bytes.")
+                        }
+                        let original = history
+                        history[index].excluded = clean.isEmpty ? nil : clean
+                        do { try saveHistory() } catch { history = original; throw error }
+                        return .context(try context(root: root))
                     case .mcp:
                         preconditionFailure("MCP is handled after file validation above.")
                     case .open:
@@ -181,18 +226,37 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
     }
 
-    /// The project `cwd` is a subproject of, for an agent starting there: the outermost project
-    /// folder that holds it (`ProjectNesting`), or nil. Its project MCP servers are shared with
-    /// the agent (`shepherd-mcp-parent.ts`). Reads the history on this store's worker, never the
-    /// caller's queue.
-    public func parentProject(of cwd: String, state: ShepherdState) async -> String? {
+    /// The startup model and thinking a space's agents take from its parent spaces when its own
+    /// settings leave them unset (slice 4 inheritance). Parents are the folders that hold it, as for
+    /// shared MCP: Shepherd's organization alone never grants configuration across unrelated folders.
+    public func launchDefaults(for cwd: String) async -> SpaceInheritedDefaults? {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 try? load()
-                try? rememberEntries(Self.directories(in: state))
-                continuation.resume(returning: ProjectNesting.parent(of: absolute(cwd), among: parentCandidates()))
+                guard let parent = parentSettings(of: absolute(cwd)) else { continuation.resume(returning: nil); return }
+                let own = (try? resourceSettings(root: URL(fileURLWithPath: absolute(cwd)))) ?? nil
+                let model = own?["defaultModel"] == nil
+                    ? parent.settings["defaultProvider"].flatMap { provider in parent.settings["defaultModel"].map { provider + "/" + $0 } } : nil
+                let thinking = own?["defaultThinkingLevel"] == nil ? parent.settings["defaultThinkingLevel"] : nil
+                continuation.resume(returning: model == nil && thinking == nil ? nil : SpaceInheritedDefaults(model: model, thinking: thinking))
             }
         }
+    }
+
+    /// The inheritable keys the ancestor spaces of `directory` set, merged root first, and the
+    /// nearest ancestor's name. Nil when no ancestor sets one.
+    private func parentSettings(of directory: String) -> (name: String, settings: [String: String])? {
+        let ancestors = parentCandidates().filter { $0 != directory && directory.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }.sorted { $0.count < $1.count }
+        guard let nearest = ancestors.last else { return nil }
+        var merged: [String: String] = [:]
+        for ancestor in ancestors {
+            guard let root = try? validatedRoot(ancestor), let settings = (try? resourceSettings(root: root)) ?? nil else { continue }
+            for key in SpaceInheritedDefaults.keys {
+                if let value = settings[key] as? String, !value.trimmingCharacters(in: .whitespaces).isEmpty { merged[key] = value }
+            }
+        }
+        guard !merged.isEmpty else { return nil }
+        return (history.first { $0.directory == nearest }?.name ?? URL(fileURLWithPath: nearest).lastPathComponent, merged)
     }
 
     /// Every project folder that can be a parent: never the home folder (its `.pi` is the user's
@@ -258,10 +322,30 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             }
         }
         if changed {
-            do {
-                try FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(history).write(to: historyURL, options: .atomic)
-            } catch { history = original; throw error }
+            do { try saveHistory() } catch { history = original; throw error }
+        }
+    }
+
+    private func saveHistory() throws {
+        try FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(history).write(to: historyURL, options: .atomic)
+    }
+
+    /// The space an agent starting in `cwd` inherits MCP servers and skills from: the outermost
+    /// project folder that holds it (`ProjectNesting`), shared by `shepherd-mcp-parent.ts`. With it,
+    /// what the child space holding `cwd` (the innermost known folder at or above it, below the
+    /// parent) turns off. Reads the history on this store's worker, never the caller's queue.
+    public func inheritance(of cwd: String, state: ShepherdState) async -> (parent: String, excluded: SpaceInheritanceExclusions)? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                try? load()
+                try? rememberEntries(Self.directories(in: state))
+                let here = absolute(cwd)
+                guard let parent = ProjectNesting.parent(of: here, among: parentCandidates()) else { continuation.resume(returning: nil); return }
+                let child = history.filter { $0.directory != parent && ($0.directory == here || here.hasPrefix($0.directory + "/")) && $0.directory.hasPrefix(parent + "/") }
+                    .max { $0.directory.count < $1.directory.count }
+                continuation.resume(returning: (parent, child?.excluded ?? SpaceInheritanceExclusions()))
+            }
         }
     }
 
@@ -424,7 +508,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             folder = parent
         }
         let files = try inventory(root: root)
-        var resources = files.filter { $0.category == .skills || $0.category == .extensions }.count
+        var resources = spaceResourcePaths(root: root).count
         if let settings = try resourceSettings(root: root) {
             resources += (settings["extensions"] as? [Any])?.count ?? 0
             resources += (settings["packages"] as? [Any])?.count ?? 0
@@ -434,10 +518,125 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             if let text = try? read(root: root, file: file.path), let settings = try? YourPiFiles.object(Data(text.utf8), file: file.path),
                let names = settings["mcpServers"] as? [String: Any] { servers.formUnion(names.keys) }
         }
-        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count)
+        let parent = parentSettings(of: root.path)
+        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count, globalSettings: globalFormSettings(),
+                              parentName: parent?.name, parentSettings: parent?.settings,
+                              inheritsFrom: ProjectNesting.parent(of: root.path, among: parentCandidates()),
+                              excluded: history.first { $0.directory == root.path }?.excluded ?? SpaceInheritanceExclusions())
+    }
+
+    /// The global values the space Settings form compares against, from Shepherd's pi home. Only the
+    /// form's keys cross the wire, never credentials or provider config.
+    private func globalFormSettings() -> String? {
+        guard let pi, let data = try? Data(contentsOf: pi.home.appendingPathComponent("settings.json")),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let keys = ["defaultProvider", "defaultModel", "defaultThinkingLevel", "defaultTools", "compaction", "retry", "shellPath", "shellCommandPrefix"]
+        let picked = object.filter { keys.contains($0.key) }
+        guard let encoded = try? JSONSerialization.data(withJSONObject: picked, options: [.sortedKeys]) else { return nil }
+        return String(decoding: encoded, as: UTF8.self)
+    }
+
+    /// The space's resource files by kind, from `.shepherd`, `.pi` and `.agents/skills`, as pi
+    /// discovers them: a skill folder's SKILL.md, and a prompt, subagent or extension file directly
+    /// in its folder. A linked folder is skipped.
+    private func spaceResourcePaths(root: URL) -> [(ProjectResource.Kind, String)] {
+        var result: [(ProjectResource.Kind, String)] = []
+        for base in ProjectConfiguration.directories + [".agents"] {
+            for kind in ProjectResource.Kind.allCases where base != ".agents" || kind == .skill {
+                for name in Self.resourceNames(kind, in: root.appendingPathComponent(base + "/" + Self.folder(kind))) {
+                    let path = base + "/" + Self.folder(kind) + "/" + name + (kind == .skill ? "/SKILL.md" : "")
+                    if ProjectConfiguration.resourceKind(path) == kind { result.append((kind, path)) }
+                }
+            }
+        }
+        return result
+    }
+
+    private static func folder(_ kind: ProjectResource.Kind) -> String {
+        switch kind { case .skill: "skills"; case .prompt: "prompts"; case .agent: "agents"; case .extension: "extensions" }
+    }
+
+    private static func resourceNames(_ kind: ProjectResource.Kind, in folder: URL) -> [String] {
+        let fm = FileManager.default
+        guard folder.resolvingSymlinksInPath().path == folder.path else { return [] }
+        return ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).sorted().prefix(256).filter { name in
+            guard !name.hasPrefix(".") else { return false }
+            switch kind {
+            case .skill: return fm.fileExists(atPath: folder.appendingPathComponent(name + "/SKILL.md").path)
+            case .prompt, .agent: return name.hasSuffix(".md")
+            case .extension: return ["ts", "js", "mjs", "cjs"].contains((name as NSString).pathExtension)
+            }
+        }
+    }
+
+    /// The space's resources, then the host's global ones in Shepherd's pi home, each with its name
+    /// and description from its own file. A global skill, template or extension is on by the global
+    /// settings' patterns; a subagent by its `disabled`.
+    private func resources(root: URL) throws -> [ProjectResource] {
+        var result: [ProjectResource] = []
+        for (kind, path) in spaceResourcePaths(root: root) {
+            guard let text = try? read(root: root, file: path) else { continue }
+            result.append(Self.resource(kind, path: path, display: path, text: text, global: false, settings: nil))
+        }
+        guard let pi else { return result }
+        let home = pi.home.standardizedFileURL
+        let settings = (try? Data(contentsOf: home.appendingPathComponent("settings.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        for kind in ProjectResource.Kind.allCases {
+            for name in Self.resourceNames(kind, in: home.appendingPathComponent(Self.folder(kind))) {
+                let url = home.appendingPathComponent(Self.folder(kind) + "/" + name + (kind == .skill ? "/SKILL.md" : ""))
+                guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= Self.fileLimit,
+                      let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                result.append(Self.resource(kind, path: url.path, display: displayPath(url.path), text: text, global: true,
+                                            settings: (settings, home.path)))
+            }
+        }
+        return result
+    }
+
+    private func displayPath(_ path: String) -> String {
+        let home = home.standardizedFileURL.path
+        let support = home + "/Library/Application Support/"
+        if path.hasPrefix(support) { return String(path.dropFirst(support.count)) }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
+
+    private static func resource(_ kind: ProjectResource.Kind, path: String, display: String, text: String, global: Bool,
+                                 settings: ([String: Any], String)?) -> ProjectResource {
+        var resource = ProjectResource(kind: kind, path: path, displayPath: display, text: text, global: global)
+        if let (object, base) = settings, let key = kind.settingsKey {
+            resource.enabled = ProjectResourcePatterns.isEnabled(path, entries: object[key] as? [String] ?? [], base: base)
+        }
+        return resource
+    }
+
+    /// Unlinks one resource file, refusing a link or a file that changed since it was read; a skill's
+    /// folder goes too once nothing else is in it.
+    private func remove(root: URL, file: String, expected: String) throws {
+        try withParent(root: root, file: file) { parent, name in
+            let fd = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard fd >= 0 else { throw ProjectFileError(errno == ENOENT ? "conflict" : "unsafe", "This file changed elsewhere. Reload the space before removing it.") }
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size <= Self.fileLimit,
+                  String(data: try handle.read(upToCount: Self.fileLimit + 1) ?? Data(), encoding: .utf8) == expected else {
+                throw ProjectFileError("conflict", "This file changed elsewhere. Reload the space before removing it.")
+            }
+            guard unlinkat(parent, name, 0) == 0 else { throw ProjectFileError("write_failed", "Could not remove the space file.") }
+        }
+        if file.hasSuffix("/SKILL.md") {
+            let folder = (file as NSString).deletingLastPathComponent
+            try? withParent(root: root, file: folder) { parent, name in _ = unlinkat(parent, name, AT_REMOVEDIR) }
+        }
     }
 
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
+        if let kind = ProjectConfiguration.resourceKind(file) {
+            var info = stat()
+            // Prompt templates live in the Resources tab beside skills.
+            return ProjectFile(path: file, category: kind == .extension ? .extensions : .skills,
+                               exists: lstat(root.appendingPathComponent(file).path, &info) == 0)
+        }
         guard let item = try inventory(root: root).first(where: { $0.path == file }) else {
             throw ProjectFileError("invalid_file", "Only project instruction, .shepherd and .pi configuration files can be edited.")
         }

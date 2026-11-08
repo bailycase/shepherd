@@ -186,6 +186,8 @@ final class RemoteHostStore {
         var supportsProjectDetails: Bool { client?.capabilities.contains(RemoteProtocol.projectDetailsCapability) == true }
         var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
         var supportsProjectTrust: Bool { client?.capabilities.contains(RemoteProtocol.projectTrustCapability) == true }
+        var supportsProjectResources: Bool { client?.capabilities.contains(RemoteProtocol.projectResourcesCapability) == true }
+        var supportsProjectInheritance: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritanceCapability) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// What Settings' host picker reads and changes the host's settings through, while it's connected.

@@ -13,6 +13,8 @@ struct MissionProposal: Decodable, Sendable {
         var goal: String
         var command: String?
         var doneWhen: [String]
+        /// A worker's planned writes, repository-relative paths or globs.
+        var paths: [String]?
     }
     struct Wire: Decodable, Sendable {
         var source: String
@@ -27,6 +29,11 @@ struct MissionProposal: Decodable, Sendable {
     var requirements: [String]?
     var stations: [Station]?
     var dependencies: [Wire]?
+    /// The planner's estimate for the whole map: tokens and minutes.
+    var estimate: Estimate?
+    /// The key of the decision station the person's latest answer settles, when a revised map follows one.
+    var resolves: String?
+    struct Estimate: Decodable, Sendable { var tokens: Int; var minutes: Double }
 
     static func decode(_ text: String) throws -> Self {
         var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -60,7 +67,8 @@ struct MissionProposal: Decodable, Sendable {
             }
             return MissionStation(id: ids[value.id]!, kind: value.kind, laneID: lane, title: value.title,
                                   goal: value.goal, model: value.kind == .check || value.kind == .decision ? nil : model,
-                                  command: value.command, doneWhen: value.doneWhen)
+                                  command: value.command, doneWhen: value.doneWhen,
+                                  paths: value.kind == .worker ? value.paths.map { Array($0.prefix(64)) } : nil)
         }
         plan.dependencies = try (dependencies ?? []).map { wire in
             guard let source = ids[wire.source], let target = ids[wire.target] else {
@@ -70,12 +78,19 @@ struct MissionProposal: Decodable, Sendable {
         }
         draft.title = title ?? original.title
         draft.requirements = requirements
+        plan.estimate = estimate.map { MissionEstimate(tokens: $0.tokens, seconds: $0.minutes * 60) }.flatMap { $0.valid ? $0 : nil }
         draft.plan = plan
         try draft.validateForApproval()
         guard plan.stations.contains(where: { $0.kind == .check }) else {
             throw MissionError("mission_proposal", "Include a real command check. A validator's statement alone is not test evidence.")
         }
         return draft
+    }
+
+    /// The decision station `resolves` names in `draft`, when it is one.
+    func resolvedStation(in draft: MissionDraft) -> MissionStationID? {
+        guard let resolves else { return nil }
+        return draft.plan?.stations.first { $0.kind == .decision && $0.id.rawValue == resolves }?.id
     }
 }
 
@@ -86,7 +101,7 @@ extension MissionController {
         guard let run = mission.run, let checkout = run.checkouts.first else { throw MissionError("mission_scope", "Choose a repository.") }
         let before = try await collectReviews(id)
         let text = try await runAgent(id, runID: runID, station: nil, checkout: checkout,
-                                      prompt: planningPrompt(mission), title: "Plan: \(mission.draft.title)")
+                                      prompt: planningPrompt(mission) + templatePrompt(mission), title: "Plan: \(mission.draft.title)")
         let after = try await collectReviews(id)
         guard before.map(\.fingerprint) == after.map(\.fingerprint) else {
             throw MissionError("mission_planner_changed_files", "The planner changed a worktree during read-only intake. Inspect its thread and changes before continuing; nothing was launched or published.")
@@ -99,6 +114,18 @@ extension MissionController {
         let draft: MissionDraft?
         if question != nil { draft = nil }
         else { draft = try proposal.draft(from: mission.draft, model: run.model) }
+        // A map that already has stations is never rewritten by an answer: the revision waits as a patch.
+        var patch: MissionPatch?
+        if let draft, mission.draft.plan?.stations.isEmpty == false {
+            let reply = run.messages.last.flatMap { $0.role == .user ? $0 : nil }
+            let asked = reply?.replyTo.flatMap { id in run.messages.first { $0.id == id && $0.question != nil } }
+            patch = MissionPatch(proposedAt: Self.now, base: mission.draft, draft: draft, summary: Self.safeText(proposal.summary),
+                                 question: asked?.question, answer: asked == nil ? nil : reply.map { Self.safeText($0.text, bytes: 400) },
+                                 resolves: asked == nil ? nil : proposal.resolvedStation(in: draft))
+        }
+        let automatic = patch.map { patch in
+            run.autoApplyPatches == true && patch.clearsFog && patch.draft.plan?.estimate?.fits(patch.draft.limits) == true
+        } ?? false
         let saved = try await server.updateMissionRun(id: id, runID: runID) { current in
             let choices = question == nil ? nil : proposal.choices.map { values in
                 Array(values.map { Self.safeText($0.trimmingCharacters(in: .whitespacesAndNewlines), bytes: 400) }.filter { !$0.isEmpty }.prefix(6))
@@ -113,9 +140,13 @@ extension MissionController {
             current.pendingChoices = question == nil ? nil : proposal.choices.map { values in
                 Array(values.map { Self.safeText($0.trimmingCharacters(in: .whitespacesAndNewlines), bytes: 400) }.filter { !$0.isEmpty }.prefix(6))
             }.flatMap { $0.isEmpty ? nil : $0 }
-            current.transition(to: .map, at: Self.now, notice: question ?? "Review the map and commands before Launch. No implementation has started.")
+            if let patch, !automatic { current.patch = patch }
+            current.transition(to: .map, at: Self.now, notice: question ?? (patch != nil && !automatic
+                ? "The planner proposed a patch to the map. Apply or reject it; nothing changed yet."
+                : "Review the map and commands before Launch. No implementation has started."))
         }
-        if let draft { _ = try await server.editMission(id: id, expectedRevision: saved.revision, draft: draft) }
+        if let patch, automatic { try await settle(id, patch: patch, revision: saved.revision) }
+        else if let draft, patch == nil { _ = try await server.editMission(id: id, expectedRevision: saved.revision, draft: draft) }
     }
 
     func planningPrompt(_ mission: Mission) -> String {
@@ -155,6 +186,11 @@ extension MissionController {
            "goal":"verify requirements against actual diff and tests","doneWhen":["requirements verified"]}],
          "dependencies":[{"source":"implement","target":"test","kind":"data","artifact":"implementation"},
            {"source":"test","target":"validate","kind":"data","artifact":"tested implementation"}]}
+        Give every worker "paths": the repository-relative paths or globs it will write ("internal/orders/place.go",
+        "migrations/**"). Other missions on the same repository wait for them; a worker that writes elsewhere pauses.
+        Add "estimate":{"tokens":N,"minutes":M}, your estimate for the whole map, when you can.
+        When the person's latest message answers a question a decision station stands for, keep that station and
+        set "resolves" to its UUID: the host records the answer as its result and dependants may run.
         For a question, summary and question alone suffice; add up to 4 short "choices" when the answer is one of a few options. Allowed kinds: research, worker, check, decision, validator.
 
         Selected worktrees (read only):
