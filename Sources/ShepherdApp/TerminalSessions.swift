@@ -466,8 +466,8 @@ final class TerminalSessionStore {
             ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code, details: .init(
                 startupKind: problem.kind, trigger: session?.startupTrigger, location: session?.startupLocation))
         }
-        // Read before the view model retires the agent: a pi that exits while it boots frees its
-        // place in the launch queue now, not when its hold runs out.
+        // Read before the pane session goes: a pi that exits while it boots frees its place in the
+        // launch queue now, not when its hold runs out.
         let agent = serverState?.agents.first { $0.paneID == paneID }
         paneBySession.removeValue(forKey: sessionID)
         detachedSessionIDs.remove(sessionID)

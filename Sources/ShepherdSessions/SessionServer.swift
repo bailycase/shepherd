@@ -9011,7 +9011,8 @@ public final class SessionServer: @unchecked Sendable {
     /// the queue and pending sends stay and the turn is not continued: inactive, paused, without
     /// an operation, and `heldAfterExit`. The thread then writes nothing more (`recoveryHeld`),
     /// so a request that failed with the exit, or a staged write that lands late, can't put the
-    /// live (still active) checkpoint back. Retry restores it paused.
+    /// live (still active) checkpoint back. Retry restores it paused. A held save that fails leaves
+    /// the previous file, as a failed Stop's does: a later launch may then continue the turn.
     @discardableResult
     func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState, force: Bool = false, holding: Bool = false) -> Bool {
         defer { if holding { thread.recoveryHeld = true } }

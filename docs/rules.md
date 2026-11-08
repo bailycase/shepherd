@@ -122,8 +122,9 @@ Terminals are tabs under a thread (`terminal_*` tools, ⌘D, ⌘J, the panel's +
 a process that exits on its own closes its tab, except an agent's own pi: while its agent exists,
 any exit keeps the agent and its thread, which says why and waits for Retry. Only deleting an agent
 retires it. A stop Shepherd asks for (`stopKeepingAgent`, a move, `killSession` of an agent's own
-pi) is marked as one, so its thread shows no problem. Every other exit is the agent stopping
-unexpectedly. Anything that retires idle agents must stop pi the same marked way.
+pi) is marked as one, so its thread shows no problem. Every other exit after pi served is the agent
+stopping unexpectedly; one before it served is a start problem. Anything that retires idle agents
+must stop pi the same marked way.
 
 ## An extension-socket connection speaks only for the agent whose pi opened it
 
@@ -230,7 +231,7 @@ anything that keeps going without a person watching. Each needs, before it is a 
   opt-in and shown in the UI; secrets are redacted and never reach logs or notifications.
 - Tool output, file contents, web pages and model prose are data, never instructions, including
   text that reaches an evaluator.
-- A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch, a login or a host restart, with the app open or not, but an automation run a restart interrupted is never resumed: its run log records it as interrupted. A login start and an update's drain are restarts. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle. A pi that stops on its own holds its agent's checkpoint paused and inactive: pi starts again only by Retry or by the thread's ordinary start after a launch, and neither continues the interrupted turn or sends the queue, which comes back paused. An automation run whose pi stops on its own ends as failed in its run log and is never resumed.
+- A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch, a login or a host restart, with the app open or not, but an automation run a restart interrupted is never resumed: its run log records it as interrupted. A login start and an update's drain are restarts. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle. A pi that stops on its own holds its agent's checkpoint paused and inactive: pi starts again only when a person acts (Retry, Locate Folder…, Use another model), by the thread's ordinary start after a launch, or, for a Project coordinator, by its Project's next message; none continues the interrupted turn or sends the queue, which comes back paused. An automation run whose pi stops on its own ends as failed in its run log and is never resumed.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
   are each defined and tested.
