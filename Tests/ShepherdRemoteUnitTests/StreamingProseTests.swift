@@ -29,8 +29,8 @@ struct StreamingProseTests {
         let expected = nativeMarkdownParse(text, streaming: true).blocks
         release.finish()
         await until {
-            guard case .prose(_, _, let blocks, _)? = store.rows.last?.presentation?.items.last else { return false }
-            return blocks == expected
+            guard case .prose(_, _, let prose)? = store.rows.last?.presentation?.items.last else { return false }
+            return prose.blocks == expected
         }
         #expect(store.offMainParses == 2, "Skip intermediate snapshots and parse only the newest text next")
     }

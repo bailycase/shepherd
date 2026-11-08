@@ -141,6 +141,11 @@ struct SHNativeCodeText: NSViewRepresentable {
         return field
     }
 
+    /// Counts the fields SwiftUI lets go of, so a test can tell how many are alive: created minus dismantled.
+    static func dismantleNSView(_ field: Field, coordinator: ()) {
+        SHRenderProbe.tick("code.nativeDismantled")
+    }
+
     func updateNSView(_ field: Field, context: Context) {
         let points = SHTextStyle.code.size * scale
         let font = NSFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: points)

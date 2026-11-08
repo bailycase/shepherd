@@ -295,8 +295,8 @@ private struct ForgePullRequestSummary: View {
                                trailing: stateEvent(now: now))
                     .padding(.top, SH.Space.l)
             }
-            if !store.bodyBlocks.isEmpty {
-                Prose(blocks: store.bodyBlocks, maxWidth: AppLayout.forgeContentWidth).padding(.top, SH.Space.xl)
+            if !store.bodyProse.isEmpty {
+                Prose(prose: store.bodyProse, maxWidth: AppLayout.forgeContentWidth).padding(.top, SH.Space.xl)
             }
             SHHairline().padding(.vertical, SH.Space.xl)
             ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest)
