@@ -157,6 +157,27 @@ struct SidebarRecentsTests {
         #expect(lists.recents.first?.accessibilityLabel == "asks, needs you, on horizon, host offline")
     }
 
+    /// A watcher whose pi stopped on its own keeps its thread, idle, with its run ended failed: the
+    /// row is not live, so its menu offers Run Now rather than Stop (which would delete the thread).
+    /// Without the run, an idle agent reads as a run still starting.
+    @Test func aWatcherWhosePiStoppedOnItsOwnIsNotLive() throws {
+        let run = agent("Nightly", at: 1)
+        let automation = Automation(name: "Nightly", prompt: "p", cwd: "/tmp", agentID: run.id)
+        var state = ShepherdState(spaces: [space], agents: [run])
+        state.automations = [automation]
+        func row(_ openRuns: [AutomationID: AutomationRun]) throws -> SidebarListRow {
+            let lists = SidebarDerivation.lists(SidebarSource(local: state, openRuns: openRuns))
+            return try #require((lists.automations + lists.recents + lists.done).first { $0.id == .local(run.id) })
+        }
+        #expect(try row([:]).automationLive, "no run yet reads as starting")
+        let stopped = AutomationRun(startedAt: 0, endedAt: 5, result: .failed, agentID: run.id,
+                                    failure: "The agent stopped unexpectedly (signal 9).")
+        let ended = try row([automation.id: stopped])
+        #expect(ended.automationLive == false)
+        let lists = SidebarDerivation.lists(SidebarSource(local: state, openRuns: [automation.id: stopped]))
+        #expect(lists.automationRows.allSatisfy { !$0.live })
+    }
+
     /// A finished watcher run leaves Automations (its automation is no longer active) for Done, with its bolt and age.
     @Test func finishedAutomationRunsGoToDoneWithTheirBolt() throws {
         let run = agent("Nightly", status: .done, at: 1)

@@ -105,6 +105,9 @@ extension RPCThreadState {
         } else if interrupted {
             beginRestartRecovery()
         } else {
+            if checkpoint.heldAfterExit == true, !items.isEmpty {
+                queueNotice = "The agent stopped unexpectedly, so the queue is waiting."
+            }
             commit()
             if !paused { drainIfReady() }
         }

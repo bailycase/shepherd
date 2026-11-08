@@ -6,8 +6,9 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// A pi that stops before it serves its thread keeps its agent: the server says so with the exit, and the thread's snapshot says why, locally and to
-/// a remote viewer, until Retry binds a new pi. A pi that served and then exited does not.
+/// An agent's pi that stops keeps its agent, before it serves its thread or on its own after: the
+/// server says so with the exit, and the thread's snapshot says why, locally and to a remote
+/// viewer, until Retry binds a new pi. Only deleting the agent retires it.
 @Suite("pi start problems", .integrationTimeLimit)
 struct StartProblemTests {
     private static let gate = "release-pi"
@@ -99,26 +100,99 @@ struct StartProblemTests {
         #expect(!callbacks.exited(pi.sessionID))
     }
 
-    /// Once pi has served, its exit is a lost connection: the app retires the agent as before.
-    @Test func aPiThatExitsAfterItServedDoesNotKeepItsAgent() async throws {
-        let h = try ScratchServer.fresh()
-        defer { h.stop() }
-        let callbacks = Callbacks(h.server)
-        let pi = try await PiAgent.launch(on: h)
+    /// Once pi has served, an exit on its own keeps the agent too: the thread says it stopped, with
+    /// pi's last words, to this host and to a remote viewer, before and after the app retires the
+    /// dead session.
+    @Test func aPiThatExitsAfterItServedKeepsItsAgentAndSaysItStopped() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let callbacks = Callbacks(r.server)
+        let pi = try await PiAgent.launch(on: r.host)
         let ready = try await pi.ready()
         _ = try await pi.send("die", from: ready)
         try await eventually("pi to exit") { callbacks.exited(pi.sessionID) }
-        #expect(callbacks.sessionExits.current[pi.sessionID] == SessionExit(code: 3))
+        let stopped = NativeStartProblem(kind: .stopped, exitCode: 3, lines: ["stub-pi: dying"])
+        #expect(callbacks.sessionExits.current[pi.sessionID] == SessionExit(code: 3, keepsAgent: true, startProblem: stopped))
+
+        let client = try await r.typed()
+        defer { client.disconnect() }
+        for retired in [false, true] {
+            if retired { await r.server.retireSession(sessionID: pi.sessionID) }
+            let local = try await pi.request(.snapshot()).snapshotValue
+            #expect(local?.startProblem == stopped, "retired: \(retired)")
+            #expect(local?.messages.isEmpty == true && local?.supportedActions.isEmpty == true)
+            let remote = try await client.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue
+            #expect(remote?.startProblem == stopped, "a remote viewer sees it too (retired: \(retired))")
+        }
+        #expect(r.server.state.agents.contains { $0.id == pi.agent.id })
+        let send = NativeThreadRequest.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "hi", delivery: .followUp)
+        #expect(await code { try await pi.request(send) } == NativeThreadCode.unavailable)
     }
 
-    /// A stop Shepherd asks for keeps the agent, with nothing to report: its thread is starting.
-    @Test func aStopShepherdAsksForKeepsTheAgentWithoutAProblem() async throws {
+    /// A pi killed by a signal says which, once it has served.
+    @Test func aServedPiEndedByASignalSaysWhichSignal() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
         let pi = try await PiAgent.launch(on: h)
         _ = try await pi.ready()
-        await h.server.stopKeepingAgent(sessionID: pi.sessionID)
+        let pid = try await h.server.enqueue { try #require(h.server.rpcThread(forAgent: pi.agent.id)).session.processIdentifier }
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("pi to exit") { callbacks.exited(pi.sessionID) }
+        let exit = try #require(callbacks.sessionExits.current[pi.sessionID])
+        #expect(exit == SessionExit(code: nil, keepsAgent: true, startProblem: NativeStartProblem(kind: .stopped, signal: 9)))
+        #expect(try await pi.request(.snapshot()).snapshotValue?.startProblem == exit.startProblem)
+    }
+
+    /// A status report the dead pi's socket still held, read after its agent settled idle, leaves the
+    /// agent idle: it would otherwise read as running and hold the host's drain.
+    @Test func aLateStatusFromAStoppedPiLeavesItsAgentIdle() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        let other = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        _ = try await other.ready()
+        let pid = try await h.server.enqueue { try #require(h.server.rpcThread(forAgent: pi.agent.id)).session.processIdentifier }
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("pi to exit") { callbacks.exited(pi.sessionID) }
+        func status(_ agent: Agent) -> AgentStatus? { h.server.state.agents.first { $0.id == agent.id }?.status }
+
+        // The second report is the barrier: one connection is read in order.
+        let reporter = try ExtensionClient(path: h.socketPath)
+        defer { reporter.closeConnection() }
+        try reporter.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try reporter.send(.setAgentStatus(agentID: other.agent.id, status: .working))
+        try await eventually("the other agent to read working") { status(other.agent) == .working }
+        #expect(status(pi.agent) == .idle)
+        #expect(try await pi.request(.snapshot()).snapshotValue?.startProblem?.kind == .stopped)
+    }
+
+    /// Deleting the agent retires its pi: the agent is gone from state when pi exits, so nothing is kept.
+    @Test func deletingAnAgentWhosePiServedRetiresItsSession() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        try await h.server.deleteAgent(pi.agent.id)
+        try await eventually("pi to exit") { callbacks.exited(pi.sessionID) }
+        let exit = try #require(callbacks.sessionExits.current[pi.sessionID])
+        #expect(!exit.keepsAgent && exit.startProblem == nil)
+        #expect(!h.server.state.agents.contains { $0.id == pi.agent.id })
+    }
+
+    /// A stop Shepherd asks for keeps the agent, with nothing to report: its thread is starting.
+    /// `killSession` of an agent's own pi is one (a halted mission's threads stay).
+    @Test(arguments: [false, true])
+    func aStopShepherdAsksForKeepsTheAgentWithoutAProblem(killed: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        if killed { h.server.killSession(pi.sessionID) } else { await h.server.stopKeepingAgent(sessionID: pi.sessionID) }
         try await eventually("pi to stop") { callbacks.exited(pi.sessionID) }
         let exit = try #require(callbacks.sessionExits.current[pi.sessionID])
         #expect(exit.keepsAgent && exit.startProblem == nil)

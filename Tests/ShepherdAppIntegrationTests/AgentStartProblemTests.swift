@@ -2,12 +2,12 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// A pi that stops before it serves keeps its agent, through
+/// A pi that stops, before it serves or on its own after, keeps its agent, through
 /// the real view model and the stub pi launched the way the app launches pi: the pane stays with
 /// its thread, which says why, the sidebar row reads "can't start", and Retry starts pi again.
 @Suite("Agent start problems", .mainActorExclusive)
@@ -105,6 +105,67 @@ struct AgentStartProblemTests {
         try await eventuallyOnMain("pi to serve after Retry", timeout: .seconds(20)) { store.ready }
         #expect(pane.phase == .live && store.startProblem == nil)
         #expect(store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
+    }
+
+    /// A pi killed from outside while it works keeps the thread: the pane, the draft nobody sent
+    /// and the queued follow-up all wait. The thread says it stopped, the row reads "can't start",
+    /// and Retry starts pi on the same conversation with the queue paused.
+    @Test func aServedAgentWhosePiStopsOnItsOwnKeepsItsThreadDraftAndQueueUntilRetry() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent("worker", in: space, piSession: SessionID())
+        try Self.writeStubHistory(sessionID: agent.agent.effectivePiSessionID, cwd: space.path, sessionsRoot: app.server.pi.sessionsRoot)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let store = vm.threadStores.store(for: agent.agent.id)
+        let server = app.server, id = agent.agent.id
+        let preview = PiSessionFile.previewLoader(sessionID: agent.agent.effectivePiSessionID, cwd: space.path,
+                                                  sessionsRoot: app.server.pi.sessionsRoot)
+        let polling = Task { await store.run(request: { try await server.nativeThread(agentID: id, request: $0) }, preview: preview) }
+        defer { polling.cancel(); store.stop() }
+        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
+        let history = ["user:1733234567890", "assistant:1733234567891"]
+
+        try await eventuallyOnMain("pi to serve", timeout: .seconds(20)) { store.ready && store.messages.map(\.entryID) == history }
+        await store.send(text: "tools:1 build")
+        try await eventuallyOnMain("the run to work") { store.snapshot?.running == true }
+        await store.send(text: "tools:0 queued")
+        try await eventuallyOnMain("the follow-up to queue") { store.queue.map(\.text) == ["tools:0 queued"] }
+        store.draft = "also check the logs"
+        let launches = { StubPi.launches().filter { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue }.count }
+        let launched = launches()
+        let conversation = try #require(store.snapshot?.piSessionID)
+        #expect(!conversation.isEmpty)
+
+        let pid = try await server.enqueue { @Sendable in try #require(server.rpcThread(forAgent: id)).session.processIdentifier }
+        #expect(kill(pid, SIGKILL) == 0)
+
+        try await eventuallyOnMain("the thread to say pi stopped", timeout: .seconds(20)) { store.startProblem?.kind == .stopped }
+        #expect(store.startProblem?.signal == 9)
+        #expect(pane.phase == .stopped)
+        #expect(vm.cannotStart.contains(id))
+        #expect(store.loadError == nil && !store.ready && !store.acceptsSend)
+        #expect(vm.state.agents.contains { $0.id == id } && server.state.agents.contains { $0.id == id })
+        let row = try #require(vm.sidebarLists.recents.first { $0.id == .local(id) })
+        #expect(row.leading == .dot(.failed) && row.accessory == .text("can't start", tone: .failed))
+        #expect(vm.sidebarLists.working.isEmpty)
+        #expect(store.draft == "also check the logs", "the draft nobody sent stays")
+        #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane, "the same pane session waits")
+        #expect(launches() == launched, "nothing starts pi again on its own")
+
+        vm.retryAgentStart(id)
+        #expect(store.startProblem == nil && store.starting, "Retry takes the banner away at once")
+        try await eventuallyOnMain("pi to serve after Retry", timeout: .seconds(20)) { store.ready }
+        #expect(pane.phase == .live && !vm.cannotStart.contains(id))
+        #expect(store.snapshot?.piSessionID == conversation, "Retry resumes the same conversation")
+        #expect(store.messages.map(\.entryID) == history)
+        try await eventuallyOnMain("the queue to come back") { store.queue.count == 1 }
+        #expect(store.queue.first?.text == "tools:0 queued" && store.queuePaused)
+        #expect(store.queueNotice == "The agent stopped unexpectedly, so the queue is waiting.")
+        #expect(store.snapshot?.running == false, "the interrupted turn is not continued")
+        #expect(store.draft == "also check the logs")
+        #expect(launches() == launched + 1)
     }
 
     /// A new agent whose pi can't reach a model keeps its opening prompt, which pi never read:

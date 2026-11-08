@@ -334,32 +334,16 @@ extension ShepherdViewModel {
         }
     }
 
-    /// A process ended: its pane closes. An agent whose process ended is
-    /// retired with its whole layout (auxiliary shells die too; the pi
-    /// transcript stays on disk). A space's last shell respawns fresh so the
-    /// space keeps a workspace.
+    /// A shell's process ended: its pane closes. A space's last shell respawns fresh so the space
+    /// keeps a workspace. An agent's pane never closes here: its pi stopping keeps the agent
+    /// (`SessionExit.keepsAgent`; Retry starts it again), and a deleted agent is already gone
+    /// from `state`. Only an agent's primary pane carries its `agentID`.
     func handleSessionExited(paneID: PaneID) {
         guard let tabIndex = state.tabs.firstIndex(where: { $0.layout.contains(paneID) }) else { return }
         let tab = state.tabs[tabIndex]
-        let exitedAgentID = tab.layout.leaf(withID: paneID)?.agentID
+        guard tab.layout.leaf(withID: paneID)?.agentID == nil else { return }
 
-        if let agentID = exitedAgentID {
-            cancelReviews(for: agentID)
-            childRuns.clear(agent: agentID)
-            forgetNotifications(of: agentID)
-            state.agents.removeAll { $0.id == agentID }
-            if selectedAgentID == agentID {
-                selectPreviousAgent(after: agentID)
-            } else {
-                selectionHistory.removeAll { $0 == agentID }
-            }
-            for leaf in tab.layout.leaves {
-                sessions.detachPane(leaf.id)
-            }
-            state.tabs.remove(at: tabIndex)
-            sessions.stateDidChange(state)
-            enqueuePersistence("agent exit cleanup") { try await $0.deleteAgent(agentID) }
-        } else if let newLayout = tab.layout.closing(pane: paneID) {
+        if let newLayout = tab.layout.closing(pane: paneID) {
             state.tabs[tabIndex].layout = newLayout
             sessions.stateDidChange(state)
             let tabID = tab.id

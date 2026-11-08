@@ -438,6 +438,30 @@ struct NativeThreadStoreTests {
         #expect(store.pollInterval == .seconds(2))
     }
 
+    /// A pi that stopped mid-turn leaves the last live snapshot under the banner: its running call
+    /// and half-written reply read stopped, and nothing reads as working.
+    @Test func aThreadWhosePiStoppedMidTurnDrawsItsLiveRowsStopped() async throws {
+        let prompt = F.user(id: "u")
+        let args = #"{"command":"git push origin main"}"#
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt], provisional: [
+            F.assistant("Pushed. Now checking", status: "streaming", id: "p"),
+            F.tool("bash", args: args, status: "running", id: "provisional:tool:b", callID: "b"),
+        ]))
+        defer { task.cancel() }
+        #expect(runningCalls(store.liveRow) == ["b"] && store.running && store.hostRunning)
+
+        var stopped = F.snapshot(generation: "start-problem", messages: [])
+        stopped.startProblem = NativeStartProblem(kind: .stopped, signal: 9)
+        host.snapshot = stopped
+        await store.refresh()
+
+        #expect(store.startProblem?.kind == .stopped)
+        #expect(!store.running && !store.hostRunning && store.liveRow == nil && !store.showsThinking)
+        #expect(store.rows.flatMap { runningCalls($0) }.isEmpty, "no call reads as running")
+        #expect(store.snapshot?.provisional.map(\.status) == ["aborted", "aborted"])
+        #expect(store.messages == [prompt], "the thread keeps what it drew")
+    }
+
     /// Retry takes the problem away at once and the thread is starting; pi serving clears it too.
     @Test func retryStartsAgainAndServingClearsTheProblem() async {
         let (store, host, task) = await startedWhileStarting()

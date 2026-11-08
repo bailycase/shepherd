@@ -29,6 +29,16 @@ struct AgentRecoveryTests {
         return PiAgent(host: host, agent: original.agent, sessionID: session.id, log: log)
     }
 
+    /// The pi Retry starts: bound to the pane by `updatePaneSession`, as the app does.
+    private func resumeAfterRetry(_ original: PiAgent, on host: ScratchServer) async throws -> PiAgent {
+        let log = host.dir.appendingPathComponent("retried-\(UUID().uuidString).log")
+        let session = try await host.server.createSession(params: CreateSessionParams(
+            cwd: host.dir.path, command: StubPi.command,
+            env: ["STUB_PI_LOG": log.path, "SHEPHERD_AGENT_ID": original.agent.id.rawValue], runtime: .rpc), resuming: "stub-session")
+        try await host.server.updatePaneSession(tabID: original.agent.tabID, paneID: try #require(original.agent.paneID), sessionID: session.id)
+        return PiAgent(host: host, agent: original.agent, sessionID: session.id, log: log)
+    }
+
     @Test func recoveryBootstrapFinishesWhenOwnershipIsBoundAfterPiAlreadyServes() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -560,6 +570,153 @@ struct AgentRecoveryTests {
         #expect(try await restored.send("new authorized work", from: idle).failureCode == nil)
         #expect(try await restored.waitForStdin("prompt")["message"] as? String == "new authorized work")
         #expect(try Data(contentsOf: archived) == damaged, "A new checkpoint must not overwrite the quarantined work")
+    }
+
+    // MARK: A pi that stops on its own
+
+    private static let heldNotice = "The agent stopped unexpectedly, so the queue is waiting."
+
+    /// A working agent with "stay queued" behind its run, its status reported as pi's extension does.
+    private func workingWithAQueue(_ h: ScratchServer, _ pi: PiAgent, _ status: ExtensionClient) async throws -> NativeThreadSnapshot {
+        let idle = try await pi.ready()
+        _ = try await pi.send("slow", from: idle)
+        let working = try await pi.snapshot { $0.running && !$0.provisional.isEmpty }
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try await eventually("working") { h.server.state.agents.first { $0.id == pi.agent.id }?.status == .working }
+        _ = try await pi.send("stay queued", from: working)
+        let live = try #require(try store(h).checkpoint(for: pi.agent.id))
+        #expect(live.active && live.items.first?.entry.text == "stay queued")
+        return idle
+    }
+
+    /// The exact pid of the agent's own pi, read where the server keeps it.
+    private func piPID(_ h: ScratchServer, _ pi: PiAgent) async throws -> pid_t {
+        try await h.server.enqueue { try #require(h.server.rpcThread(forAgent: pi.agent.id)).session.processIdentifier }
+    }
+
+    private func expectHeld(_ saved: AgentRecoveryStore.Checkpoint?, sessionID: String, items: [String]) {
+        #expect(saved?.sessionID == sessionID)
+        #expect(saved?.active == false && saved?.paused == true && saved?.heldAfterExit == true)
+        #expect(saved?.operationID == nil && saved?.token == nil && saved?.fence == nil)
+        #expect(saved?.items.map(\.entry.text) == items)
+    }
+
+    /// pi killed from outside mid-turn: the agent stays, idle, with its queue held paused. Nothing
+    /// restarts pi or continues the turn (not at the next launch either), and Retry brings the
+    /// same conversation back with the queue waiting.
+    @Test func aPiThatStopsOnItsOwnHoldsItsQueuePausedForRetry() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        defer { status.closeConnection() }
+        let idle = try await workingWithAQueue(h, pi, status)
+        #expect(await h.server.agentsNeedingStartupRecovery() == [pi.agent.id], "the live checkpoint would continue the turn")
+
+        let pid = try await piPID(h, pi)
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the exit") { callbacks.exited(pi.sessionID) }
+        let exit = try #require(callbacks.sessionExits.current[pi.sessionID])
+        #expect(exit.keepsAgent && exit.code == nil)
+        #expect(exit.startProblem?.kind == .stopped && exit.startProblem?.signal == 9 && exit.startProblem?.exitCode == nil)
+        try await eventually("the agent to read idle") { h.server.state.agents.first { $0.id == pi.agent.id }?.status == .idle }
+        #expect(h.server.state.agents.contains { $0.id == pi.agent.id })
+        #expect(await h.server.agentsNeedingStartupRecovery().isEmpty)
+        expectHeld(try store(h).checkpoint(for: pi.agent.id), sessionID: idle.piSessionID, items: ["stay queued"])
+        try await eventually("no recovery write in flight") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        expectHeld(try store(h).checkpoint(for: pi.agent.id), sessionID: idle.piSessionID, items: ["stay queued"])
+
+        // Retry, as the app does: it retires the dead session, then binds the pi it starts.
+        await h.server.retireSession(sessionID: pi.sessionID)
+        await h.server.retryStart(sessionID: pi.sessionID)
+        let retried = try await resumeAfterRetry(pi, on: h)
+        let back = try await retried.snapshot("the queue to come back") { $0.queue?.items.isEmpty == false }
+        #expect(back.startProblem == nil && back.piSessionID == idle.piSessionID)
+        #expect(back.queue?.paused == true && back.queue?.items.map(\.text) == ["stay queued"])
+        #expect(back.queue?.notice == Self.heldNotice)
+        #expect(!back.running)
+        #expect(retried.stdin("prompt").isEmpty && retried.stdin("resume_session").isEmpty, "the turn is not continued, nor the queue sent")
+        #expect(await h.server.agentsNeedingStartupRecovery().isEmpty)
+    }
+
+    /// The held checkpoint outlives the app: the next launch starts the thread like any other and
+    /// continues nothing.
+    @Test func aHeldCheckpointContinuesNothingAtTheNextLaunch() async throws {
+        let h = try ScratchServer.fresh()
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        defer { status.closeConnection() }
+        let idle = try await workingWithAQueue(h, pi, status)
+        let pid = try await piPID(h, pi)
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the exit") { callbacks.exited(pi.sessionID) }
+        try await eventually("no recovery write in flight") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        h.stop(keepFiles: true)
+        expectHeld(try store(h).checkpoint(for: pi.agent.id), sessionID: idle.piSessionID, items: ["stay queued"])
+
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        #expect(await restarted.server.agentsNeedingStartupRecovery().isEmpty)
+        let restored = try await resume(pi, on: restarted)
+        let back = try await restored.snapshot("the queue to come back") { $0.queue?.items.isEmpty == false }
+        #expect(back.queue?.paused == true && back.queue?.notice == Self.heldNotice && !back.running)
+        #expect(restored.stdin("prompt").isEmpty && restored.stdin("resume_session").isEmpty)
+    }
+
+    /// A pi that served but stops before the saved work was restored (its history could not be read)
+    /// holds that saved checkpoint: the queue stays, paused, and the turn is not continued.
+    @Test func aPiThatStopsBeforeItsSavedWorkWasRestoredHoldsThatCheckpoint() async throws {
+        let h = try ScratchServer.fresh()
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        let idle = try await workingWithAQueue(h, pi, status)
+        status.closeConnection()
+        let saved = try #require(try store(h).checkpoint(for: pi.agent.id))
+        h.stop(keepFiles: true)
+
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        let callbacks = Callbacks(restarted.server)
+        let held = try await resume(pi, on: restarted, env: ["STUB_PI_HISTORY_FAILURE_GATE": h.dir.appendingPathComponent("never-ready").path])
+        _ = try await held.snapshot { $0.clips?.history == true }
+        try await restarted.server.enqueue {
+            let thread = try #require(restarted.server.rpcThread(forAgent: pi.agent.id))
+            #expect(thread.restoringRecovery && thread.recoveryAtLaunch == saved, "the saved work is not restored yet")
+        }
+
+        let pid = try await piPID(restarted, held)
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the exit") { callbacks.exited(held.sessionID) }
+        try await eventually("the held checkpoint") { try store(restarted).checkpoint(for: pi.agent.id)?.heldAfterExit == true }
+        expectHeld(try store(restarted).checkpoint(for: pi.agent.id), sessionID: idle.piSessionID, items: ["stay queued"])
+        #expect(await restarted.server.agentsNeedingStartupRecovery().isEmpty)
+        #expect(held.stdin("prompt").isEmpty && held.stdin("resume_session").isEmpty)
+    }
+
+    /// A send pi never answered fails when pi goes, which stages a recovery write; and a staged
+    /// write that lands after the exit is refused, then retried in place. None of it may put the
+    /// live checkpoint, still active, over the held one.
+    @Test func aRecoveryWriteInFlightAtTheExitNeverReplacesTheHeldCheckpoint() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        defer { status.closeConnection() }
+        let idle = try await workingWithAQueue(h, pi, status)
+        let queued = try await pi.snapshot { $0.queue?.items.count == 1 }
+        let steer = Task { try? await pi.send("hang", delivery: .steer, from: queued) }
+        try await eventually("the steer to reach pi") { pi.stdin().contains { $0["message"] as? String == "hang" } }
+
+        let pid = try await piPID(h, pi)
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("the exit") { callbacks.exited(pi.sessionID) }
+        _ = await steer.value
+        try await eventually("no recovery write in flight") { try await h.server.enqueue { h.server.recoveryWritesInFlight == 0 } }
+        expectHeld(try store(h).checkpoint(for: pi.agent.id), sessionID: idle.piSessionID, items: ["stay queued"])
+        #expect(await h.server.agentsNeedingStartupRecovery().isEmpty)
     }
 
     @Test func aCheckpointForAnotherConversationNeverRuns() async throws {

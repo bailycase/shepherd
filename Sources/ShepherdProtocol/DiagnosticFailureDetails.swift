@@ -51,7 +51,7 @@ public struct DiagnosticFailureDetails: Equatable, Sendable {
         case .engineMissing: startupStage = .launch
         case .notSignedIn, .extensionFailed: startupStage = .initialization
         case .resumedAsNew: startupStage = .resume
-        case .exited: startupStage = .unknown
+        case .exited, .stopped: startupStage = .unknown
         }
     }
 

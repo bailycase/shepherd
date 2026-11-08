@@ -11,8 +11,14 @@ extension NativeStartProblem {
         case .homeUnsafe: "Shepherd won't start pi here."
         case .resumedAsNew: "pi couldn't find this conversation."
         case .folderMissing: "This thread's folder is missing."
-        case .exited: "pi exited while starting (\(exitCode.map { "code \($0)" } ?? "signal"))."
+        case .exited: "pi exited while starting (\(ended ?? "signal"))."
+        case .stopped: "The agent stopped unexpectedly" + (ended.map { " (\($0))" } ?? "") + "."
         }
+    }
+
+    /// How pi ended, when it says: "code 1", or "signal 9".
+    private var ended: String? {
+        exitCode.map { "code \($0)" } ?? signal.map { "signal \($0)" }
     }
 
     /// What to do about it, then Retry: on this Mac, or on `host`, where a remote viewer's agent
@@ -31,6 +37,7 @@ extension NativeStartProblem {
             "It was moved, renamed or deleted. Locate Folder… moves this thread and its conversation to where it is now"
                 + (host.map { ", on \($0)." } ?? ".")
         case .exited: host.map { "Retry on \($0) to start it again." } ?? "Retry to start it again."
+        case .stopped: (host.map { "Retry on \($0) to start it again." } ?? "Retry to start it again.") + " Its conversation is saved."
         }
     }
 
