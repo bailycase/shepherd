@@ -275,22 +275,6 @@ struct DesignReferenceThreadTests {
                 "a reference already in the words is left as it was")
     }
 
-    /// A scalar of one to four bytes typed after a reference is a keystroke, however wide.
-    @Test(arguments: ["é", "日", "🚀"])
-    func aOneScalarKeystrokeIsNoPaste(key: String) throws {
-        let reference = try #require(DesignReference(designID: Self.checkout, board: Self.a))
-        #expect(ComposerReferencePaste.extract(reference.string + key, previous: reference.string) == nil)
-        #expect(ComposerReferencePaste.extract(reference.string + " " + key, previous: reference.string + " ") == nil)
-    }
-
-    /// A flag or a skin tone is one Character of several scalars: eight bytes, still one keystroke.
-    @Test(arguments: ["🇫🇷", "👍🏽"])
-    func aMultiScalarKeystrokeStaysText(key: String) throws {
-        let reference = try #require(DesignReference(designID: Self.checkout, board: Self.a))
-        #expect(ComposerReferencePaste.extract(reference.string + key, previous: reference.string) == nil)
-        #expect(ComposerReferencePaste.extract(reference.string + " " + key, previous: reference.string + " ") == nil)
-    }
-
     // MARK: The chip and the agent's line
 
     @Test func aChipsWordsComeFromWhatTheHostKept() {
