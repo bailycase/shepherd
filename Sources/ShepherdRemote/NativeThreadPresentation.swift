@@ -812,3 +812,138 @@ public struct NativeScrollProbe: Equatable, Sendable {
         content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop
     }
 }
+
+/// Decides whether landing a stuck thread on its tail again still helps. The follower says the view
+/// belongs at its tail, but a lazy stack that keeps re-estimating answers every landing with a new
+/// layout, and the iPhone Duo's main thread spun in one Core Animation commit for minutes
+/// (ios-duo-1). A landing that leaves the tail no nearer than the one before is a miss and `limit`
+/// misses stop the landings, except for changes that move the viewport (`resized`: the width, the
+/// composer, the keyboard, the side pane's animation) and for output, which are followed for as long
+/// as they last; the reader, a send or a tail at rest start them again.
+///
+/// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:)`,
+/// `quietPassed`), then call `take()` once to learn whether to land.
+public struct NativeTailRepin: Equatable, Sendable {
+    /// Misses that stop the landings.
+    public static let limit = 4
+    /// Landings in a row with no output, rest, ask or gesture between them; resizes count.
+    public static let maxRun = 90
+    /// How long a stalled tail is left alone before it gets one try, doubling per try up to `maxQuiet`.
+    public static let quiet: Duration = .milliseconds(100)
+    public static let maxQuiet: Duration = .seconds(3)
+    public static let maxQuietTries = 5
+
+    /// The landings stopped; output, the reader, a send, a rest or the quiet's tries start them again.
+    public private(set) var stalled = false
+    /// Landings that left the tail no nearer, since it last rested.
+    public private(set) var misses = 0
+    /// A landing is wanted and has not happened: the follower asked, and nothing since has said otherwise.
+    public private(set) var pending = false
+    /// How long without a reading before a stalled tail gets its next try.
+    public private(set) var quietWait: Duration = NativeTailRepin.quiet
+    /// Tries the quiet has given since the stall.
+    public private(set) var quietTries = 0
+
+    private var run = 0
+    /// The last reading's distance from the tail, and whether one came since the last landing.
+    private var gap: Double?
+    private var fresh = false
+    /// Where the previous landing set out from, to tell whether it helped.
+    private var setOut: Double?
+    private var scrolling = false
+    private var turnResized = false
+    private var turnOutput = false
+    private var turnAsked = false
+    private var turnQuiet = false
+
+    public init() {}
+
+    /// A scroll-geometry reading. `wants` is the follower's answer; `resized` says the viewport
+    /// itself changed since the reading before. A reading on the tail ends the chase.
+    public mutating func reading(distance: Double, wants: Bool, resized: Bool) {
+        let gap = abs(distance)
+        self.gap = gap
+        fresh = true
+        if resized { turnResized = true }
+        if gap <= NativeScrollFollower.repinSlack {
+            rest()
+        } else if wants {
+            pending = true
+        }
+    }
+
+    /// Output reached the tail: this turn's landing is never a miss, the run starts over, and a
+    /// stalled tail gets this turn's try.
+    public mutating func outputArrived() {
+        turnOutput = true
+        run = 0
+    }
+
+    /// The reader asked for the tail (a send, their turn arriving, the jump pill): land on the next
+    /// turn, whatever the gap, with a fresh budget.
+    public mutating func asked() {
+        turnAsked = true
+    }
+
+    /// The reader's scroll started or ended. No landing while it moves, so a flick is never pulled
+    /// back and a finger is not fought; the request stays, and the end gives a fresh budget.
+    public mutating func reader(scrolling: Bool) {
+        guard scrolling != self.scrolling else { return }
+        self.scrolling = scrolling
+        if !scrolling { freshBudget() }
+    }
+
+    /// A stalled tail saw no reading for `quietWait`: it gets one try, and the wait doubles.
+    public mutating func quietPassed() {
+        guard stalled, quietTries < Self.maxQuietTries else { return }
+        quietTries += 1
+        quietWait = min(quietWait * 2, Self.maxQuiet)
+        turnQuiet = true
+    }
+
+    /// Whether to land now. Call it once per run-loop turn, after the turn's events.
+    public mutating func take() -> Bool {
+        if scrolling { return false }
+        let resized = turnResized, output = turnOutput, asked = turnAsked, quiet = turnQuiet
+        let measured = fresh
+        turnResized = false
+        turnOutput = false
+        turnAsked = false
+        turnQuiet = false
+        fresh = false
+        if asked {
+            freshBudget()
+            return landing(measured)
+        }
+        guard pending else { return false }
+        if let gap, gap <= NativeScrollFollower.repinSlack {
+            rest()
+            return false
+        }
+        if !stalled, measured, let setOut, let gap, !output, !resized, gap >= setOut { misses += 1 }
+        if misses >= Self.limit || run >= Self.maxRun { stalled = true }
+        if stalled, !output, !quiet { return false }
+        if !output { run += 1 }
+        return landing(measured)
+    }
+
+    private mutating func landing(_ measured: Bool) -> Bool {
+        pending = false
+        if measured { setOut = gap }
+        return true
+    }
+
+    private mutating func freshBudget() {
+        stalled = false
+        misses = 0
+        run = 0
+        quietTries = 0
+        quietWait = Self.quiet
+        setOut = nil
+    }
+
+    private mutating func rest() {
+        freshBudget()
+        pending = false
+    }
+}
