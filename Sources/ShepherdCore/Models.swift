@@ -212,7 +212,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     public var serviceTier: ServiceTier
     /// Live goal projection for sidebar badges. The durable record belongs to the pi session.
     public var goalState: String?
-    /// Why the agent's last run ended badly: the failed turn's error, or why pi couldn't start.
+    /// Why the agent's last run ended badly: the failed turn's error, why pi couldn't start, or why it stopped.
     /// Set by the host and kept in state.json (unlike `status`, which a relaunch resets to idle),
     /// so a relaunch can still show the row as failed. Cleared when pi next serves the thread or a
     /// turn starts or ends well. Nil from older state files and hosts.

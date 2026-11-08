@@ -609,7 +609,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var retry: NativeThreadRetry?
     /// Exact engine checkpoint or an explicit refusal. Absent on unsupported engines/hosts.
     public var checkpointRecovery: NativeCheckpointRecovery?
-    /// The agent's pi stopped before it served this thread, and why. The host keeps the agent and answers with only this until pi starts again: no
+    /// The agent's pi stopped, before it served this thread or on its own after, and why. The host keeps the agent and answers with only this until pi starts again: no
     /// history, no actions. nil otherwise, and from older hosts.
     public var startProblem: NativeStartProblem?
     /// The agent's service tier, "standard" or "fast" (`ServiceTier`'s raw values; a tier this
