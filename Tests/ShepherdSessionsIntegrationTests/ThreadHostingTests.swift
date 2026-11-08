@@ -53,6 +53,42 @@ struct ThreadHostingTests {
         #expect(!h.server.state.agents.contains { $0.id == id })
     }
 
+    /// An agent's agent_* tools on the background host: list its peers, spawn one, delete one.
+    /// Before the host served peers they all answered `agent peers unavailable (unsupported)`.
+    @Test func anAgentListsSpawnsAndDeletesPeersOnTheHost() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        try await h.server.addSpace(space)
+        var agents: [Agent] = []
+        for name in ["lead", "worker"] {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: agents.count, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+            try await h.server.addAgent(agent, withTab: tab)
+            agents.append(agent)
+        }
+        let (lead, worker) = (agents[0], agents[1])
+        let caller = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+
+        try caller.send(.listAgents(id: 1, agentID: lead.id))
+        guard case .agents(1, let peers) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        #expect(Set(peers.map(\.id)) == [lead.id, worker.id] && peers.first { $0.isSelf }?.id == lead.id)
+
+        try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build"))
+        guard case .agents(2, let spawned) = try await caller.reply(), let id = spawned.first?.id else {
+            Issue.record("agent_spawn not served"); return
+        }
+        #expect(h.server.state.agents.first { $0.id == id }?.spaceID == space.id)
+        try await eventuallyOnMain("the spawned pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
+
+        try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
+        guard case .agentResult(3, let result) = try await caller.reply(), result.code == nil else { Issue.record("agent_delete not served"); return }
+        #expect(!h.server.state.agents.contains { $0.id == worker.id })
+    }
+
     @Test func theAppMovesADormantThreadToAnotherSpaceAndItStaysDormant() async throws {
         try StubPi.installAsEngine()
         let (h, path, token) = try host()
