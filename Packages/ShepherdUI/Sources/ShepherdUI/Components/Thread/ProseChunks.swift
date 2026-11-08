@@ -14,23 +14,27 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
     let elements: [Element]
     let id: KeyPath<Element, ID>
     let continuesList: KeyPath<Element, Bool>
-    let lazyPrefix: Bool
+    let eagerTail: Int
     let content: (Element) -> Content
 
-    /// `lazyPrefix` false lays every chunk out for real: for a host whose own scroll view has not been
-    /// shown to place a lazy stack nested in its lazy rows (iOS's transcript: its bottom anchor drew a
-    /// long reply blank on iOS 27.0, and its row-id anchor can move text when a chunk is built).
-    public init(_ elements: [Element], id: KeyPath<Element, ID>, continuesList: KeyPath<Element, Bool>, lazyPrefix: Bool = true,
+    /// `eagerTail` is how many chunks at the end are laid out for real; the ones before them are
+    /// lazy. The default lays every chunk out, as one view would. A lazy stack nested in a host's own
+    /// lazy rows estimates the height of the chunks it has not built, and a reader scrolling up
+    /// through them sees the text move under them when it corrects: so a host asks for it only where
+    /// the chunks are too many to build at once, and where its scroll view has been shown to place
+    /// one (iOS's transcript has not: its bottom anchor drew a long reply blank on iOS 27.0, and its
+    /// row-id anchor can move text when a chunk is built).
+    public init(_ elements: [Element], id: KeyPath<Element, ID>, continuesList: KeyPath<Element, Bool>, eagerTail: Int = .max,
                 content: @escaping (Element) -> Content) {
         self.elements = elements
         self.id = id
         self.continuesList = continuesList
-        self.lazyPrefix = lazyPrefix
+        self.eagerTail = eagerTail
         self.content = content
     }
 
     public var body: some View {
-        let split = lazyPrefix ? max(0, elements.count - Self.eagerTail) : 0
+        let split = max(0, elements.count - max(1, eagerTail))
         VStack(alignment: .leading, spacing: 0) {
             if split > 0 {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -44,9 +48,6 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
             }
         }
     }
-
-    /// The chunks at the end that are laid out for real.
-    static var eagerTail: Int { 2 }
 
     private func gap(_ element: Element) -> CGFloat {
         guard let first = elements.first, element[keyPath: id] != first[keyPath: id] else { return 0 }

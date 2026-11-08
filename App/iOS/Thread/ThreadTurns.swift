@@ -264,16 +264,16 @@ struct ProseView: View, Equatable {
 
     var body: some View {
         let last = prose.chunks.last?.id
-        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList, lazyPrefix: Self.lazyChunks) { chunk in
+        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList, eagerTail: Self.lazyChunks ? prose.eagerTail : .max) { chunk in
             ProseChunkView(chunk: chunk, writingFence: writingFence && chunk.id == last).equatable()
         }
         .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
     }
 
-    /// Every chunk is laid out for real on iOS: the transcript anchors on row ids and the subagent run opens at its tail
-    /// under a native bottom anchor, and a lazy stack nested in those lazy rows (whose height they estimate) drew a reply
-    /// blank on iOS 27.0. Laziness for iOS 27.1 and later waits on the scroll-up check on the iPhone and the iPad there,
-    /// at light and dark, in the thread and in a subagent run.
+    /// Every chunk is laid out for real on iOS, a giant reply's too (`NativeProse.eagerTail`): the transcript anchors on
+    /// row ids and the subagent run opens at its tail under a native bottom anchor, and a lazy stack nested in those lazy
+    /// rows (whose height they estimate) drew a reply blank on iOS 27.0. Laziness for iOS 27.1 and later waits on the
+    /// scroll-up check on the iPhone and the iPad there, at light and dark, in the thread and in a subagent run.
     static let lazyChunks = false
 
     static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [SHProseBlock] {

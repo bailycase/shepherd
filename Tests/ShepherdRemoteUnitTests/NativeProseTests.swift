@@ -205,4 +205,54 @@ struct NativeProseTests {
         #expect(details.proseWeight == 3 + 256, "collapsed content is not drawn")
         #expect(NativeMarkdownBlock.footnotes([NativeMarkdownFootnote(number: 1, text: "note")]).proseWeight == 4)
     }
+    @Test func textBytesCountTheTextAloneWhateverTheFloors() {
+        let table = NativeMarkdownTable(alignments: [.none, .none], header: ["a", "b"], rows: [["1", "2"], ["3", "4"]], source: "| a | b |")
+        let blocks: [NativeMarkdownBlock] = [
+            .paragraph("abc"), .code("xy", language: nil), .table(table), .image(alt: "a", source: "b.png"),
+            .details(summary: "Log", blocks: [.paragraph(String(repeating: "x", count: 10_000))]),
+            Self.list(2, bytes: 4), .quote([.paragraph("q")]),
+        ]
+        let prose = NativeProse(blocks)
+        #expect(prose.textBytes == 3 + 2 + 6 + 6 + 3 + 2 * 5 + 1)
+        #expect(prose.chunks.reduce(0) { $0 + $1.weight } > 3 * 1024, "the weights keep their floors")
+        #expect(NativeProse.empty.textBytes == 0)
+    }
+
+    /// 40 code fences of 100 bytes make three chunks and weigh 40 KB with their floors, and hold 4 KB of text.
+    @Test func aReplyIsGiantByItsTextNotByItsWeight() {
+        let fences = NativeProse(Array(repeating: .code(String(repeating: "x", count: 100), language: "swift"), count: 40))
+        #expect(fences.chunks.count == 3 && fences.textBytes == 4000)
+        #expect(!fences.isGiant && fences.eagerTail == 3, "the floors make chunks, not a reason to estimate any")
+
+        func paragraphs(bytes: Int) -> NativeProse { NativeProse(Array(repeating: .paragraph(String(repeating: "x", count: 1024)), count: bytes / 1024)) }
+        let just = paragraphs(bytes: NativeProse.Limits.giantBytes - 1024)
+        #expect(!just.isGiant && just.eagerTail == just.chunks.count)
+        let giant = paragraphs(bytes: NativeProse.Limits.giantBytes)
+        #expect(giant.isGiant && giant.eagerTail < giant.chunks.count)
+    }
+
+    @Test func aGiantRepliesTailIsItsLastChunkAndTheClosedChunksBeforeItUntilTheyWeighEnough() {
+        // Two 8 KB paragraphs make a chunk (16 KB closes it): 25 of them are 13 chunks.
+        let paragraph = NativeMarkdownBlock.paragraph(String(repeating: "x", count: 8 * 1024))
+        var blocks = Array(repeating: paragraph, count: 25)
+        let long = NativeProse(blocks)
+        #expect(long.isGiant && long.chunks.count == 13)
+        // The last chunk, then closed ones until they weigh the limit: two of 16 KB.
+        #expect(long.eagerTail == 3)
+
+        // The count holds as the last chunk grows and as a new one opens: the chunk that moves into
+        // the lazy stack is the one that fell off the end, never one that a growing last chunk takes.
+        for _ in 0..<6 {
+            blocks.append(paragraph)
+            #expect(NativeProse(blocks).eagerTail == 3)
+        }
+
+        // Short chunks (wide tables are a few hundred points each) are laid out for the same weight.
+        let cell = String(repeating: "c", count: 40)
+        let wide = NativeMarkdownTable(alignments: Array(repeating: .none, count: 8), header: Array(repeating: cell, count: 8),
+                                       rows: Array(repeating: Array(repeating: cell, count: 8), count: 2), source: "")
+        let tables = NativeProse(Array(repeating: .table(wide), count: 400))
+        #expect(tables.isGiant && tables.chunks.dropLast().allSatisfy { $0.parts.count == 3 })
+        #expect(tables.eagerTail == 3)
+    }
 }

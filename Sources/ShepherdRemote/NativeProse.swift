@@ -2,8 +2,9 @@ import Foundation
 
 // MARK: Prose chunks
 
-/// A reply's parsed blocks, grouped into chunks with stable identity, so a view builds only the
-/// chunks in view plus the last one, and a parse that lands leaves unchanged chunks as they were.
+/// A reply's parsed blocks, grouped into chunks with stable identity, so a parse that lands leaves
+/// unchanged chunks as they were, and a view of a giant reply builds only the chunks in view plus
+/// its tail (`eagerTail`).
 ///
 /// A chunk holds at most `Limits.parts` parts and about `Limits.weight` bytes. A part is one
 /// top-level block; a long list is cut into stretches (parts of its own that keep its numbering),
@@ -17,6 +18,12 @@ public struct NativeProse: Equatable, Sendable {
         public static let weight = 16 * 1024
         /// Items in one stretch of a list.
         public static let listItems = 32
+        /// Bytes of text from which a reply is giant (`isGiant`): 128 KB, a few dozen screens. Below it a view
+        /// lays every chunk out, as it did before chunks. The weights are no gauge of this: a fence and a
+        /// table cell weigh a floor, so a 25 KB reply of code and tables weighs 140 KB and makes nine chunks.
+        public static let giantBytes = 128 * 1024
+        /// Weight the chunks before the last must reach to be laid out for real beside it (`eagerTail`).
+        public static let eagerWeight = 32 * 1024
     }
 
     public let chunks: [NativeProseChunk]
@@ -24,10 +31,34 @@ public struct NativeProse: Equatable, Sendable {
     public let endsInOpenFence: Bool
     /// Top-level blocks, whatever stretches the lists were cut into.
     public let blockCount: Int
+    /// The bytes of text the blocks draw, with no floors (`NativeMarkdownBlock.proseBytes`).
+    public let textBytes: Int
 
     public static let empty = NativeProse([], endsInOpenFence: false)
 
     public var isEmpty: Bool { chunks.isEmpty }
+
+    /// Long enough that a view builds only the chunks in view (`Limits.giantBytes`): what a nested lazy
+    /// stack's height estimates cost a reader (a scroll up through it moves the text under them) is
+    /// paid only by a reply whose every chunk built at once would cost more.
+    public var isGiant: Bool { textBytes >= Limits.giantBytes }
+
+    /// How many chunks at the end a view lays out for real. All of them for a reply that is not giant.
+    /// For a giant one, the last chunk and the closed chunks before it until they weigh `Limits.eagerWeight`,
+    /// so the end of the reply, where a stream grows and the thread follows it, is never an estimate even
+    /// when the chunks are short (a run of wide tables is a few hundred points a chunk). The last chunk
+    /// does not count: it grows, and a count that followed it would hand a chunk to the lazy stack
+    /// each time it filled.
+    public var eagerTail: Int {
+        guard isGiant else { return chunks.count }
+        var count = 1, weight = 0
+        for chunk in chunks.dropLast().reversed() {
+            guard weight < Limits.eagerWeight else { break }
+            weight += chunk.weight
+            count += 1
+        }
+        return count
+    }
 
     /// The blocks as parsed: parts in order, the stretches of one list rejoined into it.
     public var blocks: [NativeMarkdownBlock] {
@@ -82,6 +113,7 @@ public struct NativeProse: Equatable, Sendable {
         self.chunks = chunks
         self.endsInOpenFence = endsInOpenFence
         self.blockCount = blocks.count
+        self.textBytes = blocks.reduce(0) { $0 + $1.proseBytes }
     }
 
     public init(_ parsed: (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool), reusing previous: NativeProse? = nil) {
@@ -180,19 +212,26 @@ extension NativeMarkdownBlock {
     /// What a block costs to build and keep, in UTF-8 bytes. A fence, a table cell and an image
     /// weigh at least a floor (a view and a renderer cost more than their text), and a closed
     /// `<details>` weighs its summary alone: its content is not drawn.
-    var proseWeight: Int {
+    var proseWeight: Int { proseSize(floored: true) }
+
+    /// The UTF-8 bytes of the text a block draws, with no floors.
+    var proseBytes: Int { proseSize(floored: false) }
+
+    fileprivate func proseSize(floored: Bool) -> Int {
+        func atLeast(_ floor: Int, _ bytes: Int) -> Int { floored ? max(floor, bytes) : bytes }
         switch self {
-        case .heading(_, let text), .paragraph(let text): text.utf8.count
-        case .list(_, _, let items): items.reduce(0) { $0 + $1.proseWeight }
-        case .quote(let inner): inner.reduce(0) { $0 + $1.proseWeight }
-        case .code(let text, _): max(Self.codeFloor, text.utf8.count)
-        case .rule: 0
+        case .heading(_, let text), .paragraph(let text): return text.utf8.count
+        case .list(_, _, let items): return items.reduce(0) { $0 + $1.proseSize(floored: floored) }
+        case .quote(let inner): return inner.reduce(0) { $0 + $1.proseSize(floored: floored) }
+        case .code(let text, _): return atLeast(Self.codeFloor, text.utf8.count)
+        case .rule: return 0
         case .table(let table):
-            max(Self.tableCellFloor * (table.header.count + table.rows.reduce(0) { $0 + $1.count }),
-                table.header.reduce(0) { $0 + $1.utf8.count } + table.rows.reduce(0) { $0 + $1.reduce(0) { $0 + $1.utf8.count } })
-        case .image(let alt, let source): max(Self.imageFloor, alt.utf8.count + source.utf8.count)
-        case .details(let summary, _): summary.utf8.count + Self.detailsFloor
-        case .footnotes(let notes): notes.reduce(0) { $0 + $1.text.utf8.count }
+            let cells = table.header.count + table.rows.reduce(0) { $0 + $1.count }
+            let bytes = table.header.reduce(0) { $0 + $1.utf8.count } + table.rows.reduce(0) { $0 + $1.reduce(0) { $0 + $1.utf8.count } }
+            return floored ? max(Self.tableCellFloor * cells, bytes) : bytes
+        case .image(let alt, let source): return atLeast(Self.imageFloor, alt.utf8.count + source.utf8.count)
+        case .details(let summary, _): return summary.utf8.count + (floored ? Self.detailsFloor : 0)
+        case .footnotes(let notes): return notes.reduce(0) { $0 + $1.text.utf8.count }
         }
     }
 
@@ -203,7 +242,11 @@ extension NativeMarkdownBlock {
 }
 
 extension NativeMarkdownListItem {
-    var proseWeight: Int { text.utf8.count + children.reduce(0) { $0 + $1.proseWeight } }
+    var proseWeight: Int { proseSize(floored: true) }
+
+    fileprivate func proseSize(floored: Bool) -> Int {
+        text.utf8.count + children.reduce(0) { $0 + $1.proseSize(floored: floored) }
+    }
 }
 
 private extension Array {

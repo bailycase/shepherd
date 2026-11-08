@@ -19,7 +19,9 @@ extension SHProseFileLinks {
 
 /// Agent prose: the turn's parsed Markdown drawn a chunk at a time (`SHProseChunks`), each by
 /// `SHAgentProse` with fenced code highlighted. Blocks are parsed and chunked once per turn
-/// (`NativeTurnPresentation`); inline runs are styled once per text (`SHProseInline`).
+/// (`NativeTurnPresentation`); inline runs are styled once per text (`SHProseInline`). Every chunk
+/// is laid out unless the reply is giant (`NativeProse.isGiant`): then only its tail is, and the
+/// chunks before it are built as they scroll into view.
 struct Prose: View, Equatable {
     let prose: NativeProse
     var maxWidth: CGFloat = AppLayout.proseMaxWidth
@@ -49,7 +51,7 @@ struct Prose: View, Equatable {
 
     var body: some View {
         let last = prose.chunks.last?.id
-        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList) { chunk in
+        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList, eagerTail: prose.eagerTail) { chunk in
             ProseChunk(chunk: chunk, maxWidth: maxWidth, writingFence: writingFence && chunk.id == last).equatable()
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
