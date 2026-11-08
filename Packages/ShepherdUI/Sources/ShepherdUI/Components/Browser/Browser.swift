@@ -484,6 +484,29 @@ public struct SHViewportMenu: View {
 
 // MARK: Picked element
 
+public enum BrowserPopoverPlacement {
+    /// Where a picked element's popover goes in the page area (points): beside the element's
+    /// right edge, else its left, else under it, kept inside the area. `rect` is in CSS pixels,
+    /// `origin` and `zoom` place the page in the area.
+    public static func origin(for rect: CGRect, pageOrigin: CGPoint, zoom: CGFloat, popover: CGSize, area: CGSize, gap: CGFloat) -> CGPoint {
+        let element = CGRect(x: pageOrigin.x + rect.minX * zoom, y: pageOrigin.y + rect.minY * zoom,
+                             width: rect.width * zoom, height: rect.height * zoom)
+        var x = element.maxX + gap
+        var y = element.minY
+        if x + popover.width > area.width {
+            x = element.minX - gap - popover.width
+            if x < 0 {
+                x = element.minX
+                y = element.maxY + gap
+            }
+        }
+        x = min(max(gap, x), max(gap, area.width - popover.width - gap))
+        y = min(max(gap, y), max(gap, area.height - popover.height - gap))
+        return CGPoint(x: x, y: y)
+    }
+}
+
+
 /// A picked element's popover (PaneBrowser): 188pt, padding 8, radius 12, the popover's fill and
 /// shadow. The source location only when the page gave one, then Add to message (primary `s`)
 /// and Copy selector (ghost `s`).

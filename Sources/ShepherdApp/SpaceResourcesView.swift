@@ -33,18 +33,27 @@ extension ProjectResource.Kind {
 struct SpaceResourcesView: View {
     @Bindable var model: SpaceResourcesModel
     let project: ProjectsRow
+    /// Opens the parent space (the banner's Open <parent>); nil when it isn't listed.
+    var openParent: (() -> Void)? = nil
 
     private var locked: Bool { project.unavailable != nil || !project.host.supportsResources || model.saving || model.loading || !model.loadedOnce }
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
+            // ProjectChildSkills: only skills inherit from the parent space.
+            if model.kind == .skill, let parent = model.parent {
+                SpaceInheritanceBanner(title: "Inherited from \(parent.name)", message: SpaceInheritanceBanner.childMessage(project.project.name),
+                                       open: openParent.map { ("Open \(parent.name)", $0) }, disabled: model.saving)
+            }
             // Departure: the boards draw no kind switcher inside the Resources tab. Subagents are hidden:
             // the runtime loads only Shepherd-owned profiles, so a space's would do nothing.
             SHSegmentedPicker("Resource kind", selection: $model.kind,
                               options: ProjectResource.Kind.allCases.filter { $0 != .agent }.map { ($0, $0.title) })
                 .shControlScale(.settings).fixedSize()
             HStack(alignment: .top, spacing: SH.Space.xl) {
-                SettingsHeader(title: model.kind.title, explanation: model.kind.subtitle(project.project.name))
+                SettingsHeader(title: model.kind.title, explanation: model.kind == .skill && model.parent != nil
+                               ? "Inherited resources from \(model.parent!.name) stay read-only. Overrides change only \(project.project.name)."
+                               : model.kind.subtitle(project.project.name))
                 Spacer(minLength: 0)
                 if model.kind == .skill {
                     Button("Add from repo") { model.install = .init() }.buttonStyle(.sh(.secondary, size: .l)).disabled(locked)
@@ -160,15 +169,23 @@ private struct SpaceResourceRow: View {
                         Text(row.detail).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
                     }.lineLimit(1).truncationMode(.tail)
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                Text(item.global ? "Global" : "This space").font(.shSans(SHTextStyle.micro.size))
-                    .foregroundStyle(item.global ? Color.sh.textSecondary : Color.sh.running)
-                    .padding(.horizontal, SH.Space.s).padding(.vertical, SH.Space.xxs)
-                    .background(item.global ? Color.sh.bgRaised : Color.sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-                    .frame(width: AppLayout.resourceFromWidth, alignment: .leading)
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    Text(row.inheritedFrom.map { "From \($0)" } ?? (item.global ? "Global" : "This space")).font(.shSans(SHTextStyle.micro.size))
+                        .foregroundStyle(row.local ? Color.sh.running : Color.sh.textSecondary)
+                        .padding(.horizontal, SH.Space.s).padding(.vertical, SH.Space.xxs)
+                        .background(row.local ? Color.sh.runningTint : Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                    if row.inheritedFrom != nil {
+                        Button("Override here") { Task { await model.overrideInherited(row) } }.buttonStyle(.sh(.ghost)).disabled(locked)
+                            .accessibilityLabel("Override \(item.name) in \(project)")
+                    } else if let parent = row.overrides {
+                        Button("Reset to inherited") { Task { await model.resetToInherited(row) } }.buttonStyle(.sh(.ghost)).disabled(locked)
+                            .accessibilityLabel("Reset \(item.name) to \(parent)’s")
+                    }
+                }.frame(width: AppLayout.resourceFromWidth, alignment: .leading)
                 HStack(spacing: SH.Space.m) {
                     Toggle("Enable \(item.name) in \(project)", isOn: Binding(get: { row.enabled }, set: toggle))
                         .toggleStyle(.shSwitch).labelsHidden().disabled(locked || !row.canToggle)
-                        .help(row.canToggle ? "" : "Global subagents are turned on or off in Settings ▸ Subagents.")
+                        .help(row.canToggle ? "" : row.inheritedFrom != nil ? "Update Shepherd on this space’s host to turn off inherited skills." : "Global subagents are turned on or off in Settings ▸ Subagents.")
                     Text(row.enabled ? "Enabled" : "Disabled").font(.sh(.caption))
                         .foregroundStyle(row.enabled ? Color.sh.textSecondary : Color.sh.textTertiary)
                 }.frame(width: AppLayout.resourceStatusWidth, alignment: .leading)
@@ -182,7 +199,7 @@ private struct SpaceResourceRow: View {
                 .background(hovered ? Color.sh.bgHover : .clear)
                 .onHover { hovered = $0 }
             if !last { SHHairline(color: Color.sh.lineSubtle) }
-        }.accessibilityElement(children: .contain).accessibilityLabel("\(row.displayName), \(item.global ? "global" : "this space"), \(row.enabled ? "enabled" : "disabled")")
+        }.accessibilityElement(children: .contain).accessibilityLabel("\(row.displayName), \(row.inheritedFrom.map { "from \($0)" } ?? (item.global ? "global" : "this space")), \(row.enabled ? "enabled" : "disabled")")
     }
 }
 

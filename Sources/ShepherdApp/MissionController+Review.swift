@@ -82,7 +82,13 @@ extension MissionController {
         guard staleValidation(mission, reviews: collected).isEmpty else { throw MissionError("mission_stale_evidence", "Content changed after validation. Revalidate the current files before review.") }
         let fingerprint = try reviewFingerprint(mission, reviews: collected)
         _ = try await server.updateMissionRun(id: id, runID: runID) { run in
-            for index in run.checkouts.indices { run.checkouts[index].fingerprint = collected.first { $0.spaceID == run.checkouts[index].spaceID }?.fingerprint }
+            for index in run.checkouts.indices {
+                let review = collected.first { $0.spaceID == run.checkouts[index].spaceID }
+                run.checkouts[index].fingerprint = review?.fingerprint
+                // The review push draws each repository's +/- (NotifPhoneReview).
+                run.checkouts[index].added = review?.files.reduce(0) { $0 + $1.addedCount }
+                run.checkouts[index].removed = review?.files.reduce(0) { $0 + $1.removedCount }
+            }
             run.reviewFingerprint = fingerprint
             run.transition(to: .review, at: Self.now, notice: "Validation finished. Review the actual changes, then approve publication. No branch has been pushed.")
         }

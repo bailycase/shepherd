@@ -60,6 +60,8 @@ public struct MissionDraft: Codable, Hashable, Sendable {
     /// References supplied or discovered during intake, never executable instructions.
     public var context: [String]
     public var plan: MissionPlan?
+    /// The template this mission started from (`MissionTemplate.id`), for the template's run count.
+    public var template: String?
     public var spaceIDs: [SpaceID] { plan?.lanes.map(\.spaceID) ?? [] }
     public var limits: MissionLimits { plan?.limits ?? MissionLimits() }
 

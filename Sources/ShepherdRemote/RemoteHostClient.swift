@@ -1168,6 +1168,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard !request.requiresResources || capabilities.contains(RemoteProtocol.projectResourcesCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage space resources.")
         }
+        guard !request.requiresInheritance || capabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills.")
+        }
         let reply = try await self.request { .projects(id: $0, request: request) }
         switch reply {
         case .projects(_, let result): return result

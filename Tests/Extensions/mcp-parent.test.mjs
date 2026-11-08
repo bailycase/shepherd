@@ -313,3 +313,42 @@ test("a server added mid-session is discoverable and callable in the next turn w
     assert.equal(echo.result.content[0].text, "echo: hot");
   });
 });
+
+const skill = (folder, name, description) => {
+  fs.mkdirSync(path.join(folder, name), { recursive: true });
+  fs.writeFileSync(path.join(folder, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n${description}\n`);
+};
+
+test("a subproject loads its parent's skills, its own of the same name winning, and nothing it turned off", { timeout: 120000 }, async (t) => {
+  const options = subproject();
+  const project = options.project;
+  options.project = (dir, work) => {
+    project(dir, work);
+    skill(path.join(work, ".pi/skills"), "ledger-review", "PARENT_LEDGER");
+    skill(path.join(work, ".shepherd/skills"), "release-notes", "PARENT_RELEASE");
+    skill(path.join(work, ".pi/skills"), "copy-check", "PARENT_COPY");
+    skill(path.join(web(work), ".pi/skills"), "copy-check", "CHILD_COPY");
+  };
+  const env = options.env;
+  options.env = (dir, work) => ({ ...env(dir, work), SHEPHERD_PARENT_EXCLUDE: JSON.stringify({ mcp: ["docs"], skills: ["release-notes"] }) });
+  await withPi(t, options, async (pi) => {
+    const commands = await pi.commands();
+    const described = (name) => commands.find((c) => c.name === `skill:${name}`)?.description;
+    assert.equal(described("ledger-review"), "PARENT_LEDGER");
+    assert.equal(described("copy-check"), "CHILD_COPY", "the subproject's own skill wins");
+    assert.equal(described("release-notes"), undefined, "a turned-off skill never loads");
+    await until("the parent's shared server to start", () => pi.spawned("shared"));
+    await sleep(1500);
+    assert.equal(pi.spawned("parent-docs"), false, "a turned-off server never starts");
+  });
+});
+
+test("an untrusted parent shares no skills", { timeout: 60000 }, async (t) => {
+  const options = subproject({ trusted: false });
+  const project = options.project;
+  options.project = (dir, work) => { project(dir, work); skill(path.join(work, ".pi/skills"), "ledger-review", "PARENT_LEDGER"); };
+  await withPi(t, options, async (pi) => {
+    const commands = await pi.commands();
+    assert.equal(commands.some((c) => c.name === "skill:ledger-review"), false);
+  });
+});

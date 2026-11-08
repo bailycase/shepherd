@@ -54,6 +54,17 @@ public struct MCPLaunch: Equatable {
         launch.environment["SHEPHERD_PARENT_PROJECT"] = parent
         return launch
     }
+
+    /// This launch with what the child space turns off of its parent's MCP servers and skills
+    /// (`SHEPHERD_PARENT_EXCLUDE`, read by `shepherd-mcp-parent.ts`). Only a launch that shares a
+    /// parent carries it.
+    public func excluding(_ excluded: SpaceInheritanceExclusions) -> MCPLaunch {
+        guard environment["SHEPHERD_PARENT_PROJECT"] != nil, !excluded.isEmpty,
+              let data = try? JSONEncoder().encode(excluded) else { return self }
+        var launch = self
+        launch.environment["SHEPHERD_PARENT_EXCLUDE"] = String(decoding: data, as: UTF8.self)
+        return launch
+    }
 }
 
 /// The per-agent pi status extension: bundled TypeScript source installed to

@@ -70,6 +70,12 @@ extension AppLayout {
 
     static let missionBudgetRefresh: TimeInterval = 1
 
+    // Templates (MXTemplates, MXTemplateSave)
+    static let missionTemplateColumns: [SHTableColumns.Column] = [.flex(1.7), .flex(1.1), .fixed(64), .fixed(72), .fixed(80)]
+    static let missionTemplateInputColumns: [SHTableColumns.Column] = [.flex(1), .flex(0.8), .flex(1.4), .fixed(72)]
+    static let missionTemplateMapHeight: CGFloat = 470
+    static let missionTemplateSummary: CGFloat = 64
+
     // Path locks (MXLocks)
     static let missionLockColumns: [SHTableColumns.Column] = [.fixed(166), .flex(1.2), .flex(1.2), .flex(0.9)]
     static let missionLockQueueTitle: CGFloat = 270

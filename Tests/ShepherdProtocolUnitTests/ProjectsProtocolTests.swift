@@ -18,7 +18,9 @@ struct ProjectsProtocolTests {
                       .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old"),
                       .resources(directory: "/host/repo"), .delete(directory: "/host/repo", file: ".pi/prompts/review.md", expected: "old"),
                       .installSkills(directory: "/host/repo", repo: "acme/skills", paths: ["skills/pdf"], commit: nil),
-                      .installSkills(directory: "/host/repo", repo: "https://example.invalid/skills.git", paths: [], commit: "main")])
+                      .installSkills(directory: "/host/repo", repo: "https://example.invalid/skills.git", paths: [], commit: "main"),
+                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(mcp: ["docs"], skills: ["ledger-review"])),
+                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions())])
     func eachRequestRoundTrips(_ request: RemoteProjectsRequest) throws {
         let value = RemoteRequest.projects(id: 7, request: request)
         #expect(try NDJSON.decode(RemoteRequest.self, from: NDJSON.encode(value)) == value)
@@ -26,7 +28,7 @@ struct ProjectsProtocolTests {
 
     @Test(arguments: [RemoteProjectsResult.mcp(.init(id: UUID(), phase: .waiting, authorizationURL: "https://example.test/auth")),
                       .mcp(.init(signedIn: ["issues"])), .mcp(.init(phase: .failed, message: "Cancelled.")),
-                      RemoteProjectsResult.opened, .mcp(.init(projectTrusted: false)), .mcp(.init(projectTrusted: true)), .context(ProjectContext(files: [.init(path: "/a/AGENTS.md", displayPath: "~/a/AGENTS.md")], resources: 4, mcpServers: 1)), RemoteProjectsResult.listing(ProjectListing(projects: [], nextOffset: 64)),
+                      RemoteProjectsResult.opened, .mcp(.init(projectTrusted: false)), .mcp(.init(projectTrusted: true)), .context(ProjectContext(files: [.init(path: "/a/AGENTS.md", displayPath: "~/a/AGENTS.md")], resources: 4, mcpServers: 1)), .context(ProjectContext(inheritsFrom: "/a", excluded: SpaceInheritanceExclusions(mcp: ["docs"]))), RemoteProjectsResult.listing(ProjectListing(projects: [], nextOffset: 64)),
                       .listing(ProjectListing(projects: [ProjectSummary(directory: "/a", name: "a", displayPath: "~/a", summary: "AGENTS.md only", minimal: true)])),
                       .files([ProjectFile(path: "AGENTS.md", category: .instructions, exists: false)]),
                       .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: false), text: nil)),
@@ -37,6 +39,15 @@ struct ProjectsProtocolTests {
     func eachResultRoundTrips(_ result: RemoteProjectsResult) throws {
         let value = RemoteReply.projects(id: 9, result: result)
         #expect(try NDJSON.decode(RemoteReply.self, from: NDJSON.encode(value)) == value)
+    }
+
+    /// An older host's context has no inheritance fields, and a list without one of its keys turns nothing off.
+    @Test func inheritanceFieldsDecodeEmptyFromOlderPeers() throws {
+        let context = try JSONDecoder().decode(ProjectContext.self, from: Data(#"{"files":[],"resources":0,"mcpServers":0}"#.utf8))
+        #expect(context.inheritsFrom == nil && context.excluded == nil)
+        #expect(try JSONDecoder().decode(SpaceInheritanceExclusions.self, from: Data(#"{"mcp":["docs"]}"#.utf8)) == SpaceInheritanceExclusions(mcp: ["docs"]))
+        #expect(!RemoteProjectsRequest.context(directory: "/a").requiresInheritance)
+        #expect(RemoteProjectsRequest.inheritance(directory: "/a", excluded: .init()).requiresInheritance)
     }
 }
 

@@ -327,7 +327,7 @@ extension SessionServer {
     /// Server queue: push an alert about `agentID`. A mission's planner and stations stack under
     /// the mission's title, the kind line naming who asks (NotifPhoneStacks); any other thread
     /// stacks on its own under its name.
-    func sendPush(agentID: AgentID, kind: PushNotifications.Kind, preview: String?) {
+    func sendPush(agentID: AgentID, kind: PushNotifications.Kind, preview: String?, detail: PushDetail? = nil) {
         let line = switch kind {
         case .needsAnswer: "Question"
         case .error: "Turn failed"
@@ -337,14 +337,14 @@ extension SessionServer {
         guard let mission = store.state.missions.first(where: { $0.run?.attempts.contains { $0.agentID == agentID } == true }),
               let attempt = mission.run?.attempts.last(where: { $0.agentID == agentID }) else {
             pushNotifications.send(agentID: agentID, kind: kind, title: store.state.agents.first { $0.id == agentID }?.name,
-                                   preview: preview, subtitle: line)
+                                   preview: preview, subtitle: line, detail: detail)
             return
         }
         let station = attempt.stationID.flatMap { id in mission.draft.plan?.stations.first { $0.id == id } }
         pushNotifications.send(agentID: agentID, kind: kind, title: mission.draft.title, preview: preview,
                                group: "mission:\(mission.id.rawValue)",
                                subtitle: station.map { "\($0.title) · \(line)" } ?? "Planner \(line.lowercased())",
-                               missionID: mission.id.rawValue)
+                               missionID: mission.id.rawValue, detail: detail)
     }
 
     public func missionSteerOutcome(agentID: AgentID, operationID: UUID) async -> MissionSteerOutcome {
@@ -459,7 +459,7 @@ extension SessionServer {
               let planner = run.plannerID else { return }
         pushNotifications.send(agentID: planner, kind: .error, title: mission.draft.title, preview: run.notice,
                                group: "mission:\(mission.id.rawValue)", subtitle: "Blocked",
-                               topic: .blocked, missionID: mission.id.rawValue)
+                               topic: .blocked, missionID: mission.id.rawValue, detail: .blocked(mission))
     }
 
     /// Server queue: a mission that just reached review asks for approval on the phone, carrying
@@ -471,7 +471,8 @@ extension SessionServer {
         pushNotifications.send(agentID: planner, kind: .review, title: mission.draft.title,
             preview: count == 1 ? "1 pull request is ready to merge." : "\(count) pull requests merge in this order.",
             group: "mission:\(mission.id.rawValue)", subtitle: "Ready to review",
-            mission: .init(id: mission.id.rawValue, revision: mission.revision, fingerprint: fingerprint))
+            mission: .init(id: mission.id.rawValue, revision: mission.revision, fingerprint: fingerprint),
+            detail: .review(mission))
     }
 
     private func missionForMutation(_ id: MissionID, expectedRevision: UInt64) throws -> Mission {
