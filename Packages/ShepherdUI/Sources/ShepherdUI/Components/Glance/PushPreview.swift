@@ -133,7 +133,7 @@ public struct SHPushPreview: View {
         }
         if let read = detail?.read {
             VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Planner’s read").font(.shSans(SHPushPreviewMetrics.meta)).foregroundStyle(Color.sh.textTertiary)
+                Text("Why it paused").font(.shSans(SHPushPreviewMetrics.meta)).foregroundStyle(Color.sh.textTertiary)
                 Text(read).font(.shSans(SHPushPreviewMetrics.body)).foregroundStyle(Color.sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
