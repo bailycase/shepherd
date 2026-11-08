@@ -152,8 +152,9 @@ struct ThreadView: View {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
                     // The tail is laid out for real (`eagerRows`); only the history above it is
-                    // lazy, so nothing at the end of the thread is ever a guess the scroll view
-                    // can be left past (the blank thread).
+                    // lazy, so no row at the end of the thread is a guess the scroll view can be
+                    // left past (the blank thread). Inside a long reply, its last two chunks are
+                    // real and the ones before them are lazy (`SHProseChunks`).
                     VStack(alignment: .leading, spacing: spacing) {
                         notices
                         if rows.isEmpty {
@@ -804,8 +805,10 @@ final class ThreadFinder {
 /// heights once left the scroll view with a content size that disagreed with where the rows were
 /// placed, and the viewport drew nothing (the blank thread after a send or a finished turn;
 /// `ThreadBlankScreenTests`): the thread's tail is therefore laid out eagerly
-/// (`ThreadView.eagerRows`), and only the history above it is lazy. `ThreadTailGuard` stays as
-/// the net under it (`ThreadTailFlowTests` runs the thread with and without the anchor).
+/// (`ThreadView.eagerRows`), and only the history above it is lazy; a long reply's chunks are
+/// lazy except its last two (`SHProseChunks`), and `ThreadBlankScreenTests` checks the blank band
+/// inside them. `ThreadTailGuard` stays as the net under it (`ThreadTailFlowTests` runs the
+/// thread with and without the anchor).
 struct ThreadTailAnchor: ViewModifier {
     let sticky: Bool
     let native: Bool
