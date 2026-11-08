@@ -39,12 +39,25 @@ struct ThreadTailFlowTests {
     /// How much rows differ: every `every`th turn ends in an answer of `paragraphs` paragraphs
     /// and two code blocks, so a row can be taller than the window by many times. `tables` ends it
     /// in `paragraphs` small tables instead: chunks of a reply close at 16 KB of weight, which a
-    /// table reaches in about 600 pt, the shortest a chunk gets.
+    /// table reaches in about 600 pt, the shortest a chunk gets. Those rows are laid out whole, as
+    /// every reply of less than 128 KB of text is; `huge` and `hugeTables` are the same two with
+    /// 150 KB of text, the replies drawn a chunk at a time (`NativeProse.isGiant`), a few rows apart.
     enum Mix: Sendable, CustomTestStringConvertible {
-        case moderate, giant, tables
-        var paragraphs: Int { switch self { case .moderate: 30; case .giant: 100; case .tables: 40 } }
-        var every: Int { switch self { case .moderate: 7; case .giant, .tables: 5 } }
-        var testDescription: String { switch self { case .moderate: "rows of 3,000 pt"; case .giant: "rows of 9,000 pt"; case .tables: "rows of 40 tables" } }
+        case moderate, giant, tables, huge, hugeTables
+        var paragraphs: Int {
+            switch self { case .moderate: 30; case .giant: 100; case .tables: 40; case .huge: 1_400; case .hugeTables: 1_100 }
+        }
+        var every: Int { switch self { case .moderate: 7; case .giant, .tables: 5; case .huge, .hugeTables: 20 } }
+        var isTables: Bool { self == .tables || self == .hugeTables }
+        var testDescription: String {
+            switch self {
+            case .moderate: "rows of 3,000 pt"
+            case .giant: "rows of 9,000 pt"
+            case .tables: "rows of 40 tables"
+            case .huge: "rows of 150 KB"
+            case .hugeTables: "rows of 1,100 tables"
+            }
+        }
     }
 
     // MARK: Host
@@ -141,7 +154,7 @@ struct ThreadTailFlowTests {
         (0..<turns).flatMap { n -> [NativeThreadMessage] in
             var out = Fx.turn(n)
             if n % mix.every == 3, let last = out.indices.last {
-                let text = mix == .tables
+                let text = mix.isTables
                     ? tables(mix.paragraphs, n)
                     : Fx.prose(mix.paragraphs, n) + "\n\n" + Fx.code(n) + "\n\n" + Fx.prose(12, n) + "\n\n" + Fx.code(n + 5)
                 out[last] = Fx.reply("a\(n)", text, at: Fx.base + Double(n) * 60_000 + 5000)
