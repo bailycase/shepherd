@@ -10,8 +10,8 @@ import ShepherdUI
 /// Where the pane toggle rebuilds the detail column, the new transcript mounts on the long reply
 /// and lands on its tail inside the layout pass; the audit saw that spin the main thread
 /// (ios-duo-1). After each toggle it checks that the landings stayed few, at most `inPassLimit` of them
-/// ran inside a layout pass (the mount's first ones), the pin did not give up, the reply ends above the
-/// composer and the transcript draws (from iOS 27.1: see `inkChecked`).
+/// ran inside a layout pass (the mount's first ones), the pin did not give up (in a pass or after one),
+/// the reply ends above the composer and the transcript draws (from iOS 27.1: see `inkChecked`).
 /// A watchdog thread fails the run if the main queue stops answering. Run it posed open on the Duo,
 /// or in landscape on an iPad; where there is no side pane it says so.
 enum TailFixture {

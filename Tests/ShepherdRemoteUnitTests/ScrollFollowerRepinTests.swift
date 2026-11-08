@@ -422,6 +422,37 @@ struct ScrollFollowerRepinTests {
         #expect(inPass < NativeTailRepin.inPassLimit)
     }
 
+    /// The pin reports a stall by comparing `stalled` around the call that can set it. A stall in a pass
+    /// is seen there and nowhere else: readings that follow ask for no turn (`pending` with `stalled`
+    /// takes none) and a turn finds the pin stalled already.
+    @Test func aStallInsideAPassChangesTheStateTheCallReturnsWith() {
+        var repin = NativeTailRepin()
+        func take() -> Bool { repin.take() }
+        var seenInPass = 0
+        for i in 0..<20 {
+            repin.reading(distance: i.isMultiple(of: 2) ? 3_000 : 3_200, wants: true, resized: false)
+            let stalled = repin.stalled
+            _ = repin.takeInPass()
+            if repin.stalled, !stalled { seenInPass += 1 }
+        }
+        #expect(seenInPass == 1)
+        repin.reading(distance: 3_100, wants: true, resized: false)
+        #expect(repin.stalled)
+        #expect(!take())
+        #expect(repin.stalled)
+    }
+
+    /// The same pin that stalls in a pass is not stalled by one that makes headway.
+    @Test func passesThatMakeHeadwayDoNotChangeTheStall() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        for gap in [3_000.0, 2_000, 1_000, 500, 200, 100] {
+            repin.reading(distance: gap, wants: true, resized: false)
+            #expect(takeInPass())
+            #expect(!repin.stalled)
+        }
+    }
+
     @Test func aPinThatHasLandedEnoughTakesNoPassAfterwards() {
         var repin = NativeTailRepin()
         func takeInPass() -> Bool { repin.takeInPass() }

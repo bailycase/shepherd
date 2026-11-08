@@ -825,6 +825,7 @@ public struct NativeScrollProbe: Equatable, Sendable {
 /// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:touching:)`,
 /// `quietPassed`), then call `take()` once to learn whether to land. The pin's first few landings may
 /// come from `takeInPass()` instead, in the layout pass that asked; they are the only ones allowed there.
+/// Either one can stall the pin: watch `stalled` around both.
 public struct NativeTailRepin: Equatable, Sendable {
     /// Misses that stop the landings.
     public static let limit = 4

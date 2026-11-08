@@ -50,7 +50,10 @@ final class ThreadTailPin {
         lastSeen = ContinuousClock.now
         self.resized = self.resized || resized
         repin.reading(distance: distance, wants: wants, resized: resized)
-        if !scrolling, repin.takeInPass() {
+        let stalled = repin.stalled
+        let inPass = !scrolling && repin.takeInPass()
+        noteStall(since: stalled)
+        if inPass {
             let resizing = self.resized
             self.resized = false
             SHRenderProbe.tick("thread.tailLandingInPass")
@@ -118,10 +121,7 @@ final class ThreadTailPin {
         let stalled = repin.stalled
         let lands = repin.take()
         if lands || !scrolling { resized = false }
-        if repin.stalled, !stalled {
-            MobileSignposts.tailStalled()
-            SHRenderProbe.tick("thread.tailStalled")
-        }
+        noteStall(since: stalled)
         if lands { land?(resizing) }
         watch()
     }
@@ -133,6 +133,14 @@ final class ThreadTailPin {
         guard repin.stalled, repin.quietTries < NativeTailRepin.maxQuietTries else {
             quiet?.cancel()
             quiet = nil
+    /// Reports the pin giving up, from a turn or from a pass: after a stall in a pass, readings take
+    /// no turn and every later turn starts stalled, so nothing else would see it.
+    private func noteStall(since stalled: Bool) {
+        guard repin.stalled, !stalled else { return }
+        MobileSignposts.tailStalled()
+        SHRenderProbe.tick("thread.tailStalled")
+    }
+
             return
         }
         guard quiet == nil else { return }
