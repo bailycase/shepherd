@@ -44,4 +44,66 @@ extension PreviewTests {
             RootView(vm: vm)
         }
     }
+
+    /// A thread of the host on this Mac draws the branch card beside its transcript, as the app's
+    /// own threads do, and no branch chip in the toolbar.
+    @Test func localClientThreadBranchCard() async throws {
+        let workspace = try PreviewWorkspace(ownsWorkspace: false)
+        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
+        defer { workspace.stop(); host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        let repo = host.dir.appendingPathComponent("payments").path
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-c", "user.name=Preview", "-c", "user.email=preview@example.com", "-C", repo] + arguments
+            try process.run(); process.waitUntilExit()
+        }
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        try git(["init", "-q", "-b", "main"])
+        try (1...8).map { "line \($0)" }.joined(separator: "\n").write(toFile: repo + "/outbox.go", atomically: true, encoding: .utf8)
+        try git(["add", "."]); try git(["commit", "-q", "-m", "start"])
+        try git(["switch", "-q", "-c", "agent/refund-events"])
+        // The branch's work: 71 lines in, 8 out, committed.
+        try (1...71).map { "refund \($0)" }.joined(separator: "\n").write(toFile: repo + "/outbox.go", atomically: true, encoding: .utf8)
+        try git(["commit", "-qam", "Emit refund events"])
+        // main moves on by three.
+        try git(["switch", "-q", "main"])
+        for n in 1...3 { try "\(n)".write(toFile: repo + "/main-\(n).txt", atomically: true, encoding: .utf8); try git(["add", "."]); try git(["commit", "-q", "-m", "main \(n)"]) }
+        try git(["switch", "-q", "agent/refund-events"])
+        let space = Space(name: "payments", path: repo)
+        let id = AgentID(), other = AgentID()
+        let pane = LeafPane(cwd: repo, agentID: id), otherPane = LeafPane(cwd: repo, agentID: other)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let otherTab = ShepherdCore.Tab(spaceID: space.id, order: 1, layout: .leaf(otherPane))
+        var agent = Agent(id: id, name: "Add refund events", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .done, nameIsFinal: true)
+        agent.worktreeBranch = "agent/refund-events"
+        agent.worktreePath = repo
+        agent.worktreeBase = "main"
+        var peer = Agent(id: other, name: "Webhook retries", spaceID: space.id, tabID: otherTab.id, paneID: otherPane.id, status: .blocked, nameIsFinal: true)
+        peer.worktreeBranch = "agent/webhook-retries"
+        try await host.server.putState(ShepherdState(spaces: [space], tabs: [tab, otherTab], agents: [agent, peer]))
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let vm = workspace.vm
+        let connection = vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        try await eventuallyOnMain("the host on this Mac to connect", timeout: .seconds(30)) {
+            connection.phase == .connected && connection.state == host.server.state
+        }
+        vm.selectRemoteAgent(hostID: connection.id, agentID: id)
+        // The card reads itself once it shows.
+        let store = vm.branchCardStore(for: id)
+        for width in [1280.0, 1440.0] {
+            try await Preview.render("local-client-branch-card-\(Int(width))", size: CGSize(width: width, height: 760), ready: { store.status != nil }) {
+                RootView(vm: vm)
+            }
+        }
+        #expect(store.card?.branch == "agent/refund-events")
+        #expect(store.card?.others.map(\.branch) == ["agent/webhook-retries"])
+    }
 }

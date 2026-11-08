@@ -315,9 +315,12 @@ extension AppLayout {
     static let whereItRunsWidth: CGFloat = 270
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280
-    /// A thread this wide fits the transcript's widest column with the whole card beside it on
-    /// either side; narrower, the card folds to one row.
-    static let branchCardWideThread: CGFloat = AppLayout.threadMaxWidth + 2 * (branchCardWidth + 2 * SH.Space.l)
+    /// The card's own column at the thread's right (BranchCard): the card and its margins.
+    static let branchCardColumn: CGFloat = branchCardWidth + 2 * SH.Space.l
+    /// The narrowest transcript the docked card leaves; a thinner thread folds the card to one row.
+    static let branchCardMinTranscript: CGFloat = 640
+    /// A thread this wide docks the whole card in its column, the transcript centered in the rest.
+    static let branchCardWideThread: CGFloat = branchCardMinTranscript + branchCardColumn
     static let commitFileListMaxHeight: CGFloat = 232
     static let remoteWorktreeSheetWidth: CGFloat = 620
     /// A remote automation's details and runs, and how tall its run list grows before it scrolls.
