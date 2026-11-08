@@ -860,6 +860,11 @@ public struct NativeTailRepin: Equatable, Sendable {
 
     /// A scroll-geometry reading. `wants` is the follower's answer; `resized` says the viewport
     /// itself changed since the reading before. A reading on the tail ends the chase.
+    ///
+    /// `distance` is measured from where a landing leaves the view (the bottom marker), not from
+    /// the end of the content: a view that sits on the marker reads 0 and rests. The caller takes
+    /// off what the thread keeps below the marker (its bottom padding); without that, a view that
+    /// landed reads short of 0 for good, never rests, and a stall never clears.
     public mutating func reading(distance: Double, wants: Bool, resized: Bool) {
         let gap = abs(distance)
         self.gap = gap
