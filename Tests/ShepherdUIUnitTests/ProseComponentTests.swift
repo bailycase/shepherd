@@ -176,6 +176,33 @@ struct ProseComponentTests {
         #expect(SHTableLayout.widths(for: available, ideal: [300, 300], words: words, fitting: true, minimum: 100, maximum: 300) == widths)
     }
 
+    /// A table's layout is built again for every width, hover and scroll back into view; its
+    /// words are measured when a cell or the type changes, and not otherwise.
+    @Test func tableWordsAreMeasuredOncePerTable() {
+        func table(_ cells: [[String]]) -> SHProseTable {
+            SHProseTable(alignments: [.leading, .trailing], header: ["Name", "Notes"],
+                         rows: cells.map { $0.map { AttributedString($0) } }, markdown: "")
+        }
+        let words = SHTableWords()
+        let rows = [["identifier_one", "a few plain words"], ["two", "internationalization"]]
+        let first = words.columns(of: table(rows), size: .regular, scale: 1, dynamicType: .large)
+        #expect(first.count == 2 && first[1] > first[0], "\(first)")
+        #expect(words.measured == 6, "each of the six cells once")
+
+        for _ in 0..<5 { #expect(words.columns(of: table(rows), size: .regular, scale: 1, dynamicType: .large) == first) }
+        #expect(words.measured == 6, "an equal table is the same table")
+
+        let edited = [rows[0], ["two", "another"]]
+        _ = words.columns(of: table(edited), size: .regular, scale: 1, dynamicType: .large)
+        #expect(words.measured == 7, "one changed cell")
+        _ = words.columns(of: table(rows), size: .small, scale: 1, dynamicType: .large)
+        #expect(words.measured == 13, "a new prose size")
+        _ = words.columns(of: table(rows), size: .regular, scale: 1.25, dynamicType: .large)
+        #expect(words.measured == 19, "a new text scale")
+        _ = words.columns(of: table(rows), size: .regular, scale: 1, dynamicType: .xxxLarge)
+        #expect(words.measured == 25, "a new dynamic type size")
+    }
+
     @Test(arguments: [
         ("temporal/PLAN.md", "/work" as String?, "file:///work/temporal/PLAN.md" as String?),
         ("./temporal/PLAN.md", "/work", "file:///work/temporal/PLAN.md"),

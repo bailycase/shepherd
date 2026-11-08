@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreText
+import Synchronization
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -14,6 +15,7 @@ import UIKit
 struct SHProseTableView: View, Equatable {
     let table: SHProseTable
     @Environment(\.shProseSize) private var size
+    @Environment(\.dynamicTypeSize) private var dynamicType
     @State private var hovering = false
     @State private var copied = false
     @State private var copies = 0
@@ -29,7 +31,8 @@ struct SHProseTableView: View, Equatable {
         HStack(spacing: 0) {
             ScrollView(.horizontal) {
                 grid
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
+                    // Whole points: a fractional jitter would write the state again and relay the table out.
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded(.up) } action: { contentWidth = $0 }
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: contentWidth)
@@ -42,13 +45,14 @@ struct SHProseTableView: View, Equatable {
             Spacer(minLength: 0)
         }
         // Measure the parent's offer, not the shrinking card, so sizing cannot feed back.
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded(.down) } action: { availableWidth = $0 }
     }
 
     private var grid: some View {
         let columns = table.columns
         let rows = table.rows.count
-        return SHTableLayout(columns: columns, fitting: true, table: table, size: size, viewportWidth: availableWidth) {
+        return SHTableLayout(columns: columns, fitting: true, table: table, size: size, dynamicType: dynamicType,
+                             viewportWidth: availableWidth) {
             ForEach(0..<(columns * (rows + 1)), id: \.self) { index in
                 let row = index / columns - 1
                 let column = index % columns
@@ -146,27 +150,34 @@ extension SHProseTable.Alignment {
 /// `tableColumnMin` when it must. If the viewport cannot fit the column floors, columns
 /// keep their natural widths and scroll. Every row is as tall as its tallest cell.
 struct SHTableLayout: Layout {
+    /// What a table's measurements depend on: its cells and the type they are set in.
+    /// `markdown` alone is no key (a table built without it is still a table), so the cells are.
+    struct Inputs: Equatable {
+        var table: SHProseTable
+        var size: SHProseSize
+        var scale: CGFloat
+        var dynamicType: DynamicTypeSize
+    }
+
     let columns: Int
     let fitting: Bool
-    private let words: [CGFloat]
+    private let inputs: Inputs
     private let viewportWidth: CGFloat?
 
-    /// Prepare font measurements while the view builds on the main actor. SwiftUI can
-    /// construct a Sendable layout's cache on a background thread.
+    /// Reads the text scale while the view builds on the main actor: SwiftUI can construct a
+    /// Sendable layout's cache on a background thread.
     @MainActor
-    init(columns: Int, fitting: Bool, table: SHProseTable, size: SHProseSize, viewportWidth: CGFloat? = nil) {
+    init(columns: Int, fitting: Bool, table: SHProseTable, size: SHProseSize, dynamicType: DynamicTypeSize = .large,
+         viewportWidth: CGFloat? = nil) {
         self.columns = columns
         self.fitting = fitting
         self.viewportWidth = viewportWidth
-        self.words = (0..<columns).map { column in
-            var widest = SHTableWords.widest(table.header[column], header: true, size: size)
-            for row in table.rows { widest = max(widest, SHTableWords.widest(row[column], header: false, size: size)) }
-            let inset = SHPlatform.showsHoverDetails && column == columns - 1 ? SHThreadMetrics.codeCopyButton : 0
-            return (widest + SHTableCell.horizontalPadding + inset).rounded(.up) + 1
-        }
+        inputs = Inputs(table: table, size: size, scale: ThemeStore.shared.textScale, dynamicType: dynamicType)
     }
 
     struct Cache {
+        /// What the measurements below were made for.
+        var inputs: Inputs
         /// Each column's widest cell, unwrapped.
         var ideal: [CGFloat]
         /// Each column's widest word, padded: it never shrinks under it, so a wrapped cell
@@ -179,9 +190,17 @@ struct SHTableLayout: Layout {
     func makeCache(subviews: Subviews) -> Cache {
         var ideal = Array(repeating: CGFloat.zero, count: columns)
         for (index, subview) in subviews.enumerated() {
+            SHRenderProbe.tick("prose.tableMeasure")
             ideal[index % columns] = max(ideal[index % columns], subview.sizeThatFits(.unspecified).width.rounded(.up))
         }
-        return Cache(ideal: ideal, words: words)
+        let words = SHTableWords.shared.columns(of: inputs.table, size: inputs.size, scale: inputs.scale,
+                                                dynamicType: inputs.dynamicType)
+        return Cache(inputs: inputs, ideal: ideal, words: words)
+    }
+
+    /// A new offered width only lays rows out again: cells measure once per content and type.
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        if cache.inputs != inputs { cache = makeCache(subviews: subviews) }
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
@@ -253,33 +272,84 @@ struct SHTableLayout: Layout {
     }
 }
 
-/// The widest word of a cell's text (a stretch a line never breaks inside), measured with
-/// CoreText in the faces the cell draws: Geist for text (semibold in the header, bold where
-/// strong), Geist Mono for code spans, at the current text scale. Cached per text.
-@MainActor
-enum SHTableWords {
-    private struct Key: Hashable {
-        var text: AttributedString
-        var header: Bool
-        var size: SHProseSize
-        var scale: CGFloat
+/// The widest word of each column (a stretch a line never breaks inside), measured with
+/// CoreText in the faces the cells draw: Geist for text (semibold in the header, bold where
+/// strong), Geist Mono for code spans, at the text scale. A cell's word is cached by its text,
+/// size, scale and dynamic type in a bounded `NSCache`, so a table scrolled back into view, or one
+/// that grew by a row, measures only what it has not seen. Callers hash a table's cells when its
+/// layout cache is made, never in a view's body.
+final class SHTableWords: @unchecked Sendable {  // NSCache and the counter lock themselves.
+    static let shared = SHTableWords()
+
+    private final class Key: NSObject {
+        let text: AttributedString
+        let header: Bool
+        let size: SHProseSize
+        let scale: CGFloat
+        let dynamicType: DynamicTypeSize
+        private let digest: Int
+
+        init(text: AttributedString, header: Bool, size: SHProseSize, scale: CGFloat, dynamicType: DynamicTypeSize) {
+            self.text = text
+            self.header = header
+            self.size = size
+            self.scale = scale
+            self.dynamicType = dynamicType
+            var hasher = Hasher()
+            hasher.combine(text)
+            hasher.combine(header)
+            hasher.combine(size)
+            hasher.combine(scale)
+            hasher.combine(dynamicType)
+            digest = hasher.finalize()
+        }
+
+        override var hash: Int { digest }
+
+        override func isEqual(_ object: Any?) -> Bool {
+            guard let other = object as? Key else { return false }
+            return digest == other.digest && header == other.header && size == other.size && scale == other.scale
+                && dynamicType == other.dynamicType && text == other.text
+        }
     }
 
-    private static var cache: [Key: CGFloat] = [:]
+    private static let capacity = 8192
+    private let cache = NSCache<Key, NSNumber>()
+    private let count = Mutex(0)
 
-    static func widest(_ text: AttributedString, header: Bool, size: SHProseSize) -> CGFloat {
-        let key = Key(text: text, header: header, size: size, scale: ThemeStore.shared.textScale)
-        if let cached = cache[key] { return cached }
+    init() { cache.countLimit = Self.capacity }
+
+    /// How many cells were measured with CoreText rather than found cached.
+    var measured: Int { count.withLock { $0 } }
+
+    /// Each column's widest word plus the cell's padding (and Copy's room where it always shows),
+    /// rounded up with a point to spare.
+    func columns(of table: SHProseTable, size: SHProseSize, scale: CGFloat, dynamicType: DynamicTypeSize) -> [CGFloat] {
+        (0..<table.columns).map { column in
+            var widest = self.widest(table.header[column], header: true, size: size, scale: scale, dynamicType: dynamicType)
+            for row in table.rows {
+                widest = max(widest, self.widest(row[column], header: false, size: size, scale: scale, dynamicType: dynamicType))
+            }
+            let inset = SHPlatform.showsHoverDetails && column == table.columns - 1 ? SHThreadMetrics.codeCopyButton : 0
+            return (widest + SHTableCell.horizontalPadding + inset).rounded(.up) + 1
+        }
+    }
+
+    private func widest(_ text: AttributedString, header: Bool, size: SHProseSize, scale: CGFloat,
+                        dynamicType: DynamicTypeSize) -> CGFloat {
+        let key = Key(text: text, header: header, size: size, scale: scale, dynamicType: dynamicType)
+        if let cached = cache.object(forKey: key) { return CGFloat(cached.doubleValue) }
+        count.withLock { $0 += 1 }
         var widest: CGFloat = 0
         var word: CGFloat = 0
         for run in text.runs {
             let intent = run.inlinePresentationIntent ?? []
-            let font = font(code: intent.contains(.code), strong: header || intent.contains(.stronglyEmphasized),
-                            style: header ? .ui : .body, size: size)
+            let font = Self.font(code: intent.contains(.code), strong: header || intent.contains(.stronglyEmphasized),
+                                 style: header ? .ui : .body, size: size, scale: scale)
             var token = ""
             for character in text[run.range].characters {
                 if character.isWhitespace {
-                    word += measure(token, font)
+                    word += Self.measure(token, font)
                     token = ""
                     widest = max(widest, word)
                     word = 0
@@ -288,17 +358,16 @@ enum SHTableWords {
                 }
             }
             // A word may run on into the next run ("`notify`,").
-            word += measure(token, font)
+            word += Self.measure(token, font)
         }
         widest = max(widest, word)
-        if cache.count > 4096 { cache.removeAll(keepingCapacity: true) }
-        cache[key] = widest
+        cache.setObject(NSNumber(value: Double(widest)), forKey: key)
         return widest
     }
 
-    private static func font(code: Bool, strong: Bool, style: SHTextStyle, size: SHProseSize) -> CTFont {
+    private static func font(code: Bool, strong: Bool, style: SHTextStyle, size: SHProseSize, scale: CGFloat) -> CTFont {
         let points = code ? SHTextStyle.code.size : style.size - (style == .body ? size.step : 0)
-        var scaled = points * ThemeStore.shared.textScale
+        var scaled = points * scale
         #if os(iOS)
         scaled = UIFontMetrics(forTextStyle: code ? .callout : style == .ui ? .callout : .body).scaledValue(for: scaled)
         #endif
