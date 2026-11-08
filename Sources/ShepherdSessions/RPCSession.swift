@@ -49,6 +49,8 @@ final class RPCSession: @unchecked Sendable {
     let launchAgentID: AgentID?
     let hasGoalController: Bool
     private(set) var exitCode: Int32?
+    /// The signal that ended pi; nil for an exit with a code, and while it runs.
+    private(set) var exitSignal: Int32?
 
     /// Every stdout record that is not a `response` (unknown types included).
     var onEvent: ((RPCEvent) -> Void)?
@@ -802,6 +804,7 @@ final class RPCSession: @unchecked Sendable {
         // WIFEXITED/WEXITSTATUS are macros Swift does not import.
         let code: Int32? = (status & 0x7f) == 0 ? (status >> 8) & 0xff : nil
         exitCode = code
+        exitSignal = code == nil ? status & 0x7f : nil
         // Descendants still holding our pipes would delay EOF forever.
         signalProcessGroup(SIGHUP)
         signalProcessGroup(SIGKILL)

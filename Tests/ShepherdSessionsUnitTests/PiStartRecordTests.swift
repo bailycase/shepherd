@@ -3,8 +3,8 @@ import ShepherdProtocol
 import Testing
 @testable import ShepherdSessions
 
-/// How a pi that stopped before it served is read: pi's own
-/// stderr lines, as chalk colours them, and its exit code, to a cause.
+/// How a pi that stopped is read: pi's own stderr lines, as chalk colours them, and its exit
+/// code or signal, to a cause, before it served and on its own after.
 @Suite("pi start records")
 struct PiStartRecordTests {
     static let red = "\u{1B}[31m", yellow = "\u{1B}[33m", reset = "\u{1B}[39m"
@@ -57,7 +57,7 @@ struct PiStartRecordTests {
         #expect(problem?.kind == c.kind)
         #expect(problem?.exitCode == c.exitCode)
         #expect(problem?.lines.allSatisfy { !$0.contains("\u{1B}") && !$0.isEmpty } == true)
-        #expect(record.keepsAgent)
+        #expect(record.keepsUnboundAgent)
     }
 
     @Test func aStartupFailureKeepsItsReadableDiagnostics() {
@@ -87,13 +87,63 @@ struct PiStartRecordTests {
         #expect(PiStartRecord.plain(raw) == plain)
     }
 
-    /// Once pi serves, its exit is a lost connection and its stderr is no longer kept.
-    @Test func aPiThatServedLetsItsAgentRetire() {
+    /// Once pi serves, what it said while starting is dropped. Its exit on its own says so, with its
+    /// last words: the error it wrote, not the stack that followed or the start lines.
+    @Test func aPiThatStopsOnItsOwnAfterServingSaysSoWithItsLastWords() {
+        var record = PiStartRecord()
+        let start = ContinuousClock.now
+        _ = record.note(stderr: "starting", at: start)
+        record.served()
+        #expect(record.lines.isEmpty && !record.keepsUnboundAgent)
+        _ = record.note(stderr: "TypeError: boom", at: start + .seconds(1))
+        _ = record.note(stderr: "    at run (/pi/main.js:10:5)", at: start + .seconds(1))
+        _ = record.note(stderr: "    at async main (/pi/main.js:3:1)", at: start + .seconds(1))
+        _ = record.note(stderr: "2: 0x10089b5f8 node::Abort() [/node]", at: start + .seconds(1))
+        _ = record.note(stderr: "   ", at: start + .seconds(1))
+        let problem = record.problem(exitCode: nil, signal: 6, at: start + .seconds(2))
+        #expect(problem == NativeStartProblem(kind: .stopped, exitCode: nil, signal: 6, lines: ["TypeError: boom"]))
+        #expect(record.problem(exitCode: 3, signal: nil, at: start + .seconds(2))?.exitCode == 3)
+    }
+
+    /// What pi wrote long before it stopped says nothing about why it stopped.
+    @Test func wordsOlderThanTheWindowSayNothingAboutTheExit() {
+        var record = PiStartRecord()
+        let start = ContinuousClock.now
+        record.served()
+        _ = record.note(stderr: "warning: an hour ago", at: start)
+        _ = record.note(stderr: "FATAL ERROR: JavaScript heap out of memory", at: start + .seconds(3595))
+        let exit = start + .seconds(3600)
+        #expect(record.problem(exitCode: nil, signal: 9, at: exit)?.lines == ["FATAL ERROR: JavaScript heap out of memory"])
+        #expect(record.problem(exitCode: nil, signal: 9, at: exit + PiStartRecord.wordsWindow)?.lines.isEmpty == true)
+        #expect(record.problem(exitCode: nil, signal: 9, at: exit)?.kind == .stopped)
+    }
+
+    @Test func aStoppedProblemCarriesTheNewestLinesAndEachIsCut() {
+        var record = PiStartRecord()
+        let at = ContinuousClock.now
+        record.served()
+        for n in 1...(PiStartRecord.keptLines + 5) { _ = record.note(stderr: "line \(n)", at: at) }
+        _ = record.note(stderr: String(repeating: "x", count: 5000), at: at)
+        let lines = record.problem(exitCode: 1, signal: nil, at: at)?.lines
+        #expect(lines?.count == NativeStartProblem.maxLines)
+        #expect(lines?.last?.count == PiStartRecord.maxLineLength)
+        #expect(lines?.dropLast().last == "line \(PiStartRecord.keptLines + 5)")
+    }
+
+    @Test func theTailKeepsOnlyTheNewestLines() {
+        var record = PiStartRecord()
+        record.served()
+        for n in 1...(PiStartRecord.keptLines * 2) { _ = record.note(stderr: "line \(n)") }
+        #expect(record.tail.count == PiStartRecord.keptLines)
+        #expect(record.tail.first?.line == "line \(PiStartRecord.keptLines + 1)")
+    }
+
+    /// A signal is carried on a start problem too: pi killed while it starts.
+    @Test func aPiEndedBySignalWhileStartingCarriesTheSignal() {
         var record = PiStartRecord()
         _ = record.note(stderr: "starting")
-        record.served()
-        _ = record.note(stderr: "later")
-        #expect(!record.keepsAgent && record.lines.isEmpty)
+        let problem = record.problem(exitCode: nil, signal: 9)
+        #expect(problem?.kind == .exited && problem?.signal == 9 && problem?.exitCode == nil)
     }
 
     static let warning = "\u{1B}[33mWarning: No project session found with id 'abc-123'; creating a new session with that id.\u{1B}[39m"
@@ -106,7 +156,7 @@ struct PiStartRecordTests {
         if servedFirst { record.served() }
         let stops = record.note(stderr: Self.warning)
         #expect(stops == resuming)
-        #expect(record.keepsAgent == (resuming || !servedFirst))
+        #expect(record.keepsUnboundAgent == (resuming || !servedFirst))
         if resuming {
             let problem = record.problem(exitCode: 143)
             #expect(problem?.kind == .resumedAsNew && problem?.exitCode == nil)
@@ -121,7 +171,7 @@ struct PiStartRecordTests {
         var record = PiStartRecord(resuming: "abc-123")
         let stops = record.note(stderr: Self.warning)
         record.served()
-        #expect(stops && record.keepsAgent)
+        #expect(stops && record.keepsUnboundAgent)
         #expect(record.problem(exitCode: nil)?.lines.count == 1)
     }
 
@@ -138,7 +188,7 @@ struct PiStartRecordTests {
         var record = PiStartRecord()
         if served { record.served() }
         record.requestStop()
-        #expect(record.keepsAgent)
+        #expect(record.keepsUnboundAgent)
         #expect(record.problem(exitCode: nil) == nil)
     }
 }
