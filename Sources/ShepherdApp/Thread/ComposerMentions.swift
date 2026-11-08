@@ -13,11 +13,12 @@ import ShepherdUI
 /// The @ mention being typed at the end of a draft: an "@" at the start or after whitespace, and
 /// what follows it on the same line.
 struct ComposerMention: Equatable {
+    /// What follows the "@". Declared first, so the synthesized == compares the typed word before
+    /// the long prefix and stops there when they differ.
+    var text: String
     /// The draft before the "@", kept as a view of the draft so finding a mention costs the word
     /// being typed, not the draft.
     private let prefix: Substring
-    /// What follows the "@".
-    var text: String
 
     /// The draft before the "@".
     var before: String { String(prefix) }
@@ -38,7 +39,7 @@ struct ComposerMention: Equatable {
                 if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
                 let text = draft[end...]
                 guard text.first?.isWhitespace != true else { return nil }
-                return ComposerMention(prefix: draft[..<at], text: String(text))
+                return ComposerMention(text: String(text), prefix: draft[..<at])
             }
             if character.isNewline { return nil }
             end = at

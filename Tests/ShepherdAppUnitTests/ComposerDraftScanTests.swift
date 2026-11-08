@@ -55,4 +55,25 @@ struct ComposerDraftScanTests {
             #expect(time < Self.budget, "\(scan) took \(time) on a bridged 4.6 MB draft")
         }
     }
+
+    /// SwiftUI compares a picker's state on every write, and that state holds the mention: two
+    /// keys' mentions (or tokens) of a bridged draft compare by the typed word, not the prefix.
+    @Test(.timingSensitive) func comparingTwoKeysCostsTheWordBeingTyped() {
+        let before = ComposerMention.token(in: NSString(string: Self.prose + " @Che") as String)
+        let after = ComposerMention.token(in: NSString(string: Self.prose + " @Chec") as String)
+        let tokenBefore = ComposerCommandToken.token(in: NSString(string: Self.prose + " /re") as String)
+        let tokenAfter = ComposerCommandToken.token(in: NSString(string: Self.prose + " /rev") as String)
+        #expect(before != nil && after != nil && tokenBefore != nil && tokenAfter != nil)
+
+        var mentionsEqual = true
+        var tokensEqual = true
+        let times = [
+            ("two keys' mentions", Self.best { mentionsEqual = before == after }),
+            ("two keys' tokens", Self.best { tokensEqual = tokenBefore == tokenAfter }),
+        ]
+        #expect(!mentionsEqual && !tokensEqual, "each key typed a different word")
+        for (compare, time) in times {
+            #expect(time < Self.budget, "comparing \(compare) took \(time) on a bridged 4.6 MB draft")
+        }
+    }
 }

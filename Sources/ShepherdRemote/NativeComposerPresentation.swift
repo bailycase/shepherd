@@ -134,12 +134,13 @@ public enum NativeQueueStack {
 /// A "/" (pi's commands and prompts) or "$" (its skills) at the start of the draft or after
 /// whitespace, with no whitespace after it: the menu's trigger anywhere in a draft.
 public struct ComposerCommandToken: Equatable, Sendable {
+    public var sigil: Character
+    /// What follows the sigil. The sigil and the text come before the prefix, so the synthesized
+    /// == compares the typed word first and stops there when they differ.
+    public var text: String
     /// The draft before the sigil, kept as a view of the draft so finding a token costs the word
     /// being typed, not the draft.
     private let prefix: Substring
-    public var sigil: Character
-    /// What follows the sigil.
-    public var text: String
 
     /// The draft before the sigil.
     public var before: String { String(prefix) }
@@ -155,7 +156,7 @@ public struct ComposerCommandToken: Equatable, Sendable {
             let character = draft[at]
             if character == "/" || character == "$" {
                 if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
-                return ComposerCommandToken(prefix: draft[..<at], sigil: character, text: String(draft[draft.index(after: at)...]))
+                return ComposerCommandToken(sigil: character, text: String(draft[draft.index(after: at)...]), prefix: draft[..<at])
             }
             if character.isWhitespace { return nil }
             end = at
