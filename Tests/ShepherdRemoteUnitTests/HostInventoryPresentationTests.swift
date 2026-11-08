@@ -55,7 +55,6 @@ struct HostInventoryPresentationTests {
         let broken = ProjectSummary(directory: "/g", name: "gone", displayPath: "~/gone", summary: "directory unavailable", minimal: true, error: "not found")
         #expect(P.spaceLine(ready) == "AGENTS.md · 2 skills" && P.spaceLine(broken) == "not found")
         #expect(P.tone(ready) == .done && P.tone(broken) == .failed)
-        #expect(P.trustWord(true) == "Approved on the host" && P.trustWord(false) == "Not yet approved" && P.trustWord(nil) == nil)
     }
 
     /// An older host's sign-in words, written for its own Mac, read as the state alone.

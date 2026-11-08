@@ -27,21 +27,32 @@ function fixture(run) {
   }
 }
 
-test('only owned files load and deleting defaults survives discovery', () => fixture((dir, owned) => {
+test('a space\'s own subagents load and override Shepherd\'s; deleting defaults survives discovery', () => fixture((dir, owned) => {
   const cwd = path.join(dir,'project');
-  put(path.join(cwd,'.pi/agents/scout.md'),profile('scout','runner: forbidden\n'));
+  put(path.join(cwd,'.pi/agents/scout.md'),profile('scout'));
+  put(path.join(cwd,'.pi/agents/helper.md'),profile('helper'));
+  put(path.join(cwd,'.shepherd/agents/helper.md'),profile('helper'));
   put(path.join(cwd,'.agents/outside.md'),profile('outside'));
   put(path.join(dir,'extra/extra.md'),profile('extra'));
-  let catalog = config.discoverChildAgents({cwd,isProjectTrusted:()=>true},'both');
-  assert.deepEqual(catalog.agents.map(a=>a.name).sort(),['planner','reviewer','scout','worker']);
-  assert(catalog.agents.every(a=>a.source==='shepherd' && a.filePath.startsWith(owned + path.sep)));
+  let catalog = config.discoverChildAgents({cwd},'both');
+  assert.deepEqual(catalog.agents.map(a=>a.name).sort(),['helper','planner','reviewer','scout','worker']);
+  const real = fs.realpathSync(cwd);
+  assert.equal(catalog.agents.find(a=>a.name==='scout').filePath, path.join(real,'.pi/agents/scout.md'), "the space's scout overrides Shepherd's");
+  assert.equal(catalog.agents.find(a=>a.name==='scout').source,'project');
+  assert.equal(catalog.agents.find(a=>a.name==='helper').filePath, path.join(real,'.shepherd/agents/helper.md'), '.shepherd wins over .pi');
+  assert(catalog.agents.filter(a=>!['scout','helper'].includes(a.name)).every(a=>a.source==='shepherd' && a.filePath.startsWith(owned + path.sep)));
   assert.equal(catalog.diagnostics.length,0);
+  // The home folder is pi's global config, never a space.
+  assert(!config.projectAgentFolders(os.homedir()).length);
   fs.unlinkSync(path.join(owned,'scout.md'));
-  catalog = config.discoverChildAgents({cwd,isProjectTrusted:()=>false},'bundled');
+  catalog = config.discoverChildAgents({cwd:dir},'bundled');
   assert(!catalog.agents.some(a=>a.name==='scout'), 'an in-memory builtin must not resurrect a deleted file');
   put(path.join(owned,'reviewer.md'),profile('reviewer','runner: forbidden\n'));
-  catalog = config.discoverChildAgents({cwd},'user');
+  catalog = config.discoverChildAgents({cwd:dir},'user');
   assert.match(catalog.agents.find(a=>a.name==='reviewer').error,/Unsupported agent fields: runner/);
+  put(path.join(cwd,'.pi/agents/bad.md'),profile('bad','runner: forbidden\n'));
+  catalog = config.discoverChildAgents({cwd},'both');
+  assert.match(catalog.agents.find(a=>a.name==='bad').error,/Unsupported agent fields: runner/, "a space's invalid profile is refused, not skipped");
   assert.equal(config.childDefaults({SHEPHERD_CHILD_SCOPE:'project'}).scope,'shepherd');
 }));
 

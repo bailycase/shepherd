@@ -12,7 +12,7 @@ struct ProjectMCPConfiguration: Equatable {
     var problem: String?
     var native = true
 
-    init(text: String = "", path: String = ".shepherd/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false, projectTrusted: Bool? = nil) {
+    init(text: String = "", path: String = ".shepherd/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false) {
         // Older remote hosts still inventory native Pi configuration under .pi.
         native = path == ".shepherd/mcp.json" || path == ".pi/mcp.json"
         switch MCPConfigFile.parse(Data(text.utf8)) {
@@ -84,7 +84,7 @@ struct ProjectMCPConfiguration: Equatable {
                 signIn: signIn,
                 toolNames: [], toolCount: nil, direct: direct, searchCost: "", directCost: "", chosenNote: note,
                 transport: entry.kind == .local ? "stdio" : entry.transport == .sse ? "Legacy SSE" : "Streamable HTTP",
-                hosts: [.init(name: host, detail: native && projectTrusted == false ? "Blocked" : "Unchecked", mark: .none)], toolsNote: native && projectTrusted == false ? "New threads cannot load this server until the space is approved." : "Connection and tools are checked in each thread.")
+                hosts: [.init(name: host, detail: "Unchecked", mark: .none)], toolsNote: "Connection and tools are checked in each thread.")
             return (entry.name, detail)
         })
     }
