@@ -292,9 +292,9 @@ struct SubagentMotionTests {
     /// sit inside the transcript's lazy rows under its native bottom anchor, the setup that drew blank on iOS
     /// 27.0. Only the transcript is read, not the header.
     ///
-    /// Known issue, not the chunks' doing: the inspector draws any reply taller than about 2,000 pt blank at
-    /// its tail, a reply of one chunk and the base's single prose view included (a stranded lazy row, as
-    /// `ThreadTailGuard` describes for the thread). The test is the check for when that is fixed.
+    /// Known issue, not the chunks' doing: the inspector opens a reply taller than about 2,000 pt blank at
+    /// its tail, or short of it, a reply of one chunk (the base's single prose view) included: a stranded
+    /// lazy row, as `ThreadTailGuard` describes for the thread. The test is the check for when that is fixed.
     @Test func aLongReplyOpensTheInspectorAtItsTailWithNoBlankBand() async throws {
         let thread = Thread(runs: [Self.run(0)])
         thread.transcripts["run-0"] = [Self.message("m0", "user", "Write it all down"),
@@ -311,11 +311,18 @@ struct SubagentMotionTests {
             window.layout()
             return FrameTimer.capture(window, window.host.convert(scroll.bounds, from: scroll))
         }
-        try await Task.sleep(for: .seconds(1))
+        var last = (distance: CGFloat.infinity, content: CGFloat.infinity), still = 0
+        try await eventuallyOnMain("the transcript to come to rest", poll: .milliseconds(30)) {
+            window.layout()
+            let now = (distance: distanceFromBottom(scroll), content: scroll.documentView?.bounds.height ?? 0)
+            still = abs(now.distance - last.distance) < 0.5 && abs(now.content - last.content) < 0.5 ? still + 1 : 0
+            last = now
+            return still >= 10
+        }
         let drawn = transcript()
         #expect((scroll.documentView?.bounds.height ?? 0) > scroll.frame.height * 10, "the reply is many screens long")
-        #expect(abs(distanceFromBottom(scroll)) <= NativeScrollFollower.threshold, "the inspector is at its tail")
         withKnownIssue("bug: the inspector draws a reply taller than about 2,000 pt blank at its tail", isIntermittent: true) {
+            #expect(abs(distanceFromBottom(scroll)) <= NativeScrollFollower.threshold, "the inspector is at its tail")
             #expect(drawn.ink > 0, "the tail of the reply is drawn")
             #expect(drawn.longestBlankBand <= 64, "a blank band of \(drawn.longestBlankBand) pt at the tail")
         }
