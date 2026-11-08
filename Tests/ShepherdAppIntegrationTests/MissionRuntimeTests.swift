@@ -45,6 +45,13 @@ struct MissionRuntimeTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aFinishedMissionSavesAsATemplateHereOrThroughAPRAndANewMissionStartsFromIt() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.templateScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func stopKillsAnInFlightHostCheckAndItsChildWithoutAcceptingLateEvidence() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.stopScenario() }
@@ -508,6 +515,45 @@ struct MissionRuntimeTests {
         try await fixture.wait(c, phase: .paused)
         mission = try controller.record(c)
         #expect(mission.run?.notice?.contains("wrote outside the paths") == true)
+    }
+
+    static func templateScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        let controller = fixture.controller!
+        let id = try await fixture.create()
+        try await fixture.review(id)
+        var mission = try controller.record(id)
+        try await controller.publish(id: id, revision: mission.revision, fingerprint: try #require(mission.run?.reviewFingerprint))
+        try await fixture.wait(id, phase: .done)
+
+        // Just me: a file on this Mac, listed with one run.
+        try await controller.saveTemplate(id: id, name: "Update result files", summary: "Both repositories write after.", team: nil)
+        let local = try #require(controller.templates.first { $0.id == "update-result-files" })
+        #expect(local.team == nil && local.runs == 1 && local.plan.stations.count == 6)
+        #expect(FileManager.default.fileExists(atPath: MissionController.localTemplates.appendingPathComponent("update-result-files.json").path))
+
+        // Team: a branch with .shepherd/maps/<id>.yml pushed to origin and a PR; Shepherd's worktree for it goes.
+        try await controller.saveTemplate(id: id, name: "Team result files", summary: "", team: fixture.spaces[0].id)
+        let pushed = try git(["show", "refs/heads/shepherd/map-team-result-files:.shepherd/maps/team-result-files.yml"], in: fixture.remotes[0])
+        #expect(try JSONDecoder().decode(MissionTemplate.self, from: Data(pushed.utf8)).name == "Team result files")
+        #expect(try String(contentsOf: fixture.ghLog, encoding: .utf8).contains("pr create --base main --head shepherd/map-team-result-files"))
+        try await eventuallyOnMain("the template's worktree goes") {
+            !((try? git(["worktree", "list"], in: fixture.repos[0])) ?? "").contains("shepherd/map-team-result-files")
+        }
+        // Once it merges, it's listed from the repository.
+        try git(["push", fixture.remotes[0].path, "refs/heads/shepherd/map-team-result-files:refs/heads/main"], in: fixture.remotes[0])
+        try git(["fetch", "origin"], in: fixture.repos[0])
+        await controller.loadTemplates()
+        #expect(controller.templates.first { $0.id == "team-result-files" }?.team == fixture.spaces[0].name)
+
+        // Starting from a template: the mission names it and the planner reads it.
+        controller.startTemplate = local
+        let next = try await fixture.create()
+        mission = try controller.record(next)
+        #expect(mission.draft.template == local.id && controller.startTemplate == nil)
+        // calls.jsonl holds the prompt JSON-escaped.
+        #expect(try String(contentsOf: fixture.calls, encoding: .utf8).contains("mission template \\\"Update result files\\\""))
     }
 
     static func retryScenario() async throws {
