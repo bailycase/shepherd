@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// A long reply drawn a chunk at a time: every chunk but the last in a lazy stack, so only the
-/// ones in view are built (and the ones scrolled far away are let go), and the last chunk laid
-/// out for real, where a streaming reply grows and the thread follows it. A chunk holds blocks
-/// 12pt apart (`SHAgentProse`); here it sits `SH.Space.l` under the chunk before it, or
-/// `SH.Space.xs` (a list's item gap) when it carries on a list the chunk before it ended in.
+/// A long reply drawn a chunk at a time: every chunk but the last `eagerTail` in a lazy stack, so
+/// only the ones in view are built (and the ones scrolled far away are let go), and the last
+/// chunks laid out for real, where a streaming reply grows and the thread follows it. A chunk
+/// holds blocks 12pt apart (`SHAgentProse`); here it sits `SH.Space.l` under the chunk before it,
+/// or `SH.Space.xs` (a list's item gap) when it carries on a list the chunk before it ended in.
 ///
-/// The last chunk is keyed by its id, so the chunk that takes its place as the reply grows
-/// starts with fresh `@State` (an inline gate, a fence's colors, an open disclosure) rather than
-/// inheriting the previous chunk's. Each `ForEach` row is one view.
+/// Identity is the keyed `ForEach`: a chunk keeps its `@State` (an inline gate, a fence's colors,
+/// an open disclosure) while it stays in the same stack, and a new chunk starts fresh. One that
+/// moves from the eager tail into the lazy stack as the reply grows is built again. `content`
+/// returns one view per element: each `ForEach` row of a lazy stack must be a single view.
 public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
     let elements: [Element]
     let id: KeyPath<Element, ID>
@@ -19,7 +20,7 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
     /// `lazyPrefix` false lays every chunk out for real: for a host whose own scroll view cannot
     /// place a lazy stack nested in its lazy rows (iOS 27.0's bottom anchor draws a long reply blank).
     public init(_ elements: [Element], id: KeyPath<Element, ID>, continuesList: KeyPath<Element, Bool>, lazyPrefix: Bool = true,
-                @ViewBuilder content: @escaping (Element) -> Content) {
+                content: @escaping (Element) -> Content) {
         self.elements = elements
         self.id = id
         self.continuesList = continuesList
