@@ -1388,9 +1388,9 @@ struct ListPerformanceTests {
     }
 
     /// A reply below the giant gate (30 cycles, about 7 chunks) is laid out whole, as before chunks, and streams in a
-    /// cycle at a time: each serve redraws the chunk being written and, when a chunk fills, the one it closed (it
-    /// is no longer the last), never the closed chunks before. Only the new cycle's code view is created.
-    @Test func aStreamedReplyBelowTheGateRedrawsAtMostTwoChunksPerServe() async throws {
+    /// cycle at a time: each serve redraws exactly one chunk, the one being written, and on a serve that adds a chunk
+    /// that one and the new one at most, never the closed chunks before. Only the new cycle's code view is created.
+    @Test func aStreamedReplyBelowTheGateRedrawsOneChunkPerServe() async throws {
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
         let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming("Here it is.")], running: true),
                                 size: CGSize(width: 900, height: 800))
@@ -1399,8 +1399,10 @@ struct ListPerformanceTests {
         ListPerf.settle(thread.window)
         var text = ""
         var serves: [[String: Int]] = []
+        var chunks = [NativeProse(nativeMarkdownParse("Here it is.", streaming: true)).chunks.count]
         for cycle in 0..<30 {
             text += (cycle == 0 ? "" : "\n\n") + MarkdownFixtures.longReply(cycles: 1, from: cycle)
+            chunks.append(NativeProse(nativeMarkdownParse(text, streaming: true)).chunks.count)
             var next = thread.snapshot
             next.revision += 1
             next.provisional = [ThreadFixture.streaming(text)]
@@ -1417,9 +1419,13 @@ struct ListPerformanceTests {
         let prose = NativeProse(nativeMarkdownParse(text, streaming: true))
         #expect(!prose.isGiant && (5...10).contains(prose.chunks.count), "\(prose.chunks.count) chunks of \(prose.textBytes) bytes")
         for (cycle, counts) in serves.enumerated() {
-            #expect((1...2).contains(counts["prose.chunk", default: 0]), "serve \(cycle): \(counts)")
+            let grew = chunks[cycle + 1] > chunks[cycle]
+            let redrawn = counts["prose.chunk", default: 0]
+            #expect(grew ? (1...2).contains(redrawn) : redrawn == 1,
+                    "serve \(cycle) \(grew ? "added" : "did not add") a chunk (\(chunks[cycle]) to \(chunks[cycle + 1])): \(counts)")
             #expect(counts["code.nativeCreated", default: 0] <= 1, "serve \(cycle): \(counts)")
         }
+        #expect(chunks[30] > chunks[0], "chunks were added while it streamed: \(chunks)")
         #expect(Self.nativeFields(in: thread.window.host) >= 30, "every cycle's fence is laid out: below the gate nothing is lazy")
     }
 
