@@ -1250,6 +1250,42 @@ struct ListPerformanceTests {
         #expect(fields > 0, "the reply's tail is on screen: \(counts)")
     }
 
+    /// A reply below the giant gate (30 cycles, about 7 chunks) is laid out whole, as before chunks, and streams in a
+    /// cycle at a time: each serve redraws the chunk being written and, when a chunk fills, the one it closed (it
+    /// is no longer the last), never the closed chunks before. Only the new cycle's code view is created.
+    @Test func aStreamedReplyBelowTheGateRedrawsAtMostTwoChunksPerServe() async throws {
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it all down")]
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming("Here it is.")], running: true),
+                                size: CGSize(width: 900, height: 800))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        ListPerf.settle(thread.window)
+        var text = ""
+        var serves: [[String: Int]] = []
+        for cycle in 0..<30 {
+            text += (cycle == 0 ? "" : "\n\n") + MarkdownFixtures.longReply(cycles: 1, from: cycle)
+            var next = thread.snapshot
+            next.revision += 1
+            next.provisional = [ThreadFixture.streaming(text)]
+            SHRenderProbe.start()
+            await thread.serve(next)
+            do {
+                try await settleReply(thread, blocks: nativeMarkdownParse(text, streaming: true).blocks.count)
+            } catch {
+                SHRenderProbe.stop()
+                throw error
+            }
+            serves.append(SHRenderProbe.stop())
+        }
+        let prose = NativeProse(nativeMarkdownParse(text, streaming: true))
+        #expect(!prose.isGiant && (5...10).contains(prose.chunks.count), "\(prose.chunks.count) chunks of \(prose.textBytes) bytes")
+        for (cycle, counts) in serves.enumerated() {
+            #expect((1...2).contains(counts["prose.chunk", default: 0]), "serve \(cycle): \(counts)")
+            #expect(counts["code.nativeCreated", default: 0] <= 1, "serve \(cycle): \(counts)")
+        }
+        #expect(Self.nativeFields(in: thread.window.host) >= 30, "every cycle's fence is laid out: below the gate nothing is lazy")
+    }
+
     // MARK: Workspace
 
     /// Launching into a workspace of many agents builds the visible layout first: its first
