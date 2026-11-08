@@ -89,6 +89,18 @@ extension SessionServer {
         }
         onPaneRequest = panes
         onRemotePaneRequest = panes
+        // An agent's agent_* tools: its peers are this host's threads.
+        serveAgentPeers(AgentPeerHosting(
+            defaults: { let defaults = hosting.defaults(); return (defaults.model, defaults.thinking) },
+            startAgent: { [unowned self] config in
+                try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: hosting.defaults().serviceTier, mcp: hosting.mcp)
+            },
+            deleteAgent: { [unowned self] id, done in
+                Task { @MainActor in
+                    do { try await deleteAgent(id); done(nil) } catch { done(error) }
+                }
+            },
+            moveThread: { [unowned self] id, spaceID in try await moveRequestedThread(id, to: spaceID, hosting: hosting) }))
         // A client opened a thread whose pi has not started since the host did.
         onNativeThreadDemand = { [weak self] agentID in
             Task { @MainActor in await self?.startThreadPi(agentID, hosting: hosting) }

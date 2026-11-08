@@ -50,15 +50,13 @@ struct BranchCardPreviewTests {
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
         let label = AgentBranchLabel(kind: .worktree, branch: card.branch, changedFiles: 3)
-        // Wide: the transcript's column and the whole card side by side. Narrow (the side pane
-        // open, a smaller window): one folded row.
-        for (name, width) in [("wide", 1500.0), ("narrow", 1000.0)] {
+        // Wide: the card docked in its column, the transcript centered in the rest. Narrow (the
+        // side pane open, a small window): one folded row.
+        for (name, width) in [("wide", 1500.0), ("medium", 1100.0), ("narrow", 900.0)] {
             try await Preview.render("branch-card-\(name)", size: CGSize(width: width, height: 640),
                                      ready: { fixture.store.ready && !fixture.store.rows.isEmpty && store.status != nil }) {
                 fixture.thread(title: "Add refund events")
-                    .overlay(alignment: .topTrailing) {
-                        BranchCardOverlay(store: store, branch: label, active: true).padding(.top, SHToolbarMetrics.height)
-                    }
+                    .modifier(BranchCardDock(store: store, branch: label, active: true))
             }
         }
     }

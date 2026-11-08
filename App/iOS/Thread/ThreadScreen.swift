@@ -257,6 +257,8 @@ struct ThreadTranscript: View {
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
     private var follower: NativeScrollFollower { presentation.scrollFollower }
     @State private var historyPaging = NativeHistoryPaging()
+    /// Lands the transcript on its tail after layout; only a mount's first few landings run inside it (ThreadTailPin).
+    @State private var tailPin = ThreadTailPin()
 
     private static let bottomID = "thread-bottom"
 
@@ -316,7 +318,7 @@ struct ThreadTranscript: View {
                 }
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
-                .padding(.vertical, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                .padding(.vertical, tailGap)
                 // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
                 .environment(\.shUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
                 .frame(maxWidth: .infinity)
@@ -329,15 +331,22 @@ struct ThreadTranscript: View {
             // detaches, and sending re-attaches.
             .scrollPosition(id: $presentation.visibleTurn, anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
-            .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
+            .onChange(of: store.sessionKey) { _, _ in
+                tailPin.reset()
+                loadVisibleHistory()
+            }
+            // A reused view (the design pane's chat has no identity of its own) shows another thread.
+            .onChange(of: ref) { _, _ in tailPin.reset() }
             .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : .top) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : nil) : (follower.sticky ? nil : .top), for: .sizeChanges)
-            .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
-                // Insets and row wrapping can settle separately from scroll offsets.
-                // While following, keep the tail above the composer through every change.
-                if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling, nativeAnchor: nativeTail) }) {
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                }
+            .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
+                // Insets and row wrapping can settle separately from scroll offsets. While
+                // following, keep the tail above the composer through every change. This runs
+                // inside the layout pass, so it records and the pin lands after it; only a
+                // mount's first few landings run here, so its first frames are already at the tail.
+                let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: nativeTail) }
+                tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: tailGap), wants: wants,
+                                resized: new.resized(from: old), land: lander(proxy))
             }
             .onScrollPhaseChange { old, phase, context in
                 if phase == .interacting { historyPaging.beginScroll() }
@@ -350,13 +359,14 @@ struct ThreadTranscript: View {
                     }
                     return false
                 }
+                tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
             .onChange(of: store.sentCount) { _, _ in
                 // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
                 // the reader where they are, now and when it goes.
                 guard !store.lastSendQueued else { return }
                 follow { $0.sent(queued: false); return false }
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                tailPin.asked(lander(proxy))
             }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
                 // The echoed turn joins once pi takes it: land on it, unless the reader dragged
@@ -367,11 +377,14 @@ struct ThreadTranscript: View {
                     await Task.yield()
                     guard !Task.isCancelled, store.isLive, store.sessionKey == session,
                           follow({ $0.userTurnArrived() }) else { return }
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                    tailPin.asked(lander(proxy))
                 }
             }
             // New output at the tail is what "unseen" means, never the content height.
-            .onChange(of: rows.last) { _, _ in follow { $0.contentArrived(); return false } }
+            .onChange(of: rows.last) { _, _ in
+                follow { $0.contentArrived(); return false }
+                tailPin.outputArrived()
+            }
             .onChange(of: navigator.composerPresentation.state(for: ref).findRequest) { _, request in
                 guard let request else { return }
                 Task { await find(request.entryID, proxy: proxy) }
@@ -381,12 +394,17 @@ struct ThreadTranscript: View {
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: follower.showsJump(running: running) ? {
                     follow { $0.jumpToLatest(); return false }
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                    tailPin.asked(lander(proxy))
                 } : nil)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onDisappear { tailPin.stop() }
         }
     }
+
+    /// What a landing leaves below the bottom marker: the thread's bottom padding. A view on its
+    /// tail reads this far from the end of its content, and that is where the pin treats it as at rest.
+    private var tailGap: CGFloat { sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter }
 
     private var historyEnabled: Bool { store.isLive && store.ready && !store.loadingOlder && !follower.sticky }
 
@@ -419,6 +437,28 @@ struct ThreadTranscript: View {
         let result = change(&next)
         if next != follower { presentation.scrollFollower = next }
         return result
+    }
+
+    private static func reading(_ geometry: ScrollGeometry) -> TailReading {
+        TailReading(probe: probe(geometry), width: geometry.containerSize.width)
+    }
+
+    /// What the pin calls once the layout pass that asked is over. It holds the presentation, not
+    /// the view, so a landing asked for before a remount reads the follower it was asked for.
+    private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
+        let presentation = presentation
+        return { resized in Self.land(proxy, presentation: presentation, resized: resized) }
+    }
+
+    /// Lands on the tail while the reader still follows it and has not taken hold of the thread.
+    private static func land(_ proxy: ScrollViewProxy, presentation: ComposerPresentation, resized: Bool) {
+        let follower = presentation.scrollFollower
+        guard follower.sticky, !follower.userScrolling else { return }
+        SHRenderProbe.tick(resized ? "thread.tailLandingResized" : "thread.tailLanding")
+        MobileSignposts.tailLanding()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { proxy.scrollTo(bottomID, anchor: .bottom) }
     }
 
     private static func probe(_ geometry: ScrollGeometry) -> NativeScrollProbe {

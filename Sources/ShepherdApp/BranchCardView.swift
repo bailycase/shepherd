@@ -9,24 +9,54 @@ import ShepherdUI
 /// the whole card; narrower (the side pane open, a small window), it folds to one row that opens
 /// on hover or a click, so it never sits on the transcript's text. It reads only while its thread
 /// is on screen, and never takes focus.
+/// The thread with its branch card (BranchCard board): wide enough, the card takes a column at the
+/// right and the transcript centers in the rest; narrower, the card folds to one row over the corner.
+struct BranchCardDock: ViewModifier {
+    let store: BranchCardStore?
+    let branch: AgentBranchLabel?
+    let active: Bool
+    @State private var wide = true
+
+    func body(content: Content) -> some View {
+        let docked = wide && store?.card != nil
+        content
+            .padding(.trailing, docked ? AppLayout.branchCardColumn : 0)
+            .overlay(alignment: .topTrailing) {
+                if let store, let branch {
+                    BranchCardOverlay(store: store, branch: branch, active: active, wide: wide)
+                }
+            }
+            .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
+            // On the thread, not the card: the card draws nothing until its first read lands.
+            .task(id: store.map { ReadKey(branch: branch, active: active, request: $0.refreshRequest) }) {
+                guard let store, active else { return }
+                while !Task.isCancelled {
+                    await store.refresh()
+                    try? await Task.sleep(for: BranchCardStore.interval)
+                }
+            }
+    }
+
+    /// Read again when the branch or its changed files move, a turn ends, or the thread shows.
+    private struct ReadKey: Equatable {
+        let branch: AgentBranchLabel?
+        let active: Bool
+        let request: Int
+    }
+}
+
 struct BranchCardOverlay: View {
     let store: BranchCardStore
     let branch: AgentBranchLabel
     let active: Bool
-    @State private var wide = true
+    /// The thread docks the whole card (`BranchCardDock`); else it folds to one row.
+    let wide: Bool
     @State private var hovering = false
     @State private var pinnedOpen = false
     /// Switch branch and Change base show the Branch picker in the card's place.
     @State private var picking: Picking?
 
     enum Picking { case branch, base }
-
-    /// Read again when the branch or its changed files move, a turn ends, or the thread shows.
-    private struct ReadKey: Equatable {
-        let branch: AgentBranchLabel
-        let active: Bool
-        let request: Int
-    }
 
     var body: some View {
         Group {
@@ -62,14 +92,6 @@ struct BranchCardOverlay: View {
         .shAnimation(.content, value: wide || hovering || pinnedOpen || picking != nil)
         // The pane's width decides the form; only crossing the line redraws it.
         .frame(maxWidth: .infinity, alignment: .topTrailing)
-        .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
-        .task(id: ReadKey(branch: branch, active: active, request: store.refreshRequest)) {
-            guard active else { return }
-            while !Task.isCancelled {
-                await store.refresh()
-                try? await Task.sleep(for: BranchCardStore.interval)
-            }
-        }
     }
 }
 

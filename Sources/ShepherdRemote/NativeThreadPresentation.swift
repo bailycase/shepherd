@@ -812,3 +812,206 @@ public struct NativeScrollProbe: Equatable, Sendable {
         content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop
     }
 }
+
+/// Decides whether landing a stuck thread on its tail again still helps. The follower says the view
+/// belongs at its tail, but a lazy stack that keeps re-estimating answers every landing with a new
+/// layout, and the iPhone Duo's main thread spun in one Core Animation commit for minutes
+/// (ios-duo-1). A landing that leaves the tail no nearer than the one before is a miss and `limit`
+/// misses stall the pin. A turn that brought output or moved the viewport (`resized`: the width, the
+/// composer, the keyboard, the side pane's animation) is never a miss, so those are followed while
+/// they last, up to `maxRun` landings in a row. A stall ends at a tail at rest, the end of the
+/// reader's scroll or an ask.
+///
+/// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:touching:)`,
+/// `quietPassed`), then call `take()` once to learn whether to land. The pin's first few landings may
+/// come from `takeInPass()` instead, in the layout pass that asked; they are the only ones allowed there.
+/// Either one can stall the pin: watch `stalled` around both.
+public struct NativeTailRepin: Equatable, Sendable {
+    /// Misses that stop the landings.
+    public static let limit = 4
+    /// Landings in a row with no output, rest, ask or gesture between them; resizes count.
+    public static let maxRun = 90
+    /// How long a stalled tail is left alone before it gets one try, doubling per try.
+    public static let quiet: Duration = .milliseconds(100)
+    public static let maxQuietTries = 5
+    /// Landings a pin may make inside layout passes, counted from its first (`takeInPass`).
+    public static let inPassLimit = 8
+
+    /// The landings stopped. A tail at rest, the end of the reader's scroll or an ask start them
+    /// again; output and the quiet's tries each give one landing and leave it stalled.
+    public private(set) var stalled = false
+    /// Landings that left the tail no nearer, since it last rested.
+    public private(set) var misses = 0
+    /// A landing is wanted and has not happened: the follower asked, and nothing since has said otherwise.
+    public private(set) var pending = false
+    /// How long without a reading before a stalled tail gets its next try.
+    public private(set) var quietWait: Duration = NativeTailRepin.quiet
+    /// Tries the quiet has given since the stall.
+    public private(set) var quietTries = 0
+    /// Landings this pin has made for the thread it shows, in a pass or after one: a rest does not clear
+    /// them, and only a new thread refills them (`takeInPass`, `newThread(refillingPass:)`).
+    public private(set) var landings = 0
+
+    private var run = 0
+    /// The last reading's distance from the tail, and whether one came since the last landing.
+    private var gap: Double?
+    private var fresh = false
+    /// Where the previous landing set out from, to tell whether it helped.
+    private var setOut: Double?
+    private var scrolling = false
+    private var touching = false
+    private var turnResized = false
+    private var turnOutput = false
+    private var turnAsked = false
+    private var turnQuiet = false
+    /// The latest reading's `wants`, until a pass lands for it.
+    private var asking = false
+
+    public init() {}
+
+    /// A scroll-geometry reading. `wants` is the follower's answer; `resized` says the viewport
+    /// itself changed since the reading before. A reading on the tail ends the chase.
+    ///
+    /// `distance` is measured from where a landing leaves the view (the bottom marker), not from
+    /// the end of the content: a view that sits on the marker reads 0 and rests. Take it from
+    /// `distance(of:belowMarker:)`; a raw probe distance reads short of 0 for good on a view that
+    /// landed, which never rests, and a stall never clears.
+    public mutating func reading(distance: Double, wants: Bool, resized: Bool) {
+        let gap = abs(distance)
+        self.gap = gap
+        asking = wants
+        fresh = true
+        if resized { turnResized = true }
+        if gap <= NativeScrollFollower.repinSlack {
+            rest()
+        } else if wants {
+            pending = true
+        }
+    }
+
+    /// A probe's distance from the bottom marker, which a landing brings to the viewport's bottom.
+    /// `gap` is what the thread keeps below the marker (its bottom padding). A thread that overflows
+    /// its viewport by less than that cannot bring the marker down that far: it lands at its top,
+    /// and reads 0 there.
+    public static func distance(of probe: NativeScrollProbe, belowMarker gap: Double) -> Double {
+        probe.distance - min(gap, max(0, probe.content - probe.container))
+    }
+
+    /// Output reached the tail: this turn's landing is never a miss, the run starts over, and a
+    /// stalled tail gets this turn's try.
+    public mutating func outputArrived() {
+        turnOutput = true
+        run = 0
+    }
+
+    /// The reader asked for the tail (a send, their turn arriving, the jump pill): land on the next
+    /// turn, whatever the gap, with a fresh budget, unless a finger is down (`reader(scrolling:touching:)`).
+    public mutating func asked() {
+        turnAsked = true
+    }
+
+    /// The reader's scroll started, changed phase or ended. No automatic landing while it moves, so
+    /// a flick is never pulled back; the request stays, and the end gives a fresh budget. A reader's
+    /// own ask is held back only while `touching`, a finger on the thread: it ends a coast, as
+    /// scrolling to the tail does, and lands in the next turn.
+    public mutating func reader(scrolling: Bool, touching: Bool) {
+        self.touching = scrolling && touching
+        guard scrolling != self.scrolling else { return }
+        self.scrolling = scrolling
+        if !scrolling { freshBudget() }
+    }
+
+    /// Whether a turn should run now that the reader's scroll changed phase: an ask no finger holds
+    /// back, or, with the scroll over, a landing wanted or output, an ask or a quiet try waiting.
+    /// The other events schedule their own turns: a reading that asks, or that resized the viewport
+    /// (its turn clears the resize), output, an ask, the quiet's try. `take()` decides what each lands.
+    public var wantsTurn: Bool {
+        if scrolling { return turnAsked && !touching }
+        return pending || turnAsked || turnOutput || turnQuiet
+    }
+
+    /// Whether to land now, inside the layout pass of the reading that asked, instead of at the next
+    /// turn. Only a pin's first `inPassLimit` landings may. A transcript that mounts draws its first
+    /// frames out of those passes, and a lazy stack that has not realized its tail needs a few landings
+    /// (one of them at rest, where it moves nothing but keeps the tail anchored while the composer
+    /// settles) before the view stays there; a landing a turn later shows the rows' top for a frame.
+    /// Every later landing waits for `take()`, so a layout that asks again inside its own passes
+    /// (ios-duo-1) lands inside them at most `inPassLimit` times per thread the pin shows, whatever it
+    /// does. A pass that gets the tail no nearer can stall the pin here, as a turn's landing can.
+    public mutating func takeInPass() -> Bool {
+        guard landings < Self.inPassLimit, asking, !scrolling else { return false }
+        asking = false
+        if pending { return take() }
+        landings += 1
+        return true
+    }
+
+    /// The thread under the pin changed (the session, or a reused view's ref). What the old one did, a
+    /// stall, its misses, a landing it wanted, says nothing of the new one. The reader's scroll stays:
+    /// the view is the same.
+    ///
+    /// `refillingPass` gives the new thread its own `inPassLimit` landings in passes, as a mount has:
+    /// its first frames belong at the tail too. Pass it only for a change that no layout drives, a
+    /// session or a ref, so a layout that asks again inside its passes cannot refill what it spends;
+    /// a view that leaves the screen keeps its count.
+    public mutating func newThread(refillingPass: Bool) {
+        var next = NativeTailRepin()
+        next.scrolling = scrolling
+        next.touching = touching
+        next.landings = refillingPass ? 0 : landings
+        self = next
+    }
+
+    /// A stalled tail saw no reading for `quietWait`: it gets one try, and the wait doubles.
+    public mutating func quietPassed() {
+        guard stalled, quietTries < Self.maxQuietTries else { return }
+        quietTries += 1
+        quietWait *= 2
+        turnQuiet = true
+    }
+
+    /// Whether to land now. Call it once per run-loop turn, after the turn's events. A pass that
+    /// asked for a landing (`takeInPass`) calls it too, for the events it finds waiting.
+    public mutating func take() -> Bool {
+        if scrolling, !(turnAsked && !touching) { return false }
+        let resized = turnResized, output = turnOutput, asked = turnAsked, quiet = turnQuiet
+        let measured = fresh
+        turnResized = false
+        turnOutput = false
+        turnAsked = false
+        turnQuiet = false
+        fresh = false
+        if asked {
+            freshBudget()
+            return landing(measured)
+        }
+        // `pending` is set only by a reading beyond the slack, and a reading within it rests.
+        guard pending else { return false }
+        if !stalled, measured, let setOut, let gap, !output, !resized, gap >= setOut { misses += 1 }
+        if misses >= Self.limit || run >= Self.maxRun { stalled = true }
+        if stalled, !output, !quiet { return false }
+        if !output { run += 1 }
+        return landing(measured)
+    }
+
+    private mutating func landing(_ measured: Bool) -> Bool {
+        pending = false
+        landings += 1
+        if measured { setOut = gap }
+        return true
+    }
+
+    private mutating func freshBudget() {
+        stalled = false
+        misses = 0
+        run = 0
+        quietTries = 0
+        quietWait = Self.quiet
+        setOut = nil
+    }
+
+    private mutating func rest() {
+        freshBudget()
+        pending = false
+    }
+}

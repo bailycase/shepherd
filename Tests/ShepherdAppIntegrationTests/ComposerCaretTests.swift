@@ -1,15 +1,17 @@
 import AppKit
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// The composer's field with its selection bound (⌫ at the start of the words takes the last
-/// chip back): a draft replaced from outside the field (a mention chosen, a command picked)
-/// still leaves the caret at its end, as it did before the selection was bound.
+/// The composer's field with its caret kept (⌫ at the start of the words takes the last chip
+/// back): a draft replaced from outside the field (a mention chosen, a command picked) still
+/// leaves the caret at its end, as it did before the caret was kept.
 @Suite("Composer caret", .mainActorExclusive)
 @MainActor
 struct ComposerCaretTests {
@@ -179,6 +181,124 @@ struct ComposerCaretTests {
             return draft.prompt == "before\nafter"
         }
         #expect(!draft.starting && vm.state.agents.isEmpty, "a line break never starts the thread")
+    }
+
+    /// The field publishes its words as a native string and its caret as UTF-16 offsets of the
+    /// draft (a chip spans its whole token), so a key converts nothing to `String.Index`.
+    @Test func typingKeepsTheDraftNativeAndTheCaretAsOffsets() async throws {
+        final class Draft { var text = "" }
+        let draft = Draft()
+        let caret = ComposerCaret()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), caret: caret,
+                                          placeholder: "Message", label: "Message", focus: .constant(true), attach: { _ in }))
+        }
+        render()
+        try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+
+        editor.insertText("héllo wörld", replacementRange: editor.selectedRange())
+        #expect(draft.text == "héllo wörld")
+        #expect(draft.text.isContiguousUTF8)
+        #expect(caret.range == NSRange(location: 11, length: 0))
+
+        editor.setSelectedRange(NSRange(location: 2, length: 0))
+        #expect(caret.range == NSRange(location: 2, length: 0))
+
+        draft.text = "fix /skill:debug now"
+        render()
+        try await eventuallyOnMain("the skill to become a chip") { editor.string == "fix \u{FFFC} now" }
+        editor.setSelectedRange(NSRange(location: 5, length: 0))
+        #expect(caret.range == NSRange(location: 16, length: 0), "the caret after the chip sits after its whole token")
+        editor.setSelectedRange(NSRange(location: 4, length: 1))
+        #expect(caret.range == NSRange(location: 4, length: 12), "a selected chip spans its token")
+    }
+
+    /// A caret written to `ComposerCaret` (not by the field) moves the editor on the next update,
+    /// across a chip, and never past the words the editor holds.
+    @Test func aCaretSetOutsideTheFieldMovesTheEditorThere() async throws {
+        final class Draft { var text = "" }
+        let draft = Draft()
+        let caret = ComposerCaret()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), caret: caret,
+                                          placeholder: "Message", label: "Message", focus: .constant(true), attach: { _ in }))
+        }
+        render()
+        try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        draft.text = "fix /skill:debug naïve 日本語"
+        render()
+        try await eventuallyOnMain("the skill to become a chip") { editor.string == "fix \u{FFFC} naïve 日本語" }
+        let words = (editor.string as NSString).length
+
+        caret.range = NSRange(location: 16, length: 0)
+        render()
+        try await eventuallyOnMain("the editor to move past the chip") { editor.selectedRange() == NSRange(location: 5, length: 0) }
+
+        caret.range = NSRange(location: 400, length: 0)
+        render()
+        try await eventuallyOnMain("the editor to stop at the end of its words") {
+            editor.selectedRange() == NSRange(location: words, length: 0)
+        }
+    }
+
+    /// A draft replaced while the field is not editing leaves no caret: the offsets the field wrote
+    /// belong to the draft it replaced.
+    @Test func aDraftReplacedWhileTheFieldIsNotEditingForgetsTheCaret() async throws {
+        final class Draft { var text = "" }
+        let draft = Draft()
+        let caret = ComposerCaret()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), caret: caret,
+                                          placeholder: "Message", label: "Message", focus: .constant(false), attach: { _ in }))
+        }
+        draft.text = "héllo wörld"
+        render()
+        caret.range = NSRange(location: 3, length: 0)
+        render()
+        #expect(caret.range == NSRange(location: 3, length: 0), "the same draft keeps its caret")
+
+        draft.text = "ok"
+        render()
+        #expect(caret.range == nil)
+    }
+
+    /// ⌫ at the start of the words takes the last chip back, reading the caret the field wrote;
+    /// anywhere else it deletes a character.
+    @Test(arguments: [(0, true), (5, false)] as [(Int, Bool)])
+    func backspaceTakesTheLastChipBackOnlyAtTheStartOfTheWords(caretAt: Int, takesBack: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(1, in: app)
+        defer { window.close() }
+        vm.focusedPaneID = agents[0].piPane.id
+        var found: ComposerTextField.Editor?
+        try await eventuallyOnMain("the composer to take the keyboard") {
+            ListPerf.settle(window)
+            found = window.window.firstResponder as? ComposerTextField.Editor
+            return found != nil
+        }
+        let editor = try #require(found)
+        let store = vm.threadStores.store(for: agents[0].agent.id)
+        let piece = try #require(DesignReference(string: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@4"))
+        #expect(store.attach(reference: NativeAttachedReference(reference: piece, label: "A")))
+
+        editor.insertText("héllo", replacementRange: NSRange(location: NSNotFound, length: 0))
+        ListPerf.settle(window)
+        #expect(store.draft == "héllo")
+        editor.setSelectedRange(NSRange(location: caretAt, length: 0))
+
+        let delete = try #require(editor.keys[.delete])
+        let result = delete(ComposerTextField.Press(modifiers: [], editor: editor))
+        #expect(result == (takesBack ? .handled : .ignored))
+        #expect(store.attachedReferences.isEmpty == takesBack)
     }
 
     @Test func aDraftReplacedFromOutsideTheFieldLeavesTheCaretAtItsEnd() async throws {
