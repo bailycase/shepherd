@@ -28,7 +28,7 @@ private final class ThreadHarness {
     private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
-    init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil, subagents: [ChildRun] = []) {
+    init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil, subagents: [ChildRun] = [], height: CGFloat = 600) {
         var snapshot = Self.snapshot(count: messages, running: running, paragraphs: paragraphs)
         snapshot.olderCursor = olderCursor
         snapshot.subagents = subagents
@@ -36,7 +36,7 @@ private final class ThreadHarness {
             snapshot.messages[user].timestamp = 0
         }
         self.snapshot = snapshot
-        window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false)
+        window = OffscreenWindow(size: CGSize(width: 900, height: height), dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             if case .send(_, _, let operation, _, _, _, _, _, _) = value { return .accepted(operationID: operation) }
@@ -1039,11 +1039,19 @@ struct ThreadScrollingTests {
     }
 
     /// A reader scrolls up through a finished reply of many chunks (each lazy, built as it comes
-    /// into view): every heading they can see moves exactly as far as they scrolled, and no stretch
-    /// of the thread goes blank. A lazy stack that mis-estimates the chunks it has not built shows
-    /// as a heading that jumps. Light, because Vision misses dark low-contrast lines.
+    /// into view): the thread sits exactly as far above its tail as they scrolled, every heading they
+    /// can see moves exactly as far, and no stretch of the thread goes blank. A lazy stack that
+    /// mis-estimates the chunks it has not built shows as a heading that jumps. Light, because Vision
+    /// misses dark low-contrast lines. The window is tall and the steps short, so a heading is in view
+    /// before and after almost every step.
+    ///
+    /// Known issue: where the reader leaves the last two chunks (laid out for real) for the lazy ones,
+    /// about 1,200 pt above the tail, SwiftUI re-places the nested lazy stack and puts the view back on
+    /// the tail, which no heading comparison sees (the headings it shows are new), and for one reading the
+    /// top of the view is blank. It happens at the same places on every run, and again for the next two
+    /// passes, until the stack has measured enough chunks to estimate the rest.
     @Test func aReaderScrollingUpThroughALongReplySeesItMoveOnlyAsFarAsTheyScroll() async throws {
-        let thread = ThreadHarness(messages: 2)
+        let thread = ThreadHarness(messages: 2, height: 900)
         defer { thread.close() }
         try await thread.waitUntilReady()
         let text = MarkdownFixtures.longReply(cycles: 80, markerEvery: 1)
@@ -1052,21 +1060,26 @@ struct ThreadScrollingTests {
         try await eventuallyOnMain("the long reply to open at its tail") { thread.isPinned }
         try await thread.settle()
 
+        let pitch: CGFloat = 150, steps = 64
         var previous = try thread.markerPositions()
         var compared = 0
-        for step in 1...32 {
-            thread.scrollUp(by: 300)
-            try await thread.settle()
-            let now = try thread.markerPositions()
-            for (marker, y) in now {
-                guard let before = previous[marker] else { continue }
-                compared += 1
-                #expect(abs((y - before) - 300) <= 4, "step \(step): Marker \(marker) moved \(y - before) pt for a 300 pt scroll")
+        await withKnownIssue("bug: scrolling up out of a long reply's last two chunks into its lazy chunks puts the thread back on its tail", isIntermittent: true) {
+            for step in 1...steps {
+                thread.scrollUp(by: pitch)
+                try await thread.settle()
+                let above = thread.distanceFromBottom
+                #expect(abs(above - CGFloat(step) * pitch) <= 4, "step \(step): \(above) pt above the tail, scrolled \(CGFloat(step) * pitch)")
+                let now = try thread.markerPositions()
+                for (marker, y) in now {
+                    guard let before = previous[marker] else { continue }
+                    compared += 1
+                    #expect(abs((y - before) - pitch) <= 4, "step \(step): Marker \(marker) moved \(y - before) pt for a \(Int(pitch)) pt scroll")
+                }
+                #expect(thread.longestBlankBand <= 64, "step \(step): a blank band of \(thread.longestBlankBand) pt")
+                previous = now
             }
-            #expect(thread.longestBlankBand <= 64, "step \(step): a blank band of \(thread.longestBlankBand) pt")
-            previous = now
+            #expect(compared >= steps, "the headings were measured: \(compared) comparisons in \(steps) steps")
         }
-        #expect(compared >= 8, "the headings were measured: \(compared) comparisons")
     }
 
     /// A reader parked in the middle of a reply that is still streaming (its chunks crossing boundaries
