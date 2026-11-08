@@ -29,6 +29,9 @@ struct ThreadBlankScreenTests {
     /// The most background a reader may see in a row of the thread, in points: well over the gaps
     /// between blocks (16) and turns (40), well under a screen.
     static let blankBandLimit = 64
+    /// The longest a giant reply's thread may be blank on its way to its tail: from the last frame that drew to the
+    /// last blank one. The user accepted a frame or two (measured up to about 0.7 s).
+    static let blankStretchLimit = Duration.milliseconds(1500)
 
     // MARK: Rig
 
@@ -111,20 +114,26 @@ struct ThreadBlankScreenTests {
         ///
         /// A giant reply (`NativeProse.isGiant`) is the only one laid out a chunk at a time, and may show a blank
         /// frame or two on the way to its tail while the lazy stack replaces the heights it estimated (ink 0
-        /// for up to 0.8 s at 1200x900): a known issue until the user decides how a giant reply is drawn, with
-        /// the thread drawn again within 5 s. Any other reply is laid out whole and must show none.
+        /// for up to 0.8 s at 1200x900): a known issue, accepted by the user for replies of 128 KB or more. Outside
+        /// it, the blank frames lie within `Self.blankStretchLimit` of each other and the thread ends drawn within
+        /// 5 s. Any other reply is laid out whole and must show none.
         func expectNoBlankBand(_ what: String, for duration: Duration = .milliseconds(300), giant: Bool = false) async throws {
             let start = ContinuousClock.now
             var blank: [String] = []
             var frames = 0
             var last = (ink: 0, band: 0)
+            var previousFrame = Duration.zero, blankSince: Duration?, blankUntil = Duration.zero
             repeat {
                 window.layout()
                 let now = drawing
-                let at = (ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds]))
+                let elapsed = ContinuousClock.now - start
+                let at = elapsed.formatted(.units(allowed: [.milliseconds]))
                 if now.ink == 0 || frames > 0 && now.longestBlankBand > ThreadBlankScreenTests.blankBandLimit {
                     blank.append("\(at): band \(now.longestBlankBand) ink \(now.ink)")
+                    blankSince = blankSince ?? previousFrame
+                    blankUntil = elapsed
                 }
+                previousFrame = elapsed
                 last = (now.ink, now.longestBlankBand)
                 frames += 1
                 try await Task.sleep(for: .milliseconds(1))
@@ -134,6 +143,13 @@ struct ThreadBlankScreenTests {
                 throw TimedOut(what: "\(what): the thread to end drawn, with no blank band (limit \(ThreadBlankScreenTests.blankBandLimit) pt of background in a row): band \(last.band) ink \(last.ink); blank frames \(blank); \(reading.map(String.init(describing:)) ?? "no scroll view")")
             }
             if giant {
+                // A blank frame or two is the accepted glitch; a thread blank for seconds (the base draws a blank row for
+                // 4 s) is not, and the known issue below would swallow it.
+                if let since = blankSince {
+                    let stretch = blankUntil - since
+                    #expect(stretch <= ThreadBlankScreenTests.blankStretchLimit,
+                            "\(what): the thread was blank for \(stretch.formatted(.units(allowed: [.milliseconds]))), from the frame at \(since.formatted(.units(allowed: [.milliseconds]))) to the blank one at \(blankUntil.formatted(.units(allowed: [.milliseconds]))); blank frames \(blank)")
+                }
                 withKnownIssue("bug: a giant reply's lazy stack replaces the heights it estimated, and the thread is blank for a frame or two", isIntermittent: true) {
                     #expect(blank.isEmpty, "\(what): blank frames \(blank)")
                 }
