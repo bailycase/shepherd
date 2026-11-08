@@ -331,7 +331,12 @@ struct ThreadTranscript: View {
             // detaches, and sending re-attaches.
             .scrollPosition(id: $presentation.visibleTurn, anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
-            .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
+            .onChange(of: store.sessionKey) { _, _ in
+                tailPin.reset()
+                loadVisibleHistory()
+            }
+            // A reused view (the design pane's chat has no identity of its own) shows another thread.
+            .onChange(of: ref) { _, _ in tailPin.reset() }
             .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : .top) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : nil) : (follower.sticky ? nil : .top), for: .sizeChanges)
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in

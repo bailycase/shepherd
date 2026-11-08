@@ -944,6 +944,17 @@ public struct NativeTailRepin: Equatable, Sendable {
         return true
     }
 
+    /// The thread under the pin changed (the session, or a reused view's ref). What the old one did, a
+    /// stall, its misses, a landing it wanted, says nothing of the new one. The reader's scroll and the
+    /// landings made stay: the view is the same and so are its landings in a pass.
+    public mutating func newThread() {
+        var next = NativeTailRepin()
+        next.scrolling = scrolling
+        next.touching = touching
+        next.landings = landings
+        self = next
+    }
+
     /// A stalled tail saw no reading for `quietWait`: it gets one try, and the wait doubles.
     public mutating func quietPassed() {
         guard stalled, quietTries < Self.maxQuietTries else { return }

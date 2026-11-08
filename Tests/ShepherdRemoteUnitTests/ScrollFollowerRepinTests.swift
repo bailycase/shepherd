@@ -457,4 +457,58 @@ struct ScrollFollowerRepinTests {
         repin.reading(distance: 600, wants: true, resized: false)
         #expect(takeInPass())
     }
+
+    // MARK: A new thread under the pin
+
+    @Test func aNewThreadForgetsTheOldOnesStall() {
+        var repin = Self.stalled()
+        func take() -> Bool { repin.take() }
+        #expect(repin.stalled)
+        let landed = repin.landings
+        repin.newThread()
+        #expect(!repin.stalled)
+        #expect(repin.misses == 0)
+        #expect(!repin.pending)
+        #expect(repin.quietTries == 0)
+        #expect(repin.quietWait == NativeTailRepin.quiet)
+        #expect(repin.landings == landed)
+        repin.reading(distance: 700, wants: true, resized: false)
+        #expect(take())
+        #expect(repin.landings == landed + 1)
+    }
+
+    @Test func aNewThreadForgetsAReadingNotYetLanded() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        repin.reading(distance: 600, wants: true, resized: false)
+        repin.newThread()
+        #expect(!repin.pending)
+        #expect(!takeInPass())
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(takeInPass())
+    }
+
+    @Test func aNewThreadDoesNotRefillThePass() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        for _ in 0..<NativeTailRepin.inPassLimit {
+            repin.reading(distance: 0, wants: true, resized: false)
+            #expect(takeInPass())
+        }
+        repin.newThread()
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(!takeInPass())
+    }
+
+    @Test func aNewThreadLeavesTheReadersScrollAlone() {
+        var repin = NativeTailRepin()
+        func take() -> Bool { repin.take() }
+        repin.reader(scrolling: true, touching: false)
+        repin.newThread()
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(!take())
+        #expect(!repin.wantsTurn)
+        repin.reader(scrolling: false, touching: false)
+        #expect(take())
+    }
 }

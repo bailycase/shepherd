@@ -77,16 +77,24 @@ final class ThreadTailPin {
         watch()
     }
 
-    /// The transcript left the screen: nothing lands through a proxy that may outlive it.
-    func stop() {
+    /// The transcript now shows another thread (the session changed, or a reused view got a new ref):
+    /// what the pin knew of the old one is no use. The landing closure stays for the next reading to
+    /// replace, and so do the mount's landings in passes, spent or not.
+    func reset() {
         turn?.cancel()
         quiet?.cancel()
         turn = nil
         quiet = nil
-        land = nil
-        repin = NativeTailRepin()
-        scrolling = false
+        repin.newThread()
         resized = false
+    }
+
+    /// The transcript left the screen: nothing lands through a proxy that may outlive it.
+    func stop() {
+        reset()
+        repin.reader(scrolling: false, touching: false)
+        land = nil
+        scrolling = false
     }
 
     private func schedule() {
