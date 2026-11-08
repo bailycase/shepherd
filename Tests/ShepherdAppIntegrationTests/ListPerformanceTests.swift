@@ -1198,7 +1198,9 @@ struct ListPerformanceTests {
         try await settleReply(thread, blocks: blocks)
         // Then down through the whole reply a screenful at a time, as a reader does (a jump builds only
         // the few chunks at its two ends), and on to the tail.
-        while ListPerf.scroll(thread.window, scroll, step: 800, steps: 20).distance > 0 {}
+        var screens = 0
+        while screens < 40, ListPerf.scroll(thread.window, scroll, step: 800, steps: 20).distance > 0 { screens += 1 }
+        #expect(screens < 40, "the reply ended within \(screens) batches of 20 screens")
         ListPerf.jump(thread.window, scroll, toEnd: true)
         try await settleReply(thread, blocks: blocks)
         try await eventuallyOnMain("the chunks scrolled away to be let go") {
