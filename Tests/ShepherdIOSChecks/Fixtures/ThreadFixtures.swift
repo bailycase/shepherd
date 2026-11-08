@@ -672,7 +672,7 @@ enum FollowFixture {
         deinit { observer.map(NotificationCenter.default.removeObserver) }
     }
 
-    @MainActor private static func composerField() -> UITextView? {
+    @MainActor static func composerField() -> UITextView? {
         var fields: [UITextView] = []
         func walk(_ view: UIView) {
             if let field = view as? UITextView, field.isEditable { fields.append(field) }
@@ -723,7 +723,7 @@ enum FollowFixture {
 
     /// Puts the caret in the composer's field, so the software keyboard (when the simulator
     /// shows one) raises the composer as a reader's tap would.
-    @MainActor private static func focusComposer() {
+    @MainActor static func focusComposer() {
         composerField()?.becomeFirstResponder()
     }
 
