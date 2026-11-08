@@ -232,9 +232,12 @@ struct ThreadComposer: View {
             .scrollIndicators(.hidden)
             .shTransition(.content)
         }
-        if !store.attachedReferences.isEmpty {
+        if !store.attachedReferences.isEmpty || !store.attachedElements.isEmpty {
             ScrollView(.horizontal) {
-                HStack(spacing: SH.Space.s) { referenceChips(store) }
+                HStack(spacing: SH.Space.s) {
+                    referenceChips(store)
+                    elementChips(store)
+                }
             }
             .scrollIndicators(.hidden)
         }
@@ -258,6 +261,7 @@ struct ThreadComposer: View {
     private func card(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
         SHComposer(isFocused: focused) {
             referenceChips(store)
+            elementChips(store)
             if !state.attachments.isEmpty { attachmentChips(state) }
         } field: {
             // A command draft shows in mono while its list is open (iPadPortrait).
@@ -421,6 +425,13 @@ struct ThreadComposer: View {
                                 version: DesignReferencePresentation.version(attached.reference.revision)) {
                 store.detachReference(attached.id)
             }
+        }
+    }
+
+    /// The page elements picked in the thread's Browser, waiting beside the draft (iPadPaneBrowser's chip).
+    private func elementChips(_ store: NativeThreadStore) -> some View {
+        ForEach(store.attachedElements) { attached in
+            SHElementChip(attached.element.label, source: attached.element.sourceShort) { store.detachElement(attached.id) }
         }
     }
 

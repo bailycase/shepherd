@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 
 // The Browser tab's rules, pure so they are tested without
@@ -109,26 +110,14 @@ enum BrowserScriptMessage: Equatable {
         case "userInput":
             self = .userInput
         case "rect":
-            guard let rect = Self.rect(body["rect"]) else { return nil }
+            guard let rect = BrowserScripts.rect(body["rect"]) else { return nil }
             self = .moved(rect: rect)
         case "pick":
-            guard let selector = body["selector"] as? String, !selector.isEmpty, let label = body["label"] as? String,
-                  let rect = Self.rect(body["rect"]) else { return nil }
-            let source = (body["source"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let element = BrowserElement(page: page, selector: selector, label: label, source: source,
-                                         width: Int(rect.width.rounded()), height: Int(rect.height.rounded()),
-                                         html: body["html"] as? String).clamped
-            self = .pick(element, rect: rect)
+            guard let picked = BrowserScripts.pick(body, page: page) else { return nil }
+            self = .pick(picked.element, rect: picked.rect)
         default:
             return nil
         }
-    }
-
-    private static func rect(_ value: Any?) -> CGRect? {
-        guard let value = value as? [String: Any], let x = (value["x"] as? NSNumber)?.doubleValue, let y = (value["y"] as? NSNumber)?.doubleValue,
-              let width = (value["width"] as? NSNumber)?.doubleValue, let height = (value["height"] as? NSNumber)?.doubleValue,
-              width.isFinite, height.isFinite, x.isFinite, y.isFinite else { return nil }
-        return CGRect(x: x, y: y, width: max(0, width), height: max(0, height))
     }
 }
 
@@ -225,29 +214,5 @@ final class BrowserConsoleLog {
     nonisolated static func time(_ date: Date) -> String {
         let parts = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
         return String(format: "%02d:%02d:%02d", parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
-    }
-}
-
-// MARK: Picked element's popover
-
-enum BrowserPopoverPlacement {
-    /// Where a picked element's popover goes in the page area (points): beside the element's
-    /// right edge, else its left, else under it, kept inside the area. `rect` is in CSS pixels,
-    /// `origin` and `zoom` place the page in the area.
-    static func origin(for rect: CGRect, pageOrigin: CGPoint, zoom: CGFloat, popover: CGSize, area: CGSize, gap: CGFloat) -> CGPoint {
-        let element = CGRect(x: pageOrigin.x + rect.minX * zoom, y: pageOrigin.y + rect.minY * zoom,
-                             width: rect.width * zoom, height: rect.height * zoom)
-        var x = element.maxX + gap
-        var y = element.minY
-        if x + popover.width > area.width {
-            x = element.minX - gap - popover.width
-            if x < 0 {
-                x = element.minX
-                y = element.maxY + gap
-            }
-        }
-        x = min(max(gap, x), max(gap, area.width - popover.width - gap))
-        y = min(max(gap, y), max(gap, area.height - popover.height - gap))
-        return CGPoint(x: x, y: y)
     }
 }

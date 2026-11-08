@@ -4,6 +4,7 @@ import WebKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 
 // A remote thread's Browser page on the phone and iPad: the page renders in
 // this device's own web view and its URL stays `localhost:5173`; its traffic to the host's loopback
@@ -12,7 +13,9 @@ import ShepherdRemote
 // shared with the Mac). The only file of the iOS app that imports WebKit.
 //
 // The page is the user's alone: the host's agent does not drive it (`browser.drive.v1` is not
-// built here), so a host can't make this device open anything.
+// built here), so a host can't make this device open anything. The user selects an element in it
+// with the Mac's picker (`BrowserScripts`), in Shepherd's own content world, and adds it to their
+// message (iPadPaneBrowser).
 
 /// One thread's page: its web view, the ports it holds, the host's dev servers, and why nothing
 /// loaded. Made by `MobileBrowsers`, which lets its ports go while the host is disconnected.
@@ -33,6 +36,11 @@ final class BrowserPage {
     private(set) var lookedForRunning = false
     /// Why nothing loaded: a port that can't be forwarded, a load that failed. Cleared by the next load.
     var notice: String?
+    /// The next tap in the page picks the element under it.
+    private(set) var selecting = false
+    /// The element the user picked, and where it is in the page's viewport (CSS pixels, points here).
+    private(set) var picked: BrowserElement?
+    private(set) var pickedRect: CGRect?
 
     @ObservationIgnored weak var host: MobileHost?
     @ObservationIgnored let ports: BrowserPagePorts
@@ -40,6 +48,9 @@ final class BrowserPage {
     @ObservationIgnored private var delegate: Delegate?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var waitTask: Task<Void, Never>?
+
+    /// Shepherd's world in the page: the page can't see or call the picker that runs there.
+    static let world = WKContentWorld.world(name: "shepherd-browser")
 
     /// How long Start waits for its port, tried every half second, as on the Mac.
     static let waitSeconds = 90
@@ -82,6 +93,7 @@ final class BrowserPage {
         stopWaiting()
         ports.close()
         observations.removeAll()
+        webView?.configuration.userContentController.removeAllScriptMessageHandlers()
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
@@ -125,6 +137,55 @@ final class BrowserPage {
             webView.reload()
         } else if let url {
             open(url)
+        }
+    }
+
+    // MARK: Selecting an element
+
+    func toggleSelecting() { setSelecting(!selecting) }
+
+    func setSelecting(_ on: Bool) {
+        guard let webView, url != nil else { return }
+        if selecting != on { selecting = on }
+        clearPick()
+        let palette = Self.palette(webView.traitCollection)
+        webView.callAsyncJavaScript("return window.__shepherdBrowser ? window.__shepherdBrowser.setSelecting(on, palette) : false",
+                                    arguments: ["on": on, "palette": palette], in: nil, in: Self.world) { _ in }
+    }
+
+    /// The popover closed (or its element was added): the outline goes with it.
+    func dismissPick() {
+        clearPick()
+        webView?.callAsyncJavaScript("if (window.__shepherdBrowser) window.__shepherdBrowser.clear()", arguments: [:], in: nil,
+                                     in: Self.world) { _ in }
+    }
+
+    private func clearPick() {
+        if picked != nil { picked = nil }
+        if pickedRect != nil { pickedRect = nil }
+    }
+
+    /// The outline's colors, as on the Mac: the `running` role and its tint, and text on it, in the page's appearance.
+    static func palette(_ traits: UITraitCollection) -> [String: String] {
+        let colors = ThemeStore.shared.theme.variant(dark: traits.userInterfaceStyle == .dark).colors
+        return ["accent": colors.running, "tint": colors.runningTint, "text": colors.textOnRunning]
+    }
+
+    /// What the picker posts: a pick, its element moving as the page scrolls, or Esc.
+    fileprivate func picker(_ body: Any) {
+        guard let body = body as? [String: Any] else { return }
+        switch body["kind"] as? String {
+        case "pick":
+            guard let pick = BrowserScripts.pick(body, page: url?.absoluteString ?? "") else { return }
+            if selecting { selecting = false }
+            picked = pick.element
+            pickedRect = pick.rect
+        case "rect":
+            if picked != nil, let rect = BrowserScripts.rect(body["rect"]) { pickedRect = rect }
+        case "cancel":
+            if selecting { selecting = false }
+        default:
+            break
         }
     }
 
@@ -214,9 +275,16 @@ final class BrowserPage {
         // Nothing of the page is kept on the device or shared with another thread's page.
         configuration.websiteDataStore = .nonPersistent()
         configuration.allowsInlineMediaPlayback = true
+        let delegate = Delegate(page: self)
+        let content = configuration.userContentController
+        // The page's world answers the picker's source question (a React dev build's JSX location); the picker runs in ours.
+        content.addUserScript(WKUserScript(source: BrowserScripts.pageShim, injectionTime: .atDocumentStart, forMainFrameOnly: true,
+                                           in: .page))
+        content.addUserScript(WKUserScript(source: BrowserScripts.picker, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
+                                           in: Self.world))
+        content.add(WeakHandler(delegate), contentWorld: Self.world, name: BrowserScripts.pickerHandler)
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.allowsBackForwardNavigationGestures = true
-        let delegate = Delegate(page: self)
         view.navigationDelegate = delegate
         view.uiDelegate = delegate
         self.delegate = delegate
@@ -265,7 +333,7 @@ final class BrowserPage {
     }
 
     @MainActor
-    private final class Delegate: NSObject, WKNavigationDelegate, WKUIDelegate {
+    private final class Delegate: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         weak var page: BrowserPage?
 
         init(page: BrowserPage) { self.page = page }
@@ -277,6 +345,14 @@ final class BrowserPage {
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
             page?.notice = nil
+            // A new document: nothing is picked or being picked in it.
+            if page?.selecting == true || page?.picked != nil { page?.setSelecting(false) }
+        }
+
+        /// Only the main frame's picker, in Shepherd's world, posts here.
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.frameInfo.isMainFrame else { return }
+            page?.picker(message.body)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -332,5 +408,16 @@ struct BrowserWebView: UIViewRepresentable {
             webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             addSubview(webView)
         }
+    }
+}
+
+/// The content controller holds its handlers strongly: this keeps the page's delegate out of that cycle.
+private final class WeakHandler: NSObject, WKScriptMessageHandler {
+    weak var target: (any WKScriptMessageHandler)?
+
+    init(_ target: any WKScriptMessageHandler) { self.target = target }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(controller, didReceive: message)
     }
 }
