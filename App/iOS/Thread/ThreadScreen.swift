@@ -336,6 +336,7 @@ struct ThreadTranscript: View {
                 // Insets and row wrapping can settle separately from scroll offsets.
                 // While following, keep the tail above the composer through every change.
                 if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling, nativeAnchor: nativeTail) }) {
+                    SHRenderProbe.tick("thread.tailLanding")
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }

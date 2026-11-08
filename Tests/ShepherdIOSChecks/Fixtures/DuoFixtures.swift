@@ -20,6 +20,9 @@ extension FixtureCatalog {
             // Closed on Subagents, then unfolded: the pushed screen becomes the open pane's tab beside the thread.
             FixtureScreen(name: "duo-unfold", hosts: SubagentFixtures.hosts(), routes: [.thread(live), .subagents(.list(live))],
                           prepare: { app in await DuoFixtures.unfold(app, thread: live) }),
+            // The side pane opened and closed ten times over a thread whose newest reply is 24 KB: the transcript lands on its
+            // tail after each, few times, and draws (ios-duo-1). Posed open on the Duo, or landscape on an iPad.
+            FixtureScreen(name: "duo-pane-long-reply", hosts: TailFixture.hosts(), routes: [.thread(review)], prepare: TailFixture.togglePane),
             // Laptop pose: the arrangement, a draft in its composer; then laid flat, the same thread and draft, its composer a card.
             FixtureScreen(name: "duo-laptop", hosts: ReviewFixture.hosts(), routes: [.thread(review)],
                           prepare: { app in await DuoFixtures.laptop(app, thread: review, flatten: false) }),

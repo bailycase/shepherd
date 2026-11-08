@@ -708,12 +708,17 @@ enum FollowFixture {
     /// Prints whether the thread's tail sits where `holds` wants it: its distance, in points,
     /// above the end of the content, with the composer's inset counted. At the tail it is the
     /// thread's bottom padding (the gutter under the bottom marker a scroll lands on).
-    @MainActor private static func check(_ what: String, _ holds: (CGFloat) -> Bool) {
-        guard let scroll = threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
+    @MainActor static func check(_ what: String, _ holds: (CGFloat) -> Bool) {
+        guard let reading = tail(holds) else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
+        FixtureCheck.report("FIXTURE CHECK \(reading.valid ? "ok" : "FAILED"): \(what) (\(Int(reading.distance.rounded()))pt above the tail)")
+    }
+
+    /// The tail's distance, and whether `holds` for it with the offset inside the content (never past its end).
+    @MainActor static func tail(_ holds: (CGFloat) -> Bool) -> (valid: Bool, distance: CGFloat)? {
+        guard let scroll = threadScrollView() else { return nil }
         let distance = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
         let minimum = min(0, scroll.contentSize.height + scroll.adjustedContentInset.top + scroll.adjustedContentInset.bottom - scroll.bounds.height)
-        let valid = holds(distance) && distance >= minimum - NativeScrollFollower.repinSlack
-        FixtureCheck.report("FIXTURE CHECK \(valid ? "ok" : "FAILED"): \(what) (\(Int(distance.rounded()))pt above the tail)")
+        return (holds(distance) && distance >= minimum - NativeScrollFollower.repinSlack, distance)
     }
 
     /// Puts the caret in the composer's field, so the software keyboard (when the simulator
@@ -724,7 +729,7 @@ enum FollowFixture {
 
     /// The thread's scroll view: the tallest scrolling one that isn't a list (the iPad sidebar)
     /// or a text view.
-    @MainActor private static func threadScrollView() -> UIScrollView? {
+    @MainActor static func threadScrollView() -> UIScrollView? {
         var found: [UIScrollView] = []
         func walk(_ view: UIView) {
             if let scroll = view as? UIScrollView, !(scroll is UICollectionView), !(scroll is UITextView),
@@ -735,5 +740,46 @@ enum FollowFixture {
         }
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).forEach(walk)
         return found.max { $0.contentSize.height < $1.contentSize.height }
+    }
+
+    /// The share of the thread scroll view's visible rect, between the bars and the composer, that
+    /// is not its background, from the pixels it draws. The numbers a scroll view reports do not
+    /// show a transcript stranded past its rows (a blank page at the tail), this does.
+    @MainActor static func transcriptInk() -> Double {
+        guard let scroll = threadScrollView() else { return 0 }
+        let inset = scroll.adjustedContentInset
+        let frame = CGRect(origin: .zero, size: scroll.bounds.size)
+        let visible = frame.inset(by: UIEdgeInsets(top: inset.top, left: 0, bottom: inset.bottom, right: 0)).integral
+        guard visible.width > 1, visible.height > 1 else { return 0 }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: frame.size, format: format).image { _ in
+            scroll.drawHierarchy(in: frame, afterScreenUpdates: true)
+        }
+        guard let cropped = image.cgImage?.cropping(to: visible) else { return 0 }
+        let width = cropped.width, height = cropped.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return 0 }
+        // The background is the colour most pixels have; ink is whatever differs from it by more than rounding.
+        var tally: [UInt32: Int] = [:]
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            tally[UInt32(pixels[i]) << 16 | UInt32(pixels[i + 1]) << 8 | UInt32(pixels[i + 2]), default: 0] += 1
+        }
+        guard let background = tally.max(by: { $0.value < $1.value })?.key else { return 0 }
+        let (r, g, b) = (Int(background >> 16 & 0xFF), Int(background >> 8 & 0xFF), Int(background & 0xFF))
+        var ink = 0
+        for i in stride(from: 0, to: pixels.count, by: 4)
+        where abs(Int(pixels[i]) - r) > 8 || abs(Int(pixels[i + 1]) - g) > 8 || abs(Int(pixels[i + 2]) - b) > 8 {
+            ink += 1
+        }
+        return Double(ink) / Double(width * height)
     }
 }
