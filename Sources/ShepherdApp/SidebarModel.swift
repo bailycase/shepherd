@@ -211,7 +211,7 @@ struct SidebarSource: Equatable {
     var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
-    /// This Mac's agents whose pi stopped before it served, waiting for Retry.
+    /// This Mac's agents whose pi stopped (before it served or on its own after), waiting for Retry.
     var cannotStart: Set<AgentID> = []
     /// Of those, the ones that stopped because nothing signs in for their model: Needs you.
     var notSignedIn: Set<AgentID> = []

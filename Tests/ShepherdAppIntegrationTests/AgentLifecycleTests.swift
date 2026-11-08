@@ -181,9 +181,8 @@ struct AgentLifecycleTests {
         #expect(vm.state == original)
     }
 
-    /// pi exiting on its own closes its pane, and an agent whose pi is gone is retired with its
-    /// whole layout.
-    @Test func anAgentWhosePiExitsIsRetiredWithItsLayout() async throws {
+    /// pi exiting on its own keeps the agent with its layout: its pane waits, stopped, for Retry.
+    @Test func anAgentWhosePiExitsKeepsItsLayoutUntilRetry() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -198,11 +197,13 @@ struct AgentLifecycleTests {
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
             operationID: UUID(), text: "die", delivery: .followUp))
 
-        try await eventuallyOnMain("the pane to see pi exit") { pane.phase == .exited(3) }
+        try await eventuallyOnMain("the pane to see pi stop") { pane.phase == .stopped }
         let server = app.server
-        try await eventuallyOnMain("the agent to be retired") { server.state.agents.isEmpty && server.state.tabs.isEmpty }
-        #expect(vm.state.agents.isEmpty)
-        #expect(vm.selectedAgentID == nil)
+        #expect(server.state.agents.map(\.id) == [agent.agent.id] && server.state.tabs.map(\.id) == [agent.tab.id])
+        #expect(vm.state.agents.map(\.id) == [agent.agent.id] && vm.state.tabs.map(\.id) == [agent.tab.id])
+        #expect(vm.selectedAgentID == agent.agent.id)
+        #expect(vm.cannotStart.contains(agent.agent.id))
+        #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane)
     }
 }
 
