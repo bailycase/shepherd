@@ -22,6 +22,8 @@ struct MissionWorkspace: View {
     /// The same actions, awaited: true only when the controller accepted it (composers clear on that).
     var send: (MissionUIAction) async -> Bool = { _ in false }
     let action: (MissionUIAction) -> Void
+    /// The host's other missions: who holds this one's repositories (MXLocks).
+    var others: [Mission] = []
     @State private var page: MissionWorkspacePage?
 
     private var phase: MissionRun.Phase { mission.phase }
@@ -59,6 +61,11 @@ struct MissionWorkspace: View {
                                    showTrain: mission.trainShown ? { page = .run } : nil)
                 case .run where mission.trainShown:
                     MissionTrainPage(mission: mission, reviews: reviews, busy: busy, action: action) {
+                        MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
+                                       threads: threads)
+                    }
+                case .run where mission.locksShown:
+                    MissionLocksPage(mission: mission, others: others, busy: busy, action: action) {
                         MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
                                        threads: threads)
                     }

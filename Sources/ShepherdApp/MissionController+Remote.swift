@@ -187,7 +187,7 @@ extension MissionController {
         let halting: Bool = switch action {
         case .pause, .stop: mission.run?.phase.active == true
         // A running train moves the revision with every step; halting it never waits on that.
-        case .pauseTrain, .skipSoak: true
+        case .pauseTrain, .skipSoak, .laneLock: true
         default: false
         }
         if case .steer = action {} else if !halting, mission.revision != revision {
@@ -218,6 +218,7 @@ extension MissionController {
         case .pauseTrain: try await pauseTrain(id: id, revision: mission.revision)
         case .resumeTrain: try await resumeTrain(id: id, revision: current)
         case .skipSoak: try await skipSoak(id: id, revision: mission.revision)
+        case .laneLock(let lane, let choice): try await chooseLock(id: id, lane: lane, choice: choice)
         }
         return nil
     }

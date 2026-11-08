@@ -843,7 +843,18 @@ struct SettingsPreviewTests {
         let (agent, tab) = try await workspace.agent("Fix the login redirect", in: space, order: 0)
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         try await Preview.render("sheet-delete-agent", size: CGSize(width: SHDialogMetrics.width, height: 300)) {
-            AgentDeleteDialog(vm: workspace.vm, agent: agent)
+            AgentDeleteDialog(agent: agent, settings: workspace.vm.settings, cancel: {}, delete: {})
+        }
+    }
+
+    /// A host's agent: the dialog names the host.
+    @Test func deleteRemoteAgentDialog() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "acme-web", path: workspace.dir.path)
+        let (agent, _) = try await workspace.agent("Migrate invoices to v2", in: space, order: 0, status: .working)
+        try await Preview.render("sheet-delete-remote-agent", size: CGSize(width: SHDialogMetrics.width, height: 300)) {
+            AgentDeleteDialog(agent: agent, host: "build-01", settings: workspace.vm.settings, cancel: {}, delete: {})
         }
     }
 

@@ -38,6 +38,13 @@ struct MissionRuntimeTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aMissionWaitsForPathsAnotherHoldsAndAWorkerWritingElsewherePauses() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.locksScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func stopKillsAnInFlightHostCheckAndItsChildWithoutAcceptingLateEvidence() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.stopScenario() }
@@ -462,6 +469,45 @@ struct MissionRuntimeTests {
         let calls = try String(contentsOf: log, encoding: .utf8).split(separator: "\n").filter { $0.hasPrefix("pr merge") }
         #expect(calls.count == 2)
         #expect(try controller.record(id).pill.label == "Merged")
+    }
+
+    static func locksScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        MissionController.lockPoll = .milliseconds(50)
+        let controller = fixture.controller!
+        // A holds result.txt in both repositories while its first check runs.
+        let a = try await fixture.create()
+        try await fixture.holdFirstCheck(a)
+        try await fixture.launch(a)
+        _ = try await fixture.waitForCommand()
+        let b = try await fixture.create()
+        try await fixture.launch(b)
+        try await eventuallyOnMain("B waits for both repositories", timeout: .seconds(30)) {
+            (try? controller.record(b).run?.held?.count) == 2
+        }
+        var waiting = try controller.record(b)
+        #expect(waiting.run?.held?.values.allSatisfy { $0.holder == a && $0.overlap == ["result.txt"] && $0.blocks } == true)
+        #expect(waiting.stationAttempts.isEmpty, "a held repository starts nothing")
+        #expect(waiting.pill.label == "Running · 2 lanes held")
+        #expect(controller.records.queue(fixture.spaces[0].id, paths: ["result.txt"]).map(\.mission.id) == [a, b])
+
+        // A stops: its paths are free, and B runs to review.
+        try await controller.stop(id: a, revision: controller.record(a).revision)
+        try await fixture.wait(b, phase: .review)
+        waiting = try controller.record(b)
+        #expect(waiting.run?.held == nil)
+
+        // A worker that writes outside its declared paths pauses the mission.
+        let c = try await fixture.create()
+        var mission = try controller.record(c)
+        var draft = mission.draft
+        for index in draft.plan!.stations.indices where draft.plan!.stations[index].kind == .worker { draft.plan!.stations[index].paths = ["docs/**"] }
+        try await controller.saveDraft(id: c, revision: mission.revision, draft: draft)
+        try await fixture.launch(c)
+        try await fixture.wait(c, phase: .paused)
+        mission = try controller.record(c)
+        #expect(mission.run?.notice?.contains("wrote outside the paths") == true)
     }
 
     static func retryScenario() async throws {

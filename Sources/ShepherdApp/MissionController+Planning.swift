@@ -13,6 +13,8 @@ struct MissionProposal: Decodable, Sendable {
         var goal: String
         var command: String?
         var doneWhen: [String]
+        /// A worker's planned writes, repository-relative paths or globs.
+        var paths: [String]?
     }
     struct Wire: Decodable, Sendable {
         var source: String
@@ -65,7 +67,8 @@ struct MissionProposal: Decodable, Sendable {
             }
             return MissionStation(id: ids[value.id]!, kind: value.kind, laneID: lane, title: value.title,
                                   goal: value.goal, model: value.kind == .check || value.kind == .decision ? nil : model,
-                                  command: value.command, doneWhen: value.doneWhen)
+                                  command: value.command, doneWhen: value.doneWhen,
+                                  paths: value.kind == .worker ? value.paths.map { Array($0.prefix(64)) } : nil)
         }
         plan.dependencies = try (dependencies ?? []).map { wire in
             guard let source = ids[wire.source], let target = ids[wire.target] else {
@@ -183,6 +186,8 @@ extension MissionController {
            "goal":"verify requirements against actual diff and tests","doneWhen":["requirements verified"]}],
          "dependencies":[{"source":"implement","target":"test","kind":"data","artifact":"implementation"},
            {"source":"test","target":"validate","kind":"data","artifact":"tested implementation"}]}
+        Give every worker "paths": the repository-relative paths or globs it will write ("internal/orders/place.go",
+        "migrations/**"). Other missions on the same repository wait for them; a worker that writes elsewhere pauses.
         Add "estimate":{"tokens":N,"minutes":M}, your estimate for the whole map, when you can.
         When the person's latest message answers a question a decision station stands for, keep that station and
         set "resolves" to its UUID: the host records the answer as its result and dependants may run.

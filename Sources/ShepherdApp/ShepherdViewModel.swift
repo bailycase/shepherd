@@ -338,6 +338,8 @@ final class ShepherdViewModel {
     var remoteInspectingAgent: RemoteAgentRef?
     var remoteInspectionRequest = UUID()
     var remoteRenameTarget: RemoteAgentRef?
+    /// A host's agent waiting on its Delete agent dialog (AppDialogs). Ephemeral.
+    var remoteDeleteTarget: RemoteAgentRef?
     /// A terminal tab being renamed (the panel's Rename tab).
     var terminalRenameTarget: TerminalRenameTarget?
     /// The failure the error sheet shows: what was attempted, and why it failed.
