@@ -76,7 +76,7 @@ struct ComposerSkillChipTests {
         render()
         try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
         let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
-        let field = try #require(editor.delegate as? ComposerTextField.Field)
+        let field = try #require((editor.delegate as AnyObject?) as? ComposerTextField.Field)
         #expect(editor.string == "fix \u{FFFC} now")
 
         draft.focused = false
@@ -105,11 +105,12 @@ struct ComposerSkillChipTests {
         render()
         try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
         let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
-        let field = try #require(editor.delegate as? ComposerTextField.Field)
+        let field = try #require((editor.delegate as AnyObject?) as? ComposerTextField.Field)
         #expect(editor.string == "fix \u{FFFC} now")
 
         #expect(window.window.makeFirstResponder(nil))
         #expect(window.window.makeFirstResponder(field))
+        #expect(!field.trustsPublished, "the editor was reloaded from the cell: the field no longer trusts the words it published")
         try await eventuallyOnMain("the editor to show the chip again") {
             render()
             return editor.textStorage?.attribute(.attachment, at: 4, effectiveRange: nil) is SHSkillChipAttachment

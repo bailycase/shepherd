@@ -11,6 +11,37 @@ import Testing
 @Suite("Composer field work", .serialized, .mainActorExclusive)
 @MainActor
 struct ComposerFieldWorkTests {
+    @Test func aKeystrokeCopiesTheFieldsWordsOnce() async throws {
+        let thread = ComposerThread(focused: true, animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = String(repeating: "The quick brown fox jumps over the lazy dog.\n", count: 1_500)
+        try await thread.settle()
+        let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
+        #expect(editor.string == thread.store.draft, "the field shows the long draft")
+
+        for letter in "hello" {
+            SHRenderProbe.start()
+            thread.type(String(letter))
+            try await thread.settle()
+            let counts = SHRenderProbe.stop()
+            #expect(counts["text.composerFieldCopied"] == 1, "\"\(letter)\" copied the field's words \(counts["text.composerFieldCopied", default: 0]) times: \(counts)")
+        }
+        #expect(thread.store.draft.hasSuffix("dog.\nhello"))
+    }
+
+    @Test func aPublishedDraftIsNewOnlyWhenItsWordsChange() {
+        let field = ComposerTextField.Field(frame: CGRect(x: 0, y: 0, width: 300, height: 40))
+        field.publish("fix /skill:debug now")
+        #expect(field.revision == 1)
+        field.publish("fix /skill:debug now")
+        #expect(field.revision == 1, "the same words are not a new draft")
+        field.publish("fix /skill:debug nowx")
+        #expect(field.revision == 2)
+        #expect(field.published == "fix /skill:debug nowx")
+        #expect(!field.trustsPublished, "a field that is not editing has no editor to trust")
+    }
+
     /// Every update that does not trust the field's last published words compares them as it always did.
     @Test func aFieldEditedBehindItsBindingIsRestoredFromTheBinding() async throws {
         final class Draft { var text = "hello" }
