@@ -1874,6 +1874,70 @@ struct NativeThreadStoreTests {
         #expect(store.editingPath == nil, "a read is not an edit")
     }
 
+    /// A live turn whose last item is an edit still running, on a host that queues follow-ups.
+    private func runningEditThread() async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
+        let args = #"{"path":"src/Checkout.tsx","edits":[{"oldText":"a","newText":"b"}]}"#
+        let running = F.tool("edit", args: args, status: "running", id: "provisional:tool:e", callID: "e")
+        return await started(F.snapshot(running: true, messages: [F.user(id: "u")],
+                                        provisional: [F.assistant("Fixing it.", status: "streaming", id: "p"), running],
+                                        queue: NativeQueue(items: [])))
+    }
+
+    private func runningCalls(_ row: NativeThreadRow?) -> [String] {
+        (row?.presentation?.items ?? []).flatMap { item -> [NativeActivityCall] in
+            guard case .activity(_, let bursts) = item else { return [] }
+            return bursts.flatMap(\.calls)
+        }.filter { $0.state == .running }.map(\.id)
+    }
+
+    /// Showing a thread again pulls an identical page, which rebuilds no row: the running call's
+    /// row stays, with the Files tab's working file.
+    @Test func aThreadShownAgainKeepsItsRunningToolRow() async throws {
+        let (store, host, task) = await runningEditThread()
+        defer { task.cancel() }
+        let live = try #require(store.liveRow)
+        #expect(runningCalls(live) == ["e"] && store.editingPath == "src/Checkout.tsx")
+
+        store.suspend()
+        task.cancel()
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+
+        #expect(store.liveRowID != nil && store.liveRow?.id == store.liveRowID)
+        #expect(store.liveRow == live && runningCalls(store.liveRow) == ["e"])
+        #expect(store.editingPath == "src/Checkout.tsx")
+    }
+
+    /// A follow-up accepted into the host's queue only adds an overlay: no message changed, so
+    /// no row is rebuilt, and the running call's row must stay, before the host's next snapshot
+    /// and after it.
+    @Test func aQueuedFollowUpKeepsTheRunningToolRow() async throws {
+        let (store, host, task) = await runningEditThread()
+        defer { task.cancel() }
+        let live = try #require(store.liveRow)
+        var seen: [NativeThreadRow?] = []
+        host.onRequest = { request in
+            if case .snapshot = request { seen.append(store.liveRow) }
+        }
+        host.action = { request in
+            guard case .send(_, _, let operation, let text, _, _, _, _, _) = request, var next = host.snapshot.queue else {
+                return .failure(code: "x", message: "unexpected")
+            }
+            next.items = [NativeQueuedMessage(id: operation, text: text, sentAt: 42)]
+            host.snapshot.revision += 1
+            host.snapshot.queue = next
+            return .accepted(operationID: operation)
+        }
+        store.draft = "and then this"
+        await store.send()
+
+        #expect(store.queue.map(\.text) == ["and then this"], "the follow-up waits in the host's queue")
+        #expect(!seen.isEmpty && seen.allSatisfy { $0 == live }, "the row stayed through the accepted send, before the host's snapshot")
+        #expect(store.liveRowID != nil && store.liveRow?.id == store.liveRowID)
+        #expect(store.liveRow == live && runningCalls(store.liveRow) == ["e"])
+        #expect(store.editingPath == "src/Checkout.tsx")
+    }
+
     /// A call the model is still writing keeps the thread from looking idle: the agent runs (Stop
     /// stays), "Thinking…" stays away, and the call's line is the live row, following the
     /// arguments as they stream and continuing into the running call.
