@@ -275,6 +275,25 @@ struct DesignReferenceThreadTests {
                 "a reference already in the words is left as it was")
     }
 
+    /// A paste is told from a keystroke by the Characters it added, whatever their bytes: a
+    /// reference over a selection of wide text is a paste, a flag and a space over a letter is not.
+    @Test func aPasteIsTheCharactersItAdded() throws {
+        let reference = try #require(DesignReference(designID: Self.checkout, board: Self.a))
+        let word = reference.string
+        let width = word.count
+        let rows: [(String, previous: String, draft: String, chip: Bool)] = [
+            ("over ASCII, two Characters more", String(repeating: "x", count: width - 2), word, true),
+            ("over ASCII, one Character more", String(repeating: "x", count: width - 1), word, false),
+            ("over CJK, two Characters more", String(repeating: "日", count: width - 2), word, true),
+            ("over CJK, one Character more", String(repeating: "日", count: width - 1), word, false),
+            ("a flag and a space over a letter", "X" + word, "🇫🇷 " + word, false),
+            ("two letters and a space over a letter", "X" + word, "ab " + word, true),
+        ]
+        for (label, previous, draft, chip) in rows {
+            #expect((ComposerReferencePaste.extract(draft, previous: previous) != nil) == chip, "\(label)")
+        }
+    }
+
     // MARK: The chip and the agent's line
 
     @Test func aChipsWordsComeFromWhatTheHostKept() {
