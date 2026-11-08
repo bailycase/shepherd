@@ -15,8 +15,8 @@ import ShepherdUI
 /// iPad; where there is no side pane it says so.
 enum TailFixture {
     static let toggles = 10
-    /// Landings with the content moving by itself one toggle may make: `2 × NativeTailRepin.limit + 1`.
-    static let landingCeiling = 9
+    /// Landings with the content moving by itself one toggle may make: the pin stops after this many.
+    static let landingCeiling = 2 * NativeTailRepin.limit + 1
     /// A drawn transcript is mostly text on a background; a blank one has no ink.
     static let inkFloor = 0.02
 
@@ -101,18 +101,23 @@ enum TailFixture {
         FixtureCheck.report("FIXTURE CHECK ok: \(verdicts.count) checks over \(toggles) toggles")
     }
 
-    /// Waits until 300 ms pass with no landing, at most 2 s.
+    /// Waits until 300 ms pass with no landing and no stretch where the main thread was too busy to
+    /// answer (a landing may be queued behind what blocked it), at most 3 s.
     @MainActor private static func settle() async {
         func landings() -> Int { SHRenderProbe.count("thread.tailLanding") + SHRenderProbe.count("thread.tailLandingResized") }
-        let started = ContinuousClock.now
+        let clock = ContinuousClock()
+        let started = clock.now
         var last = landings()
-        var since = started
-        while ContinuousClock.now - since < .milliseconds(300), ContinuousClock.now - started < .seconds(2) {
+        var quietSince = started
+        var woke = started
+        while clock.now - started < .seconds(3), clock.now - quietSince < .milliseconds(300) {
             try? await Task.sleep(for: .milliseconds(20))
-            if landings() != last {
+            let now = clock.now
+            if now - woke > .milliseconds(100) || landings() != last {
                 last = landings()
-                since = .now
+                quietSince = now
             }
+            woke = now
         }
     }
 }
