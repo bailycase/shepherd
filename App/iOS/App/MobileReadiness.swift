@@ -5,8 +5,7 @@ import ShepherdRemote
 
 /// Fixed-label signposts for Instruments (subsystem `com.shepherd.ios`, category `UI`): when the
 /// app first has something usable to show, each reconnect, iPad thread switches, and the
-/// transcript's tail landings. They carry
-/// no content, names or ids, and stay on the device.
+/// transcript's tail landings. They carry no content, names or ids, and stay on the device.
 enum MobileSignposts {
     static let signposter = OSSignposter(subsystem: "com.shepherd.ios", category: "UI")
 
