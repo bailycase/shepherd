@@ -1227,7 +1227,6 @@ struct ListPerformanceTests {
         SHRenderProbe.start()
         let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming("Here it is.")], running: true),
                                 size: CGSize(width: 900, height: 800))
-        thread.answersUnchanged = true
         defer {
             thread.close()
             SHRenderProbe.stop()

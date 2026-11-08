@@ -22,10 +22,6 @@ private final class ThreadHarness {
     private let pillSize = NSHostingView(rootView: SHJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
     var olderRequestPhases: [ScrollPhase] = []
-    /// Answers a poll for the revision it already serves with `.unchanged`, as a host does (a whole
-    /// snapshot again makes the store derive for nothing, and a derive that rebuilds no row clears the
-    /// live row of a reply being streamed). Drop this opt-in when the store keeps it.
-    var answersUnchanged = false
     private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
@@ -45,9 +41,6 @@ private final class ThreadHarness {
                 self.olderRequests += 1
                 self.olderRequestPhases.append(self.scrollPhase)
                 return await withCheckedContinuation { self.olderReply = $0 }
-            }
-            if self.answersUnchanged, case .snapshot(_, nil, let after?) = value, after == self.snapshot.revision {
-                return .unchanged(piSessionID: self.snapshot.piSessionID, generation: self.snapshot.generation, revision: after)
             }
             return .snapshot(value: self.snapshot)
         }
@@ -1113,7 +1106,6 @@ struct ThreadScrollingTests {
     @Test(arguments: ScrolledReply.allCases)
     func aDetachedReaderInALongReplyStaysPutWhileItStreams(reply: ScrolledReply) async throws {
         let thread = ThreadHarness(messages: 2)
-        thread.answersUnchanged = true
         defer { thread.close() }
         try await thread.waitUntilReady()
         var cycles = reply == .ordinary ? 60 : reply.cycles

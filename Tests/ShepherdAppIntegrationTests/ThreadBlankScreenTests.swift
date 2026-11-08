@@ -435,7 +435,6 @@ struct ThreadBlankScreenTests {
     @Test(arguments: longReplySizes, GiantReply.allCases)
     func aVeryLongReplyStreamingAndFinishingNeverLeavesTheThreadBlank(size: CGSize, reply: GiantReply) async throws {
         try await Self.withRig(size: size) { rig in
-            rig.host.answersUnchanged = true
             let promptAt = Self.base + 41 * 60_000
             await rig.publish { $0.append(Self.user("u40", "Write the whole report.", at: promptAt)) }
             try await rig.expectTail("the prompt")

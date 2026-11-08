@@ -63,11 +63,6 @@ final class FakeThread {
     static let pageSize = 50
     /// While true, snapshot requests answer that pi is still starting.
     var starting = false
-    /// Answers a poll for the revision it already serves with `.unchanged`, as a host does. By
-    /// default every poll gets the whole snapshot again, which the store derives from for nothing:
-    /// a derive that rebuilds no row also clears the live row (it looks for the live row among the
-    /// rows it rebuilt), so a reply being streamed goes blank. Drop this opt-in when the store keeps it.
-    var answersUnchanged = false
     private(set) var snapshotRequests = 0
     let window: OffscreenWindow
 
@@ -86,12 +81,9 @@ final class FakeThread {
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             switch value {
-            case .snapshot(_, let before, let after):
+            case .snapshot(_, let before, _):
                 self.snapshotRequests += 1
                 if self.starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
-                if self.answersUnchanged, before == nil, let after, after == self.snapshot.revision {
-                    return .unchanged(piSessionID: self.snapshot.piSessionID, generation: self.snapshot.generation, revision: after)
-                }
                 guard let history = self.history else { return .snapshot(value: self.snapshot) }
                 let end = before.flatMap { cursor in history.firstIndex { $0.entryID == cursor } } ?? history.count
                 let start = max(0, end - Self.pageSize)
