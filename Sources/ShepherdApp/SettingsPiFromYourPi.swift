@@ -89,8 +89,6 @@ struct FromYourPiSettings: View {
                             theirs != survey.shepherdDefaultModel ? "Your pi now uses \(NativeModelChoices.shortName(theirs))." : nil
                         },
                         enabled: survey.defaultModel != nil)
-            reimportRow("Trusted folders", detail: Self.trustDetail(survey), item: .trust, freshness: survey.freshness["trust"],
-                        enabled: survey.trustedFolders > 0)
         }
     }
 
@@ -225,17 +223,6 @@ struct FromYourPiSettings: View {
         guard let theirs = survey.defaultModel else { return [.init("None set in your pi.")] }
         guard let mine = survey.shepherdDefaultModel, mine != theirs else { return [.init(NativeModelChoices.shortName(theirs), mono: true)] }
         return [.init(NativeModelChoices.shortName(mine), mono: true), .init("here")]
-    }
-
-    /// "4 folders · ~/code/shepherd and 3 more".
-    static func trustDetail(_ survey: YourPiSurvey) -> [SHReimportRow.Detail] {
-        guard survey.trustedFolders > 0 else { return [.init("None in your pi.")] }
-        var parts: [SHReimportRow.Detail] = [.init(YourPiText.count(survey.trustedFolders, "folder") + (survey.trustedFolderPaths.isEmpty ? "" : " ·"))]
-        if let first = survey.trustedFolderPaths.first {
-            parts.append(.init((first as NSString).abbreviatingWithTildeInPath, mono: true))
-            if survey.trustedFolderPaths.count > 1 { parts.append(.init("and \(survey.trustedFolderPaths.count - 1) more")) }
-        }
-        return parts
     }
 
     /// "Today at 9:41 AM, on first launch. Nothing is synced after that."

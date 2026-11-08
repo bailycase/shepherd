@@ -28,6 +28,10 @@ read and write whatever you can. Shepherd adds no sandbox. The workflow runner i
 subagent extension is restricted JavaScript execution, not an OS sandbox. Run untrusted work in an OS-contained
 environment.
 
+Adding a space is the decision to run its configuration. A space's `.shepherd/` and `.pi/` settings,
+skills, prompts, extensions, MCP servers and subagent profiles load with no separate approval, so
+add only repos you would run yourself. The home folder is never treated as a space.
+
 The boundaries below are deliberate. A report about one of them should show behavior outside
 what is described here, or a way around the protection it states.
 
@@ -153,8 +157,7 @@ above) and neither has a switch yet.
   default) a repo's file can start any command as you, so turn it on only for repos you trust.
   Shepherd still keeps the app's values from it: its servers start with every Keychain value
   blanked, and its `env`, `headers` and `command` cannot refer to a `SHEPHERD_*` variable
-  (`Tests/Extensions/mcp-project.test.mjs`). pi's trust prompt for a project's `.pi/mcp.json` is
-  pi's own.
+  (`Tests/Extensions/mcp-project.test.mjs`).
 
 ### Everything else Shepherd writes
 

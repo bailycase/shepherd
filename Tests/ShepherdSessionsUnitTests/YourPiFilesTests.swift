@@ -126,22 +126,6 @@ struct YourPiFilesTests {
         #expect(YourPiFiles.contextFile(in: dir)?.lastPathComponent == "CLAUDE.md")
     }
 
-    // MARK: trust.json
-
-    /// The home folder is never trusted as a project: a `true` for it, or for a folder above it,
-    /// isn't copied; every other decision is, and null means none.
-    @Test func trustNeverCopiesTheHomeFolderAsAProject() throws {
-        let data = Data(#"{"/u": true, "/": true, "/u/work/a": true, "/u/work/b": false, "/u/work/c": null, "/other": false}"#.utf8)
-        let (decisions, dropped) = try YourPiFiles.trust(data, home: "/u")
-        #expect(decisions == ["/u/work/a": true, "/u/work/b": false, "/other": false])
-        #expect(dropped == ["/", "/u"])
-    }
-
-    @Test(arguments: [#"{"/a": "yes"}"#, "[true]", "{"])
-    func anInvalidTrustJSONIsRefused(text: String) {
-        #expect(throws: YourPiFileError.self) { _ = try YourPiFiles.trust(Data(text.utf8), home: "/u") }
-    }
-
     // MARK: Extensions
 
     @Test func environmentKeysNameTheirProvidersByNameOnly() {

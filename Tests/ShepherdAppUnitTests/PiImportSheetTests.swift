@@ -18,7 +18,6 @@ struct PiImportSheetTests {
                          PiLogin(provider: "openai", kind: .apiKey(.literal)), PiLogin(provider: "openrouter", kind: .apiKey(.environment(["OPENROUTER_API_KEY"])))]
         report.customProviders = ["northwind-gateway", "ollama"]
         report.defaultModel = "anthropic/claude-opus"
-        report.trustedFolders = 4
         report.copied = [YourPiCopy(kind: .instructions, name: "AGENTS.md", source: "/a", destination: "AGENTS.md"),
                          YourPiCopy(kind: .skills, name: "pdf", source: "/s", destination: "skills/pdf"),
                          YourPiCopy(kind: .prompts, name: "review", source: "/p", destination: "prompts/review.md"),
@@ -35,13 +34,13 @@ struct PiImportSheetTests {
 
     @Test func whileItRunsEveryItemIsListedTheCurrentOneLiveAndCountsOnlyOnceDone() {
         let sheet = Self.sheet([.logins: .done, .apiKeys: .done, .customProviders: .done, .defaultModel: .running])
-        #expect(sheet.rows.map(\.title) == ["Logins", "API keys", "Custom providers", "Default model", "Trusted folders",
+        #expect(sheet.rows.map(\.title) == ["Logins", "API keys", "Custom providers", "Default model",
                                             "Instructions, skills and prompts", "Extensions"])
-        #expect(sheet.rows.map(\.state) == [.done, .done, .done, .now, .pending, .pending, .pending])
+        #expect(sheet.rows.map(\.state) == [.done, .done, .done, .now, .pending, .pending])
         #expect(sheet.rows[0].detail == "Anthropic, OpenAI Codex" && sheet.rows[0].count == "2 subscriptions")
         #expect(sheet.rows[1].detail == "OpenAI, OpenRouter" && sheet.rows[1].count == "2 keys")
         #expect(sheet.rows[2].count == "2 providers" && sheet.rows[3].count == nil, "the running step has no count yet")
-        #expect(sheet.rows[5].detail == "Copied into Shepherd" && sheet.rows[6].detail == "Listed, switched off")
+        #expect(sheet.rows[4].detail == "Copied into Shepherd" && sheet.rows[5].detail == "Listed, switched off")
     }
 
     @Test func anItemYourPiHasNoneOfIsLeftOutOnceTheCopyKnows() {
@@ -168,7 +167,7 @@ struct PiImportSheetTests {
         var sheet = Self.sheet([:])
         sheet.stage = .done
         #expect(sheet.summary == [.init("logins", count: 2), .init("API keys", count: 2), .init("custom providers"),
-                                  .init("default model", value: "claude-opus"), .init("trusted folders", count: 4),
+                                  .init("default model", value: "claude-opus"),
                                   .init("instructions"), .init("skill", count: 1, comma: true), .init("prompt", count: 1, comma: true)])
         sheet.stage = .missing
         #expect(sheet.summary.last == .init("instructions, skills, prompts"))
