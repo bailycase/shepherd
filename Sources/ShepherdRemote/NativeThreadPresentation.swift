@@ -828,9 +828,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     public static let limit = 4
     /// Landings in a row with no output, rest, ask or gesture between them; resizes count.
     public static let maxRun = 90
-    /// How long a stalled tail is left alone before it gets one try, doubling per try up to `maxQuiet`.
+    /// How long a stalled tail is left alone before it gets one try, doubling per try.
     public static let quiet: Duration = .milliseconds(100)
-    public static let maxQuiet: Duration = .seconds(3)
     public static let maxQuietTries = 5
 
     /// The landings stopped; output, the reader, a send, a rest or the quiet's tries start them again.
@@ -909,7 +908,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     public mutating func quietPassed() {
         guard stalled, quietTries < Self.maxQuietTries else { return }
         quietTries += 1
-        quietWait = min(quietWait * 2, Self.maxQuiet)
+        quietWait *= 2
         turnQuiet = true
     }
 

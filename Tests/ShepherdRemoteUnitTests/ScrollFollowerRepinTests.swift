@@ -326,7 +326,6 @@ struct ScrollFollowerRepinTests {
             #expect(!take())
         }
         #expect(waits == [.milliseconds(100), .milliseconds(200), .milliseconds(400), .milliseconds(800), .milliseconds(1_600)])
-        #expect(repin.quietWait == NativeTailRepin.maxQuiet)
         repin.quietPassed()
         #expect(!take())
     }
