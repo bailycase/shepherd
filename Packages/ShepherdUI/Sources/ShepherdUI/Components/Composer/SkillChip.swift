@@ -110,7 +110,9 @@ public enum SHSkillChips {
         return result
     }
 
-    /// The draft the field's text spells: each chip as its token.
+    /// The draft the field's text spells: each chip as its token. A native string: appending to an
+    /// empty String adopts the bridged copy of the storage, and Swift walks and compares a bridged
+    /// UTF-16 string on the slow path.
     public static func text(of attributed: NSAttributedString) -> String {
         var text = ""
         let string = attributed.string as NSString
@@ -121,6 +123,7 @@ public enum SHSkillChips {
                 text += string.substring(with: range)
             }
         }
+        text.makeContiguousUTF8()
         return text
     }
 
