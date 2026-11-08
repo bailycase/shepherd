@@ -16,7 +16,7 @@
 #   -w               an app that supports multiple windows, as the shipped app does (the windows-* screens)
 #   --list           print the screen names and exit
 #
-# Screens: any name in Tests/ShepherdIOSChecks/Fixtures (home, thread, question, newthread, …), or "all".
+# Screens: any name in Tests/ShepherdIOSChecks/Fixtures (home, thread, question, newthread, …), or "all" (not tail-frames).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 root=$PWD
@@ -51,6 +51,8 @@ fold_check=false
 if [[ "${screens[0]}" == all ]]; then
     screens=()
     while IFS= read -r screen; do
+        # tail-frames measures and never fails (about 35 s): ask for it by name.
+        [[ "$screen" == tail-frames ]] && continue
         if [[ "$screen" != windows-fold || "$fold_check" == true ]]; then screens+=("$screen"); fi
     done < <(grep -ho 'FixtureScreen(name: "[^"]*"' Tests/ShepherdIOSChecks/Fixtures/*.swift | sed 's/.*"\(.*\)"/\1/')
 fi
