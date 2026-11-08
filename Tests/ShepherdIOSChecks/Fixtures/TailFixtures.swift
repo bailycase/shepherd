@@ -17,10 +17,13 @@ import ShepherdUI
 enum TailFixture {
     static let toggles = 10
     /// Landings with the content moving by itself that one toggle may make: this screen's empirical
-    /// ceiling (the merge base lands 22 to 29 times per open, the fix at most 4). The repin itself
-    /// guarantees less: a tail that nears on every turn but never rests lands up to `maxRun` times.
+    /// ceiling (the merge base lands 22 to 29 times per open; the fix 2 to 6, up to 8 of them in a layout
+    /// pass, which count here too). The repin itself guarantees less: a tail that nears on every turn
+    /// but never rests lands up to `maxRun` times.
     static let landingCeiling = 2 * NativeTailRepin.limit + 1
-    /// A toggle mounts the transcript once, and a pin lands inside a layout pass `inPassLimit` times per mount.
+    /// A pin lands inside a layout pass at most `inPassLimit` times per mount. Where a toggle remounts the
+    /// transcript (the open Duo) that is per toggle; where the pin outlives the toggles (the iPad) it is
+    /// per launch.
     static let inPassCeiling = NativeTailRepin.inPassLimit
     /// A drawn transcript is mostly text on a background; a blank one has no ink.
     static let inkFloor = 0.02

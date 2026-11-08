@@ -970,7 +970,8 @@ public struct NativeTailRepin: Equatable, Sendable {
         turnQuiet = true
     }
 
-    /// Whether to land now. Call it once per run-loop turn, after the turn's events.
+    /// Whether to land now. Call it once per run-loop turn, after the turn's events. A pass that
+    /// asked for a landing (`takeInPass`) calls it too, for the events it finds waiting.
     public mutating func take() -> Bool {
         if scrolling, !(turnAsked && !touching) { return false }
         let resized = turnResized, output = turnOutput, asked = turnAsked, quiet = turnQuiet

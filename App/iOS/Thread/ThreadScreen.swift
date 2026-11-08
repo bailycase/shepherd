@@ -257,7 +257,7 @@ struct ThreadTranscript: View {
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
     private var follower: NativeScrollFollower { presentation.scrollFollower }
     @State private var historyPaging = NativeHistoryPaging()
-    /// Lands the transcript on its tail after layout, never inside it (ThreadTailPin).
+    /// Lands the transcript on its tail after layout; only a mount's first few landings run inside it (ThreadTailPin).
     @State private var tailPin = ThreadTailPin()
 
     private static let bottomID = "thread-bottom"
