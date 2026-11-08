@@ -64,7 +64,6 @@ final class YourPiModel {
         case .logins: "logins"
         case .customProviders: "customProviders"
         case .defaultModel: "defaultModel"
-        case .trust: "trust"
         case .files(let kind): "files:\(kind.rawValue)"
         }
     }
@@ -85,7 +84,6 @@ final class YourPiModel {
         var items: [YourPiImport.Item] = [.logins]
         if !survey.customProviders.isEmpty { items.append(.customProviders) }
         if survey.defaultModel != nil { items.append(.defaultModel) }
-        if survey.trustedFolders > 0 { items.append(.trust) }
         items += YourPiResourceKind.allCases.map { .files($0) }
         for item in items { await reimport(item) }
     }

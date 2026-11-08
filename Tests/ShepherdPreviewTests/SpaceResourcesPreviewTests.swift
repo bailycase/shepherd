@@ -35,8 +35,8 @@ struct SpaceResourcesPreviewTests {
         "extensions/workspace-shortcuts.ts": "// Shortcuts for common workspace tasks.\nexport default function () {}\n",
     ]
 
-    @Test(arguments: ["skills", "skills-space", "commands", "extensions", "empty", "dirty", "remove", "leave",
-                      "skill-add", "skill-edit", "command-edit", "skill-new", "offline", "settings-json"])
+    @Test(arguments: ["skills", "skills-space", "commands", "subagents", "extensions", "empty", "dirty", "remove", "leave",
+                      "skill-add", "skill-edit", "command-edit", "subagent-edit", "skill-new", "offline", "settings-json"])
     func resources(state: String) async throws {
         let world = try await ProjectsPreviewWorld(detail: true, supportPi: true)
         defer { world.stop() }
@@ -71,6 +71,7 @@ struct SpaceResourcesPreviewTests {
         switch state {
         case "skills-space": resources.scope = .space
         case "commands", "command-edit": resources.kind = .prompt
+        case "subagents", "subagent-edit": resources.kind = .agent
         case "extensions": resources.kind = .extension
         case "empty": resources.scope = .space
         default: break
@@ -85,7 +86,7 @@ struct SpaceResourcesPreviewTests {
             await model.navigate(.category(.mcp))
         case "skill-add":
             resources.install = .init()
-        case "skill-edit", "command-edit":
+        case "skill-edit", "command-edit", "subagent-edit":
             await resources.edit(resources.rows[0])
         case "skill-new":
             resources.create()

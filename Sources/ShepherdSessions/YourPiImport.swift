@@ -34,7 +34,7 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
     public var legacySkills: [String] = []
     public var legacyPrompts: [String] = []
     /// A digest of what each item was when Shepherd last copied it ("login:<provider>",
-    /// "customProviders", "defaultModel", "trust"), never the value: Settings compares both
+    /// "customProviders", "defaultModel"), never the value: Settings compares both
     /// sides against it (`PiFreshness`).
     public var digests: [String: String] = [:]
 
@@ -131,10 +131,6 @@ public struct YourPiImportReport: Equatable, Sendable {
     public var defaultModel: String?
     /// Shepherd's pi already had this default model (a first sign-in sets one), so theirs wasn't copied.
     public var keptDefaultModel: String?
-    /// Folders whose trust decision was copied.
-    public var trustedFolders = 0
-    /// Trust decisions not copied because they would trust the home folder as a project.
-    public var droppedTrust: [String] = []
     /// What each copied item was, as digests (`YourPiImportState.digests`).
     public var digests: [String: String] = [:]
     /// Their auth.json couldn't be read or isn't JSON: its path and the parser's reason (never its
@@ -162,7 +158,7 @@ public struct YourPiImportReport: Equatable, Sendable {
 
     /// Anything was brought over.
     public var broughtOver: Bool {
-        !logins.isEmpty || !customProviders.isEmpty || defaultModel != nil || trustedFolders > 0 || !copied.isEmpty
+        !logins.isEmpty || !customProviders.isEmpty || defaultModel != nil || !copied.isEmpty
     }
 
     /// One line for the log: counts and provider names only.
@@ -171,8 +167,6 @@ public struct YourPiImportReport: Equatable, Sendable {
         if !keptLogins.isEmpty { parts.append("kept Shepherd's \(keptLogins.joined(separator: ", "))") }
         parts.append("custom providers \(customProviders.count)")
         if let defaultModel { parts.append("default model \(defaultModel)") }
-        parts.append("trusted folders \(trustedFolders)")
-        if !droppedTrust.isEmpty { parts.append("\(droppedTrust.count) trust decision(s) for the home folder left out") }
         let instructions = copied(.instructions).map(\.name)
         if !instructions.isEmpty { parts.append("instructions \(instructions.joined(separator: ", "))") }
         parts.append(YourPiResourceKind.allCases.filter { $0 != .instructions }.map { "\($0.rawValue) \(copied($0).count)" }
@@ -184,7 +178,7 @@ public struct YourPiImportReport: Equatable, Sendable {
 /// One line of the first launch's sheet (`PiImportStepRow(item, step)`), in the order the copy
 /// takes them.
 public enum YourPiImportStep: String, CaseIterable, Sendable {
-    case logins, apiKeys, customProviders, defaultModel, trustedFolders, files, extensions
+    case logins, apiKeys, customProviders, defaultModel, files, extensions
 }
 
 /// How the first copy is going, as it goes: where it copies from, then each step as it starts and
@@ -224,9 +218,6 @@ public struct YourPiSurvey: Equatable, Sendable {
     public var shepherdCustomProviders: [String] = []
     public var defaultModel: String?
     public var shepherdDefaultModel: String?
-    /// Their trust decisions Shepherd would copy, and how many Shepherd's pi holds.
-    public var trustedFolders = 0
-    public var shepherdTrustedFolders = 0
     /// What was copied into Shepherd's home as files, in the order it was found.
     public var copies: [YourPiCopy] = []
     /// The copied instructions file's line count, when it has one.
@@ -248,12 +239,10 @@ public struct YourPiSurvey: Equatable, Sendable {
     /// Shepherd's custom providers, with their keys and addresses.
     public var customProviderDetails: [PiCustomProvider] = []
     /// How each copied item stands against theirs: "login:<provider>", "customProviders",
-    /// "defaultModel", "trust".
+    /// "defaultModel".
     public var freshness: [String: PiFreshness] = [:]
     /// When their auth.json last changed.
     public var yourSignInsChanged: Date?
-    /// Their trusted folders, for "4 folders · ~/code/shepherd and 3 more".
-    public var trustedFolderPaths: [String] = []
 
     public init(folder: String? = nil) {
         self.folder = folder
@@ -359,7 +348,6 @@ public struct YourPiImport: Sendable {
     public var stateURL: URL { home.directory.appendingPathComponent(Self.stateName) }
     var auth: URL { home.directory.appendingPathComponent("auth.json") }
     var models: URL { home.directory.appendingPathComponent("models.json") }
-    var trust: URL { home.directory.appendingPathComponent("trust.json") }
 
     /// What the first copy (or a switch) left, or nil before either, or when it can't be read.
     public func state() -> YourPiImportState? {
@@ -418,7 +406,6 @@ public struct YourPiImport: Sendable {
                 progress?(.finished(.apiKeys, report: report))
                 step(.customProviders) { copyModels(from: yourPi, overwrite: false, into: &$0) }
                 step(.defaultModel) { copyDefaultModel(from: yourPi, overwrite: false, into: &$0) }
-                step(.trustedFolders) { copyTrust(from: yourPi, into: &$0) }
             }
             step(.files) { copyFiles(of: [.instructions, .skills, .prompts, .themes], from: yourPi, replacing: false, into: &$0) }
             step(.extensions) { copyFiles(of: [.extensions], from: yourPi, replacing: false, into: &$0) }
@@ -455,7 +442,6 @@ public struct YourPiImport: Sendable {
         case logins
         case customProviders
         case defaultModel
-        case trust
         /// Every file of a kind: their instructions, skills, prompts, themes or extensions.
         case files(YourPiResourceKind)
     }
@@ -475,7 +461,6 @@ public struct YourPiImport: Sendable {
         case .logins: copyLogins(from: yourPi, overwriting: nil, replacing: true, into: &report)
         case .customProviders: copyModels(from: yourPi, overwrite: true, into: &report)
         case .defaultModel: copyDefaultModel(from: yourPi, overwrite: true, into: &report)
-        case .trust: copyTrust(from: yourPi, into: &report)
         case .files(let kind):
             copyFiles(of: [kind], from: yourPi, replacing: true, into: &report)
             if report.copied.isEmpty, report.problems.isEmpty {
@@ -830,24 +815,6 @@ public struct YourPiImport: Sendable {
         }
     }
 
-    private func copyTrust(from yourPi: YourPi, into report: inout YourPiImportReport) {
-        do {
-            guard let data = try YourPiFiles.read(yourPi.agentDirectory.appendingPathComponent("trust.json")) else { return }
-            let (decisions, dropped) = try YourPiFiles.trust(data, home: userHome)
-            report.droppedTrust = dropped
-            guard !decisions.isEmpty else { return }
-            let notes = try PiSettingsFile(url: trust, mode: 0o600).update { ours in
-                for (path, trusted) in decisions { ours[path] = trusted }
-                return []
-            }
-            guard notes.isEmpty else { report.problems += notes; return }
-            report.trustedFolders = decisions.count
-            report.digests["trust"] = PiDigest.of(decisions)
-        } catch {
-            report.problems.append("Your pi's trusted folders weren't copied: \(error).")
-        }
-    }
-
     /// models.json as pi reads it (comments and a BOM aside), so a copy written back byte for byte
     /// or not compares the same.
     static func modelsDigest(_ data: Data) -> String? {
@@ -921,16 +888,6 @@ public struct YourPiImport: Sendable {
                 survey.problems.append("Your pi's settings couldn't be read: \(error).")
             }
             survey.defaultModel = YourPiFiles.defaultModel(theirSettings)
-            do {
-                let decisions = try YourPiFiles.read(folder.appendingPathComponent("trust.json")).map { try YourPiFiles.trust($0, home: userHome).decisions } ?? [:]
-                survey.trustedFolders = decisions.count
-                survey.trustedFolderPaths = decisions.filter(\.value).keys.sorted()
-                let ours = (try? YourPiFiles.read(trust)).flatMap { $0 }.flatMap { try? YourPiFiles.trust($0, home: userHome).decisions }
-                survey.freshness["trust"] = decisions.isEmpty ? nil
-                    : PiFreshness.compare(ours: ours.flatMap { PiDigest.of($0) }, theirs: PiDigest.of(decisions), copied: digests["trust"])
-            } catch {
-                survey.problems.append("Your pi's trusted folders couldn't be read: \(error).")
-            }
         }
         survey.shepherdCustomProviders = (try? YourPiFiles.read(models)).flatMap { $0 }.flatMap { try? YourPiFiles.customProviders($0) } ?? []
         survey.customProviderDetails = (try? YourPiFiles.read(models)).flatMap { $0 }.flatMap { try? PiCustomProvider.parse($0) } ?? []
@@ -940,8 +897,6 @@ public struct YourPiImport: Sendable {
             survey.freshness["defaultModel"] = PiFreshness.compare(ours: survey.shepherdDefaultModel.flatMap(PiDigest.of),
                                                                    theirs: PiDigest.of(theirs), copied: digests["defaultModel"])
         }
-        survey.shepherdTrustedFolders = ((try? YourPiFiles.read(trust)).flatMap { $0 }.flatMap { try? YourPiFiles.object($0, file: "trust.json") } ?? [:])
-            .values.filter { ($0 as? Bool) == true }.count
 
         let environment = PiProviders.providers(withKeys: environmentKeys)
         let providers = Set(mine.map(\.provider)).union(theirs.map(\.provider)).union(environment.keys)

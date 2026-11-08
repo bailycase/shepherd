@@ -2,7 +2,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, ProjectTrustStore, loadSkills } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, loadSkills } from "@earendil-works/pi-coding-agent";
 
 export const bundledAgents = {
   scout: { description: "Find relevant code and facts. Do not edit files.", tools: ["read", "grep", "find", "ls"], prompt: "Find relevant code and facts. Return concise findings with file paths. Do not edit files." },
@@ -74,7 +74,9 @@ export async function childUserExtensions(cwd) {
 }
 
 export function childTargetContext(ctx, cwd) {
-  const trusted = cwd === fs.realpathSync(ctx.cwd) ? ctx.isProjectTrusted?.() === true : new ProjectTrustStore(getAgentDir()).get(cwd) === true;
+  // A space's configuration always loads; only the home folder (pi's own global config) never counts as a project.
+  let trusted = true;
+  try { trusted = fs.realpathSync(cwd) !== fs.realpathSync(os.homedir()); } catch {}
   return { ...ctx, cwd, isProjectTrusted: () => trusted };
 }
 
@@ -147,15 +149,25 @@ export function ensureChildAgents() {
   return dir;
 }
 
-export function discoverChildAgents(_ctx, _scope) {
+/// A space's own subagents (`.shepherd/agents`, then `.pi/agents`) load beside Shepherd's, and a
+/// space profile overrides Shepherd's of the same name for that space. Adding a space is the
+/// decision to run its configuration; there is no separate trust step.
+export function projectAgentFolders(cwd) {
+  if (!cwd) return [];
+  let real;
+  try { real = fs.realpathSync(cwd); } catch { return []; }
+  if (real === fs.realpathSync(os.homedir())) return []; // the home folder is pi's global config, not a space
+  return [".shepherd", ".pi"].map((dir) => path.join(real, dir, "agents")).filter(directory);
+}
+
+function scanAgents(root, source, extraCheck = () => {}) {
   const agents = [], diagnostics = [];
-  let root, folders = 0;
-  try { root = ensureChildAgents(); }
-  catch (error) { return { agents, diagnostics: [{ source: "shepherd", error: error.message }] }; }
-  const canonicalRoot = fs.realpathSync(root), rootIdentity = fs.lstatSync(root), homeIdentity = fs.lstatSync(getAgentDir());
+  let folders = 0;
+  const canonicalRoot = fs.realpathSync(root), rootIdentity = fs.lstatSync(root);
   function checkRoot() {
-    const current = fs.lstatSync(root), home = fs.lstatSync(getAgentDir());
-    if (current.isSymbolicLink() || home.isSymbolicLink() || current.dev !== rootIdentity.dev || current.ino !== rootIdentity.ino || home.dev !== homeIdentity.dev || home.ino !== homeIdentity.ino) throw Error("The subagent folder changed during discovery");
+    const current = fs.lstatSync(root);
+    if (current.isSymbolicLink() || current.dev !== rootIdentity.dev || current.ino !== rootIdentity.ino) throw Error("The subagent folder changed during discovery");
+    extraCheck();
   }
   function scan(dir, depth = 0) {
     checkRoot();
@@ -181,24 +193,51 @@ export function discoverChildAgents(_ctx, _scope) {
         while (length < bytes.length && (count = fs.readSync(fd, bytes, length, bytes.length-length, null)) > 0) length += count;
         if (length > 128 * 1024) throw Error("Agent file exceeds 128 KiB");
         text = new TextDecoder("utf-8", {fatal:true}).decode(bytes.subarray(0,length));
-        const agent = parseChildAgent(text, file);
+        const agent = { ...parseChildAgent(text, file), source };
         const unavailable = unavailableTools(agent);
         agents.push(unavailable.length ? { ...agent, unavailableTools: unavailable } : agent);
       } catch (error) {
-        const failed = childAgentError(text, file, error);
+        const failed = { ...childAgentError(text, file, error), source };
         agents.push(failed); diagnostics.push(failed);
       } finally { if (fd !== undefined) fs.closeSync(fd); }
     }
   }
-  try { scan(root); }
-  catch (error) { return { agents: [], diagnostics: [{ source: "shepherd", error: error.message }] }; }
-  // No last-file-wins ambiguity: every duplicate refuses to launch.
+  scan(root);
+  // No last-file-wins ambiguity inside one folder: every duplicate refuses to launch.
   const counts = new Map();
   for (const agent of agents) counts.set(agent.name, (counts.get(agent.name) ?? 0) + 1);
   for (const agent of agents) if (counts.get(agent.name) > 1) {
     agent.error = `Duplicate subagent name: ${agent.name}`;
     diagnostics.push({ name: agent.name, source: agent.source, filePath: agent.filePath, error: agent.error });
   }
+  return { agents, diagnostics };
+}
+
+export function discoverChildAgents(ctx, _scope) {
+  let root;
+  try { root = ensureChildAgents(); }
+  catch (error) { return { agents: [], diagnostics: [{ source: "shepherd", error: error.message }] }; }
+  const homeIdentity = fs.lstatSync(getAgentDir());
+  const homeCheck = () => {
+    const home = fs.lstatSync(getAgentDir());
+    if (home.isSymbolicLink() || home.dev !== homeIdentity.dev || home.ino !== homeIdentity.ino) throw Error("The subagent folder changed during discovery");
+  };
+  let owned;
+  try { owned = scanAgents(root, "shepherd", homeCheck); }
+  catch (error) { return { agents: [], diagnostics: [{ source: "shepherd", error: error.message }] }; }
+  // `.shepherd` wins over `.pi`, and either wins over Shepherd's own profile of the same name.
+  const agents = [], diagnostics = [], taken = new Set();
+  for (const folder of projectAgentFolders(ctx?.cwd)) {
+    let found;
+    try { found = scanAgents(folder, "project"); }
+    catch (error) { diagnostics.push({ source: "project", filePath: folder, error: error.message }); continue; }
+    diagnostics.push(...found.diagnostics);
+    const names = new Set();
+    for (const agent of found.agents) if (!taken.has(agent.name)) { agents.push(agent); names.add(agent.name); }
+    for (const name of names) taken.add(name);
+  }
+  for (const agent of owned.agents) if (!taken.has(agent.name)) agents.push(agent);
+  diagnostics.push(...owned.diagnostics.filter((d) => !taken.has(d.name)));
   return { agents, diagnostics };
 }
 

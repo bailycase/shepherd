@@ -243,7 +243,7 @@ struct YourPiImportEdgeTests {
         for provider in ["anthropic", "openai-codex", "openai", "google", "groq"] {
             reports.append(try setup.importer().reimport(.login(provider)))
         }
-        for item in [YourPiImport.Item.customProviders, .defaultModel, .trust] {
+        for item in [YourPiImport.Item.customProviders, .defaultModel] {
             reports.append(try setup.importer().reimport(item))
         }
         let survey = setup.importer().survey()

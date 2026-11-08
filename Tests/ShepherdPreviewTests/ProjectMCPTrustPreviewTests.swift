@@ -6,7 +6,7 @@ import ShepherdTestSupport
 import ShepherdUI
 @testable import ShepherdApp
 
-@Suite("Project MCP approval previews", .mainActorExclusive, .enabled(if: Preview.enabled))
+@Suite("Project MCP previews", .mainActorExclusive, .enabled(if: Preview.enabled))
 @MainActor
 struct ProjectMCPTrustPreviewTests {
     @Test func legacyRemoteNativeConfigurationRendersItsSelectedPathAndStates() async throws {
@@ -87,15 +87,13 @@ struct ProjectMCPTrustPreviewTests {
         await model.setMCPEnabled("issues", false)
         try await render("approved-server-disabled")
         await model.setMCPEnabled("issues", true)
-        trusted = nil; failure = "Couldn't check project approval. Check again before starting a new thread."
+        trusted = nil; failure = "Couldn't read sign-ins. Check again before starting a new thread."
         await model.refreshMCPCredentials()
         try await render("check-failure")
         failure = nil; await model.refreshMCPCredentials()
-        model.selected?.host.supportsProjectTrust = false
-        try await render("old-host")
         model.selected?.host.unavailable = "Host offline. Reconnect in Settings > Remote to edit its projects."
         try await render("offline")
-        model.selected?.host.unavailable = nil; model.selected?.host.supportsProjectTrust = true
+        model.selected?.host.unavailable = nil
         trusted = false; await model.refreshMCPCredentials()
         try await model.removeMCP("issues")
         try await render("empty")

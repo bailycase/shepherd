@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { withPi, until } from "./fixtures/pi-rpc-harness.mjs";
 import { root, installTestCliLauncher } from "./fixtures/children-harness.mjs";
 
-for (const scenario of ["untrusted", "missing", "timeout", "blocked", "child-blocked", "ordinary", "nested"]) test(`Spec Kit stops safely on ${scenario}`, { timeout: 20000 }, async t => {
+for (const scenario of ["missing", "timeout", "blocked", "child-blocked", "ordinary", "nested"]) test(`Spec Kit stops safely on ${scenario}`, { timeout: 20000 }, async t => {
   const dir = fs.mkdtempSync("/tmp/sk-life-");
   const socket = path.join(dir, "s"), connections = new Set();
   const server = net.createServer(c => {
@@ -26,7 +26,7 @@ for (const scenario of ["untrusted", "missing", "timeout", "blocked", "child-blo
   await withPi(t, {
     launcher: process.env.SHEPHERD_TEST_PI_LAUNCHER, agentDir: process.env.SHEPHERD_TEST_PI_HOME,
     args: ["-e", bridge], usage: () => ({ input: 1, output: 1 }),
-    files: (_dir, work) => ({ "trust.json": { [work]: !["untrusted", "ordinary"].includes(scenario) } }),
+    files: (_dir, work) => ({ "trust.json": { [work]: scenario !== "ordinary" } }),
     env: { SHEPHERD_NATIVE_CHILDREN: "0", SHEPHERD_AGENT_ID: "parent", SHEPHERD_SOCKET: socket, SHEPHERD_EXT_CHILDREN: bridge },
     project(_dir, work) {
       installTestCliLauncher(process.env.SHEPHERD_TEST_PI_HOME ?? path.join(_dir, "home"));
@@ -65,7 +65,7 @@ for (const scenario of ["untrusted", "missing", "timeout", "blocked", "child-blo
       assert.equal(pi.provider.requests.filter(r => r.body.tools?.some(tool => tool.function.name === "shepherd_parent_message")).length, 2);
       return;
     }
-    assert.match(JSON.stringify(result), scenario === "untrusted" ? /Approve this project/ : scenario === "missing" ? /not enabled/ : scenario === "blocked" ? /Fixture permission denied/ : scenario === "child-blocked" ? /Child shell denied/ : /timed out|time limit|abort|cancel/i);
+    assert.match(JSON.stringify(result), scenario === "missing" ? /not enabled/ : scenario === "blocked" ? /Fixture permission denied/ : scenario === "child-blocked" ? /Child shell denied/ : /timed out|time limit|abort|cancel/i);
     if (scenario === "timeout") {
       assert.ok(fs.existsSync(childPID), "the child started its Bash command before cancellation");
       const pid = Number(fs.readFileSync(childPID, "utf8"));

@@ -21,7 +21,6 @@ const jiti = createJiti(import.meta.url, { alias: {
 const config = await jiti.import(path.join(root, "Extensions/shepherd-children-config.ts"));
 const { executeWorkflow, lifecycleWaiters } = await jiti.import(path.join(root, "Extensions/shepherd-workflow.ts"));
 const { missionStore } = await jiti.import(path.join(root, "Extensions/shepherd-missions.ts"));
-const { ProjectTrustStore } = await import(path.join(pkg, "dist/index.js"));
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 
 test("child user extensions respect Pi filters and exclude project resources", async () => {
@@ -46,17 +45,16 @@ test("child user extensions respect Pi filters and exclude project resources", a
   }
 });
 
-test("child target context still requires trust for skills, independent of profile ownership", () => {
+test("a child's space always counts as trusted; only the home folder never does", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-profiles-")), old = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = path.join(dir, "pi");
   try {
     const cwd = path.join(dir, "project"), other = path.join(dir, "other");
     fs.mkdirSync(cwd); fs.mkdirSync(other);
     const ctx = { cwd, isProjectTrusted: () => true };
-    assert.equal(config.childTargetContext(ctx, fs.realpathSync(other)).isProjectTrusted(), false);
-    new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(other, true);
     assert.equal(config.childTargetContext(ctx, fs.realpathSync(other)).isProjectTrusted(), true);
-    assert.equal(config.childTargetContext({ ...ctx, isProjectTrusted: () => false }, fs.realpathSync(cwd)).isProjectTrusted(), false);
+    assert.equal(config.childTargetContext({ ...ctx, isProjectTrusted: () => false }, fs.realpathSync(cwd)).isProjectTrusted(), true);
+    assert.equal(config.childTargetContext(ctx, fs.realpathSync(os.homedir())).isProjectTrusted(), false);
     assert.deepEqual(config.childDefaults({}), { concurrency: 4, thinking: undefined, model: undefined, context: "fresh", scope: "shepherd" });
     assert.equal(config.childDefaults({ SHEPHERD_CHILD_CONCURRENCY: "9", SHEPHERD_CHILD_MODEL: "x/y", SHEPHERD_CHILD_CONTEXT: "fork" }).concurrency, 9);
     assert.throws(() => config.childDefaults({ SHEPHERD_CHILD_CONCURRENCY: "99" }), /1..16/);

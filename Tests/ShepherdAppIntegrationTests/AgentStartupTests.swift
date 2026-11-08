@@ -70,7 +70,7 @@ struct AgentStartupTests {
         #expect(launch.env["SHEPHERD_MCP_WORKTREE_CWD"] == (mcpEnabled ? PiHome.canonical(checkout.path) : nil))
         #expect(launch.env["SHEPHERD_RESOURCE_OWNING_SPACE"] == PiHome.canonical(owner.path))
         #expect(launch.env["SHEPHERD_RESOURCE_WORKTREE_CWD"] == PiHome.canonical(checkout.path))
-        #expect(!launch.argv.contains("--approve"))
+        #expect(launch.argv.contains("--approve"), "A space's checkout loads its own configuration")
         #expect(launch.env["SHEPHERD_EXT_MCP_PROJECT"] == nil, "Shared .mcp.json keeps its independent opt-in")
         #expect(vm.state.agents.first?.spaceID == space.id)
     }

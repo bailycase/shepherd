@@ -152,13 +152,7 @@ public enum HostInventoryPresentation {
         project.error != nil ? .failed : project.minimal ? .idle : .done
     }
 
-    /// "Trusted" or "Not yet approved": a space's executable resources (skills, extensions, MCP)
-    /// load only once approved on the Mac; nil when the host did not say.
-    public static func trustWord(_ trusted: Bool?) -> String? {
-        trusted.map { $0 ? "Approved on the host" : "Not yet approved" }
-    }
-
     public static func spacesGuidance(host: String) -> String {
-        "Edit a space's instructions, pi settings and MCP file, or approve its resources, in Settings ▸ Spaces on \(host)."
+        "Edit a space's instructions, pi settings, resources and MCP file in Settings ▸ Spaces on \(host)."
     }
 }
