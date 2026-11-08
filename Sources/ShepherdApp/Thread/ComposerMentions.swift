@@ -13,27 +13,43 @@ import ShepherdUI
 /// The @ mention being typed at the end of a draft: an "@" at the start or after whitespace, and
 /// what follows it on the same line.
 struct ComposerMention: Equatable {
-    /// The draft before the "@".
-    var before: String
-    /// What follows the "@".
+    /// What follows the "@". Declared first, so the synthesized == compares the typed word before
+    /// the long prefix and stops there when they differ.
     var text: String
+    /// The draft before the "@", kept as a view of the draft so finding a mention costs the word
+    /// being typed, not the draft.
+    private let prefix: Substring
+
+    /// The draft before the "@".
+    var before: String { String(prefix) }
 
     /// A mention runs at most this long; past it the draft is prose.
     static let maxLength = 160
 
     /// The mention the draft ends in, or nil: an "@" that starts the draft or follows whitespace,
-    /// with no line break after it (an address like a@b.c is no mention).
+    /// with no line break after it (an address like a@b.c is no mention). It walks back from the
+    /// end, no further than the longest mention reaches.
     static func token(in draft: String) -> ComposerMention? {
-        guard let at = draft.lastIndex(of: "@") else { return nil }
-        if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
-        let text = draft[draft.index(after: at)...]
-        guard !text.contains(where: \.isNewline), text.count <= maxLength,
-              text.first?.isWhitespace != true else { return nil }
-        return ComposerMention(before: String(draft[..<at]), text: String(text))
+        var end = draft.endIndex
+        var after = 0
+        while end > draft.startIndex, after <= maxLength {
+            let at = draft.index(before: end)
+            let character = draft[at]
+            if character == "@" {
+                if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+                let text = draft[end...]
+                guard text.first?.isWhitespace != true else { return nil }
+                return ComposerMention(text: String(text), prefix: draft[..<at])
+            }
+            if character.isNewline { return nil }
+            end = at
+            after += 1
+        }
+        return nil
     }
 
     /// The draft with the mention written as `text` ("@Checkout funnel dashboard › ").
-    func draft(with text: String) -> String { before + "@" + text }
+    func draft(with text: String) -> String { String(prefix) + "@" + text }
 }
 
 /// Where the @ picker is: the designs, inside a design (its boards), or inside a board (its

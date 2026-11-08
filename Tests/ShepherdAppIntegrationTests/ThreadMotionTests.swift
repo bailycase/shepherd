@@ -137,6 +137,53 @@ struct ThreadMotionTests {
         #expect(count > 0)
     }
 
+    private static let working = ThreadFixture.history(4) + [ThreadFixture.user("u9", "Build it")]
+    /// The turn ends and the person's queued follow-up is taken: a user row and the wait line arrive.
+    private static let followUp = ThreadFixture.snapshot(working + [ThreadFixture.assistant("a9", "Built."), ThreadFixture.user("u10", "Then lint it")],
+                                                         running: true, revision: 3)
+
+    /// Switching back to a working agent is a catch-up, and the first change after it is not: it
+    /// makes its entrances (the user row rises in, the wait line fades in). The pull that catches
+    /// the thread up changed only the live reply, which the thread's body no longer reads once
+    /// it has caught up.
+    @Test(arguments: [false, true]) func aTurnAfterSwitchingBackToAWorkingAgentMakesItsEntrance(toolBoundaryWhileAway: Bool) async throws {
+        let before = toolBoundaryWhileAway ? ThreadFixture.bash("running") : ThreadFixture.streaming("Building")
+        let thread = FakeThread(ThreadFixture.snapshot(Self.working, provisional: [before], running: true), dark: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await thread.show(false)
+        let during = toolBoundaryWhileAway ? ThreadFixture.bash("complete") : ThreadFixture.streaming("Building it now, step by step")
+        thread.snapshot = ThreadFixture.snapshot(Self.working, provisional: [during], running: true, revision: 2)
+        try await thread.show(true)
+        #expect(thread.store.catchUp != nil && thread.store.liveRow != nil, "the thread caught up")
+
+        let count = await entrances {
+            await thread.serve(Self.followUp)
+            ListPerf.settle(thread.window)
+        }
+
+        #expect(count >= 2, "the user row and the wait line made their entrances")
+    }
+
+    /// A reply that opens with a running call is made after the thread caught up, and its first
+    /// part makes its entrance: the live row's first render is not a catch-up.
+    @Test func aNewRepliesFirstPartMakesItsEntrance() async throws {
+        let asked = ThreadFixture.history(4) + [ThreadFixture.user("u9", "Build it")]
+        let thread = FakeThread(ThreadFixture.snapshot(asked, running: true), dark: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the thread to catch up") { thread.store.catchUp != nil && thread.store.showsThinking }
+        ListPerf.settle(thread.window)
+
+        let count = await entrances {
+            await thread.serve(ThreadFixture.snapshot(asked, provisional: [ThreadFixture.bash("running")], running: true, revision: 2))
+            ListPerf.settle(thread.window)
+        }
+
+        #expect(thread.store.liveRow != nil, "the reply began")
+        #expect(count > 0)
+    }
+
     /// Text streaming into a reply appears at once: no row, part, or line animates per chunk.
     @Test func streamedTextAppearsAtOnce() async throws {
         let first = "Streaming a reply that keeps growing."
