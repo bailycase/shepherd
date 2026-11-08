@@ -98,9 +98,17 @@ struct PiStartRecord {
         return words.suffix(NativeStartProblem.maxLines).map(\.line)
     }
 
-    /// A frame of a stack trace: node's `at fn (file:1:2)`, or the native `3: 0x1008c6a30 node::Abort()`.
+    /// A frame of a stack trace: node's `at fn (file:1:2)`, `at file:1:2`, `at fn (<anonymous>)` or
+    /// `at async Promise.all (index 0)`, or the native `3: 0x1008c6a30 node::Abort()`. A sentence that
+    /// only starts with "at" is not one.
     static func isStackFrame(_ line: String) -> Bool {
-        if line.hasPrefix("at ") { return true }
+        if line.hasPrefix("at ") {
+            let frame = line.hasSuffix(")") ? line.dropLast() : line[...]
+            if frame.hasSuffix("<anonymous>") { return true }
+            if let open = frame.range(of: " (", options: .backwards), frame[open.upperBound...].hasPrefix("index ") { return true }
+            let place = frame.split(separator: ":", omittingEmptySubsequences: false).suffix(3)
+            return place.count == 3 && place.dropFirst().allSatisfy { !$0.isEmpty && $0.allSatisfy { $0 >= "0" && $0 <= "9" } }
+        }
         let digits = line.prefix { $0 >= "0" && $0 <= "9" }
         return !digits.isEmpty && line.dropFirst(digits.count).hasPrefix(": 0x")
     }

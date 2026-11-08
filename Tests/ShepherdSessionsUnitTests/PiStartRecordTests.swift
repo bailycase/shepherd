@@ -105,6 +105,24 @@ struct PiStartRecordTests {
         #expect(record.problem(exitCode: 3, signal: nil, at: start + .seconds(2))?.exitCode == 3)
     }
 
+    /// Only a stack frame is dropped from the last words: a sentence that starts with "at" is the error.
+    @Test(arguments: [
+        ("at run (/pi/main.js:10:5)", true),
+        ("at async main (file:///pi/main.js:3:1)", true),
+        ("at /pi/main.js:10:5", true),
+        ("at node:internal/modules/cjs/loader:1:2", true),
+        ("at new Promise (<anonymous>)", true),
+        ("at async Promise.all (index 0)", true),
+        ("3: 0x1008c6a30 node::Abort()", true),
+        ("at least one model must be configured", false),
+        ("at line 5: unexpected token", false),
+        ("at startup (config.json) is invalid", false),
+        ("attempt 3: failed", false),
+    ])
+    func onlyAStackFrameIsNotALastWord(_ line: String, _ frame: Bool) {
+        #expect(PiStartRecord.isStackFrame(line) == frame)
+    }
+
     /// What pi wrote long before it stopped says nothing about why it stopped.
     @Test func wordsOlderThanTheWindowSayNothingAboutTheExit() {
         var record = PiStartRecord()
