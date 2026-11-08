@@ -69,6 +69,79 @@ struct AutomationRunLogTests {
         #expect(followed.result.isLive == AutomationRun.isLive(agentStatus: status, run: followed))
     }
 
+    /// An agent whose run never settled and whose pi stops on its own stays, idle: its run is over,
+    /// and neither Run now nor a trigger waits on it.
+    @Test func aRunWhosePiStopsOnItsOwnEndsFailedAndKeepsItsAgent() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
+        let id = AgentID(rawValue: "run")
+        Self.replay([Self.state(agent: nil), Self.state(agent: .working)], log: log)
+        #expect(log.openRuns[Self.automation.id]?.result == .running)
+
+        let stopped = Self.start.addingTimeInterval(30)
+        log.agentStopped(id, failure: "The agent stopped unexpectedly (signal 9).", now: stopped)
+        let run = try #require(log.runs[Self.automation.id]?.last)
+        #expect(run.result == .failed && run.failure == "The agent stopped unexpectedly (signal 9).")
+        #expect(run.endedAt == stopped.timeIntervalSince1970 && run.settledAt == nil)
+        #expect(run.unread && run.agentID == id, "the run still opens its thread")
+        #expect(log.openRuns[Self.automation.id] == nil)
+        #expect(!AutomationRun.isLive(agentStatus: .idle, run: run))
+        #expect(run.result.isLive == AutomationRun.isLive(agentStatus: .idle, run: run))
+
+        // The server then moves the agent to idle: the ended run is neither reopened nor changed.
+        log.record(from: Self.state(agent: .working), to: Self.state(agent: .idle), now: stopped)
+        #expect(log.runs[Self.automation.id] == [run])
+    }
+
+    @Test func aRunThatAlreadySettledStaysSettledWhenItsPiStopsLater() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
+        Self.replay([Self.state(agent: nil), Self.state(agent: .working), Self.state(agent: .done)], log: log)
+        let settled = try #require(log.runs[Self.automation.id]?.last)
+        #expect(settled.result == .finished)
+
+        log.agentStopped(AgentID(rawValue: "run"), failure: "The agent stopped unexpectedly (signal 9).", now: Self.start.addingTimeInterval(60))
+        #expect(log.runs[Self.automation.id] == [settled])
+        #expect(!AutomationRun.isLive(agentStatus: .idle, run: settled))
+    }
+
+    @Test func aStoppedRunKeepsAtMostFiveHundredCharactersOfItsReason() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
+        Self.replay([Self.state(agent: nil), Self.state(agent: .working)], log: log)
+        log.agentStopped(AgentID(rawValue: "run"), failure: String(repeating: "x", count: 900), now: Self.start)
+        #expect(log.runs[Self.automation.id]?.last?.failure?.count == 500)
+    }
+
+    @Test func anotherAgentsPiStoppingLeavesTheRunAlone() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
+        Self.replay([Self.state(agent: nil), Self.state(agent: .working)], log: log)
+        let running = log.runs[Self.automation.id]
+        log.agentStopped(AgentID(rawValue: "someone-else"), failure: "stopped", now: Self.start)
+        #expect(log.runs[Self.automation.id] == running)
+    }
+
+    /// A run that ended while its agent stays idle is not live; one that has not, or that no one
+    /// knows, is.
+    @Test(arguments: [
+        (AgentStatus.idle, 5.0 as Double?, nil as Double?, false), (.idle, nil, 9, false), (.idle, nil, nil, true),
+        (.working, nil, 9, true), (.blocked, nil, 9, true), (.done, nil, nil, false),
+    ])
+    func anIdleRunIsLiveOnlyWhileItHasNeitherSettledNorEnded(_ status: AgentStatus, settled: Double?, ended: Double?, live: Bool) {
+        let run = AutomationRun(startedAt: 0, settledAt: settled, endedAt: ended, result: .running)
+        #expect(AutomationRun.isLive(agentStatus: status, run: run) == live)
+        if status == .idle { #expect(AutomationRun.isLive(agentStatus: .idle, run: nil)) }
+    }
+
     @Test func aNewAgentStartsANewRunAndTheLogKeepsTheNewest() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

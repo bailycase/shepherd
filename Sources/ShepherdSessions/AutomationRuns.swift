@@ -6,7 +6,8 @@ import ShepherdRemote
 /// The runs of each automation, kept by the server so a remote client can read how the last
 /// ones went after their agents are gone (`automation-runs.json` in the support directory,
 /// newest `limit` per automation). A run opens when an automation gains an agent and closes
-/// when it loses it; in between it follows the agent's status. Confined to the server queue,
+/// when it loses it, or when its pi stops on its own (the agent stays); in between it follows the
+/// agent's status. Confined to the server queue,
 /// except `openRuns`; writes go to disk off it, in order.
 final class AutomationRunLog: @unchecked Sendable {
     static let limit = 30
@@ -172,6 +173,33 @@ final class AutomationRunLog: @unchecked Sendable {
         runs[automationID] = Array(list.suffix(Self.limit))
         publish()
         save()
+    }
+
+    /// The agent's pi stopped on its own: each run of it that had not settled ends as failed with
+    /// `failure`. The agent stays (`agentID` is kept, so the run still opens its thread), and
+    /// neither Run now nor a trigger waits on a run that is over. A run that already settled
+    /// stays finished. True when a run changed.
+    @discardableResult
+    func agentStopped(_ agentID: AgentID, failure: String, now: Date = Date()) -> Bool {
+        let time = now.timeIntervalSince1970
+        var changed = false
+        for (id, list) in runs {
+            runs[id] = list.map { run in
+                guard run.agentID == agentID, run.endedAt == nil, run.settledAt == nil else { return run }
+                changed = true
+                var run = run
+                run.result = .failed
+                run.failure = String(failure.prefix(500))
+                run.endedAt = time
+                run.unread = true
+                return run
+            }
+        }
+        if changed {
+            publish()
+            save()
+        }
+        return changed
     }
 
     /// A run that never started (its thread or worktree couldn't be made).
