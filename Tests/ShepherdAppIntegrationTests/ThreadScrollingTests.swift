@@ -1052,9 +1052,10 @@ struct ThreadScrollingTests {
     /// An ordinary reply is laid out whole, as before chunks, and moves exactly as the reader scrolls. A giant one
     /// is drawn a chunk at a time, and its lazy stack revises the height it estimated for the chunks it has not built,
     /// which the content's height shows (the first scroll adds about 5,000 pt and a later one now and then revises it
-    /// again: the distance checks are a known issue until the user decides how a giant reply is drawn); the headings
-    /// the reader sees and the blank band are held for it too, over the 15,000 pt that take the reader out of the
-    /// last chunks, laid out for real, into the lazy ones.
+    /// again: the exact distance check is a known issue, accepted for replies of 128 KB or more); the headings the
+    /// reader sees and the blank band are held for it too, over the 15,000 pt that take the reader out of the last
+    /// chunks, laid out for real, into the lazy ones. So is that the reader is never put back on the tail: at every
+    /// step, for either reply, the thread is not pinned and is further from the tail than at the step before.
     ///
     /// The first version of this fix drew every reply of more than two chunks a chunk at a time, and its lazy stack
     /// moved the headings of an 80-cycle reply (up to 534 pt, and a blank band of 457 pt at the top) and of a reply of
@@ -1088,6 +1089,11 @@ struct ThreadScrollingTests {
             withKnownIssue("bug: a giant reply's lazy stack revises the content's height under the reader", isIntermittent: true) {
                 #expect(abs(moved - pitch) <= 4, "step \(step): the view moved \(moved) pt from the tail for a \(Int(pitch)) pt scroll")
             } when: { reply == .giant }
+            // Outside the known issue, so a lazy stack that puts the reader back on the tail (no heading in common with
+            // the frame before it, so none to compare) fails the step. The revisions seen so far pass: +5,185 pt at
+            // step 1 and -23 pt at step 18.
+            #expect(!thread.isPinned, "step \(step): the reader is back on the tail, \(above) pt from it")
+            #expect(moved > 0, "step \(step): the view moved \(moved) pt from the tail for a scroll up")
             let now = try thread.markerPositions()
             for (marker, y) in now {
                 guard let before = previous[marker] else { continue }
