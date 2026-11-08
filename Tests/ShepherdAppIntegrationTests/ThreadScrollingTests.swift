@@ -23,7 +23,8 @@ private final class ThreadHarness {
     var olderRequests = 0
     var olderRequestPhases: [ScrollPhase] = []
     /// Answers a poll for the revision it already serves with `.unchanged`, as a host does (a whole
-    /// snapshot again would clear the live row of a reply being streamed).
+    /// snapshot again makes the store derive for nothing, and a derive that rebuilds no row clears the
+    /// live row of a reply being streamed). Drop this opt-in when the store keeps it.
     var answersUnchanged = false
     private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
@@ -1038,58 +1039,84 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "an obsolete history anchor displaced the new navigation from \(before) to \(after)")
     }
 
-    /// A reader scrolls up through a finished reply of many chunks (each lazy, built as it comes
-    /// into view): the thread sits exactly as far above its tail as they scrolled, every heading they
-    /// can see moves exactly as far, and no stretch of the thread goes blank. A lazy stack that
-    /// mis-estimates the chunks it has not built shows as a heading that jumps. Light, because Vision
-    /// misses dark low-contrast lines. The window is tall and the steps short, so a heading is in view
+    /// A reply to scroll up through: `ordinary` is 30 cycles, about 7 chunks (24 KB), laid out whole as it was
+    /// before chunks; `giant` is 450 cycles (`NativeProse.isGiant`), the only kind drawn a chunk at a time.
+    enum ScrolledReply: String, CaseIterable, Sendable, CustomTestStringConvertible {
+        case ordinary, giant
+        var testDescription: String { rawValue }
+        var cycles: Int { self == .ordinary ? 30 : 450 }
+        /// Steps of 150 pt: 64 cover 9,600 pt of an ordinary reply; a giant one lays out its last 10 to 15 cycles
+        /// (about 9,750 pt) for real, and the steps go on well into the lazy chunks above.
+        var steps: Int { self == .ordinary ? 64 : 100 }
+    }
+
+    /// A reader scrolls up through a finished long reply: the thread sits exactly as far above its tail as they
+    /// scrolled, every heading they can see moves exactly as far, and no stretch of the thread goes blank. A
+    /// lazy stack that mis-estimates the chunks it has not built shows as a heading that jumps. Light, because
+    /// Vision misses dark low-contrast lines. The window is tall and the steps short, so a heading is in view
     /// before and after almost every step.
     ///
-    /// Known issue: where the reader leaves the last two chunks (laid out for real) for the lazy ones,
-    /// about 1,200 pt above the tail, SwiftUI re-places the nested lazy stack and puts the view back on
-    /// the tail, which no heading comparison sees (the headings it shows are new), and for one reading the
-    /// top of the view is blank. It happens at the same places on every run, and again for the next two
-    /// passes, until the stack has measured enough chunks to estimate the rest.
-    @Test func aReaderScrollingUpThroughALongReplySeesItMoveOnlyAsFarAsTheyScroll() async throws {
+    /// An ordinary reply is laid out whole, as before chunks, and moves exactly as the reader scrolls. A giant one
+    /// is drawn a chunk at a time, and its lazy stack revises the height it estimated for the chunks it has not built,
+    /// which the content's height shows (the first scroll adds about 5,000 pt: a known issue until the user decides
+    /// how a giant reply is drawn, and it tracks the scroll after it); the headings the reader sees and the blank band are held for it too, over the
+    /// 15,000 pt that take the reader out of the last chunks, laid out for real, into the lazy ones.
+    ///
+    /// The first version of this fix drew every reply of more than two chunks a chunk at a time, and its lazy stack
+    /// moved the headings of an 80-cycle reply (up to 534 pt, and a blank band of 457 pt at the top) and of a reply of
+    /// 5 chunks (46 pt); that is why only a giant reply is lazy now.
+    @Test(arguments: ScrolledReply.allCases)
+    func aReaderScrollingUpThroughALongReplySeesItMoveOnlyAsFarAsTheyScroll(reply: ScrolledReply) async throws {
         let thread = ThreadHarness(messages: 2, height: 900)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let text = MarkdownFixtures.longReply(cycles: 80, markerEvery: 1)
-        #expect(nativeMarkdownBlocks(text).count > 12 * 20, "twelve chunks or more")
+        let text = MarkdownFixtures.longReply(cycles: reply.cycles, markerEvery: 1)
+        let prose = NativeProse(nativeMarkdownParse(text))
+        #expect(prose.isGiant == (reply == .giant), "\(prose.textBytes) bytes of text")
+        if reply == .ordinary { #expect((5...10).contains(prose.chunks.count), "\(prose.chunks.count) chunks") }
         try await thread.publishReply(text, streaming: false)
         try await eventuallyOnMain("the long reply to open at its tail") { thread.isPinned }
         try await thread.settle()
 
-        let pitch: CGFloat = 150, steps = 64
+        let pitch: CGFloat = 150, steps = reply.steps
         var previous = try thread.markerPositions()
+        var above = thread.distanceFromBottom
         var compared = 0
-        await withKnownIssue("bug: scrolling up out of a long reply's last two chunks into its lazy chunks puts the thread back on its tail", isIntermittent: true) {
-            for step in 1...steps {
-                thread.scrollUp(by: pitch)
-                try await thread.settle()
-                let above = thread.distanceFromBottom
-                #expect(abs(above - CGFloat(step) * pitch) <= 4, "step \(step): \(above) pt above the tail, scrolled \(CGFloat(step) * pitch)")
-                let now = try thread.markerPositions()
-                for (marker, y) in now {
-                    guard let before = previous[marker] else { continue }
-                    compared += 1
-                    #expect(abs((y - before) - pitch) <= 4, "step \(step): Marker \(marker) moved \(y - before) pt for a \(Int(pitch)) pt scroll")
-                }
-                #expect(thread.longestBlankBand <= 64, "step \(step): a blank band of \(thread.longestBlankBand) pt")
-                previous = now
+        for step in 1...steps {
+            thread.scrollUp(by: pitch)
+            try await thread.settle()
+            let was = above
+            above = thread.distanceFromBottom
+            if step > 1 { #expect(abs((above - was) - pitch) <= 4, "step \(step): the view moved \(above - was) pt from the tail for a \(Int(pitch)) pt scroll") }
+            // The distance from the tail is read off the content's height, which a giant reply's lazy stack
+            // revises at the first scroll (by about 5,000 pt) with no heading moving; it tracks the scroll after it.
+            if step == 1 {
+                withKnownIssue("bug: a giant reply's lazy stack revises the content's height under the reader", isIntermittent: true) {
+                    #expect(abs(above - pitch) <= 4, "step 1: \(above) pt above the tail, scrolled \(pitch)")
+                } when: { reply == .giant }
             }
-            #expect(compared >= steps, "the headings were measured: \(compared) comparisons in \(steps) steps")
+            let now = try thread.markerPositions()
+            for (marker, y) in now {
+                guard let before = previous[marker] else { continue }
+                compared += 1
+                #expect(abs((y - before) - pitch) <= 4, "step \(step): Marker \(marker) moved \(y - before) pt for a \(Int(pitch)) pt scroll")
+            }
+            let band = thread.longestBlankBand
+            #expect(band <= 64, "step \(step): a blank band of \(band) pt")
+            previous = now
         }
+        #expect(compared >= steps, "the headings were measured: \(compared) comparisons in \(steps) steps")
     }
 
-    /// A reader parked in the middle of a reply that is still streaming (its chunks crossing boundaries
-    /// below them) sees nothing move.
-    @Test func aDetachedReaderInALongReplyStaysPutWhileItStreams() async throws {
+    /// A reader parked in the tail of a reply that is still streaming (its chunks crossing boundaries
+    /// below them) sees nothing move: in an ordinary reply, and in a giant one whose earlier chunks are lazy.
+    @Test(arguments: ScrolledReply.allCases)
+    func aDetachedReaderInALongReplyStaysPutWhileItStreams(reply: ScrolledReply) async throws {
         let thread = ThreadHarness(messages: 2)
         thread.answersUnchanged = true
         defer { thread.close() }
         try await thread.waitUntilReady()
-        var cycles = 60
+        var cycles = reply == .ordinary ? 60 : reply.cycles
         try await thread.publishReply(MarkdownFixtures.longReply(cycles: cycles, markerEvery: 1), streaming: true)
         try await eventuallyOnMain("the streaming reply to open at its tail") { thread.isPinned }
         for _ in 0..<4 {
