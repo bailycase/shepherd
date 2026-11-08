@@ -274,12 +274,11 @@ struct ProseView: View, Equatable {
         .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
     }
 
-    /// The chunks before the last two build as they scroll into view from iOS 27.1, whose transcript follows its tail
-    /// explicitly. iOS 27.0 anchors the bottom natively, and with a lazy stack nested in its lazy rows (whose height it
-    /// estimates) a reply of five or more chunks lands blank at the tail: there every chunk is laid out for real.
-    static let lazyChunks: Bool = {
-        if #available(iOS 27.1, *) { true } else { false }
-    }()
+    /// Every chunk is laid out for real on iOS: the transcript anchors on row ids and the subagent run opens at its tail
+    /// under a native bottom anchor, and a lazy stack nested in those lazy rows (whose height they estimate) drew a reply
+    /// blank on iOS 27.0. Laziness for iOS 27.1 and later waits on the scroll-up check on the iPhone and the iPad there,
+    /// at light and dark, in the thread and in a subagent run.
+    static let lazyChunks = false
 
     static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [SHProseBlock] {
         blocks.map { block in
