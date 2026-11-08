@@ -81,20 +81,7 @@ struct ThreadBlankScreenTests {
         var drawing: (ink: Int, longestBlankBand: Int) {
             let inset = (reading?.insetBottom ?? 0) + 24
             let capture = FrameTimer.capture(window, CGRect(x: 0, y: 0, width: size.width, height: size.height - inset))
-            let ink = capture.data.withUnsafeBytes { raw -> Int in
-                let p = raw.bindMemory(to: UInt8.self)
-                let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
-                var count = 0
-                for y in 0..<capture.height {
-                    let row = y * capture.bytesPerRow
-                    for x in 0..<capture.width {
-                        let i = row + x * 4
-                        if abs(Int(p[i]) - r) > 12 || abs(Int(p[i + 1]) - g) > 12 || abs(Int(p[i + 2]) - b) > 12 { count += 1 }
-                    }
-                }
-                return count
-            }
-            return (ink, capture.longestBlankBand)
+            return (capture.ink, capture.longestBlankBand)
         }
 
         var ink: Int { drawing.ink }
@@ -111,19 +98,15 @@ struct ThreadBlankScreenTests {
             }
         }
 
-        /// Waits for the thread to draw its tail with no blank stretch in it longer than
-        /// `Self.blankBandLimit`: a blank region inside a long reply, which `expectTail` (any ink at
-        /// all) and the tail guard (its row marker spans the whole row) cannot see.
+        /// The thread's first frame after `expectTail` has it at its tail has no blank stretch longer
+        /// than `Self.blankBandLimit`: a blank region inside a long reply, which `expectTail` (any
+        /// ink at all) and the tail guard (its row marker spans the whole row) cannot see. It reads
+        /// that one frame, so a band that fills in later still fails.
         func expectNoBlankBand(_ what: String) async throws {
-            var last: (ink: Int, longestBlankBand: Int) = (0, 0)
-            do {
-                try await eventuallyOnMain("\(what): no blank band", timeout: .seconds(4), poll: .milliseconds(16)) {
-                    window.layout()
-                    last = drawing
-                    return last.ink > 0 && last.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit
-                }
-            } catch {
-                throw TimedOut(what: "\(what): no blank band (\(last.longestBlankBand) pt of background in a row, limit \(ThreadBlankScreenTests.blankBandLimit); \(reading.map(String.init(describing:)) ?? "no scroll view"))")
+            window.layout()
+            let now = drawing
+            guard now.ink > 0, now.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit else {
+                throw TimedOut(what: "\(what): no blank band (\(now.longestBlankBand) pt of background in a row, limit \(ThreadBlankScreenTests.blankBandLimit), \(now.ink) pixels drawn; \(reading.map(String.init(describing:)) ?? "no scroll view"))")
             }
         }
 

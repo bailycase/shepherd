@@ -60,6 +60,24 @@ enum FrameTimer {
         let width: Int
         let height: Int
 
+        /// The pixels that differ from the background (the first pixel): zero means nothing is drawn.
+        var ink: Int {
+            data.withUnsafeBytes { raw -> Int in
+                let p = raw.bindMemory(to: UInt8.self)
+                guard p.count >= 4 else { return 0 }
+                let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
+                var count = 0
+                for y in 0..<height {
+                    let row = y * bytesPerRow
+                    for x in 0..<width {
+                        let i = row + x * 4
+                        if abs(Int(p[i]) - r) > 12 || abs(Int(p[i + 1]) - g) > 12 || abs(Int(p[i + 2]) - b) > 12 { count += 1 }
+                    }
+                }
+                return count
+            }
+        }
+
         /// The longest run of rows, in points, that draw only the background (the first pixel):
         /// a blank region inside a long row, which a count of ink cannot see.
         var longestBlankBand: Int {
