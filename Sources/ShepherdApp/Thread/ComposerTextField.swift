@@ -115,12 +115,15 @@ struct ComposerTextField: NSViewRepresentable {
             if field.currentEditor() != nil {
                 field.editor.setSelectedRange(NSRange(location: field.editor.textStorage?.length ?? 0, length: 0))
                 context.coordinator.readSelection(field)
+            } else {
+                // The offsets belong to the draft this one replaced.
+                caret?.range = nil
             }
         } else if field.chipsStyle != field.styleVersion, text.contains(ComposerSkillToken.prefix) {
             // A new appearance or text size redraws the chips, keeping the caret where it is.
-            let caret = field.editor.selectedRange()
+            let selected = field.editor.selectedRange()
             field.setDraft(text)
-            if field.currentEditor() != nil { field.editor.setSelectedRange(caret) }
+            if field.currentEditor() != nil { field.editor.setSelectedRange(selected) }
         }
         if !replaced, let range = caret?.range {
             let native = field.editorRange(range)
