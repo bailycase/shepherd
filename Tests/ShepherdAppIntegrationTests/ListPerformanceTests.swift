@@ -1550,7 +1550,8 @@ struct ListPerformanceTests {
         local.settings.designToolEnabled = true
         remote.host.settings.designToolEnabled = true
         let space = Fixture.space("acme-web", path: remote.host.dir.path)
-        let shown = Fixture.agent("Checkout funnel", in: space)
+        // The thread's pi is up before the host starts, so nothing binds to its layout while it is counted.
+        let shown = try await remote.host.liveAgent("Checkout funnel", in: space)
         let other = Fixture.agent("Search index", in: space, order: 1)
         try await remote.host.start(with: Fixture.state(spaces: [space], agents: [shown, other]))
         let vm = try await local.start()
@@ -1567,6 +1568,8 @@ struct ListPerformanceTests {
             window.layout()
             return ListPerf.scrollView(in: window) != nil
         }
+        let store = vm.remoteThreadStores.store(for: ref)
+        try await eventuallyOnMain("the remote thread to load") { store.ready }
         ListPerf.settle(window)
 
         let reporter = try ExtensionClient(path: remote.host.scratch.socketPath)
@@ -1580,10 +1583,8 @@ struct ListPerformanceTests {
         SHRenderProbe.start()
         for edge in 0..<6 { try await report(edge.isMultiple(of: 2) ? .working : .done) }
         let pushes = SHRenderProbe.stop()
-        withKnownIssue("every push reruns the remote layout and its thread") {
-            for key in ["layout.remoteLayout", "layout.remotePaneTree", "thread.view", "composer.body"] {
-                #expect(pushes[key, default: 0] == 0, "\(key): \(pushes)")
-            }
+        for key in ["layout.remoteLayout", "layout.remotePaneTree", "thread.view", "composer.body"] {
+            #expect(pushes[key, default: 0] == 0, "\(key): \(pushes)")
         }
 
         // Control: the thread's own name changing redraws its layout.
