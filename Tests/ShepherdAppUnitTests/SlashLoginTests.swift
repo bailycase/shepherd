@@ -80,8 +80,8 @@ struct SlashLoginTests {
             String((0..<Int.random(in: 0...12, using: &generator)).map { _ in alphabet[Int.random(in: 0..<alphabet.count, using: &generator)] }.joined())
         }
         let verbs = ["login", "logout", "LogIn", "LOGOUT", "LOGİN", "logi", "log", "logoutt", "loginn", "logoutxyz", "l", "", "review"]
-        let joiners = [" ", "  ", "\n", "\t", "\r\n", "", " \n", "\u{00A0}"]
-        let tails = ["", "a", "Ant", "k", "kimi", "OPENAI", "日本", "a b", "a\n", "\nb", " ", "a ", "\u{00A0}x", "open ai"]
+        let joiners = [" ", "  ", "\n", "\t", "\r\n", "", " \n", "\u{00A0}", "\r", "\u{2028}", "\u{85}"]
+        let tails = ["", "a", "Ant", "k", "kimi", "OPENAI", "日本", "a b", "a\n", "\nb", " ", "a ", "\u{00A0}x", "open ai", "a\rb", "a\u{2028}b", "\r\n"]
         for lead in ["/", "", " /", "//", "/\u{301}"] {
             for verb in verbs {
                 for joiner in joiners {

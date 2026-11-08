@@ -64,8 +64,9 @@ enum SlashLogin {
         let word = draft.dropFirst()
         guard let space = word.prefix(Verb.longest + 1).firstIndex(of: " "),
               let verb = Verb(rawValue: word[..<space].lowercased()) else { return nil }
-        guard !draft.contains("\n") else { return nil }
-        let partial = String(draft[draft.index(after: space)...])
+        // A line break is whitespace and the verb holds none, so this check covers it. It reads a
+        // view of the argument and stops at the first space, so prose costs a word, not a copy.
+        let partial = draft[draft.index(after: space)...]
         guard !partial.contains(where: \.isWhitespace) else { return nil }
         return (verb, partial.lowercased())
     }
