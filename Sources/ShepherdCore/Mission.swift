@@ -60,6 +60,8 @@ public struct MissionDraft: Codable, Hashable, Sendable {
     /// References supplied or discovered during intake, never executable instructions.
     public var context: [String]
     public var plan: MissionPlan?
+    /// The template this mission started from (`MissionTemplate.id`), for the template's run count.
+    public var template: String?
     public var spaceIDs: [SpaceID] { plan?.lanes.map(\.spaceID) ?? [] }
     public var limits: MissionLimits { plan?.limits ?? MissionLimits() }
 
@@ -160,9 +162,12 @@ public struct MissionStation: Codable, Hashable, Sendable, Identifiable {
     public var model: String?
     public var command: String?
     public var doneWhen: [String]
+    /// What a worker plans to write in its repository: paths or globs ("internal/orders/**"). The mission
+    /// holds them against other missions on the same repository (MXLocks). Nil: not declared.
+    public var paths: [String]?
 
     public init(id: MissionStationID = MissionStationID(), kind: Kind, laneID: SpaceID? = nil,
-                title: String, goal: String, model: String? = nil, command: String? = nil, doneWhen: [String] = []) {
+                title: String, goal: String, model: String? = nil, command: String? = nil, doneWhen: [String] = [], paths: [String]? = nil) {
         self.id = id
         self.kind = kind
         self.laneID = laneID
@@ -171,6 +176,7 @@ public struct MissionStation: Codable, Hashable, Sendable, Identifiable {
         self.model = model
         self.command = command
         self.doneWhen = doneWhen
+        self.paths = paths
     }
 }
 
@@ -236,7 +242,8 @@ public struct MissionPlan: Codable, Hashable, Sendable {
                   !station.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, station.title.utf8.count <= 800,
                   !station.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, station.goal.utf8.count <= 16_000,
                   station.model.map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 512 }) ?? true,
-                  station.doneWhen.count <= 32,
+                  station.doneWhen.count <= 32, (station.paths?.count ?? 0) <= 64,
+                  station.paths?.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("/") && !$0.contains("..") && $0.utf8.count <= 1_024 }) ?? true,
                   station.doneWhen.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 4_000 }) else {
                 throw MissionError("invalid_mission", "Invalid station identity, lane, goal or completion checks.")
             }

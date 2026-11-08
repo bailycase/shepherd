@@ -64,6 +64,19 @@ struct SpaceSettingsFormTests {
         #expect(off["defaultTools"] as? [String] == ["read", "edit", "write", "codemode"])
     }
 
+    @Test func aChildSpaceFollowsItsParentForModelAndThinkingOnly() throws {
+        let parent: (name: String, settings: [String: Any]) = ("shepherd", ["defaultProvider": "anthropic", "defaultModel": "claude-opus-4-6"])
+        let rows = SpaceSettingsForm.groups(["defaultThinkingLevel": "low"], inherited: inherited, parent: parent, models: []).flatMap(\.rows)
+        let model = try #require(rows.first { $0.key == "defaultModel" })
+        #expect(model.source == "Inherited from shepherd · shepherd: anthropic/claude-opus-4-6" && model.resetTo == "parent")
+        if case .dropdown(let options) = model.control { #expect(options.first?.label == "Follow parent · anthropic/claude-opus-4-6") }
+        // The parent sets no thinking level, so thinking follows global; tools and the rest always do.
+        let thinking = try #require(rows.first { $0.key == "defaultThinkingLevel" })
+        #expect(thinking.source == "Space override · Global: Medium" && thinking.resetTo == "global")
+        let tools = try #require(rows.first { $0.key == "defaultTools" })
+        #expect(tools.source.hasPrefix("Inherited from Global") && tools.resetTo == "global")
+    }
+
     @Test func onlyAnObjectIsAForm() {
         #expect(SpaceSettingsForm.parse("")?.isEmpty == true)
         #expect(SpaceSettingsForm.parse("[1]") == nil)

@@ -598,6 +598,12 @@ struct AgentLaunchCommandTests {
         #expect(shared.extensions == MCPLaunch.builtIns + ["/tmp/support/shepherd-mcp-parent.ts"])
         #expect(shared.environment["SHEPHERD_PARENT_PROJECT"] == "/code/acme")
         #expect(shared.environment["SHEPHERD_MCP_SECRETS"] == "", "the user's own MCP launch is kept")
+        // What the child turned off goes only to a launch that shares a parent.
+        let off = SpaceInheritanceExclusions(mcp: ["docs"], skills: ["ledger-review"])
+        let excluded = try #require(shared.excluding(off).environment["SHEPHERD_PARENT_EXCLUDE"])
+        #expect(try JSONDecoder().decode(SpaceInheritanceExclusions.self, from: Data(excluded.utf8)) == off)
+        #expect(shared.excluding(SpaceInheritanceExclusions()) == shared)
+        #expect(base.excluding(off) == base)
     }
 
     @Test func ownedWorktreesShareOnlyTheirRegisteredSpacesMCPWithoutApprovingTheCheckout() throws {

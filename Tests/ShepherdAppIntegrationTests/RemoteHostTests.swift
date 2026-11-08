@@ -45,6 +45,93 @@ struct RemoteHostTests {
         #expect(local.server.state == original && vm.state == original)
     }
 
+    /// ⇧⌘W and a host row's Delete Agent… on a host's plain thread ask first, as This Mac's do: Cancel sends
+    /// nothing, the dialog's Delete reaches the host once the sheet is down, a thread deleted elsewhere takes
+    /// its dialog with it, and Delete agent's "Don't ask again" acts at once.
+    @Test(arguments: [false, true])
+    func aRemoteAgentsDeleteAsksFirstAndTheHostKeepsItUntilConfirmed(fromSelection: Bool) async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: remote.host.dir.path)
+        let agents = (0..<3).map { Fixture.agent("agent\($0)", in: space, order: $0) }
+        let vm = try await local.start()
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: agents))
+        let connection = try await remote.connect(local.remoteHosts)
+        let refs = agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.agent.id) }
+        let hostAgents = { remote.host.server.state.agents.map(\.id) }
+        vm.selectRemoteAgent(hostID: connection.id, agentID: agents[0].agent.id)
+
+        // Asks: the dialog names the agent and its host, and nothing waits for the sheet.
+        if fromSelection { vm.deleteSelectedAgent() } else { vm.requestRemoteDelete(refs[0]) }
+        #expect(vm.remoteDeleteTarget == refs[0])
+        #expect(vm.remoteDeleteItem?.agent.name == "agent0" && vm.remoteDeleteItem?.hostName == "host")
+        #expect(vm.agentDeleteTarget == nil && vm.remoteWorktreeSheet == nil && vm.afterDialogDismiss == nil)
+
+        // Cancel, then the sheet's dismissal. A later rename on the same agent lands and the host keeps three
+        // (best effort: wire order between two tasks isn't guaranteed; the dialog state above is the regression check).
+        vm.remoteDeleteTarget = nil
+        vm.remoteDeleteDismissed()
+        try await local.remoteHosts.agentAction(refs[0], action: .rename(name: "kept"))
+        try await eventuallyOnMain("the host's rename to reach this Mac") {
+            connection.state.agents.first { $0.id == refs[0].agentID }?.name == "kept"
+        }
+        #expect(hostAgents().count == 3)
+
+        // Delete: nothing until the sheet is down, then the host deletes that agent alone.
+        vm.requestRemoteDelete(refs[0])
+        vm.confirmRemoteDelete(refs[0])
+        #expect(vm.remoteDeleteTarget == nil && vm.afterDialogDismiss != nil)
+        #expect(hostAgents().count == 3, "the delete waits for the sheet to go")
+        vm.remoteDeleteDismissed()
+        try await eventuallyOnMain("the host to delete the agent") { hostAgents() == [agents[1].agent.id, agents[2].agent.id] }
+
+        // Deleted elsewhere while its dialog is open: the item goes (the sheet closes) and the dismissal clears the target.
+        vm.requestRemoteDelete(refs[1])
+        #expect(vm.remoteDeleteItem != nil)
+        try await local.remoteHosts.agentAction(refs[1], action: .deleteKeepingWorktree)
+        try await eventuallyOnMain("the host's delete to reach this Mac") { vm.remoteDeleteItem == nil }
+        vm.remoteDeleteDismissed()
+        #expect(vm.remoteDeleteTarget == nil && vm.afterDialogDismiss == nil)
+
+        // Remembered: no dialog, straight to the host.
+        local.settings.skip(.deleteAgent, with: "Delete")
+        vm.requestRemoteDelete(refs[2])
+        #expect(vm.remoteDeleteTarget == nil)
+        try await eventuallyOnMain("the remembered delete to reach the host") { hostAgents().isEmpty }
+        #expect(vm.actionError?.title != "The host refused the action", "no delete was refused")
+        #expect(local.server.state.agents.isEmpty, "nothing on this Mac was touched")
+    }
+
+    /// A host's worktree agent keeps its own routing: Settings ▸ Worktrees decides, never Delete agent's
+    /// "Don't ask again" (as on This Mac).
+    @Test(arguments: WorktreeDeleteAction.allCases)
+    func aRemoteWorktreeAgentsDeleteFollowsTheWorktreeSetting(_ action: WorktreeDeleteAction) async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: remote.host.dir.path)
+        var agent = Fixture.agent("tree", in: space)
+        agent.agent.worktreeBranch = "worktree/acme-tree"
+        // Inside the host's scratch folder: the host's busy-checkout check resolves this path.
+        agent.agent.worktreePath = remote.host.dir.appendingPathComponent("acme-tree").path
+        let vm = try await local.start()
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let connection = try await remote.connect(local.remoteHosts)
+        let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
+        local.settings.skip(.deleteAgent, with: "Delete")
+        local.settings.worktreeDeleteAction = action
+
+        vm.requestRemoteDelete(ref)
+
+        #expect(vm.remoteDeleteTarget == nil)
+        if action == .keepWorktree {
+            #expect(vm.remoteWorktreeSheet == nil)
+            try await eventuallyOnMain("the host to delete the agent") { remote.host.server.state.agents.isEmpty }
+        } else {
+            #expect(vm.remoteWorktreeSheet == ref && !vm.remoteWorktreeFinalize)
+            #expect(remote.host.server.state.agents.count == 1)
+        }
+    }
+
     /// The terminal panel's Rename tab on a host's agent names the tab in the host's layout
     /// (`terminalControlCapability`); the host refuses its thread's pane, and Kill process on a
     /// shell at its prompt.

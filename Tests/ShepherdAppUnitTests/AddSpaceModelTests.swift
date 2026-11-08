@@ -39,4 +39,14 @@ struct AddSpaceModelTests {
         model.hostID = "build"
         #expect(model.parentID == nil && model.title == "Add space" && model.parents.isEmpty)
     }
+
+    @Test func onlyAFolderInsideTheParentsInherits() {
+        let model = AddSpaceModel(hosts: rows.map(\.host), rows: rows, hostID: "local", parentID: parent) { _ in }
+        model.path = "/code/shepherd/landing"
+        #expect(model.inheritsFromParent == true)
+        model.path = "/elsewhere/landing"
+        #expect(model.inheritsFromParent == false)
+        model.parentID = nil
+        #expect(model.inheritsFromParent == nil)
+    }
 }

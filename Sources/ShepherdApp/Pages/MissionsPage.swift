@@ -19,8 +19,9 @@ struct MissionsDestination<Driver: MissionDriving>: View {
                 MissionStartView(spaces: controller.availableSpaces, models: controller.availableModels,
                                  defaultModel: controller.defaultModel, branchChoices: controller.branchChoices,
                                  defaultBranches: controller.defaultBranches, busy: busy, chrome: chrome,
-                                 goal: seed.startGoal, selected: seed.startSpaces,
-                                 cancel: { creating = false }) { goal, spaces, model, branches in
+                                 goal: seed.startGoal, selected: seed.startSpaces, template: controller.startTemplate,
+                                 clearTemplate: { controller.startTemplate = nil },
+                                 cancel: { creating = false; controller.startTemplate = nil }) { goal, spaces, model, branches in
                     perform {
                         let id = try await controller.create(goal: goal, spaces: spaces, model: model, branches: branches)
                         controller.selectedID = id
@@ -38,11 +39,14 @@ struct MissionsDestination<Driver: MissionDriving>: View {
                                  threads: MissionThreads(source: { controller.thread(for: $0) }, report: { controller.error = $0 },
                                                          isLive: { controller.isLive($0) }),
                                  send: { action in await submit(action, mission: selected).value },
-                                 action: { action in submit(action, mission: selected) })
+                                 action: { action in submit(action, mission: selected) },
+                                 others: controller.records.filter { $0.id != selected.id },
+                                 template: selected.draft.template.flatMap { id in controller.templates.first { $0.id == id } })
                     .id(selected.id)
             } else {
                 MissionsPage(records: controller.records, chrome: chrome,
-                             select: { controller.selectedID = $0 }, create: { creating = true })
+                             select: { controller.selectedID = $0 }, create: { controller.startTemplate = nil; creating = true },
+                             templates: controller.templates, start: { controller.startTemplate = $0; creating = true })
             }
         }
         .overlay(alignment: .bottom) {
@@ -53,7 +57,7 @@ struct MissionsDestination<Driver: MissionDriving>: View {
         }
         .background(Color.sh.bgWindow)
         .foregroundStyle(Color.sh.textPrimary)
-        .task { await controller.refreshModels() }
+        .task { await controller.refreshModels(); await controller.loadTemplates() }
         .task(id: controller.selectedID) { if let id = controller.selectedID { await controller.opened(id) } }
         .onAppear { if seed.creating { creating = true }; takeStartRequest() }
         // The sidebar's New mission.
@@ -139,6 +143,9 @@ struct MissionInitialPanes: Equatable {
     var wires: MissionWireFilter?
     var comments: [MissionReviewComment] = []
     var openContractItem: Int?
+    /// The list's tab (MXTemplates) and Done's Save as template (MXTemplateSave).
+    var listTab: MissionListFilter?
+    var savingTemplate = false
 }
 
 extension EnvironmentValues {
@@ -160,6 +167,10 @@ enum MissionUIAction {
     case applyPatch(UUID), rejectPatch(UUID), autoApplyPatches(Bool)
     /// MXTrain: start the merge train in this order under these rules, change a paused one, pause, resume, skip a soak.
     case startTrain([SpaceID], MissionTrain.Rules), changeTrain([SpaceID], MissionTrain.Rules), pauseTrain, resumeTrain, skipSoak
+    /// MXLocks: wait in the queue, stack on the holder's branch, or run anyway, for a held repository.
+    case laneLock(SpaceID, MissionLaneLock.Choice)
+    /// MXTemplateSave: this finished mission as a template, on this Mac or (with a repository) for the team.
+    case saveTemplate(String, String, SpaceID?)
 }
 
 struct MissionPublishApproval: Equatable {
@@ -219,6 +230,7 @@ extension Mission {
     var pill: (state: AgentState, label: String) {
         if run?.pendingQuestion != nil, phase == .map { return (.attention, "Needs you") }
         if run?.patch != nil, !phase.active { return (.attention, "Patch ready") }
+        if phase == .running, !heldLanes.isEmpty { return (.attention, "Running · \(heldLanes.count) lane\(heldLanes.count == 1 ? "" : "s") held") }
         if phase == .done, let train = run?.train {
             switch train.status {
             case .running: return (.running, "Merging · \(train.merged) of \(train.cars.count)")
@@ -326,10 +338,11 @@ struct MissionLaneChip: View {
 // MARK: List (NavMissions)
 
 enum MissionListFilter: String, CaseIterable {
-    case all = "All", needsYou = "Needs you", running = "Running", drafts = "Drafts", done = "Done"
+    case all = "All", needsYou = "Needs you", running = "Running", drafts = "Drafts", done = "Done", templates = "Templates"
     func includes(_ mission: Mission) -> Bool {
         let phase = mission.phase
         switch self {
+        case .templates: return false
         case .all: return true
         case .needsYou: return phase == .paused || phase == .review || mission.run?.pendingQuestion != nil || mission.run?.patch != nil
         case .running: return phase.active
@@ -344,11 +357,15 @@ struct MissionsPage: View {
     var chrome = PageHeaderChrome()
     let select: (MissionID) -> Void
     let create: () -> Void
+    /// MXTemplates: the templates tab, and New mission from one.
+    var templates: [MissionTemplate] = []
+    var start: (MissionTemplate) -> Void = { _ in }
     @State private var filter = ""
     @State private var category = MissionListFilter.all
     /// A narrow window drops the secondary Lanes and Host columns so names keep their room.
     @State private var narrow = false
     @Environment(\.missionHostName) private var host
+    @Environment(\.missionInitialPanes) private var seed
     private var columns: [SHTableColumns.Column] { narrow ? AppLayout.missionNarrowColumns : AppLayout.missionColumns }
 
     private var rows: [Mission] {
@@ -360,7 +377,7 @@ struct MissionsPage: View {
             DestinationPageHeader(title: host == EnvironmentValues().missionHostName ? "Missions" : "Missions on \(host)", chrome: chrome) {
                 // With no missions the empty state carries the one New mission.
                 if !records.isEmpty {
-                    SHPageFilterField("Filter missions", text: $filter)
+                    SHPageFilterField(category == .templates ? "Filter templates" : "Filter missions", text: $filter)
                     Button(action: create) { Label("New mission", systemImage: "plus") }
                         .buttonStyle(.sh(.primary))
                 }
@@ -372,7 +389,11 @@ struct MissionsPage: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                MissionStateTabs(records: records, selection: $category)
+                MissionStateTabs(records: records, templates: templates.count, selection: $category)
+                if category == .templates {
+                    MissionTemplatesList(templates: templates.filter { filter.isEmpty || $0.name.localizedStandardContains(filter) },
+                                         records: records, start: start)
+                } else {
                 SHTableHead(narrow ? ["Mission", "Route", "Spend"] : ["Mission", "Lanes", "Route", "Spend", "Host"], columns: columns)
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -387,16 +408,19 @@ struct MissionsPage: View {
                         }
                     }
                 }
+                }
             }
         }
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: Bool.self) { $0.size.width < AppLayout.missionNarrowWidth } action: { narrow = $0 }
+        .onAppear { if let tab = seed.listTab { category = tab } }
     }
 }
 
 /// The state tabs (pages.md › State tabs): label in 12.5 and a mono count.
 private struct MissionStateTabs: View {
     let records: [Mission]
+    var templates = 0
     @Binding var selection: MissionListFilter
     var body: some View {
         HStack(spacing: SH.Space.xxs) {
@@ -406,7 +430,7 @@ private struct MissionStateTabs: View {
                     HStack(spacing: SH.Space.s) {
                         Text(tab.rawValue).font(.sh(.ui, weight: selected ? .semibold : .regular))
                             .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
-                        Text("\(records.filter(tab.includes).count)").shText(.micro).foregroundStyle(Color.sh.textTertiary)
+                        Text("\(tab == .templates ? templates : records.filter(tab.includes).count)").shText(.micro).foregroundStyle(Color.sh.textTertiary)
                     }
                     .padding(.horizontal, AppLayout.missionTabPadding)
                     .frame(height: AppLayout.missionTabHeight)
@@ -520,6 +544,9 @@ struct MissionStartView: View {
     let defaultBranches: [SpaceID: String]
     let busy: Bool
     var chrome = PageHeaderChrome()
+    /// MXTemplateStart: the template the mission starts from.
+    var template: MissionTemplate?
+    var clearTemplate: () -> Void = {}
     let cancel: () -> Void
     let create: (String, [SpaceID], String, [SpaceID: String]) -> Void
     @State private var goal = ""
@@ -530,12 +557,15 @@ struct MissionStartView: View {
 
     init(spaces: [Space], models: [String], defaultModel: String?, branchChoices: [SpaceID: [String]], defaultBranches: [SpaceID: String],
          busy: Bool, chrome: PageHeaderChrome = PageHeaderChrome(), goal: String = "", selected: [SpaceID] = [],
+         template: MissionTemplate? = nil, clearTemplate: @escaping () -> Void = {},
          cancel: @escaping () -> Void, create: @escaping (String, [SpaceID], String, [SpaceID: String]) -> Void) {
         self.spaces = spaces; self.models = models; self.defaultModel = defaultModel
         self.branchChoices = branchChoices; self.defaultBranches = defaultBranches
         self.busy = busy; self.chrome = chrome; self.cancel = cancel; self.create = create
-        // A restored or previewed draft: its words and chosen repositories.
-        _goal = State(initialValue: goal); _selectedSpaces = State(initialValue: selected)
+        self.template = template; self.clearTemplate = clearTemplate
+        // A restored or previewed draft: its words and chosen repositories; a template's repositories by name.
+        let named = template.map { template in template.plan.lanes.compactMap { lane in spaces.first { $0.name == lane.name }?.id } } ?? []
+        _goal = State(initialValue: goal); _selectedSpaces = State(initialValue: selected.isEmpty ? named : selected)
     }
 
     private var trimmed: String { goal.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -575,6 +605,22 @@ struct MissionStartView: View {
                         }
                         .padding(.horizontal, SH.Space.l).padding(.top, SH.Space.l)
                         HStack(spacing: SH.Space.s) {
+                            if let template {
+                                Button(action: clearTemplate) {
+                                    HStack(spacing: SH.Space.xs) {
+                                        SHGlyph.mission.image.font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                                        Text(template.name).shText(.mono).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                                        Image(systemName: "xmark").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+                                    }
+                                    .padding(.horizontal, SH.Space.m).frame(height: SH.Height.controlS)
+                                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain).fixedSize()
+                                .accessibilityLabel("Template \(template.name)").accessibilityHint("Starts without the template")
+                                .help("Starting from \(template.name). Click to start without it.")
+                            }
                             MissionRepositoryPicker(spaces: spaces, selected: $selectedSpaces, branchChoices: branchChoices, branches: $selectedBranches)
                             MissionModelChip(models: models, model: $model)
                             Spacer(minLength: SH.Space.m)
@@ -605,6 +651,9 @@ struct MissionStartView: View {
         .background(Color.sh.bgWindow)
         .onAppear { chooseDefaultModel(); chooseDefaultBranches(); focused = true }
         .onChange(of: spaces.map(\.id)) { _, ids in
+            if selectedSpaces.isEmpty, let template {
+                selectedSpaces = template.plan.lanes.compactMap { lane in spaces.first { $0.name == lane.name }?.id }
+            }
             if selectedSpaces.isEmpty, ids.count == 1 { selectedSpaces = ids }
         }
         .onChange(of: branchChoices) { _, _ in chooseDefaultBranches() }

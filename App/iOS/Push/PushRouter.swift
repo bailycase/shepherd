@@ -60,6 +60,7 @@ final class PushRouter {
         case .missionReview:
             guard let mission = payload.mission else { return .thread(ref) }
             return .missions(.review(host: ref.host, mission: MissionID(rawValue: mission.id)))
+        case .mission(let id): return .missions(.mission(host: ref.host, mission: MissionID(rawValue: id)))
         }
     }
 }

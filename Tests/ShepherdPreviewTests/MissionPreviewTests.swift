@@ -55,6 +55,33 @@ extension PreviewTests {
         try await show(fixture.done.id, "mission-done-summary", widths: [720], panes: side)
         try await show(fixture.patched.id, "mission-patch", widths: [1440, 720])
         try await show(fixture.merging.id, "mission-train", widths: [1600, 1100])
+        try await show(fixture.held.id, "mission-locks", widths: [1600, 1100])
+        // MXTemplates, MXTemplateSave, MXTemplateStart: templates on this Mac's support folder, as the app saves them.
+        let now = Date().timeIntervalSince1970
+        var event = MissionTemplate.from(fixture.done, name: "Add an event across services", summary: "Add proto events, emit them from producers through the outbox, and land them in a consumer's table.", at: now - 86_400 * 40)
+        event.runs = 3; event.seconds = 3 * 9_600; event.tokens = 3 * 4_600_000; event.team = "contracts"
+        event.learned = [.init(at: now - 86_400 * 3, text: "Ask for the join key before drafting"), .init(at: now - 86_400 * 25, text: "Consumers merge before producers"),
+                         .init(at: now - 86_400 * 40, text: "sqlc vet after every migration")]
+        func variant(_ name: String, runs: Int, hours: Double, team: Bool, inputs: [String]) -> MissionTemplate {
+            var value = event
+            value.id = MissionTemplate.slug(name); value.name = name; value.runs = runs; value.seconds = Double(runs) * hours * 3_600
+            value.team = team ? "contracts" : nil; value.learned = []
+            value.inputs = inputs.map { .init(name: $0, kind: "input", example: "", filledBy: .planner) }
+            return value
+        }
+        let templates = [event, variant("Contract change", runs: 5, hours: 3.08, team: true, inputs: ["proto", "breaking?", "consumers"]),
+                         variant("Dependency bump across services", runs: 11, hours: 0.83, team: true, inputs: ["module", "version", "repos"]),
+                         variant("Retire an endpoint", runs: 2, hours: 2.33, team: true, inputs: ["rpc", "callers"]),
+                         variant("New event stream", runs: 1, hours: 4.17, team: false, inputs: ["topic", "schema", "backfill window"])]
+        try FileManager.default.createDirectory(at: MissionController.localTemplates, withIntermediateDirectories: true)
+        for template in templates { try template.encoded.write(to: MissionController.localTemplates.appendingPathComponent(template.id + ".json")) }
+        await controller.loadTemplates()
+        try await show(nil, "mission-templates", panes: MissionInitialPanes(listTab: .templates))
+        try await show(fixture.done.id, "mission-template-save", widths: [1600], panes: MissionInitialPanes(savingTemplate: true))
+        try await show(fixture.templated.id, "mission-template-goal", widths: [1600])
+        controller.startTemplate = event
+        try await show(nil, "mission-template-start", panes: MissionInitialPanes(creating: true, startGoal: fixture.templated.draft.goal))
+        controller.startTemplate = nil
         try await show(fixture.draft.id, "mission-map-data", panes: MissionInitialPanes(wires: .data))
         try await show(fixture.draft.id, "mission-map-both", panes: MissionInitialPanes(wires: .both))
         // Review with a queued change, a draft on another line and the third requirement's evidence open.
@@ -146,7 +173,7 @@ extension PreviewTests {
         let repos = fixture.spaces
         let lanes = repos.map { MissionLane(spaceID: $0.id, name: $0.name, baseBranch: "refs/heads/main") }
         let goal = fixture.draft.draft.goal
-        let checkouts = repos.map { MissionCheckout(spaceID: $0.id, repo: $0.path, path: $0.path + "-mission", branch: "mission/anl-214", base: "1234567", head: "abcdef0") }
+        let checkouts = repos.map { MissionCheckout(spaceID: $0.id, repo: $0.path, path: $0.path + "-mission", branch: "mission/anl-214", base: "main", head: "abcdef0") }
         let user = MissionChatMessage(role: .user, text: "Add checkout funnel analytics. It's ANL-214.")
 
         func report(_ status: String, fingerprint: String = "files-now", customized: [String] = [], hooks: [[String: Any]] = [],
@@ -278,7 +305,7 @@ extension PreviewTests {
 private struct MissionPreviewFixture {
     let spaces: [Space]
     let state: ShepherdState
-    let goal, planning, pausedPlanning, draft, running, review, done, patched, merging: Mission
+    let goal, planning, pausedPlanning, draft, running, review, done, patched, merging, held, refunds, templated: Mission
     let reviews: [MissionID: [MissionRepositoryReview]]
 
     init(dir: URL) throws {
@@ -327,7 +354,7 @@ private struct MissionPreviewFixture {
             return value
         }
         let checkouts = repos.map { space in
-            MissionCheckout(spaceID: space.id, repo: space.path, path: space.path + "-mission", branch: "mission/anl-214", base: "1234567", head: "abcdef0", fingerprint: "content-\(space.name)")
+            MissionCheckout(spaceID: space.id, repo: space.path, path: space.path + "-mission", branch: "mission/anl-214", base: "main", head: "abcdef0", fingerprint: "content-\(space.name)")
         }
         func mission(_ title: String, _ phase: MissionRun.Phase, draft: MissionDraft? = nil, attempts: [MissionAttempt] = [], elapsed: Double = 0,
                      messages: [MissionChatMessage]? = nil, question: String? = nil, choices: [String]? = nil, notice: String? = nil,
@@ -414,8 +441,39 @@ private struct MissionPreviewFixture {
             train.record(.init(at: now - entry.0, subject: entry.1, text: entry.2, by: entry.3))
         }
         mergingValue.run?.train = train
-        for index in mergingValue.run!.checkouts.indices { mergingValue.run?.checkouts[index].base = "main" }
+        // Only this funnel run declared what it writes, so it alone holds orders-svc in the locks preview.
+        let writes: [MissionStationID: [String]] = [schema.id: ["events/v1/order.proto"], ingest.id: ["internal/ingest/**", "migrations/**"],
+                                                    place.id: ["internal/orders/**", "internal/outbox/**"]]
+        for index in mergingValue.draft.plan!.stations.indices { mergingValue.draft.plan!.stations[index].paths = writes[mergingValue.draft.plan!.stations[index].id] }
         merging = mergingValue
+        // MXLocks: a second mission on the same repositories; orders-svc waits for the funnel's place.go.
+        let payment = MissionStation(kind: .worker, laneID: contracts, title: "payment", goal: "Add PaymentIdempotencyKey to events/v1.", paths: ["events/v1/payment.proto"])
+        let key = MissionStation(kind: .worker, laneID: orders, title: "orders", goal: "Check an idempotency key at the top of PlaceOrder.", paths: ["internal/orders/place.go", "migrations/**"])
+        let charge = MissionStation(kind: .worker, laneID: analytics, title: "charge", goal: "Dedupe charges by key.", paths: ["internal/charge/**"])
+        let heldValidator = MissionStation(kind: .validator, title: "validator", goal: "Replay a doubled request and see one order.")
+        var heldDraft = MissionDraft(title: "Idempotent order placement", goal: "Placing the same order twice creates one order.", requirements: ["A repeated PlaceOrder with the same key returns the first order"],
+                                     plan: MissionPlan(lanes: lanes, stations: [payment, key, charge, heldValidator], dependencies: [
+                                        MissionDependency(source: payment.id, target: key.id, kind: .data, artifact: "events v1.9.0"),
+                                        MissionDependency(source: key.id, target: heldValidator.id, kind: .data, artifact: "orders branch"),
+                                        MissionDependency(source: charge.id, target: heldValidator.id, kind: .data, artifact: "charge branch")],
+                                                       limits: MissionLimits(tokens: 3_000_000, seconds: 2 * 3600), estimate: MissionEstimate(tokens: 2_200_000, seconds: 5_400)))
+        var heldValue = mission("Idempotent order placement", .running, draft: heldDraft,
+                                attempts: [attempt(payment, .succeeded, start: 1_500, end: 1_100, tokens: 300_000), attempt(charge, .running, start: 1_000, tokens: 600_000)],
+                                elapsed: 1_440)
+        heldValue.draft.title = "Idempotent order placement"
+        heldValue.run?.held = [orders: MissionLaneLock(holder: merging.id, holderTitle: merging.draft.title, overlap: ["internal/orders/place.go"], since: now - 1_200)]
+        held = heldValue
+        heldDraft.title = "Refund events"
+        heldDraft.plan?.stations = [MissionStation(kind: .worker, laneID: orders, title: "refunds", goal: "Emit refund events.", paths: ["internal/orders/place.go"])]
+        heldDraft.plan?.dependencies = []
+        refunds = Mission(draft: heldDraft)
+        // MXTemplateStart: a mission planned from the "Add an event across services" template.
+        var templatedValue = mission("Refunds in the funnel", .map, draft: MissionDraft(title: "", goal: "Put refunds in the funnel too: RefundRequested and RefundIssued from orders-svc. It's PAY-311.", plan: MissionPlan(lanes: lanes)),
+                                     messages: [MissionChatMessage(role: .user, text: "Put refunds in the funnel too: RefundRequested and RefundIssued from orders-svc. It's PAY-311."),
+                                                MissionChatMessage(role: .assistant, text: "Same shape as the funnel mission, so I'm starting from **Add an event across services**. The template asks one thing before it draws anything:", question: "Which key joins a refund to the funnel?", choices: ["order_id", "payment_id"])],
+                                     question: "Which key joins a refund to the funnel?", choices: ["order_id", "payment_id"])
+        templatedValue.draft.template = "add-an-event-across-services"
+        templated = templatedValue
         done = mission("Checkout funnel events", .done, attempts: passed, elapsed: 10_680, published: true)
 
         let files = DiffFile.parse("""
@@ -462,12 +520,12 @@ private struct MissionPreviewFixture {
     /// Through the revision-checked mission service, as the app writes them.
     @MainActor func seed(_ workspace: PreviewWorkspace) async throws {
         try await workspace.server.putState(state)
-        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched, merging] {
+        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched, merging, held, refunds, templated] {
             var saved = try await workspace.server.createMission(id: mission.id, draft: mission.draft)
             if mission.approvedPlanRevision != nil { saved = try await workspace.server.approveMissionPlan(id: mission.id, expectedRevision: saved.revision) }
             if let run = mission.run { _ = try await workspace.server.setMissionRun(id: mission.id, expectedRevision: saved.revision, run: run) }
         }
         let vm = workspace.vm
-        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 9 }
+        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 12 }
     }
 }

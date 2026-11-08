@@ -31,6 +31,12 @@ extension FixtureCatalog {
                 }
                 FilesFixture.presentScreen(app)
             }),
+            // iPadPaneFiles: the pane beside the running thread, two tabs, the person's unsaved lines and the agent's.
+            FixtureScreen(name: "files-pad-editor", hosts: FilesPadFixture.hosts(), routes: [.thread(FilesPadFixture.ref), .sidePane(.files(FilesPadFixture.ref))],
+                          prepare: { app in await FilesPadFixture.edit(app, conflict: false) }),
+            // The same, after Save found the file changed on the host: the conflict banner.
+            FixtureScreen(name: "files-pad-conflict", hosts: FilesPadFixture.hosts(), routes: [.thread(FilesPadFixture.ref), .sidePane(.files(FilesPadFixture.ref))],
+                          prepare: { app in await FilesPadFixture.edit(app, conflict: true) }),
             FixtureScreen(name: "files-old-host", hosts: FilesFixture.hosts(capable: false), routes: [thread], prepare: { app in
                 _ = FilesFixture.present(app)
             }),
@@ -105,7 +111,7 @@ enum FilesFixture {
     }
 
     @MainActor static func presentScreen(_ app: MobileApp) {
-        let root = NavigationStack { ThreadFilesScreen(thread: ref) }.environment(app.hosts)
+        let root = NavigationStack { ThreadFilesScreen(thread: ref) }.environment(app.hosts).environment(app.threads).environment(app.navigator)
         let controller = UIHostingController(rootView: root)
         // Over, not instead of, the window's root: a removed root unregisters the window and the hosts disconnect.
         controller.modalPresentationStyle = .overFullScreen
@@ -113,5 +119,145 @@ enum FilesFixture {
         var top = window?.rootViewController
         while let presented = top?.presentedViewController { top = presented }
         top?.present(controller, animated: false)
+    }
+}
+
+/// iPadPaneFiles's data: a made-up checkout app on build-01, its agent editing PromoField.tsx.
+@MainActor
+enum FilesPadFixture {
+    static let agent = AgentID(rawValue: "agent-pay-jump")
+    static let ref = FixtureData.ref(agent, on: FixtureData.buildBox)
+    static let space = Space(id: SpaceID(rawValue: "space-acme-web"), name: "acme-web", path: "/Users/dev/acme-web")
+    static let checkout = "src/components/Checkout.tsx"
+
+    static func dir(_ name: String) -> ThreadFileEntry { ThreadFileEntry(name: name, kind: .directory) }
+    static func file(_ name: String) -> ThreadFileEntry { ThreadFileEntry(name: name, kind: .file, size: 2_048) }
+
+    static let listings: [String: ThreadFileListing] = [
+        "": ThreadFileListing(entries: [dir("public"), dir("src"), dir("tests"), file("AGENTS.md"), file("package.json"), file("vite.config.ts")]),
+        "src": ThreadFileListing(entries: [dir("components"), dir("hooks"), dir("pages"), dir("styles"), file("main.tsx")]),
+        "src/components": ThreadFileListing(entries: [file("Checkout.tsx"), file("OrderSummary.tsx"), file("PromoField.tsx"), file("PromoList.tsx")]),
+        "src/styles": ThreadFileListing(entries: [file("tokens.css")]),
+    ]
+
+    /// Checkout.tsx before the agent's change, after it, and the person's unsaved edit over that.
+    static let before = """
+    export function Checkout({ cart }: Props) {
+      const [promoOpen, setPromoOpen] = useState(false);
+      const pay = usePayment(cart.id);
+
+      return (
+        <form className="checkout" onSubmit={pay.submit}>
+          <ContactFields />
+          <CardFields />
+          <OrderSummary cart={cart} />
+          {promoOpen && <PromoField onApply={cart.applyPromo} />}
+          <div className="checkout-actions">
+            <Button className="pay" size="lg">
+              {payLabel}
+            </Button>
+          </div>
+        </form>
+      );
+    }
+
+    """
+    static let agentText = """
+    export function Checkout({ cart }: Props) {
+      const [promoOpen, setPromoOpen] = useState(false);
+      const pay = usePayment(cart.id);
+
+      return (
+        <form className="checkout" onSubmit={pay.submit}>
+          <ContactFields />
+          <CardFields />
+          {promoOpen ? (
+            <PromoField onApply={cart.applyPromo} />
+          ) : (
+            <LinkButton onClick={openPromo}>Have a promo code?</LinkButton>
+          )}
+          <OrderSummary cart={cart} />
+          <div className="checkout-actions">
+            <Button className="pay" size="lg">
+              {payLabel}
+            </Button>
+          </div>
+        </form>
+      );
+    }
+
+    """
+    static let mine = agentText
+        .replacingOccurrences(of: "<Button className=\"pay\" size=\"lg\">", with: "<Button className=\"pay\" size=\"lg\" disabled={pay.pending}>")
+        .replacingOccurrences(of: "{payLabel}", with: "{pay.pending ? <Spinner /> : payLabel}")
+    static let theirs = agentText.replacingOccurrences(of: "<OrderSummary cart={cart} />", with: "<OrderSummary cart={cart} compact />")
+
+    /// Reads of Checkout.tsx: the version before the agent's change first, the agent's after it.
+    final class Reads: @unchecked Sendable {
+        let lock = NSLock()
+        var count = 0
+        func next() -> Int { lock.lock(); defer { lock.unlock() }; count += 1; return count }
+    }
+
+    static func hosts() -> [FixtureHostData] {
+        let started = Date().timeIntervalSince1970 * 1000 - FixtureData.start - 12_000
+        let thread = FixtureData.snapshot([
+            FixtureData.user("p1", "The promo list isn’t keyboard friendly. Can you fix that? I’ll add the loading state myself.", at: started - 60_000),
+            FixtureData.tool("p2", "read", args: #"{"path":"src/components/PromoList.tsx"}"#, output: "export function PromoList", at: started - 40_000),
+            FixtureData.tool("p3", "read", args: #"{"path":"src/components/PromoField.tsx"}"#, output: "export function PromoField", at: started - 30_000),
+            FixtureData.tool("p4", "edit", args: #"{"path":"src/components/PromoField.tsx","oldText":"onKeyDown","newText":"arrow keys + Enter"}"#,
+                             status: "running", at: started),
+        ], running: true)
+        let reads = Reads()
+        var host = FixtureHostData(id: FixtureData.buildBox, name: "build-01", state: ShepherdState(spaces: [space], agents: [
+            Agent(id: agent, name: "Fix pay button jump", spaceID: space.id, tabID: TabID(rawValue: "tab-pay-jump"), status: .working,
+                  nameIsFinal: true, worktreeBranch: "fix/pay-jump", checkout: AgentCheckout(branch: "fix/pay-jump", changedFiles: 2)),
+        ]), threads: [agent: thread])
+        host.reply = { request in
+            switch request {
+            case .agentQuery(let id, _, .files(let path, _)):
+                guard let listing = listings[path] else { return .error(id: id, code: "not_found", message: "No such file or folder") }
+                return .agentResult(id: id, result: .files(listing))
+            case .agentQuery(let id, _, .fileRead(let path)):
+                let text = path == checkout ? (reads.next() == 1 ? before : agentText) : "export function \((path as NSString).lastPathComponent)() {}\n"
+                return .agentResult(id: id, result: .fileData(Data(text.utf8)))
+            case .agentQuery(let id, _, .fileWrite):
+                return .agentResult(id: id, result: .fileWrite(.changed(theirs)))
+            default: return nil
+            }
+        }
+        return [host]
+    }
+
+    static func edit(_ app: MobileApp, conflict: Bool) async {
+        // The board's thread has its sidebar hidden, so the pane is wide enough for the tree beside the editor.
+        app.navigator.padColumns = .detailOnly
+        let model = ThreadFilesStores.shared.model(for: ref, hosts: app.hosts)
+        await FixtureCheck.wait("the Files tree", seconds: 20) { model.phase == .loaded }
+        for folder in ["src", "src/components", "src/styles"] { await model.toggle(folder) }
+        await model.open(checkout)
+        await model.checkDisk()
+        await model.open("src/components/PromoField.tsx")
+        await model.open(checkout)
+        model.setText(mine, for: checkout)
+        if conflict { await model.save() }
+        // Until it holds: the split view may write its own columns back while it settles its first layout.
+        await FixtureCheck.wait("the thread without its sidebar", seconds: 10) {
+            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
+            return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
+        }
+        let edit = model.edits[checkout]
+        let ok = edit?.isDirty == true && edit?.before == before && (conflict ? edit?.conflict == theirs : edit?.conflict == nil)
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): Checkout.tsx has unsaved edits over the agent's change\(conflict ? " and a conflict" : "")")
+    }
+
+    static func splitView() -> UISplitViewController? {
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow
+        func find(_ controller: UIViewController?) -> UISplitViewController? {
+            guard let controller else { return nil }
+            if let split = controller as? UISplitViewController { return split }
+            return controller.children.lazy.compactMap(find).first ?? find(controller.presentedViewController)
+        }
+        return find(window?.rootViewController)
     }
 }

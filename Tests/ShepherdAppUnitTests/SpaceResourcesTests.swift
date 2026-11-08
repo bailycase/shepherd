@@ -91,4 +91,44 @@ struct SpaceResourcesTests {
         model.scope = .space
         #expect(model.rows.isEmpty)
     }
+
+    /// ProjectChildSkills: the parent's skills list after the space's own, turn off through the host
+    /// record, and Override here copies one into the draft, which hides the parent's until Reset.
+    @Test func aChildListsItsParentsSkillsAndOverridesOneInTheDraft() async throws {
+        let parentText = "---\nname: ledger-review\ndescription: Review ledgers.\n---\n\nCheck.\n"
+        var turnedOff: [(String, Bool)] = []
+        let model = SpaceResourcesModel()
+        model.canExcludeInherited = true
+        model.setInherited = { skill, on in turnedOff.append((skill, on)) }
+        await model.load(directory: "/code/payments/web", settingsPath: ".pi/settings.json", parent: ("payments", "/code/payments")) { request in
+            switch request {
+            case .resources("/code/payments"):
+                return .resources([ProjectResource(kind: .skill, path: ".pi/skills/ledger-review/SKILL.md", text: parentText),
+                                   ProjectResource(kind: .prompt, path: ".pi/prompts/release.md", text: "Release.\n")])
+            case .resources:
+                return .resources([ProjectResource(kind: .skill, path: ".pi/skills/web-copy/SKILL.md", text: "---\nname: web-copy\ndescription: Copy.\n---\n\nRead.\n"),
+                                   ProjectResource(kind: .skill, name: "useful-tests", path: "/support/pi/skills/useful-tests/SKILL.md", global: true)])
+            case .read("/code/payments", let file):
+                return .text(ProjectFileText(file: ProjectFile(path: file, category: .skills, exists: true), text: parentText))
+            case .read(_, let file):
+                return .text(ProjectFileText(file: ProjectFile(path: file, category: .skills, exists: false), text: nil))
+            default: throw ProjectFileError("unexpected", "Not in this test.")
+            }
+        }
+        #expect(model.rows.map(\.displayName) == ["web-copy", "ledger-review", "useful-tests"], "only skills inherit")
+        #expect(model.spaceCount == 1 && model.inheritedCount == 2)
+        let inherited = try #require(model.rows.first { $0.inheritedFrom == "payments" })
+        #expect(!inherited.local && inherited.canToggle)
+        await model.toggle(inherited, on: false)
+        #expect(turnedOff.map(\.0) == ["ledger-review"] && turnedOff.map(\.1) == [false] && !model.dirty)
+        model.excludedSkills = ["ledger-review"]
+        #expect(model.rows.first { $0.inheritedFrom != nil }?.enabled == false)
+
+        await model.overrideInherited(inherited)
+        #expect(model.writes[".pi/skills/ledger-review/SKILL.md"] == .some(parentText))
+        let override = try #require(model.rows.first { $0.overrides == "payments" })
+        #expect(override.local && !model.rows.contains { $0.inheritedFrom != nil })
+        await model.resetToInherited(override)
+        #expect(!model.dirty && model.rows.contains { $0.inheritedFrom == "payments" })
+    }
 }

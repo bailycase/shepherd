@@ -38,6 +38,14 @@ final class AddSpaceModel: Identifiable {
         return rows.filter { $0.host.id == hostID }.compactMap { row in row.project.projectID.map { Parent(id: $0, name: row.project.name) } }
     }
     var parentName: String? { parents.first { $0.id == parentID }?.name }
+    /// Whether the folder is inside the parent's: only then does the child inherit, as configuration
+    /// never crosses unrelated folders. Nil without a parent or a folder.
+    var inheritsFromParent: Bool? {
+        guard let parentID, !path.trimmed.isEmpty,
+              let parent = rows.first(where: { $0.host.id == hostID && $0.project.projectID == parentID })?.project.directory else { return nil }
+        let folder = (path.trimmed as NSString).expandingTildeInPath
+        return ProjectNesting.parent(of: folder, among: [parent]) != nil
+    }
     var title: String { parentID == nil ? "Add space" : "Add child space" }
     var canSubmit: Bool { !busy && !name.trimmed.isEmpty && !path.trimmed.isEmpty && host?.unavailable == nil }
     var footer: String { busy ? "Adding…" : "No files are moved or credentials copied." }
@@ -121,8 +129,12 @@ struct AddSpaceSheet: View {
                 if let parent = model.parentName {
                     VStack(alignment: .leading, spacing: SH.Space.xs) {
                         label("Inherited from \(parent)")
-                        hint("MCP servers, skills, slash commands, extensions and defaults. Child overrides stay separate.")
-                        hint("The folder can be elsewhere on \(model.host?.name ?? "this host"). This does not move files.")
+                        if model.inheritsFromParent == false {
+                            hint("Nothing: this folder isn’t inside \(parent)’s. The space is listed under \(parent) only. This does not move files.")
+                        } else {
+                            hint("Shared MCP servers and the startup model and thinking. Child overrides stay separate.")
+                            hint("A folder inside \(parent)’s inherits; one elsewhere on \(model.host?.name ?? "this host") is only listed under it. This does not move files.")
+                        }
                     }.padding(.top, SH.Space.m)
                 }
                 if let error = model.error {

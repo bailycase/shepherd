@@ -22,6 +22,10 @@ struct MissionWorkspace: View {
     /// The same actions, awaited: true only when the controller accepted it (composers clear on that).
     var send: (MissionUIAction) async -> Bool = { _ in false }
     let action: (MissionUIAction) -> Void
+    /// The host's other missions: who holds this one's repositories (MXLocks).
+    var others: [Mission] = []
+    /// The template this mission started from (MXTemplateStart).
+    var template: MissionTemplate?
     @State private var page: MissionWorkspacePage?
 
     private var phase: MissionRun.Phase { mission.phase }
@@ -51,7 +55,7 @@ struct MissionWorkspace: View {
             Group {
                 switch displayed {
                 case .goal:
-                    MissionGoalView(mission: mission, output: output, specKitReports: specKitReports, busy: busy, openThread: openThread, send: send, action: action,
+                    MissionGoalView(mission: mission, output: output, specKitReports: specKitReports, busy: busy, openThread: openThread, send: send, action: action, template: template,
                                     showMap: { page = .map })
                 case .map, .done:
                     MissionMapPage(mission: mission, done: displayed == .done, models: models, reviews: reviews,
@@ -59,6 +63,11 @@ struct MissionWorkspace: View {
                                    showTrain: mission.trainShown ? { page = .run } : nil)
                 case .run where mission.trainShown:
                     MissionTrainPage(mission: mission, reviews: reviews, busy: busy, action: action) {
+                        MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
+                                       threads: threads)
+                    }
+                case .run where mission.locksShown:
+                    MissionLocksPage(mission: mission, others: others, busy: busy, action: action) {
                         MissionRunPage(mission: mission, output: output, attemptOutput: attemptOutput, reviews: reviews, openThread: openThread,
                                        threads: threads)
                     }
@@ -363,6 +372,7 @@ struct MissionGoalView: View {
     let openThread: (AgentID) -> Void
     var send: (MissionUIAction) async -> Bool = { _ in false }
     let action: (MissionUIAction) -> Void
+    var template: MissionTemplate?
     let showMap: () -> Void
     @State private var reply = ""
     /// A reply or an answer on its way: the composer and the choices wait, and keep the words until it lands.
@@ -414,7 +424,7 @@ struct MissionGoalView: View {
     }
 
     private var brief: some View {
-        MissionBrief(mission: mission, specKitReports: specKitReports, busy: busy, editable: canReply, action: action, showMap: showMap)
+        MissionBrief(mission: mission, specKitReports: specKitReports, busy: busy, editable: canReply, action: action, showMap: showMap, template: template)
     }
 
     private func conversation(narrow: Bool) -> some View {
@@ -679,6 +689,7 @@ struct MissionBrief: View {
     let editable: Bool
     let action: (MissionUIAction) -> Void
     let showMap: () -> Void
+    var template: MissionTemplate?
     @State private var editing: BriefField?
     @State private var text = ""
     @State private var title = ""
@@ -696,7 +707,8 @@ struct MissionBrief: View {
                         Text("Mission brief").shText(.title).accessibilityAddTraits(.isHeader)
                         HStack(spacing: SH.Space.s) {
                             if mission.phase == .planning { ProgressView().progressViewStyle(.shSpinner(size: 10)) }
-                            Text(editable ? "built by the planner as you talk · click a section to change it" : "built by the planner as you talk")
+                            Text(template != nil ? "started from a template · click a section to change it"
+                                 : editable ? "built by the planner as you talk · click a section to change it" : "built by the planner as you talk")
                                 .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         }
                     }.padding(SH.Space.xl)
@@ -704,6 +716,7 @@ struct MissionBrief: View {
                     section(.destination, "Destination", meta: "from your message") {
                         MissionProse(mission.draft.goal)
                     }
+                    if let template { MissionBriefTemplate(mission: mission, template: template) }
                     lanes
                     section(.context, "Context", meta: mission.draft.context.isEmpty ? nil : "\(mission.draft.context.count) found") {
                         if mission.draft.context.isEmpty {

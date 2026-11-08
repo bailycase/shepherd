@@ -15,15 +15,28 @@ extension ShepherdViewModel {
         }
     }
 
-    /// A remote worktree agent's delete opens the host's sheet, unless Settings ▸ Worktrees
-    /// remembers keeping the checkout. A remembered removal opens it too: the sheet probes the
-    /// host, starts on its own when nothing would be lost, and shows the host's progress.
+    /// Delete on a host's agent (its row's menu, or ⇧⌘W) does what it does to This Mac's
+    /// (`requestDeleteAgent`): a plain agent asks first unless Delete agent's "Don't ask again" is
+    /// set. A worktree agent opens the host's sheet unless Settings ▸ Worktrees remembers keeping
+    /// the checkout; a remembered removal opens it too: the sheet probes the host, starts on its
+    /// own when nothing would be lost, and shows the host's progress.
     func requestRemoteDelete(_ target: RemoteAgentRef) {
         guard let agent = remoteAgent(target) else { return }
-        if agent.worktreeBranch != nil, settings.worktreeDeleteAction != .keepWorktree {
-            remoteWorktreeFinalize = false
-            remoteWorktreeSheet = target
+        if agent.worktreeBranch != nil {
+            if settings.worktreeDeleteAction == .keepWorktree { performRemoteAction(target, action: .deleteKeepingWorktree) }
+            else {
+                remoteWorktreeFinalize = false
+                remoteWorktreeSheet = target
+            }
         }
-        else { performRemoteAction(target, action: .deleteKeepingWorktree) }
+        else if settings.skipped(.deleteAgent) != nil { performRemoteAction(target, action: .deleteKeepingWorktree) }
+        else if remoteDeleteTarget != target { remoteDeleteTarget = target }
+    }
+
+    /// The dialog's Delete: the host deletes the agent once the sheet is down, as This Mac's
+    /// deletion waits.
+    func confirmRemoteDelete(_ target: RemoteAgentRef) {
+        afterDialogDismiss = { [weak self] in self?.performRemoteAction(target, action: .deleteKeepingWorktree) }
+        remoteDeleteTarget = nil
     }
 }

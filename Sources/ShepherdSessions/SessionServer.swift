@@ -2852,6 +2852,10 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to manage space resources."), to: client)
                 return
             }
+            guard !request.requiresInheritance || offeredCapabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills."), to: client)
+                return
+            }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
                 send(.error(id: id, code: "update_required", message: "Project approval is unavailable on this host."), to: client)
                 return
@@ -5873,7 +5877,10 @@ public final class SessionServer: @unchecked Sendable {
         if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
            thread.pushQuestion != question {
             thread.pushQuestion = question
-            sendPush(agentID: agentID, kind: .needsAnswer, preview: question)
+            // Its options become buttons under the push (NotifPhoneRich's per-question actions).
+            let prompt = thread.dialogs.first.map(NativeQuestionPrompt.init(dialog:))
+            sendPush(agentID: agentID, kind: .needsAnswer, preview: question,
+                     detail: prompt.flatMap { $0.blocked == nil ? PushDetail.question(options: $0.options.map(\.title)) : nil })
         } else if question == nil {
             thread?.pushQuestion = nil
         }

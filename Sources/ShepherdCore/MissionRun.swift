@@ -32,6 +32,8 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
     public var decisions: [MissionDecisionRecord]?
     /// The merge train over this run's published pull requests (MXTrain), once the owner started it.
     public var train: MissionTrain?
+    /// This mission's repositories another mission holds (MXLocks), with the owner's choice for each.
+    public var held: [SpaceID: MissionLaneLock]?
 
     public init(id: UUID = UUID(), model: String, phase: Phase = .map, messages: [MissionChatMessage] = [],
                 checkouts: [MissionCheckout] = [], attempts: [MissionAttempt] = [], elapsedSeconds: Double = 0,
@@ -40,6 +42,9 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
         self.checkouts = checkouts; self.attempts = attempts; self.elapsedSeconds = elapsedSeconds
         self.activeSince = activeSince; self.notice = notice; self.reviewFingerprint = reviewFingerprint
     }
+
+    /// The notice a person's Pause leaves, which tells it apart from a run that paused itself.
+    public static let pausedByPerson = "Paused. Worktrees and evidence are retained; nothing will resume on its own."
 
     public var tokens: Int { attempts.reduce(0) { $0 + $1.tokens } }
     public var cost: Double { attempts.reduce(0) { $0 + $1.cost } }
@@ -77,6 +82,9 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
         try specKit?.validate()
         try patch?.validate()
         try train?.validate()
+        guard (held?.count ?? 0) <= 32, held?.values.allSatisfy({ $0.overlap.count <= 64 && $0.holderTitle.utf8.count <= 800 && $0.since.isFinite }) ?? true else {
+            throw MissionError("invalid_mission_run", "Invalid path lock record.")
+        }
         guard (decisions?.count ?? 0) <= 32, decisions?.allSatisfy({ $0.station.utf8.count <= 800 && $0.answer.utf8.count <= 400 && $0.at.isFinite }) ?? true else {
             throw MissionError("invalid_mission_run", "Invalid decision log.")
         }
@@ -145,6 +153,9 @@ public struct MissionCheckout: Codable, Hashable, Sendable, Identifiable {
     /// HEAD after the mission's own last turn, when a stock Spec Kit step committed (the git extension's
     /// commit hooks, or the model): review diffs from `head` and accepts commits up to here. Nil: none.
     public var observedHead: String?
+    /// Lines the reviewed changes add and remove, read when the mission reached review. Nil before.
+    public var added: Int?
+    public var removed: Int?
     public var id: SpaceID { spaceID }
     public init(spaceID: SpaceID, repo: String, path: String, branch: String, base: String, head: String,
                 fingerprint: String? = nil, prURL: String? = nil, publishedHead: String? = nil, originFingerprint: String? = nil) {

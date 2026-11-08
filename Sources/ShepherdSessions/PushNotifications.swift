@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -27,13 +28,24 @@ final class PushNotifications: @unchecked Sendable {
         var level: String?
         var relevance: Double?
         var mission: MissionReview?
-        /// An older relay knows no review: it hears a finished turn, with no approval.
-        var legacy: Event {
+        /// The long-press preview's data (shepherd-landing#4); a relay without it hears the rest.
+        var detail: PushDetail?
+        /// The same event for a relay at `level`: one without `detail` drops it, and the oldest
+        /// knows no review either, so it hears a finished turn with no approval.
+        func shaped(for level: Relay) -> Event {
             var event = self
-            (event.group, event.subtitle, event.level, event.relevance, event.mission) = (nil, nil, nil, nil, nil)
-            if event.kind == .review { event.kind = .done }
+            if level != .detail { event.detail = nil }
+            if level == .legacy {
+                (event.group, event.subtitle, event.level, event.relevance, event.mission) = (nil, nil, nil, nil, nil)
+                if event.kind == .review { event.kind = .done }
+            }
             return event
         }
+    }
+    /// What the relay accepts, newest first: an older one answers 400 to fields it doesn't know.
+    enum Relay: Int, Comparable, CaseIterable {
+        case detail, rich, legacy
+        static func < (a: Relay, b: Relay) -> Bool { a.rawValue < b.rawValue }
     }
     private struct Delivery {
         let registrationID: String
@@ -45,13 +57,17 @@ final class PushNotifications: @unchecked Sendable {
     private var deliveries: [UUID: Delivery] = [:]
     private var window = Date.distantPast
     private var eventCount = 0
-    /// An older relay answers 400 to fields it doesn't know; from then on send it only the old ones.
+    /// The newest shape the relay took; a 400 steps down one shape, and from then on that's all it gets.
     /// ponytail: remembered until the host restarts, so a relay upgrade is picked up on the next launch.
-    private(set) var relayIsLegacy = false
+    private(set) var relay = Relay.detail
     var transport: Transport
     /// The thread you are watching on this Mac (`SessionServer.setFocusedThread`); it sends no pushes.
     var focused: AgentID?
     var now: () -> Date = Date.init
+    /// Seconds since the person last touched this Mac, for away-only phones.
+    var idleSeconds: () -> TimeInterval = {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
 
     init(file: URL, queue: DispatchQueue) {
         self.file = file
@@ -67,7 +83,8 @@ final class PushNotifications: @unchecked Sendable {
            let saved = try? JSONDecoder().decode([RemotePushRegistration].self, from: data), saved.count <= 16 {
             for registration in saved where Self.valid(registration) {
                 let id = UUID(uuidString: registration.id)!.uuidString
-                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken)
+                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken,
+                                                           preferences: registration.preferences)
             }
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         }
@@ -83,7 +100,7 @@ final class PushNotifications: @unchecked Sendable {
         let id = UUID(uuidString: registration.id)!.uuidString
         guard registrations[id] != nil || registrations.count < 16 else { throw Failure.full }
         var next = registrations
-        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken)
+        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken, preferences: registration.preferences)
         try persist(next)
         cancel(id)
         registrations = next
@@ -139,6 +156,15 @@ final class PushNotifications: @unchecked Sendable {
         #"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@"#
     ].map { try! NSRegularExpression(pattern: $0) }
 
+    /// Which Send me switch an alert of `kind` answers to, when the caller names none.
+    static func topic(_ kind: Kind) -> RemotePushPreferences.Topic {
+        switch kind {
+        case .needsAnswer, .review: .questions
+        case .error: .failures
+        case .done: .finished
+        }
+    }
+
     /// Loudness and Scheduled Summary rank by kind: a question outranks a failure outranks finished work.
     static func presentation(_ kind: Kind) -> (level: String, relevance: Double) {
         switch kind {
@@ -151,27 +177,44 @@ final class PushNotifications: @unchecked Sendable {
 
     /// `group` stacks the alert with its thread's or mission's others; `subtitle` names the kind.
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
-              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil) {
-        guard !registrations.isEmpty, agentID != focused else { return }
+              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil,
+              topic: RemotePushPreferences.Topic? = nil, missionID: String? = nil, detail: PushDetail? = nil) {
+        let topic = topic ?? Self.topic(kind)
+        let away = idleSeconds() >= RemotePushPreferences.awayAfter
+        let wanted = registrations.values.filter { registration in
+            guard let preferences = registration.preferences else { return true }
+            return (away || !preferences.awayOnly) && preferences.allows(topic, mission: missionID ?? mission?.id)
+        }
+        guard !wanted.isEmpty, agentID != focused else { return }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
         guard eventCount < 30 else { return }
         eventCount += 1
         let (level, relevance) = Self.presentation(kind)
+        let detail = detail?.mapText { Self.notificationText($0, limit: 240) ?? "" }
         let event = Event(agentID: agentID, kind: kind,
             title: Self.notificationText(title, limit: 100), preview: Self.notificationText(preview, limit: 240),
             group: group ?? "thread:\(agentID.rawValue)", subtitle: Self.notificationText(subtitle, limit: 60),
-            level: level, relevance: relevance, mission: mission)
-        guard let rich = try? JSONEncoder().encode(event), let legacy = try? JSONEncoder().encode(event.legacy) else { return }
-        let body = relayIsLegacy ? legacy : rich
+            level: level, relevance: relevance, mission: mission,
+            detail: detail == PushDetail() ? nil : detail)
+        // Each shape this relay may take, newest first, without repeats; a detail that would
+        // overflow the relay's 2048-byte body is left out rather than cut.
+        var bodies: [(Relay, Data)] = []
+        for level in Relay.allCases where level >= relay {
+            guard let body = try? JSONEncoder().encode(event.shaped(for: level)) else { return }
+            if bodies.last?.1 != body, level != .detail || body.count <= 2048 { bodies.append((level, body)) }
+        }
+        guard !bodies.isEmpty else { return }
         // No pending queue: overload drops deliveries rather than growing memory or replaying later.
-        for registration in registrations.values where deliveries.count < 16 {
-            post(body, legacy: body == legacy ? nil : legacy, to: registration)
+        for registration in wanted where deliveries.count < 16 {
+            post(bodies[...], to: registration)
         }
     }
 
-    /// One delivery; `legacy` is the same event in the old relay's shape, sent once if this one is refused.
-    private func post(_ body: Data, legacy: Data?, to registration: RemotePushRegistration) {
+    /// One delivery of `bodies.first`; the rest are the same event in older relays' shapes, each sent once
+    /// if the one before is refused.
+    private func post(_ bodies: ArraySlice<(Relay, Data)>, to registration: RemotePushRegistration) {
+        guard let body = bodies.first?.1 else { return }
         let id = UUID()
         var request = URLRequest(url: URL(string: "https://api.useshepherd.app/api/push/registrations/\(registration.id)/events")!)
         request.httpMethod = "POST"
@@ -184,9 +227,9 @@ final class PushNotifications: @unchecked Sendable {
             self.queue.async {
                 self.deliveries.removeValue(forKey: id)
                 // The relay validates before it claims the event id, so the same event may go again.
-                if status == 400, let legacy, self.registrations[registration.id] == registration {
-                    self.relayIsLegacy = true
-                    self.post(legacy, legacy: nil, to: registration)
+                if status == 400, let older = bodies.dropFirst().first, self.registrations[registration.id] == registration {
+                    self.relay = max(self.relay, older.0)
+                    self.post(bodies.dropFirst(), to: registration)
                     return
                 }
                 guard status == 401 || status == 410,
