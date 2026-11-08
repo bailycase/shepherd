@@ -352,7 +352,7 @@ struct ThreadTranscript: View {
                     }
                     return false
                 }
-                tailPin.reader(scrolling: phase != .idle)
+                tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
             .onChange(of: store.sentCount) { _, _ in
                 // A send that goes in now re-attaches; a follow-up that waits in Up next leaves

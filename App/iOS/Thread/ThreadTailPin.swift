@@ -51,18 +51,19 @@ final class ThreadTailPin {
         schedule()
     }
 
-    /// The reader sent a message, or asks for the latest: land on the next turn.
+    /// The reader sent a message, or asks for the latest: land on the next turn, even while the
+    /// thread coasts after a flick (landing ends the coast). A finger on it holds the landing back.
     func asked(_ land: @escaping Land) {
         self.land = land
         repin.asked()
         schedule()
     }
 
-    /// A scroll of the reader's started or ended.
-    func reader(scrolling: Bool) {
+    /// The reader's scroll started, changed phase or ended; `touching` is a finger on the thread.
+    func reader(scrolling: Bool, touching: Bool) {
         self.scrolling = scrolling
-        repin.reader(scrolling: scrolling)
-        if !scrolling, repin.pending { schedule() }
+        repin.reader(scrolling: scrolling, touching: touching)
+        if repin.wantsTurn { schedule() }
         watch()
     }
 
@@ -87,12 +88,13 @@ final class ThreadTailPin {
         }
     }
 
+    /// The repin decides what a turn does while the reader scrolls: automatic landings wait for the
+    /// scroll to end, the reader's own asks do not.
     private func run() {
-        guard !scrolling else { return }
         let resizing = resized
-        resized = false
         let stalled = repin.stalled
         let lands = repin.take()
+        if lands || !scrolling { resized = false }
         if repin.stalled, !stalled {
             MobileSignposts.tailStalled()
             SHRenderProbe.tick("thread.tailStalled")

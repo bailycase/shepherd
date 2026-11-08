@@ -164,19 +164,35 @@ struct ScrollFollowerRepinTests {
         var repin = NativeTailRepin()
         func take() -> Bool { repin.take() }
         repin.reading(distance: 600, wants: true, resized: false)
-        repin.reader(scrolling: true)
+        repin.reader(scrolling: true, touching: true)
         #expect(!take())
         #expect(repin.pending)
-        repin.reader(scrolling: false)
+        repin.reader(scrolling: false, touching: false)
+        #expect(take())
+    }
+
+    /// The flick was let go: the thread coasts on its own, and no landing of its own pulls it back.
+    @Test func anAutomaticLandingStillWaitsForTheCoast() {
+        var repin = NativeTailRepin()
+        func take() -> Bool { repin.take() }
+        repin.reader(scrolling: true, touching: true)
+        repin.reader(scrolling: true, touching: false)
+        repin.reading(distance: 600, wants: true, resized: false)
+        repin.outputArrived()
+        #expect(!repin.wantsTurn)
+        #expect(!take())
+        #expect(repin.pending)
+        repin.reader(scrolling: false, touching: false)
+        #expect(repin.wantsTurn)
         #expect(take())
     }
 
     @Test func theReaderLettingGoStartsAFreshBudget() {
         var repin = Self.stalled()
         #expect(repin.stalled)
-        repin.reader(scrolling: true)
+        repin.reader(scrolling: true, touching: true)
         #expect(repin.stalled)
-        repin.reader(scrolling: false)
+        repin.reader(scrolling: false, touching: false)
         #expect(!repin.stalled)
         #expect(repin.misses == 0)
         #expect(repin.quietWait == NativeTailRepin.quiet)
@@ -200,11 +216,76 @@ struct ScrollFollowerRepinTests {
     @Test func askingWhileTheReaderScrollsWaitsForTheFingerToLift() {
         var repin = NativeTailRepin()
         func take() -> Bool { repin.take() }
-        repin.reader(scrolling: true)
+        // A finger down but not yet moving holds it back too, and so does a drag.
+        repin.reader(scrolling: true, touching: true)
+        repin.asked()
+        #expect(!repin.wantsTurn)
+        #expect(!take())
+        // Let go of a drag and the thread coasts: the ask lands.
+        repin.reader(scrolling: true, touching: false)
+        #expect(repin.wantsTurn)
+        #expect(take())
+        #expect(!take())
+
+        // Let go without a coast (a tap): the same.
+        repin.reader(scrolling: false, touching: false)
+        repin.reader(scrolling: true, touching: true)
         repin.asked()
         #expect(!take())
-        repin.reader(scrolling: false)
+        repin.reader(scrolling: false, touching: false)
+        #expect(repin.wantsTurn)
         #expect(take())
+    }
+
+    /// The jump pill and a send are not the reader's flick coming back: landing is what stops the
+    /// coast, and holding the ask until the coast ends loses it, since the coast's end reads a
+    /// thread far from the tail and detaches again.
+    @Test func askingWhileTheThreadCoastsLandsAtOnce() {
+        var repin = NativeTailRepin()
+        func take() -> Bool { repin.take() }
+        repin.reader(scrolling: true, touching: true)
+        repin.reader(scrolling: true, touching: false)
+        repin.reading(distance: 2_200, wants: false, resized: false)
+        repin.asked()
+        #expect(repin.wantsTurn)
+        #expect(take())
+        #expect(!repin.wantsTurn)
+        #expect(!take())
+    }
+
+    @Test func askingWhileTheThreadCoastsOverMovingRowsLandsOnce() {
+        var repin = Self.stalled()
+        func take() -> Bool { repin.take() }
+        repin.reader(scrolling: true, touching: false)
+        repin.reading(distance: 3_200, wants: true, resized: true)
+        repin.outputArrived()
+        repin.asked()
+        #expect(take())
+        // The ask took the turn's output and resize with it, and gave a fresh budget.
+        #expect(!repin.stalled)
+        #expect(repin.misses == 0)
+        #expect(!repin.pending)
+        #expect(!take())
+    }
+
+    // MARK: Turns wanted
+
+    @Test func aTurnIsWantedOnlyWhereItCouldLand() {
+        var repin = NativeTailRepin()
+        #expect(!repin.wantsTurn)
+        repin.reading(distance: 600, wants: false, resized: false)
+        #expect(!repin.wantsTurn)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(repin.wantsTurn)
+        _ = repin.take()
+        #expect(!repin.wantsTurn)
+        repin.outputArrived()
+        #expect(repin.wantsTurn)
+        _ = repin.take()
+        repin.asked()
+        #expect(repin.wantsTurn)
+        _ = repin.take()
+        #expect(!repin.wantsTurn)
     }
 
     // MARK: A stall

@@ -821,7 +821,7 @@ public struct NativeScrollProbe: Equatable, Sendable {
 /// composer, the keyboard, the side pane's animation) and for output, which are followed for as long
 /// as they last; the reader, a send or a tail at rest start them again.
 ///
-/// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:)`,
+/// Feed it a run-loop turn's events (`reading`, `outputArrived`, `asked`, `reader(scrolling:touching:)`,
 /// `quietPassed`), then call `take()` once to learn whether to land.
 public struct NativeTailRepin: Equatable, Sendable {
     /// Misses that stop the landings.
@@ -851,6 +851,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// Where the previous landing set out from, to tell whether it helped.
     private var setOut: Double?
     private var scrolling = false
+    private var touching = false
     private var turnResized = false
     private var turnOutput = false
     private var turnAsked = false
@@ -880,17 +881,28 @@ public struct NativeTailRepin: Equatable, Sendable {
     }
 
     /// The reader asked for the tail (a send, their turn arriving, the jump pill): land on the next
-    /// turn, whatever the gap, with a fresh budget.
+    /// turn, whatever the gap, with a fresh budget, unless a finger is down (`reader(scrolling:touching:)`).
     public mutating func asked() {
         turnAsked = true
     }
 
-    /// The reader's scroll started or ended. No landing while it moves, so a flick is never pulled
-    /// back and a finger is not fought; the request stays, and the end gives a fresh budget.
-    public mutating func reader(scrolling: Bool) {
+    /// The reader's scroll started, changed phase or ended. No automatic landing while it moves, so
+    /// a flick is never pulled back; the request stays, and the end gives a fresh budget. A reader's
+    /// own ask is held back only while `touching`, a finger on the thread: it ends a coast, as
+    /// scrolling to the tail does, and lands in the next turn.
+    public mutating func reader(scrolling: Bool, touching: Bool) {
+        self.touching = scrolling && touching
         guard scrolling != self.scrolling else { return }
         self.scrolling = scrolling
         if !scrolling { freshBudget() }
+    }
+
+    /// Whether a turn could land now: an ask no finger holds back, or, with the reader's scroll
+    /// over, a landing wanted or output, an ask or a quiet try waiting. The caller schedules a turn
+    /// when this holds after any event, and not otherwise.
+    public var wantsTurn: Bool {
+        if scrolling { return turnAsked && !touching }
+        return pending || turnAsked || turnOutput || turnQuiet
     }
 
     /// A stalled tail saw no reading for `quietWait`: it gets one try, and the wait doubles.
@@ -903,7 +915,7 @@ public struct NativeTailRepin: Equatable, Sendable {
 
     /// Whether to land now. Call it once per run-loop turn, after the turn's events.
     public mutating func take() -> Bool {
-        if scrolling { return false }
+        if scrolling, !(turnAsked && !touching) { return false }
         let resized = turnResized, output = turnOutput, asked = turnAsked, quiet = turnQuiet
         let measured = fresh
         turnResized = false
