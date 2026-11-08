@@ -17,8 +17,9 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
     let lazyPrefix: Bool
     let content: (Element) -> Content
 
-    /// `lazyPrefix` false lays every chunk out for real: for a host whose own scroll view cannot
-    /// place a lazy stack nested in its lazy rows (iOS 27.0's bottom anchor draws a long reply blank).
+    /// `lazyPrefix` false lays every chunk out for real: for a host whose own scroll view has not been
+    /// shown to place a lazy stack nested in its lazy rows (iOS's transcript: its bottom anchor drew a
+    /// long reply blank on iOS 27.0, and its row-id anchor can move text when a chunk is built).
     public init(_ elements: [Element], id: KeyPath<Element, ID>, continuesList: KeyPath<Element, Bool>, lazyPrefix: Bool = true,
                 content: @escaping (Element) -> Content) {
         self.elements = elements
