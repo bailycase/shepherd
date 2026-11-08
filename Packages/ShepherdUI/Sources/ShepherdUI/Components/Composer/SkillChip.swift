@@ -110,9 +110,9 @@ public enum SHSkillChips {
         return result
     }
 
-    /// The draft the field's text spells: each chip as its token. A native string: appending to an
-    /// empty String adopts the bridged copy of the storage, and Swift walks and compares a bridged
-    /// UTF-16 string on the slow path.
+    /// The draft the field's text spells: each chip as its token. A native string, each run of the
+    /// storage read in one bulk copy: Swift walks and compares a bridged UTF-16 string on the slow
+    /// path, and transcodes one character at a time.
     public static func text(of attributed: NSAttributedString) -> String {
         var text = ""
         let string = attributed.string as NSString
@@ -120,11 +120,19 @@ public enum SHSkillChips {
             if let chip = value as? SHSkillChipAttachment {
                 text += String(repeating: chip.token, count: range.length)
             } else {
-                text += string.substring(with: range)
+                text += native(string, range)
             }
         }
-        text.makeContiguousUTF8()
         return text
+    }
+
+    private static func native(_ string: NSString, _ range: NSRange) -> String {
+        guard range.length > 0 else { return "" }
+        let units = [UInt16](unsafeUninitializedCapacity: range.length) { buffer, count in
+            string.getCharacters(buffer.baseAddress!, range: range)
+            count = range.length
+        }
+        return String(decoding: units, as: UTF16.self)
     }
 
     /// A field range as a range of the draft: a chip spans its whole token.
