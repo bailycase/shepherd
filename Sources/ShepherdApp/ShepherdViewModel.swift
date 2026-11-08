@@ -1474,7 +1474,7 @@ final class ShepherdViewModel {
         pruneDesigns()
         pruneFileTrees()
         pruneSidebarPins()
-        let live = Set(state.agents.map(\.id))
+        let live = Set(state.agents.map(\.id) + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents.map(\.id) ?? []))
         branchCardStores = branchCardStores.filter { live.contains($0.key) }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }

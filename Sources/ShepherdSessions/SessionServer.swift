@@ -2635,6 +2635,21 @@ public final class SessionServer: @unchecked Sendable {
             designRelays.removeValue(forKey: token)?.answer(result)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
+        case .agentQuery(let id, let agentID, .setWorktree(let branch, let base)):
+            // The server owns the record: answered here, without the GUI, off the queue.
+            let connection = ChangesUnchecked(value: client)
+            Task { [weak self] in
+                guard let self else { return }
+                let failure: String?
+                do { try await self.setAgentWorktree(agentID, branch: branch, base: base); failure = nil }
+                catch { failure = String(describing: error) }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    if let failure { self.send(.error(id: id, code: "worktree_record", message: failure), to: client) }
+                    else { self.send(.agentResult(id: id, result: .ok), to: client) }
+                }
+            }
         case .agentQuery(let id, let agentID, let query) where query.isFiles:
             remoteFiles(id: id, agentID: agentID, query: query, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
