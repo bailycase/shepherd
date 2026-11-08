@@ -15,7 +15,8 @@ public final class QueueFixture {
     private var deleted: [UUID: NativeQueuedMessage] = [:]
     /// Answers a poll for the revision it already serves with `.unchanged`, as a host does. By
     /// default every poll gets the whole snapshot again, which the store derives from for nothing:
-    /// a derive that rebuilds no row also clears the live row, so a reply being streamed goes blank.
+    /// a derive that rebuilds no row also clears the live row (it looks for the live row among the
+    /// rows it rebuilt), so a reply being streamed goes blank. Drop this opt-in when the store keeps it.
     public var answersUnchanged = false
 
     public init(_ snapshot: NativeThreadSnapshot) {
