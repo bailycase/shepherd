@@ -118,10 +118,8 @@ test("the subproject's own server of the same name wins over the parent's", { ti
   });
 });
 
-test("an untrusted subproject shares nothing, and neither does a missing or wrong parent", { timeout: 180000 }, async (t) => {
+test("a missing or wrong parent shares nothing", { timeout: 180000 }, async (t) => {
   for (const [what, options] of [
-    ["untrusted", subproject({ trusted: false })],
-    ["a trusted parent, but the subproject refused", subproject({ deniedChild: true })],
     ["no parent named", subproject({ parent: () => undefined })],
     ["a parent that does not hold the subproject", subproject({ parent: (work) => path.join(work, "elsewhere") })],
   ]) {
@@ -244,9 +242,8 @@ test("the bundled engine rejects command credentials from global, trusted-local 
   });
 });
 
-test("revoked space approval, missing or mismatched ownership and disabled MCP grant no inherited access", { timeout: 180000 }, async (t) => {
+test("missing or mismatched ownership and disabled MCP grant no inherited access", { timeout: 180000 }, async (t) => {
   for (const [what, options] of [
-    ["revoked space approval", ownedWorktree({ trusted: false })],
     ["unrelated sibling", ownedWorktree({ grant: false })],
     ["grant for another checkout", ownedWorktree({ mismatched: true })],
     ["MCP disabled", ownedWorktree({ enabled: false })],
@@ -283,7 +280,7 @@ test("a running thread picks up mcp.json edits: new servers connect, changed one
   });
 });
 
-test("mcp.json edits in an untrusted project still load nothing", { timeout: 60000 }, async (t) => {
+test("mcp.json edits under --no-approve (the home folder) still load nothing", { timeout: 60000 }, async (t) => {
   await withPi(t, { args: [...ARGS, "--no-approve"] }, async (pi) => {
     await status(pi);
     mcpFile(pi.work, { blocked: server(pi.dir, "blocked") });
@@ -343,12 +340,12 @@ test("a subproject loads its parent's skills, its own of the same name winning, 
   });
 });
 
-test("an untrusted parent shares no skills", { timeout: 60000 }, async (t) => {
+test("a parent shares its skills with no saved trust decision", { timeout: 60000 }, async (t) => {
   const options = subproject({ trusted: false });
   const project = options.project;
   options.project = (dir, work) => { project(dir, work); skill(path.join(work, ".pi/skills"), "ledger-review", "PARENT_LEDGER"); };
   await withPi(t, options, async (pi) => {
     const commands = await pi.commands();
-    assert.equal(commands.some((c) => c.name === "skill:ledger-review"), false);
+    assert.equal(commands.some((c) => c.name === "skill:ledger-review"), true);
   });
 });

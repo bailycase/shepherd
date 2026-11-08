@@ -36,10 +36,8 @@ actor ProjectMCPService {
             }
             return runs[id]?.result ?? run.result
         case .approveProject:
-            guard ProjectConfiguration.isMCP(file), !PiLaunch.isHomeFolder(directory, userHome: pi.userHome) else {
-                throw ProjectFileError("protected", "The home folder cannot be trusted as a project.")
-            }
-            return .init(projectTrusted: try await projectTrust(directory: directory, approve: true, canonicalDirectory: canonicalDirectory ?? PiHome.canonical(directory)))
+            // Spaces need no approval: their configuration always loads. Older clients still send this.
+            return .init(projectTrusted: true)
         case .credentials:
             let entries = try servers(text)
             let data = try? Data(contentsOf: pi.home.appendingPathComponent("mcp-auth.json"))
@@ -52,12 +50,8 @@ actor ProjectMCPService {
                 let state = (auth[key] ?? auth[canonical]) as? [String: Any]
                 return (state?["tokens"] as? [String: Any])?["access_token"] is String ? name : nil
             }
-            guard ProjectConfiguration.isMCP(file) else { return .init(signedIn: signed.sorted()) }
-            do {
-                return .init(signedIn: signed.sorted(), projectTrusted: try await projectTrust(directory: directory, approve: false))
-            } catch {
-                return .init(signedIn: signed.sorted(), message: "Couldn't check project approval. Check again before starting a new thread.")
-            }
+            // `projectTrusted` stays true for older clients, which would otherwise draw a space as blocked.
+            return .init(signedIn: signed.sorted(), projectTrusted: ProjectConfiguration.isMCP(file) ? true : nil)
         case .login(let server), .logout(let server):
             guard runs.values.filter({ $0.result.phase == .waiting }).count + preparing.count < 4 else {
                 throw ProjectFileError("busy", "Too many sign-ins are running. Close one and try again.")
@@ -111,40 +105,6 @@ actor ProjectMCPService {
             bridge.send(.answer(id: "config", value: String(decoding: data, as: UTF8.self)))
             return runs[id]!.result
         }
-    }
-
-    /// Reads or saves Pi's decision without starting a session or loading any project code.
-    private func projectTrust(directory: String, approve: Bool, canonicalDirectory: String? = nil) async throws -> Bool {
-        if let problem = await Task.detached(operation: { [pi] in pi.prepare() }).value {
-            throw ProjectFileError("pi", problem.message)
-        }
-        try Task.checkCancellation()
-        guard let package = pi.engine.packageDirectory else { throw ProjectFileError("pi", "Shepherd's pi SDK is unavailable.") }
-        let script = try ProjectMCPScript.install(in: pi.home)
-        let sdk = URL(fileURLWithPath: package).appendingPathComponent(BundledPiEngine.libraryPath).path
-        let bridge = PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files))
-        let expiry = Task {
-            try? await Task.sleep(for: .seconds(10))
-            if !Task.isCancelled { bridge.close() }
-        }
-        defer { expiry.cancel(); bridge.close() }
-        let payload = ["command": approve ? "trust" : "trust-status", "directory": directory, "userHome": pi.userHome, "canonicalDirectory": canonicalDirectory ?? PiHome.canonical(directory)]
-        bridge.send(.answer(id: "config", value: String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)))
-        return try await withTaskCancellationHandler {
-            var trusted: Bool?
-            for await reply in bridge.replies {
-                try Task.checkCancellation()
-                switch reply {
-                case .info(let message):
-                    trusted = (try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Bool])?["projectTrusted"]
-                case .done:
-                    if let trusted { return trusted }
-                case .failed: throw ProjectFileError("trust", "Project approval couldn't be checked or saved. Try again.")
-                default: break
-                }
-            }
-            throw ProjectFileError("trust", "Project approval didn't finish. Try again.")
-        } onCancel: { bridge.close() }
     }
 
     private func servers(_ text: String) throws -> [String: [String: Any]] {

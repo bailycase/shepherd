@@ -125,39 +125,6 @@ function atomic(file, data) {
   fs.renameSync(tmp, file);
 }
 
-// One authenticated host fence for both fresh starts and resumes. Standalone Pi has no host.
-export function prepareProjectConfiguration(cwd, env = process.env) {
-  if (!env.SHEPHERD_SOCKET && !env.SHEPHERD_AGENT_ID) return Promise.resolve();
-  if (!env.SHEPHERD_SOCKET || !env.SHEPHERD_AGENT_ID) return Promise.reject(Error("Shepherd project migration host is unavailable"));
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(env.SHEPHERD_SOCKET);
-    let replyChars = 0, settled = false;
-    const finish = (error) => {
-      if (settled) return;
-      settled = true; clearTimeout(timer); socket.destroy();
-      error ? reject(error) : resolve();
-    };
-    const timer = setTimeout(() => finish(Error("Shepherd project migration timed out; retry the child")), 45_000);
-    socket.setEncoding("utf8");
-    socket.on("connect", () => socket.write(JSON.stringify({ type: "prepareProjectConfiguration", id: 1, agentID: env.SHEPHERD_AGENT_ID, cwd }) + "\n"));
-    const read = textLines((line) => {
-      try {
-        const reply = JSON.parse(line);
-        if (reply.id !== 1 || reply.type !== "ok") finish(Error(reply.message || "Project migration was refused"));
-        else finish();
-      } catch { finish(Error("Invalid project migration reply")); }
-      return false;
-    });
-    socket.on("data", chunk => {
-      if (settled) return;
-      replyChars += chunk.length;
-      if (replyChars > 1_048_576) return finish(Error("Invalid project migration reply"));
-      read(chunk);
-    });
-    socket.on("error", () => finish(Error("Shepherd project migration host is unavailable")));
-    socket.on("close", () => finish(Error("Shepherd project migration host disconnected")));
-  });
-}
 
 // A fork is the active branch through the last complete tool batch. In-flight
 // tool calls and their partial results are omitted, including the spawning call.
@@ -231,7 +198,7 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
   env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
   if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
   if (run.cliCommand) env.SHEPHERD_CHILD_CLI = "1";
-  const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
+  const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", childTargetContext({}, run.cwd).isProjectTrusted() ? "--approve" : "--no-approve",
     "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
     "--tools", [...run.tools, "shepherd_parent_message"].join(","),
     run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
@@ -934,7 +901,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   }
   async function launch(run, message, signal, images) {
     run.cancelled = false; run.preparing = true;
-    await prepareProjectConfiguration(run.cwd);
     signal?.throwIfAborted();
     checkScope(run.projectScope);
     if (!current(run) || runs.get(run.id) !== run || run.cancelled) throw Error("Parent session ended or dispatch cancelled");
@@ -1276,7 +1242,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
       if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
       const startingOwner = owner;
-      await prepareProjectConfiguration(cwd);
       signal?.throwIfAborted();
       if (!active || owner !== startingOwner) throw Error("Parent session ended or dispatch cancelled");
       capacity();
@@ -1311,7 +1276,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       fs.mkdirSync(path.join(dir, "control", "steer-requests"), { recursive: true, mode: 0o700 });
       const run = { id, dir, owner, projectScope, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
         context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
-        requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
+        profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
         extensions: profile.extensions ?? [], skills, workflowId, ...missionFor(params, params.task),
         tools: requestedTools.filter((name) => cli ? ctx.tools.some(tool => tool.name === name) : parentAllows(name, pi.getActiveTools())),
         ...(cli ? { cliCommand: params.task, localToolExtensions: requestedTools.filter(name => ["codemode", "tool_search"].includes(name)).map(name => name === "tool_search" ? "tool-search" : name) } : {}), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
@@ -1355,7 +1320,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const cli = { prompt, budget, emit, output: "", toolExtensions, relay: { cli: true, tools },
         specs: relayed.map(name => ({ ...metadata.get(name), name })),
         profile: { name: "Pi subprocess", prompt: "Execute the delegated command. Stop and ask your parent when approval or clarification is required.",
-          tools: allowed, context: "fresh", inheritSkills: true, inheritProjectContext: true, requiresProjectTrust: true } };
+          tools: allowed, context: "fresh", inheritSkills: true, inheritProjectContext: true } };
       const abort = () => { if (cli.run) void stop(cli.run, String(signal.reason?.message ?? "Pi subprocess cancelled")); };
       signal.addEventListener("abort", abort, { once: true });
       try {
@@ -1442,7 +1407,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     if (run.cliCommand) throw Error("Pi subprocess authority ended with its calling Bash command. Run the command again after answering the question.");
     const projectScope = projectWorker ? await authorizeScope() : undefined;
     if (!active) throw Error("No active parent session");
-    if ((run.requiresProjectTrust || run.profileSource === "project") && childTargetContext(ctx, run.cwd).isProjectTrusted() !== true) throw Error("Project profile continuation requires Pi project trust");
     if (run.workflowId && workflows.has(run.workflowId) && !workflows.get(run.workflowId).cleaned) throw Error("Child is still owned by an active workflow");
     if (run.settled && run.proc) await run.closed;
     if (run.proc || ["running", "queued"].includes(run.state)) throw new Error("Child already active");
@@ -1672,7 +1636,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     },
     doctor: (ctx) => [`Pi >= 0.85.1 · ${supported ? "supported" : "unsupported"}`,
       `child bridge · ${bridge && fs.existsSync(bridge) ? "available" : "missing"}`,
-      `project trust · ${ctx.isProjectTrusted?.() === true ? "active" : "not granted"}`,
       `scope · ${defaults.scope} · context · ${defaults.context} · concurrency · ${defaults.concurrency}`,
       `${runs.size} retained children · ${[...runs.values()].filter((r) => ["running", "queued"].includes(r.state)).length} active · ${workflows.size} workflows`,
       "no provider probes · no configuration changes · children stop with this parent"],

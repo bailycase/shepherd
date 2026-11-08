@@ -43,10 +43,13 @@ Pi and its SDK modules by install location, version, registry tarball and `sha51
    multiple archive roots are refused. Named roots used by `@types` packages are supported.
 4. Sets the staged package's `piConfig` to `name: "pi", configDir: ".shepherd"`. Pi reads this
    manifest at runtime for project resource discovery; keeping `name` preserves `PI_*` environment
-   names. Trusted projects discover settings, skills, prompts, themes, extensions, system prompts
+   names. Projects discover settings, skills, prompts, themes, extensions, system prompts
    and MCP in both `.shepherd/` and `.pi/`. `.shepherd` wins collisions; settings and system prompts
    fall back per file, while MCP merges server names. Relative settings paths use the selected
-   settings file's folder. Both SDK and bundled child CLI use the same precedence and trust rules.
+   settings file's folder. Both SDK and bundled child CLI use the same precedence. There is no
+   trust step: every launch passes `--approve` (the home folder `--no-approve`), and a space's
+   `.shepherd/agents` and `.pi/agents` subagent profiles load beside Shepherd's own, overriding a
+   profile of the same name.
    Shepherd still pins its global agent home, and terminal Pi is unchanged. Verification rejects
    an engine with a different primary project directory or application name.
 5. Keeps the files above (Node's binary as it comes), writes the licences, and swaps the tree
@@ -186,7 +189,7 @@ client secrets and model credentials must use literal values or environment-vari
 Shepherd's own MCP translation also supports Keychain references. Explicit MCP stdio commands
 remain available. `config-command-values.test.mjs` verifies the pinned resolver patch against
 both upstream and staged Pi; `mcp-parent.test.mjs` checks real bundled MCP startup rejects
-command values in global, trusted-project and inherited config.
+command values in global, project and inherited config.
 
 `EngineSmokeTests` runs trust, busy preflight, Stop and prompt/history/extension-preservation
 checks from `Tests/Extensions/engine-live-skills.mjs`, including CLI, loaded local-package and
@@ -249,7 +252,7 @@ Pi ▸ Bundled extensions ▸ MCP servers is on. Shepherd's derived `mcp.json` a
 so tools stay reachable through direct calls or tool search when codemode is off.
 
 Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Before a primary agent launch, `PiHome.configureCodemode`
-writes `codemode.enabled` in the host's Pi home under Pi's settings lock. A trusted project's
+writes `codemode.enabled` in the host's Pi home under Pi's settings lock. A space's
 Project `settings.json` in `.shepherd` or `.pi` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
 with `models: false` and `mode: "on"`. It caps each script at five minutes and 128 nested tool calls.
 Pi still owns the QuickJS executor, discovery, tool hooks, nested-call metadata and cancellation.
@@ -268,7 +271,7 @@ what pi does with them, measured).
 
 What pi's MCP adds to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
-sign-ins. A trusted project's `.shepherd/mcp.json` and `.pi/mcp.json` are read too, as pi's trust model says. `llama.cpp`, the
+sign-ins. A space's `.shepherd/mcp.json` and `.pi/mcp.json` are read too. `llama.cpp`, the
 fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
 the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
 `hostSettings`) and the first copy from "your pi" ignore the `builtin:` entries.

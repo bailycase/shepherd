@@ -31,10 +31,10 @@ public enum PiLaunch {
     /// sessions in `home.sessionDirectory(forCwd:)` (`--session-dir`, which wins over anything the
     /// environment or a project's settings say). The `cd` runs after the login shell's startup
     /// files, so a `cd` in them can't move pi. `model` and `thinking` go only to a fresh session;
-    /// `extensions` load in order. `untrustedProject` (an agent in the user's home folder,
-    /// never a trusted project) passes `--no-approve`, so pi loads no project
-    /// code or settings there whatever a trust decision says. Throws when the session folder
-    /// resolves outside the home.
+    /// `extensions` load in order. A space's own configuration always loads (`--approve`): adding
+    /// a space is the decision to run it. `untrustedProject` (an agent in the user's home folder,
+    /// whose `.pi` is pi's global config, not a project) and the coordinator pass `--no-approve`.
+    /// Throws when the session folder resolves outside the home.
     public static func agent(home: PiHome, cwd: String, sessionID: String, model: String?, thinking: String?,
                              extensions: [String], untrustedProject: Bool = false, coordinator: Bool = false,
                              promptTemplates: [String] = []) throws -> Line {
@@ -42,7 +42,7 @@ public enum PiLaunch {
         guard home.contains(sessionDirectory) else { throw OutsideHome(path: sessionDirectory) }
         var script = "cd -- \(quoted(cwd)) && exec \(quoted(home.launcher.path)) --mode rpc --session-dir \(quoted(sessionDirectory))"
             + " --session-id \(quoted(sessionID))"
-        if untrustedProject || coordinator { script += " --no-approve" }
+        script += untrustedProject || coordinator ? " --no-approve" : " --approve"
         // `--no-tools` would also drop the Project tools its extension registers; built-ins only.
         if coordinator { script += " --no-builtin-tools --no-extensions --no-skills --no-prompt-templates --no-context-files" }
         if let model { script += " --model \(quoted(model))" }
