@@ -106,6 +106,7 @@ struct NativeProseTests {
         "- [x] Parse tables\n- [ ] Render diagrams\n  - nested under it\n    - and deeper",
         "3) c\n4) d\n\nafter",
         "```\npartial",
+        "", "* * *", ">bare quote", "+ plus", "#hashtag and -dash", "###### six\n\n## Closed ##",
         "~~~python\nprint(1)\n~~~\n\ntext",
         "1. Parser\n   - Blocks\n     - Tables\n   - Inline runs\n2. Renderers",
         "| a | b |\n|---|--:|\n| 1 | 2 |\n| 3 | 4 |\n\nAfter the table.",
