@@ -764,14 +764,8 @@ struct Composer: View {
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
     }
 
-    /// The field's selection, kept in `caret` without redrawing the composer. A selection the
-    /// draft has outgrown (the draft replaced from outside the field) reads as none.
-    private var caretBinding: Binding<TextSelection?> {
-        Binding(get: { [caret, store] in caret.selection(in: store.draft) }, set: { [caret] in caret.selection = $0 })
-    }
-
     private var field: some View {
-        ComposerTextField(text: $store.draft, selection: caretBinding, placeholder: placeholder,
+        ComposerTextField(text: $store.draft, caret: caret, placeholder: placeholder,
                           label: "Message the agent", focus: $composing, attach: attach,
                           lineSpacing: max(0, SHTextStyle.body.lineSpacing - 1))
             .onComposerKey(.return) { press in
@@ -1540,19 +1534,18 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
 
 // MARK: Sending while pi works
 
-/// Where the composer field's caret is. Written by the field as the caret moves, read only when
-/// ⌫ is pressed, so nothing observes it.
+/// Where the composer field's caret is. Written by the field as the caret moves, read when ⌫ is
+/// pressed and when the field restores its caret, so nothing observes it.
 final class ComposerCaret {
-    var selection: TextSelection?
+    /// The selection in UTF-16 offsets of the draft; a chip spans its whole token. Offsets, so a
+    /// key never converts to `String.Index` (on a native draft that builds UTF-16 breadcrumbs, O(n)).
+    var range: NSRange?
 
-    /// The selection, while it still lies inside `draft`.
+    /// The selection as indices into `draft`, while it still lies inside it. A draft the selection
+    /// has outgrown (replaced from outside the field) reads as none.
     func selection(in draft: String) -> TextSelection? {
-        guard let selection else { return nil }
-        switch selection.indices {
-        case .selection(let range): return range.upperBound <= draft.endIndex ? selection : nil
-        case .multiSelection(let ranges): return ranges.ranges.allSatisfy { $0.upperBound <= draft.endIndex } ? selection : nil
-        @unknown default: return nil
-        }
+        guard let range, let indices = Range(range, in: draft) else { return nil }
+        return TextSelection(range: indices)
     }
 
     /// Whether ⌫ takes the last chip back rather than deleting a character: in an empty field, or

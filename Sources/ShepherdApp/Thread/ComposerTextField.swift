@@ -8,7 +8,7 @@ import ShepherdUI
 /// undo and text paste; only image/file paste and the composer's explicit keys are different.
 struct ComposerTextField: NSViewRepresentable {
     @Binding var text: String
-    var selection: Binding<TextSelection?> = .constant(nil)
+    var caret: ComposerCaret?
     let placeholder: String
     let label: String
     let focus: Binding<Bool>
@@ -31,11 +31,11 @@ struct ComposerTextField: NSViewRepresentable {
         }
     }
 
-    init(text: Binding<String>, selection: Binding<TextSelection?> = .constant(nil), placeholder: String,
+    init(text: Binding<String>, caret: ComposerCaret? = nil, placeholder: String,
          label: String, focus: Binding<Bool>, attach: @escaping ([NSItemProvider]) -> Void,
          lineSpacing: CGFloat = 0) {
         _text = text
-        self.selection = selection
+        self.caret = caret
         self.placeholder = placeholder
         self.label = label
         self.focus = focus
@@ -122,9 +122,8 @@ struct ComposerTextField: NSViewRepresentable {
             field.setDraft(text)
             if field.currentEditor() != nil { field.editor.setSelectedRange(caret) }
         }
-        if !replaced, let range = selection.wrappedValue, case .selection(let indices) = range.indices,
-           indices.upperBound <= text.endIndex {
-            let native = field.editorRange(NSRange(indices, in: text))
+        if !replaced, let range = caret?.range {
+            let native = field.editorRange(range)
             if field.currentEditor() != nil, field.editor.selectedRange() != native { field.editor.setSelectedRange(native) }
         }
         if field.wantsFocus != focus.wrappedValue {
@@ -153,8 +152,7 @@ struct ComposerTextField: NSViewRepresentable {
             readSelection(field)
         }
         func readSelection(_ field: Field) {
-            guard let range = Range(field.draftRange(field.editor.selectedRange()), in: parent.text) else { return }
-            parent.selection.wrappedValue = TextSelection(range: range)
+            parent.caret?.range = field.draftRange(field.editor.selectedRange())
         }
     }
 

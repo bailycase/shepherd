@@ -184,7 +184,7 @@ struct NewThreadPage: View {
             }
         } field: {
             ComposerTextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }),
-                              selection: caretBinding, placeholder: "Describe the task…",
+                              caret: caret, placeholder: "Describe the task…",
                               label: "What should the agent work on?", focus: $composing, attach: draft.attach)
             .onComposerKey(.return) { press in
                 if let result = press.lineBreak() { return result }
@@ -282,12 +282,6 @@ struct NewThreadPage: View {
         .background { if mentionShown || commandQuery != nil { ComposerMenuRegion(dismissal: dismissal) } }
         .overlay(alignment: .bottomLeading) { menus }
         .overlay(alignment: .bottomLeading) { mentionMenu }
-    }
-
-    /// The field's selection, kept in `caret` without redrawing the page. A selection the prompt has
-    /// outgrown (the prompt replaced from outside the field) reads as none.
-    private var caretBinding: Binding<TextSelection?> {
-        Binding(get: { [caret, draft] in caret.selection(in: draft.prompt) }, set: { [caret] in caret.selection = $0 })
     }
 
     private var controls: some View {
