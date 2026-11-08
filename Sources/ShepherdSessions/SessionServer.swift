@@ -4459,6 +4459,11 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .setAgentStatus(let agentID, let status):
+            // A report read from a pi that has since stopped must not put its kept agent back to work.
+            if status != .idle, agentWaitsForRetry(agentID) {
+                ShepherdLog.info("dropped a late \(status) status for agent \(agentID): its pi stopped")
+                break
+            }
             applyAgentStatus(agentID: agentID, status: status)
         case .nativeQueueBoundary(let id, let agentID, let piSessionID, let expiresAt):
             let now = Date().timeIntervalSince1970 * 1000
@@ -8831,6 +8836,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: the agent whose own pane runs this session. Streaming asks on every
     /// revision, so the lookup is rebuilt once per committed state rather than scanned.
+    /// Server queue: the agent's bound pi stopped and its thread waits for Retry (not yet starting again).
+    private func agentWaitsForRetry(_ agentID: AgentID) -> Bool {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+              let sessionID = store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: paneID)?.sessionID,
+              let kept = keptStarts[sessionID], !kept.retrying else { return false }
+        return sessions[sessionID]?.isAlive != true
+    }
+
     private func agentID(forSession sessionID: SessionID) -> AgentID? {
         if sessionAgents?.version != store.version {
             let tabs = Dictionary(store.state.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

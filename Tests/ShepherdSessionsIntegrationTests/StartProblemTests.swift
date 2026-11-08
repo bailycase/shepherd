@@ -144,6 +144,31 @@ struct StartProblemTests {
         #expect(try await pi.request(.snapshot()).snapshotValue?.startProblem == exit.startProblem)
     }
 
+    /// A status report the dead pi's socket still held, read after its agent settled idle, leaves the
+    /// agent idle: it would otherwise read as running and hold the host's drain.
+    @Test func aLateStatusFromAStoppedPiLeavesItsAgentIdle() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        let other = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        _ = try await other.ready()
+        let pid = try await h.server.enqueue { try #require(h.server.rpcThread(forAgent: pi.agent.id)).session.processIdentifier }
+        #expect(kill(pid, SIGKILL) == 0)
+        try await eventually("pi to exit") { callbacks.exited(pi.sessionID) }
+        func status(_ agent: Agent) -> AgentStatus? { h.server.state.agents.first { $0.id == agent.id }?.status }
+
+        // The second report is the barrier: one connection is read in order.
+        let reporter = try ExtensionClient(path: h.socketPath)
+        defer { reporter.closeConnection() }
+        try reporter.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try reporter.send(.setAgentStatus(agentID: other.agent.id, status: .working))
+        try await eventually("the other agent to read working") { status(other.agent) == .working }
+        #expect(status(pi.agent) == .idle)
+        #expect(try await pi.request(.snapshot()).snapshotValue?.startProblem?.kind == .stopped)
+    }
+
     /// Deleting the agent retires its pi: the agent is gone from state when pi exits, so nothing is kept.
     @Test func deletingAnAgentWhosePiServedRetiresItsSession() async throws {
         let h = try ScratchServer.fresh()
