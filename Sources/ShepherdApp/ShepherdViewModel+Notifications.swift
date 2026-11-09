@@ -26,7 +26,8 @@ extension ShepherdViewModel {
 
     /// Tells the server which local thread you are watching, so its phone pushes stay quiet too.
     func syncFocusedThread() {
-        server.setFocusedThread(selectedAgentID.flatMap { isWatching(.agent($0)) ? $0 : nil })
+        let watched = selectedAgentID.flatMap { isWatching(.agent($0)) ? $0 : nil }
+        if localHost != nil { remoteHosts.focusLocalThread(watched) } else { server.setFocusedThread(watched) }
     }
 
     /// Calls `syncFocusedThread` now and whenever the selection or what covers it changes.

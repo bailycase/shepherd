@@ -412,6 +412,9 @@ public enum RemoteSpaceAction: Codable, Hashable, Sendable {
     case move(before: SpaceID?)
     /// Stops its agents and forgets it; its folder stays.
     case delete
+    /// Locate Folder…: points it, and everything recorded inside its old folder, at `path`. Its
+    /// threads stop and their conversations move; the app starts them again (`restartPi`).
+    case relocate(path: String)
 }
 
 public struct RemoteWorktreeInfo: Codable, Hashable, Sendable {
@@ -643,6 +646,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Local clients only (`localCapability`): this Mac's own app starts a thread on its
     /// background host as it would in process. Answered `agentCreated`.
     case startThread(id: Int, thread: RemoteThreadStart)
+    /// Local clients only (`localCapability`): the thread this Mac's own app shows with Shepherd
+    /// in front (nil: none), so the host's phone pushes for it stay quiet. Answered `ok`.
+    case focusThread(id: Int, agentID: AgentID?)
     /// Create an agent on the host: the host GUI runs its normal creation
     /// flow (spawn pi, seed the session file, bind the pane) and the new
     /// agent arrives at every client via the state push.
@@ -736,7 +742,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, addSpace, spaceAction, startThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -901,6 +907,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 path: try c.decode(String.self, forKey: .path)
             )
+        case .focusThread:
+            self = .focusThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decodeIfPresent(AgentID.self, forKey: .agentID))
         case .startThread:
             self = .startThread(id: try c.decode(Int.self, forKey: .id), thread: try c.decode(RemoteThreadStart.self, forKey: .thread))
         case .spaceAction:
@@ -1130,6 +1138,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(path, forKey: .path)
+        case .focusThread(let id, let agentID):
+            try c.encode(Kind.focusThread, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encodeIfPresent(agentID, forKey: .agentID)
         case .startThread(let id, let thread):
             try c.encode(Kind.startThread, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1252,6 +1264,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// local client that lists `RemoteProtocol.designRelayCapability`; answered
     /// `RemoteRequest.designRelayAnswer` with the same token.
     case designRelay(token: Int, job: DesignRelayJob)
+    /// An agent's notify tool (or its goal) on the background host, pushed only to this Mac's
+    /// app that shows its threads as its own (`RemoteProtocol.localThreadsCapability`), which
+    /// posts the banner; the host doesn't.
+    case agentNotify(agentID: AgentID, title: String, body: String)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1263,6 +1279,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case designID, revision, commentsRevision
         case url, push, missionID, live
         case token, job
+        case title, body
     }
 
     private enum Kind: String, Codable {
@@ -1276,7 +1293,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay
+        case designRelay, agentNotify
     }
 
     public init(from decoder: Decoder) throws {
@@ -1296,6 +1313,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .browserDrive(try c.decode(BrowserDrivePush.self, forKey: .push))
         case .designRelay:
             self = .designRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(DesignRelayJob.self, forKey: .job))
+        case .agentNotify:
+            self = .agentNotify(agentID: try c.decode(AgentID.self, forKey: .agentID), title: try c.decode(String.self, forKey: .title),
+                                body: try c.decode(String.self, forKey: .body))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1575,6 +1595,11 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designRelay, forKey: .type)
             try c.encode(token, forKey: .token)
             try c.encode(job, forKey: .job)
+        case .agentNotify(let agentID, let title, let body):
+            try c.encode(Kind.agentNotify, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(title, forKey: .title)
+            try c.encode(body, forKey: .body)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

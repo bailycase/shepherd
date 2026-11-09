@@ -3058,6 +3058,13 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
+        case .focusThread(let id, let agentID):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
+                return
+            }
+            pushNotifications.focused = agentID
+            send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
             guard client.isLocal else {
                 send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
@@ -4380,7 +4387,11 @@ public final class SessionServer: @unchecked Sendable {
         Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
-        if client.isLocal, client.authenticated { localAppsChanged() }
+        if client.isLocal, client.authenticated {
+            localAppsChanged()
+            // A closed window shows nothing: every thread's phone pushes go out again.
+            pushNotifications.focused = nil
+        }
         for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
@@ -6441,7 +6452,37 @@ public final class SessionServer: @unchecked Sendable {
         case .setSidebarHidden(let hidden): try await updating { $0.sidebarHidden = hidden }
         case .move(let before): try await moveSpace(spaceID, before: before)
         case .delete: try await deleteSpace(spaceID)
+        case .relocate(let path): try await relocateSpaceStoppingThreads(spaceID, to: path)
         }
+    }
+
+    /// Locate Folder… as the app does it in process (`ShepherdViewModel.relocateSpace`): the threads
+    /// inside the old folder stop, the space moves, and their conversations follow. Starting them
+    /// again is the caller's.
+    func relocateSpaceStoppingThreads(_ spaceID: SpaceID, to path: String) async throws {
+        let state = await enqueueValue { self.store.state }
+        guard let old = state.spaces.first(where: { $0.id == spaceID })?.path else { throw SessionServerError.noSuchSpace(spaceID) }
+        let target = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
+        let moving = state.agents.compactMap { agent -> (session: String, from: String, to: String, live: SessionID?)? in
+            guard let pane = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID()),
+                  let to = Self.relocated(pane.cwd, from: old, to: target) else { return nil }
+            return (agent.effectivePiSessionID, pane.cwd, to, pane.sessionID)
+        }
+        // A pi still running would write to the conversation being moved.
+        let deadline = ContinuousClock.now + .seconds(10)
+        for thread in moving {
+            guard let session = thread.live, await sessionInfo(sessionID: session)?.isAlive == true else { continue }
+            await stopKeepingAgent(sessionID: session)
+            while await sessionInfo(sessionID: session)?.isAlive == true {
+                guard ContinuousClock.now < deadline else { throw ProjectFileError("busy", "A thread did not stop. Nothing was moved.") }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        _ = try await relocateSpace(spaceID, to: path)
+        let root = pi.sessionsRoot
+        await Task.detached(priority: .userInitiated) {
+            for thread in moving { PiSessionFile.relocate(sessionID: thread.session, from: thread.from, to: thread.to, sessionsRoot: root) }
+        }.value
     }
 
     public func moveSpace(_ spaceID: SpaceID, before target: SpaceID?) async throws {
@@ -7417,6 +7458,20 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         return destination
+    }
+
+    /// Hands an agent's notify banner to this Mac's app showing the host's threads as its own;
+    /// false (nothing sent) when no such app is connected. Main actor.
+    @MainActor
+    public func relayNotifyToLocalApp(agentID: AgentID, title: String, body: String) -> Bool {
+        guard localAppConnected else { return false }
+        queue.async { [self] in
+            for app in clients.values where app.isLocal && app.authenticated
+                && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+                send(.agentNotify(agentID: agentID, title: title, body: body), to: app)
+            }
+        }
+        return true
     }
 
     /// Hands `job` to the app connected over `host.sock` to draw, for a host with no web view of

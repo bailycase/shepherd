@@ -899,16 +899,7 @@ final class ShepherdViewModel {
         sessions.onPaneSessionExited = { [weak self] paneID in
             self?.handleSessionExited(paneID: paneID)
         }
-        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in
-            guard let self else { return }
-            if stopped { sidebarOpeningTurns.remove(agentID) }
-            let waiting = stopped && problem != nil
-            if waiting != cannotStart.contains(agentID) {
-                if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
-            }
-            noteSignIn(agentID, problem: stopped ? problem : nil)
-            if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
-        }
+        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in self?.agentStopped(agentID, problem: problem, stopped: stopped) }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
@@ -1470,6 +1461,18 @@ final class ShepherdViewModel {
         let live = Set(state.agents.map(\.id) + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents.map(\.id) ?? []))
         branchCardStores = branchCardStores.filter { live.contains($0.key) }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
+    }
+
+    /// An agent's pi stopped (`problem`: why it couldn't start), or started again: the thread's
+    /// can't-start and sign-in cards, from the in-process session or the background host's thread.
+    func agentStopped(_ agentID: AgentID, problem: NativeStartProblem?, stopped: Bool) {
+        if stopped { sidebarOpeningTurns.remove(agentID) }
+        let waiting = stopped && problem != nil
+        if waiting != cannotStart.contains(agentID) {
+            if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
+        }
+        noteSignIn(agentID, problem: stopped ? problem : nil)
+        if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus, failure: TurnFailure?) {

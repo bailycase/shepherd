@@ -336,7 +336,7 @@ extension ShepherdViewModel {
         if selectAfter {
             selectAgent(id)
             if focusWindow {
-                NSApp.activate(ignoringOtherApps: false)
+                NSApp?.activate(ignoringOtherApps: false)
                 window?.makeKeyAndOrderFront(nil)
             }
         }
