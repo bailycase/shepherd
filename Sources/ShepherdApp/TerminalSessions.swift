@@ -385,12 +385,6 @@ final class TerminalSessionStore {
         serverState = state
     }
 
-    /// Wait for a pane to have a live session bound.
-    ///
-    /// A pane's process is spawned when its view first renders, so a pane the
-    /// agent just opened has none yet. Polls rather than adding a callback
-    /// path: this is only used by agent-driven pane opening, where a short
-    /// wait is fine and a missed callback would hang the request.
     /// Live session bound to a pane, if any.
     func liveSession(forPane paneID: PaneID) -> SessionID? {
         guard let sessionID = sessions[paneID]?.sessionID, aliveSessions.contains(sessionID) else {
@@ -399,6 +393,11 @@ final class TerminalSessionStore {
         return sessionID
     }
 
+    /// Wait for a pane to have a live session bound.
+    ///
+    /// A pane's process starts when its view first renders or when the code that opened it
+    /// activates it. Polls rather than adding a callback path: this is only used by agent-driven
+    /// pane opening, where a short wait is fine and a missed callback would hang the request.
     func awaitSession(forPane paneID: PaneID, timeout: Duration) async -> SessionID? {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {

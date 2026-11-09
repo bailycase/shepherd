@@ -180,10 +180,12 @@ extension ShepherdViewModel {
         }
 
         setLayout(newLayout, forTab: tab.id)
+        var grown = tab
+        grown.layout = newLayout
+        sessions.activateTerminal(newTerminal, in: grown)
 
-        // The terminal's view spawns the shell when it renders. Wait for that binding before
-        // reporting, so a command runs in a live process rather than being written into a
-        // terminal that has none yet.
+        // Its shell starts here, drawn or not (a layout nobody opened or a parked one has no
+        // view); wait for its binding before reporting, so a command runs in a live process.
         Task {
             let sessionID = await self.sessions.awaitSession(forPane: newTerminal.id, timeout: .seconds(5))
             if let sessionID, let command, !command.isEmpty {
