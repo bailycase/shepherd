@@ -214,11 +214,25 @@ struct LocalHostRoutingTests {
         #expect(agent.worktreePath.map { FileManager.default.fileExists(atPath: $0) } == true)
         #expect(s.vm.newThread.error == nil)
 
-        let id = try await s.vm.startAgent(NewAgentConfig(spaceID: SpaceID(rawValue: ""), workingDirectory: "", reservedAgentID: AgentID(),
-                                                          thinking: .medium))
-        let standalone = try #require(s.onHost(id))
+        // "No space" in the place menu, as in process: This Mac's first option, a standalone thread.
+        s.vm.openNewThread(in: s.space.id)
+        let sections = NewThreadPlaces.sections(NewThreadState.hosts(s.vm), chosen: s.vm.newThread.place)
+        #expect(sections.map(\.title) == [NewThreadPlaces.thisMac])
+        let noSpace = try #require(sections.first?.options.first)
+        #expect(noSpace.title == "No space")
+        let place = try #require(NewThreadPlaces.place(noSpace))
+        s.vm.newThread.choose(host: place.host, space: place.space, vm: s.vm)
+        #expect(s.vm.newThread.place == NewThreadPlace(host: nil, space: nil))
+        s.vm.newThread.prompt = "Compare approaches to organizing research notes"
+        try await eventuallyOnMain("the standalone thread's defaults") { s.vm.newThread.blocker(s.vm) == nil }
+        s.vm.newThread.send(s.vm)
+        try await eventuallyOnMain("the host's standalone thread", timeout: .seconds(20)) {
+            s.vm.selectedAgentID.flatMap(s.onHost).map { $0.id != agent.id } == true
+        }
+        let standalone = try #require(s.vm.selectedAgentID.flatMap(s.onHost))
         #expect(s.host.server.state.spaces.first { $0.id == standalone.spaceID }?.holdsThreads == true)
-        #expect(s.vm.selectedAgentID == id)
+        #expect(standalone.worktreeBranch == nil && s.vm.newThread.error == nil)
+        #expect(s.vm.state.agents.contains { $0.id == standalone.id }, "a local thread of the app's own")
     }
 
     @Test func aTerminalOpensAndClosesOnTheHost() async throws {
