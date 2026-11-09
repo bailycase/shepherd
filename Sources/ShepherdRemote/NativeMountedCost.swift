@@ -24,9 +24,9 @@ import Foundation
 ///
 /// | Fixture (rows, content) | First | Second | Estimate |
 /// | --- | --- | --- | --- |
-/// | 8: four of 100 KB, fences (350 bytes) and tables (12 cells) | 997 MiB, 11,529 NSViews | 397, half the views | 1,003 |
+/// | 8: four of 100 KB, fences (350 bytes) and tables (12 cells) | 997 MiB, 11,529 NSViews | 397, 4 of 8 rows loaded | 1,003 (501 for 4 rows) |
 /// | 20: ten of 10 KB, the same | 328, 2,921 | 247, 2,932 | 260 |
-/// | 8: four of 100 KB, fences alone (282 each) | 530, 5,669 | 166, half the views | 537 |
+/// | 8: four of 100 KB, fences alone (282 each) | 530, 5,669 | 166, 4 of 8 rows loaded | 537 (268 for 4 rows) |
 /// | 8: four of 30 KB, tables alone (199 each) | 1,296, 15,949 | 1,414, 15,960 | 1,297 |
 /// | 8: four of 10 KB, text blocks alone | 97, 541 | 101, 552 | 100 |
 /// | 20: ten of 3.8 KB, text, 5 fences and a table | 193, 781 | 93, 792 | 96 |
@@ -38,13 +38,27 @@ import Foundation
 /// | 20: ten of 4 tool calls; ten of a thought | 38 and 15, 193 and 81 | not read | 36 and 18 |
 ///
 /// The estimate is within 6% of the first thread for the fences and tables, the text, the rows, the tool bursts and the
-/// 19 and 202 KB fences, 16% over for the thoughts and 21% over for the 67 KB fence, and within 15% of the second thread
-/// everywhere.
-/// What the first thread also holds is the process's one-time cost: against its second, 82 MiB more for fences in Swift
-/// and Python, 33 for Python alone and 100 for the mixed reply, and nothing more for text or tables alone (consistent
-/// with the tree-sitter grammars `CodeHighlight` loads and caches; not isolated). That share is inside the fence rate
-/// (483 is the first thread's), so the estimate runs 21% under the first of ten 10 KB replies and 50% under the first of
-/// the mixed reply and of the 3.2 KB fences, and 5, 3 and 15% over their second.
+/// 19 and 202 KB fences, 16% over for the thoughts and 21% over for the 67 KB fence. Against the second thread it is
+/// within 15% wherever every row loaded. The second threads of the two 100 KB fixtures did not: the run waits 90 s for
+/// the store to land every row and stopped with 4 of 8 (why the store was that slow was not looked into), so the "half
+/// the views" they drew is half the rows. The estimate for those four rows (501 and 268 MiB) is 24 to 28% over the
+/// second thread of the mixed reply (393 to 403 MiB, +26% on average) and 57 to 61% over that of the fences (166 to 170
+/// MiB, +60% on average; one run read 96, +179%).
+///
+/// The first thread held more than the second, by 82 MiB for fences in Swift and Python (ten of 10 KB), 33 for Python
+/// alone (the 3.2 KB fences) and 100 for the mixed reply, and by nothing for text or tables alone (the second held more).
+/// For the 100 KB fixtures it is about 200 MiB per eight rows, if the other four rows of the second thread would have
+/// held what its first four did (an extrapolation). The cause is open. A one-time cost of the process (the tree-sitter
+/// grammars `CodeHighlight` loads and caches) fits, but the comparison has two confounds, and either could make the gap:
+/// - the QA model's plain replies are one text, so the second thread draws fences the first already highlighted, and
+///   `CodeHighlightCache` (keyed by the code, 256 entries, more than the 247 fences of a 100 KB reply) may hold them;
+/// - the second reading is a difference taken after the first thread was hidden, so it is net of whatever the first gave
+///   back then.
+/// Whatever the cause, it is inside the fences' rate: 483 is the first thread's, so the estimate runs 21% under the first
+/// of ten 10 KB replies and 50% under the first of the mixed reply and of the 3.2 KB fences, and 5, 3 and 15% over
+/// their second. The process's one-time cost, if that is it, is not a separate term. A budget that reads this for the
+/// threads after the first may be 25 to 60% high for code-heavy replies, and should measure again with distinct content
+/// in each thread before it derives its numbers.
 ///
 /// The fits: 483 bytes per unit of weight for a fence on its floor (fences alone), 554 for a table (tables alone; fences
 /// with tables, by difference, agree within 1%), 100 a byte of a fence above its floor (the 202 KB fence; the 19 and 67
@@ -54,8 +68,7 @@ import Foundation
 ///
 /// Placeholders: images (448 is the design's) and Mermaid (the app's footprint grew 22 MiB a diagram; its WebContent
 /// process was not measured, and 64 MiB is the design's guess at both). Not covered: the lazy part of a giant reply
-/// (the one giant fixture, a 202 KB fence, has every chunk in its eager tail). The second thread of 100 KB replies drew
-/// half the first's views at 5 s and held steady; the estimate counts what the first drew.
+/// (the one giant fixture, a 202 KB fence, has every chunk in its eager tail).
 ///
 /// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
 /// lazy stack realizes above its eager rows, and that a Mermaid fence still being written is drawn as code
