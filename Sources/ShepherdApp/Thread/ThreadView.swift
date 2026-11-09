@@ -455,13 +455,9 @@ struct ThreadView: View {
                                       historyRowID: String?) -> some View {
         let _ = SHRenderProbe.tick("thread.rowBuilder")
         ThreadRowLayer {
-            if row.live, row.presentation == nil {
-                LiveRow(store: store, active: active, parentCatchingUp: catchingUp) { live, inputs in
-                    turn(live, running: running, thinking: inputs.thinking, wait: inputs.wait, arriving: arrived.contains(live.id), settled: inputs.settled)
-                }
-            } else {
-                // The list holds the streaming reply as a shell (`NativeThreadStore.listRows`), so a row with its content is never live.
-                turn(row, running: running, thinking: false, wait: NativeLiveWait(), arriving: arrived.contains(row.id), settled: settled)
+            // One view serves the streaming shell and the reply it becomes, so the turn's end updates its turn in place.
+            ThreadRowContent(store: store, row: row, active: active, parentCatchingUp: catchingUp, settled: settled) { shown, inputs in
+                turn(shown, running: running, thinking: inputs.thinking, wait: inputs.wait, arriving: arrived.contains(shown.id), settled: inputs.settled)
             }
         }
         .id(row.id)
@@ -486,33 +482,58 @@ struct ThreadView: View {
         var settled: Bool
     }
 
-    /// The streaming reply's row: it reads the store's `liveRow` and `showsThinking` itself, so each
-    /// streamed chunk and each tool boundary invalidates this one view and not the transcript that
-    /// holds its shell (`listRows`).
+    /// A transcript row's content. A finished row draws what the list holds, and reads nothing of the store.
+    /// The streaming reply is held in the list as a shell (`NativeThreadStore.listRows`), and its row reads the
+    /// store's `liveRow` and `showsThinking` itself, so each streamed chunk and each tool boundary invalidates this
+    /// one view and not the transcript that holds its shell.
+    ///
+    /// The same view draws the shell and the reply it becomes, with no branch between them: when the turn ends its
+    /// turn is updated where it stands, and keeps its code views, its disclosures and the entrances it has played,
+    /// where a branch flipping under the row's id would build every part again.
     ///
     /// Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
     /// is written. Between tools the turn ends in "Thinking…". A question waits in the composer
     /// instead, and a pi that is starting says so there too, never here (`NativeThreadStore.showsThinking`).
-    private struct LiveRow<Content: View>: View {
+    private struct ThreadRowContent<Content: View>: View {
         let store: NativeThreadStore
+        let row: NativeThreadRow
         let active: Bool
-        /// The transcript's verdict, for this view's first render: a new reply's row is made while the thread is on screen.
+        /// The transcript's verdict, for the shell's first render: a new reply's row is made while the thread is on screen.
         let parentCatchingUp: Bool
+        /// The transcript's verdict on whether its motion is on, for a row that is not the shell.
+        let settled: Bool
         @ViewBuilder let content: (NativeThreadRow, LiveTurnInputs) -> Content
         @State private var catchUp = CatchUpGate()
 
-        var body: some View {
-            let _ = SHRenderProbe.tick("thread.liveRow")
-            let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion, parent: parentCatchingUp)
-            if let row = store.liveRow {
-                let thinking = store.showsThinking
-                let inputs = LiveTurnInputs(thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(), settled: active && !catchingUp)
-                content(row, inputs)
-                    // As the thread's own (see `body`).
-                    .transaction(value: CatchUpGate.Key(version: store.threadVersion, active: active)) {
-                        if catchingUp { $0.disablesAnimations = true }
-                    }
+        /// What one render draws, and what its catch-up gate decided.
+        private struct Drawn {
+            var row: NativeThreadRow
+            var inputs: LiveTurnInputs
+            var catchingUp = false
+            /// The thread's version the shell drew; 0 for a row that reads none, so a chunk never reaches it.
+            var version = 0
+        }
+
+        private func resolve() -> Drawn {
+            guard row.live, row.presentation == nil else {
+                return Drawn(row: row, inputs: LiveTurnInputs(thinking: false, wait: NativeLiveWait(), settled: settled))
             }
+            SHRenderProbe.tick("thread.liveRow")
+            let version = store.threadVersion
+            let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: version, parent: parentCatchingUp)
+            let thinking = store.showsThinking
+            let inputs = LiveTurnInputs(thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(), settled: active && !catchingUp)
+            // No live row draws nothing: the shell holds no content.
+            return Drawn(row: store.liveRow ?? row, inputs: inputs, catchingUp: catchingUp, version: version)
+        }
+
+        var body: some View {
+            let drawn = resolve()
+            content(drawn.row, drawn.inputs)
+                // As the thread's own (see `body`).
+                .transaction(value: CatchUpGate.Key(version: drawn.version, active: active)) {
+                    if drawn.catchingUp { $0.disablesAnimations = true }
+                }
         }
     }
 

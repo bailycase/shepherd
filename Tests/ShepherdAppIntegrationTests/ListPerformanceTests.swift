@@ -709,6 +709,102 @@ struct ListPerformanceTests {
         #expect(rows["thread.view", default: 0] <= 2, "scrolling must not repeatedly rebuild the transcript: \(rows)")
     }
 
+    private static let replyFences = 3
+
+    /// A reply of three Swift fences and a closing paragraph, which grows by a few words from chunk 0 to 2. It ends
+    /// in a newline whichever chunk it is, so the finished parse draws exactly what streamed.
+    private static func fencedReply(chunk: Int) -> String {
+        let steps = (1...replyFences).map { "Step \($0):\n\n```swift\nfunc turnEnd\($0)() {\n    let value = \($0)\n    print(value)\n}\n```\n\n" }
+        let closings = ["That is the whole change.\n", "That is the whole change, in three steps.\n",
+                        "That is the whole change, in three steps, each one small enough to read.\n"]
+        return "Here is how the change fits together, in three small steps.\n\n" + steps.joined() + closings[chunk]
+    }
+
+    /// Serves `messages` (and the reply being written, while `running`) and draws it.
+    private func serve(_ thread: FakeThread, messages: [NativeThreadMessage], provisional: [NativeThreadMessage] = [],
+                       running: Bool) async {
+        var next = thread.snapshot
+        next.revision += 1
+        next.running = running
+        next.messages = messages
+        next.provisional = provisional
+        await thread.serve(next)
+        ListPerf.settle(thread.window)
+    }
+
+    /// A caught-up thread of twenty messages with a prompt, and a reply that streams in on screen in three chunks: it
+    /// made its entrance, and `fencedReply`'s fences are drawn.
+    private func threadWithAReplyOnScreen() async throws -> (thread: FakeThread, asked: [NativeThreadMessage]) {
+        let history = ThreadFixture.history(20)
+        let asked = history + [ThreadFixture.user("u", "Walk me through it")]
+        let thread = FakeThread(ThreadFixture.snapshot(history), size: CGSize(width: 900, height: 800))
+        do {
+            try await thread.waitUntilReady()
+            try await eventuallyOnMain("the thread to catch up") { thread.store.catchUp != nil }
+            try await atRest(thread.window)
+            let arrival = try await counting(thread.window) {
+                await serve(thread, messages: asked, provisional: [ThreadFixture.streaming(Self.fencedReply(chunk: 0))], running: true)
+            }
+            #expect(arrival["arrival.animates", default: 0] > 0, "the reply arrived on screen: \(arrival)")
+            for chunk in 1...2 {
+                await serve(thread, messages: asked, provisional: [ThreadFixture.streaming(Self.fencedReply(chunk: chunk))], running: true)
+            }
+            try await atRest(thread.window)
+            #expect(Self.nativeFields(in: thread.window.host) == Self.replyFences, "the reply's fences are on screen")
+        } catch {
+            thread.close()
+            throw error
+        }
+        return (thread, asked)
+    }
+
+    /// A reply that arrived on screen with three fences, and its turn then ends: the one row view that drew
+    /// it while it streamed updates in place. Its fences keep their code views (none is created again) and its
+    /// parts do not run their entrances again; the footer that ends the turn is the one new part, so the one
+    /// entrance. The turn used to swap its live view for a new one, and the new one built every part afresh.
+    @Test func aTurnThatEndsUpdatesItsReplyInPlace() async throws {
+        let (thread, asked) = try await threadWithAReplyOnScreen()
+        defer { thread.close() }
+
+        let ended = try await counting(thread.window) {
+            await serve(thread, messages: asked + [ThreadFixture.assistant("a", Self.fencedReply(chunk: 2))], running: false)
+            try await eventuallyOnMain("the turn to end") { thread.store.rows.last?.live == false }
+            // The store lets go of running 400 ms after pi does, and redraws the turn then too.
+            try await eventuallyOnMain("the store to settle its running state") {
+                ListPerf.settle(thread.window)
+                return !thread.store.running
+            }
+        }
+
+        #expect(ended["code.nativeCreated", default: 0] == 0, "no code view is made again: \(ended)")
+        #expect(ended["arrival.animates", default: 0] <= 1, "only the footer makes an entrance: \(ended)")
+        #expect(ended["thread.agentTurn", default: 0] <= 2, "the turn redraws for its end and nothing else: \(ended)")
+        #expect(Self.nativeFields(in: thread.window.host) == Self.replyFences, "the finished reply draws its fences")
+    }
+
+    /// The same view draws a finished reply that goes live again (pi carries on in the turn it had ended), so it is
+    /// updated where it stands too: no code view is made again and no part enters again.
+    @Test func aFinishedReplyThatGoesLiveAgainIsUpdatedInPlace() async throws {
+        let (thread, asked) = try await threadWithAReplyOnScreen()
+        defer { thread.close() }
+        let finished = asked + [ThreadFixture.assistant("a", Self.fencedReply(chunk: 2))]
+        await serve(thread, messages: finished, running: false)
+        try await eventuallyOnMain("the store to settle its running state") {
+            ListPerf.settle(thread.window)
+            return !thread.store.running && thread.store.rows.last?.live == false
+        }
+        try await atRest(thread.window)
+
+        let resumed = try await counting(thread.window) {
+            await serve(thread, messages: finished, running: true)
+            try await eventuallyOnMain("the turn to be live again") { thread.store.rows.last?.live == true }
+        }
+
+        #expect(resumed["code.nativeCreated", default: 0] == 0, "no code view is made again: \(resumed)")
+        #expect(resumed["arrival.animates", default: 0] == 0, "no part enters again: \(resumed)")
+        #expect(Self.nativeFields(in: thread.window.host) == Self.replyFences, "the live reply draws its fences")
+    }
+
     // MARK: Thread chrome
 
     /// Row bodies counted while `work` runs, with the window settled after it.

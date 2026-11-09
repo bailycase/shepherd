@@ -274,6 +274,45 @@ struct ThreadMotionTests {
                 "nothing shows beneath it until the turn is hovered")
     }
 
+    /// The same, for a reply that made its entrance on screen first: its parts have arrived, so the turn's end
+    /// does not bring them in again (`aTurnThatEndsKeepsItsReplyStillAndItsFooterOutOfSight`'s reply was there
+    /// from the start, so a replay never showed).
+    @Test(.timingSensitive) func aReplyThatArrivedOnScreenStaysStillWhenItsTurnEnds() async throws {
+        let asked = 1_700_000_000_000.0
+        let prompt = NativeThreadMessage(entryID: "u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Answer me")],
+                                         truncated: false, timestamp: asked)
+        let text = "Here is the answer, streamed in full before the turn ends."
+        let history = Fixtures.history(2)
+        let thread = MotionThread(Fixtures.snapshot(history))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the thread to catch up") { thread.store.catchUp != nil }
+        thread.serve(Fixtures.snapshot(history + [prompt], provisional: [Fixtures.streaming(text)], running: true, revision: 2))
+        try await eventuallyOnMain("the reply to begin") { thread.store.liveRow != nil }
+        // Its entrance has played out.
+        try await thread.settle()
+        let lines = thread.textRows()
+        try #require(lines.count >= 1, "rows of text: \(lines)")
+        let prose = Int(lines[lines.count - 1])
+        let saved = NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
+                                        truncated: false, timestamp: asked + 5000)
+        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 90, y: CGFloat(prose - 8), width: 210, height: 64)
+
+        let recording = await MotionProbe.record(thread.window, region: column, timeout: 1) {
+            thread.serve(Fixtures.snapshot(history + [prompt, saved], revision: 3))
+        }
+
+        try await eventuallyOnMain("the turn to end") { thread.store.rows.last?.live == false }
+        let ended = await MotionProbe.record(thread.window, region: column, timeout: 0.3) {}
+        let frames = recording.frames + ended.frames
+
+        let proseRows = 0..<16
+        #expect(frames.allSatisfy { frame in !proseRows.contains { frame.differs(from: recording.before, row: $0) } },
+                "the reply never redrew")
+        #expect(frames.allSatisfy { $0.lastRow(differingFrom: recording.before, by: Self.visible) == nil },
+                "nothing shows beneath it until the turn is hovered")
+    }
+
     private static let asked = Fixtures.history(2) + [Fixtures.user("u2", "Build it")]
 
     /// What an agent did while hidden: the reply it was streaming finished, new turns, and a
