@@ -130,6 +130,8 @@ extension SessionServer {
         }))
         // No web view here: the app's window draws boards.
         relayDesignDrawingToApp()
+        // Nor a window: review_diff and Remove space's confirmation are the app's.
+        relayWindowRequestsToApp()
     }
 
     /// The header's branch chip and recorded worktree branches with no app: each thread's

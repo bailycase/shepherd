@@ -77,6 +77,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// An agent's notify tool on the background host, for this Mac's app to post (`agentNotify`).
     /// Main queue, in order.
     public var onAgentNotify: ((AgentID, String, String) -> Void)?
+    /// What the background host on this Mac asks of this app's window (`AppRelayJob`); answer it
+    /// with `appRelayAnswer` and the same token. Main queue, in order.
+    public var onAppRelay: ((Int, AppRelayJob) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -148,6 +151,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case browserDrive(BrowserDrivePush)
         case designRelay(Int, DesignRelayJob)
         case agentNotify(AgentID, String, String)
+        case appRelay(Int, AppRelayJob)
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -871,6 +875,11 @@ public final class RemoteHostClient: @unchecked Sendable {
         queue.async { self.sendRequest(.designRelayAnswer(requestToken: token, result: result)) }
     }
 
+    /// Answers a `RemoteReply.appRelay`. Nothing answers it.
+    public func appRelayAnswer(token: Int, result: AppRelayResult) {
+        queue.async { self.sendRequest(.appRelayAnswer(requestToken: token, result: result)) }
+    }
+
     /// Why a host without `browserDriveCapability` leaves its agent on its own page.
     public static let driveRefusal = "Update Shepherd on the host so its agent can use the page shown here."
 
@@ -1580,6 +1589,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         case .agentNotify(let agentID, let title, let body):
             self.push(.agentNotify(agentID, title, body), bytes: line.count)
+        case .appRelay(let token, let job):
+            self.push(.appRelay(token, job), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1695,6 +1706,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 case .designRelay(let token, let job): self.onDesignRelay?(token, job)
                 case .agentNotify(let agentID, let title, let body): self.onAgentNotify?(agentID, title, body)
+                case .appRelay(let token, let job): self.onAppRelay?(token, job)
                 }
             }
             finish()
