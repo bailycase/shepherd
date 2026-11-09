@@ -830,6 +830,7 @@ public final class NativeThreadStore {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
         rowCosts.replaceSubrange(rowStart..., with: costs)
+        assert(rowCosts.count == self.rows.count, "rowCosts runs parallel to rows")
         // From the full list: a derive that rebuilt no row (a queue overlay, an identical page)
         // leaves the live turn out of `rows`, and its row must stay.
         assert(liveReply.map { self.rows.indices.contains($0) } ?? true)
