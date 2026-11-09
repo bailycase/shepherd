@@ -213,6 +213,9 @@ final class TerminalSessionStore {
 
     /// The in-process server. Owned by the app (one per process).
     let server: SessionServer
+    /// False while the background host runs every session (`ShepherdViewModel.adoptLocalHost`):
+    /// nothing starts on this idle server.
+    var startsSessions = true
     var reserveCheckoutForLaunch: ((String) throws -> (() -> Void))?
     /// What an agent's pi gets for MCP when it starts (`MCPLaunch.forAgents`); the app sets it,
     /// and an agent launched without it has no MCP.
@@ -584,7 +587,7 @@ final class TerminalSessionStore {
 
     private func scheduleStart(_ session: PaneSession, pane: LeafPane, tab: Tab) {
         // Creation owns reserved panes; hidden restored layouts own no processes yet.
-        guard !reservedPanes.contains(pane.id), !dormantPanes.contains(pane.id) else { return }
+        guard startsSessions, !reservedPanes.contains(pane.id), !dormantPanes.contains(pane.id) else { return }
         // Only an agent's first start waits its turn; a pane session made again later starts now.
         guard session.isRPC, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
             Task { await start(session, pane: pane, tab: tab) }
@@ -602,6 +605,7 @@ final class TerminalSessionStore {
     /// Classify before hidden layouts mount. Only selection, demand, or durable unfinished
     /// ordinary work starts a restored pi; recovery never starts its auxiliary terminals.
     func restoreAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
+        guard startsSessions else { return }
         let tabs = Set(state.agents.map(\.tabID))
         dormantPanes.formUnion(state.tabs.filter { tabs.contains($0.id) }.flatMap { $0.layout.leaves.map(\.id) })
         for id in first { startAhead(id, trigger: .restore) }

@@ -248,7 +248,7 @@ extension ShepherdViewModel {
     func reconcileSidebarOpeningTurn(_ id: AgentID) {
         guard sidebarOpeningTurns.contains(id), !sidebarPreparingOpeningTurns.contains(id) else { return }
         Task {
-            guard case .snapshot(let snapshot) = try? await server.nativeThread(agentID: id, request: .snapshot()),
+            guard case .snapshot(let snapshot) = try? await nativeThread(id, request: .snapshot()),
                   !snapshot.piSessionID.isEmpty, !snapshot.running,
                   !snapshot.messages.contains(where: { $0.status == "pending" }) else { return }
             sidebarOpeningTurns.remove(id)

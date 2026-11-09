@@ -172,9 +172,10 @@ final class NewThreadState {
     @ObservationIgnored private var defaultsHost: UUID??
 
     /// Every host a thread can start on: This Mac, and each connected host. In client mode the
-    /// background host is This Mac, and the app's own empty workspace isn't offered.
+    /// background host is This Mac: its workspace is the app's own (`localHost`), or it is
+    /// listed as a host and the app's own empty workspace isn't offered.
     static func hosts(_ vm: ShepherdViewModel) -> [NewThreadPlaces.Host] {
-        (vm.ownsWorkspace ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
+        (vm.ownsWorkspace || vm.localHost != nil ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
             + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
                 NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden })
             }
@@ -357,9 +358,8 @@ final class NewThreadState {
             if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
             if !edited.speed { serviceTier = vm.settings.defaultServiceTier }
-            let server = vm.server
             Task {
-                let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
+                let listing = await vm.modelListing()
                 let catalog = await ModelCatalog.derive(listing, hostTakesAllLevels: true)
                 guard defaultsRequest == request else { return }
                 self.listing = listing
@@ -407,8 +407,7 @@ final class NewThreadState {
             let all = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
             loaded = await ModelCatalog.derive(listing, hostTakesAllLevels: all)
         } else {
-            let server = vm.server
-            listing = await Task.detached(priority: .utility) { server.modelListing() }.value
+            listing = await vm.modelListing()
             loaded = await ModelCatalog.derive(listing, hostTakesAllLevels: true)
         }
         guard self.place == place else { return }
@@ -478,7 +477,10 @@ final class NewThreadState {
                     let spaceID: SpaceID
                     let directory: String
                     var projectBase: String?
-                    if let standaloneID {
+                    if standaloneID != nil, vm.localHost != nil {
+                        // The background host makes the thread's folder as it starts it.
+                        (spaceID, directory) = (SpaceID(rawValue: ""), "")
+                    } else if let standaloneID {
                         (spaceID, directory) = try await vm.server.standaloneThreadFolder(for: standaloneID)
                         vm.adopt(vm.server.state)
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {

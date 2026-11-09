@@ -69,7 +69,7 @@ extension ShepherdViewModel {
 
     func commitTerminalRename(_ rename: TerminalRenameTarget, to title: String) {
         terminalRenameTarget = nil
-        if let remote = rename.remote {
+        if let remote = rename.remote ?? rename.agentID.flatMap(localRef) {
             Task {
                 do { try await remoteHosts.agentAction(remote, action: .renameTerminal(paneID: rename.paneID, title: title)) }
                 catch { fail("Couldn’t rename the terminal", error) }
@@ -83,7 +83,7 @@ extension ShepherdViewModel {
 
     /// Kill process: the command running in the tab's terminal.
     func killTerminalProcess(in tab: TerminalPanelTab, target: TerminalTarget) {
-        if let remote = target.remote {
+        if let remote = target.remote ?? agentID(of: target).flatMap(localRef) {
             Task {
                 do { try await remoteHosts.agentAction(remote, action: .killTerminalProcess(paneID: tab.id)) }
                 catch { NSSound.beep() }

@@ -268,6 +268,14 @@ struct ThreadHostingTests {
         _ = try? await snapshot(control)
         try await eventuallyOnMain("the other thread's pi to launch") { launches(control) == 1 }
         #expect(launches(stopped) == started, "no pi starts for a thread that stopped on its own")
+
+        // Retry (`restartPi`) starts it again.
+        try await client.agentAction(agentID: stopped.id, action: .restartPi(newConversation: false))
+        try await eventually("its pi to serve again", timeout: .seconds(20)) { @Sendable in
+            let thread = try? await snapshot(stopped)
+            return thread?.startProblem == nil && thread?.piSessionID.isEmpty == false
+        }
+        #expect(launches(stopped) == started + 1)
     }
 
     @Test func theAppOpensStartsRenamesReadsAndClosesATerminal() async throws {

@@ -143,7 +143,9 @@ extension ShepherdViewModel {
         guard let moved = state.spaces.moving(space, before: target), moved != state.spaces else { return }
         state.spaces = moved
         sessions.stateDidChange(state)
-        enqueuePersistence("move project", failureTitle: "Couldn’t move the space") { try await $0.moveSpace(space, before: target) }
+        persistSpace(space, "move project", failureTitle: "Couldn’t move the space", host: .move(before: target)) {
+            try await $0.moveSpace(space, before: target)
+        }
     }
 
     /// The project menu's Hide from Sidebar: its threads stay in ⌘K and Activity, and the +
@@ -153,7 +155,8 @@ extension ShepherdViewModel {
         state.spaces[index].sidebarHidden = hidden
         sessions.stateDidChange(state)
         let space = state.spaces[index]
-        enqueuePersistence(hidden ? "hide project" : "show project", failureTitle: hidden ? "Couldn’t hide the space" : "Couldn’t show the space") { try await $0.updateSpace(space) }
+        persistSpace(id, hidden ? "hide project" : "show project", failureTitle: hidden ? "Couldn’t hide the space" : "Couldn’t show the space",
+                     host: .setSidebarHidden(hidden: hidden)) { try await $0.updateSpace(space) }
     }
 
     // MARK: Project menu

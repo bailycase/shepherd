@@ -20,7 +20,9 @@ final class ShepherdViewModel {
     var state: ShepherdState
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
-    @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [server] in await server.forge($0) })
+    @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
+        await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
+    })
     /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
     /// over the same transport; none while the branch has no pull request.
     var branchPullRequests: [AgentID: ForgeStore] = [:]
@@ -67,7 +69,7 @@ final class ShepherdViewModel {
     var sidebarOpeningTurns: Set<AgentID> = [] {
         didSet {
             if oldValue != sidebarOpeningTurns {
-                sessions.watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns))
+                watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns))
             }
         }
     }
@@ -279,6 +281,9 @@ final class ShepherdViewModel {
     /// A worktree agent of the background host on this Mac waiting in This Mac's own Delete
     /// worktree agent dialog (`requestRemoteDelete`), with the host's checkout once probed.
     var thisMacWorktreeDelete: ThisMacWorktreeDelete?
+    /// What the background host reported for the worktree in Delete worktree agent's dialog
+    /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
+    var hostWorktreeInfo: RemoteWorktreeInfo?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// This Mac's worktree operations and commits from review, as a host; the headless host has
@@ -627,7 +632,8 @@ final class ShepherdViewModel {
         sink: .init(post: { [unowned self] in self.notifications.post($0) },
                     remove: { [unowned self] in self.notifications.remove($0) },
                     isWatching: { [unowned self] in self.isWatching($0) },
-                    notifyOnTurnFinished: { [unowned self] in self.settings.notifyOnTurnFinished }))
+                    notifyOnTurnFinished: { [unowned self] in self.settings.notifyOnTurnFinished }),
+        request: { [unowned self] in try await self.nativeThread($0, request: $1) })
     let settings: AppSettings
     private let sidebarDefaults: UserDefaults
     let keybindings: KeybindingsStore
@@ -765,7 +771,9 @@ final class ShepherdViewModel {
         spacePins = SpacePins(defaults: sidebarDefaults)
 
         sessions.onStateChanged = { [weak self] serverState in
-            self?.adopt(serverState)
+            // As the host's client, the idle in-process server's empty workspace is nobody's.
+            guard let self, self.localHost == nil else { return }
+            self.adopt(serverState)
         }
         // The selected thread keeps its history whatever its recency (`NativeThreadStores`).
         threadStores.protected = { [weak self] in self?.selectedAgentID.map { [$0] } ?? [] }
@@ -821,7 +829,7 @@ final class ShepherdViewModel {
         threadStores.drafts = ComposerDrafts(defaults: sidebarDefaults)
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }
-            sessions.watchThreadRevisions(of: live.union(sidebarOpeningTurns))
+            watchThreadRevisions(of: live.union(sidebarOpeningTurns))
         }
         sessions.onThreadRevision = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
@@ -861,6 +869,7 @@ final class ShepherdViewModel {
         self.remoteHosts.onProjectionChanged = { [weak self] in
             self?.refreshProjectHosts()
             guard let self else { return }
+            self.syncLocalHostChildren()
             self.reconcileSidebarCompletions()
             self.notifyRemote()
             let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
@@ -890,16 +899,7 @@ final class ShepherdViewModel {
         sessions.onPaneSessionExited = { [weak self] paneID in
             self?.handleSessionExited(paneID: paneID)
         }
-        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in
-            guard let self else { return }
-            if stopped { sidebarOpeningTurns.remove(agentID) }
-            let waiting = stopped && problem != nil
-            if waiting != cannotStart.contains(agentID) {
-                if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
-            }
-            noteSignIn(agentID, problem: stopped ? problem : nil)
-            if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
-        }
+        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in self?.agentStopped(agentID, problem: problem, stopped: stopped) }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
@@ -987,6 +987,9 @@ final class ShepherdViewModel {
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
                     case .startTerminal(let paneID): try self.startTerminalPane(paneID, of: agentID)
                     case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
+                    case .restartPi(let newConversation, let model):
+                        if let model { self.sessions.modelOverrides[agentID] = model }
+                        self.retryAgentStart(agentID, newConversation: newConversation)
                     }
                     completion(.success(()))
                 } catch {
@@ -1341,6 +1344,14 @@ final class ShepherdViewModel {
             if Self.persistedTurnFailed(agent) { failedTurns.insert(agent.id) } else { failedTurns.remove(agent.id) }
         }
         let shownBefore = shownDesign?.id
+        // As the background host's client, a status arrives in the workspace, not as a session's
+        // report: each change runs what the report would (notifications, failed rows, cards).
+        if localHost != nil {
+            for agent in serverState.agents {
+                guard let old = state.agents.first(where: { $0.id == agent.id })?.status, old != agent.status else { continue }
+                applyAgentStatus(agent.id, agent.status, failure: agent.status == .done ? agent.lastFailure.map { TurnFailure(message: $0) } : nil)
+            }
+        }
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
             sidebarOpeningTurns.subtract(removed)
@@ -1452,6 +1463,18 @@ final class ShepherdViewModel {
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }
 
+    /// An agent's pi stopped (`problem`: why it couldn't start), or started again: the thread's
+    /// can't-start and sign-in cards, from the in-process session or the background host's thread.
+    func agentStopped(_ agentID: AgentID, problem: NativeStartProblem?, stopped: Bool) {
+        if stopped { sidebarOpeningTurns.remove(agentID) }
+        let waiting = stopped && problem != nil
+        if waiting != cannotStart.contains(agentID) {
+            if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
+        }
+        noteSignIn(agentID, problem: stopped ? problem : nil)
+        if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
+    }
+
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus, failure: TurnFailure?) {
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
@@ -1492,7 +1515,7 @@ final class ShepherdViewModel {
     /// Runs the ChildRuns TTL/staleness sweep only while rows exist; the
     /// timer dies with the last row, so an idle fleet costs nothing.
     private func syncChildSweepTimer() {
-        if childRuns.rows.isEmpty {
+        if childRuns.rows.isEmpty || localHost != nil {
             childSweepTimer?.invalidate()
             childSweepTimer = nil
             return

@@ -191,7 +191,7 @@ struct DesignChatPane: View {
                         input: vm.threadStores.input(for: agentID),
                         active: model.isVisible,
                         isFocused: chat && model.focusedPaneID == thread.paneID,
-                        request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
+                        request: { [vm] in try await vm.nativeThread(agentID, request: $0) },
                         preview: PiSessionFile.previewLoader(sessionID: thread.piSessionID, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot),
                         commandKey: ThreadCommandCenter.key(local: agentID),
                         agentName: thread.agentName,
