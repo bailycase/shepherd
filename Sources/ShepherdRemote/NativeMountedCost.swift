@@ -65,7 +65,7 @@ public enum NativeMountedCost {
     public static let fenceWeight = 483
     /// A fence of up to 1 KB of code (the weight floor).
     public static let fenceFloor = fenceWeight * NativeMarkdownBlock.codeFloor
-    /// A byte of a fence above the floor. Measured on fences of 19, 67 and 202 KB, which agree within 15%.
+    /// A byte of a fence above the floor. Fitted to a 202 KB fence; fences of 19 and 67 KB agree within 25%.
     public static let fenceSlope = 100
     /// A unit of weight of a table (a cell's floor is 256 units). Measured on tables of 12 cells only.
     public static let tableWeight = 554
