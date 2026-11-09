@@ -338,6 +338,78 @@ struct PaneControlTests {
             await app.server.screenText(sessionID: session)?.contains { $0.contains("tab-ready") } == true
         }
     }
+
+    /// A terminal no view has measured starts at the grid this Mac's terminals last reported, not
+    /// at 80×24, and keeps it as its own until its surface reports one.
+    @Test func aTerminalNoViewMeasuredStartsAtTheLastLocalGrid() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let measured = Fixture.agent("measured", in: space, order: 0, auxiliary: 1)
+        let unseen = Fixture.agent("unseen", in: space, order: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [measured, unseen]))
+
+        let first = vm.sessions.session(for: measured.auxiliary[0], in: measured.tab)
+        try await eventuallyOnMain("the first terminal's shell to go live") {
+            vm.sessions.liveSession(forPane: measured.auxiliary[0].id) != nil
+        }
+        // How Ghostty reports a surface's grid.
+        first.terminal.onResize?(132, 41)
+
+        let terminal = try await openTerminal(running: "stty size", for: unseen, in: app, vm: vm, id: 20)
+        let tab = try #require(vm.state.tabs.first { $0.id == unseen.tab.id })
+        let printed = try await printedGrid(of: terminal, for: unseen, in: app)
+        #expect(printed == "41 132")
+        let second = vm.sessions.session(for: terminal, in: tab)
+        #expect(second.lastCols == 132 && second.lastRows == 41)
+
+        second.terminal.onResize?(100, 30)
+        #expect(second.lastCols == 100 && second.lastRows == 30, "the surface's own report replaces the estimate")
+    }
+
+    /// Before any terminal has reported a grid there is nothing to estimate from.
+    @Test func aTerminalStartsAt80By24BeforeAnySurfaceHasMeasured() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+
+        let terminal = try await openTerminal(running: "stty size", for: agent, in: app, vm: vm, id: 21)
+        let printed = try await printedGrid(of: terminal, for: agent, in: app)
+        #expect(printed == "24 80")
+        let session = vm.sessions.session(for: terminal, in: try #require(vm.state.tabs.first { $0.id == agent.tab.id }))
+        #expect(session.lastCols == 80 && session.lastRows == 24)
+    }
+
+    /// The agent's terminal_open: a new terminal beside its thread running `command`.
+    private func openTerminal(running command: String, for agent: AgentFixture, in app: AppHarness,
+                              vm: ShepherdViewModel, id: Int) async throws -> LeafPane {
+        let reply = try await app.extensionRequest(.openPane(
+            id: id, agentID: agent.agent.id, axis: .vertical, cwd: nil, relativeTo: nil, command: command))
+        guard case .paneOpened(id, let info) = reply else {
+            Issue.record("unexpected reply \(reply)")
+            throw TimedOut(what: "a terminal to open")
+        }
+        let tab = try #require(vm.state.tabs.first { $0.id == agent.tab.id })
+        return try #require(tab.layout.leaf(withID: info.id))
+    }
+
+    /// What `stty size` printed in the terminal, as "rows cols".
+    private func printedGrid(of terminal: LeafPane, for agent: AgentFixture, in app: AppHarness) async throws -> String {
+        var grid = ""
+        try await eventuallyAsync("stty size to print in the terminal", timeout: .seconds(20)) {
+            let reply = try await app.extensionRequest(.readPane(id: 22, agentID: agent.agent.id, paneID: terminal.id))
+            guard case .paneContent(_, _, let lines) = reply else { return false }
+            let printed = lines.map { $0.trimmingCharacters(in: .whitespaces) }.first { line in
+                let words = line.split(separator: " ")
+                return words.count == 2 && words.allSatisfy { $0.allSatisfy(\.isNumber) }
+            }
+            grid = printed ?? ""
+            return printed != nil
+        }
+        return grid
+    }
 }
 
 /// Terminal focus and layout rules the user drives from the keyboard (⌘D, ⌘W).

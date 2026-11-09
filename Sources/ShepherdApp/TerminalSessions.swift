@@ -113,6 +113,14 @@ final class TerminalSessionStore {
             if isFirst { releaseGridWaiters() }
         }
 
+        /// Start from an estimated grid while no surface has reported one. Not a report: the
+        /// surface's own first grid still takes over, and `awaitGrid` still waits for it.
+        fileprivate func spawnAt(cols: Int, rows: Int) {
+            guard !hasReportedGrid else { return }
+            lastCols = cols
+            lastRows = rows
+        }
+
         /// Wait for the surface's first grid report so the PTY can be spawned
         /// at the size the child will actually render into. Falls back to the
         /// 80×24 default if the surface never lays out in time — a late,
@@ -211,6 +219,9 @@ final class TerminalSessionStore {
     var mcpLaunch: () throws -> MCPLaunch? = { nil }
     private var sessions: [PaneID: PaneSession] = [:]
     private var paneBySession: [SessionID: PaneID] = [:]
+    /// The grid this Mac's terminal surfaces last reported: what a shell no surface has measured yet
+    /// (one a tool or another device opened) starts at instead of 80×24.
+    private var lastLocalGrid: (cols: Int, rows: Int)?
     private typealias PendingExit = SessionExit
 
     /// A very short-lived child can exit before the create/adopt continuation
@@ -532,6 +543,7 @@ final class TerminalSessionStore {
             // Recorded even before a session exists: the spawn path waits for
             // this so the child starts at the surface's real grid.
             session.noteGrid(cols: cols, rows: rows)
+            self.lastLocalGrid = (cols, rows)
             guard let sessionID = session.sessionID else { return }
             self.server.reportLocalViewport(sessionID: sessionID, cols: cols, rows: rows)
             // Resize enters the server queue before attach, so the replay is
@@ -999,7 +1011,10 @@ final class TerminalSessionStore {
                 return true
             } else {
                 let command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
-                if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
+                if !session.isRPC {
+                    await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds)
+                    if let grid = lastLocalGrid { session.spawnAt(cols: grid.cols, rows: grid.rows) }
+                }
                 guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID),
                       session.sessionID == nil,
                       liveBinding(forPane: session.paneID) == nil else {
