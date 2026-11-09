@@ -151,7 +151,7 @@ PR CI runs only for pull requests targeting `master`, not `nightly`. Pushes to `
 the daily schedule and manual dispatch keep their existing triggers.
 
 The hosted `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
-sidebar/Finalize loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI
+sidebar loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI
 validation. Failed compiler outputs and the client-check log are retained in its CI artifact.
 
 `scripts/ci_plan.py` picks what runs from the changed paths: docs, templates and the Xcode

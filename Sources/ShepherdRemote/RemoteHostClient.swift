@@ -683,8 +683,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The capability a host must advertise before `query` is sent to it.
     public static func capability(for query: RemoteAgentQuery) -> String {
         switch query {
-        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: RemoteProtocol.worktreeSetupCapability
-        case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
+        case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
+        case .setWorktree: RemoteProtocol.worktreeRecordCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
@@ -702,10 +702,10 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard capabilities.contains(capability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to inspect remote agents.")
         }
-        // The host's setup probes and a drafted commit message run a model or the network.
+        // A drafted commit message and the Changes reads run a model or git over a large tree.
         let slow: Bool
         switch query {
-        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription, .commitMessage, .changesOverview, .changesList: slow = true
+        case .commitMessage, .changesOverview, .changesList: slow = true
         default: slow = false
         }
         let cancellable: Bool

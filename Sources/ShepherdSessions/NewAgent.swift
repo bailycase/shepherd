@@ -30,7 +30,7 @@ public struct NewAgentConfig {
     /// Shepherd made one for it. Persisted on the agent so the sidebar can
     /// render it as a worktree of its space.
     public var worktreeBranch: String?
-    /// The base the worktree branched from; Finalize targets the PR at it.
+    /// The base the worktree branched from; the branch card compares against it.
     public var worktreeBase: String?
     /// Actual checkout path for imported worktrees whose directory name does
     /// not follow Shepherd's generated repo-branch convention.

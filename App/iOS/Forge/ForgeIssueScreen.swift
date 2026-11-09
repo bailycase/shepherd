@@ -108,7 +108,7 @@ struct ForgeIssueContent: View {
         if model.body.isEmpty {
             Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary)
         } else {
-            ProseView(blocks: model.body).equatable()
+            ProseView(prose: model.body).equatable()
         }
         if model.detail.summary.state == .open {
             handOff(model, store: store)

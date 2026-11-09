@@ -50,15 +50,13 @@ struct BranchCardPreviewTests {
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
         let label = AgentBranchLabel(kind: .worktree, branch: card.branch, changedFiles: 3)
-        // Wide: the transcript's column and the whole card side by side. Narrow (the side pane
-        // open, a smaller window): one folded row.
-        for (name, width) in [("wide", 1500.0), ("narrow", 1000.0)] {
+        // Wide: the card docked in its column, the transcript centered in the rest. Narrow (the
+        // side pane open, a small window): one folded row.
+        for (name, width) in [("wide", 1500.0), ("medium", 1100.0), ("narrow", 900.0)] {
             try await Preview.render("branch-card-\(name)", size: CGSize(width: width, height: 640),
                                      ready: { fixture.store.ready && !fixture.store.rows.isEmpty && store.status != nil }) {
                 fixture.thread(title: "Add refund events")
-                    .overlay(alignment: .topTrailing) {
-                        BranchCardOverlay(store: store, branch: label, active: true).padding(.top, SHToolbarMetrics.height)
-                    }
+                    .modifier(BranchCardDock(store: store, branch: label, active: true))
             }
         }
     }
@@ -180,23 +178,6 @@ struct BranchCardPreviewTests {
             try await Preview.render(rename ? "branch-rename" : "branch-new", size: CGSize(width: AppLayout.branchSheetWidth, height: 220)) {
                 BranchNameSheet(vm: workspace.vm, agentID: AgentID(), branch: "agent/refund-events", cwd: clone.path, rename: rename)
             }
-        }
-    }
-
-    /// Finalize's plan (BranchFinalizePlan), staged as the sheet opens on a worktree with five files left.
-    @Test func theFinalizePlan() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let repo = try makeScratchRepo()
-        defer { try? FileManager.default.removeItem(at: repo) }
-        let space = Space(name: "payments", path: repo.path)
-        var (agent, tab) = try await workspace.agent("Emit refund events", in: space, order: 0, branch: "agent/refund-events")
-        agent.checkout = AgentCheckout(branch: "agent/refund-events", changedFiles: 5)
-        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        let plan = FinalizeWorktreeSheet.Plan(commit: true, commitMessage: "Emit refund events from the ledger outbox", merge: false)
-        try await Preview.render("finalize-plan", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 520)) {
-            FinalizeWorktreeSheet(vm: workspace.vm, agent: agent, space: space,
-                                  staged: .init(phase: .plan, base: "main", includedCommits: 6, plan: plan))
         }
     }
 }

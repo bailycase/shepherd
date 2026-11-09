@@ -3,7 +3,7 @@ import Foundation
 // A direct commit from review, run by the host (`RemoteAgentQuery.commitInfo`, `.commitMessage`
 // and `.commit`, behind `RemoteProtocol.reviewCommitCapability`). The client asks what would be
 // committed, drafts the message on the host, then starts the commit as an operation it polls
-// with `.worktreeStatus`, as Finalize does. Every field past `path` decodes with a default, so a
+// with `.worktreeStatus`, as Delete Worktree does. Every field past `path` decodes with a default, so a
 // newer host's info still reads on an older client of this capability.
 
 /// One changed file the commit can take: the review's path, the old path of a rename, and a

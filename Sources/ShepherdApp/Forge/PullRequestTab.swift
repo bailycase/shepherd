@@ -130,7 +130,7 @@ private struct PullRequestOverview: View {
     private var column: some View {
         VStack(alignment: .leading, spacing: SH.Space.l) {
             if header { PullRequestHeader(store: store, detail: detail) }
-            if !store.bodyBlocks.isEmpty { Prose(blocks: store.bodyBlocks, maxWidth: AppLayout.forgeContentWidth) }
+            if !store.bodyProse.isEmpty { Prose(prose: store.bodyProse, maxWidth: AppLayout.forgeContentWidth) }
             SHHairline()
             ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest, lineComments: true)
             PullRequestCommentCard(store: store, viewer: detail.viewer)

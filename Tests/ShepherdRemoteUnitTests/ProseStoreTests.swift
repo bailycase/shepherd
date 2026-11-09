@@ -31,7 +31,7 @@ struct ProseStoreTests {
         }
         func prose() -> [[NativeMarkdownBlock]]? {
             store.rows.last?.presentation?.items.compactMap {
-                if case .prose(_, _, let blocks, _) = $0 { blocks } else { nil }
+                if case .prose(_, _, let prose) = $0 { prose.blocks } else { nil }
             }
         }
         let answer = "Answer" + String(repeating: " grows", count: 6)
@@ -57,7 +57,7 @@ struct ProseStoreTests {
         }
         func prose() -> [NativeMarkdownBlock]? {
             store.rows.last?.presentation?.items.compactMap {
-                if case .prose(_, _, let blocks, _) = $0 { blocks } else { nil }
+                if case .prose(_, _, let prose) = $0 { prose.blocks } else { nil }
             }.last
         }
         let host = FakeHost(snapshot(1, long))
@@ -84,5 +84,35 @@ struct ProseStoreTests {
         #expect(store.offMainParses == 3)
         await until { prose()?.count == 3 }
         #expect(prose()?.last == .paragraph("and more"))
+    }
+
+    /// The store hands the prose it holds to the parse of a newer text, so a chunk the new text leaves
+    /// alone keeps its storage and comparing the two stays cheap.
+    @Test func aReplyGrownAtItsEndKeepsTheStorageOfTheChunksBeforeIt() async throws {
+        let user = F.user("write it up", id: "u")
+        let paragraphs = (0..<48).map { "Paragraph \($0) " + String(repeating: "word ", count: 200) }
+        func text(_ last: String) -> String { (paragraphs.dropLast() + [last]).joined(separator: "\n\n") }
+        #expect(text("x").utf8.count >= NativeThreadStore.offMainProseBytes)
+        func snapshot(_ revision: UInt64, _ text: String) -> NativeThreadSnapshot {
+            F.snapshot(revision: revision, running: true, messages: [user], provisional: [F.assistant(text, status: "streaming", id: "live")])
+        }
+        func prose() -> NativeProse? {
+            store.rows.last?.presentation?.items.compactMap { if case .prose(_, _, let prose) = $0 { prose } else { nil } }.last
+        }
+        let host = FakeHost(snapshot(1, text("The end.")))
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        await until { prose()?.blockCount == 48 }
+        let old = try #require(prose())
+        #expect(old.chunks.count > 1)
+
+        host.snapshot = snapshot(2, text("The end, written on."))
+        await store.refresh()
+        await until { prose()?.blocks.last == .paragraph("The end, written on.") }
+        let new = try #require(prose())
+        #expect(new.chunks.count == old.chunks.count)
+        for index in 0..<new.chunks.count - 1 { #expect(new.chunks[index].sharesStorage(with: old.chunks[index]), "chunk \(index)") }
+        #expect(!new.chunks[new.chunks.count - 1].sharesStorage(with: old.chunks[old.chunks.count - 1]))
     }
 }

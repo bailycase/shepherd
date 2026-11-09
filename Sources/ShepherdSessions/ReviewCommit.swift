@@ -121,7 +121,7 @@ public enum ReviewCommitGit {
     @MainActor public static func inspect(cwd: String, runner: Runner) async throws -> Checkout {
         let output = await runner(inspectScript, cwd)
         guard output.status == 0, let checkout = parseCheckout(output.stdout) else {
-            throw ReviewCommitRefusal("Not a git repository: \(WorktreeFinalizer.failureDetail(output))")
+            throw ReviewCommitRefusal("Not a git repository: \(LoginShell.failureDetail(output))")
         }
         return checkout
     }
@@ -221,7 +221,7 @@ public enum ReviewCommitGit {
         guard !chosen.isEmpty, await Task.detached(priority: .userInitiated, operation: { pi.prepare() == nil }).value else {
             return (fallback.title, fallback.body, false)
         }
-        let output = await runner(WorktreePRDescriptionGenerator.draftCommand(prompt: prompt(context: promptContext(chosen)), home: pi.files), root)
+        let output = await runner(LoginShell.draftCommand(prompt: prompt(context: promptContext(chosen)), home: pi.files), root)
         guard output.status == 0, let message = reviewCommitMessage(fromModel: output.stdout) else {
             return (fallback.title, fallback.body, false)
         }
@@ -253,8 +253,17 @@ public final class ReviewCommitter {
         }
     }
 
-    public typealias StepState = WorktreeFinalizer.StepState
-    public typealias Phase = WorktreeFinalizer.Phase
+    public enum StepState: Equatable, Sendable {
+        case pending
+        case running
+        case done(String)
+        case skipped(String)
+        case failed(String)
+    }
+
+    public enum Phase: Equatable, Sendable {
+        case idle, running, succeeded, failed
+    }
 
     public private(set) var steps: [Step] = [.check]
     public private(set) var states: [Step: StepState] = [:]
@@ -268,7 +277,7 @@ public final class ReviewCommitter {
 
     public init() {}
 
-    /// The progress lines a remote client reads (`finalizeSteps`).
+    /// The progress lines a remote client reads (`operationSteps`).
     public var progress: [String] {
         steps.map { step in
             let detail = switch states[step] ?? .pending {
@@ -469,5 +478,5 @@ public final class ReviewCommitter {
         return (.failed(reason), "Nothing was committed; the files are as they were.")
     }
 
-    private func detail(_ output: LoginShell.Output) -> String { WorktreeFinalizer.failureDetail(output) }
+    private func detail(_ output: LoginShell.Output) -> String { LoginShell.failureDetail(output) }
 }

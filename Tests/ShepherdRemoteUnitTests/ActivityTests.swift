@@ -546,8 +546,8 @@ struct TurnPresentationTests {
         let header = "Here:\n\n| Area | Tools |\n"
         func paragraphs(_ presentation: NativeTurnPresentation) -> [String] {
             presentation.items.flatMap { item -> [String] in
-                guard case .prose(_, _, let blocks, _) = item else { return [] }
-                return blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } }
+                guard case .prose(_, _, let prose) = item else { return [] }
+                return prose.blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } }
             }
         }
         let streaming = F.assistant(header, status: "streaming")
@@ -628,9 +628,9 @@ struct TurnPresentationTests {
         let presentation = nativeTurnPresentation([F.assistant(header, status: "streaming"), writing], live: true)
         #expect(kinds(presentation) == ["prose", "lines:1"] && presentation.changes == nil)
         #expect(!presentation.betweenTools, "the call is what moves")
-        guard case .prose(_, _, let blocks, let openFence) = presentation.items[0] else { Issue.record("no prose"); return }
-        #expect(blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } } == ["Writing it now.", "| Area | Tools |"])
-        #expect(!openFence)
+        guard case .prose(_, _, let prose) = presentation.items[0] else { Issue.record("no prose"); return }
+        #expect(prose.blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } } == ["Writing it now.", "| Area | Tools |"])
+        #expect(!prose.endsInOpenFence)
         guard case .activity(_, let bursts)? = presentation.items.last, let burst = bursts.first else { Issue.record("no live line"); return }
         #expect(bursts.count == 1 && burst.state == .running)
         #expect(burst.label == "Writing" && burst.meta == "src/big.txt" && burst.startedAt == 4_000)
@@ -641,8 +641,8 @@ struct TurnPresentationTests {
     @Test func aStreamingReplyWithNoCallAfterItIsStillBeingWritten() {
         let header = "Here:\n\n| Area | Tools |\n"
         let presentation = nativeTurnPresentation([F.assistant(header, status: "streaming")], live: true)
-        guard case .prose(_, _, let blocks, _) = presentation.items.first else { Issue.record("no prose"); return }
-        #expect(blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } } == ["Here:"], "the pending table header is held back")
+        guard case .prose(_, _, let prose) = presentation.items.first else { Issue.record("no prose"); return }
+        #expect(prose.blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } } == ["Here:"], "the pending table header is held back")
         #expect(!presentation.betweenTools)
     }
 
@@ -780,8 +780,8 @@ struct TurnPresentationTests {
 
     @Test func proseIsParsedOnceIntoBlocks() {
         let presentation = nativeTurnPresentation([F.assistant("# Title\n\n- a\n- b")], live: false)
-        guard case .prose(_, _, let blocks, _) = presentation.items.first else { Issue.record("no prose"); return }
-        #expect(blocks.count == 2)
+        guard case .prose(_, _, let prose) = presentation.items.first else { Issue.record("no prose"); return }
+        #expect(prose.blocks.count == 2)
     }
 
     @Test(arguments: [(nil, "Thought"), (0.3, "Thought"), (4.4, "Thought for 4s"), (64, "Thought for 1m 04s")] as [(Double?, String)])

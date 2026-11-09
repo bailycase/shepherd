@@ -578,13 +578,9 @@ struct PaneLeafView: View, Equatable {
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
                 .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
-                // The branch card floats over the thread's top right: never in its layout, so it
-                // can't shift or remount the transcript.
-                .overlay(alignment: .topTrailing) {
-                    if let branch = model.branch {
-                        BranchCardOverlay(store: vm.branchCardStore(for: agentID), branch: branch, active: model.isVisible)
-                    }
-                }
+                // The branch card's column at the thread's right; the transcript keeps its identity.
+                .modifier(BranchCardDock(store: model.branch.map { _ in vm.branchCardStore(for: agentID) }, branch: model.branch,
+                                         active: model.isVisible))
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
@@ -971,6 +967,10 @@ private struct RemotePaneLeafView: View {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
                                       isFocused: active && !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
                                       active: active, cwd: leaf.cwd)
+                    // This Mac's background host checks out on this machine: its threads get the
+                    // branch card, as the app's own do.
+                    .modifier(BranchCardDock(store: connection.isThisMac ? vm.branchCardStore(for: agent.id) : nil,
+                                             branch: connection.isThisMac ? AgentBranchLabel(agent: agent) : nil, active: active))
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)

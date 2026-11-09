@@ -2635,6 +2635,21 @@ public final class SessionServer: @unchecked Sendable {
             designRelays.removeValue(forKey: token)?.answer(result)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
+        case .agentQuery(let id, let agentID, .setWorktree(let branch, let base)):
+            // The server owns the record: answered here, without the GUI, off the queue.
+            let connection = ChangesUnchecked(value: client)
+            Task { [weak self] in
+                guard let self else { return }
+                let failure: String?
+                do { try await self.setAgentWorktree(agentID, branch: branch, base: base); failure = nil }
+                catch { failure = String(describing: error) }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    if let failure { self.send(.error(id: id, code: "worktree_record", message: failure), to: client) }
+                    else { self.send(.agentResult(id: id, result: .ok), to: client) }
+                }
+            }
         case .agentQuery(let id, let agentID, let query) where query.isFiles:
             remoteFiles(id: id, agentID: agentID, query: query, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
@@ -6609,8 +6624,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The branch card's Rename branch…, Switch branch… and Change base…: what Shepherd records for
-    /// a worktree agent's branch and base, so Finalize pushes, targets and deletes the branch the
-    /// worktree is really on. Only a worktree agent has them; nil leaves a field as it is.
+    /// a worktree agent's branch and base, so the branch card and Delete Worktree act on the branch
+    /// the worktree is really on. Only a worktree agent has them; nil leaves a field as it is.
     public func setAgentWorktree(_ agentID: AgentID, branch: String? = nil, base: String? = nil) async throws {
         try await mutateStateOffQueue { state in
             guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {

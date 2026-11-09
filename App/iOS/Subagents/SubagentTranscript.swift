@@ -242,8 +242,8 @@ private struct SubagentTurnItem: View {
         case .thinking(_, _, let blocks, let seconds, let live, let since):
             ThinkingRow(seconds: seconds, blocks: blocks, live: live, since: since, isExpanded: openThinking) { openThinking.toggle() }
                 .equatable()
-        case .prose(_, _, let blocks, let openFence):
-            SHAgentProse(ProseView.proseBlocks(blocks), writingFence: live && openFence)
+        case .prose(_, _, let prose):
+            ProseView(prose: prose, writingFence: live && prose.endsInOpenFence).equatable()
         case .activity(_, let bursts):
             VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
                 ForEach(bursts) { burst in

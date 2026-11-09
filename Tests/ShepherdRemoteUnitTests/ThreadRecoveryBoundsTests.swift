@@ -258,8 +258,8 @@ struct ThreadRecoveryBoundsTests {
         #expect(store.offMainParses == 4 && store.activeProseTasks == 0 && store.mainActorLargeParses == 0)
         #expect(store.snapshot?.generation == "g6")
         let texts = store.rows.compactMap(\.presentation).flatMap(\.items).compactMap { item -> String? in
-            guard case .prose(_, let text, let blocks, _) = item else { return nil }
-            #expect(blocks == nativeMarkdownParse(text, streaming: false).blocks)
+            guard case .prose(_, let text, let prose) = item else { return nil }
+            #expect(prose.blocks == nativeMarkdownParse(text, streaming: false).blocks)
             return text
         }
         #expect(texts == [long + "6 first", long + "6 last"], "only the newest queued generation may publish")

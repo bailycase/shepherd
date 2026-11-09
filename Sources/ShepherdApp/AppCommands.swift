@@ -24,7 +24,7 @@ final class MenuState {
         var canCloseTerminal = false
         /// This Mac's selected thread: what the Agent menu's thread commands act on.
         var selectedLocalAgent: AgentID?
-        /// The commands that apply to it (Finalize is a worktree agent's alone).
+        /// The commands that apply to it.
         var threadCommands: [ThreadCommand] = []
         /// Whether it is pinned; nil when it cannot be.
         var selectedPinned: Bool?
@@ -88,7 +88,7 @@ extension MenuState.Snapshot {
             hasMachineAgents: !vm.sidebarWalkRows.isEmpty,
             canCloseTerminal: vm.canCloseTerminal,
             selectedLocalAgent: local?.id,
-            threadCommands: local.map(ThreadCommand.commands(for:)) ?? [],
+            threadCommands: local == nil ? [] : ThreadCommand.allCases,
             selectedPinned: local.map { vm.canPin(.local($0.id)) ? vm.isPinned(.local($0.id)) : nil } ?? nil,
             saveTitle: save?.title,
             canSave: save?.enabled ?? false,

@@ -26,6 +26,12 @@ import Testing
 @MainActor
 struct ThreadBlankScreenTests {
     static let base = 1_700_000_000_000.0
+    /// The most background a reader may see in a row of the thread, in points: well over the gaps
+    /// between blocks (16) and turns (40), well under a screen.
+    static let blankBandLimit = 64
+    /// The longest a giant reply's thread may be blank on its way to its tail: from the last frame that drew to the
+    /// last blank one. The user accepted a frame or two (measured up to about 0.7 s).
+    static let blankStretchLimit = Duration.milliseconds(1500)
 
     // MARK: Rig
 
@@ -72,23 +78,83 @@ struct ThreadBlankScreenTests {
                            insetTop: scroll.contentInsets.top, insetBottom: scroll.contentInsets.bottom)
         }
 
-        /// Pixels in the thread above the composer that differ from its background: zero means
-        /// the thread draws nothing.
-        var ink: Int {
+        /// What the thread above the composer draws, from one capture: the pixels that differ from
+        /// its background (zero means the thread draws nothing), and the longest run of rows, in
+        /// points, that draw only the background.
+        var drawing: (ink: Int, longestBlankBand: Int) {
             let inset = (reading?.insetBottom ?? 0) + 24
             let capture = FrameTimer.capture(window, CGRect(x: 0, y: 0, width: size.width, height: size.height - inset))
-            return capture.data.withUnsafeBytes { raw -> Int in
-                let p = raw.bindMemory(to: UInt8.self)
-                let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
-                var count = 0
-                for y in 0..<capture.height {
-                    let row = y * capture.bytesPerRow
-                    for x in 0..<capture.width {
-                        let i = row + x * 4
-                        if abs(Int(p[i]) - r) > 12 || abs(Int(p[i + 1]) - g) > 12 || abs(Int(p[i + 2]) - b) > 12 { count += 1 }
-                    }
+            return (capture.ink, capture.longestBlankBand)
+        }
+
+        var ink: Int { drawing.ink }
+        var longestBlankBand: Int { drawing.longestBlankBand }
+
+        /// Waits for the reply's off-main parse to land: its prose has `blocks` top-level blocks.
+        func expectParsed(blocks: Int, _ what: String) async throws {
+            try await eventuallyOnMain("\(what): the reply's parse to land") {
+                window.layout()
+                for item in (store.rows.last?.presentation?.items ?? []).reversed() {
+                    if case .prose(_, _, let prose) = item { return prose.blockCount == blocks }
                 }
-                return count
+                return false
+            }
+        }
+
+        /// Every frame of the thread for `duration` after `expectTail` has it at its tail (at least two) draws
+        /// something and has no blank stretch longer than `Self.blankBandLimit`: a blank region inside a long
+        /// reply, which `expectTail` (any ink at all) and the tail guard (its row marker spans the whole row)
+        /// cannot see. It reads frame after frame, not the first one: a lazy stack that has estimated chunks it
+        /// has not built replaces the estimates a few frames after the tail is drawn, and the thread was blank
+        /// for the length of one of them. A frame takes as long as the thread takes to lay out, up to seconds.
+        ///
+        /// The first frame is held to the ink alone: the tables of a long reply are painted in part in it (a
+        /// reply of 60 tables, laid out whole, reads a band of 79 pt with half its ink), and in the next frame
+        /// in full.
+        ///
+        /// A giant reply (`NativeProse.isGiant`) is the only one laid out a chunk at a time, and may show a blank
+        /// frame or two on the way to its tail while the lazy stack replaces the heights it estimated (ink 0
+        /// for up to 0.8 s at 1200x900): a known issue, accepted by the user for replies of 128 KB or more. Outside
+        /// it, the blank frames lie within `Self.blankStretchLimit` of each other and the thread ends drawn within
+        /// 5 s. Any other reply is laid out whole and must show none.
+        func expectNoBlankBand(_ what: String, for duration: Duration = .milliseconds(300), giant: Bool = false) async throws {
+            let start = ContinuousClock.now
+            var blank: [String] = []
+            var frames = 0
+            var last = (ink: 0, band: 0)
+            var previousFrame = Duration.zero, blankSince: Duration?, blankUntil = Duration.zero
+            repeat {
+                window.layout()
+                let now = drawing
+                let elapsed = ContinuousClock.now - start
+                let at = elapsed.formatted(.units(allowed: [.milliseconds]))
+                if now.ink == 0 || frames > 0 && now.longestBlankBand > ThreadBlankScreenTests.blankBandLimit {
+                    blank.append("\(at): band \(now.longestBlankBand) ink \(now.ink)")
+                    blankSince = blankSince ?? previousFrame
+                    blankUntil = elapsed
+                }
+                previousFrame = elapsed
+                last = (now.ink, now.longestBlankBand)
+                frames += 1
+                try await Task.sleep(for: .milliseconds(1))
+            } while frames < 2 || ContinuousClock.now - start < duration
+                || giant && (last.ink == 0 || last.band > ThreadBlankScreenTests.blankBandLimit) && ContinuousClock.now - start < .seconds(5)
+            guard last.ink > 0, frames < 2 || last.band <= ThreadBlankScreenTests.blankBandLimit else {
+                throw TimedOut(what: "\(what): the thread to end drawn, with no blank band (limit \(ThreadBlankScreenTests.blankBandLimit) pt of background in a row): band \(last.band) ink \(last.ink); blank frames \(blank); \(reading.map(String.init(describing:)) ?? "no scroll view")")
+            }
+            if giant {
+                // A blank frame or two is the accepted glitch; a thread blank for seconds (the base draws a blank row for
+                // 4 s) is not, and the known issue below would swallow it.
+                if let since = blankSince {
+                    let stretch = blankUntil - since
+                    #expect(stretch <= ThreadBlankScreenTests.blankStretchLimit,
+                            "\(what): the thread was blank for \(stretch.formatted(.units(allowed: [.milliseconds]))), from the frame at \(since.formatted(.units(allowed: [.milliseconds]))) to the blank one at \(blankUntil.formatted(.units(allowed: [.milliseconds]))); blank frames \(blank)")
+                }
+                withKnownIssue("bug: a giant reply's lazy stack replaces the heights it estimated, and the thread is blank for a frame or two", isIntermittent: true) {
+                    #expect(blank.isEmpty, "\(what): blank frames \(blank)")
+                }
+            } else {
+                #expect(blank.isEmpty, "\(what): blank frames \(blank), \(reading.map(String.init(describing:)) ?? "no scroll view")")
             }
         }
 
@@ -357,6 +423,96 @@ struct ThreadBlankScreenTests {
                 $0.append(Self.reply("a41", Self.prose(3, 41) + "\n\n" + Self.code(41), at: promptAt + 90_000))
             }
             try await rig.expectTail("that turn finishing")
+        }
+    }
+
+    /// The windows of the long-reply tests: the suite's, and a tall one, where the viewport is longest against the chunks.
+    nonisolated static let longReplySizes = sizes + [CGSize(width: 1400, height: 1600)]
+
+    /// A giant reply (`NativeProse.isGiant`, the only kind drawn a chunk at a time): a mix of paragraphs, fences, tables
+    /// and lists, and a run of wide tables, whose chunks are the shortest (about 400 pt).
+    enum GiantReply: String, CaseIterable, Sendable, CustomTestStringConvertible {
+        case mixed, wideTables
+
+        var testDescription: String { rawValue }
+
+        /// The reply grown to `step` (0 to 4) in five steps: 500 cycles or 1,000 tables, giant from the fourth.
+        func text(step: Int) -> String {
+            switch self {
+            case .mixed: MarkdownFixtures.longReply(cycles: 100 * (step + 1))
+            case .wideTables: MarkdownFixtures.wideTables(count: 200 * (step + 1))
+            }
+        }
+    }
+
+    /// A reply of hundreds of blocks streams in, crossing many chunk boundaries (the earlier chunks
+    /// become lazy once it is giant, as the tail moves on), and finishes: the thread draws its tail, and no
+    /// stretch of it goes blank in any frame, at every step.
+    @Test(arguments: longReplySizes, GiantReply.allCases)
+    func aVeryLongReplyStreamingAndFinishingNeverLeavesTheThreadBlank(size: CGSize, reply: GiantReply) async throws {
+        try await Self.withRig(size: size) { rig in
+            let promptAt = Self.base + 41 * 60_000
+            await rig.publish { $0.append(Self.user("u40", "Write the whole report.", at: promptAt)) }
+            try await rig.expectTail("the prompt")
+
+            func streaming(_ text: String) -> NativeThreadMessage {
+                NativeThreadMessage(entryID: "provisional:assistant:1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
+                                    status: "streaming", truncated: false)
+            }
+            for step in 0..<5 {
+                let text = reply.text(step: step)
+                await rig.publish(provisional: [streaming(text)])
+                try await rig.expectParsed(blocks: nativeMarkdownParse(text, streaming: true).blocks.count, "streaming step \(step)")
+                try await rig.expectTail("streaming step \(step)")
+                try await rig.expectNoBlankBand("streaming step \(step)", giant: NativeProse(nativeMarkdownParse(text, streaming: true)).isGiant)
+            }
+
+            let text = reply.text(step: 4)
+            #expect(NativeProse(nativeMarkdownParse(text)).isGiant, "the reply is giant")
+            await rig.publish(running: false, turnChanges: [Self.recorded(promptAt: promptAt)]) {
+                $0.append(Self.reply("a40", text, at: promptAt + 60_000))
+            }
+            try await rig.expectParsed(blocks: nativeMarkdownBlocks(text).count, "the turn finishing")
+            try await rig.expectTail("the turn finishing")
+            try await rig.expectNoBlankBand("the turn finishing", giant: true)
+            try await eventuallyOnMain("the turn to settle") { !rig.store.settledRunning }
+            try await rig.expectTail("the turn settled")
+            try await rig.expectNoBlankBand("the turn settled", giant: true)
+        }
+    }
+
+    /// A finished reply that lands at the end of a long thread in one piece.
+    enum LandingReply: String, CaseIterable, Sendable, CustomTestStringConvertible {
+        case mixed, wideTables, fewWideTables
+
+        var testDescription: String { rawValue }
+
+        /// 500 cycles and 1,000 wide tables are giant; 60 wide tables are three to a chunk and not, so laid out whole.
+        var text: String {
+            switch self {
+            case .mixed: MarkdownFixtures.longReply(cycles: 500)
+            case .wideTables: MarkdownFixtures.wideTables(count: 1000)
+            case .fewWideTables: MarkdownFixtures.wideTables(count: 60)
+            }
+        }
+    }
+
+    /// A finished reply lands at the end of a long thread in one piece: no estimate of a chunk is ever
+    /// between the reader and the tail, however short the chunks are.
+    @Test(arguments: longReplySizes, LandingReply.allCases)
+    func aFinishedLongReplyLandingAtTheTailNeverBlanksTheThread(size: CGSize, reply: LandingReply) async throws {
+        let text = reply.text
+        #expect(NativeProse(nativeMarkdownParse(text)).isGiant == (reply != .fewWideTables))
+        try await Self.withRig(size: size) { rig in
+            let promptAt = Self.base + 41 * 60_000
+            await rig.publish { $0.append(Self.user("u40", "Compare them all.", at: promptAt)) }
+            try await rig.expectTail("the prompt")
+            await rig.publish(running: false, turnChanges: [Self.recorded(promptAt: promptAt)]) {
+                $0.append(Self.reply("a40", text, at: promptAt + 60_000))
+            }
+            try await rig.expectParsed(blocks: nativeMarkdownBlocks(text).count, "the reply")
+            try await rig.expectTail("the reply")
+            try await rig.expectNoBlankBand("the reply", giant: reply != .fewWideTables)
         }
     }
 }

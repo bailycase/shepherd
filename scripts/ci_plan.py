@@ -77,7 +77,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # app 684 s, other 580 s). Unknown app suites go to app, everything outside the app target to
 # other, so a new suite never disappears. Keep the entire Sessions target together: its
 # process-lifetime regressions depend on ordering. Rebalance from completed logs, never adaptively.
-_FEATURES = r"(?:Composer|Design|Review|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance|Browser|RemoteBrowser|MCPCallback)"
+_FEATURES = r"(?:Composer|Design|Review|GitDiff|GitWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance|Browser|RemoteBrowser|MCPCallback)"
 _THREAD = r"Thread(?!CompletionReproduction)"
 FULL_LANES = {
     "thread": APP + _THREAD,
@@ -109,10 +109,10 @@ AREAS = (
       "Sources/ShepherdApp/*Worktree*.swift", "Sources/ShepherdApp/ReviewCommit*.swift",
       "Sources/ShepherdApp/ShepherdViewModel+Review*.swift", "Sources/ShepherdApp/GitDiff.swift",
       "Sources/ShepherdApp/CodeHighlight.swift", "Sources/ShepherdApp/SplitDiffWheelReader.swift",
-      "Sources/ShepherdApp/ChecklistStatus.swift", "Sources/ShepherdApp/CheckoutMonitor.swift",
+      "Sources/ShepherdApp/CheckoutMonitor.swift",
       "Sources/ShepherdSessions/Changes/*", "Sources/ShepherdSessions/GitWorktree.swift",
       "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/*"),
-     (APP + r"(Review|DiffDrawing|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|WorktreeAgent|WorktreeBaseOffline|NewThreadWorktreeBase|ListPerformance|CheckoutMonitor)",
+     (APP + r"(Review|DiffDrawing|GitDiff|GitWorktree|RemoteWorktree|WorktreeAgent|WorktreeBaseOffline|NewThreadWorktreeBase|ListPerformance|CheckoutMonitor)",
       SES + "Changes", PREVIEW + "ReviewPreviewTests")),
     (("Sources/ShepherdApp/CodeHighlight.swift",),
      (APP + r"(ThreadCodeBlock|ThreadCompletion|ThreadMarkdown)", PREVIEW + "ThreadPreviewTests")),
