@@ -109,11 +109,10 @@ public struct NativeProse: Equatable, Sendable {
         var weight = 0
         func close() {
             guard let first = current.first else { return }
-            let chunk = NativeProseChunk(id: first.id, parts: current, weight: weight)
-            if let old = previous?.chunks[safe: chunks.count], old.id == chunk.id, old.parts == chunk.parts {
+            if let old = previous?.chunks[safe: chunks.count], old.id == first.id, old.parts == current {
                 chunks.append(old)
             } else {
-                chunks.append(chunk)
+                chunks.append(NativeProseChunk(id: first.id, parts: current, weight: weight))
             }
             current = []
             weight = 0
