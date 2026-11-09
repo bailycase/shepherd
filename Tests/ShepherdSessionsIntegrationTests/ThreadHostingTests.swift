@@ -77,11 +77,15 @@ struct ThreadHostingTests {
         guard case .agents(1, let peers) = try await caller.reply() else { Issue.record("agent_list not served"); return }
         #expect(Set(peers.map(\.id)) == [lead.id, worker.id] && peers.first { $0.isSelf }?.id == lead.id)
 
-        try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build"))
+        try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build",
+                                    model: "claude-fable-5-1", thinking: "low"))
         guard case .agents(2, let spawned) = try await caller.reply(), let id = spawned.first?.id else {
             Issue.record("agent_spawn not served"); return
         }
-        #expect(h.server.state.agents.first { $0.id == id }?.spaceID == space.id)
+        let created = h.server.state.agents.first { $0.id == id }
+        #expect(created?.spaceID == space.id)
+        // The pinned model and reasoning level land on the new thread; its defaults are not used.
+        #expect(created?.model == "claude-fable-5-1" && created?.thinkingLevel == .low)
         try await eventuallyOnMain("the spawned pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
 
         try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))

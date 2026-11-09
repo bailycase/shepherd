@@ -461,10 +461,16 @@ struct ExtensionSocketTests {
         #expect(try await client.reply() == .ok(id: 2))
         try client.send(.spawnAgent(id: 3, agentID: sender, cwd: space.path, prompt: "do the thing"))
         #expect(try await client.reply() == .ok(id: 3))
+        try client.send(.spawnAgent(id: 4, agentID: sender, cwd: space.path, prompt: "do it cheaply", model: "claude-fable-5-1", thinking: "low"))
+        #expect(try await client.reply() == .ok(id: 4))
+        // A reasoning level Shepherd doesn't know is refused before anything is routed.
+        try client.send(.spawnAgent(id: 5, agentID: sender, cwd: space.path, prompt: "x", thinking: "turbo"))
+        guard case .error(5, "invalid", _) = try await client.reply() else { Issue.record("bad thinking level accepted"); return }
         #expect(seen.current == [
             .list(agentID: sender),
             .send(agentID: sender, targetAgentID: target, text: "CI is green", delivery: delivery),
             .spawn(agentID: sender, cwd: space.path, prompt: "do the thing"),
+            .spawn(agentID: sender, cwd: space.path, prompt: "do it cheaply", model: "claude-fable-5-1", thinking: .low),
         ])
     }
 
