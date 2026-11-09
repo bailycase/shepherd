@@ -42,6 +42,15 @@ extension ShepherdViewModel {
         }
     }
 
+    /// The subagents the host's threads published, as this app's own threads' (`applyAgentChildren`).
+    /// The host sweeps stale rows as it answers, so none are swept here (`syncChildSweepTimer`).
+    func syncLocalHostChildren() {
+        guard let host = localHost else { return }
+        let published = host.children
+        for (id, rows) in published where childRuns.children(of: id) != rows { applyAgentChildren(id, rows) }
+        for id in childRuns.rows.keys where published[id] == nil { applyAgentChildren(id, []) }
+    }
+
     /// The threads whose revisions are pushed: those on screen and those opening a turn.
     func watchThreadRevisions(of ids: Set<AgentID>) {
         if localHost != nil { remoteHosts.updateLocalThreadHints(live: ids) } else { sessions.watchThreadRevisions(of: ids) }

@@ -866,6 +866,7 @@ final class ShepherdViewModel {
         self.remoteHosts.onProjectionChanged = { [weak self] in
             self?.refreshProjectHosts()
             guard let self else { return }
+            self.syncLocalHostChildren()
             self.reconcileSidebarCompletions()
             self.notifyRemote()
             let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
@@ -1505,7 +1506,7 @@ final class ShepherdViewModel {
     /// Runs the ChildRuns TTL/staleness sweep only while rows exist; the
     /// timer dies with the last row, so an idle fleet costs nothing.
     private func syncChildSweepTimer() {
-        if childRuns.rows.isEmpty {
+        if childRuns.rows.isEmpty || localHost != nil {
             childSweepTimer?.invalidate()
             childSweepTimer = nil
             return
