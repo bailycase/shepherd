@@ -351,8 +351,9 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     case openTerminal(cwd: String, command: String)
     /// Starts the thread's stopped pi again, as its Can't start banner's Retry does; a pi that
     /// runs is left alone. `newConversation` starts without looking for the conversation it was
-    /// resuming (`agentRestartCapability`).
-    case restartPi(newConversation: Bool)
+    /// resuming; `model` starts it on another model, once ("Use another model")
+    /// (`agentRestartCapability`).
+    case restartPi(newConversation: Bool, model: String? = nil)
 
     /// The capability a host must advertise before the action is sent to it.
     public var capability: String {

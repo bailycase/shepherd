@@ -314,7 +314,7 @@ extension ShepherdViewModel {
 
     /// Retry in an agent's Can't start banner: starts its pi again (`newConversation`: without
     /// looking for the conversation it was resuming).
-    func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false) {
+    func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false, model: String? = nil) {
         // A thread whose folder is still gone: choose where it went (Locate Folder…) instead.
         if let agent = state.agents.first(where: { $0.id == agentID }),
            let cwd = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.cwd,
@@ -326,7 +326,7 @@ extension ShepherdViewModel {
         if let ref = localRef(agentID) {
             // The background host runs the agent's pi and starts it again.
             Task {
-                do { try await remoteHosts.agentAction(ref, action: .restartPi(newConversation: newConversation)) }
+                do { try await remoteHosts.agentAction(ref, action: .restartPi(newConversation: newConversation, model: model)) }
                 catch { fail("Couldn’t start the agent", error) }
             }
             return
@@ -604,8 +604,8 @@ extension ShepherdViewModel {
 
     /// "Use another model": an agent not signed in starts again on `model`.
     func useAnotherModel(_ agentID: AgentID, model: String) {
-        sessions.modelOverrides[agentID] = model
-        retryAgentStart(agentID)
+        if localHost == nil { sessions.modelOverrides[agentID] = model }
+        retryAgentStart(agentID, model: model)
     }
 }
 

@@ -158,11 +158,12 @@ extension SessionServer {
 
     /// Starts a thread's pi with the host's launch settings; a failure is logged.
     @MainActor
-    private func startThreadPi(_ agentID: AgentID, hosting: ThreadHosting, checksResume: Bool = true) async {
+    private func startThreadPi(_ agentID: AgentID, hosting: ThreadHosting, checksResume: Bool = true, model: String? = nil) async {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
         var spawn = AgentSpawn(agent: agent, cwd: "", settings: hosting.launch())
         spawn.mcp = hosting.mcp
         spawn.checksResume = checksResume
+        if let model { spawn.takeModelOverride = { model } }
         do {
             _ = try await respawnAgent(spawn)
         } catch let failed as PaneBindingFailed {
@@ -263,13 +264,13 @@ extension SessionServer {
             let outcome = await handleTerminalRequest(.open(agentID: agentID, axis: .vertical, cwd: target, relativeTo: nil, command: command),
                                                       hosting: hosting)
             if case .failed(_, let message) = outcome { throw RemoteCreateAgentError(message) }
-        case .restartPi(let newConversation):
+        case .restartPi(let newConversation, let model):
             let (_, thread) = try threadPane(of: agentID)
             if let session = thread.sessionID {
                 guard await sessionInfo(sessionID: session)?.isAlive != true else { return }
                 await retryStart(sessionID: session)
             }
-            await startThreadPi(agentID, hosting: hosting, checksResume: !newConversation)
+            await startThreadPi(agentID, hosting: hosting, checksResume: !newConversation, model: model)
         }
     }
 

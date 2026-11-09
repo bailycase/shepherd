@@ -33,6 +33,7 @@ extension ShepherdViewModel {
     /// added). Its threads' revision hints go to the host as the in-process server's would.
     func adoptLocalHost() {
         remoteHosts.hidesLocalHost = true
+        sessions.startsSessions = false
         remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(state) }
         let remoteChanged = remoteHosts.onNativeThreadChanged
         remoteHosts.onNativeThreadChanged = { [weak self] ref in

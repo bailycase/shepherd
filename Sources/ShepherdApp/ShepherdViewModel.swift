@@ -993,7 +993,9 @@ final class ShepherdViewModel {
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
                     case .startTerminal(let paneID): try self.startTerminalPane(paneID, of: agentID)
                     case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
-                    case .restartPi(let newConversation): self.retryAgentStart(agentID, newConversation: newConversation)
+                    case .restartPi(let newConversation, let model):
+                        if let model { self.sessions.modelOverrides[agentID] = model }
+                        self.retryAgentStart(agentID, newConversation: newConversation)
                     }
                     completion(.success(()))
                 } catch {
