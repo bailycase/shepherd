@@ -15,7 +15,9 @@ extension ShepherdViewModel {
               state.spaces[index].name != trimmed else { return }
         state.spaces[index].name = trimmed
         sessions.stateDidChange(state)
-        enqueuePersistence("rename space", failureTitle: "Couldn’t rename the space") { _ = try await $0.editProject(id, edit: ProjectEdit(name: trimmed)) }
+        persistSpace(id, "rename space", failureTitle: "Couldn’t rename the space", host: .rename(name: trimmed)) {
+            _ = try await $0.editProject(id, edit: ProjectEdit(name: trimmed))
+        }
         let committed = persistenceTail
         Task { @MainActor [weak self] in
             await committed?.value
@@ -31,7 +33,9 @@ extension ShepherdViewModel {
         state.spaces[index].worktreeBase = base
         sessions.stateDidChange(state)
         let space = state.spaces[index]
-        enqueuePersistence("set worktree base", failureTitle: "Couldn’t save the project’s default base") { try await $0.updateSpace(space) }
+        persistSpace(id, "set worktree base", failureTitle: "Couldn’t save the project’s default base", host: .setWorktreeBase(base: base)) {
+            try await $0.updateSpace(space)
+        }
     }
 
     /// Delete a space and everything in it (agents, layouts, sessions). Spaces nested under it by path are independent
@@ -84,7 +88,7 @@ extension ShepherdViewModel {
         }
         sessions.stateDidChange(state)
         syncFocus()
-        enqueuePersistence("space deletion", failureTitle: "Couldn’t remove the space") { try await $0.deleteSpace(id) }
+        persistSpace(id, "space deletion", failureTitle: "Couldn’t remove the space", host: .delete) { try await $0.deleteSpace(id) }
     }
 }
 

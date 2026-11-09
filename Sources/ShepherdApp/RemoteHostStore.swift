@@ -250,6 +250,8 @@ final class RemoteHostStore {
     static let defaultsKey = "shepherd.remote.hosts"
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
+    /// Each workspace the background host on this Mac pushes, after its connection holds it.
+    @ObservationIgnored var onLocalHostState: ((ShepherdState) -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
@@ -274,9 +276,20 @@ final class RemoteHostStore {
     /// What each host was asked to hint about, and the threads on screen to ask for (`updateThreadHints`).
     @ObservationIgnored private var threadHints = RemoteThreadHints()
     @ObservationIgnored private var liveThreads: Set<RemoteAgentRef> = []
+    /// The background host's threads polling on screen, as the app's own (`hidesLocalHost`).
+    @ObservationIgnored private var localLiveThreads: Set<AgentID> = []
     /// Every host's design files, by hash (in memory).
     let designCache = RemoteDesignCache()
-    private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
+    /// Every connection, the background host on this Mac's included. Lookups by host id use it.
+    private(set) var allConnections: [Connection] = [] { didSet { onProjectionChanged?() } }
+    /// The hosts the UI lists: every connection, less the background host on this Mac while its
+    /// threads are the app's own (`hidesLocalHost`).
+    var connections: [Connection] { hidesLocalHost ? pairedConnections : allConnections }
+    /// The background host on this Mac is transport only: its workspace is the app's own
+    /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it.
+    var hidesLocalHost = false
+    /// The background host on this Mac, whatever `hidesLocalHost` says.
+    var localHost: Connection? { allConnections.first(where: \.isThisMac) }
 
     private let defaults: UserDefaults
     private let childRefreshInterval: Duration
@@ -284,7 +297,7 @@ final class RemoteHostStore {
     private let connects: Bool
 
     var hosts: [HostConfig] {
-        connections.map(\.config)
+        allConnections.map(\.config)
     }
 
     /// The remote threads polling on screen in any window: each connected host that offers revision hints is asked
@@ -294,12 +307,19 @@ final class RemoteHostStore {
         sendThreadHints()
     }
 
+    /// `updateThreadHints` for the background host's threads, which the app keys as its own.
+    func updateLocalThreadHints(live: Set<AgentID>) {
+        localLiveThreads = live
+        sendThreadHints()
+    }
+
     private func sendThreadHints() {
-        let hinting = connections.filter { connection in
+        let hinting = allConnections.filter { connection in
             connection.phase == .connected && connection.client?.capabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability) == true
         }
         let byID = Dictionary(uniqueKeysWithValues: hinting.map { ($0.id, $0) })
-        let plan = threadHints.plan(live: liveThreads, hosts: Set(byID.keys)) { ref in
+        let local = localHost.map { host in localLiveThreads.map { RemoteAgentRef(hostID: host.id, agentID: $0) } } ?? []
+        let plan = threadHints.plan(live: liveThreads.union(local), hosts: Set(byID.keys)) { ref in
             guard let state = byID[ref.hostID]?.state, let agent = state.agents.first(where: { $0.id == ref.agentID }) else { return false }
             return state.isOrdinaryThread(agent)
         }
@@ -309,7 +329,7 @@ final class RemoteHostStore {
                 do { try await client?.subscribeNativeThreads(ids) }
                 catch {
                     // Refused or dropped: the poll carries on, and the next change (or reconnect) asks again.
-                    guard let self, self.connections.first(where: { $0.id == host })?.client === client else { return }
+                    guard let self, self.allConnections.first(where: { $0.id == host })?.client === client else { return }
                     self.threadHints.forget(host)
                 }
             }
@@ -322,22 +342,22 @@ final class RemoteHostStore {
         self.connects = connects
         if let data = defaults.data(forKey: Self.defaultsKey),
            let configs = try? JSONDecoder().decode([HostConfig].self, from: data) {
-            connections = configs.map { Connection(config: $0, designCache: designCache) }
+            allConnections = configs.map { Connection(config: $0, designCache: designCache) }
         }
-        for connection in connections {
+        for connection in allConnections {
             connect(connection)
         }
     }
 
     /// The hosts the user added: every connection but the background host on this Mac.
-    var pairedConnections: [Connection] { connections.filter { !$0.isThisMac } }
+    var pairedConnections: [Connection] { allConnections.filter { !$0.isThisMac } }
 
     /// The background host on this Mac, through its local socket at `socket`; not persisted.
     @discardableResult
     func addLocalHost(name: String, socket: String, token: String) -> Connection {
         let connection = Connection(config: HostConfig(name: name, host: "", port: 0, token: token, localSocket: socket),
                                     designCache: designCache)
-        connections.insert(connection, at: 0)
+        allConnections.insert(connection, at: 0)
         connect(connection)
         return connection
     }
@@ -345,14 +365,14 @@ final class RemoteHostStore {
     func addHost(name: String, host: String, port: UInt16, token: String) {
         let config = HostConfig(name: name, host: host, port: port, token: token)
         let connection = Connection(config: config, designCache: designCache)
-        connections.append(connection)
+        allConnections.append(connection)
         persist()
         connect(connection)
     }
 
     /// Update a host's config and reconnect with the new values.
     func updateHost(id: UUID, name: String, host: String, port: UInt16, token: String) {
-        guard let connection = connections.first(where: { $0.id == id }) else { return }
+        guard let connection = allConnections.first(where: { $0.id == id }) else { return }
         connection.endpointID = UUID()
         var config = connection.config
         if config.host != host || config.port != port || config.token != token {
@@ -368,8 +388,8 @@ final class RemoteHostStore {
     }
 
     func removeHost(id: UUID) {
-        guard let index = connections.firstIndex(where: { $0.id == id }) else { return }
-        let connection = connections.remove(at: index)
+        guard let index = allConnections.firstIndex(where: { $0.id == id }) else { return }
+        let connection = allConnections.remove(at: index)
         connection.reconnectTask?.cancel()
         connection.stopChildRefresh()
         connection.client?.disconnect()
@@ -384,7 +404,7 @@ final class RemoteHostStore {
     }
 
     func reconnect(id: UUID) {
-        guard let connection = connections.first(where: { $0.id == id }) else { return }
+        guard let connection = allConnections.first(where: { $0.id == id }) else { return }
         connection.reconnectTask?.cancel()
         connection.phase = .connecting
         connection.stopChildRefresh()
@@ -403,7 +423,7 @@ final class RemoteHostStore {
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(connections.map(\.config).filter { $0.localSocket == nil }) {
+        if let data = try? JSONEncoder().encode(allConnections.map(\.config).filter { $0.localSocket == nil }) {
             defaults.set(data, forKey: Self.defaultsKey)
         }
     }
@@ -411,7 +431,7 @@ final class RemoteHostStore {
     // MARK: - Connection lifecycle
 
     private func connect(_ connection: Connection) {
-        guard connects, connections.contains(where: { $0 === connection }) else { return }
+        guard connects, allConnections.contains(where: { $0 === connection }) else { return }
         connection.retryPending = false
         connection.onProjectionChanged = { [weak self] in self?.onProjectionChanged?() }
         let hostID = connection.id
@@ -431,16 +451,19 @@ final class RemoteHostStore {
                     host: connection.config.host,
                     port: connection.config.port,
                     token: connection.config.token,
-                    clientName: Host.current().localizedName ?? "shepherd"
+                    clientName: Host.current().localizedName ?? "shepherd",
+                    capabilities: RemoteProtocol.clientCapabilities
+                        + (connection.isThisMac && self.hidesLocalHost ? [RemoteProtocol.localThreadsCapability] : [])
                 )
                 guard !Task.isCancelled,
                       connection.client === client,
-                      self.connections.contains(where: { $0 === connection }) else {
+                      self.allConnections.contains(where: { $0 === connection }) else {
                     client.disconnect()
                     return
                 }
                 if connection.stateGeneration == stateGeneration {
                     connection.state = state
+                    if connection.isThisMac { self.onLocalHostState?(state) }
                 }
                 connection.phase = .connected
                 // A new connection holds no subscriptions: ask again for the threads on screen.
@@ -476,9 +499,10 @@ final class RemoteHostStore {
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onProjectExecutionChanged?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID), key)
         }
-        client.onStateChanged = { [weak connection] state in
+        client.onStateChanged = { [weak self, weak connection] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            defer { if connection.isThisMac { self?.onLocalHostState?(state) } }
             let liveSessionIDs = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
@@ -545,7 +569,7 @@ final class RemoteHostStore {
                 pane.phase = .failed("disconnected: \(reason)")
             }
             connection.panes.removeAll()
-            if self.connections.contains(where: { $0 === connection }) {
+            if self.allConnections.contains(where: { $0 === connection }) {
                 self.scheduleReconnect(connection)
                 if connection.isThisMac { self.onLocalHostLost?() }
             }
@@ -567,7 +591,7 @@ final class RemoteHostStore {
     // MARK: - Remote mutations
 
     func agentQuery(_ target: RemoteAgentRef, query: RemoteAgentQuery, endpointID: UUID? = nil, transportID: UUID? = nil) async throws -> RemoteAgentResult {
-        guard let connection = connections.first(where: { $0.id == target.hostID }),
+        guard let connection = allConnections.first(where: { $0.id == target.hostID }),
               connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.rejected(code: "not_sent", message: "Host is disconnected. Reconnect before trying again.")
         }
@@ -585,7 +609,7 @@ final class RemoteHostStore {
 
     /// A remote agent's native thread, served by its host.
     func nativeThread(_ target: RemoteAgentRef, request: NativeThreadRequest) async throws -> NativeThreadResult {
-        guard let connection = connections.first(where: { $0.id == target.hostID }),
+        guard let connection = allConnections.first(where: { $0.id == target.hostID }),
               connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.disconnected
         }
@@ -605,7 +629,7 @@ final class RemoteHostStore {
     }
 
     func agentAction(_ target: RemoteAgentRef, action: RemoteAgentAction) async throws {
-        guard let connection = connections.first(where: { $0.id == target.hostID }),
+        guard let connection = allConnections.first(where: { $0.id == target.hostID }),
               connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.disconnected
         }
@@ -615,7 +639,7 @@ final class RemoteHostStore {
     /// Manage one of a host's automations, or read its runs.
     @discardableResult
     func automation(_ key: AutomationKey, request: RemoteAutomationRequest) async throws -> RemoteAutomationResult {
-        guard let connection = connections.first(where: { $0.id == key.host }),
+        guard let connection = allConnections.first(where: { $0.id == key.host }),
               connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.disconnected
         }
@@ -625,7 +649,7 @@ final class RemoteHostStore {
     /// Reads or saves a host's root instructions (Settings ▸ Instructions).
     @discardableResult
     func instructions(hostID: UUID, request: RemoteInstructionsRequest = .fetch) async throws -> InstructionsSnapshot {
-        guard let connection = connections.first(where: { $0.id == hostID }),
+        guard let connection = allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.disconnected
         }
@@ -633,7 +657,7 @@ final class RemoteHostStore {
     }
 
     func projects(hostID: UUID, endpointID: UUID?, request: RemoteProjectsRequest) async throws -> RemoteProjectsResult {
-        guard let connection = connections.first(where: { $0.id == hostID }),
+        guard let connection = allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
         guard endpointID == connection.endpointID else {
             throw RemoteHostClientError.rejected(code: "host_changed", message: "Host changed. Reopen this space before editing it.")
@@ -647,7 +671,7 @@ final class RemoteHostStore {
 
     /// One Projects request to the host that owns the project. The request names the owner's own IDs.
     func logicalProjects(hostID: UUID, request: LogicalProjectsRequest) async throws -> LogicalProjectsResult {
-        guard let connection = connections.first(where: { $0.id == hostID }),
+        guard let connection = allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
         let endpoint = connection.endpointID
         let result = try await client.logicalProjects(request)
@@ -661,7 +685,7 @@ final class RemoteHostStore {
     /// One Project runtime request to the host that owns the project (its hosts list, a native read, an action). A host that
     /// changed identity mid-request answered for another machine and is not trusted.
     func projectRuntime(hostID: UUID, request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
-        guard let connection = connections.first(where: { $0.id == hostID }),
+        guard let connection = allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
         let endpoint = connection.endpointID
         let result = try await client.projectRuntime(request)
@@ -672,7 +696,7 @@ final class RemoteHostStore {
     }
 
     func creationOptions(hostID: UUID, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {
-        guard let connection = connections.first(where: { $0.id == hostID }), connection.phase == .connected, let client = connection.client else {
+        guard let connection = allConnections.first(where: { $0.id == hostID }), connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.disconnected
         }
         return try await client.creationOptions(spaceID: spaceID, cwd: cwd, fetchFirst: fetchFirst)
@@ -680,7 +704,7 @@ final class RemoteHostStore {
 
     /// List a directory on a host (remote pickers). Empty path = host home.
     func listDir(hostID: UUID, path: String) async throws -> RemoteHostClient.DirListing {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         return try await client.listDir(path: path)
@@ -688,15 +712,33 @@ final class RemoteHostStore {
 
     /// The host's pi model ids and default (remote model picker).
     func listModels(hostID: UUID) async throws -> ModelListing {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         return try await client.listModels()
     }
 
+    /// Issues & PRs through the background host on this Mac, which knows its threads' folders.
+    func localForge(_ request: RemoteForgeRequest) async -> Result<RemoteForgeResult, ForgeError> {
+        guard let client = localHost?.client else { return .failure(ForgeError(.unreachable, "Shepherd's background service isn't running.")) }
+        return await client.forge(request)
+    }
+
+    /// Starts a thread on the background host on this Mac (`startThread`).
+    func startThread(hostID: UUID, _ thread: RemoteThreadStart) async throws -> AgentID {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.startThread(thread)
+    }
+
+    /// Changes a space of the background host on this Mac (`spaceAction`).
+    func spaceAction(hostID: UUID, spaceID: SpaceID, _ action: RemoteSpaceAction) async throws {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        try await client.spaceAction(action, spaceID: spaceID)
+    }
+
     /// Create a space on a host from a host-side directory path.
     func addSpace(hostID: UUID, path: String) async throws -> SpaceID {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         return try await client.addSpace(path: path)
@@ -717,7 +759,7 @@ final class RemoteHostStore {
         initialImages: [NativeImage] = [],
         serviceTier: ServiceTier? = nil
     ) async throws -> AgentID {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         return try await client.createAgent(
@@ -737,13 +779,13 @@ final class RemoteHostStore {
     // MARK: - Remote panes
 
     func updateAppearance(_ terminal: ShepherdTheme.Terminal) {
-        for pane in connections.flatMap({ $0.panes.values }) {
+        for pane in allConnections.flatMap({ $0.panes.values }) {
             pane.terminal.updateAppearance(terminal)
         }
     }
 
     func updateSurfaceConfiguration() {
-        for pane in connections.flatMap({ $0.panes.values }) {
+        for pane in allConnections.flatMap({ $0.panes.values }) {
             pane.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
                 fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
@@ -753,21 +795,21 @@ final class RemoteHostStore {
     }
 
     func openPane(hostID: UUID, agentID: AgentID, relativeTo paneID: PaneID, axis: SplitAxis) async throws -> PaneID {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         return try await client.openPane(agentID: agentID, relativeTo: paneID, axis: axis)
     }
 
     func closePane(hostID: UUID, agentID: AgentID, paneID: PaneID) async throws {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         try await client.closePane(agentID: agentID, paneID: paneID)
     }
 
     func resizePaneSplit(hostID: UUID, agentID: AgentID, split: PaneNode, ratio: Double) async throws {
-        guard let client = connections.first(where: { $0.id == hostID })?.client else {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }
         try await client.resizePaneSplit(agentID: agentID, split: split, ratio: ratio)

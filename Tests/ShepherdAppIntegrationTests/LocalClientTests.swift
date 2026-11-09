@@ -185,6 +185,7 @@ struct LocalClientTests {
         // the Hosts page's This Mac card counts its threads, and it isn't a host to remove.
         if case .tag = row.accessory { Issue.record("a thread of this Mac's host wears a host tag") }
         #expect(NewThreadState.hosts(vm).map(\.name) == ["This Mac"])
+        #expect(!host.server.localAppConnected, "an app showing This Mac as a host leaves its banners to the host")
         #expect(vm.hostsPageModel(agentVersion: nil).cards.count == 1)
         #expect(hosts.pairedConnections.isEmpty)
 

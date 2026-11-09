@@ -388,6 +388,9 @@ public final class SessionServer: @unchecked Sendable {
 
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A client's agent query; the flag says it came over the local socket (this Mac's own app).
+    /// This Mac's own app is connected over the local socket and shows the host's threads as its
+    /// own (`localThreadsCapability`): it posts their turns' and questions' banners itself.
+    @MainActor public private(set) var localAppConnected = false
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, Bool, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
@@ -2414,6 +2417,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             client.authenticated = true
             client.clientCapabilities = Set(capabilities ?? [])
+            if client.isLocal { localAppsChanged() }
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
@@ -3054,6 +3058,42 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
+        case .startThread(let id, let thread):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
+                return
+            }
+            var request = RemoteCreateAgentRequest(
+                spaceID: thread.spaceID ?? SpaceID(rawValue: ""), cwd: thread.cwd, model: thread.model, thinking: thread.thinking,
+                initialPrompt: thread.initialPrompt, worktreeBranch: thread.worktreeBranch, worktreeBase: thread.worktreeBase,
+                initialImages: thread.initialImages ?? [], serviceTier: thread.serviceTier)
+            request.name = thread.name
+            request.piSessionID = thread.piSessionID
+            request.agentID = thread.agentID
+            request.worktreePath = thread.worktreePath
+            request.standalone = thread.spaceID == nil
+            guard !request.standalone || thread.agentID != nil else {
+                send(.error(id: id, code: "invalid", message: "A standalone thread needs its id."), to: client)
+                return
+            }
+            remoteCreateAgent(id: id, request: request, client: client)
+        case .spaceAction(let id, let spaceID, let action):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
+                return
+            }
+            let connection = ChangesUnchecked(value: client)
+            Task { [weak self] in
+                guard let self else { return }
+                var failure: String?
+                do { try await self.performSpaceAction(action, on: spaceID) } catch { failure = String(describing: error) }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    if let failure { self.send(.error(id: id, code: "space_action", message: failure), to: client) }
+                    else { self.send(.ok(id: id), to: client) }
+                }
+            }
         case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             let images = initialImages ?? []
             // Refused before anything is made: pi would refuse them once the agent exists.
@@ -3990,7 +4030,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "unsupported", message: "host cannot create agents (no GUI)"), to: client)
             return
         }
-        guard store.state.spaces.contains(where: { $0.id == request.spaceID }) else {
+        guard request.standalone || store.state.spaces.contains(where: { $0.id == request.spaceID }) else {
             send(.error(id: id, code: "no_such_space", message: "unknown space \(request.spaceID)"), to: client)
             return
         }
@@ -4316,6 +4356,14 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: tells the main actor whether this Mac's own app is connected now.
+    private func localAppsChanged() {
+        let connected = clients.values.contains {
+            $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
+        }
+        hopToMain { [weak self] in MainActor.assumeIsolated { self?.localAppConnected = connected } }
+    }
+
     private func disconnect(_ client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
         hostUpdateRequests[client.fd] = nil
@@ -4332,6 +4380,7 @@ public final class SessionServer: @unchecked Sendable {
         Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
+        if client.isLocal, client.authenticated { localAppsChanged() }
         for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
@@ -6376,6 +6425,25 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Moves a space to sit just before `target`, or last when `target` is nil: the order the
     /// sidebar's project tree draws its projects in.
+    /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`), as its in-process
+    /// view model makes it.
+    func performSpaceAction(_ action: RemoteSpaceAction, on spaceID: SpaceID) async throws {
+        func updating(_ change: (inout Space) -> Void) async throws {
+            guard var space = await enqueueValue({ self.store.state.spaces.first { $0.id == spaceID } }) else {
+                throw SessionServerError.noSuchSpace(spaceID)
+            }
+            change(&space)
+            try await updateSpace(space)
+        }
+        switch action {
+        case .rename(let name): _ = try await editProject(spaceID, edit: ProjectEdit(name: name))
+        case .setWorktreeBase(let base): try await updating { $0.worktreeBase = base }
+        case .setSidebarHidden(let hidden): try await updating { $0.sidebarHidden = hidden }
+        case .move(let before): try await moveSpace(spaceID, before: before)
+        case .delete: try await deleteSpace(spaceID)
+        }
+    }
+
     public func moveSpace(_ spaceID: SpaceID, before target: SpaceID?) async throws {
         try await enqueue {
             let spaces = self.store.state.spaces

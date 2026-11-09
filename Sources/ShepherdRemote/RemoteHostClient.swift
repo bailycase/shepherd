@@ -402,6 +402,26 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Starts a thread on the background host as this Mac's own app does (`startThread`).
+    public func startThread(_ thread: RemoteThreadStart) async throws -> AgentID {
+        let reply = try await request { id in .startThread(id: id, thread: thread) }
+        switch reply {
+        case .agentCreated(_, let agentID): return agentID
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected startThread reply")
+        }
+    }
+
+    /// Changes one of the background host's spaces (`spaceAction`; this Mac's own app only).
+    public func spaceAction(_ action: RemoteSpaceAction, spaceID: SpaceID) async throws {
+        let reply = try await request { id in .spaceAction(id: id, spaceID: spaceID, action: action) }
+        switch reply {
+        case .ok: return
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected spaceAction reply")
+        }
+    }
+
     /// Create a space from a directory on the host.
     @discardableResult
     public func addSpace(path: String) async throws -> SpaceID {
