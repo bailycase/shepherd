@@ -2337,6 +2337,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Drops the app's connections over `host.sock` and keeps listening, as a broken link does
+    /// (tests).
+    func dropLocalClients() {
+        queue.sync { for client in Array(clients.values) where client.isLocal { disconnect(client, reason: "dropped") } }
+    }
+
     private func stopLocalListenerOnQueue() {
         for client in Array(clients.values) where client.isLocal { disconnect(client, reason: "local listener stopped") }
         localAcceptSource?.cancel()
