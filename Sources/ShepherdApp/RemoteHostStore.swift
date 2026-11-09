@@ -716,6 +716,12 @@ final class RemoteHostStore {
         return try await client.listModels()
     }
 
+    /// Issues & PRs through the background host on this Mac, which knows its threads' folders.
+    func localForge(_ request: RemoteForgeRequest) async -> Result<RemoteForgeResult, ForgeError> {
+        guard let client = localHost?.client else { return .failure(ForgeError(.unreachable, "Shepherd's background service isn't running.")) }
+        return await client.forge(request)
+    }
+
     /// Starts a thread on the background host on this Mac (`startThread`).
     func startThread(hostID: UUID, _ thread: RemoteThreadStart) async throws -> AgentID {
         guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }

@@ -60,6 +60,9 @@ public struct PullRequestLinkHosting {
     public var closed: @MainActor (_ agent: Agent, _ link: ThreadPullRequest, _ branch: String, _ remote: String) -> Void = { _, _, _, _ in }
     /// A merged thread was kept, for `reason` (said once per reason).
     public var keptOpen: @MainActor (_ agent: Agent, _ link: ThreadPullRequest, _ reason: String) -> Void = { _, _, _ in }
+    /// The workspace whose threads are linked, when it isn't the server's own (the background
+    /// host's, mirrored in its app); nil reads the server's.
+    public var state: @MainActor () -> ShepherdState? = { nil }
 
     public init(closeOnMerge: @escaping @MainActor () -> Bool,
                 lookup: @escaping @MainActor (String) async -> ThreadPullRequest?,
@@ -116,6 +119,7 @@ public final class PullRequestLinks {
     private var lookups: Set<AgentID> = []
     private weak var server: SessionServer?
     private let hosting: PullRequestLinkHosting
+    private var workspace: ShepherdState? { hosting.state() ?? server?.state }
 
     init(server: SessionServer, hosting: PullRequestLinkHosting) {
         self.server = server
@@ -129,11 +133,11 @@ public final class PullRequestLinks {
     /// close the thread. Returns the link (nil: none, or gh couldn't say).
     @discardableResult
     public func refresh(_ id: AgentID) async -> ThreadPullRequest? {
-        guard !lookups.contains(id), let server, let agent = server.state.agents.first(where: { $0.id == id }) else { return links[id] }
+        guard !lookups.contains(id), let state = workspace, let agent = state.agents.first(where: { $0.id == id }) else { return links[id] }
         lookups.insert(id)
-        let found = await hosting.lookup(Self.cwd(of: agent, in: server.state))
+        let found = await hosting.lookup(Self.cwd(of: agent, in: state))
         lookups.remove(id)
-        guard server.state.agents.contains(where: { $0.id == id }) else { return nil }
+        guard workspace?.agents.contains(where: { $0.id == id }) == true else { return nil }
         if links[id] != found {
             links[id] = found
             hosting.changed()
@@ -157,7 +161,7 @@ public final class PullRequestLinks {
     /// Every thread once per run, then only those with an open pull request or a merged one kept open.
     // ponytail: one gh call per thread, threads sharing a checkout included; group by folder if that shows up.
     public func poll() async {
-        guard let state = server?.state else { return }
+        guard let state = workspace else { return }
         for agent in state.agents where state.isOrdinaryThread(agent) {
             let id = agent.id
             guard !polled.contains(id) || links[id]?.isOpen == true || closeNotes[id] != nil else { continue }

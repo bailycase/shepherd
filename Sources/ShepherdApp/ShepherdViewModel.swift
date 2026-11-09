@@ -20,7 +20,9 @@ final class ShepherdViewModel {
     var state: ShepherdState
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
-    @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [server] in await server.forge($0) })
+    @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
+        await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
+    })
     /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
     /// over the same transport; none while the branch has no pull request.
     var branchPullRequests: [AgentID: ForgeStore] = [:]

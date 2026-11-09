@@ -58,6 +58,13 @@ extension ShepherdViewModel {
         if localHost != nil { remoteHosts.updateLocalThreadHints(live: ids) } else { sessions.watchThreadRevisions(of: ids) }
     }
 
+    /// One Issues & PRs request, answered with the workspace's threads and folders: by the
+    /// background host as its client, else the in-process server.
+    func forge(_ request: RemoteForgeRequest) async -> Result<RemoteForgeResult, ForgeError> {
+        if localHost != nil { return await remoteHosts.localForge(request) }
+        return await server.forge(request)
+    }
+
     /// A space change, persisted where the workspace lives: the background host (as its client),
     /// else the in-process server. Ordered after earlier changes either way (`enqueuePersistence`).
     func persistSpace(_ id: SpaceID, _ description: String, failureTitle: String, host action: RemoteSpaceAction,
