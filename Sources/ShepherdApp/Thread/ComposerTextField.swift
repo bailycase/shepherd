@@ -58,16 +58,8 @@ struct ComposerTextField: NSViewRepresentable {
     func makeNSView(context: Context) -> Field {
         let field = Field()
         field.cell = Cell(textCell: "")
-        field.isEditable = true
-        field.isSelectable = true
-        field.isBordered = false
-        field.drawsBackground = false
+        Self.configureLayout(field)
         field.focusRingType = .none
-        field.maximumNumberOfLines = SHComposerMetrics.fieldMaxLines
-        field.lineBreakMode = .byWordWrapping
-        field.cell?.wraps = true
-        field.cell?.isScrollable = false
-        field.cell?.usesSingleLineMode = false
         field.cell?.allowsUndo = true
         field.editor.allowsUndo = true
         field.editor.observeUndo()
@@ -94,6 +86,20 @@ struct ComposerTextField: NSViewRepresentable {
         return field
     }
 
+    /// What sets a field's size: the field and the one that measures it for the editing path are alike in it.
+    /// The field's cell is set first.
+    static func configureLayout(_ field: NSTextField) {
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.drawsBackground = false
+        field.maximumNumberOfLines = SHComposerMetrics.fieldMaxLines
+        field.lineBreakMode = .byWordWrapping
+        field.cell?.wraps = true
+        field.cell?.isScrollable = false
+        field.cell?.usesSingleLineMode = false
+    }
+
     func updateNSView(_ field: Field, context: Context) {
         // Observation can render synchronously from willSet, before the binding holds the
         // native edit. Do not write that old snapshot back into the editor publishing it.
@@ -118,7 +124,7 @@ struct ComposerTextField: NSViewRepresentable {
         }
         if replaced {
             field.setDraft(text)
-            field.invalidateIntrinsicContentSize()
+            field.invalidateSize()
             if field.currentEditor() != nil {
                 field.editor.setSelectedRange(NSRange(location: field.editor.textStorage?.length ?? 0, length: 0))
                 context.coordinator.readSelection(field)
@@ -145,8 +151,15 @@ struct ComposerTextField: NSViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: Field, context: Context) -> CGSize? {
         guard let width = proposal.width, width > 0 else { return nil }
         field.preferredMaxLayoutWidth = width
-        let bounds = CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
-        let height = field.cell?.cellSize(forBounds: bounds).height ?? field.intrinsicContentSize.height
+        let height: CGFloat
+        if field.currentEditor() != nil {
+            // The cell holds what editing began with: the editor's words are the field's.
+            height = field.fittingHeight(width: width)
+        } else {
+            let bounds = CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
+            height = field.cell?.cellSize(forBounds: bounds).height ?? field.intrinsicContentSize.height
+        }
+        field.answered(height, forWidth: width)
         return CGSize(width: width, height: height)
     }
 
@@ -160,7 +173,7 @@ struct ComposerTextField: NSViewRepresentable {
             let text = field.draftText
             field.publish(text)
             parent.text = text
-            field.invalidateIntrinsicContentSize()
+            field.edited()
             readSelection(field)
         }
         func readSelection(_ field: Field) {
@@ -204,6 +217,21 @@ struct ComposerTextField: NSViewRepresentable {
             if let storage = note.object as? NSTextStorage, storage.editedMask.contains(.editedCharacters) { storageEdits &+= 1 }
         }
 
+        /// The heights answered to `sizeThatFits`, and the editing heights measured for one set of words and style.
+        private var answers = Heights()
+        private var measured: (styleVersion: Int, revision: Int, heights: Heights)?
+        /// Characters the field's measures have laid out; a test zeroes it before an edit.
+        var lastMeasuredCharacters = 0
+
+        /// A cell alike the field's in everything that sets its size, holding the sample being measured. It is
+        /// never in a window.
+        private lazy var measurer: NSTextField = {
+            let measurer = NSTextField(frame: .zero)
+            measurer.cell = Cell(textCell: "")
+            ComposerTextField.configureLayout(measurer)
+            return measurer
+        }()
+
         func publish(_ text: String) {
             if text != published { revision &+= 1 }
             published = text
@@ -236,9 +264,81 @@ struct ComposerTextField: NSViewRepresentable {
             editor.defaultParagraphStyle = paragraph
             appliedStyle = style
             styleVersion &+= 1
+            invalidateSize()
+        }
+
+        func invalidateSize() {
+            SHRenderProbe.tick("layout.composerFieldInvalidated")
             invalidateIntrinsicContentSize()
         }
 
+        func answered(_ height: CGFloat, forWidth width: CGFloat) { answers[width] = height }
+
+        /// The field's words changed. Its size is asked again only when their height is not the one it last answered:
+        /// a keystroke that keeps the height changes nothing SwiftUI laid out.
+        func edited() {
+            // The width SwiftUI proposed: the frame is wider than the alignment rect the field is placed by, and the
+            // rect is on whole points where the proposal need not be.
+            let placed = alignmentRect(forFrame: frame).width
+            if currentEditor() != nil, placed > 0, let answer = answers.nearest(to: placed, within: 1),
+               answer.height == fittingHeight(width: answer.width) { return }
+            invalidateSize()
+        }
+
+        /// The height the words being edited need at `width`, as the cell would measure them whole, up to the
+        /// field's lines. The sample laid out is the start of the words, only as long as it must be to see whether
+        /// a line comes past the last one shown. Cached, so each edit is measured once.
+        func fittingHeight(width: CGFloat) -> CGFloat {
+            let words: String
+            if trustsPublished {
+                words = published
+            } else {
+                words = draftText
+                publish(words)
+            }
+            if let measured, measured.styleVersion == styleVersion, measured.revision == revision, let height = measured.heights[width] {
+                return height
+            }
+            let lines = SHComposerMetrics.fieldMaxLines
+            let height = SHComposerFit.height { count in
+                let sample = words.prefix(count)
+                show(sample)
+                let shown = cellHeight(of: sample, lines: lines, width: width)
+                if sample.endIndex == words.endIndex { return (shown, true, false) }
+                // A sample with a line past the last shown has the words' own first lines, and the cell stops at those.
+                return (shown, false, cellHeight(of: sample, lines: lines + 1, width: width) > shown)
+            }
+            if measured?.styleVersion != styleVersion || measured?.revision != revision { measured = (styleVersion, revision, Heights()) }
+            measured?.heights[width] = height
+            return height
+        }
+
+        /// Puts `sample` in the measurer as the field holds the words: with chips only if `setDraft` showed chips.
+        private func show(_ sample: Substring) {
+            if measurer.font != font { measurer.font = font }
+            if measurer.placeholderAttributedString !== placeholderAttributedString {
+                measurer.placeholderAttributedString = placeholderAttributedString
+            }
+            let text = String(sample)
+            guard showsChips else {
+                measurer.stringValue = text
+                return
+            }
+            let chips = text.contains(ComposerSkillToken.prefix)
+                ? SHSkillChips.attributed(text, tokens: ComposerSkillToken.ranges(in: text), name: ComposerSkillToken.name,
+                                          attributes: draftAttributes) : nil
+            measurer.attributedStringValue = chips ?? NSAttributedString(string: text, attributes: draftAttributes)
+        }
+
+        private func cellHeight(of sample: Substring, lines: Int, width: CGFloat) -> CGFloat {
+            SHRenderProbe.tick("layout.composerFieldMeasured")
+            if SHRenderProbe.isRecording { lastMeasuredCharacters += sample.count }
+            measurer.maximumNumberOfLines = lines
+            return measurer.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height ?? 0
+        }
+
+        /// Whether `setDraft` last showed the words with their skills as chips. Words typed or pasted in are plain text.
+        private(set) var showsChips = false
         /// Bumped with each style applied; `chipsStyle` is the one the chips were drawn in.
         private(set) var styleVersion = 0
         private(set) var chipsStyle = 0
@@ -252,18 +352,25 @@ struct ComposerTextField: NSViewRepresentable {
         func draftRange(_ range: NSRange) -> NSRange { SHSkillChips.draftRange(range, in: shown) }
         func editorRange(_ range: NSRange) -> NSRange { SHSkillChips.fieldRange(range, in: shown) }
 
+        /// What the words are shown in when they hold skill chips.
+        private var draftAttributes: [NSAttributedString.Key: Any] {
+            var attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: SHTextStyle.body.size)]
+            if let textColor { attributes[.foregroundColor] = textColor }
+            if let paragraph = editor.defaultParagraphStyle { attributes[.paragraphStyle] = paragraph }
+            return attributes
+        }
+
         /// Shows `text`, its skills as inline chips.
         func setDraft(_ text: String) {
             chipsStyle = styleVersion
             defer { publish(text) }
-            var attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: SHTextStyle.body.size)]
-            if let textColor { attributes[.foregroundColor] = textColor }
-            if let paragraph = editor.defaultParagraphStyle { attributes[.paragraphStyle] = paragraph }
             guard let chips = SHSkillChips.attributed(text, tokens: ComposerSkillToken.ranges(in: text), name: ComposerSkillToken.name,
-                                                      attributes: attributes) else {
+                                                      attributes: draftAttributes) else {
+                showsChips = false
                 stringValue = text
                 return
             }
+            showsChips = true
             attributedStringValue = chips
             if currentEditor() != nil { editor.textStorage?.setAttributedString(chips) }
         }
@@ -289,6 +396,26 @@ struct ComposerTextField: NSViewRepresentable {
             guard let window else { return }
             if wantsFocus, currentEditor() == nil { window.makeFirstResponder(self) }
             else if !wantsFocus, window.firstResponder === editor { window.makeFirstResponder(nil) }
+        }
+    }
+
+    /// A height for each of the last few widths a field was asked at.
+    struct Heights {
+        private var entries: [(width: CGFloat, height: CGFloat)] = []
+        /// The answer for the width nearest `width`, if one is within `tolerance` of it.
+        func nearest(to width: CGFloat, within tolerance: CGFloat) -> (width: CGFloat, height: CGFloat)? {
+            guard let best = entries.min(by: { abs($0.width - width) < abs($1.width - width) }),
+                  abs(best.width - width) < tolerance else { return nil }
+            return best
+        }
+        subscript(width: CGFloat) -> CGFloat? {
+            get { entries.first { $0.width == width }?.height }
+            set {
+                entries.removeAll { $0.width == width }
+                guard let newValue else { return }
+                entries.append((width, newValue))
+                if entries.count > 4 { entries.removeFirst() }
+            }
         }
     }
 
