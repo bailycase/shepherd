@@ -61,6 +61,7 @@ struct RPCSessionTests {
             case .compactionEnd: "compaction_end"
             case .autoRetryStart: "auto_retry_start"
             case .autoRetryEnd: "auto_retry_end"
+            case .entryAppended: "entry_appended"
             case .unknown(let type): "unknown:\(type)"
             }
         }

@@ -294,7 +294,7 @@ struct RPCWireTests {
         (#"{"type":"auto_retry_start"}"#, .autoRetryStart(attempt: 1, maxAttempts: 0, delayMs: 0, errorMessage: nil)),
         (#"{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"529 overloaded"}"#, .autoRetryEnd(success: false)),
         (#"{"type":"auto_retry_end","success":true,"attempt":1}"#, .autoRetryEnd(success: true)),
-        (#"{"type":"entry_appended","entry":{}}"#, .unknown(type: "entry_appended")),
+        (#"{"type":"entry_appended","entry":{}}"#, .entryAppended(entry: RPCSessionEntry(type: ""))),
         (#"{"reason":"threshold"}"#, .unknown(type: "")),
     ]
 
@@ -334,6 +334,77 @@ struct RPCWireTests {
     @Test(arguments: simpleEvents)
     func eventsDecode(json: String, expected: RPCEvent) throws {
         #expect(try Self.event(json) == expected)
+    }
+
+    private static func appended(_ entry: String) throws -> RPCSessionEntry {
+        guard case .entryAppended(let entry) = try event(#"{"type":"entry_appended","entry":\#(entry)}"#) else { throw CocoaError(.coderReadCorrupt) }
+        return entry
+    }
+
+    /// pi saves a custom message with its time as ISO text; its transcript lists the message with
+    /// that time in ms, so a fold from this event and a read agree on the id.
+    @Test func anAppendedCustomMessageEntryIsTheMessagePiListsForIt() throws {
+        let hook = try Self.appended(#"""
+        {"type":"custom_message","id":"e1","parentId":"e0","timestamp":"2026-11-07T06:10:00.123Z","customType":"shepherd.hook",
+         "content":"Keep going","display":true,"details":{"hook":"stop"}}
+        """#)
+        #expect(hook.type == "custom_message" && hook.id == "e1" && hook.parentID == "e0")
+        #expect(hook.message == RPCMessage(role: "custom", content: [.text("Keep going")], timestamp: 1_794_031_800_123,
+                                           customType: "shepherd.hook", display: true, details: .object(["hook": .string("stop")])))
+
+        let whole = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00Z","customType":"note","content":"x"}"#)
+        #expect(whole.message?.timestamp == 1_794_031_800_000)
+
+        let blocks = try Self.appended(#"""
+        {"type":"custom_message","timestamp":"2026-11-07T06:10:00.5Z","customType":"note","display":false,
+         "content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}
+        """#)
+        #expect(blocks.message?.content == [.text("a"), .text("b")] && blocks.message?.display == false)
+        #expect(blocks.id == nil && blocks.parentID == nil)
+
+        let bare = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00.123Z","customType":"note"}"#)
+        #expect(bare.message?.content == [] && bare.message?.display == nil)
+    }
+
+    @Test(arguments: ["shepherd.goal.check", "shepherd-peer-report", "shepherd.hook"])
+    func anAppendedCustomMessageKeepsDetailsForTheTypesThatShowThem(customType: String) throws {
+        let entry = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00Z","customType":"\#(customType)","content":"x","details":{"n":1}}"#)
+        #expect(entry.message?.details == .object(["n": .number(1)]))
+        #expect(RPCMessage.customTypesWithDetails.contains(customType))
+    }
+
+    @Test func anAppendedCustomMessageDropsDetailsForOtherTypes() throws {
+        let entry = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00Z","customType":"shepherd.goal.continue","content":"x","details":{"n":1}}"#)
+        #expect(entry.message?.details == nil && entry.message?.customType == "shepherd.goal.continue")
+    }
+
+    /// The same set decides it for a message in a history read.
+    @Test func aCustomMessageInAHistoryKeepsDetailsForTheSameTypes() throws {
+        let kept = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"custom","customType":"shepherd.hook","content":"x","details":{"n":1}}"#.utf8))
+        let dropped = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"custom","customType":"note","content":"x","details":{"n":1}}"#.utf8))
+        #expect(kept.details == .object(["n": .number(1)]) && dropped.details == nil)
+    }
+
+    @Test(arguments: ["custom", "usage", "context_edit", "compaction", "label", "branch_summary", "model_change", "message", "future_kind"])
+    func otherAppendedEntriesCarryNoMessage(type: String) throws {
+        let entry = try Self.appended(#"{"type":"\#(type)","id":"e2","parentId":"e1","timestamp":"2026-11-07T06:10:00.123Z","customType":"x","content":"c","summary":"s"}"#)
+        #expect(entry.type == type && entry.message == nil && entry.id == "e2" && entry.parentID == "e1")
+    }
+
+    /// A broken entry never costs the event: it is an entry of no type, or a custom message nobody can place.
+    @Test func aMalformedAppendedEntryKeepsTheEvent() throws {
+        for json in [#"{"type":"custom_message","timestamp":"yesterday","customType":"note","content":"x"}"#,
+                     #"{"type":"custom_message","customType":"note","content":"x"}"#,
+                     #"{"type":"custom_message","timestamp":5,"customType":"note","content":"x"}"#] {
+            let entry = try Self.appended(json)
+            #expect(entry.type == "custom_message" && entry.message == nil)
+        }
+        for json in ["5", #""custom_message""#, "[]", "null"] {
+            #expect(try Self.appended(json) == RPCSessionEntry(type: ""))
+        }
+        guard case .entryAppended(let none) = try Self.event(#"{"type":"entry_appended"}"#) else { Issue.record("expected entry"); return }
+        #expect(none == RPCSessionEntry(type: ""))
+        #expect(try Self.appended(#"{"type":5,"id":7}"#) == RPCSessionEntry(type: ""))
     }
 
     @Test func toolResultsCarryContentAndDetails() throws {
