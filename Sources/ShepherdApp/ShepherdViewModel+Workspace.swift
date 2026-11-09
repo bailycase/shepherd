@@ -203,7 +203,7 @@ extension ShepherdViewModel {
         if let remote = selectedRemoteAgent {
             if remoteInspectingAgent == remote, remoteVisibleTab(remote) != nil { return true }
             if let review = remoteReviews[remote], remoteFocusedPaneID == review.paneID { return true }
-            guard let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+            guard let connection = remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                   let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
                   let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else { return false }
             let focus = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? agent.paneID ?? tab.layout.firstLeaf.id
@@ -239,7 +239,7 @@ extension ShepherdViewModel {
                 return
             }
             if let review = remoteReviews[remote], remoteFocusedPaneID == review.paneID { cancelReview(review); return }
-            guard let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+            guard let connection = remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                   let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
                   let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else {
                 NSSound.beep()

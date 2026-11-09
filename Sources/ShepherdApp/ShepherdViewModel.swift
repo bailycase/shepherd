@@ -313,7 +313,7 @@ final class ShepherdViewModel {
         set { worktrees.starting = newValue }
     }
     var remoteChildren: [RemoteAgentRef: [ChildRun]] {
-        Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
+        Dictionary(uniqueKeysWithValues: remoteHosts.allConnections.flatMap { connection in
             connection.children.map { (RemoteAgentRef(hostID: connection.id, agentID: $0.key), $0.value) }
         })
     }
@@ -733,7 +733,7 @@ final class ShepherdViewModel {
         // Remote threads on screen (in any window) ask their host for revision hints; a hint wakes only a store already polling.
         remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
         hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
-        remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
+        remoteThreadStores.hostName = { [weak hosts] ref in hosts?.allConnections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
         instructions.piHome = server.pi.home
         self.instructions = instructions
@@ -872,7 +872,7 @@ final class ShepherdViewModel {
             self.syncLocalHostChildren()
             self.reconcileSidebarCompletions()
             self.notifyRemote()
-            let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
+            let liveRemote = Set(self.remoteHosts.allConnections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             })
             self.remoteThreadStores.prune(live: liveRemote)
@@ -881,7 +881,7 @@ final class ShepherdViewModel {
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
-                guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),
+                guard let connection = self.remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,
                       !connection.state.tabs.contains(where: { $0.layout.contains(review.paneID) }) else { continue }
                 let oldPaneID = review.paneID

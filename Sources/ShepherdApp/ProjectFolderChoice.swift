@@ -35,7 +35,7 @@ enum ProjectFolderRoute: Equatable {
 extension ShepherdViewModel {
     func projectFolderRoute(_ home: LogicalProjectHome) -> ProjectFolderRoute {
         guard case .host(let id) = home else { return .thisMac }
-        let connection = remoteHosts.connections.first { $0.id == id }
+        let connection = remoteHosts.allConnections.first { $0.id == id }
         return .route(home: home, connection: connection.map { ($0.config.name, $0.phase == .connected) })
     }
 }

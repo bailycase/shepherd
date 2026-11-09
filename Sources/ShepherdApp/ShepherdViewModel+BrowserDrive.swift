@@ -24,34 +24,42 @@ extension ShepherdViewModel {
     /// One thing a host said about an agent's browser.
     func remoteBrowserDrive(hostID: UUID, client: RemoteHostClient, push: BrowserDrivePush) {
         let ref = RemoteAgentRef(hostID: hostID, agentID: push.agentID)
+        // A thread of the background host that the app shows as its own: its page is the thread's
+        // local one, as in process (`localHost`).
+        let own = localHost?.id == hostID && state.agents.contains { $0.id == push.agentID }
         switch push {
         case .request(let token, _, let request):
             // Only the page this Mac claimed on this connection runs what the host sends, or any
             // page of the background host on this Mac, which has none of its own: its agents are
             // this Mac's, so the page acts for them as it does in process.
-            let thisMac = remoteHosts.connections.first { $0.id == hostID }?.isThisMac == true
+            let thisMac = remoteHosts.allConnections.first { $0.id == hostID }?.isThisMac == true
             let claimed = browsers.existing(ref).flatMap { session in session.remote?.drives(for: client) == true ? session : nil }
-            guard let session = claimed ?? (thisMac ? browsers.session(for: ref, hosts: remoteHosts) : nil), let remote = session.remote else {
+            let session = own ? browsers.session(for: push.agentID) : claimed ?? (thisMac ? browsers.session(for: ref, hosts: remoteHosts) : nil)
+            guard let session, own || session.remote != nil else {
                 client.browserAnswer(token: token, outcome: .failure(code: BrowserDriveCode.viewerGone,
                                                                       message: "The Mac showing this page is not driving it any more."))
                 return
             }
             Task { @MainActor [weak self] in
-                let outcome = thisMac ? await session.perform(request) : await session.performFromHost(request, policy: remote.policy)
+                let outcome = if !thisMac, let remote = session.remote {
+                    await session.performFromHost(request, policy: remote.policy)
+                } else {
+                    await session.perform(request)
+                }
                 client.browserAnswer(token: token, outcome: outcome)
                 if request.opensPage, case .result = outcome, let url = session.tabs.agentTarget?.url { self?.agentOpenedPage(session, url) }
             }
         case .abandoned:
-            browsers.existing(ref)?.abandonQueued()
+            (own ? browsers.existing(push.agentID) : browsers.existing(ref))?.abandonQueued()
         case .ended(_, let reason):
             browsers.existing(ref)?.remote?.driveEnded(reason: reason)
         case .handBack:
-            browsers.existing(ref)?.handBack()
+            (own ? browsers.existing(push.agentID) : browsers.existing(ref))?.handBack()
         case .opened(_, let address):
             // The agent opened a page in the host's own browser (no viewer owned it): the tab says
             // so, and nothing opens by itself.
             guard BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else { return }
-            agentOpenedPage(browsers.session(for: ref, hosts: remoteHosts), url)
+            agentOpenedPage(own ? browsers.session(for: push.agentID) : browsers.session(for: ref, hosts: remoteHosts), url)
         }
     }
 

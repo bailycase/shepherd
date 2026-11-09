@@ -121,7 +121,7 @@ struct ConversationThread: View {
         guard case .host(let host) = ref.home else { return nil }
         return { [vm] in
             guard let listing = try? await vm.remoteHosts.listModels(hostID: host) else { return .empty }
-            let allLevels = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
+            let allLevels = vm.remoteHosts.allConnections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
             return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
         }
     }

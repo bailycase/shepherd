@@ -81,8 +81,9 @@ struct LocalHostRoutingTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
-        vm.adoptLocalHost()
-        hosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        // As `ShepherdApp` connects it, with `SHEPHERD_THIS_MAC_LOCAL` at its default.
+        #expect(ShepherdViewModel.routesThisMacLocally)
+        vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) {
             vm.state.agents == host.server.state.agents && vm.state.spaces == host.server.state.spaces
         }
@@ -103,6 +104,35 @@ struct LocalHostRoutingTests {
 
         s.vm.selectAgent(ids[0])
         #expect(s.vm.selectedAgentID == ids[0] && s.vm.selectedRemoteAgent == nil)
+    }
+
+    /// Designs, automations, Projects and missions still reach the host as This Mac's host section on
+    /// their pages: the app's own workspace never holds them, so nothing acts on them through the
+    /// idle server, and a run opens as the host's thread.
+    @Test func automationsStayOnThisMacsHostSection() async throws {
+        let s = try await Self.setUp(agents: ["Fix the login redirect"])
+        defer { s.stop() }
+        var state = s.host.server.state
+        let automation = Automation(name: "Nightly triage", prompt: "triage", cwd: s.space.path)
+        let pane = LeafPane(cwd: s.space.path)
+        let tab = ShepherdCore.Tab(spaceID: s.space.id, order: 1, layout: .leaf(pane))
+        var run = Agent(name: "Triage #12", spaceID: s.space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+        run.automationOrigin = AutomationOrigin(automationID: automation.id)
+        state.automations = [automation]
+        state.agents.append(run)
+        state.tabs.append(tab)
+        try await s.host.server.putState(state)
+        let thisMac = try #require(s.hosts.localHost)
+        try await eventuallyOnMain("the host's automation to reach the app") {
+            thisMac.state.automations.map(\.id) == [automation.id] && thisMac.state.agents.contains { $0.id == run.id }
+        }
+
+        #expect(s.vm.state.automations.isEmpty && !s.vm.state.agents.contains { $0.id == run.id })
+        #expect(s.vm.state.agents.count == 1, "the ordinary thread stays the app's own")
+        #expect(s.vm.automationHosts.contains { $0.id == thisMac.id && $0.state.automations.map(\.id) == [automation.id] })
+        #expect(s.hosts.connections.isEmpty, "no other surface lists This Mac")
+        s.vm.selectRemoteAgent(hostID: thisMac.id, agentID: run.id)
+        #expect(s.vm.selectedRemoteAgent == RemoteAgentRef(hostID: thisMac.id, agentID: run.id))
     }
 
     @Test func renameAndDeleteReachTheHost() async throws {
@@ -184,11 +214,25 @@ struct LocalHostRoutingTests {
         #expect(agent.worktreePath.map { FileManager.default.fileExists(atPath: $0) } == true)
         #expect(s.vm.newThread.error == nil)
 
-        let id = try await s.vm.startAgent(NewAgentConfig(spaceID: SpaceID(rawValue: ""), workingDirectory: "", reservedAgentID: AgentID(),
-                                                          thinking: .medium))
-        let standalone = try #require(s.onHost(id))
+        // "No space" in the place menu, as in process: This Mac's first option, a standalone thread.
+        s.vm.openNewThread(in: s.space.id)
+        let sections = NewThreadPlaces.sections(NewThreadState.hosts(s.vm), chosen: s.vm.newThread.place)
+        #expect(sections.map(\.title) == [NewThreadPlaces.thisMac])
+        let noSpace = try #require(sections.first?.options.first)
+        #expect(noSpace.title == "No space")
+        let place = try #require(NewThreadPlaces.place(noSpace))
+        s.vm.newThread.choose(host: place.host, space: place.space, vm: s.vm)
+        #expect(s.vm.newThread.place == NewThreadPlace(host: nil, space: nil))
+        s.vm.newThread.prompt = "Compare approaches to organizing research notes"
+        try await eventuallyOnMain("the standalone thread's defaults") { s.vm.newThread.blocker(s.vm) == nil }
+        s.vm.newThread.send(s.vm)
+        try await eventuallyOnMain("the host's standalone thread", timeout: .seconds(20)) {
+            s.vm.selectedAgentID.flatMap(s.onHost).map { $0.id != agent.id } == true
+        }
+        let standalone = try #require(s.vm.selectedAgentID.flatMap(s.onHost))
         #expect(s.host.server.state.spaces.first { $0.id == standalone.spaceID }?.holdsThreads == true)
-        #expect(s.vm.selectedAgentID == id)
+        #expect(standalone.worktreeBranch == nil && s.vm.newThread.error == nil)
+        #expect(s.vm.state.agents.contains { $0.id == standalone.id }, "a local thread of the app's own")
     }
 
     @Test func aTerminalOpensAndClosesOnTheHost() async throws {

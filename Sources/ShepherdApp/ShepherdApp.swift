@@ -90,9 +90,7 @@ public struct ShepherdMacApp: App {
                 if BackgroundHostClient.owner == .host {
                     let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
                                                restoresAgentsAtLaunch: false, browserData: .persistent)
-                    if ShepherdViewModel.routesThisMacLocally { vm.adoptLocalHost() }
-                    vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac,
-                                                socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
+                    vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                     vm.backgroundService = service
                     vm.backgroundServiceStatus = status
                     let socket = BackgroundHostClient.socketPath()

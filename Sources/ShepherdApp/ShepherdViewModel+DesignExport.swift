@@ -40,7 +40,7 @@ extension ShepherdViewModel {
     /// Export… of a host's design: the sheet over this Mac's synced copy of its files, written
     /// here by this Mac's renderer.
     func openRemoteDesignExport(_ ref: RemoteDesignRef) {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
               let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
         let screen = remoteDesignScreens[ref]
         var selected = Set(screen?.picks.map(\.board) ?? [])
@@ -66,7 +66,7 @@ extension ShepherdViewModel {
             let files = try await server.designExportFiles(model.designID, boards: model.selection.boards)
             return (files, await designTokens(model.designID, files: files), designRendering)
         }
-        guard let connection = remoteHosts.connections.first(where: { $0.id == host }), let rendering = remoteDesignRendering(host) else {
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == host }), let rendering = remoteDesignRendering(host) else {
             throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
         }
         let source = connection.designs.source(model.designID)
