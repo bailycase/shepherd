@@ -30,6 +30,71 @@ struct ComposerFieldWorkTests {
         #expect(thread.store.draft.hasSuffix("dog.\nhello"))
     }
 
+    /// A keystroke in a long draft lays out the draft's first lines, not the draft: the field is as tall as
+    /// its eight lines need.
+    @Test func aKeystrokeMeasuresOnlyTheFirstLines() async throws {
+        let thread = ComposerThread(focused: true, animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = String(repeating: "The quick brown fox jumps over the lazy dog.\n", count: 1_500)
+        try await thread.settle()
+        let field = try #require(thread.field)
+
+        for letter in "hello" {
+            field.lastMeasuredCharacters = 0
+            SHRenderProbe.start()
+            thread.type(String(letter))
+            try await thread.settle()
+            let counts = SHRenderProbe.stop()
+            let measured = counts["layout.composerFieldMeasured", default: 0]
+            #expect(measured <= 2, "\"\(letter)\" measured the field \(measured) times: \(counts)")
+            #expect(field.lastMeasuredCharacters <= 8_192, "\"\(letter)\" measured \(field.lastMeasuredCharacters) characters")
+        }
+        #expect(thread.store.draft.hasSuffix("dog.\nhello"))
+    }
+
+    @Test func aPasteMeasuresOnlyTheLinesTheFieldShows() async throws {
+        let thread = ComposerThread(focused: true, animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let field = try #require(thread.field)
+        let empty = thread.composerInset
+        let paste = String(repeating: "The quick brown fox jumps over the lazy dog.\n", count: 11_000)
+
+        field.lastMeasuredCharacters = 0
+        thread.type(paste)
+        try await thread.settle()
+        #expect(thread.store.draft == paste)
+        #expect(field.lastMeasuredCharacters <= 8_192, "the paste measured \(field.lastMeasuredCharacters) characters")
+        #expect(thread.composerInset > empty, "the field grew to show the pasted lines")
+    }
+
+    /// The field's size changes with its height, not with its words: a keystroke that keeps the height
+    /// asks nothing to measure the field again.
+    @Test func aSameHeightKeystrokeInvalidatesNoSize() async throws {
+        let thread = ComposerThread(focused: true, animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.type("A line of the draft")
+        try await thread.settle()
+        let editor = try #require(thread.focusedEditor)
+
+        SHRenderProbe.start()
+        for letter in "hello" {
+            thread.type(String(letter))
+            try await thread.settle()
+        }
+        let letters = SHRenderProbe.stop()
+        print("composerFieldInvalidated per same-height key: \(letters["layout.composerFieldInvalidated", default: 0]) in 5, composerControlsMinimum: \(letters["layout.composerControlsMinimum", default: 0])")
+        #expect(letters["layout.composerFieldInvalidated", default: 0] == 0, "five letters on one line invalidated the field's size: \(letters)")
+
+        SHRenderProbe.start()
+        #expect(SHReturnKey.insertLineBreak(in: editor))
+        try await thread.settle()
+        let broken = SHRenderProbe.stop()
+        #expect(broken["layout.composerFieldInvalidated", default: 0] == 1, "a new line is a new height: \(broken)")
+    }
+
     @Test func aPublishedDraftIsNewOnlyWhenItsWordsChange() {
         let field = ComposerTextField.Field(frame: CGRect(x: 0, y: 0, width: 300, height: 40))
         field.publish("fix /skill:debug now")

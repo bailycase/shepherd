@@ -3,6 +3,7 @@ import Darwin
 import GhosttyTerminal
 import ShepherdRemote
 import ShepherdTestSupport
+import ShepherdUI
 import SwiftUI
 import Testing
 import UniformTypeIdentifiers
@@ -204,6 +205,40 @@ struct ThreadInputTests {
         let caret = editor.firstRect(forCharacterRange: editor.selectedRange(), actualRange: nil)
         let visible = thread.window.window.convertToScreen(editor.convert(editor.visibleRect, to: nil))
         #expect(visible.intersects(caret), "the end of a long draft remains reachable inside the scrolling field")
+    }
+
+    /// Typed or pasted lines grow the field the way a programmatic draft does, to its eight lines and no further.
+    @Test func typedLinesGrowTheFieldToItsEightLineCeiling() async throws {
+        let thread = ComposerThread(focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let empty = thread.composerInset
+        thread.store.draft = Array(repeating: "A line of the draft.", count: 8).joined(separator: "\n")
+        try await thread.settle()
+        let eight = thread.composerInset
+        #expect(eight > empty)
+        thread.store.draft = ""
+        try await thread.settle()
+        let editor = try #require(thread.focusedEditor)
+
+        thread.type("Line 1")
+        var last = empty
+        for n in 2...12 {
+            #expect(SHReturnKey.insertLineBreak(in: editor))
+            thread.type("Line \(n)")
+            if n <= 8 {
+                try await eventuallyOnMain("line \(n) to grow the field") { thread.composerInset > last }
+            } else {
+                try await eventuallyOnMain("line \(n) to keep the eight-line ceiling") { thread.composerInset == eight }
+            }
+            #expect(thread.composerInset <= eight, "line \(n) stays within the eight-line ceiling")
+            last = thread.composerInset
+        }
+        #expect(last == eight)
+
+        thread.type("\n" + String(repeating: "A line of the draft.\n", count: 3_000))
+        try await thread.settle()
+        #expect(thread.composerInset == eight, "a paste of 64 KB of lines keeps the eight-line ceiling")
     }
 
     @Test(arguments: [false, true])

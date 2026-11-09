@@ -146,6 +146,8 @@ struct ComposerTextField: NSViewRepresentable {
         guard let width = proposal.width, width > 0 else { return nil }
         field.preferredMaxLayoutWidth = width
         let bounds = CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
+        SHRenderProbe.tick("layout.composerFieldMeasured")
+        if SHRenderProbe.isRecording { field.lastMeasuredCharacters += field.cell?.attributedStringValue.length ?? 0 }
         let height = field.cell?.cellSize(forBounds: bounds).height ?? field.intrinsicContentSize.height
         return CGSize(width: width, height: height)
     }
@@ -160,6 +162,7 @@ struct ComposerTextField: NSViewRepresentable {
             let text = field.draftText
             field.publish(text)
             parent.text = text
+            SHRenderProbe.tick("layout.composerFieldInvalidated")
             field.invalidateIntrinsicContentSize()
             readSelection(field)
         }
@@ -189,6 +192,8 @@ struct ComposerTextField: NSViewRepresentable {
         /// Character edits the editor's storage has processed, and how many it had when `published` was set.
         private var storageEdits = 0
         private var publishedEdits = 0
+        /// Characters the field's measures have laid out; a test zeroes it before an edit.
+        var lastMeasuredCharacters = 0
 
         override init(frame: NSRect) {
             super.init(frame: frame)
