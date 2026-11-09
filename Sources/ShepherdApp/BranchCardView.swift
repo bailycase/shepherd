@@ -112,6 +112,7 @@ extension BranchCardOverlay {
         case .branch:
             BranchPickerMenu(title: "Switch branch", selected: card.branch, load: handle.branches,
                              choose: { finish($0.map(BranchCardAction.switchBranch)) },
+                             move: { finish(.moveToCheckout($0, $1)) },
                              newBranch: { finish(.newBranch) }, fetch: fetch, close: { picking = nil })
         case .base:
             BranchPickerMenu(title: "Change base", selected: store.status?.git.base.map { "origin/\($0)" }, load: handle.branches,

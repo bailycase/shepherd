@@ -101,6 +101,25 @@ extension SessionServer {
                 }
             },
             moveThread: { [unowned self] id, spaceID in try await moveRequestedThread(id, to: spaceID, hosting: hosting) }))
+        // The branch picker's "move here" restarts pi, so it needs the launch settings here; every
+        // other query goes on to `serveAgentQueries`' handler.
+        let queries = onRemoteAgentQuery
+        onRemoteAgentQuery = { [weak self] agentID, query, completion in
+            guard case .moveToCheckout(let path, let branch) = query else {
+                guard let queries else { return completion(.failure(RemoteCreateAgentError("Open Shepherd on the host for this."))) }
+                return queries(agentID, query, completion)
+            }
+            Task { @MainActor in
+                guard let self else { return completion(.failure(RemoteCreateAgentError("host is shutting down"))) }
+                do {
+                    try await self.restartingAfterMove(agentID, hosting: hosting) {
+                        try await self.moveThreadToCheckout(agentID, path: path, branch: branch)
+                    }
+                    completion(.success(.ok))
+                } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
+            }
+        }
+        watchCheckouts()
         // A client opened a thread whose pi has not started since the host did.
         onNativeThreadDemand = { [weak self] agentID in
             Task { @MainActor in await self?.startThreadPi(agentID, hosting: hosting) }
@@ -111,6 +130,30 @@ extension SessionServer {
         }))
         // No web view here: the app's window draws boards.
         relayDesignDrawingToApp()
+    }
+
+    /// The header's branch chip and recorded worktree branches with no app: each thread's
+    /// checkout read after the events the app's view model reads it after (a thread appearing, a
+    /// tool that may write files, a turn starting or ending).
+    @MainActor
+    private func watchCheckouts() {
+        let monitor = CheckoutMonitor(read: CheckoutMonitor.git) { [weak self] ids, cwd, checkout in
+            await self?.setAgentCheckouts(ids, checkout, directory: cwd)
+        }
+        let (onState, onTool, onStatus) = (onStateChanged, onAgentToolFinished, onAgentStatus)
+        onStateChanged = { state in
+            onState?(state)
+            MainActor.assumeIsolated { monitor.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id)) }
+        }
+        onAgentToolFinished = { id, tool in
+            onTool?(id, tool)
+            MainActor.assumeIsolated { if CheckoutMonitor.touchesFiles(tool: tool) { monitor.refresh(id, after: .seconds(1)) } }
+        }
+        onAgentStatus = { id, status, failure in
+            onStatus?(id, status, failure)
+            MainActor.assumeIsolated { monitor.refresh(id, after: .milliseconds(300)) }
+        }
+        monitor.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
     }
 
     /// Starts a thread's pi with the host's launch settings; a failure is logged.
@@ -133,12 +176,19 @@ extension SessionServer {
     /// stopping it; a thread that was dormant stays dormant until a client opens it.
     @MainActor
     private func moveRequestedThread(_ agentID: AgentID, to spaceID: SpaceID, hosting: ThreadHosting) async throws {
+        try await restartingAfterMove(agentID, hosting: hosting) { try await self.moveThread(agentID, to: spaceID) }
+    }
+
+    /// `move` stops the thread's pi (`relocateThread`); a pi that ran starts again afterwards,
+    /// wherever the thread now is.
+    @MainActor
+    private func restartingAfterMove(_ agentID: AgentID, hosting: ThreadHosting, _ move: () async throws -> Bool) async throws {
         let sessionID = state.agents.first { $0.id == agentID }.flatMap { agent in
             state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
         }
         let wasAlive = if let sessionID { await sessionInfo(sessionID: sessionID)?.isAlive == true } else { false }
         do {
-            guard try await moveThread(agentID, to: spaceID) else { return }
+            guard try await move() else { return }
         } catch {
             // Only a pi the move had already stopped starts again.
             if wasAlive, let sessionID, await sessionInfo(sessionID: sessionID)?.isAlive != true { await startThreadPi(agentID, hosting: hosting) }

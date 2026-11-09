@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdTestSupport
 import Testing
+import ShepherdSessions
 @testable import ShepherdApp
 
 /// The header's branch chip: each local agent's checkout read off the main thread, after the

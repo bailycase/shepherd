@@ -118,6 +118,70 @@ struct ThreadHostingTests {
         #expect(!StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue }, "a dormant thread stays dormant")
     }
 
+    /// The branch card's "move here" on This Mac: the host re-points a live thread at the worktree
+    /// that has the branch, its pi starting again there, then back to the main checkout as an
+    /// ordinary thread. No git runs, and the worktree it left stays.
+    @Test func theAppMovesAThreadToTheCheckoutThatHasABranchAndItsPiRestartsThere() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let repo = try makeScratchRepo()
+        let worktree = repo.deletingLastPathComponent().appendingPathComponent(repo.lastPathComponent + "-payout")
+        defer { for url in [repo, worktree] { try? FileManager.default.removeItem(at: url) } }
+        try git(["worktree", "add", "-q", "-b", "agent/payout-ui", worktree.path], in: repo)
+        let (main, linked) = (PiSessionFolder.realPath(repo.path), PiSessionFolder.realPath(worktree.path))
+        let space = Space(name: "acme-web", path: main)
+        try await h.server.addSpace(space)
+        let agentID = AgentID()
+        let pane = LeafPane(cwd: main, agentID: agentID)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(id: agentID, name: "Payout screen", spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true,
+                          piSessionID: "stub-session")
+        try await h.server.addAgent(agent, withTab: tab)
+        PiSessionFile.seedIfMissing(sessionID: "stub-session", cwd: main, sessionsRoot: h.server.pi.sessionsRoot)
+        let client = try await connect(path, token)
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.worktreeMoveCapability))
+
+        func serving(in cwd: String) async throws {
+            try await eventually("pi to serve in \(cwd)") { @Sendable in
+                guard let session = h.server.state.tabs.first?.layout.firstLeaf.sessionID,
+                      let info = await h.server.sessionInfo(sessionID: session), info.isAlive, info.cwd == cwd else { return false }
+                return await h.server.threadServes(sessionID: session)
+            }
+        }
+        // Started as opening the thread would.
+        _ = try await h.server.respawnAgent(AgentSpawn(agent: agent, cwd: "", settings: AgentLaunchSettings()))
+        try await serving(in: main)
+
+        var busy = try #require(h.server.state.agents.first)
+        busy.status = .working
+        try await h.server.updateAgent(busy)
+        await #expect(throws: RemoteHostClientError.self, "a running thread stays") {
+            _ = try await client.agentQuery(agentID: agent.id, query: .moveToCheckout(path: linked, branch: "agent/payout-ui"))
+        }
+        busy.status = .idle
+        try await h.server.updateAgent(busy)
+        await #expect(throws: RemoteHostClientError.self, "a checkout on another branch is refused") {
+            _ = try await client.agentQuery(agentID: agent.id, query: .moveToCheckout(path: linked, branch: "main"))
+        }
+        #expect(h.server.state.tabs.first?.layout.firstLeaf.cwd == main)
+
+        #expect(try await client.agentQuery(agentID: agent.id, query: .moveToCheckout(path: linked, branch: "agent/payout-ui")) == .ok)
+        let moved = try #require(h.server.state.agents.first)
+        #expect(moved.worktreeBranch == "agent/payout-ui" && moved.worktreePath == linked)
+        #expect(h.server.state.tabs.first?.layout.firstLeaf.cwd == linked)
+        try await serving(in: linked)
+        #expect(PiSessionFile.exists(sessionID: "stub-session", cwd: linked, sessionsRoot: h.server.pi.sessionsRoot))
+
+        #expect(try await client.agentQuery(agentID: agent.id, query: .moveToCheckout(path: main, branch: "main")) == .ok)
+        let back = try #require(h.server.state.agents.first)
+        #expect(back.worktreeBranch == nil && back.worktreePath == nil)
+        try await serving(in: main)
+        #expect(FileManager.default.fileExists(atPath: worktree.appendingPathComponent("README.md").path), "the worktree it left stays")
+        #expect(try git(["branch", "--show-current"], in: worktree).trimmingCharacters(in: .whitespacesAndNewlines) == "agent/payout-ui")
+    }
+
     @Test func theAppMakesADesignAndItsAgentStartsInTheDesignsFolder() async throws {
         try StubPi.installAsEngine()
         let (h, path, token) = try host()

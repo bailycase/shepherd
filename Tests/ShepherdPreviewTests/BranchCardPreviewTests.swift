@@ -91,6 +91,33 @@ struct BranchCardPreviewTests {
         }
     }
 
+    /// Switch branch from a worktree: main (in the main checkout) and another thread's worktree
+    /// branch move the thread there; while it runs, the rows say why they can't.
+    @Test func theSwitchBranchPickerMovesToAnotherCheckout() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let (origin, clone) = try clone()
+        let worktree = clone.deletingLastPathComponent().appendingPathComponent(clone.lastPathComponent + "-webhooks")
+        let payout = clone.deletingLastPathComponent().appendingPathComponent(clone.lastPathComponent + "-payout")
+        defer { for url in [origin, clone, worktree, payout] { try? FileManager.default.removeItem(at: url) } }
+        try git(["switch", "-q", "main"], in: clone)
+        try git(["worktree", "add", "-q", "-b", "agent/webhook-retries", worktree.path], in: clone)
+        try git(["worktree", "add", "-q", "--no-track", "-b", "sam/payout-ui", payout.path, "origin/sam/payout-ui"], in: clone)
+        var list = try await workspace.vm.branchPickerList(cwd: worktree.path)
+        list.threads[ShepherdViewModel.standard(PiSessionFolder.realPath(payout.path))] = "Payout screen"
+        for busy in [nil, "running"] as [String?] {
+            list.busy = busy
+            let shown = list
+            try await Preview.render(busy == nil ? "branch-picker-move" : "branch-picker-move-running", size: CGSize(width: 420, height: 360)) {
+                BranchPickerMenu(title: "Switch branch", selected: "agent/webhook-retries", load: { shown },
+                                 choose: { _ in }, move: { _, _ in }, newBranch: {}, fetch: {}, close: {})
+                    .padding(SH.Space.xl)
+                    .frame(width: 420, height: 360, alignment: .top)
+                    .background(Color.sh.bgWindow)
+            }
+        }
+    }
+
     /// The new thread's ⚙ (BranchWhereItRuns) and its Branch picker (BranchPicker).
     @Test func theNewThreadWhereItRunsAndBranchPicker() async throws {
         let workspace = try PreviewWorkspace()
