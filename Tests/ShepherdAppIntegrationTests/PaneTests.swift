@@ -165,6 +165,10 @@ struct PaneControlTests {
         #expect(info.id == terminal.id && info.isAlive && !info.isAgentPane)
         #expect(vm.selectedAgentID == visible.agent.id && vm.focusedPaneID == visible.piPane.id)
         #expect(TerminalPanel.tabs(in: tab.layout, thread: background.piPane.id).map(\.id) == [terminal.id])
+        let started = await app.server.listSessions().filter(\.isAlive).count
+        // What the terminal's view does when it draws: it takes the session the open started.
+        let drawn = vm.sessions.session(for: terminal, in: tab)
+        #expect(drawn.sessionID != nil && drawn.sessionID == vm.sessions.liveSession(forPane: terminal.id))
         var lastRead = "no reply"
         do {
             try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
@@ -182,18 +186,18 @@ struct PaneControlTests {
                 return lines.contains { $0.contains("terminal-ready") }
             }
         } catch let error as TimedOut {
-            let pane = vm.sessions.session(for: terminal, in: tab)
             let phase: String
-            switch pane.phase {
+            switch drawn.phase {
             case .connecting: phase = "connecting"
             case .live: phase = "live"
             case .failed: phase = "failed"
             case .exited: phase = "exited"
             case .stopped: phase = "stopped"
             }
-            print("Agent-opened terminal: phase=\(phase), bound=\(pane.sessionID != nil), reported grid=\(pane.lastCols)x\(pane.lastRows), last read=\(lastRead)")
+            print("Agent-opened terminal: phase=\(phase), bound=\(drawn.sessionID != nil), reported grid=\(drawn.lastCols)x\(drawn.lastRows), last read=\(lastRead)")
             throw error
         }
+        #expect(await app.server.listSessions().filter(\.isAlive).count == started, "drawing the terminal started no second shell")
     }
 
     /// The panel of the thread on screen opens on the terminal the agent opened, and the keyboard
@@ -302,7 +306,7 @@ struct PaneControlTests {
 
         let client = try #require(connection.browserClient)
         // The command echo cannot contain its output marker, even with prompt redraws.
-        try await client.openTerminal(agentID: agent.agent.id, cwd: space.path, command: "printf 'remote-%s' ready")
+        try await client.openTerminal(agentID: agent.agent.id, cwd: space.path, command: "printf 'remote-%s\\n' ready")
         let layout = try #require(host.state.tabs.first { $0.id == agent.tab.id }?.layout)
         let ran = try #require(layout.leaves.first { $0.id != agent.piPane.id && $0.id != opened })
         let session = try #require(host.sessions.liveSession(forPane: ran.id))
@@ -311,27 +315,27 @@ struct PaneControlTests {
         }
     }
 
-    /// The gh login helper opens a terminal beside the agent and types into it before any view
-    /// draws it.
-    @Test func theGhLoginTerminalStartsWithoutAView() async throws {
+    /// A terminal opened beside a thread to run a command gets its shell, and the command typed
+    /// into it, before any view draws it.
+    @Test func aTerminalOpenedBesideAThreadToRunACommandStartsWithoutAView() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
 
-        vm.openTerminalPane(besideAgent: agent.agent, running: "printf 'login-%s' ready")
+        vm.openTerminalPane(besideAgent: agent.agent, running: "printf 'tab-%s\\n' ready")
 
-        var login: LeafPane?
+        var opened: LeafPane?
         try await eventuallyOnMain("the terminal to join the layout") {
-            login = vm.state.tabs.first { $0.id == agent.tab.id }?.layout.leaves.first { $0.id != agent.piPane.id }
-            return login != nil
+            opened = vm.state.tabs.first { $0.id == agent.tab.id }?.layout.leaves.first { $0.id != agent.piPane.id }
+            return opened != nil
         }
-        let terminal = try #require(login)
+        let terminal = try #require(opened)
         try await eventuallyOnMain("its shell to go live") { vm.sessions.liveSession(forPane: terminal.id) != nil }
         let session = try #require(vm.sessions.liveSession(forPane: terminal.id))
         try await eventuallyAsync("the command's output to reach its screen", timeout: .seconds(20)) {
-            await app.server.screenText(sessionID: session)?.contains { $0.contains("login-ready") } == true
+            await app.server.screenText(sessionID: session)?.contains { $0.contains("tab-ready") } == true
         }
     }
 }
