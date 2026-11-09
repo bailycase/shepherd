@@ -32,7 +32,12 @@
   `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
   `focusThread` (the thread it shows, so phone pushes for it stay quiet; cleared when it
   disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
-  `agentNotify` push instead of posting on the host. With no app, the host
+  `agentNotify` push instead of posting on the host. The local link ends only when its socket
+  closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
+  alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
+  workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops
+  being read while it has 4 MiB unwritten, as a slow terminal emulator slows its program. Both
+  sides log every drop with its reason (`ShepherdLog.connection`, category `Connection`). With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves
@@ -451,7 +456,7 @@
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
   or action from another version's client) with `unsupported` and keeps the connection; a frame
-  with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
+  with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap (16 MiB from the host to a local client).
 - **Sizing:** viewports are smallest-viewer-wins. Each attached remote viewer reports its grid,
   and the PTY takes the minimum; with no remote viewers, the local viewport rules. Resize reports
   from unattached clients are ignored.

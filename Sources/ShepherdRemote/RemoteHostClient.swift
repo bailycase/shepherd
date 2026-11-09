@@ -106,6 +106,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var readSource: DispatchSourceRead?
     private var writeSource: DispatchSourceWrite?
     private var lineBuffer = LineBuffer()
+    /// Connected to the host on this Mac through its local socket (`init(localSocket:)`). Only
+    /// the socket closing ends this link: a slow reply or a full write queue fails one request,
+    /// since a busy host here is not a dead one, and frames may be as large as `localMaxPayloadBytes`.
+    private let isLocal: Bool
     private var pendingWrites: [Data] = []
     private var pendingWriteOffset = 0
     /// Bytes not yet written: what `pendingWrites` holds, less the offset into the first.
@@ -167,6 +171,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     static let readTurnBytes = 1024 * 1024
 
     static let requestTimeout: TimeInterval = 10
+    static let localHandshakeTimeout: TimeInterval = 60
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
 
     /// This connection's Browser tunnels (`RemoteProtocol.browserTunnelCapability`): opened on
@@ -175,6 +180,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     public init() {
         socketOpen = nil
+        isLocal = false
         tunnels = BrowserTunnelHub(queue: queue)
         tunnels.link = self
     }
@@ -182,7 +188,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A client of the host on this Mac, through its local socket (`host.sock`) at `path`: the
     /// remote protocol, offered `local.v1`. `connect`'s host and port are ignored.
     public convenience init(localSocket path: String) {
-        self.init(socketOpen: { _, _ in try Self.openUnix(path) })
+        self.init(socketOpen: { _, _ in try Self.openUnix(path) }, local: true)
     }
 
     /// Whether a host listens on the local socket at `path` now (a connect, closed at once).
@@ -220,8 +226,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     // Allows the pending-open lifecycle to be checked without relying on DNS timing.
-    init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32) {
+    init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32, local: Bool = false) {
         self.socketOpen = socketOpen
+        isLocal = local
         tunnels = BrowserTunnelHub(queue: queue)
         tunnels.link = self
     }
@@ -280,7 +287,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 self.fd = fd
                 disconnectNotified = false
                 established = false
-                lineBuffer = LineBuffer()
+                lineBuffer = LineBuffer(maxPayloadBytes: isLocal ? NDJSON.localMaxPayloadBytes : NDJSON.maxPayloadBytes)
                 let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
                 source.setEventHandler { [weak self] in self?.handleReadable() }
                 source.setCancelHandler { close(fd) }
@@ -289,7 +296,10 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
 
             do {
-                let helloReply = try await request(connectionGeneration: attempt) { id in
+                // A loaded Mac can take a while to answer even its own app; only a remote host that
+                // says nothing for the usual timeout is taken for unreachable.
+                let handshake = isLocal ? Self.localHandshakeTimeout : Self.requestTimeout
+                let helloReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in
                     .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
                            capabilities: capabilities)
                 }
@@ -306,7 +316,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     self.capabilities = Set(capabilities)
                     self.hostBuild = build
                 }
-                let stateReply = try await request(connectionGeneration: attempt) { id in .stateFetch(id: id) }
+                let stateReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in .stateFetch(id: id) }
                 guard case .state(_, let state) = stateReply else {
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
                 }
@@ -1362,14 +1372,26 @@ public final class RemoteHostClient: @unchecked Sendable {
                     self.nextRequestID += 1
                     ticket.id = id
                     self.pendingReplies[id] = continuation
-                    self.sendRequest(make(id))
+                    guard self.sendRequest(make(id)) else {
+                        // A remote client was torn down, which already failed it; a local one fails just this.
+                        self.pendingReplies.removeValue(forKey: id)?.resume(throwing: RemoteHostClientError.rejected(
+                            code: "not_sent", message: "The host isn't reading requests right now. Try again."))
+                        return
+                    }
                     self.queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
                         guard let self else { return }
                         // Cancelled before it answered: nothing waits, and nothing is torn down.
                         if self.cancelledReplies.remove(id) != nil { return }
                         guard let pending = self.pendingReplies.removeValue(forKey: id) else { return }
                         pending.resume(throwing: RemoteHostClientError.timeout)
-                        self.teardown(reason: "request timed out")
+                        guard self.isLocal else {
+                            self.teardown(reason: "request \(id) timed out after \(timeout) s")
+                            return
+                        }
+                        // The host on this Mac is busy (a loaded machine, a slow git), not gone: its
+                        // socket would have closed. The late reply is dropped like a cancelled one's.
+                        self.cancelledReplies.insert(id)
+                        ShepherdLog.connection("local host slow: request \(id) unanswered after \(timeout) s; connection kept")
                     }
                 }
             }
@@ -1384,22 +1406,31 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    private func sendRequest(_ req: RemoteRequest) {
-        guard fd >= 0 else { return }
+    /// Queues `req`; false when it was not queued (no connection, unencodable, or the queue is full).
+    @discardableResult
+    private func sendRequest(_ req: RemoteRequest) -> Bool {
+        guard fd >= 0 else { return false }
         let payload: Data
         do {
             payload = try NDJSON.encode(req)
         } catch {
             ShepherdLog.error("could not encode remote request: \(error)")
-            return
+            return false
         }
         guard pendingWriteBytes + payload.count <= Self.maxQueuedWriteBytes else {
-            teardown(reason: "write queue overflow")
-            return
+            let sizes = "\(pendingWriteBytes) B queued, \(payload.count) B more"
+            if isLocal {
+                // The host on this Mac isn't reading yet; it will. Refuse this one, keep the link.
+                ShepherdLog.connection("local host write queue full (\(sizes)); request refused, connection kept")
+            } else {
+                teardown(reason: "write queue overflow (\(sizes))")
+            }
+            return false
         }
         pendingWrites.append(payload)
         pendingWriteBytes += payload.count
         drainWrites()
+        return true
     }
 
     private func drainWrites() {
@@ -1683,6 +1714,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         pendingOpen?.cancel()
         pendingOpen = nil
         guard fd >= 0 else { return }
+        ShepherdLog.connection("\(isLocal ? "local host" : "host") connection ended: \(reason) (\(established ? "established" : "connecting"); "
+            + "\(pendingReplies.count) replies awaited, \(pendingWriteBytes) B unwritten, \(pendingEventBytes) B undelivered)")
         // A suspended source must be resumed before it is cancelled and released.
         if readsPaused { readSource?.resume() }
         readsPaused = false
