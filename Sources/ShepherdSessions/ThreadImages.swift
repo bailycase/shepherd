@@ -26,8 +26,13 @@ enum ThreadImages {
     /// on the owner's queue only looks entries up (`RPCThreadState.projectHistory(images:)`). Nothing is cached between calls: an
     /// identity that is not the whole content's hash is not an identity, and a table built from these very messages cannot be stale.
     static func table(for messages: [RPCMessage]) -> [String: Meta] {
+        table(for: RPCThreadState.shownHistory(messages))
+    }
+
+    /// The same table for a list already numbered (`RPCThreadState.HistoryProjector.shown`).
+    static func table(for shown: [(entryID: String, message: RPCMessage)]) -> [String: Meta] {
         var table: [String: Meta] = [:]
-        for (entryID, message) in RPCThreadState.shownHistory(messages) {
+        for (entryID, message) in shown {
             var index = 0
             for case .image(let mime, let base64, let ref) in message.content {
                 if let meta = ref.map({ named(mimeType: mime, ref: $0) }) ?? inspect(mimeType: mime, base64: base64)?.meta {
