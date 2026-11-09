@@ -733,11 +733,17 @@ struct ListPerformanceTests {
     }
 
     /// A caught-up thread of twenty messages with a prompt, and a reply that streams in on screen in three chunks: it
-    /// made its entrance, and `fencedReply`'s fences are drawn.
-    private func threadWithAReplyOnScreen() async throws -> (thread: FakeThread, asked: [NativeThreadMessage]) {
+    /// made its entrance, and `fencedReply`'s fences are drawn. `awayMidStream` switches the agent away and back
+    /// after the first chunk, so the reply is no longer one that arrived with the thread's latest change. `inCard`
+    /// is a design chat, where the prompt is a comment card and the turns draw no footer.
+    private func threadWithAReplyOnScreen(awayMidStream: Bool = false, inCard: Bool = false) async throws
+        -> (thread: FakeThread, asked: [NativeThreadMessage]) {
         let history = ThreadFixture.history(20)
-        let asked = history + [ThreadFixture.user("u", "Walk me through it")]
-        let thread = FakeThread(ThreadFixture.snapshot(history), size: CGSize(width: 900, height: 800))
+        let prompt = inCard ? LongThreads.user("u", "Walk me through it", origin: .designComment(id: LongThreads.commentID))
+            : ThreadFixture.user("u", "Walk me through it")
+        let asked = history + [prompt]
+        let thread = FakeThread(ThreadFixture.snapshot(history), size: CGSize(width: inCard ? AppLayout.designChatWidth : 900, height: 800),
+                                designCards: inCard ? DesignChatFixture.cards() : nil)
         do {
             try await thread.waitUntilReady()
             try await eventuallyOnMain("the thread to catch up") { thread.store.catchUp != nil }
@@ -746,6 +752,11 @@ struct ListPerformanceTests {
                 await serve(thread, messages: asked, provisional: [ThreadFixture.streaming(Self.fencedReply(chunk: 0))], running: true)
             }
             #expect(arrival["arrival.animates", default: 0] > 0, "the reply arrived on screen: \(arrival)")
+            if awayMidStream {
+                try await thread.show(false)
+                try await thread.show(true)
+                try await atRest(thread.window)
+            }
             for chunk in 1...2 {
                 await serve(thread, messages: asked, provisional: [ThreadFixture.streaming(Self.fencedReply(chunk: chunk))], running: true)
             }
@@ -758,27 +769,47 @@ struct ListPerformanceTests {
         return (thread, asked)
     }
 
-    /// A reply that arrived on screen with three fences, and its turn then ends: the one row view that drew
-    /// it while it streamed updates in place. Its fences keep their code views (none is created again) and its
-    /// parts do not run their entrances again; the footer that ends the turn is the one new part, so the one
-    /// entrance. The turn used to swap its live view for a new one, and the new one built every part afresh.
-    @Test func aTurnThatEndsUpdatesItsReplyInPlace() async throws {
-        let (thread, asked) = try await threadWithAReplyOnScreen()
-        defer { thread.close() }
-
-        let ended = try await counting(thread.window) {
+    /// Ends the turn of `threadWithAReplyOnScreen`'s reply and counts what the end draws, up to the store letting go of
+    /// running (400 ms after pi does), which redraws the turn too.
+    private func endingTheTurn(of thread: FakeThread, asked: [NativeThreadMessage]) async throws -> [String: Int] {
+        try await counting(thread.window) {
             await serve(thread, messages: asked + [ThreadFixture.assistant("a", Self.fencedReply(chunk: 2))], running: false)
             try await eventuallyOnMain("the turn to end") { thread.store.rows.last?.live == false }
-            // The store lets go of running 400 ms after pi does, and redraws the turn then too.
             try await eventuallyOnMain("the store to settle its running state") {
                 ListPerf.settle(thread.window)
                 return !thread.store.running
             }
         }
+    }
+
+    /// A reply that arrived on screen with three fences, and its turn then ends: the one row view that drew
+    /// it while it streamed updates in place. Its fences keep their code views (none is created again) and its
+    /// parts do not run their entrances again; the footer that ends the turn is the one new part, so the one
+    /// entrance (none in a design chat, whose turns draw no footer). The turn used to swap its live view for a
+    /// new one, and the new one built every part afresh.
+    @Test(arguments: [false, true]) func aTurnThatEndsUpdatesItsReplyInPlace(inCard: Bool) async throws {
+        let (thread, asked) = try await threadWithAReplyOnScreen(inCard: inCard)
+        defer { thread.close() }
+
+        let ended = try await endingTheTurn(of: thread, asked: asked)
 
         #expect(ended["code.nativeCreated", default: 0] == 0, "no code view is made again: \(ended)")
-        #expect(ended["arrival.animates", default: 0] <= 1, "only the footer makes an entrance: \(ended)")
+        #expect(ended["arrival.animates", default: 0] == (inCard ? 0 : 1), "only the footer makes an entrance: \(ended)")
         #expect(ended["thread.agentTurn", default: 0] <= 2, "the turn redraws for its end and nothing else: \(ended)")
+        #expect(Self.nativeFields(in: thread.window.host) == Self.replyFences, "the finished reply draws its fences")
+    }
+
+    /// A reply that did not arrive on screen with the thread's latest change (its agent was switched away from and
+    /// back to while it streamed) is a reply whose footer was always simply there when its turn ended: it makes no
+    /// entrance now either. Only a reply that arrived on screen brings its footer in (`aTurnThatEndsUpdatesItsReplyInPlace`).
+    @Test func aReplyThatDidNotArriveOnScreenMakesNoEntranceWhenItsTurnEnds() async throws {
+        let (thread, asked) = try await threadWithAReplyOnScreen(awayMidStream: true)
+        defer { thread.close() }
+
+        let ended = try await endingTheTurn(of: thread, asked: asked)
+
+        #expect(ended["code.nativeCreated", default: 0] == 0, "no code view is made again: \(ended)")
+        #expect(ended["arrival.animates", default: 0] == 0, "nothing makes an entrance: \(ended)")
         #expect(Self.nativeFields(in: thread.window.host) == Self.replyFences, "the finished reply draws its fences")
     }
 

@@ -456,7 +456,8 @@ struct ThreadView: View {
         let _ = SHRenderProbe.tick("thread.rowBuilder")
         ThreadRowLayer {
             // One view serves the streaming shell and the reply it becomes, so the turn's end updates its turn in place.
-            ThreadRowContent(store: store, row: row, active: active, parentCatchingUp: catchingUp, settled: settled) { shown, inputs in
+            ThreadRowContent(store: store, row: row, active: active, parentCatchingUp: catchingUp, settled: settled,
+                             arriving: arrived.contains(row.id)) { shown, inputs in
                 turn(shown, running: running, thinking: inputs.thinking, wait: inputs.wait, arriving: arrived.contains(shown.id), settled: inputs.settled)
             }
         }
@@ -482,14 +483,17 @@ struct ThreadView: View {
         var settled: Bool
     }
 
-    /// A transcript row's content. A finished row draws what the list holds, and reads nothing of the store.
+    /// A transcript row's content. A finished row draws what the list holds, and reads none of the streaming state
+    /// (`liveRow`, `showsThinking`, `liveWait`, the thread's version), so a chunk never reaches it.
     /// The streaming reply is held in the list as a shell (`NativeThreadStore.listRows`), and its row reads the
     /// store's `liveRow` and `showsThinking` itself, so each streamed chunk and each tool boundary invalidates this
     /// one view and not the transcript that holds its shell.
     ///
     /// The same view draws the shell and the reply it becomes, with no branch between them: when the turn ends its
     /// turn is updated where it stands, and keeps its code views, its disclosures and the entrances it has played,
-    /// where a branch flipping under the row's id would build every part again.
+    /// where a branch flipping under the row's id would build every part again. The render in which it flips still
+    /// moves as the swap did: what that render brings (the footer, the changes card, a new part) enters only for a
+    /// reply that arrived on screen (`arriving`).
     ///
     /// Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
     /// is written. Between tools the turn ends in "Thinking…". A question waits in the composer
@@ -502,8 +506,17 @@ struct ThreadView: View {
         let parentCatchingUp: Bool
         /// The transcript's verdict on whether its motion is on, for a row that is not the shell.
         let settled: Bool
+        /// The row arrived with the thread's latest change (`ThreadArrivals`).
+        let arriving: Bool
         @ViewBuilder let content: (NativeThreadRow, LiveTurnInputs) -> Content
-        @State private var catchUp = CatchUpGate()
+        @State private var memory = Memory()
+
+        /// What the row keeps between its renders. A reference, so keeping it current never redraws the row.
+        @MainActor private final class Memory {
+            let catchUp = CatchUpGate()
+            /// Whether the last render drew the shell; nil until the first.
+            var shell: Bool?
+        }
 
         /// What one render draws, and what its catch-up gate decided.
         private struct Drawn {
@@ -515,14 +528,21 @@ struct ThreadView: View {
         }
 
         private func resolve() -> Drawn {
-            guard row.live, row.presentation == nil else {
-                return Drawn(row: row, inputs: LiveTurnInputs(thinking: false, wait: NativeLiveWait(), settled: settled))
+            let shell = row.live && row.presentation == nil
+            // The turn is kept across the flip, so its first render after it has already appeared. Without this, what
+            // that render brings would enter for every reply and not only for one that arrived on screen.
+            let flipped = memory.shell.map { $0 != shell } ?? false
+            memory.shell = shell
+            let moves = arriving || !flipped
+            guard shell else {
+                return Drawn(row: row, inputs: LiveTurnInputs(thinking: false, wait: NativeLiveWait(), settled: settled && moves))
             }
             SHRenderProbe.tick("thread.liveRow")
             let version = store.threadVersion
-            let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: version, parent: parentCatchingUp)
+            let catchingUp = memory.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: version, parent: parentCatchingUp)
             let thinking = store.showsThinking
-            let inputs = LiveTurnInputs(thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(), settled: active && !catchingUp)
+            let inputs = LiveTurnInputs(thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(),
+                                        settled: active && !catchingUp && moves)
             // No live row draws nothing: the shell holds no content.
             return Drawn(row: store.liveRow ?? row, inputs: inputs, catchingUp: catchingUp, version: version)
         }

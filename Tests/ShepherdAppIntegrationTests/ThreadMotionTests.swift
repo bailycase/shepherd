@@ -162,7 +162,7 @@ struct ThreadMotionTests {
             ListPerf.settle(thread.window)
         }
 
-        #expect(count >= 2, "the user row and the wait line made their entrances")
+        #expect(count == 2, "the user row and the wait line made their entrances, and nothing else did")
     }
 
     /// A reply that opens with a running call is made after the thread caught up, and its first
