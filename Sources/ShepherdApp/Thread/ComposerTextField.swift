@@ -108,7 +108,14 @@ struct ComposerTextField: NSViewRepresentable {
         if field.accessibilityLabel() != label { field.setAccessibilityLabel(label) }
         field.editor.attach = attach
         field.editor.keys = keys
-        let replaced = field.draftText != text
+        let replaced: Bool
+        if field.trustsPublished {
+            replaced = text != field.published
+        } else {
+            let shown = field.draftText
+            replaced = shown != text
+            if !replaced { field.publish(shown) }
+        }
         if replaced {
             field.setDraft(text)
             field.invalidateIntrinsicContentSize()
@@ -150,7 +157,9 @@ struct ComposerTextField: NSViewRepresentable {
             field.publishingEdit = true
             defer { field.publishingEdit = false }
             // Not editing (an assistive client set AXValue): the cell holds the text, not the editor.
-            parent.text = field.draftText
+            let text = field.draftText
+            field.publish(text)
+            parent.text = text
             field.invalidateIntrinsicContentSize()
             readSelection(field)
         }
@@ -173,6 +182,38 @@ struct ComposerTextField: NSViewRepresentable {
         let editor = Editor()
         private var appliedStyle: Style?
         private var pendingStyle: Style?
+
+        /// The words the draft last spelled out of this field, and how often they changed.
+        private(set) var published = ""
+        private(set) var revision = 0
+        /// Character edits the editor's storage has processed, and how many it had when `published` was set.
+        private var storageEdits = 0
+        private var publishedEdits = 0
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            NotificationCenter.default.addObserver(self, selector: #selector(storageProcessed(_:)),
+                                                   name: NSTextStorage.didProcessEditingNotification, object: editor.textStorage)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        deinit { NotificationCenter.default.removeObserver(self) }
+
+        @objc private func storageProcessed(_ note: Notification) {
+            if let storage = note.object as? NSTextStorage, storage.editedMask.contains(.editedCharacters) { storageEdits &+= 1 }
+        }
+
+        func publish(_ text: String) {
+            if text != published { revision &+= 1 }
+            published = text
+            publishedEdits = storageEdits
+        }
+
+        /// The editor holds `published` while it has had no character edit since: only the field's own edits
+        /// changed it. Anything else (AppKit loading the cell as editing begins, undo, a service, a programmatic set)
+        /// breaks this, and the update compares what the field shows.
+        var trustsPublished: Bool { currentEditor() != nil && publishedEdits == storageEdits }
 
         func updateStyle(_ style: Style) {
             pendingStyle = style
@@ -203,6 +244,7 @@ struct ComposerTextField: NSViewRepresentable {
         private(set) var chipsStyle = 0
         /// What the field holds, as the draft spells it: each skill chip as its "/skill:name".
         var draftText: String {
+            SHRenderProbe.tick("text.composerFieldCopied")
             if currentEditor() != nil, let storage = editor.textStorage { return SHSkillChips.text(of: storage) }
             return SHSkillChips.text(of: attributedStringValue)
         }
@@ -213,6 +255,7 @@ struct ComposerTextField: NSViewRepresentable {
         /// Shows `text`, its skills as inline chips.
         func setDraft(_ text: String) {
             chipsStyle = styleVersion
+            defer { publish(text) }
             var attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: SHTextStyle.body.size)]
             if let textColor { attributes[.foregroundColor] = textColor }
             if let paragraph = editor.defaultParagraphStyle { attributes[.paragraphStyle] = paragraph }
