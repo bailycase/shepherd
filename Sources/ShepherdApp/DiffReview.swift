@@ -117,6 +117,12 @@ final class ReviewSession: Identifiable {
     /// When the review was last sent (ms since the epoch): the agent's reply turns the pane to
     /// Last turn, unless the reader picks a scope meanwhile.
     var sentAt: Double?
+    /// Files changed in the working tree while the pane was out of sight (a Files-tab Save): the
+    /// pane reloads when it shows, then clears this.
+    var workingTreeChanged = false
+    /// The agent's latest turn as the pane last saw it, to tell a turn that ended while the tab
+    /// was hidden (`ChangesFollow.shown`).
+    @ObservationIgnored var followedTurn: ChangesTurn?
 
     /// Comments by file, then by line: a file's section takes one dictionary (unchanged files
     /// compare equal without a scan), and a row finds its comment in O(1).

@@ -99,6 +99,45 @@ struct FileEditingTests {
         #expect(try String(contentsOf: secret, encoding: .utf8) == "secret")
     }
 
+    @Test func onlyASaveThatWroteTheFileTellsOnSaved() async throws {
+        let (root, file, model) = try await open("a\n")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var saved: [String] = []
+        model.onSaved = { saved.append($0) }
+        model.setText("mine\n", for: file.path)
+        try "theirs\n".write(to: file, atomically: true, encoding: .utf8)
+        await model.save()
+        #expect(saved.isEmpty, "a conflict wrote nothing")
+        await model.save(overwrite: true)
+        #expect(saved == [file.path])
+    }
+
+    @Test func aSaveWhoseTabClosedMeanwhileStillTellsOnSaved() async throws {
+        let started = Locked(false)
+        let (gate, release) = AsyncStream<Void>.makeStream()
+        defer { release.finish() }
+        let source = FileTreeSource(list: { _, _ in .success([]) }, read: { _ in .success(.text(["a"], "txt")) },
+                                    write: { _, _, _ in
+                                        started.withValue { $0 = true }
+                                        for await _ in gate {}
+                                        return .saved
+                                    })
+        let model = FileTreeModel(rootPath: "/acme-web", source: source)
+        var saved: [String] = []
+        model.onSaved = { saved.append($0) }
+        await model.select(path: "/acme-web/a.txt")
+        model.setText("b", for: "/acme-web/a.txt")
+
+        let saving = Task { await model.save() }
+        try await eventuallyOnMain("the write to start") { started.current }
+        await model.closeTab("/acme-web/a.txt")
+        release.finish()
+        await saving.value
+
+        #expect(model.edits["/acme-web/a.txt"] == nil)
+        #expect(saved == ["/acme-web/a.txt"], "the file was written all the same")
+    }
+
     @Test func aRemoteTreeIsReadOnly() async throws {
         let source = FileTreeSource(list: { _, _ in .success([]) }, read: { _ in .success(.text(["a"], "txt")) })
         let model = FileTreeModel(rootPath: "/remote/acme-web", source: source)

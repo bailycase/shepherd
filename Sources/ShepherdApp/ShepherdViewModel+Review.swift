@@ -279,6 +279,15 @@ extension ShepherdViewModel {
 
     // MARK: Loading
 
+    /// The person changed files in `agentID`'s working tree (a Files-tab Save): the branch chip
+    /// counts them now, and the Changes tab, which is out of sight while they edit, reloads the
+    /// next time it shows.
+    func workingTreeChanged(_ agentID: AgentID) {
+        checkouts?.refresh(agentID, priority: true)
+        guard let session = reviewSessions.values.first(where: { $0.agentID == agentID }), !session.workingTreeChanged else { return }
+        session.workingTreeChanged = true
+    }
+
     /// Loads the review again: a Changes review its scope, a legacy review its side (nil the
     /// working tree, "pr" the PR). Comments are kept and re-anchor to the lines they were written
     /// on where the diff still has them.
@@ -645,7 +654,9 @@ extension ShepherdViewModel {
             session.engine = makeChangesEngine(agentID, cwdPath)
             // Branch for a worktree agent, else Uncommitted, until the engine's overview says;
             // Last turn once the agent has replied to a review.
-            let replied = repliedSinceReview(owner, latest: threadStores.store(for: agentID).snapshot?.turnChanges?.last)
+            let latest = threadStores.store(for: agentID).snapshot?.turnChanges?.last
+            session.followedTurn = latest
+            let replied = repliedSinceReview(owner, latest: latest)
             session.scope = reference == "pr" ? .pullRequest : replied ? .lastTurn : agent.worktreeBase != nil ? .branch(base: nil) : .uncommitted
             session.scopeChosen = reference == "pr" || replied
             loadChanges(session)

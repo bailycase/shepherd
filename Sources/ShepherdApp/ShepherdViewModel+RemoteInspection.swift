@@ -137,7 +137,9 @@ extension ShepherdViewModel {
             // A host with the Changes engine: its scopes, lists and files over `changes*`.
             let session = ReviewSession(agentID: target.agentID, paneID: PaneID(), cwd: cwd, reference: nil, isLoading: true)
             session.engine = remoteChangesEngine(target)
-            let replied = repliedSinceReview(.remote(target), latest: remoteThreadStores.store(for: target).snapshot?.turnChanges?.last)
+            let latest = remoteThreadStores.store(for: target).snapshot?.turnChanges?.last
+            session.followedTurn = latest
+            let replied = repliedSinceReview(.remote(target), latest: latest)
             session.scope = pullRequest ? .pullRequest : replied ? .lastTurn : agent?.worktreeBase != nil ? .branch(base: nil) : .uncommitted
             session.scopeChosen = pullRequest || replied
             remoteReviews[target] = session
