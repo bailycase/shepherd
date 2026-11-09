@@ -13,7 +13,11 @@ import ShepherdUI
 /// right and the transcript centers in the rest; narrower, the card folds to one row over the corner.
 struct BranchCardDock: ViewModifier {
     let store: BranchCardStore?
-    let branch: AgentBranchLabel?
+    let branch: String?
+    /// The checkout's changed-file count, for a layout whose model carries it (a remote page's):
+    /// the card reads again when it moves. A local layout leaves it 0 and the view model asks
+    /// the store instead, so the count is no input of the layout.
+    var changedFiles = 0
     let active: Bool
     @State private var wide = true
 
@@ -28,7 +32,9 @@ struct BranchCardDock: ViewModifier {
             }
             .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
             // On the thread, not the card: the card draws nothing until its first read lands.
-            .task(id: store.map { ReadKey(branch: branch, active: active, request: $0.refreshRequest) }) {
+            .task(id: store.flatMap { store in
+                branch.map { ReadKey(branch: $0, changedFiles: changedFiles, active: active, request: store.refreshRequest) }
+            }) {
                 guard let store, active else { return }
                 while !Task.isCancelled {
                     await store.refresh()
@@ -37,9 +43,11 @@ struct BranchCardDock: ViewModifier {
             }
     }
 
-    /// Read again when the branch or its changed files move, a turn ends, or the thread shows.
+    /// Read again when the branch moves, a turn ends, the view model asks (its checkout's count
+    /// moved while the thread was on screen), or the thread shows.
     private struct ReadKey: Equatable {
-        let branch: AgentBranchLabel?
+        let branch: String
+        let changedFiles: Int
         let active: Bool
         let request: Int
     }
@@ -47,7 +55,7 @@ struct BranchCardDock: ViewModifier {
 
 struct BranchCardOverlay: View {
     let store: BranchCardStore
-    let branch: AgentBranchLabel
+    let branch: String
     let active: Bool
     /// The thread docks the whole card (`BranchCardDock`); else it folds to one row.
     let wide: Bool
