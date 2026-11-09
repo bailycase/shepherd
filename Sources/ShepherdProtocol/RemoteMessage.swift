@@ -50,7 +50,10 @@ public enum RemoteProtocol {
     /// And it draws a background host's designs off screen when the host asks
     /// (`designRelayCapability`), which a host asks only of a local client that lists it.
     public static let designRelayCapability = "designRelay.v1"
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability]
+    /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
+    /// which a host asks only of a local client that lists it.
+    public static let appRelayCapability = "appRelay.v1"
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -724,6 +727,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// The app's answer to a `RemoteReply.designRelay` carrying `requestToken`. Nothing answers
     /// it; one from anyone but the client the job went to, or for a job that is over, is ignored.
     case designRelayAnswer(requestToken: Int, result: DesignRelayResult)
+    /// The app's answer to a `RemoteReply.appRelay` carrying `requestToken`. Nothing answers it;
+    /// one from anyone but the client the job went to, or for a job that is over, is ignored.
+    case appRelayAnswer(requestToken: Int, result: AppRelayResult)
 
     private enum CodingKeys: String, CodingKey {
         case registration, registrationID, agentIDs, session, revision
@@ -750,7 +756,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case design, mission
         case tunnel
         case browserClaim, browserRelease, browserAnswer
-        case designRelayAnswer
+        case designRelayAnswer, appRelayAnswer
     }
 
     public init(from decoder: Decoder) throws {
@@ -776,6 +782,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .browserAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), outcome: try c.decode(BrowserOutcome.self, forKey: .outcome))
         case .designRelayAnswer:
             self = .designRelayAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), result: try c.decode(DesignRelayResult.self, forKey: .result))
+        case .appRelayAnswer:
+            self = .appRelayAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), result: try c.decode(AppRelayResult.self, forKey: .result))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
         case .mission:
@@ -1078,6 +1086,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.designRelayAnswer, forKey: .type)
             try c.encode(requestToken, forKey: .requestToken)
             try c.encode(result, forKey: .result)
+        case .appRelayAnswer(let requestToken, let result):
+            try c.encode(Kind.appRelayAnswer, forKey: .type)
+            try c.encode(requestToken, forKey: .requestToken)
+            try c.encode(result, forKey: .result)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1268,6 +1280,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// app that shows its threads as its own (`RemoteProtocol.localThreadsCapability`), which
     /// posts the banner; the host doesn't.
     case agentNotify(agentID: AgentID, title: String, body: String)
+    /// What a background host's agent asks of Shepherd's window (`AppRelayJob`), pushed only to
+    /// a local client that lists `RemoteProtocol.appRelayCapability`; answered
+    /// `RemoteRequest.appRelayAnswer` with the same token.
+    case appRelay(token: Int, job: AppRelayJob)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1293,7 +1309,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify
+        case designRelay, agentNotify, appRelay
     }
 
     public init(from decoder: Decoder) throws {
@@ -1313,6 +1329,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .browserDrive(try c.decode(BrowserDrivePush.self, forKey: .push))
         case .designRelay:
             self = .designRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(DesignRelayJob.self, forKey: .job))
+        case .appRelay:
+            self = .appRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(AppRelayJob.self, forKey: .job))
         case .agentNotify:
             self = .agentNotify(agentID: try c.decode(AgentID.self, forKey: .agentID), title: try c.decode(String.self, forKey: .title),
                                 body: try c.decode(String.self, forKey: .body))
@@ -1593,6 +1611,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(push, forKey: .push)
         case .designRelay(let token, let job):
             try c.encode(Kind.designRelay, forKey: .type)
+            try c.encode(token, forKey: .token)
+            try c.encode(job, forKey: .job)
+        case .appRelay(let token, let job):
+            try c.encode(Kind.appRelay, forKey: .type)
             try c.encode(token, forKey: .token)
             try c.encode(job, forKey: .job)
         case .agentNotify(let agentID, let title, let body):

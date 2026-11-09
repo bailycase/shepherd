@@ -394,11 +394,11 @@ struct RemoteRequestTests {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 50
+    static let caseCount = 51
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -483,6 +483,8 @@ struct RemoteRequestTests {
             boards: [.init(picture: .init(name: "board.png", bytes: 1_024, pixelWidth: 800, pixelHeight: 600), html: nil)],
             computedStyles: ["color": "#111111"]))),
         .designRelayAnswer(requestToken: 6, result: .failed(code: "render_failed", message: "Two.dc.html couldn't be drawn.")),
+        .appRelayAnswer(requestToken: 7, result: .done(text: "Review ready in the side pane's Changes tab.")),
+        .appRelayAnswer(requestToken: 8, result: .failed(code: "no_such_agent", message: "unknown agent a")),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -653,11 +655,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 47
+    static let caseCount = 48
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -726,6 +728,8 @@ struct RemoteReplyTests {
         .browserDrive(.request(token: 12, agentID: S.agent, request: .click(ref: "e4", double: false, note: "paying"))),
         .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
         .agentNotify(agentID: AgentID(rawValue: "a"), title: "CI passed", body: "PR #42 is green"),
+        .appRelay(token: 6, job: .review(agentID: AgentID(rawValue: "a"), cwd: "/tmp/acme-web", reference: "pr")),
+        .appRelay(token: 7, job: .confirmSpaceDelete(spaceID: SpaceID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c34"))),
         .designRelay(token: 3, job: .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
                                                             request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
                                                             deadline: Date(timeIntervalSince1970: 1_000)))),

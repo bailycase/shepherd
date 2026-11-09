@@ -874,6 +874,9 @@ public final class SessionServer: @unchecked Sendable {
     /// who waits for the answer. Server queue.
     var designRelays: [Int: (fd: Int32, answer: (DesignRelayResult?) -> Void)] = [:]
     var nextDesignRelayToken = 0
+    /// Jobs handed to the app's window (`relayToApp`), by token.
+    private var appRelays: [Int: (fd: Int32, answer: (AppRelayResult?) -> Void)] = [:]
+    private var nextAppRelayToken = 0
 
     private struct DriveRequest {
         let asker: ExtensionConnection
@@ -2638,6 +2641,9 @@ public final class SessionServer: @unchecked Sendable {
         case .designRelayAnswer(let token, let result):
             guard designRelays[token]?.fd == client.fd else { return }
             designRelays.removeValue(forKey: token)?.answer(result)
+        case .appRelayAnswer(let token, let result):
+            guard appRelays[token]?.fd == client.fd else { return }
+            appRelays.removeValue(forKey: token)?.answer(result)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
         case .agentQuery(let id, let agentID, .setWorktree(let branch, let base)):
@@ -4393,6 +4399,7 @@ public final class SessionServer: @unchecked Sendable {
             pushNotifications.focused = nil
         }
         for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
+        for (token, relay) in appRelays where relay.fd == client.fd { appRelays.removeValue(forKey: token)?.answer(nil) }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -7485,6 +7492,20 @@ public final class SessionServer: @unchecked Sendable {
             nextDesignRelayToken += 1
             designRelays[nextDesignRelayToken] = (app.fd, answer)
             send(.designRelay(token: nextDesignRelayToken, job: job), to: app)
+        }
+    }
+
+    /// Hands `job` to the app connected over `host.sock`, for a host with no window of its own.
+    /// `answer` gets the app's result, or nil when no such app is connected or it went away
+    /// first. Any thread; `answer` is called on the server queue.
+    func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
+        queue.async { [self] in
+            guard let app = clients.values.first(where: {
+                $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability)
+            }) else { return answer(nil) }
+            nextAppRelayToken += 1
+            appRelays[nextAppRelayToken] = (app.fd, answer)
+            send(.appRelay(token: nextAppRelayToken, job: job), to: app)
         }
     }
 

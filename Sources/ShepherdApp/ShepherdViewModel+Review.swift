@@ -21,6 +21,32 @@ extension ShepherdViewModel {
                 self.beginReview(agentID: agentID, cwd: cwd, reference: reference, respond: respond)
             }
         }
+        // The background host on this Mac has no window: what its agents ask of one is answered
+        // here, as this app answers its own server's agents.
+        remoteHosts.onAppRelay = { [weak self] client, token, job in
+            let answer = { (result: AppRelayResult) in client.appRelayAnswer(token: token, result: result) }
+            guard let self else { return answer(.failed(code: "unavailable", message: "The workspace is gone.")) }
+            switch job {
+            case .review(let agentID, let cwd, let reference):
+                self.beginReview(agentID: agentID, cwd: cwd, reference: reference) { outcome in
+                    switch outcome {
+                    case .submitted(let text): answer(.done(text: text))
+                    case .failed(let code, let message): answer(.failed(code: code, message: message))
+                    }
+                }
+            case .confirmSpaceDelete(let id):
+                // As `handleProjectRequest(.delete)`: the dialog shows; the user confirms or not.
+                guard self.state.spaces.contains(where: { $0.id == id && !$0.hidden }) else {
+                    return answer(.failed(code: "no_such_project", message: "No registered local space has that ID."))
+                }
+                guard self.spaceDeleteTarget == nil || self.spaceDeleteTarget == id else {
+                    return answer(.failed(code: "confirmation_busy", message: "Another space removal is awaiting confirmation."))
+                }
+                self.spaceDeleteRequested = true
+                self.spaceDeleteTarget = id
+                answer(.done(text: "confirmation_required"))
+            }
+        }
     }
 
     /// Show the agent's Changes tab scrolled to `path`, in front of an inspected subagent: the
