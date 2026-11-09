@@ -228,6 +228,7 @@ struct RemoteHostClientTests {
         (.worktreeStatus(operationID: UUID()), RemoteProtocol.worktreeActionsCapability),
         (.review(pullRequest: false), RemoteProtocol.agentInspectionCapability),
         (.devServers, RemoteProtocol.browserTunnelCapability),
+        (.moveToCheckout(path: "/tmp/acme-web-feat", branch: "feat/card"), RemoteProtocol.worktreeMoveCapability),
     ])
     func eachAgentQueryNeedsItsCapability(_ query: RemoteAgentQuery, _ capability: String) {
         #expect(RemoteHostClient.capability(for: query) == capability)

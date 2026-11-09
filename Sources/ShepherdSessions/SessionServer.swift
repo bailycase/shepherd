@@ -6584,13 +6584,17 @@ public final class SessionServer: @unchecked Sendable {
 
     /// One shared checkout read publishes once. Membership and directory authority are checked
     /// here, not in the app's earlier snapshot, so moved/deleted agents never receive stale data.
+    /// A worktree whose branch changed outside Shepherd (an agent or a terminal ran `git switch`)
+    /// has it recorded for every thread in it, persisted, so labels and pull request links follow.
     public func setAgentCheckouts(_ agentIDs: [AgentID], _ checkout: AgentCheckout?, directory: String? = nil) async {
         await enqueueValue {
             let members = Set(agentIDs)
             let layouts = Dictionary(self.store.state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
+            let switched = checkout.map(\.branch).flatMap { Self.looksDetached($0) ? nil : $0 }
+            func renamed(_ agent: Agent) -> Bool { switched != nil && agent.worktreeBranch != nil && agent.worktreeBranch != switched }
             let indices = self.store.state.agents.indices.filter { index in
                 let agent = self.store.state.agents[index]
-                guard members.contains(agent.id), agent.checkout != checkout else { return false }
+                guard members.contains(agent.id), agent.checkout != checkout || renamed(agent) else { return false }
                 if let directory {
                     let layout = layouts[agent.tabID]
                     let cwd = layout?.leaves.first { $0.agentID == agent.id }?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd
@@ -6600,6 +6604,13 @@ public final class SessionServer: @unchecked Sendable {
                 return true
             }
             guard !indices.isEmpty else { return }
+            if let switched, indices.contains(where: { renamed(self.store.state.agents[$0]) }),
+               (try? self.mutateState({ state in
+                   for index in indices {
+                       state.agents[index].checkout = checkout
+                       if state.agents[index].worktreeBranch != nil { state.agents[index].worktreeBranch = switched }
+                   }
+               })) != nil { return }
             self.store.updateLive { state in
                 for index in indices { state.agents[index].checkout = checkout }
             }
@@ -6607,6 +6618,12 @@ public final class SessionServer: @unchecked Sendable {
             self.broadcastRemoteState(committedState)
             self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
         }
+    }
+
+    /// `CheckoutStatus` reads a detached HEAD as its short commit: no branch to record.
+    // ponytail: a branch literally named like a 7-digit hex commit is never recorded.
+    nonisolated static func looksDetached(_ branch: String) -> Bool {
+        branch.count == 7 && branch.allSatisfy(\.isHexDigit)
     }
 
     /// Persist a hand-entered agent title without replacing the rest of the
@@ -7926,7 +7943,69 @@ public final class SessionServer: @unchecked Sendable {
     private var nextPeerDeliveryID = 0
 
     @discardableResult public func moveThread(_ agentID: AgentID, to spaceID: SpaceID) async throws -> Bool {
-        let plan = try await enqueue { () -> (Agent, LeafPane, Space)? in
+        try await relocateThread(agentID, missing: "The destination space's folder is missing.", plan: { state, agent, _ in
+            guard agent.worktreePath == nil && agent.worktreeBranch == nil else {
+                throw ProjectFileError("worktree_thread", "Worktree threads cannot move between spaces.")
+            }
+            guard let destination = state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
+                throw ProjectFileError("no_such_space", "Choose an existing, non-reserved space on this host.")
+            }
+            return agent.spaceID == spaceID ? nil : destination.path
+        }, apply: { state, index, tab in
+            state.agents[index].spaceID = spaceID
+            state.tabs[tab].spaceID = spaceID
+        })
+    }
+
+    /// The Switch branch picker's "move here": points a thread at `path`, another checkout of its
+    /// space's repository that already has `branch` checked out (a linked worktree, or the main
+    /// checkout), as `moveThread` moves one between spaces: its pi stops and its conversation
+    /// follows. No git command runs and neither checkout's files change; the worktree it leaves
+    /// stays on disk. In a linked worktree the thread records it and its branch (as a worktree
+    /// thread); in the main checkout it is an ordinary thread of its space again. False when it
+    /// is already there. The caller restarts its pi.
+    @discardableResult public func moveThreadToCheckout(_ agentID: AgentID, path: String, branch: String) async throws -> Bool {
+        let snapshot = state
+        guard let agent = snapshot.agents.first(where: { $0.id == agentID }),
+              let from = snapshot.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.cwd,
+              let space = snapshot.spaces.first(where: { $0.id == agent.spaceID }) else {
+            throw ProjectFileError("no_such_agent", "The thread no longer exists.")
+        }
+        let target = PiSessionFolder.realPath((path as NSString).expandingTildeInPath)
+        // Read-only git: the folder is a registered checkout of the space's repository, on `branch`.
+        let main = try await Task.detached(priority: .userInitiated) { () throws -> Bool in
+            guard let repo = try? GitWorktree.primaryCheckout(at: space.path),
+                  (try? GitWorktree.primaryCheckout(at: target)) == repo,
+                  (try? GitWorktree.containsCheckout(repo: repo, checkout: target)) == true else {
+                throw ProjectFileError("not_a_checkout", "That folder is not a checkout of this space's repository.")
+            }
+            guard GitWorktree.currentBranch(repo: target) == branch else {
+                throw ProjectFileError("workspace_changed", "That checkout is no longer on \(branch). Nothing was moved.")
+            }
+            // primaryCheckout's spelling of a path, so /private/tmp and /tmp compare equal.
+            return repo == URL(fileURLWithPath: target).resolvingSymlinksInPath().standardized.path
+        }.value
+        // Another thread already there lends its recorded base.
+        let base = agent.worktreeBase ?? snapshot.agents.first { $0.worktreePath.map(PiSessionFolder.realPath) == target }?.worktreeBase
+        return try await relocateThread(agentID, missing: "That checkout's folder is missing.", plan: { _, agent, pane in
+            guard pane.cwd == from else { throw ProjectFileError("workspace_changed", "The thread changed. Nothing was moved.") }
+            return PiSessionFolder.realPath(pane.cwd) == target ? nil : target
+        }, apply: { state, index, _ in
+            state.agents[index].worktreeBranch = main ? nil : branch
+            state.agents[index].worktreePath = main ? nil : target
+            state.agents[index].worktreeBase = main ? nil : base
+            state.agents[index].checkout = nil
+        })
+    }
+
+    /// Moves a thread's pi to another folder: refused unless it is an ordinary, idle thread; its
+    /// pi stopped, its conversation copied to the folder's session directory, and its pane's cwd
+    /// rewritten with `apply`, all or nothing. `plan` validates on the server queue (before the
+    /// stop and again before the write) and names the folder, nil when nothing needs moving.
+    private func relocateThread(_ agentID: AgentID, missing: String,
+                                plan: @escaping (ShepherdState, Agent, LeafPane) throws -> String?,
+                                apply: @escaping (inout ShepherdState, Int, Int) -> Void) async throws -> Bool {
+        let planned = try await enqueue { () -> (Agent, LeafPane, String)? in
             guard let agent = self.store.state.agents.first(where: { $0.id == agentID }),
                   let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }),
                   let paneID = agent.paneID, let pane = tab.layout.leaf(withID: paneID) else {
@@ -7935,14 +8014,9 @@ public final class SessionServer: @unchecked Sendable {
             guard self.store.state.isOrdinaryThread(agent), !self.store.state.isProjectWorker(agentID),
                   !self.store.state.isProjectCoordinator(agentID),
                   !self.store.state.automations.contains(where: { $0.agentID == agentID }) else {
-                throw ProjectFileError("not_a_thread", "Only ordinary threads can move between spaces.")
+                throw ProjectFileError("not_a_thread", "Only ordinary threads can move.")
             }
-            guard agent.worktreePath == nil && agent.worktreeBranch == nil else {
-                throw ProjectFileError("worktree_thread", "Worktree threads cannot move between spaces.")
-            }
-            guard let destination = self.store.state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
-                throw ProjectFileError("no_such_space", "Choose an existing, non-reserved space on this host.")
-            }
+            let destination = try plan(self.store.state, agent, pane)
             guard !self.movingThreads.contains(agentID), !self.peerDeliveries.values.contains(where: { $0.agentID == agentID }),
                   agent.status != .working, agent.status != .blocked,
                   agent.waitingOn == nil else {
@@ -7962,17 +8036,17 @@ public final class SessionServer: @unchecked Sendable {
             }), !self.agentRequests.values.contains(where: { $0.targetAgentID == agentID }) else {
                 throw ProjectFileError("thread_active", "The thread is starting or handling another request. Try again when it is inactive.")
             }
-            if agent.spaceID == spaceID { return nil }
+            guard let destination else { return nil }
             self.movingThreads.insert(agentID)
             return (agent, pane, destination)
         }
-        guard let (agent, pane, destination) = plan else { return false }
+        guard let (agent, pane, destination) = planned else { return false }
         var copy: ThreadSessionMove?
         do {
             var directory: ObjCBool = false
-            let cwd = PiSessionFolder.realPath(destination.path)
+            let cwd = PiSessionFolder.realPath(destination)
             guard FileManager.default.fileExists(atPath: cwd, isDirectory: &directory), directory.boolValue else {
-                throw ProjectFileError("no_such_directory", "The destination space's folder is missing.")
+                throw ProjectFileError("no_such_directory", missing)
             }
             let root = pi.sessionsRoot
             let allowMissing = pane.sessionID == nil && agent.piSessionID == nil && agent.lastActiveAt == nil
@@ -8013,16 +8087,15 @@ public final class SessionServer: @unchecked Sendable {
                 guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
                       self.store.state.agents[index].spaceID == agent.spaceID,
                       self.store.state.agents[index].effectivePiSessionID == agent.effectivePiSessionID,
-                      self.store.state.agents[index].worktreePath == nil,
-                      self.store.state.agents[index].worktreeBranch == nil,
-                      self.store.state.spaces.contains(where: { $0 == destination }),
+                      self.store.state.agents[index].worktreePath == agent.worktreePath,
+                      self.store.state.agents[index].worktreeBranch == agent.worktreeBranch,
                       let tab = self.store.state.tabs.firstIndex(where: { $0.id == agent.tabID }),
-                      self.store.state.tabs[tab].layout.leaf(withID: pane.id)?.cwd == pane.cwd else {
+                      self.store.state.tabs[tab].layout.leaf(withID: pane.id)?.cwd == pane.cwd,
+                      (try? plan(self.store.state, self.store.state.agents[index], pane)) == destination else {
                     throw ProjectFileError("workspace_changed", "The thread or destination changed. Nothing was moved.")
                 }
                 try self.mutateState {
-                    $0.agents[index].spaceID = spaceID
-                    $0.tabs[tab].spaceID = spaceID
+                    apply(&$0, index, tab)
                     $0.tabs[tab].layout = $0.tabs[tab].layout.updatingLeaf(pane.id) { $0.cwd = cwd }
                 }
             }
