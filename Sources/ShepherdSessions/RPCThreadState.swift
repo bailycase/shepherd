@@ -974,7 +974,7 @@ final class RPCThreadState {
             retry = nil
         case .turnStart:
             beginDiagnostic("model.response", operation: "model.response")
-        case .turnEnd, .unknown:
+        case .turnEnd, .unknown, .entryAppended:
             break
         }
         commit()
