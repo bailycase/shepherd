@@ -392,13 +392,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 47
+    static let caseCount = 48
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -429,6 +429,12 @@ struct RemoteRequestTests {
         .listModels(id: 10),
         .drain(id: 10),
         .addSpace(id: 5, path: "/Users/demo/Developer/project"),
+        .spaceAction(id: 5, spaceID: S.space, action: .rename(name: "acme-web")),
+        .spaceAction(id: 5, spaceID: S.space, action: .setWorktreeBase(base: nil)),
+        .spaceAction(id: 5, spaceID: S.space, action: .setWorktreeBase(base: "origin/release")),
+        .spaceAction(id: 5, spaceID: S.space, action: .setSidebarHidden(hidden: true)),
+        .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
+        .spaceAction(id: 5, spaceID: S.space, action: .delete),
         .createAgent(id: 6, spaceID: S.space, cwd: "/tmp/checkout", model: "anthropic/claude-4", thinking: .high,
                      initialPrompt: "fix the \"thing\"\nplease", worktreeBranch: "worktree/a", worktreeBase: "origin/release",
                      worktreeFetchFirst: false,

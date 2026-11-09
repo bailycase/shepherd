@@ -122,6 +122,30 @@ struct LocalHostRoutingTests {
         #expect(s.vm.actionError == nil)
     }
 
+    /// The project menu's rename, base, hide, order and remove reach the host (`spaceAction`).
+    @Test func spaceChangesReachTheHost() async throws {
+        let s = try await Self.setUp(agents: ["Fix the login redirect"])
+        defer { s.stop() }
+        let other = try makeScratchDirectory("acme-api")
+        let added = try #require(await s.vm.addSpace(at: other, select: false))
+        func onHost() -> [Space] { s.host.server.state.spaces }
+
+        s.vm.renameSpace(s.space.id, to: "Acme Web")
+        s.vm.setWorktreeBase("origin/release", for: s.space.id)
+        s.vm.setProjectHiddenFromSidebar(s.space.id, true)
+        try await eventuallyOnMain("the host to rename, base and hide it") {
+            onHost().first { $0.id == s.space.id }.map { $0.name == "Acme Web" && $0.worktreeBase == "origin/release" && $0.sidebarHidden } == true
+        }
+        s.vm.moveProject(s.space.id, before: added)
+        try await eventuallyOnMain("the host to reorder") { onHost().map(\.id) == [s.space.id, added] }
+        s.vm.deleteSpace(s.space.id)
+        try await eventuallyOnMain("the host to remove it and its threads") {
+            onHost().map(\.id) == [added] && s.host.server.state.agents.isEmpty && s.vm.state.spaces.map(\.id) == [added]
+        }
+        #expect(s.vm.actionError == nil)
+        try? FileManager.default.removeItem(at: other)
+    }
+
     @Test func aNewThreadStartsOnTheHostAndIsSelectedHere() async throws {
         try StubPi.installAsEngine()
         let s = try await Self.setUp()

@@ -716,6 +716,12 @@ final class RemoteHostStore {
         return try await client.listModels()
     }
 
+    /// Changes a space of the background host on this Mac (`spaceAction`).
+    func spaceAction(hostID: UUID, spaceID: SpaceID, _ action: RemoteSpaceAction) async throws {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        try await client.spaceAction(action, spaceID: spaceID)
+    }
+
     /// Create a space on a host from a host-side directory path.
     func addSpace(hostID: UUID, path: String) async throws -> SpaceID {
         guard let client = allConnections.first(where: { $0.id == hostID })?.client else {

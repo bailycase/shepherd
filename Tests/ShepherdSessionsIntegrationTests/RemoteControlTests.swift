@@ -364,6 +364,19 @@ struct RemoteControlTests {
         #expect(seen.current == [.rename(name: "Renamed"), .deleteKeepingWorktree])
     }
 
+    /// Space actions are this Mac's own app's (the local socket): a paired client is refused and
+    /// nothing changes.
+    @Test func aPairedClientCannotChangeSpaces() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let space = Space(name: "acme-web", path: r.host.dir.path)
+        try await r.server.addSpace(space)
+        let client = try await r.raw()
+        try client.send(.spaceAction(id: 1, spaceID: space.id, action: .rename(name: "renamed")))
+        guard case .error(1, "unsupported", _) = try await client.next() else { Issue.record("expected unsupported"); return }
+        #expect(r.server.state.spaces.first?.name == "acme-web")
+    }
+
     @Test func agentQueriesRouteToTheHost() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

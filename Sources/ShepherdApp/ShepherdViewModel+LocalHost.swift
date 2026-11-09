@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// The background service's client, with the host's workspace as the app's own: the host on this
 /// Mac pushes its state into `adopt`, as the in-process server does, so the sidebar, the thread,
@@ -55,6 +56,18 @@ extension ShepherdViewModel {
     /// The threads whose revisions are pushed: those on screen and those opening a turn.
     func watchThreadRevisions(of ids: Set<AgentID>) {
         if localHost != nil { remoteHosts.updateLocalThreadHints(live: ids) } else { sessions.watchThreadRevisions(of: ids) }
+    }
+
+    /// A space change, persisted where the workspace lives: the background host (as its client),
+    /// else the in-process server. Ordered after earlier changes either way (`enqueuePersistence`).
+    func persistSpace(_ id: SpaceID, _ description: String, failureTitle: String, host action: RemoteSpaceAction,
+                      server operation: @escaping @Sendable (SessionServer) async throws -> Void) {
+        guard let host = localHost else {
+            enqueuePersistence(description, failureTitle: failureTitle, operation: operation)
+            return
+        }
+        let (hosts, hostID) = (remoteHosts, host.id)
+        enqueuePersistence(description, failureTitle: failureTitle) { _ in try await hosts.spaceAction(hostID: hostID, spaceID: id, action) }
     }
 
     /// The models the workspace's pi offers: the host's pi as its client, else this app's.

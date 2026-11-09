@@ -368,6 +368,19 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     }
 }
 
+/// What this Mac's own app does to a space of its background host (`RemoteRequest.spaceAction`),
+/// as the in-process app does to its own: the sidebar's project menu and the base picker.
+public enum RemoteSpaceAction: Codable, Hashable, Sendable {
+    case rename(name: String)
+    /// The branch new worktrees start from; nil goes back to Settings ▸ Worktrees.
+    case setWorktreeBase(base: String?)
+    case setSidebarHidden(hidden: Bool)
+    /// Before `target`, or last (nil).
+    case move(before: SpaceID?)
+    /// Stops its agents and forgets it; its folder stays.
+    case delete
+}
+
 public struct RemoteWorktreeInfo: Codable, Hashable, Sendable {
     public var path: String
     public var branch: String
@@ -591,6 +604,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case drain(id: Int)
     /// Create a space from a directory that exists on the host.
     case addSpace(id: Int, path: String)
+    /// Local clients only (`localCapability`): this Mac's own app changes one of its background
+    /// host's spaces. Answered `ok`.
+    case spaceAction(id: Int, spaceID: SpaceID, action: RemoteSpaceAction)
     /// Create an agent on the host: the host GUI runs its normal creation
     /// flow (spawn pi, seed the session file, bind the pane) and the new
     /// agent arrives at every client via the state push.
@@ -683,7 +699,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, addSpace, spaceAction, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -847,6 +863,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .addSpace(
                 id: try c.decode(Int.self, forKey: .id),
                 path: try c.decode(String.self, forKey: .path)
+            )
+        case .spaceAction:
+            self = .spaceAction(
+                id: try c.decode(Int.self, forKey: .id),
+                spaceID: try c.decode(SpaceID.self, forKey: .spaceID),
+                action: try c.decode(RemoteSpaceAction.self, forKey: .action)
             )
         case .createAgent:
             self = .createAgent(
@@ -1069,6 +1091,11 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(path, forKey: .path)
+        case .spaceAction(let id, let spaceID, let action):
+            try c.encode(Kind.spaceAction, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(spaceID, forKey: .spaceID)
+            try c.encode(action, forKey: .action)
         case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             try c.encode(Kind.createAgent, forKey: .type)
             try c.encode(id, forKey: .id)

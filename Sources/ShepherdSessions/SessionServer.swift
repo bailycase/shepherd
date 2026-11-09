@@ -3054,6 +3054,23 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
+        case .spaceAction(let id, let spaceID, let action):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
+                return
+            }
+            let connection = ChangesUnchecked(value: client)
+            Task { [weak self] in
+                guard let self else { return }
+                var failure: String?
+                do { try await self.performSpaceAction(action, on: spaceID) } catch { failure = String(describing: error) }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    if let failure { self.send(.error(id: id, code: "space_action", message: failure), to: client) }
+                    else { self.send(.ok(id: id), to: client) }
+                }
+            }
         case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             let images = initialImages ?? []
             // Refused before anything is made: pi would refuse them once the agent exists.
@@ -6376,6 +6393,25 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Moves a space to sit just before `target`, or last when `target` is nil: the order the
     /// sidebar's project tree draws its projects in.
+    /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`), as its in-process
+    /// view model makes it.
+    func performSpaceAction(_ action: RemoteSpaceAction, on spaceID: SpaceID) async throws {
+        func updating(_ change: (inout Space) -> Void) async throws {
+            guard var space = await enqueueValue({ self.store.state.spaces.first { $0.id == spaceID } }) else {
+                throw SessionServerError.noSuchSpace(spaceID)
+            }
+            change(&space)
+            try await updateSpace(space)
+        }
+        switch action {
+        case .rename(let name): _ = try await editProject(spaceID, edit: ProjectEdit(name: name))
+        case .setWorktreeBase(let base): try await updating { $0.worktreeBase = base }
+        case .setSidebarHidden(let hidden): try await updating { $0.sidebarHidden = hidden }
+        case .move(let before): try await moveSpace(spaceID, before: before)
+        case .delete: try await deleteSpace(spaceID)
+        }
+    }
+
     public func moveSpace(_ spaceID: SpaceID, before target: SpaceID?) async throws {
         try await enqueue {
             let spaces = self.store.state.spaces
