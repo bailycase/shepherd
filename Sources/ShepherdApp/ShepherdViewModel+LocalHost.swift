@@ -72,6 +72,11 @@ extension ShepherdViewModel {
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
         }
+        // As the in-process server's `onAgentToolFinished` and the thread's rotation notice.
+        remoteHosts.onLocalToolFinished = { [weak self] agentID, _ in self?.recordSidebarActivity(agentID) }
+        remoteHosts.onLocalThreadNotice = { [weak self] agentID, message in
+            self?.threadStores.store(for: agentID).reportActionNotice(message)
+        }
         // Settings pages that read the host's stores follow its changes, and catch up on each connect.
         remoteHosts.onLocalSettingsChanged = { [weak self] page in Task { await self?.localHostSettingsChanged(page) } }
         let connected = remoteHosts.onHostConnected

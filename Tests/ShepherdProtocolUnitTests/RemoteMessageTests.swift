@@ -671,11 +671,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 48
+    static let caseCount = 51
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -749,6 +749,8 @@ struct RemoteReplyTests {
         .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
         .settingsChanged(page: .instructions),
         .settingsChanged(page: .slashCommands),
+        .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
+        .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
     ]
 
     static let relayDesign = DesignID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c33")

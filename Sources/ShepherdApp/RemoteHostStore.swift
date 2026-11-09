@@ -256,6 +256,9 @@ final class RemoteHostStore {
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
     @ObservationIgnored var onLocalSettingsChanged: ((RemoteSettingsPage) -> Void)?
+    /// A tool call, or a line said, in a thread of the background host on this Mac.
+    @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
+    @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
@@ -520,6 +523,14 @@ final class RemoteHostStore {
         client.onSettingsChanged = { [weak self, weak connection] page in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalSettingsChanged?(page)
+        }
+        client.onToolFinished = { [weak self, weak connection] agentID, tool in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalToolFinished?(agentID, tool)
+        }
+        client.onThreadNotice = { [weak self, weak connection] agentID, message in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalThreadNotice?(agentID, message)
         }
         client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }

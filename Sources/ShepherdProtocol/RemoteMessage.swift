@@ -1297,6 +1297,13 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// host's threads as its own (`RemoteProtocol.localThreadsCapability`), whose pages read it
     /// again. A hint; it carries nothing.
     case settingsChanged(page: RemoteSettingsPage)
+    /// A tool call one of the background host's threads finished, pushed only to this Mac's app
+    /// that shows its threads as its own (`RemoteProtocol.localThreadsCapability`): its sidebar
+    /// activity follows it.
+    case toolFinished(agentID: AgentID, tool: String)
+    /// A line the background host says in one of its threads (its account rotation), pushed only
+    /// to this Mac's app that shows its threads as its own; never persisted.
+    case threadNotice(agentID: AgentID, message: String)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1309,7 +1316,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case url, push, missionID, live
         case token, jobFile, job
         case title, body
-        case page
+        case page, tool
     }
 
     private enum Kind: String, Codable {
@@ -1323,7 +1330,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay, settingsChanged
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice
     }
 
     public init(from decoder: Decoder) throws {
@@ -1350,6 +1357,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                                 body: try c.decode(String.self, forKey: .body))
         case .settingsChanged:
             self = .settingsChanged(page: try c.decode(RemoteSettingsPage.self, forKey: .page))
+        case .toolFinished:
+            self = .toolFinished(agentID: try c.decode(AgentID.self, forKey: .agentID), tool: try c.decode(String.self, forKey: .tool))
+        case .threadNotice:
+            self = .threadNotice(agentID: try c.decode(AgentID.self, forKey: .agentID), message: try c.decode(String.self, forKey: .message))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1641,6 +1652,14 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .settingsChanged(let page):
             try c.encode(Kind.settingsChanged, forKey: .type)
             try c.encode(page, forKey: .page)
+        case .toolFinished(let agentID, let tool):
+            try c.encode(Kind.toolFinished, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(tool, forKey: .tool)
+        case .threadNotice(let agentID, let message):
+            try c.encode(Kind.threadNotice, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(message, forKey: .message)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

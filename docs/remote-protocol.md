@@ -34,7 +34,9 @@
   disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
   `agentNotify` push instead of posting on the host, and a `settingsChanged` push names the
   Settings page (instructions, suggestions, skills, hooks, slash commands) whose data changed on the
-  host, for the app to read again. The local link ends only when its socket
+  host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
+  activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
+  it the same way. The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
   alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
   workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops

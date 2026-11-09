@@ -4425,11 +4425,20 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
     /// page's data changed here; in process there is none, and the GUI's own `on…Changed` follow.
-    func pushSettingsChanged(_ page: RemoteSettingsPage) {
+    func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
+
+    /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
+    func sendToLocalApps(_ reply: RemoteReply) {
         for app in clients.values where app.isLocal && app.authenticated
             && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-            send(.settingsChanged(page: page), to: app)
+            send(reply, to: app)
         }
+    }
+
+    /// Says `message` in `agentID`'s thread in this Mac's app showing the host's threads as its
+    /// own (the host has no window to say it in). Any thread.
+    public func noticeToLocalApps(agentID: AgentID, message: String) {
+        queue.async { [self] in sendToLocalApps(.threadNotice(agentID: agentID, message: message)) }
     }
 
     /// Server queue: tells the main actor whether this Mac's own app is connected now.
@@ -7554,12 +7563,7 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor
     public func relayNotifyToLocalApp(agentID: AgentID, title: String, body: String) -> Bool {
         guard localAppConnected else { return false }
-        queue.async { [self] in
-            for app in clients.values where app.isLocal && app.authenticated
-                && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(.agentNotify(agentID: agentID, title: title, body: body), to: app)
-            }
-        }
+        queue.async { [self] in sendToLocalApps(.agentNotify(agentID: agentID, title: title, body: body)) }
         return true
     }
 
@@ -8535,6 +8539,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.sendToLocalApps(.toolFinished(agentID: agentID, tool: name))
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread, weak serverWeak] event in

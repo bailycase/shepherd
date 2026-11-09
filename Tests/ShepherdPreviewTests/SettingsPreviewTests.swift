@@ -361,7 +361,7 @@ struct SettingsPreviewTests {
         }
     }
 
-    private nonisolated static let instructionsSample = """
+    nonisolated static let instructionsSample = """
         # How I work
 
         ## Stack

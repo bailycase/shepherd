@@ -923,8 +923,7 @@ final class ShepherdViewModel {
             guard let self, PiAuthText.isLimit(message) else { return }
             Task {
                 guard let switched = await self.piAuth.limitHit(provider) else { return }
-                self.threadStores.store(for: agentID).reportActionNotice(
-                    "Switched \(PiSignInCatalog.name(provider)) to \(switched.to): \(switched.from) hit its limit.")
+                self.threadStores.store(for: agentID).reportActionNotice(PiAuthText.switched(provider, switched))
             }
         }
         // Agents drive their own panes through the server's extension socket.

@@ -195,7 +195,7 @@ extension PreviewTests {
 /// as the app's own: the New thread page and Delete worktree agent, from the same fixture.
 extension PreviewTests {
     /// A host serving `state` on its local socket, and `workspace`'s app taking it as its own.
-    private func adoptHost(_ state: ShepherdState, into workspace: PreviewWorkspace) async throws -> ScratchServer {
+    func adoptHost(_ state: ShepherdState, into workspace: PreviewWorkspace) async throws -> ScratchServer {
         let host = try ScratchServer(dir: try makeScratchDirectory("host"))
         host.server.serveThreads(ThreadHosting(defaults: {
             ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,

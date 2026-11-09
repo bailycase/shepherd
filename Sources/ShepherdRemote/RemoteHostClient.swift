@@ -83,6 +83,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// What a Settings page shows changed on the background host on this Mac (`settingsChanged`).
     /// Main queue, in order.
     public var onSettingsChanged: ((RemoteSettingsPage) -> Void)?
+    /// A tool call a thread of the background host on this Mac finished (`toolFinished`). Main queue.
+    public var onToolFinished: ((AgentID, String) -> Void)?
+    /// A line the background host on this Mac says in a thread (`threadNotice`). Main queue.
+    public var onThreadNotice: ((AgentID, String) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -156,6 +160,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         case agentNotify(AgentID, String, String)
         case appRelay(Int, AppRelayJob)
         case settingsChanged(RemoteSettingsPage)
+        case toolFinished(AgentID, String)
+        case threadNotice(AgentID, String)
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -1597,6 +1603,10 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.appRelay(token, job), bytes: line.count)
         case .settingsChanged(let page):
             self.push(.settingsChanged(page), bytes: line.count)
+        case .toolFinished(let agentID, let tool):
+            self.push(.toolFinished(agentID, tool), bytes: line.count)
+        case .threadNotice(let agentID, let message):
+            self.push(.threadNotice(agentID, message), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1714,6 +1724,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .agentNotify(let agentID, let title, let body): self.onAgentNotify?(agentID, title, body)
                 case .appRelay(let token, let job): self.onAppRelay?(token, job)
                 case .settingsChanged(let page): self.onSettingsChanged?(page)
+                case .toolFinished(let agentID, let tool): self.onToolFinished?(agentID, tool)
+                case .threadNotice(let agentID, let message): self.onThreadNotice?(agentID, message)
                 }
             }
             finish()

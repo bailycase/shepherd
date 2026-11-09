@@ -51,11 +51,12 @@ struct HostStores {
     /// in Sign-in.
     func serveTurnErrors(on server: SessionServer) {
         let piAuth = piAuth
-        server.onAgentProviderError = { _, provider, message in
+        server.onAgentProviderError = { [weak server] agentID, provider, message in
             guard PiAuthText.isLimit(message) else { return }
             Task { @MainActor in
                 guard let switched = await piAuth.limitHit(provider) else { return }
                 ShepherdLog.info("switched \(provider) to \(switched.to): \(switched.from) hit its limit")
+                server?.noticeToLocalApps(agentID: agentID, message: PiAuthText.switched(provider, switched))
             }
         }
         let status = server.onAgentStatus

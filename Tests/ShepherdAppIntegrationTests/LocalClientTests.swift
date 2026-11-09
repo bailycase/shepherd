@@ -124,6 +124,32 @@ struct LocalClientTests {
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: relays.path)) ?? []).isEmpty)
     }
 
+    /// A host thread's finished tools fill its sidebar sparkline, and the host's account rotation
+    /// notice shows in the thread, as in process (A19, A4).
+    @Test func theHostsToolCallsAndNoticesReachTheApp() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        let id = AgentID(rawValue: "acme-thread")
+        for _ in 0..<2 {
+            host.server.queue.async { host.server.sendToLocalApps(.toolFinished(agentID: id, tool: "edit")) }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await eventuallyOnMain("the sparkline to take the host's tool calls") { !vm.sidebarActivityBox(id).samples.isEmpty }
+
+        let line = "Switched Acme to work: personal hit its limit."
+        host.server.noticeToLocalApps(agentID: id, message: line)
+        try await eventuallyOnMain("the thread to say the host's notice") { vm.threadStores.existing(for: id)?.notice == line }
+    }
+
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()
