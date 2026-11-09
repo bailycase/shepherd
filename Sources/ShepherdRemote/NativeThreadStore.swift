@@ -441,7 +441,12 @@ public final class NativeThreadStore {
     /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
     /// that wants one asks, and holds what it got.
     @ObservationIgnored public let images = NativeThreadImages()
-    @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
+    /// A reply's presentation by turn, with what its views hold (`NativeMountedCost.presentation`), worked out when it was built.
+    @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation, cost: Int)] = [:]
+    /// What each of `rows` holds once drawn (`NativeMountedCost.row`), row for row; `mountedCost` sums the tail.
+    @ObservationIgnored private var rowCosts: [Int] = []
+    /// Presentations whose cost was worked out: one per reply built, none for a cached one or a user row.
+    @ObservationIgnored private(set) var rowCostComputations = 0
     @ObservationIgnored private var messageIndex: [String: Int] = [:]
     @ObservationIgnored private var toolCounts: [String: Int] = [:]
     @ObservationIgnored private var toolPositions: [String: [Int]] = [:]
@@ -740,6 +745,8 @@ public final class NativeThreadStore {
         } : nil
         var rows: [NativeThreadRow] = []
         rows.reserveCapacity(turns.count - rowStart)
+        var costs: [Int] = []
+        costs.reserveCapacity(turns.count - rowStart)
         let removed = Set(self.rows.dropFirst(rowStart).map(\.id)).subtracting(turns.dropFirst(rowStart).map(\.id))
         for id in removed {
             presentationCache[id] = nil
@@ -758,6 +765,7 @@ public final class NativeThreadStore {
                     && !Self.opensWithCompaction(turns[index + 1])
                 row.designMarkup = Self.designMarkup(turn)
                 rows.append(row)
+                costs.append(NativeMountedCost.row(row))
                 continue
             }
             let isLive = index == liveReply
@@ -765,8 +773,10 @@ public final class NativeThreadStore {
             let errors = NativeTurnErrorContext(host: hostName, retry: isLive ? snapshot?.retry : nil)
             let key = PresentationKey(messages: turn.messages, live: isLive, cards: NativeCardLayout(placements[turn.id]), errors: errors)
             let presentation: NativeTurnPresentation
+            let presentationCost: Int
             if let cached = presentationCache[turn.id], cached.key == key {
                 presentation = cached.value
+                presentationCost = cached.cost
             } else {
                 var thinkingIndex = 0
                 var used: Set<ProseKey> = []
@@ -781,7 +791,9 @@ public final class NativeThreadStore {
                 })
                 for key in (proseKeysByTurn[turn.id] ?? []).subtracting(used) { invalidateParse(key) }
                 proseKeysByTurn[turn.id] = used
-                presentationCache[turn.id] = (key, presentation)
+                presentationCost = NativeMountedCost.presentation(presentation)
+                rowCostComputations += 1
+                presentationCache[turn.id] = (key, presentation, presentationCost)
             }
             let prompt = opener.map { opener in
                 if let cached = promptCache[opener.id], cached.messages == opener.messages { return cached.text }
@@ -806,6 +818,7 @@ public final class NativeThreadStore {
             }
             if index == turns.count - 1, !isLive, let opener { row.retryEntryID = Self.retryEntryID(opener) }
             rows.append(row)
+            costs.append(NativeMountedCost.row(presentation: presentationCost))
         }
         // Start from cached *unfolded* presentations, including the predecessor above, so a
         // changed or removed successor can both fold and unfold an earlier error.
@@ -816,6 +829,8 @@ public final class NativeThreadStore {
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
+        rowCosts.replaceSubrange(rowStart..., with: costs)
+        assert(rowCosts.count == self.rows.count, "rowCosts runs parallel to rows")
         // From the full list: a derive that rebuilt no row (a queue overlay, an identical page)
         // leaves the live turn out of `rows`, and its row must stay.
         assert(liveReply.map { self.rows.indices.contains($0) } ?? true)
@@ -1421,6 +1436,37 @@ public final class NativeThreadStore {
 
     /// Whether `release` has anything to let go.
     public var holdsHistory: Bool { snapshot != nil || !messages.isEmpty || images.heldBytes > 0 }
+
+    /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
+    /// `eagerRows` rows the thread's view draws, which it lays out for real whether or not it is on screen, and for the
+    /// last reply the chunk its lazy stack builds first beyond its eager tail (a giant reply's). `hidden` names the rows
+    /// the view leaves out (a Project's user turns made only of the runtime's wake-ups, `ThreadView`), so the walk
+    /// reaches back as far as the view's own last `eagerRows`. It sums costs kept with the rows and reads only the rows
+    /// it passes, never the rest of the history; read it from the owner, never from a view body.
+    public func mountedCost(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
+        mountedCostWalk(eagerRows: eagerRows, skipping: hidden).cost
+    }
+
+    /// `mountedCost` and how many rows it passed to reach it (a test pins that it stays at the tail).
+    func mountedCostWalk(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool) -> (cost: Int, visited: Int) {
+        var cost = 0, drawn = 0, visited = 0
+        var index = min(rows.count, rowCosts.count)
+        var edgeTaken = false
+        while drawn < eagerRows, index > 0 {
+            index -= 1
+            visited += 1
+            let row = rows[index]
+            if hidden(row) { continue }
+            cost += rowCosts[index]
+            drawn += 1
+            guard !edgeTaken, let items = row.presentation?.items else { continue }
+            edgeTaken = true
+            if case .prose(_, _, let prose)? = items.last(where: { if case .prose = $0 { true } else { false } }) {
+                cost += prose.lazyEdgeCost
+            }
+        }
+        return (cost, visited)
+    }
 
     /// `catchingUp`: the first pull since the thread came on screen, which lands what happened
     /// while it was away all at once, a finished turn included.
