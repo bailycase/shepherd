@@ -1346,6 +1346,14 @@ final class ShepherdViewModel {
             if Self.persistedTurnFailed(agent) { failedTurns.insert(agent.id) } else { failedTurns.remove(agent.id) }
         }
         let shownBefore = shownDesign?.id
+        // As the background host's client, a status arrives in the workspace, not as a session's
+        // report: each change runs what the report would (notifications, failed rows, cards).
+        if localHost != nil {
+            for agent in serverState.agents {
+                guard let old = state.agents.first(where: { $0.id == agent.id })?.status, old != agent.status else { continue }
+                applyAgentStatus(agent.id, agent.status, failure: agent.status == .done ? agent.lastFailure.map { TurnFailure(message: $0) } : nil)
+            }
+        }
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
             sidebarOpeningTurns.subtract(removed)

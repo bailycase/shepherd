@@ -143,3 +143,50 @@ extension PreviewTests {
         }
     }
 }
+
+/// The background host's workspace as the app's own (`adoptLocalHost`): the same fixture, in
+/// process and as the host's client, renders the same window.
+extension PreviewTests {
+    @Test func localHostWorkspaceMatchesInProcess() async throws {
+        let space = Space(name: "acme-web", path: try makeScratchDirectory("acme-web").path)
+        let names = ["Fix the checkout total rounding", "Upgrade the payments SDK", "Write release notes for 2.4"]
+        let records = names.enumerated().map { index, name -> (Agent, ShepherdCore.Tab) in
+            let id = AgentID()
+            let pane = LeafPane(cwd: space.path, agentID: id)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: index, layout: .leaf(pane))
+            return (Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id,
+                          status: index == 0 ? .working : .done, nameIsFinal: true), tab)
+        }
+        let fixture = ShepherdState(spaces: [space], tabs: records.map(\.1), agents: records.map(\.0))
+
+        let local = try PreviewWorkspace()
+        defer { local.stop() }
+        try await local.seed(fixture)
+        local.vm.selectAgent(records[1].0.id)
+        try await Preview.render("this-mac-in-process", size: CGSize(width: 1280, height: 760)) { RootView(vm: local.vm) }
+
+        let workspace = try PreviewWorkspace(ownsWorkspace: false)
+        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
+        defer { workspace.stop(); host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        try await host.server.putState(fixture)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let vm = workspace.vm
+        vm.adoptLocalHost()
+        vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) { vm.state.agents == host.server.state.agents }
+        vm.selectAgent(records[1].0.id)
+        try await Preview.render("this-mac-client", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
+        let directory = try #require(Preview.directory)
+        for mode in ["light", "dark"] {
+            #expect(try Data(contentsOf: directory.appendingPathComponent("this-mac-in-process-\(mode).png"))
+                == Data(contentsOf: directory.appendingPathComponent("this-mac-client-\(mode).png")), "the \(mode) windows differ")
+        }
+    }
+}
