@@ -65,7 +65,7 @@
     `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
     reference) loads design_get and design_note in a thread that draws no design, while Settings ▸
     Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on.
-- **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
+- **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts commit messages from review.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
   from the environment pi was started with, so it comes from the user's shell, not from Shepherd.

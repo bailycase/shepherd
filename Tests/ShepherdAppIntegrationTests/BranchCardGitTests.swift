@@ -73,7 +73,7 @@ struct BranchCardActionTests {
     }
 
     /// Switch and rename in a worktree thread's checkout also move the branch Shepherd records,
-    /// so Finalize acts on the branch the worktree is really on; Change base only records.
+    /// so Delete Worktree acts on the branch the worktree is really on; Change base only records.
     @Test func switchingAWorktreesBranchMovesItsRecord() async throws {
         let app = try AppHarness()
         defer { app.stop() }

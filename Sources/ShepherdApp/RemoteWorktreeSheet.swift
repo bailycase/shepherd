@@ -4,35 +4,23 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
+/// Delete Worktree Agent for a remote worktree agent: the host's worktree and loss warning, then
+/// the host's progress as it stops the agent and removes the checkout.
 struct RemoteWorktreeSheet: View {
     var vm: ShepherdViewModel
     let target: RemoteAgentRef
-    let finalize: Bool
     @State private var endpointID: UUID?
     @State private var transportID: UUID?
-    /// Set only by previews: the finalize form as a ready host fills it, and no query is sent.
-    private let staged: Staged?
+    /// Set only by previews: the host's worktree as a ready host reports it, and no query is sent.
+    private let staged: RemoteWorktreeInfo?
 
-    /// The host's worktree and a commit count, so a preview renders the finalize form without a
-    /// host.
-    struct Staged {
-        var info: RemoteWorktreeInfo
-        var includedCommits: Int?
-    }
-
-    init(vm: ShepherdViewModel, target: RemoteAgentRef, finalize: Bool, staged: Staged? = nil) {
-        self.vm = vm; self.target = target; self.finalize = finalize; self.staged = staged
+    init(vm: ShepherdViewModel, target: RemoteAgentRef, staged: RemoteWorktreeInfo? = nil) {
+        self.vm = vm; self.target = target; self.staged = staged
         let connection = vm.remoteHosts.connections.first { $0.id == target.hostID }
         _endpointID = State(initialValue: vm.remoteWorktreeOperationEndpoints[target] ?? connection?.endpointID)
         _transportID = State(initialValue: connection?.transportID)
         _remember = State(initialValue: vm.settings.worktreeDeleteAction != .ask)
-        if let staged {
-            _info = State(initialValue: staged.info)
-            _options = State(initialValue: staged.info.defaults)
-            _includedCommits = State(initialValue: staged.includedCommits)
-            _checking = State(initialValue: false)
-            _descriptionPrepared = State(initialValue: true)
-        }
+        if let staged { _info = State(initialValue: staged) }
     }
 
     private func query(_ value: RemoteAgentQuery, statusOnly: Bool = false) async throws -> RemoteAgentResult {
@@ -41,19 +29,12 @@ struct RemoteWorktreeSheet: View {
         }
         return try await vm.remoteHosts.agentQuery(target, query: value, endpointID: endpointID, transportID: statusOnly ? nil : transportID)
     }
-    @State private var setup = WorktreeSetupModel(repoPath: "host repository")
-    @State private var showingSetup = false
-    @State private var checking = true
-    @State private var includedCommits: Int?
-    @State private var generatingDescription = false
-    @State private var descriptionPrepared = false
     @State private var info: RemoteWorktreeInfo?
-    @State private var options = RemoteFinalizeOptions(base: "", title: "", body: "", autoCommit: true, deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash")
     @State private var errorText: String?
     @State private var operation: RemoteWorktreeOperation?
     @State private var submitting = false
     @State private var acknowledgedLoss = false
-    /// Delete's "Don't ask again", stored by a delete only.
+    /// Delete's "Don't ask again".
     @State private var remember: Bool
 
     private var hostName: String {
@@ -62,30 +43,15 @@ struct RemoteWorktreeSheet: View {
 
     private var operationPending: Bool { vm.remoteWorktreeOperationIDs[target] != nil }
 
-    /// Which part of the sheet shows: the checks, the setup checklist, the form, the running
-    /// operation, the outcome.
+    /// Which part of the sheet shows: the confirmation, the running operation, the outcome.
     private var stage: [Bool] {
-        [checking, showingSetup, info != nil, operationPending, operation != nil, operation?.finished == true, options.autoMergePR]
+        [info != nil, operationPending, operation != nil, operation?.finished == true]
     }
 
     var body: some View {
-        SHDialog(finalize ? "Finalize worktree" : "Delete worktree agent",
-                 message: finalize ? "Runs on \(hostName): commit, push, pull request, optional merge, then cleanup." : nil,
-                 width: AppLayout.remoteWorktreeSheetWidth) {
+        SHDialog("Delete worktree agent", width: AppLayout.remoteWorktreeSheetWidth) {
             SheetRow("Host") {
                 Text(hostName).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-            }
-            if finalize && !operationPending {
-                if checking {
-                    HStack(spacing: SH.Space.s) {
-                        ProgressView().progressViewStyle(.shSpinner)
-                        Text("Checking host prerequisites…").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                    }
-                    .padding(.horizontal, SHDialogMetrics.inset)
-                    .padding(.vertical, SH.Space.l)
-                } else if showingSetup {
-                    WorktreeSetupChecklist(model: setup, openLoginShell: openLoginShell)
-                }
             }
             if let info {
                 SheetRow("Worktree") {
@@ -96,9 +62,7 @@ struct RemoteWorktreeSheet: View {
                     Text(info.branch).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary).textSelection(.enabled)
                 }
                 if operation == nil && !operationPending {
-                    if finalize && !checking && !showingSetup {
-                        finalizeInput(info)
-                    } else if !finalize, let warning = info.warning {
+                    if let warning = info.warning {
                         DialogBanner(title: "Unreconciled work", message: "\(warning) will be lost with the worktree.")
                         Toggle("I understand this work will be lost", isOn: $acknowledgedLoss)
                             .toggleStyle(.shCheckbox)
@@ -107,7 +71,7 @@ struct RemoteWorktreeSheet: View {
                             .padding(.horizontal, SHDialogMetrics.inset)
                             .padding(.top, SH.Space.l)
                     }
-                    if !finalize { DontAskAgainToggle(isOn: $remember, caption: DontAskAgainToggle.worktreeCaption).dialogInset() }
+                    DontAskAgainToggle(isOn: $remember, caption: DontAskAgainToggle.worktreeCaption).dialogInset()
                 }
             }
             if let operation {
@@ -120,66 +84,23 @@ struct RemoteWorktreeSheet: View {
                 .padding(.horizontal, SHDialogMetrics.inset)
                 .padding(.top, SH.Space.l)
                 if let error = operation.error { DialogBanner(state: .failed, title: "The host stopped the operation", message: error) }
-                if let url = operation.prURL, let link = URL(string: url) {
-                    Link(url, destination: link)
-                        .font(.sh(.mono))
-                        .foregroundStyle(Color.sh.running)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, SHDialogMetrics.inset)
-                        .padding(.top, SH.Space.l)
-                        .shTransition(.disclosure)
-                }
             }
             if let errorText { DialogBanner(state: .failed, title: "Request failed", message: errorText) }
         } status: {
             if operationPending, operation?.finished != true {
                 SHDialogStatus("Operation continues on the host. Reconnecting only checks its status.")
-            } else if finalize && showingSetup && !operationPending {
-                Button("Re-run checks") { Task { await setup.runAll() } }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(setup.running)
             }
         } actions: {
             actions
         }
-        // Checking → setup or the form → the host's progress → done: each stage replaces the
-        // last in place as the sheet eases to its height, and progress lines arrive as rows.
+        // The confirmation → the host's progress → done: each stage replaces the last in place
+        // as the sheet eases to its height, and progress lines arrive as rows.
         .shAnimation(.disclosure, value: stage)
         .shAnimation(.list, value: operation?.progress.count)
         .shAnimation(.disclosure, value: errorText)
-        .shAnimation(.content, value: generatingDescription)
-        .shAnimation(.content, value: includedCommits)
         .task {
-            guard vm.remoteWorktreeOperationIDs[target] == nil else { return }
-            if staged != nil {
-                // Every check passing, answered here instead of by a host.
-                let checks = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0.rawValue, RemoteWorktreeCheckState.pass("ok")) })
-                setup.remoteAction = { _ in RemoteWorktreeSetup(repoPath: "host repository", checks: checks, repoSettings: [:]) }
-                await setup.runAll()
-                return
-            }
-            if finalize {
-                setup.remoteAction = { action in
-                    guard case .worktreeSetup(let result) = try await query(.worktreeSetup(action: action)) else {
-                        throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected host setup reply")
-                    }
-                    return result
-                }
-                await setup.runAll()
-                showingSetup = !setup.allPassed
-                checking = false
-                if setup.allPassed { await prepareInput() }
-            } else { await prepareInput() }
-        }
-        .task(id: options.base) {
-            guard finalize, info != nil, staged == nil else { return }
-            let base = options.base
-            includedCommits = nil
-            do {
-                try await Task.sleep(for: .milliseconds(250))
-                if case .worktreeCommitCount(let count) = try await query(.worktreeCommitCount(base: base)),
-                   !Task.isCancelled, options.base == base { includedCommits = count }
-            } catch { if !Task.isCancelled { errorText = String(describing: error) } }
+            guard vm.remoteWorktreeOperationIDs[target] == nil, staged == nil else { return }
+            await loadInfo()
         }
         .task(id: vm.remoteWorktreeOperationIDs[target]) {
             guard let id = vm.remoteWorktreeOperationIDs[target] else { return }
@@ -210,155 +131,44 @@ struct RemoteWorktreeSheet: View {
             .buttonStyle(.sh(.primary))
             .keyboardShortcut(.defaultAction)
         } else if !operationPending {
-            if finalize && showingSetup {
-                Button("Continue") { Task { await prepareInput() } }
-                    .buttonStyle(.sh(.primary))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(setup.running || !setup.allPassed)
-            } else if !finalize {
-                Button("Delete agent only") {
-                    vm.settings.rememberWorktreeDelete(remember, removeWorktree: false)
-                    Task {
-                        do {
-                            _ = try await query(.deleteKeepingWorktree)
-                            vm.remoteWorktreeSheet = nil
-                        } catch { errorText = String(describing: error) }
-                    }
+            Button("Delete agent only") {
+                vm.settings.rememberWorktreeDelete(remember, removeWorktree: false)
+                Task {
+                    do {
+                        _ = try await query(.deleteKeepingWorktree)
+                        vm.remoteWorktreeSheet = nil
+                    } catch { errorText = String(describing: error) }
                 }
-                .buttonStyle(.sh(.secondary))
             }
-            if let info, !(finalize && showingSetup) {
-                Button(finalize ? "Finalize" : "Delete agent and worktree") { start(info) }
-                    .buttonStyle(.sh(finalize ? .primary : .dangerFill))
-                    .keyboardShortcut(finalize ? KeyboardShortcut.defaultAction : nil)
-                    .disabled(submitting || (finalize && (checking || showingSetup || generatingDescription || !setup.allPassed)) || (!finalize && info.warning != nil && !acknowledgedLoss)
-                              || (finalize && (options.base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || options.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
+            .buttonStyle(.sh(.secondary))
+            if let info {
+                Button("Delete agent and worktree") { start(info) }
+                    .buttonStyle(.sh(.dangerFill))
+                    .disabled(submitting || (info.warning != nil && !acknowledgedLoss))
             }
         }
     }
 
-    @ViewBuilder
-    private func finalizeInput(_ info: RemoteWorktreeInfo) -> some View {
-        SheetRow("Base") {
-            HStack(spacing: SH.Space.m) {
-                TextField("Base branch", text: $options.base).textFieldStyle(.sh(mono: true))
-                    .frame(maxWidth: AppLayout.baseFieldMaxWidth)
-                if let count = includedCommits {
-                    Text("Will include \(count) commit\(count == 1 ? "" : "s")")
-                        .font(.sh(.caption))
-                        .foregroundStyle(count > 20 ? Color.sh.lanternText : Color.sh.textTertiary)
-                        .shContentTransition(.numeric())
-                }
-            }
-        }
-        SheetRow("Title") {
-            TextField("Pull request title", text: $options.title,
-                      prompt: Text("PR title").foregroundStyle(Color.sh.textTertiary))
-                .textFieldStyle(.sh)
-        }
-        SheetRow("Description", alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                TextEditor(text: $options.body)
-                    .shText(.body)
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .scrollContentBackground(.hidden)
-                    .frame(height: AppLayout.descriptionEditorHeight)
-                    .padding(SH.Space.s)
-                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
-                    .accessibilityLabel("Pull request description")
-                if generatingDescription {
-                    Text("Generating on the host…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                } else if info.generateDescription == true {
-                    SheetLinkButton(label: descriptionPrepared ? "Regenerate…" : "Generate…") {
-                        Task { await generateDescription(force: true) }
-                    }
-                }
-            }
-        }
-        SheetRow("Setup") { SheetLinkButton(label: "Repo setup…") { showingSetup = true } }
-        SheetRow("Commit") { captionedSwitch("Commit remaining work", isOn: $options.autoCommit) }
-        SheetRow("Cleanup") { captionedSwitch("Delete local branch", isOn: $options.deleteLocalBranch) }
-        SheetRow("Merge") { captionedSwitch("Merge PR automatically", isOn: $options.autoMergePR) }
-        if options.autoMergePR {
-            SheetRow("Method") {
-                SHSegmentedPicker("Merge method", selection: $options.mergeMethod,
-                                  options: [("squash", "Squash"), ("merge", "Merge"), ("rebase", "Rebase")])
-            }
-            .shTransition(.disclosure)
-        }
-        Text("Runs on the host: commit, push, PR, optional merge, clean check, stop agent, remove checkout. The remote branch is never deleted. Failures stop cleanup.")
-            .shText(.caption)
-            .foregroundStyle(Color.sh.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, SHDialogMetrics.inset)
-            .padding(.top, SH.Space.l)
-    }
-
-    /// A switch with what it does beside it: the row label alone ("Cleanup") doesn't say.
-    private func captionedSwitch(_ label: String, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: SH.Space.m) {
-            SettingsSwitch(label: label, isOn: isOn)
-            Text(label)
-                .font(.sh(.caption))
-                .foregroundStyle(Color.sh.textSecondary)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private func prepareInput() async {
+    private func loadInfo() async {
         do {
             if info == nil, case .worktreeInfo(let value) = try await query(.worktreeInfo) {
                 info = value
-                options = value.defaults
                 // A remembered removal skips the confirmation, never the host's loss warning.
-                if !finalize, value.warning == nil, vm.settings.worktreeDeleteAction == .removeWorktree { start(value) }
-            }
-            showingSetup = false
-            if finalize { await generateDescription() }
-        } catch { errorText = String(describing: error) }
-    }
-
-    private func generateDescription(force: Bool = false) async {
-        guard WorktreePRDescriptionGenerator.shouldGenerate(enabled: info?.generateDescription == true, prepared: descriptionPrepared, force: force),
-              !generatingDescription else { return }
-        let original = options.body
-        generatingDescription = true
-        defer { generatingDescription = false }
-        do {
-            if case .worktreeDescription(let body) = try await query(.worktreeDescription(base: options.base, title: options.title)) {
-                options.body = WorktreePRDescriptionGenerator.applying(body, replacing: original, current: options.body)
-                descriptionPrepared = true
+                if value.warning == nil, vm.settings.worktreeDeleteAction == .removeWorktree { start(value) }
             }
         } catch { errorText = String(describing: error) }
-    }
-
-    private func openLoginShell() {
-        vm.selectRemoteAgent(hostID: target.hostID, agentID: target.agentID)
-        let requestID = UUID()
-        vm.remoteInspectionRequest = requestID
-        Task {
-            do {
-                if case .inspector(let tabID) = try await query(.worktreeSetup(action: .loginShell)), vm.remoteInspectionRequest == requestID, vm.selectedRemoteAgent == target {
-                    vm.showRemoteInspector(target, tabID: tabID)
-                    vm.remoteWorktreeSheet = nil
-                }
-            } catch { errorText = String(describing: error) }
-        }
     }
 
     private func start(_ info: RemoteWorktreeInfo) {
-        if !finalize { vm.settings.rememberWorktreeDelete(remember, removeWorktree: true) }
+        vm.settings.rememberWorktreeDelete(remember, removeWorktree: true)
         submitting = true
         let id = UUID()
         vm.remoteWorktreeOperationIDs[target] = id
         vm.remoteWorktreeOperationEndpoints[target] = endpointID
         Task {
             do {
-                let query: RemoteAgentQuery = finalize
-                    ? .finalizeWorktree(operationID: id, options: options)
-                    : .deleteWorktree(operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint)
-                if case .worktreeOperation(let status) = try await self.query(query) {
+                if case .worktreeOperation(let status) = try await query(
+                    .deleteWorktree(operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint)) {
                     operation = status
                 }
             } catch RemoteHostClientError.rejected(_, let message) {

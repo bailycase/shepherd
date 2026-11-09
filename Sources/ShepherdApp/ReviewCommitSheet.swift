@@ -228,7 +228,7 @@ struct ReviewCommitSheet: View {
         }
     }
 
-    private func agentState(_ state: FinalizeStep.State) -> AgentState {
+    private func agentState(_ state: OperationStep.State) -> AgentState {
         switch state {
         case .pending: .queued
         case .running: .running
@@ -237,7 +237,7 @@ struct ReviewCommitSheet: View {
         }
     }
 
-    private func detail(_ state: FinalizeStep.State) -> String? {
+    private func detail(_ state: OperationStep.State) -> String? {
         switch state {
         case .done(let text), .failed(let text): text
         case .pending, .running: nil

@@ -79,7 +79,7 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   - read text files in a thread's folder (read-only, bounded, never outside that folder)
   - upload files (up to 32 MiB each, into a private `0700` directory)
   - review diffs and revert files
-  - create, finalize (commit, push, open PRs), and delete worktrees
+  - create and delete worktrees
 - **Revoking:** delete `remote-token`, then turn the listener off and on (or relaunch
   Shepherd). A new token is generated, and every client must be given it again. The token is
   read when the listener starts, so deleting the file alone does not disconnect anyone.
@@ -161,13 +161,13 @@ above) and neither has a switch yet.
 
 ### Everything else Shepherd writes
 
-- **Repository changes:** worktree creation, confirmed deletion and Finalize can change
+- **Repository changes:** worktree creation and confirmed deletion can change
   checkouts, commits and branches. The Changes pane also
   supports confirmed per-file Revert, selected-file Commit with optional push/PR, and Undo/Redo
   of a recorded agent turn. Undo requires no extra confirmation and refuses when the turn's
   files changed afterward. Reading changes creates unreachable loose git objects through a
   private index; it does not write the user's index, working tree, HEAD, refs, stash or config.
-  Finalize never deletes a remote branch, and Shepherd removes or prunes only worktrees it created.
+  Shepherd removes or prunes only worktrees it created.
 - **pi configuration:** Shepherd runs its own pi, shipped inside the app, in its own home
   (`<support directory>/pi`: its settings, sign-ins, models and conversations). It never runs your `pi` or `npm`, and never writes your pi's
   folder (`~/.pi/agent`, or wherever your `PI_CODING_AGENT_DIR` points), lock folders included.

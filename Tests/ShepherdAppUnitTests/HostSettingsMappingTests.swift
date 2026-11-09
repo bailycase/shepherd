@@ -17,8 +17,6 @@ struct HostSettingsMappingTests {
         app.defaultThinking = .high
         app.goalsEnabled = true
         app.worktreeBaseMode = .head
-        app.worktreeAutoMergePR = true
-        app.worktreeMergeMethod = .rebase
         app.piReviewExtension = false
         let settings = HostSettingsMapping.settings(from: app, shepherdVersion: "0.4.2", piVersion: "0.87.1")
         #expect(settings.shepherdVersion == "0.4.2" && settings.piVersion == "0.87.1")
@@ -26,7 +24,7 @@ struct HostSettingsMappingTests {
         #expect(settings.defaultThinking == .high)
         #expect(!settings.goalCrossProviderEvaluation && settings.goalsEnabled, "the legacy checker consent is always off")
         #expect(settings.worktreeBase == .head)
-        #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
+        #expect(!settings.mergePRAutomatically && settings.mergeMethod == .squash, "the removed Finalize's settings read as their defaults")
         #expect(settings.bundledExtensions.map(\.id) == ["panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "designReferences", "context", "deferTools", "codemode"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
@@ -101,8 +99,12 @@ struct HostSettingsMappingTests {
         #expect(app.queueDelivery == .oneAtATime)
         HostSettingsMapping.apply(.worktreeBase(.head), to: app)
         #expect(app.worktreeBaseMode == .head)
-        HostSettingsMapping.apply(.mergeMethod(.merge), to: app)
-        #expect(app.worktreeMergeMethod == .merge)
+        // An older client's Finalize settings change nothing.
+        let unchanged = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+        for legacy: HostSettingChange in [.commitRemainingWork(false), .deleteLocalBranch(false), .mergePRAutomatically(true), .mergeMethod(.merge)] {
+            HostSettingsMapping.apply(legacy, to: app)
+        }
+        #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil) == unchanged)
         HostSettingsMapping.apply(.bundledExtension(id: "panes", on: false), to: app)
         #expect(!app.piPanesExtension)
         HostSettingsMapping.apply(.bundledExtension(id: "browser", on: false), to: app)
@@ -117,8 +119,8 @@ struct HostSettingsMappingTests {
     @Test(arguments: [
         HostSettingChange.defaultThinking(.low),
         .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
-        .fetchBeforeCreating(false), .commitRemainingWork(false),
-        .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
+        .fetchBeforeCreating(false),
+        .generatePRDescriptions(false),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false), .bundledExtension(id: "context", on: false),
         .bundledExtension(id: "designReferences", on: false),
         .designToolEnabled(true), .missionsEnabled(true),
