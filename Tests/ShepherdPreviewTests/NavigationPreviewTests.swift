@@ -813,7 +813,7 @@ extension PreviewTests {
         let host = SHPlaceSection(id: "host", title: "build-01", options: remotes, addTitle: "Add folder…")
         try await Preview.renderMatrix("new-thread-place-menu-overflow", size: CGSize(width: 360, height: 420)) {
             SHPlaceMenu(sections: [mac, host],
-                        worktree: SHPlaceWorktree(isOn: true, caption: "Creates a temporary branch", base: "main"),
+                        worktree: SHPlaceWorktree(isOn: true, caption: "Creates a temporary branch", branch: "new from main", base: "main"),
                         maxHeight: SHComposerMetrics.modelPickerMaxHeight,
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onChooseBase: {}, onClose: {}) { _ in EmptyView() }
                 .padding(SH.Space.l)

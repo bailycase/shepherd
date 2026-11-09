@@ -44,16 +44,19 @@ public struct SHPlaceSection: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The worktree option under the projects: a switch with what it does, and while it is on a Base
-/// row naming the branch it starts from ("Default" until one is picked). `base` nil draws no row.
+/// The worktree option under the projects: a switch with what it does, and while it is on a
+/// Branch row ("new from main", or the branch picked) and a Base row naming the branch it starts
+/// from ("Default" until one is picked). `branch` or `base` nil draws no row.
 public struct SHPlaceWorktree: Equatable, Sendable {
     public var isOn: Bool
     public var caption: String
+    public var branch: String?
     public var base: String?
 
-    public init(isOn: Bool, caption: String, base: String? = nil) {
+    public init(isOn: Bool, caption: String, branch: String? = nil, base: String? = nil) {
         self.isOn = isOn
         self.caption = caption
+        self.branch = branch
         self.base = base
     }
 }
@@ -83,6 +86,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
     let onChoose: (SHPlaceOption) -> Void
     let onAdd: (SHPlaceSection) -> Void
     let onWorktree: (Bool) -> Void
+    let onChooseBranch: () -> Void
     let onChooseBase: () -> Void
     let onClose: () -> Void
     @ViewBuilder let rowMenu: (SHPlaceOption) -> RowMenu
@@ -94,7 +98,8 @@ public struct SHPlaceMenu<RowMenu: View>: View {
 
     public init(sections: [SHPlaceSection], worktree: SHPlaceWorktree?, maxHeight: CGFloat? = nil,
                 onChoose: @escaping (SHPlaceOption) -> Void, onAdd: @escaping (SHPlaceSection) -> Void,
-                onWorktree: @escaping (Bool) -> Void, onChooseBase: @escaping () -> Void = {}, onClose: @escaping () -> Void,
+                onWorktree: @escaping (Bool) -> Void, onChooseBranch: @escaping () -> Void = {}, onChooseBase: @escaping () -> Void = {},
+                onClose: @escaping () -> Void,
                 @ViewBuilder rowMenu: @escaping (SHPlaceOption) -> RowMenu) {
         self.sections = sections
         self.worktree = worktree
@@ -102,6 +107,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         self.onChoose = onChoose
         self.onAdd = onAdd
         self.onWorktree = onWorktree
+        self.onChooseBranch = onChooseBranch
         self.onChooseBase = onChooseBase
         self.onClose = onClose
         self.rowMenu = rowMenu
@@ -142,8 +148,11 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         let parents = Set(sections.flatMap(\.options).compactMap(\.ancestors.last))
         // Rows line up with their siblings' chevrons once any project nests.
         let disclosures = query.isEmpty && !parents.isEmpty
-        let showsBase = worktree?.isOn == true && worktree?.base != nil
-        let rowCount = options.count + (showsBase ? 1 : 0)
+        // The worktree's rows after the projects, in order, for ↑↓ and ⏎.
+        let extras: [(String, String, () -> Void)] = worktree?.isOn == true
+            ? [worktree?.branch.map { ("Branch", $0, onChooseBranch) }, worktree?.base.map { ("Base", $0, onChooseBase) }].compactMap { $0 }
+            : []
+        let rowCount = options.count + extras.count
         let indexByID = Dictionary(options.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: SH.Space.m) {
@@ -174,7 +183,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                     }
                     .onKeyPress(.return) {
                         if options.indices.contains(selection) { onChoose(options[selection]) }
-                        else if showsBase, selection == options.count { onChooseBase() }
+                        else if extras.indices.contains(selection - options.count) { extras[selection - options.count].2() }
                         return .handled
                     }
                     .onKeyPress(.escape) { onClose(); return .handled }
@@ -244,7 +253,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
             }
             .scrollIndicators(.hidden)
             .frame(maxHeight: maxHeight.map {
-                max(0, $0 - SHComposerMetrics.modelSearchHeight - (worktree == nil ? 0 : SHComposerMetrics.menuRowHeight * 2))
+                max(0, $0 - SHComposerMetrics.modelSearchHeight - (worktree == nil ? 0 : SHComposerMetrics.menuRowHeight * 3))
             })
             .fixedSize(horizontal: false, vertical: maxHeight == nil)
             if let worktree {
@@ -261,14 +270,15 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                 }
                 .padding(.horizontal, SH.Space.m)
                 .padding(.vertical, SH.Space.xs)
-                if worktree.isOn, let base = worktree.base {
-                    SHMenuRow(highlighted: selection == options.count, action: onChooseBase, onHover: { selection = options.count }) {
-                        Text("Base").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
+                ForEach(Array(extras.enumerated()), id: \.element.0) { offset, row in
+                    let index = options.count + offset
+                    SHMenuRow(highlighted: selection == index, action: row.2, onHover: { selection = index }) {
+                        Text(row.0).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
                         Spacer(minLength: SH.Space.m)
-                        Text(base).font(.shMono(SHPlaceMenuMetrics.baseFont)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                        Text(row.1).font(.shMono(SHPlaceMenuMetrics.baseFont)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
                         Image(systemName: "chevron.right").font(.system(size: SHPlaceMenuMetrics.baseChevron, weight: .semibold)).foregroundStyle(sh.textTertiary)
                     }
-                    .accessibilityLabel("Base branch: \(base)")
+                    .accessibilityLabel(row.0 == "Base" ? "Base branch: \(row.1)" : "\(row.0): \(row.1)")
                 }
             }
         }

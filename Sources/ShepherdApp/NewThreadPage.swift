@@ -32,7 +32,7 @@ struct NewThreadPage: View {
     @State private var dismissedQuery: String?
     @State private var slash = SlashMatchCache()
 
-    private enum Menu: Equatable { case place, base, models, settings, whereItRuns, branch }
+    private enum Menu: Equatable { case place, base, models, settings, branch }
     /// The Branch picker's New branch…: the name being typed, while its prompt is up.
     @State private var namingBranch = false
     @State private var newBranchName = ""
@@ -126,7 +126,7 @@ struct NewThreadPage: View {
             Button("Use") {
                 let name = newBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !name.isEmpty { draft.worktreeBranch = .named(name) }
-                menu = .whereItRuns
+                menu = .place
             }
         } message: {
             Text("The new worktree starts this branch from the base.")
@@ -328,16 +328,9 @@ struct NewThreadPage: View {
             .accessibilityValue(summary.value)
             Spacer(minLength: SH.Space.m)
             Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: chip.host) }
-                .buttonStyle(.shComposerChip(active: menu == .place || menu == .base))
+                .buttonStyle(.shComposerChip(active: menu == .place || menu == .base || menu == .branch))
                 .background { ComposerMenuRegion(dismissal: dismissal) }
                 .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
-            if draft.offersWorktree(vm) {
-                Button { toggle(.whereItRuns) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.shIcon(isOn: menu == .whereItRuns || menu == .branch, size: SHComposerMetrics.chipHeight))
-                    .background { ComposerMenuRegion(dismissal: dismissal) }
-                    .help("Where this thread runs")
-                    .accessibilityLabel("Where this thread runs")
-            }
         }
     }
 
@@ -356,13 +349,11 @@ struct NewThreadPage: View {
                         draft.worktreeBase = base
                         menu = nil
                         composing = true
-                    } close: { menu = baseReturn } defaultChanged: { base in
+                    } close: { menu = .place } defaultChanged: { base in
                         if base != nil { draft.worktree = true }
                     }
                     .shTransition(.overlay, anchor: .topLeading)
                 }
-            case .whereItRuns:
-                whereItRunsMenu.shTransition(.overlay, anchor: .topLeading)
             case .branch:
                 if let space = draft.place.flatMap({ place in vm.state.spaces.first { $0.id == place.space } }) {
                     let base = draft.worktreeBase ?? draft.projectBase(vm)
@@ -371,14 +362,14 @@ struct NewThreadPage: View {
                                      load: { try await vm.branchPickerList(cwd: space.path) },
                                      choose: { name in
                                          draft.worktreeBranch = name.map(NewThreadBranch.existing)
-                                         menu = .whereItRuns
+                                         menu = .place
                                      },
                                      newBranch: { newBranchName = ""; namingBranch = true },
                                      fetch: {
                                          let path = space.path
                                          try await Task.detached { try BranchGit.fetchAll(cwd: path) }.value
                                      },
-                                     close: { menu = .whereItRuns })
+                                     close: { menu = .place })
                         .shTransition(.overlay, anchor: .topLeading)
                 }
             case .models:
@@ -424,28 +415,17 @@ struct NewThreadPage: View {
         .shAnimation(.overlay, value: menu)
     }
 
-    /// Where the base picker goes back to: the ⚙ popover it was opened from, else the place menu.
-    @State private var baseReturn: Menu = .place
-
-    private var whereItRunsMenu: some View {
-        let chip = NewThreadPlaces.chip(NewThreadState.hosts(vm), chosen: draft.place)
-        let base = draft.worktreeBase ?? draft.projectBase(vm)
-        return WhereItRunsMenu(worktree: draft.worktree,
-                               branch: draft.worktreeBranch?.title ?? "new from \(base.map(BranchCardGitReader.baseName) ?? "default")",
-                               base: base ?? "Default", host: chip.host, local: draft.place?.host == nil,
-                               setWorktree: { draft.worktree = $0 },
-                               chooseBranch: { menu = .branch },
-                               chooseBase: { baseReturn = .whereItRuns; menu = .base })
-    }
-
     private var placeMenu: some View {
         let hosts = NewThreadState.hosts(vm)
         let offers = draft.offersWorktree(vm)
         let base = draft.worktreeBase ?? draft.projectBase(vm)
+        // Branch and Base are this Mac's; a host resolves its own.
+        let local = draft.place?.host == nil
         return SHPlaceMenu(
             sections: NewThreadPlaces.sections(hosts, chosen: draft.place),
             worktree: offers ? SHPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: base ?? ""),
-                                               base: draft.place?.host == nil ? base ?? "Default" : nil) : nil,
+                                               branch: local ? draft.worktreeBranch?.title ?? "new from \(base.map(BranchCardGitReader.baseName) ?? "default")" : nil,
+                                               base: local ? base ?? "Default" : nil) : nil,
             maxHeight: SHComposerMetrics.modelPickerMaxHeight,
             onChoose: { option in
                 if let place = NewThreadPlaces.place(option) { draft.choose(host: place.host, space: place.space, vm: vm) }
@@ -457,7 +437,8 @@ struct NewThreadPage: View {
                 if let host = NewThreadPlaces.host(of: section) { vm.remoteSpacePickerHostID = host } else { vm.addSpaceFromPanel() }
             },
             onWorktree: { draft.worktree = $0 },
-            onChooseBase: { baseReturn = .place; menu = .base },
+            onChooseBranch: { menu = .branch },
+            onChooseBase: { menu = .base },
             onClose: { menu = nil; composing = true }
         ) { option in
             ProjectMenu(vm: vm, place: NewThreadPlaces.place(option))
