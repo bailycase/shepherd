@@ -9,7 +9,8 @@ import Foundation
 /// The unit is `NativeMarkdownBlock.proseWeight` (a floor per fence, table cell and image), costed per kind:
 /// - a fence: `fenceFloor` up to a kilobyte of code, then `fenceByte` for each byte above it;
 /// - a table: `tableWeight` per unit of weight, 256 to a cell at least;
-/// - an image: `imageWeight` per unit of weight;
+/// - an image: `imageFloor` units at `imageWeight`, whatever its source (a web or data image is a chip, a file a
+///   bounded thumbnail);
 /// - text (paragraph, heading, list item, quote, footnote, a closed disclosure's summary): `textByte` a byte;
 /// - a Mermaid diagram: `mermaid`, mostly in its WebContent process, counted for what it costs the system;
 /// - any other line of a row (an activity burst, a thought, a note, an error, a steer): `line`;
@@ -41,7 +42,7 @@ public enum NativeMountedCost {
     public static let fenceFloor = fenceByte * NativeMarkdownBlock.codeFloor
     /// A unit of weight of a table (a cell's floor is 256 units). Measured by difference, tables of 12 cells only.
     public static let tableWeight = 554
-    /// A unit of weight of an image (an estimate).
+    /// A unit of weight of an image, which costs its floor (an estimate).
     public static let imageWeight = 448
     /// A byte of text: a quarter of a fence's, text being one view per block and a fence a text system (an estimate).
     public static let textByte = fenceByte / 4
@@ -71,7 +72,7 @@ public enum NativeMountedCost {
         case .table:
             return value.proseWeight * tableWeight
         case .image:
-            return value.proseWeight * imageWeight
+            return NativeMarkdownBlock.imageFloor * imageWeight
         case .details, .footnotes:
             return value.proseWeight * textByte
         }

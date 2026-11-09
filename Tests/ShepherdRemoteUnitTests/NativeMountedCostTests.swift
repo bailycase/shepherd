@@ -133,10 +133,11 @@ struct NativeMountedCostTests {
         #expect(Cost.block(.code(diagram, language: "plantuml")) == Cost.fenceFloor, "drawn as source, not as a diagram")
     }
 
-    @Test func anImageCostsItsFloorAndItsLengthAbove() {
-        #expect(Cost.block(.image(alt: "a", source: "b.png")) == NativeMarkdownBlock.imageFloor * Cost.imageWeight)
-        let long = NativeMarkdownBlock.image(alt: "a", source: String(repeating: "x", count: 5000))
-        #expect(Cost.block(long) == 5001 * Cost.imageWeight)
+    @Test func anImageCostsItsFloorWhateverItsSource() {
+        let floor = NativeMarkdownBlock.imageFloor * Cost.imageWeight
+        #expect(Cost.block(.image(alt: "a", source: "b.png")) == floor)
+        let data = NativeMarkdownBlock.image(alt: "a", source: "data:image/png;base64," + String(repeating: "x", count: 300_000))
+        #expect(Cost.block(data) == floor, "a long source is still one chip or one thumbnail")
     }
 
     @Test func aClosedDetailsCostsItsSummaryAlone() {
