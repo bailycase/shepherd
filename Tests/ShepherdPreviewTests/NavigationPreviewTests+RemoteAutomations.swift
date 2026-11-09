@@ -139,4 +139,14 @@ extension PreviewTests {
                 .background(Color.sh.bgWindow)
         }
     }
+
+    /// The same pane when the host is the app's own background service, gone past its grace.
+    @Test func thisMacHostNotAnswering() async throws {
+        let seen = Date().addingTimeInterval(-12)
+        try await Preview.render("this-mac-host-not-answering", size: CGSize(width: 900, height: 140)) {
+            HostAwayBanner(name: "This Mac", lastSeen: seen, thisMac: true) {}
+                .frame(width: 900, height: 140)
+                .background(Color.sh.bgWindow)
+        }
+    }
 }

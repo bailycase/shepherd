@@ -850,11 +850,13 @@ extension RemoteLayoutModel {
         let phase = host.phase.kind
         let visible = screen.isVisible
         if visible {
-            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen), let lastSeen = host.lastSeen {
+            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen, thisMac: host.isThisMac), let lastSeen = host.lastSeen {
                 return .away(host: host.name, hostID: host.connection.id, lastSeen: lastSeen, phase: phase)
             }
             switch host.phase {
             case .connected: break
+            // This Mac's host back within its grace (`HostAway.thisMacGrace`): its last state stands.
+            case _ where host.isThisMac && host.lastSeen.map { Date().timeIntervalSince($0) < HostAway.thisMacGrace } == true: break
             case .connecting: return .placeholder("connecting to \(host.name)…", phase: phase)
             case .failed(let failure): return .placeholder(failure.message(host: host.name), phase: phase)
             case .disconnected: return .placeholder("\(host.name) disconnected", phase: phase)
@@ -977,7 +979,7 @@ private struct RemoteAgentPaneContent: View, Equatable {
             // One banner through every try (connecting, then waiting out the backoff), so it
             // never flickers between them.
             case .away(let host, let hostID, let lastSeen, _):
-                HostAwayBanner(name: host, lastSeen: lastSeen) {
+                HostAwayBanner(name: host, lastSeen: lastSeen, thisMac: hostID == vm.remoteHosts.localHost?.id) {
                     vm.remoteHosts.reconnect(id: hostID)
                 }
                 .shTransition(.content)
@@ -1323,9 +1325,13 @@ struct RemoteTerminalPane: View {
 /// Whether a remote agent's pane says its host is reconnecting (SHStatus): the host was
 /// connected earlier this launch and Shepherd is trying it again. A host that never connected, or
 /// a failure that won't retry (a refused token, another protocol), keeps its own placeholder.
+/// The host on this Mac (`thisMac`) is the app's own background service: a drop it comes back from
+/// within `thisMacGrace` (an update's restart) shows nothing.
 enum HostAway {
-    static func reconnecting(_ phase: RemoteHostStore.Phase, lastSeen: Date?) -> Bool {
-        guard lastSeen != nil else { return false }
+    static let thisMacGrace: TimeInterval = 5
+
+    static func reconnecting(_ phase: RemoteHostStore.Phase, lastSeen: Date?, thisMac: Bool = false, now: Date = Date()) -> Bool {
+        guard let lastSeen, !thisMac || now.timeIntervalSince(lastSeen) >= thisMacGrace else { return false }
         switch phase {
         case .connecting: return true
         case .failed(let failure): return failure.retries
@@ -1334,8 +1340,15 @@ enum HostAway {
     }
 
     /// "Last seen 3h ago. Remote agents resume when it's back."
-    static func message(lastSeen: Date, now: Date = Date()) -> String {
-        "Last seen \(InstructionsPresentation.age(lastSeen.timeIntervalSince1970, now: now)). Remote agents resume when it’s back."
+    static func message(lastSeen: Date, now: Date = Date(), thisMac: Bool = false) -> String {
+        let age = InstructionsPresentation.age(lastSeen.timeIntervalSince1970, now: now)
+        return thisMac ? "Last answered \(age). Your agents show here again when it’s back."
+            : "Last seen \(age). Remote agents resume when it’s back."
+    }
+
+    /// The banner's title: a paired host by name, this Mac by what it is.
+    static func title(name: String, thisMac: Bool) -> String {
+        thisMac ? "Shepherd’s background service isn’t answering" : "\(name) reconnecting"
     }
 }
 
@@ -1344,12 +1357,14 @@ enum HostAway {
 struct HostAwayBanner: View {
     let name: String
     let lastSeen: Date
+    var thisMac = false
     let retry: () -> Void
 
     var body: some View {
         // The age moves on by itself ("just now", then "1m ago").
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            SHBanner(.running, title: "\(name) reconnecting", message: HostAway.message(lastSeen: lastSeen, now: context.date),
+            SHBanner(.running, title: HostAway.title(name: name, thisMac: thisMac),
+                     message: HostAway.message(lastSeen: lastSeen, now: context.date, thisMac: thisMac),
                      systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
                 Button("Retry now", action: retry)
                     .buttonStyle(.sh(.secondary, size: .s))
