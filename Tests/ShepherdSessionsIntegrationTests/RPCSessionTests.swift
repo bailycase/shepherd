@@ -156,7 +156,7 @@ struct RPCSessionTests {
             "agent_start", "turn_start", "message_start", "message_end", "message_start",
             "message_update", "message_update", "message_update", "message_update", "message_update",
             "message_update", "message_update",
-            "message_end", "tool_execution_start", "tool_execution_end", "turn_end",
+            "message_end", "tool_execution_start", "tool_execution_end", "message_start", "message_end", "turn_end",
             "unknown:stub_unmodelled_event", "agent_end", "agent_settled",
         ])
         var text = ""
@@ -212,7 +212,8 @@ struct RPCSessionTests {
         try await h.waitFor("agent_settled")
         #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start", "message_end", "message_start"]
             + Array(repeating: "message_update", count: 7)
-            + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:stub_unmodelled_event", "agent_end", "agent_settled"])
+            + ["message_end", "tool_execution_start", "tool_execution_end", "message_start", "message_end", "turn_end",
+               "unknown:stub_unmodelled_event", "agent_end", "agent_settled"])
     }
 
     @Test func deferredDecodeBackpressuresTheProducerAndThenDeliversEveryRecordInOrder() async throws {
@@ -305,6 +306,39 @@ struct RPCSessionTests {
         #expect(c.command == "get_commands" && c.data?["commands"]?.arrayValue?.first?["name"]?.stringValue == "session-name")
         #expect(s.command == "get_session_stats" && s.data?["contextUsage"]?["percent"]?.doubleValue == 30)
         #expect(Set([m.id, c.id, s.id].compactMap { $0 }).count == 3)
+    }
+
+    /// pi saves a message where it emits its message_end, and its stats count what is saved, so a
+    /// history read and a stats request agree mid-run and a compaction never shrinks the count.
+    @Test func stubSavesEachMessageAtItsMessageEnd() async throws {
+        let h = try Harness()
+        defer { h.stop() }
+        func counts() async throws -> [String: Int] {
+            let data = try await h.request(.getSessionStats).get().data
+            return Dictionary(uniqueKeysWithValues: ["totalMessages", "userMessages", "assistantMessages", "toolResults", "toolCalls"].map {
+                ($0, Int(data?[$0]?.doubleValue ?? -1))
+            })
+        }
+        #expect(try await h.request(.prompt(message: "tools:1")).get().success)
+        try await h.waitFor("tool_execution_start")
+
+        let held = try await h.request(.getMessages).get().messages ?? []
+        #expect(held.map(\.role) == ["user", "assistant", "user", "assistant"], "the greeting, then the user message and the first reply")
+        #expect(held.last?.content.contains { if case .toolCall = $0 { true } else { false } } == true)
+        let midRun = try await counts()
+        #expect(midRun == ["totalMessages": 4, "userMessages": 2, "assistantMessages": 2, "toolResults": 0, "toolCalls": 1])
+
+        try Data().write(to: h.dir.appendingPathComponent("tool-1"))
+        try await h.waitFor("agent_settled")
+        let settled = ["totalMessages": 6, "userMessages": 2, "assistantMessages": 3, "toolResults": 1, "toolCalls": 1]
+        #expect(try await h.request(.getMessages).get().messages?.count == 6)
+        let afterRun = try await counts()
+        #expect(afterRun == settled)
+
+        #expect(try await h.request(.compact()).get().success)
+        #expect(try await h.request(.getMessages).get().messages?.count == 3, "the summary and the last two messages")
+        let afterCompact = try await counts()
+        #expect(afterCompact == settled, "what a compaction drops stays counted")
     }
 
     @Test func anUnansweredRequestTimesOutAndTheTransportStaysUsable() async throws {

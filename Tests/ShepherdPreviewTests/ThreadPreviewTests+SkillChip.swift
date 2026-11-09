@@ -56,4 +56,33 @@ extension ThreadPreviewTests {
             .background(Color.sh.bgWindow)
         }
     }
+
+    /// An idle composer is as tall as its draft's lines, to its eight: one line, three, eight, thirty (eight, scrolling),
+    /// and three with a skill chip. Only a field being edited measures from its words; these go through the cell.
+    @Test func composerDraftHeights() async throws {
+        func lines(_ count: Int) -> String { (1...count).map { "Line \($0) of the draft" }.joined(separator: "\n") }
+        let drafts = [
+            lines(1), lines(3), lines(8), lines(30),
+            "fix the login bug\n/skill:debug and add a test\nthen ship it",
+        ]
+        func mac(_ draft: String) -> some View {
+            SHComposer(isFocused: false) {
+                ComposerTextField(text: .constant(draft), placeholder: "Follow up, or / for commands…", label: "Message the agent",
+                                  focus: .constant(false), attach: { _ in })
+            } controls: {
+                Spacer(minLength: 8)
+                SHComposerActionButton(.send, enabled: true) {}
+            }
+            .frame(width: 560)
+        }
+        let size = CGSize(width: 640, height: 1_040)
+        try await Preview.render("composer-draft-heights", size: size) {
+            VStack(alignment: .leading, spacing: 24) {
+                ForEach(drafts.indices, id: \.self) { mac(drafts[$0]) }
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.sh.bgWindow)
+        }
+    }
 }

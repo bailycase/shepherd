@@ -168,6 +168,16 @@ final class ComposerThread {
         return found
     }
 
+    /// The composer's text field, found as `scrollViews()` finds the scroll views.
+    var field: ComposerTextField.Field? {
+        func walk(_ view: NSView) -> ComposerTextField.Field? {
+            if let field = view as? ComposerTextField.Field { return field }
+            for sub in view.subviews { if let field = walk(sub) { return field } }
+            return nil
+        }
+        return walk(window.host)
+    }
+
     /// The scroll view inside the open menu.
     var menuScroll: NSScrollView? { scrollViews().first { $0 !== threadScroll } }
 

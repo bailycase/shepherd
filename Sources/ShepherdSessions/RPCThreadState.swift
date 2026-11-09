@@ -1734,10 +1734,12 @@ final class RPCThreadState {
                     hook?()
                     Self.historySlots.wait()
                     let interval = Self.signposter.beginInterval("History projection", id: Self.signposter.makeSignpostID())
-                    let marked = Self.markingStopped(messages, stopped: stopped)
-                    let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: messages) : [:]
-                    let history = Self.projectHistory(marked, sentReferences: sentReferences, images: images, adjust: adjust)
-                    let estimate = Self.estimate(messages)
+                    // One pass: marking only turns an error into an abort, which the estimate's baseline skips alike.
+                    let ordered = Self.chronological(Self.markingStopped(messages, stopped: stopped))
+                    var projector = HistoryProjector()
+                    let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: projector.shown(ordered)) : [:]
+                    let history = projector.append(ordered, sentReferences: sentReferences, images: images, adjust: adjust)
+                    let estimate = projector.estimator.estimate()
                     Self.signposter.endInterval("History projection", interval)
                     Self.historySlots.signal()
                     self?.queue.async { [weak self] in
@@ -3052,7 +3054,7 @@ final class RPCThreadState {
     /// usual case), and child reports ("Child native-… (worker): complete … Session: …") restate
     /// the card and ledger, which own that information here (the TUI still shows them). pi keeps
     /// a call's arguments and start on the assistant's toolCall block; the toolResult row is
-    /// what the thread shows, so both are handed across by call id. `adjust` sees each row with
+    /// what the thread shows, so both are handed across by call id (`HistoryProjector`). `adjust` sees each row with
     /// its message last.
     ///
     /// `sentReferences` names, by entry id, the design references' copies of each message the
@@ -3064,46 +3066,22 @@ final class RPCThreadState {
         images: [String: ThreadImages.Meta] = [:],
         adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }
     ) -> [NativeThreadMessage] {
-        var arguments: [String: JSONValue] = [:]
-        var callTimes: [String: Double] = [:]
-        for message in messages where message.role == "assistant" {
-            for case .toolCall(let id, _, let args) in message.content {
-                if let args { arguments[id] = args }
-                if let time = message.timestamp { callTimes[id] = time }
-            }
-        }
-        let shown = shownHistory(messages)
-        var rows: [NativeThreadMessage] = []
-        rows.reserveCapacity(shown.count)
-        for (entryID, message) in shown {
-            let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
-            var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID], images: images)
-            if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
-            adjust(&value, message)
-            rows.append(value)
-            rows.append(contentsOf: nestedRows(message, parentEntryID: entryID, adjust: adjust))
-        }
-        return rows
+        var projector = HistoryProjector()
+        return projector.append(chronological(messages), sentReferences: sentReferences, images: images, adjust: adjust)
     }
 
     /// The messages history shows, in order, each with the entry id history gives it. The one place that decides which messages
-    /// are hidden and how the rest are numbered: `projectHistory` and `ThreadImages.table` both read it, so an image id the
-    /// snapshot offered always names its own message's image (a hidden message with a repeated timestamp cannot shift the numbers).
+    /// are hidden and how the rest are numbered (`HistoryProjector`): `projectHistory` and `ThreadImages.table` both read it, so an
+    /// image id the snapshot offered always names its own message's image (a hidden message with a repeated timestamp cannot shift
+    /// the numbers).
     static func shownHistory(_ messages: [RPCMessage]) -> [(entryID: String, message: RPCMessage)] {
-        var seen: [String: Int] = [:]
-        return chronological(messages).enumerated().compactMap { index, message in
-            // pi's structured system prompt rides in the message list; the thread never shows it.
-            if message.role == "system" { return nil }
-            if message.role == "custom" && message.display != true { return nil }
-            if message.role == "custom" && message.customType == "shepherd-child" { return nil }
-            return (historyEntryID(message, index: index, seen: &seen), message)
-        }
+        HistoryProjector().shown(chronological(messages))
     }
 
     /// Native metadata keeps invocation order and arguments; our display-only details keep
     /// bounded output. Missing output in an older session is not an empty successful result.
-    private static func nestedRows(_ message: RPCMessage, parentEntryID: String,
-                                   adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }) -> [NativeThreadMessage] {
+    static func nestedRows(_ message: RPCMessage, parentEntryID: String,
+                           adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }) -> [NativeThreadMessage] {
         guard message.role == "toolResult", let nested = message.nestedCalls else { return [] }
         let details = message.details?["calls"]?.arrayValue ?? []
         let saved = Dictionary(details.prefix(256).compactMap { value -> (String, JSONValue)? in
@@ -3148,18 +3126,23 @@ final class RPCThreadState {
     /// the list becoming "#<n>"; a message without a timestamp (never from pi itself) keeps its
     /// position ("m:<index>").
     static func historyEntryID(_ message: RPCMessage, index: Int, seen: inout [String: Int]) -> String {
-        let key: String
-        if message.role == "toolResult", let call = message.toolCallId, !call.isEmpty {
-            key = "t:\(call)"
-        } else if let time = message.timestamp.flatMap(millisecondKey) {
-            key = "\(message.role.isEmpty ? "custom" : message.role):\(time)"
-        } else {
-            return "m:\(index)"
-        }
+        guard let key = historyEntryKey(message) else { return "m:\(index)" }
         let repeats = seen[key, default: 0]
         seen[key] = repeats + 1
-        return repeats == 0 ? key : "\(key)#\(repeats)"
+        return historyEntryID(key: key, repeats: repeats)
     }
+
+    /// What an entry id is made of before its repeat: nil for a message without a timestamp, which history numbers by place.
+    static func historyEntryKey(_ message: RPCMessage) -> String? {
+        if message.role == "toolResult", let call = message.toolCallId, !call.isEmpty {
+            return "t:\(call)"
+        } else if let time = message.timestamp.flatMap(millisecondKey) {
+            return "\(message.role.isEmpty ? "custom" : message.role):\(time)"
+        }
+        return nil
+    }
+
+    static func historyEntryID(key: String, repeats: Int) -> String { repeats == 0 ? key : "\(key)#\(repeats)" }
 
     ///
     /// A user message's design references fence comes off (its records become the message's
