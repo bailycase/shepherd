@@ -53,10 +53,8 @@ struct AppSettingsTests {
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
         #expect(!settings.remoteListenerEnabled && settings.remoteListenerPort == 7433)
         #expect(settings.worktreeBaseMode == .fresh && settings.worktreeFetchBeforeCreate)
-        #expect(settings.worktreeAutoCommit && settings.worktreeGeneratePRDescription && settings.worktreeDeleteLocalBranch)
-        #expect(!settings.worktreeAutoMergePR, "merging is strictly opt-in")
+        #expect(settings.worktreeGeneratePRDescription)
         #expect(!settings.worktreeCloseOnMerge, "closing threads on merge is strictly opt-in")
-        #expect(settings.worktreeMergeMethod == .squash)
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
@@ -242,11 +240,7 @@ struct AppSettingsTests {
         settings.remoteListenerPort = 9000
         settings.worktreeBaseMode = .head
         settings.worktreeFetchBeforeCreate = false
-        settings.worktreeAutoCommit = false
         settings.worktreeGeneratePRDescription = false
-        settings.worktreeDeleteLocalBranch = false
-        settings.worktreeAutoMergePR = true
-        settings.worktreeMergeMethod = .rebase
 
         let reloaded = AppSettings(store: store)
         #expect(reloaded.terminalFontFamily == "Menlo" && reloaded.terminalFontSize == 15)
@@ -260,8 +254,7 @@ struct AppSettingsTests {
         #expect(reloaded.uiDensity == 1.2 && reloaded.uiTextScale == 1.1 && reloaded.sidebarWidth == 275)
         #expect(reloaded.remoteListenerEnabled && reloaded.remoteListenerPort == 9000)
         #expect(reloaded.worktreeBaseMode == .head && !reloaded.worktreeFetchBeforeCreate)
-        #expect(!reloaded.worktreeAutoCommit && !reloaded.worktreeGeneratePRDescription && !reloaded.worktreeDeleteLocalBranch)
-        #expect(reloaded.worktreeAutoMergePR && reloaded.worktreeMergeMethod == .rebase)
+        #expect(!reloaded.worktreeGeneratePRDescription)
     }
 
     /// Hand-edited or stale defaults must not reach ghostty or the layout as unusable values.
@@ -288,7 +281,9 @@ struct AppSettingsTests {
         store.set("gigantic", forKey: AppSettings.Key.defaultThinking)
         store.set("ultrafast", forKey: AppSettings.Key.defaultServiceTier)
         store.set("sideways", forKey: AppSettings.Key.worktreeBaseMode)
-        store.set("octopus", forKey: AppSettings.Key.worktreeMergeMethod)
+        // Removed Finalize settings from an older build are ignored.
+        store.set("octopus", forKey: "shepherd.worktree.mergeMethod")
+        store.set(true, forKey: "shepherd.worktree.autoMergePR")
         store.set("invalid", forKey: AppSettings.Key.childContext)
         store.set("project", forKey: "shepherd.pi.children.scope") // Retired discovery choice must not reach a launch.
         store.set("ultra", forKey: AppSettings.Key.childThinking)
@@ -296,7 +291,7 @@ struct AppSettingsTests {
         let settings = AppSettings(store: store)
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "a tier from a newer build reads as Standard")
-        #expect(settings.worktreeBaseMode == .fresh && settings.worktreeMergeMethod == .squash)
+        #expect(settings.worktreeBaseMode == .fresh && settings.worktreeGeneratePRDescription)
         #expect(settings.childContext == "fresh" && settings.childThinking.isEmpty)
         #expect(settings.childEnvironment["SHEPHERD_CHILD_SCOPE"] == nil)
     }
@@ -355,7 +350,7 @@ struct AppSettingsTests {
         settings.uiDensity = 1.3
         settings.uiTextScale = 1.2
         settings.sidebarWidth = 300
-        settings.worktreeAutoMergePR = true
+        settings.worktreeGeneratePRDescription = false
         settings.worktreeCloseOnMerge = true
         settings.childConcurrency = 9
 
@@ -365,7 +360,7 @@ struct AppSettingsTests {
         #expect(settings.defaultServiceTier == .standard)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
-        #expect(!settings.worktreeAutoMergePR && !settings.worktreeCloseOnMerge && settings.childConcurrency == 4)
+        #expect(settings.worktreeGeneratePRDescription && !settings.worktreeCloseOnMerge && settings.childConcurrency == 4)
         for key in AppSettings.Key.resettable {
             #expect(store.object(forKey: key) == nil, "\(key) survived reset")
         }

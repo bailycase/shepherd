@@ -31,7 +31,7 @@
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
   `hostInventory` and `hostConfig` through the same `HostStores` the app serves. It answers
-  worktree info, setup, finalize and delete, commit from review (the same `WorktreeQueries` the app
+  worktree info and delete, commit from review (the same `WorktreeQueries` the app
   serves in process), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
   With no page of its own, the host hands an agent's browser call that no viewer claimed to the
@@ -136,7 +136,7 @@
     State broadcasts carry the updated agent space, tab space and thread cwd. This does not
     transfer a thread between hosts. The Mac adds controls; the iOS layout is unchanged.
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
-    info/setup/finalize/delete, `terminals` (what each terminal runs; answered by the
+    info/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
     `commitMessage`, `commit` behind `review.commit.v1`; the commit is an operation polled with
     `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,

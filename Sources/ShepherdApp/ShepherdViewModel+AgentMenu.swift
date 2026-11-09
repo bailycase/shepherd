@@ -8,7 +8,7 @@ import ShepherdUI
 /// section and the sidebar row's menu all offer this list, so nothing is reachable from one
 /// surface alone.
 enum ThreadCommand: String, CaseIterable, Identifiable {
-    case fork, copyTranscript, reviewChanges, openInFinder, finalizeWorktree, delete
+    case fork, copyTranscript, reviewChanges, openInFinder, delete
 
     var id: String { rawValue }
 
@@ -19,7 +19,6 @@ enum ThreadCommand: String, CaseIterable, Identifiable {
         case .copyTranscript: "Copy Transcript"
         case .reviewChanges: "Review Changes"
         case .openInFinder: "Open in Finder"
-        case .finalizeWorktree: "Finalize Worktree…"
         case .delete: "Delete Agent…"
         }
     }
@@ -31,7 +30,6 @@ enum ThreadCommand: String, CaseIterable, Identifiable {
         case .copyTranscript: "Copy transcript"
         case .reviewChanges: "Review changes"
         case .openInFinder: "Open in Finder"
-        case .finalizeWorktree: "Finalize worktree…"
         case .delete: "Delete agent…"
         }
     }
@@ -42,7 +40,6 @@ enum ThreadCommand: String, CaseIterable, Identifiable {
         case .copyTranscript: "doc.on.doc"
         case .reviewChanges: "plus.forwardslash.minus"
         case .openInFinder: "folder"
-        case .finalizeWorktree: SHGlyph.gitBranch.symbolName
         case .delete: "trash"
         }
     }
@@ -50,13 +47,6 @@ enum ThreadCommand: String, CaseIterable, Identifiable {
     var isDestructive: Bool { self == .delete }
 
     var shortcut: ShortcutAction? { self == .delete ? .deleteAgent : nil }
-
-    /// Finalize is a worktree agent's alone; the rest apply to any of this Mac's threads.
-    func applies(to agent: Agent) -> Bool {
-        self != .finalizeWorktree || agent.worktreeBranch != nil
-    }
-
-    static func commands(for agent: Agent) -> [ThreadCommand] { allCases.filter { $0.applies(to: agent) } }
 }
 
 /// The agent menu's actions beyond rename, review and delete (SHComposer › Menus): Fork
@@ -69,7 +59,6 @@ extension ShepherdViewModel {
         case .copyTranscript: copyAgentTranscript(id)
         case .reviewChanges: selectAgent(id); openUserReview()
         case .openInFinder: openAgentInFinder(id)
-        case .finalizeWorktree: beginFinalizeWorktree(id)
         case .delete: requestDeleteAgent(id)
         }
     }

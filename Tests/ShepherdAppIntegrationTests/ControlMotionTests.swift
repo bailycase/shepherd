@@ -283,9 +283,7 @@ struct ControlMotionTests {
 }
 
 /// Settings and the sheets, on isolated preferences: a page picked in the nav cross-fades,
-/// search lands on a page at once, a conditional row discloses as its card grows, a sheet keeps
-/// its title still while it grows, and a failed Finalize check reveals its remedy as the list
-/// makes room.
+/// search lands on a page at once, and a sheet keeps its title still while it grows.
 @Suite("Settings and dialog motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct SettingsMotionTests {
@@ -345,31 +343,6 @@ struct SettingsMotionTests {
         #expect(!closing.inBetween.isEmpty, "it cross-fades out")
     }
 
-    /// Merge PR automatically reveals the merge method: the card grows and the footnote under it
-    /// moves down through the frames between, cross-fading under Reduce Motion but never jumping.
-    @Test(arguments: [false, true])
-    func turningOnAutoMergeDisclosesTheMergeMethodRow(reduceMotion: Bool) async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        app.settings.worktreeAutoMergePR = false
-        let size = CGSize(width: 760, height: 900)
-        let window = OffscreenWindow(size: size, dark: false,
-                                     WorktreeSettings(settings: app.settings)
-                                         .padding(20)
-                                         .frame(width: size.width, height: size.height, alignment: .topLeading)
-                                         .background(Color.sh.bgWindow)
-                                         .environment(\._accessibilityReduceMotion, reduceMotion))
-        defer { window.close() }
-        // A column through the rows' titles and the footnote under the card.
-        let strip = CGRect(x: 60, y: 0, width: 1, height: size.height)
-        let recording = await MotionProbe.record(window, region: strip) { app.settings.worktreeAutoMergePR = true }
-
-        let rest = try #require(recording.settled.lastRow(differingFrom: recording.before))
-        let edges = recording.inBetween.compactMap { $0.lastRow(differingFrom: recording.before) }
-        #expect(edges.contains { $0 < rest - 10 }, "caught growing toward \(rest): \(edges)")
-        #expect(edges == edges.sorted(), "it only grows: \(edges)")
-    }
-
     @MainActor @Observable
     final class SheetModel {
         var open = false
@@ -410,32 +383,6 @@ struct SettingsMotionTests {
         let column = CGRect(x: SHDialogMetrics.inset + 4, y: 0, width: 1, height: closed.height)
         let growth = await MotionProbe.record(window, region: column) { model.open = true }
         #expect(!growth.inBetween.isEmpty, "the banner discloses in steps")
-    }
-
-    /// A failed prerequisite grows its remedy in place: the checks under it move down through
-    /// the frames between instead of jumping.
-    @Test func aFailedSetupCheckGrowsItsRemedyAsTheListMakesRoom() async throws {
-        let model = WorktreeSetupModel(repoPath: "/tmp/repo")
-        model.remoteAction = { _ in
-            RemoteWorktreeSetup(repoPath: "/tmp/repo",
-                                checks: ["git": .pass("git 2.50"), "identity": .fail("user.email not set"),
-                                         "remote": .pass("origin"), "gh": .pass("gh 2.80"), "ghAuth": .pass("signed in")],
-                                repoSettings: [:])
-        }
-        let size = CGSize(width: 620, height: 520)
-        let window = OffscreenWindow(size: size, dark: false,
-                                     WorktreeSetupChecklist(model: model) {}
-                                         .frame(width: size.width, height: size.height, alignment: .top)
-                                         .background(Color.sh.bgWindow))
-        defer { window.close() }
-        // A column through the check titles and the section below them.
-        let strip = CGRect(x: SHDialogMetrics.inset + 30, y: 0, width: 1, height: size.height)
-        let recording = await MotionProbe.record(window, region: strip) { Task { await model.runAll() } }
-
-        #expect(model.states[.identity] == .fail("user.email not set"))
-        let rest = try #require(recording.settled.lastRow(differingFrom: recording.before))
-        let edges = recording.inBetween.compactMap { $0.lastRow(differingFrom: recording.before) }
-        #expect(edges.contains { $0 < rest - 10 }, "caught making room toward \(rest): \(edges)")
     }
 }
 

@@ -180,7 +180,7 @@ struct FleetSidebarTests {
             #expect(groups.needsYou.first?.origin == .project, "a genuine question still waits on the user")
         }
         let abilities = FleetThreadAbilities(agent: restricted, state: host.state, connected: true, capabilities: Set(RemoteProtocol.capabilities))
-        #expect(!abilities.pin && !abilities.rename && !abilities.delete && abilities.moveSpaces.isEmpty && !abilities.finalize)
+        #expect(!abilities.pin && !abilities.rename && !abilities.delete && abilities.moveSpaces.isEmpty)
         #expect(abilities.review, "read-only inspection remains available")
     }
 
@@ -217,7 +217,7 @@ struct FleetSidebarTests {
         let state = ShepherdState(spaces: [F.space, F.hidden, space2], agents: [agent])
         let all = Set(RemoteProtocol.capabilities)
         let full = FleetThreadAbilities(agent: agent, state: state, connected: true, capabilities: all)
-        #expect(full.rename && full.delete && full.pin && full.review && !full.finalize)
+        #expect(full.rename && full.delete && full.pin && full.review)
         #expect(full.moveSpaces.map(\.id) == [F.space.id, space2.id], "never a hidden space")
 
         let older = FleetThreadAbilities(agent: agent, state: state, connected: true,
@@ -231,9 +231,6 @@ struct FleetSidebarTests {
         var worktree = agent
         worktree.worktreeBranch = "agent/x"
         let tree = FleetThreadAbilities(agent: worktree, state: state, connected: true, capabilities: all)
-        #expect(tree.finalize && tree.moveSpaces.isEmpty, "worktree threads finalize and never move")
-        let noSetup = FleetThreadAbilities(agent: worktree, state: state, connected: true,
-                                           capabilities: all.subtracting([RemoteProtocol.worktreeSetupCapability]))
-        #expect(!noSetup.finalize)
+        #expect(tree.delete && tree.moveSpaces.isEmpty, "worktree threads delete and never move")
     }
 }

@@ -291,7 +291,7 @@ struct SidebarRowMenu: View {
                 PinMenuItem(vm: vm, row: row)
                 if !row.worktree { ThreadMoveMenu(vm: vm, row: row.id) }
                 // The same list the Agent menu and ⌘K offer (ThreadCommand).
-                ForEach(ThreadCommand.allCases.filter { $0 != .delete && ($0 != .finalizeWorktree || row.worktree) }) { command in
+                ForEach(ThreadCommand.allCases.filter { $0 != .delete }) { command in
                     Button(command.title, systemImage: command.symbol) { vm.perform(command, on: id) }
                 }
                 Divider()
@@ -367,12 +367,6 @@ private struct RemoteRowMenu: View {
             ThreadMoveMenu(vm: vm, row: row.id)
         }
         Divider()
-        if row.worktree {
-            Button("Finalize Worktree…") {
-                vm.remoteWorktreeFinalize = true
-                vm.remoteWorktreeSheet = ref
-            }
-        }
         Button("Review Uncommitted Changes") { vm.openRemoteReview(ref, pullRequest: false) }
         Button("Review PR Changes") { vm.openRemoteReview(ref, pullRequest: true) }
         Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent…", role: .destructive) {

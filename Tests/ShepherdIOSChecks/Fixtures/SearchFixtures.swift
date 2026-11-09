@@ -260,10 +260,7 @@ enum SearchFixtures {
         case .worktreeInfo where agent == worktree:
             return .agentResult(id: id, result: .worktreeInfo(RemoteWorktreeInfo(
                 path: "/Users/dev/Shepherd/.worktrees/calm-stone-3831", branch: "worktree/calm-stone-3831",
-                warning: "2 uncommitted files and 1 unpushed commit",
-                defaults: RemoteFinalizeOptions(base: "nightly", title: "Queue steering polish", body: "", autoCommit: true,
-                                                deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash"),
-                fingerprint: "fixture")))
+                warning: "2 uncommitted files and 1 unpushed commit", fingerprint: "fixture")))
         default:
             return nil
         }

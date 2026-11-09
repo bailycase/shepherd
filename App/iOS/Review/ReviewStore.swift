@@ -93,7 +93,6 @@ final class ReviewStore {
     }
 
     let ref: AgentRef
-    let finalize: FinalizeStore
 
     // MARK: What is compared
 
@@ -254,7 +253,6 @@ final class ReviewStore {
         self.ref = ref
         self.request = request
         self.prepareText = prepareText
-        finalize = FinalizeStore(ref: ref)
     }
 
     func forget() {

@@ -13,7 +13,7 @@ enum SettingsRoute: Hashable, Codable {
     case appearance
     /// What a host's new threads start with: the model, thinking, and how the queue goes.
     case defaults
-    /// How a host creates and finalizes worktrees.
+    /// How a host creates worktrees and handles them when the work is done.
     case worktrees
     /// The pi extensions a host loads, and its daily updates.
     case piExtensions

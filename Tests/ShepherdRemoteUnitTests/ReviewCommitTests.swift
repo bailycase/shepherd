@@ -154,6 +154,20 @@ struct ReviewCommitPresentationTests {
     func anOperationsOutcome(_ operation: RemoteWorktreeOperation, _ outcome: ReviewCommitOutcome) {
         #expect(ReviewCommitOutcome(operation) == outcome)
     }
+
+    /// The host's progress lines ("commit: committed abc1234") read back as steps.
+    @Test func progressLinesBecomeSteps() {
+        let steps = operationSteps([
+            "check the checkout: done",
+            "push: pushed",
+            "open a pull request: working…",
+            "commit: pending",
+            "branch: failed: exists",
+            "stopping agent",
+        ])
+        #expect(steps.map(\.label) == ["check the checkout", "push", "open a pull request", "commit", "branch", "stopping agent"])
+        #expect(steps.map(\.state) == [.done("done"), .done("pushed"), .running, .pending, .failed("exists"), .done("")])
+    }
 }
 
 /// Holds whoever waits until opened (at once, once it is open).

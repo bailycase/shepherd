@@ -166,8 +166,7 @@ and only for a layout holding a terminal (`WorkspaceSelection.coldParkCandidates
 
 ## Only these paths mutate repositories
 
-Worktree add (`GitWorktree.swift`), Delete Worktree Agent (confirmed), Finalize Worktree (each step
-gates the next; the remote branch is never deleted), per-file Revert in the Changes pane (confirmed),
+Worktree add (`GitWorktree.swift`), Delete Worktree Agent (confirmed), per-file Revert in the Changes pane (confirmed),
 Commit from review (`ReviewCommit.swift`: only the ticked files, refuses a dirty HEAD state, never
 force-pushes), Mission PR publication (`MissionController+Review.swift`: explicit approval binds the
 validation contract and worktree contents; commits through `ReviewCommit.swift`, pushes the exact
@@ -206,8 +205,7 @@ the base, then rebase or merge onto it; refused on a dirty tree; a conflict stop
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
 origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
-branch with a tracking local copy) or a named new one. Finalize's plan runs only the steps the person
-ticked. Close threads when their pull request merges (Settings ▸ Worktrees,
+branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Worktrees,
 off by default; `ShepherdSessions/PullRequestLinks.swift`): once a thread's pull request is seen
 going from open to merged in this host's run, it deletes the thread, removes its worktree and local
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
@@ -280,7 +278,6 @@ compatibility bug.
   as an option. Remote clients may not set a review `cwd`.
 - Worktree branches are created `--no-track`, never force-reset, with full `refs/heads/` refs
   passed as arguments to `/usr/bin/git` by absolute path.
-- Finalize does nothing destructive before `GitWorktree.unreconciledWork` reports clean.
 
 **Projects**
 - Refuse Project or Space file requests from a client that has not acknowledged `projects.v2`,
