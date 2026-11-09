@@ -152,8 +152,7 @@ final class NewThreadState {
     /// The branch a new worktree on this Mac starts from, picked in the workplace menu; nil lets
     /// Settings ▸ Worktrees decide. A host's projects keep the base the host resolves.
     var worktreeBase: String?
-    /// The new worktree's branch, from the ⚙ popover's Branch picker (BranchWhereItRuns,
-    /// BranchPicker); nil makes a new branch with a generated name from the base.
+    /// The new worktree's branch, from the workplace menu's Branch row (BranchPicker); nil makes a new branch with a generated name from the base.
     var worktreeBranch: NewThreadBranch?
     /// The model, thinking and speed the thread starts with; a blank model is the target's default.
     private(set) var model = ""

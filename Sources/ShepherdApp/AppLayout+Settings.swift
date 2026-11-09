@@ -310,8 +310,6 @@ extension AppLayout {
     static let branchSheetWidth: CGFloat = 520
     /// The branch card's Commit… (BranchCommit).
     static let branchCommitSheetWidth: CGFloat = 560
-    /// The new thread's ⚙ popover (BranchWhereItRuns).
-    static let whereItRunsWidth: CGFloat = 270
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280
     /// The card's own column at the thread's right (BranchCard): the card and its margins.

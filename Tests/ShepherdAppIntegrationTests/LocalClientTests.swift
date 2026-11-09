@@ -93,6 +93,23 @@ struct LocalClientTests {
         #expect(rendered.image.mimeType == "image/png" && rendered.text.hasPrefix("Two.dc.html at 400×300"))
     }
 
+    /// Add Space adds to the host, never the idle in-process server, whose spaces nothing lists.
+    @Test func addSpaceAddsToTheHost() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, _, connection, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.connections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.addSpaceFromPanel()
+        #expect(vm.spacePickerTarget == .host(connection.id))
+    }
+
     @Test func theHostsAgentDrivesTheAppsPageWithNoTunnel() async throws {
         _ = NSApplication.shared
         let host = try ScratchServer()

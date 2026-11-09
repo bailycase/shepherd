@@ -12,6 +12,12 @@ extension ShepherdViewModel {
     /// Every "new space" affordance opens the app's own directory browser
     /// (RootView presents it); local and remote are the same UI.
     func addSpaceFromPanel() {
+        // Under the background host this Mac's spaces are the host's: the in-process server is idle,
+        // and a space added to it never reaches the sidebar or the space menu.
+        if !ownsWorkspace, let host = remoteHosts.connections.first(where: \.isThisMac) {
+            spacePickerTarget = .host(host.id)
+            return
+        }
         spacePickerTarget = .local
     }
 

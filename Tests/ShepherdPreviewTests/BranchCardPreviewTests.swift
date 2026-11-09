@@ -117,21 +117,17 @@ struct BranchCardPreviewTests {
         }
     }
 
-    /// The new thread's ⚙ (BranchWhereItRuns) and its Branch picker (BranchPicker).
-    @Test func theNewThreadWhereItRunsAndBranchPicker() async throws {
+    /// The new thread's Branch picker (BranchPicker), opened from the workplace menu's Branch row.
+    @Test func theNewThreadBranchPicker() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         let (origin, clone) = try clone()
         defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
-        try await Preview.render("where-it-runs", size: CGSize(width: 760, height: 380)) {
-            HStack(alignment: .top, spacing: SH.Space.xxl) {
-                WhereItRunsMenu(worktree: true, branch: "new from main", base: "origin/main", host: "This Mac", local: true,
-                                setWorktree: { _ in }, chooseBranch: {}, chooseBase: {})
-                BranchPickerMenu(first: "New branch from main", selected: nil, load: { try await workspace.vm.branchPickerList(cwd: clone.path) },
-                                 choose: { _ in }, newBranch: {}, fetch: {}, close: {})
-            }
+        try await Preview.render("new-thread-branch-picker", size: CGSize(width: 420, height: 380)) {
+            BranchPickerMenu(first: "New branch from main", selected: nil, load: { try await workspace.vm.branchPickerList(cwd: clone.path) },
+                             choose: { _ in }, newBranch: {}, fetch: {}, close: {})
             .padding(SH.Space.xl)
-            .frame(width: 760, height: 380, alignment: .topLeading)
+            .frame(width: 420, height: 380, alignment: .topLeading)
             .background(Color.sh.bgWindow)
         }
     }
