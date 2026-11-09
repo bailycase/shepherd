@@ -46,8 +46,9 @@ struct ComposerFieldWorkTests {
             thread.type(String(letter))
             try await thread.settle()
             let counts = SHRenderProbe.stop()
+            // Each width SwiftUI asks (the column's, the window's minimum) is measured once per edit, in two samples.
             let measured = counts["layout.composerFieldMeasured", default: 0]
-            #expect(measured <= 2, "\"\(letter)\" measured the field \(measured) times: \(counts)")
+            #expect(measured <= 4, "\"\(letter)\" measured the field \(measured) times: \(counts)")
             #expect(field.lastMeasuredCharacters <= 8_192, "\"\(letter)\" measured \(field.lastMeasuredCharacters) characters")
         }
         #expect(thread.store.draft.hasSuffix("dog.\nhello"))
@@ -93,6 +94,88 @@ struct ComposerFieldWorkTests {
         try await thread.settle()
         let broken = SHRenderProbe.stop()
         #expect(broken["layout.composerFieldInvalidated", default: 0] == 1, "a new line is a new height: \(broken)")
+    }
+
+    /// Asking again for the same words at the same width measures nothing; new words or a new width measure once.
+    @Test func aWidthIsMeasuredOncePerEdit() async throws {
+        let thread = ComposerThread(focused: true, animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = String(repeating: "The quick brown fox jumps over the lazy dog.\n", count: 1_500)
+        try await thread.settle()
+        let field = try #require(thread.field)
+        thread.type("!")
+        try await thread.settle()
+        let width = field.alignmentRect(forFrame: field.frame).width
+        func measures(_ asks: Int, at width: CGFloat) -> Int {
+            SHRenderProbe.start()
+            for _ in 0..<asks { _ = field.fittingHeight(width: width) }
+            return SHRenderProbe.stop()["layout.composerFieldMeasured", default: 0]
+        }
+        #expect(measures(5, at: width) == 0, "the width the edit measured is answered from its measure")
+        #expect(measures(5, at: width / 2) == 2, "a new width is measured once, in the two samples that decide its height")
+        thread.type("!")
+        try await thread.settle()
+        #expect(measures(5, at: width) == 0, "the edit that follows measured the width again")
+        #expect(measures(5, at: width / 2) == 2, "...and the other width is new words' to measure")
+    }
+
+    /// A sample of the words decides the height, and it is the height the cell gives the whole draft: the draft's
+    /// first lines are the sample's, and the cell stops at the field's eight.
+    @Test func theFieldsHeightIsTheCellsForTheWholeDraft() async throws {
+        final class Draft { var text = "" }
+        func lines(_ count: Int, _ line: String = "A line of the draft, long enough to wrap in a narrow column of the composer.") -> String {
+            Array(repeating: line, count: count).joined(separator: "\n")
+        }
+        let cjk = "这是一个很长的句子，用来检查换行与高度的计算是否正确，" + String(repeating: "输入", count: 40)
+        let drafts: [(name: String, text: String)] = [
+            ("empty", ""), ("one line", "A line of the draft."), ("three lines", lines(3)), ("eight lines", lines(8)),
+            ("nine lines", lines(9)), ("thirty lines", lines(30)), ("a 64 KB draft", lines(900)),
+            ("a 3,000-character paragraph", String(repeating: "word ", count: 600)),
+            ("a skill and ten lines", "fix /skill:debug now\n" + lines(10)),
+            ("a skill in a long paragraph", "fix /skill:debug now " + String(repeating: "word ", count: 900)),
+            ("cjk lines", (1...12).map { _ in cjk }.joined(separator: "\n")),
+            ("a cjk skill and ten lines", "修复 /skill:debug 然后\n" + lines(10, cjk)),
+            ("lines of nothing wide", String(repeating: "\u{200B}", count: 3_000) + String(repeating: "\n", count: 10) + "end"),
+        ]
+        let editing = Draft(), idle = Draft()
+        let editingWindow = OffscreenWindow(size: CGSize(width: 900, height: 300))
+        let idleWindow = OffscreenWindow(size: CGSize(width: 900, height: 300))
+        defer { editingWindow.close(); idleWindow.close() }
+        func show(_ window: OffscreenWindow, _ draft: Draft, focused: Bool) {
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), placeholder: "Message",
+                                          label: "Message", focus: .constant(focused), attach: { _ in }))
+        }
+        func composerField(in window: OffscreenWindow) -> ComposerTextField.Field? {
+            func walk(_ view: NSView) -> ComposerTextField.Field? {
+                if let field = view as? ComposerTextField.Field { return field }
+                for sub in view.subviews { if let field = walk(sub) { return field } }
+                return nil
+            }
+            return walk(window.host)
+        }
+        show(editingWindow, editing, focused: true)
+        try await eventuallyOnMain("the native composer editor to focus") { editingWindow.window.firstResponder is ComposerTextField.Editor }
+        show(idleWindow, idle, focused: false)
+        let field = try #require(composerField(in: editingWindow))
+        let reference = try #require(composerField(in: idleWindow))
+        #expect(field.currentEditor() != nil)
+        #expect(reference.currentEditor() == nil)
+
+        for draft in drafts {
+            editing.text = draft.text
+            show(editingWindow, editing, focused: true)
+            idle.text = draft.text
+            show(idleWindow, idle, focused: false)
+            for width in [300.0, 790.0] {
+                let whole = reference.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height
+                field.lastMeasuredCharacters = 0
+                #expect(field.fittingHeight(width: width) == whole, "\(draft.name) at \(width) pt")
+                if draft.name.hasPrefix("lines of nothing") {
+                    #expect(field.lastMeasuredCharacters > SHComposerFit.firstSample, "the sample grew past its first \(SHComposerFit.firstSample) characters")
+                }
+            }
+        }
     }
 
     @Test func aPublishedDraftIsNewOnlyWhenItsWordsChange() {

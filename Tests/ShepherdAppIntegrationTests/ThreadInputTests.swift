@@ -226,10 +226,10 @@ struct ThreadInputTests {
         for n in 2...12 {
             #expect(SHReturnKey.insertLineBreak(in: editor))
             thread.type("Line \(n)")
-            if n <= 8 {
-                try await eventuallyOnMain("line \(n) to grow the field") { thread.composerInset > last }
-            } else {
-                try await eventuallyOnMain("line \(n) to keep the eight-line ceiling") { thread.composerInset == eight }
+            switch n {
+            case 2: break // Two lines still fit the field's minimum height.
+            case 3...8: try await eventuallyOnMain("line \(n) to grow the field") { thread.composerInset > last }
+            default: try await eventuallyOnMain("line \(n) to keep the eight-line ceiling") { thread.composerInset == eight }
             }
             #expect(thread.composerInset <= eight, "line \(n) stays within the eight-line ceiling")
             last = thread.composerInset
