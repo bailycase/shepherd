@@ -1428,9 +1428,9 @@ struct ComposerControls: View, Equatable {
 
 /// Answers the window's minimum-size pass for the control row without measuring it. The window
 /// sizes to its content's minimum (`windowResizability(.contentMinSize)`), so after every change
-/// that could move it (each keystroke in the field, whose text field reports a new intrinsic
-/// size) the scene's hosting view measures the whole view tree from a zero-width proposal: the
-/// row is asked at no width, at the width of its paddings, and again at its own minimum as the
+/// that could move it (among them the text field reporting a new intrinsic size, which it does when
+/// its height changes) the scene's hosting view measures the whole view tree from a zero-width
+/// proposal: the row is asked at no width, at the width of its paddings, and again at its own minimum as the
 /// pass places it. At each of those `ViewThatFits` measures every alternative, building the two
 /// it does not show, with their tooltips and accessibility: half of a keystroke's main-thread
 /// time. A real layout never proposes the row less than `AppLayout.composerControlsNarrowest`,
