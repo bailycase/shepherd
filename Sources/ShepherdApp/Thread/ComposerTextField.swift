@@ -302,37 +302,43 @@ struct ComposerTextField: NSViewRepresentable {
             let lines = SHComposerMetrics.fieldMaxLines
             let height = SHComposerFit.height { count in
                 let sample = words.prefix(count)
-                let whole = sample.endIndex == words.endIndex
-                let shown = measure(sample, lines: lines, width: width)
-                if whole { return (shown, true, false) }
+                show(sample)
+                let shown = cellHeight(of: sample, lines: lines, width: width)
+                if sample.endIndex == words.endIndex { return (shown, true, false) }
                 // A sample with a line past the last shown has the words' own first lines, and the cell stops at those.
-                return (shown, false, measure(sample, lines: lines + 1, width: width) > shown)
+                return (shown, false, cellHeight(of: sample, lines: lines + 1, width: width) > shown)
             }
             if measured?.styleVersion != styleVersion || measured?.revision != revision { measured = (styleVersion, revision, Heights()) }
             measured?.heights[width] = height
             return height
         }
 
-        private func measure(_ sample: Substring, lines: Int, width: CGFloat) -> CGFloat {
-            SHRenderProbe.tick("layout.composerFieldMeasured")
-            lastMeasuredCharacters += sample.count
+        /// Puts `sample` in the measurer as the field holds the words: with chips only if `setDraft` showed chips.
+        private func show(_ sample: Substring) {
             if measurer.font != font { measurer.font = font }
             if measurer.placeholderAttributedString !== placeholderAttributedString {
                 measurer.placeholderAttributedString = placeholderAttributedString
             }
-            measurer.maximumNumberOfLines = lines
             let text = String(sample)
-            // As `setDraft` shows them.
-            if text.contains(ComposerSkillToken.prefix),
-               let chips = SHSkillChips.attributed(text, tokens: ComposerSkillToken.ranges(in: text), name: ComposerSkillToken.name,
-                                                   attributes: draftAttributes) {
-                measurer.attributedStringValue = chips
-            } else {
+            guard showsChips else {
                 measurer.stringValue = text
+                return
             }
+            let chips = text.contains(ComposerSkillToken.prefix)
+                ? SHSkillChips.attributed(text, tokens: ComposerSkillToken.ranges(in: text), name: ComposerSkillToken.name,
+                                          attributes: draftAttributes) : nil
+            measurer.attributedStringValue = chips ?? NSAttributedString(string: text, attributes: draftAttributes)
+        }
+
+        private func cellHeight(of sample: Substring, lines: Int, width: CGFloat) -> CGFloat {
+            SHRenderProbe.tick("layout.composerFieldMeasured")
+            if SHRenderProbe.isRecording { lastMeasuredCharacters += sample.count }
+            measurer.maximumNumberOfLines = lines
             return measurer.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height ?? 0
         }
 
+        /// Whether `setDraft` last showed the words with their skills as chips. Words typed or pasted in are plain text.
+        private(set) var showsChips = false
         /// Bumped with each style applied; `chipsStyle` is the one the chips were drawn in.
         private(set) var styleVersion = 0
         private(set) var chipsStyle = 0
@@ -360,9 +366,11 @@ struct ComposerTextField: NSViewRepresentable {
             defer { publish(text) }
             guard let chips = SHSkillChips.attributed(text, tokens: ComposerSkillToken.ranges(in: text), name: ComposerSkillToken.name,
                                                       attributes: draftAttributes) else {
+                showsChips = false
                 stringValue = text
                 return
             }
+            showsChips = true
             attributedStringValue = chips
             if currentEditor() != nil { editor.textStorage?.setAttributedString(chips) }
         }
