@@ -135,6 +135,17 @@ $STUB_PI_SESSION_ID gives independent fixture workers distinct native session id
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
 
+Saving, as pi does it: a message is saved where its message_end is emitted, in one step, so a
+get_messages answered after the event holds the message and one answered before it does not.
+get_session_stats counts what is saved (user, assistant, toolResult and system messages, and the
+tool calls in the assistant ones), and what a compaction drops stays in its totals until the
+session changes. "tools:N", "question", "toolcall", the default streaming turn ("slow" too) and a
+script's turns save this way; the last two emit each tool result's message events after its
+tool_execution_end. These still save without events (a host that counts messages has something to
+find): "fill", the seeds and $STUB_PI_STRESS, "stream", "provider-error", "project-action",
+"project-plan", "project-tools", "child-report-noise", "context", and the prompts that rewrite the
+history ("newsession" and the resume prompts).
+
 set_model / set_thinking_level update STATE (unknown provider -> error).
 $STUB_PI_MODEL (a JSON object) overrides fields of the starting model (provider, id, api), and
 $STUB_PI_MODEL_APIS (a JSON object from "provider/id" to its api) names the non-anthropic models
@@ -189,7 +200,7 @@ import threading
 import time
 
 out = sys.stdout.buffer
-out_lock = threading.Lock()
+out_lock = threading.RLock()
 turn_thread = None
 log_path = os.environ.get("STUB_PI_LOG")
 tier_path = os.environ.get("SHEPHERD_EXT_SERVICE_TIER")
@@ -219,7 +230,9 @@ def wait_for_file(name, timeout=30.0):
         time.sleep(0.02)
 
 
-def emit(obj, terminator=b"\n"):
+def emit(obj, terminator=b"\n", save=None):
+    """Writes one record. `save` (a message) is appended to MESSAGES in the same step, as pi saves a
+    message where it emits its message_end: nothing answered in between sees one without the other."""
     global turn_thread
     # ensure_ascii=False keeps U+2028 as a raw code point inside the string,
     # the exact case a generic line reader would split on.
@@ -229,6 +242,8 @@ def emit(obj, terminator=b"\n"):
             turn_thread = None
         out.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + terminator)
         out.flush()
+        if save is not None:
+            MESSAGES.append(save)
 
 
 def image_size(mime, b):
@@ -381,12 +396,58 @@ STATS = {
     "contextUsage": {"tokens": 60000, "contextWindow": 200000, "percent": 30},
 }
 
+COUNT_KEYS = ("totalMessages", "userMessages", "assistantMessages", "toolResults", "toolCalls")
+# What compactions dropped from MESSAGES: pi's stats count every message the session file holds.
+COMPACTED = dict.fromkeys(COUNT_KEYS, 0)
+
+
+def count_messages(messages):
+    """get_session_stats' counts over `messages`: pi counts its message entries (user, assistant,
+    toolResult and system), not custom messages or summaries."""
+    counts = dict.fromkeys(COUNT_KEYS, 0)
+    for m in messages:
+        role = m.get("role")
+        if role not in ("user", "assistant", "toolResult", "system"):
+            continue
+        counts["totalMessages"] += 1
+        if role == "user":
+            counts["userMessages"] += 1
+        elif role == "toolResult":
+            counts["toolResults"] += 1
+        elif role == "assistant":
+            counts["assistantMessages"] += 1
+            content = m.get("content")
+            if isinstance(content, list):
+                counts["toolCalls"] += sum(1 for b in content if isinstance(b, dict) and b.get("type") == "toolCall")
+    return counts
+
+
+def message_counts():
+    return {k: n + COMPACTED[k] for k, n in count_messages(MESSAGES).items()}
+
+
+def reset_compacted():
+    """A new session starts counting from its own messages."""
+    COMPACTED.update(dict.fromkeys(COUNT_KEYS, 0))
+
+
 USAGE = {"input": 100, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 101,
          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}}
 
 
 def update(delta):
     emit({"type": "message_update", "usage": USAGE, "assistantMessageEvent": delta})
+
+
+def message_end(message):
+    """The message's message_end, which saves it."""
+    emit({"type": "message_end", "message": message}, save=message)
+
+
+def tool_result_events(result):
+    """The tool result's message events, which pi emits right after the call's tool_execution_end."""
+    emit({"type": "message_start", "message": result})
+    message_end(result)
 
 
 def project_action_turn(prompt, result_file="project-tool-result.json"):
@@ -521,7 +582,7 @@ def script_turn(prompt, script):
     emit({"type": "agent_start"})
     emit({"type": "turn_start"})
     emit({"type": "message_start", "message": user})
-    emit({"type": "message_end", "message": user})
+    message_end(user)
     for n, item in enumerate(script):
         if "startedAgo" in item:
             continue
@@ -533,13 +594,12 @@ def script_turn(prompt, script):
             global pending_ui
             pending_ui = "uuid-script"
             emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", **item["ask"]})
-            MESSAGES.extend(new)
             STATE["messageCount"] = len(MESSAGES)
             return
         if "text" in item:
             message = {"role": "assistant", "content": [{"type": "text", "text": item["text"]}], "stopReason": "stop", "timestamp": now_ms()}
             emit({"type": "message_start", "message": dict(message, content=[])})
-            emit({"type": "message_end", "message": message})
+            message_end(message)
             new.append(message)
             continue
         call = f"script_call_{n}"
@@ -555,12 +615,12 @@ def script_turn(prompt, script):
             name, args, content, details, error = tool["toolName"], tool.get("arguments", {}), tool["content"], tool.get("details", {}), tool.get("isError", False)
         assistant = {"role": "assistant", "content": [{"type": "toolCall", "id": call, "name": name, "arguments": args}], "stopReason": "toolUse", "timestamp": now_ms()}
         emit({"type": "message_start", "message": dict(assistant, content=[])})
-        emit({"type": "message_end", "message": assistant})
+        message_end(assistant)
         emit({"type": "tool_execution_start", "toolCallId": call, "toolName": name, "args": args})
         result = {"role": "toolResult", "toolCallId": call, "toolName": name, "content": content, "details": details, "isError": error, "timestamp": now_ms()}
         emit({"type": "tool_execution_end", "toolCallId": call, "toolName": name, "result": {"content": content, "details": details}, "isError": error})
+        tool_result_events(result)
         new.extend([assistant, result])
-    MESSAGES.extend(new)
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": new[1:], "willRetry": False})
     emit({"type": "agent_settled"})
@@ -571,7 +631,7 @@ def streaming_turn(prompt, slow=False):
     emit({"type": "agent_start"})
     emit({"type": "turn_start"})
     emit({"type": "message_start", "message": user})
-    emit({"type": "message_end", "message": user})
+    message_end(user)
     emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
     update({"type": "text_start", "contentIndex": 0})
     update({"type": "text_delta", "contentIndex": 0, "delta": "Hello"})
@@ -587,7 +647,7 @@ def streaming_turn(prompt, slow=False):
              "content": [{"type": "text", "text": "Hello line\u2028sep world"},
                          {"type": "toolCall", "id": "call_abc123", "name": "bash", "arguments": {"command": "ls"}}],
              "stopReason": "toolUse"}
-    emit({"type": "message_end", "message": final})
+    message_end(final)
     emit({"type": "tool_execution_start", "toolCallId": "call_abc123", "toolName": "bash", "args": {"command": "ls"}})
     if slow:
         wait_for_file("continue-2")
@@ -595,11 +655,11 @@ def streaming_turn(prompt, slow=False):
           "result": {"content": [{"type": "text", "text": "total 48\n"}], "details": {}}, "isError": False})
     tool_result = {"role": "toolResult", "toolCallId": "call_abc123", "toolName": "bash",
                    "content": [{"type": "text", "text": "total 48\n"}], "isError": False}
+    # Like pi, each message_end saved its message; get_messages returns them.
+    tool_result_events(tool_result)
     emit({"type": "turn_end", "message": final, "toolResults": [tool_result]})
     # An event type this client does not model; must decode as unknown, not fail.
     emit({"type": "stub_unmodelled_event", "reason": "manual"})
-    # Like pi, message_end persisted these; get_messages now returns them.
-    MESSAGES.extend([user, final, tool_result])
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
     STATS["contextUsage"] = {"tokens": 60000, "contextWindow": 200000, "percent": 30}
@@ -641,8 +701,12 @@ def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
         summary += "\n\nKept: " + instructions
     system = [m for m in MESSAGES if m.get("role") == "system"]
     kept = conversation[-keep:]
-    MESSAGES[:] = system + [{"role": "compactionSummary", "summary": summary, "tokensBefore": before,
-                             "timestamp": now_ms()}] + kept
+    with out_lock:
+        # pi's stats still count what the summary replaced.
+        for k, n in count_messages(conversation[:len(conversation) - len(kept)]).items():
+            COMPACTED[k] += n
+        MESSAGES[:] = system + [{"role": "compactionSummary", "summary": summary, "tokensBefore": before,
+                                 "timestamp": now_ms()}] + kept
     STATE["messageCount"] = len(MESSAGES)
     STATS["contextUsage"] = {"tokens": None, "contextWindow": 200000, "percent": None}
     result = {"summary": summary, "firstKeptEntryId": "kept", "tokensBefore": before, "estimatedTokensAfter": 23000,
@@ -896,13 +960,13 @@ def agent_run(first):
     def deliver(item):
         message = user_message(*item)
         emit({"type": "message_start", "message": message})
-        emit({"type": "message_end", "message": message})
+        message_end(message)
         new.append(message)
         last[0] = message
 
     def say(message):
         emit({"type": "message_start", "message": dict(message, content=[])})
-        emit({"type": "message_end", "message": message})
+        message_end(message)
         new.append(message)
 
     emit({"type": "agent_start"})
@@ -946,8 +1010,7 @@ def agent_run(first):
                       "result": {"content": [{"type": "text", "text": output}], "details": {}}, "isError": failed})
                 result = {"role": "toolResult", "toolCallId": call, "toolName": "bash",
                           "content": [{"type": "text", "text": output}], "isError": failed, "timestamp": now_ms()}
-                emit({"type": "message_start", "message": result})
-                emit({"type": "message_end", "message": result})
+                tool_result_events(result)
                 new.append(result)
                 if not failed and native_queue_boundary():
                     # A later boundary handler ended the run before pi dequeued steering.
@@ -994,7 +1057,6 @@ def agent_run(first):
     if not aborted and "compact-retry" in text_of(new[0]):
         # pi's overflow recovery: the run ends, pi compacts (its list keeps only the last two messages, or
         # all of them with "compact-retry-all"), and a new run goes on with the summary.
-        MESSAGES.extend(new[persisted:])
         STATE["messageCount"] = len(MESSAGES)
         emit({"type": "agent_end", "messages": new[persisted:], "willRetry": True})
         persisted = len(new)
@@ -1015,7 +1077,6 @@ def agent_run(first):
               "errorMessage": None if RUN["abort"].is_set() else "Compaction failed: stub"})
     if not aborted and "hold-settle" in text_of(new[0]):
         gate("settle")
-    MESSAGES.extend(new[persisted:])
     STATE["messageCount"] = len(MESSAGES)
     if messages_file:
         with open(messages_file, "w") as f:
@@ -1035,7 +1096,7 @@ def toolcall_turn(prompt):
     emit({"type": "agent_start"})
     emit({"type": "turn_start"})
     emit({"type": "message_start", "message": user})
-    emit({"type": "message_end", "message": user})
+    message_end(user)
     emit({"type": "message_start", "message": {"role": "assistant", "content": [], "timestamp": now_ms()}})
     update({"type": "text_start", "contentIndex": 0})
     update({"type": "text_delta", "contentIndex": 0, "delta": words})
@@ -1059,7 +1120,7 @@ def toolcall_turn(prompt):
         partial = dict(call, arguments=parsed)
         update({"type": "toolcall_end", "contentIndex": 1, "toolCall": partial})
         stopped = dict(reply, content=reply["content"] + [partial], stopReason="aborted", errorMessage="Request was aborted")
-        emit({"type": "message_end", "message": stopped})
+        message_end(stopped)
         emit({"type": "turn_end", "message": stopped, "toolResults": []})
         new.append(stopped)
     else:
@@ -1067,7 +1128,7 @@ def toolcall_turn(prompt):
         made = dict(call, arguments=complete)
         update({"type": "toolcall_end", "contentIndex": 1, "toolCall": made})
         ask = dict(reply, content=reply["content"] + [made], stopReason="toolUse")
-        emit({"type": "message_end", "message": ask})
+        message_end(ask)
         emit({"type": "tool_execution_start", "toolCallId": call["id"], "toolName": "write", "args": complete})
         gate("continue-3")
         output = "Successfully wrote to src/big.txt"
@@ -1075,17 +1136,15 @@ def toolcall_turn(prompt):
               "result": {"content": [{"type": "text", "text": output}]}, "isError": False})
         result = {"role": "toolResult", "toolCallId": call["id"], "toolName": "write",
                   "content": [{"type": "text", "text": output}], "isError": False, "timestamp": now_ms()}
-        emit({"type": "message_start", "message": result})
-        emit({"type": "message_end", "message": result})
+        tool_result_events(result)
         emit({"type": "turn_end", "message": ask, "toolResults": [result]})
         closing = {"role": "assistant", "content": [{"type": "text", "text": "Wrote it."}], "stopReason": "stop",
                    "timestamp": now_ms()}
         emit({"type": "turn_start"})
         emit({"type": "message_start", "message": dict(closing, content=[])})
-        emit({"type": "message_end", "message": closing})
+        message_end(closing)
         emit({"type": "turn_end", "message": closing, "toolResults": []})
         new += [ask, result, closing]
-    MESSAGES.extend(new)
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": new, "willRetry": False})
     RUN["active"] = False
@@ -1101,7 +1160,7 @@ def question_turn(prompt):
 
     def say(message):
         emit({"type": "message_start", "message": dict(message, content=[]) if message["role"] == "assistant" else message})
-        emit({"type": "message_end", "message": message})
+        message_end(message)
         new.append(message)
 
     emit({"type": "agent_start"})
@@ -1143,7 +1202,6 @@ def question_turn(prompt):
              "stopReason": "stop", "timestamp": now_ms()}
     say(reply)
     emit({"type": "turn_end", "message": reply, "toolResults": []})
-    MESSAGES.extend(new)
     STATE["messageCount"] = len(MESSAGES)
     if messages_file:
         with open(messages_file, "w") as f:
@@ -1487,6 +1545,7 @@ for raw in sys.stdin.buffer:
     elif t == "new_session":
         STATE["sessionId"] = "stub-session-2"
         del MESSAGES[:]
+        reset_compacted()
         STATE["messageCount"] = 0
         respond(cmd, t, data={"cancelled": False})
         emit({"type": "agent_settled"})
@@ -1508,7 +1567,8 @@ for raw in sys.stdin.buffer:
             fail_switched_history = False
             respond(cmd, t, success=False, error="Switched history unavailable")
         else:
-            respond(cmd, t, data={"messages": image_refs(MESSAGES) if cmd.get("images") == "refs" else MESSAGES})
+            with out_lock:
+                respond(cmd, t, data={"messages": image_refs(MESSAGES) if cmd.get("images") == "refs" else MESSAGES})
     elif t == "get_image":
         image = saved_image(MESSAGES, cmd.get("sha256"))
         if image:
@@ -1582,7 +1642,8 @@ for raw in sys.stdin.buffer:
     elif t == "get_session_stats":
         if os.environ.get("STUB_PI_METADATA_GATE"):
             wait_for_file(os.environ["STUB_PI_METADATA_GATE"], timeout=60.0)
-        respond(cmd, t, data=STATS)
+        with out_lock:
+            respond(cmd, t, data=dict(STATS, **message_counts()))
     elif t == "compact":
         result = compaction("manual", cmd.get("customInstructions"))
         if result is None:
@@ -1953,6 +2014,7 @@ for raw in sys.stdin.buffer:
                   "title": "Pick one", "options": ["Allow", "Deny"]})
             STATE["sessionId"] = "stub-session-2"
             del MESSAGES[:]
+            reset_compacted()
             STATE["messageCount"] = 0
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
@@ -1969,6 +2031,7 @@ for raw in sys.stdin.buffer:
                 publish_goal()
             STATE["sessionId"] = "stub-session-2"
             del MESSAGES[:]
+            reset_compacted()
             if message != "newsession":
                 MESSAGES.extend([
                     {"role": "user", "content": "resumed question"},
