@@ -853,8 +853,9 @@ final class ShepherdViewModel {
         notifications.onResponse = { [weak self] response in
             self?.respond(to: response)
         }
-        // Banners from a previous app run point at dead sessions; drop them.
-        notifications.removeAll()
+        // Banners from a previous app run point at dead sessions; drop them. The background
+        // host's sessions outlive the app, and its banners (questions, merged PRs) stay.
+        if ownsWorkspace { notifications.removeAll() }
         sessions.reserveCheckoutForLaunch = { [weak self] cwd in
             guard let self else { throw AgentStartFailure(message: "Workspace closed") }
             try self.verifyCheckoutAvailable(cwd)

@@ -331,8 +331,10 @@ public enum ShepherdHost {
             serveSettings(settings, on: server)
             // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
             let subagents = SubagentDefinitionsModel(pi: server.pi)
-            HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
-                       remoteSignIns: RemoteSignIns()).serve(on: server)
+            let stores = HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
+                                    remoteSignIns: RemoteSignIns())
+            stores.serve(on: server)
+            stores.serveTurnErrors(on: server)
             server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                       deleteAgent: { id, _ in try await server.deleteAgent(id) }))
         }, threads: { server in

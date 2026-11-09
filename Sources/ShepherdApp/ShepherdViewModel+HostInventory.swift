@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
@@ -42,6 +43,28 @@ struct HostStores {
                 catch let error as RemoteCreateAgentError { completion(.failure(error)) }
                 catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
             }
+        }
+    }
+
+    /// The host with no app: what the app's view model does with a turn's error in process. A
+    /// limit on a provider with rotation on switches accounts, and a failed refresh reads Expired
+    /// in Sign-in.
+    func serveTurnErrors(on server: SessionServer) {
+        let piAuth = piAuth
+        server.onAgentProviderError = { _, provider, message in
+            guard PiAuthText.isLimit(message) else { return }
+            Task { @MainActor in
+                guard let switched = await piAuth.limitHit(provider) else { return }
+                ShepherdLog.info("switched \(provider) to \(switched.to): \(switched.from) hit its limit")
+            }
+        }
+        let status = server.onAgentStatus
+        server.onAgentStatus = { [weak server] id, agentStatus, failure in
+            status?(id, agentStatus, failure)
+            guard let message = failure?.message else { return }
+            let model = server?.state.agents.first { $0.id == id }?.model
+            let provider = model.flatMap { m in m.firstIndex(of: "/").flatMap { $0 == m.startIndex ? nil : String(m[..<$0]) } }
+            MainActor.assumeIsolated { piAuth.noteTurnError(message, provider: provider) }
         }
     }
 

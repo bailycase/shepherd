@@ -85,11 +85,12 @@ public enum SessionHost {
                 observer.observeServer()
                 Self.banners = observer
             }
+            // Agents' automation_* tools are served before the respawn awaits, so a respawned
+            // agent's first call isn't refused as unsupported.
+            if let automations { server.serveAutomations(automations(server)) }
             await server.respawnAgentsNeedingRecovery(respawn)
             if let pullRequests { server.servePullRequestLinks(pullRequests(server)).startPolling() }
-            guard let automations else { return }
-            server.serveAutomations(automations(server))
-            await server.autoStartAutomations()
+            if automations != nil { await server.autoStartAutomations() }
         }
         ready()
         signalSources = sources
