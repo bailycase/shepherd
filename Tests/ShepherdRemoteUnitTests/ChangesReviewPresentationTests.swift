@@ -55,6 +55,21 @@ struct ChangesReviewPresentationTests {
         #expect(nativeChangesCard(turn: nil, changes: nil) == nil)
     }
 
+    /// The host's record is authoritative for a turn it ended: a turn whose own files are none
+    /// (another thread's edits were left out of it) has no card, whatever the edit calls say.
+    @Test(arguments: [ChangesTurn.State.ready, .undone])
+    func aRecordedTurnWithNoFilesOfItsOwnHasNoCardEvenWithEdits(state: ChangesTurn.State) throws {
+        let edits = try #require(NativeTurnChanges(turn: ChangesTurn(startedAt: 1, state: .ready, files: [
+            Self.file("App/iOS/ThreadView.swift", added: 0, removed: 4)], removed: 4)))
+        let recorded = ChangesTurn(startedAt: 1, state: state, files: [], fileCount: 0)
+        #expect(nativeChangesCard(turn: recorded, changes: edits) == nil)
+        // A turn still running or unrecorded has no record to trust: the edits stand in.
+        for fallback in [ChangesTurn.State.running, .unavailable] {
+            let card = nativeChangesCard(turn: ChangesTurn(startedAt: 1, state: fallback), changes: edits)
+            #expect(card?.title == "Edited 1 file" && card?.turnID == nil)
+        }
+    }
+
     // MARK: The scope menu
 
     static let overview = ChangesOverview(
