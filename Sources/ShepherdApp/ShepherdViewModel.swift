@@ -276,6 +276,9 @@ final class ShepherdViewModel {
     var selectedRemoteAgent: RemoteAgentRef?
     var remoteFocusedPaneID: PaneID?
     var remoteWorktreeSheet: RemoteAgentRef?
+    /// A worktree agent of the background host on this Mac waiting in This Mac's own Delete
+    /// worktree agent dialog (`requestRemoteDelete`), with the host's checkout once probed.
+    var thisMacWorktreeDelete: ThisMacWorktreeDelete?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// This Mac's worktree operations and commits from review, as a host; the headless host has

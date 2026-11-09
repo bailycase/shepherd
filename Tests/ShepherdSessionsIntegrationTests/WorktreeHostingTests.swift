@@ -86,13 +86,16 @@ struct WorktreeHostingTests {
         let hosted = try await host()
         defer { hosted.stop() }
         let checkout = try GitWorktree.add(repo: hosted.repo.path, branch: "agent/fix-login")
+        try "fix\n".write(to: URL(fileURLWithPath: checkout).appendingPathComponent("fix.txt"), atomically: true, encoding: .utf8)
+        for args in [["add", "."], ["commit", "-qm", "fix"]] { try git(args, in: URL(fileURLWithPath: checkout)) }
         let agentID = try await addAgent("fix-login", cwd: checkout, in: hosted, branch: "agent/fix-login")
 
         guard case .worktreeInfo(let info) = try await hosted.client.agentQuery(agentID: agentID, query: .worktreeInfo) else {
             Issue.record("expected worktree info"); return
         }
         #expect(info.branch == "agent/fix-login")
-        #expect(info.warning == "1 commits not on a remote", "with no remote, the initial commit is the loss the client confirms")
+        // Over the local socket the client is this Mac's own app: the in-process rule and words.
+        #expect(info.warning == "1 commit only on this branch", "the branch's own commit is the loss the client confirms")
 
         let id = UUID()
         _ = try await hosted.client.agentQuery(agentID: agentID, query: .deleteWorktree(operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint))

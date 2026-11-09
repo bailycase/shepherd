@@ -58,7 +58,9 @@ public final class WorktreeQueries {
         return hosting
     }
 
-    public func worktree(_ agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
+    /// `local`: the request is this Mac's own app's (the background host's client), whose loss
+    /// rule is the in-process one; a paired Mac's counts every commit no remote has.
+    public func worktree(_ agentID: AgentID, query: RemoteAgentQuery, local: Bool = false) async throws -> RemoteAgentResult {
         let hosting = try hosted()
         if case .deleteKeepingWorktree = query {
             try await hosting.deleteAgent(agentID, false)
@@ -94,7 +96,9 @@ public final class WorktreeQueries {
         guard !busy.contains(identity.path) else {
             throw RemoteCreateAgentError("Another worktree operation is running for this checkout")
         }
-        let warning = try await Task.detached { try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch) }.value
+        let warning = try await Task.detached {
+            try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch, otherBranchesKeep: local)
+        }.value
         // Probes suspend the main actor. Recheck both operation identity and agent identity before accepting.
         if let id = operationID, let existing = operations[id] {
             guard operationAgents[id] == agentID else { throw RemoteCreateAgentError("Operation belongs to another agent") }
@@ -126,7 +130,7 @@ public final class WorktreeQueries {
                     try await retireWorktreeAgent(agentID)
                     // The confirmation covers the same loss warning after the writer has stopped.
                     let current = try await Task.detached {
-                        try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch)
+                        try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch, otherBranchesKeep: local)
                     }.value
                     guard current == confirmedWarning else {
                         throw RemoteCreateAgentError("Work changed while the agent stopped. Checkout was kept.")
@@ -276,11 +280,11 @@ extension SessionServer {
         queries.hosting = hosting
         let children = HostedChildren()
         onAgentChildren = { agentID, rows in MainActor.assumeIsolated { children.runs.apply(agentID: agentID, children: rows) } }
-        onRemoteAgentQuery = { [weak self] agentID, query, completion in
+        onRemoteAgentQuery = { [weak self] agentID, query, local, completion in
             Task { @MainActor in
                 do {
                     guard let self else { throw RemoteCreateAgentError("host is shutting down") }
-                    completion(.success(try await self.answer(query, agentID: agentID, queries: queries, children: children)))
+                    completion(.success(try await self.answer(query, agentID: agentID, local: local, queries: queries, children: children)))
                 } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
             }
         }
@@ -288,11 +292,11 @@ extension SessionServer {
     }
 
     @MainActor
-    private func answer(_ query: RemoteAgentQuery, agentID: AgentID, queries: WorktreeQueries,
+    private func answer(_ query: RemoteAgentQuery, agentID: AgentID, local: Bool, queries: WorktreeQueries,
                         children: HostedChildren) async throws -> RemoteAgentResult {
         switch query {
         case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .worktreeStatus:
-            return try await queries.worktree(agentID, query: query)
+            return try await queries.worktree(agentID, query: query, local: local)
         case .commitInfo, .commitMessage, .commit:
             return try await queries.commit(agentID, query: query)
         case .children:

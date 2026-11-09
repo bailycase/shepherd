@@ -107,6 +107,20 @@ struct AppDialogs: ViewModifier {
                 WorktreeDeleteDialog(vm: vm, agent: agent)
                     .dialogSheetFrame()
             }
+            // The background host's worktree agent: This Mac's dialog, the host's checkout and warning.
+            .sheet(item: $vm.thisMacWorktreeDelete, onDismiss: vm.runAfterDialogDismiss) { item in
+                WorktreeDeleteDialog(agent: item.agent, path: item.info?.path ?? item.agent.worktreePath ?? "", settings: vm.settings, probe: {
+                    if let info = item.info { return info.warning }
+                    let info = try await vm.thisMacWorktreeInfo(item.target)
+                    vm.thisMacWorktreeDelete?.info = info
+                    return info.warning
+                }, cancel: { vm.thisMacWorktreeDelete = nil }) { removeWorktree in
+                    let (target, info) = (item.target, vm.thisMacWorktreeDelete?.info)
+                    vm.afterDialogDismiss = { vm.deleteThisMacWorktreeAgent(target, removing: removeWorktree ? info : nil) }
+                    vm.thisMacWorktreeDelete = nil
+                }
+                .dialogSheetFrame()
+            }
             .sheet(item: $vm.agentDeleteAgent, onDismiss: vm.runAfterDialogDismiss) { agent in
                 AgentDeleteDialog(agent: agent, settings: vm.settings, cancel: { vm.agentDeleteTarget = nil }) {
                     let id = agent.id
@@ -227,23 +241,48 @@ struct AppDialogs: ViewModifier {
 /// Delete Worktree Agent: confirmed unless Settings ▸ Worktrees remembers a delete
 /// (`requestWorktreeDelete`). The warning about unreconciled work comes from git off the main
 /// thread; until it is in, removing the worktree stays disabled so the warning can never arrive
-/// after the click.
+/// after the click. The background host's worktree agents use it too, with the host's probe.
 struct WorktreeDeleteDialog: View {
-    var vm: ShepherdViewModel
     let agent: Agent
+    let path: String
+    let settings: AppSettings
+    /// The loss warning, nil when nothing would be lost. A throw keeps the worktree.
+    let probe: () async throws -> String?
+    let cancel: () -> Void
+    /// Runs after "Don't ask again" is remembered.
+    let delete: (_ removeWorktree: Bool) -> Void
     @State private var warning: String?
+    @State private var probeFailure: String?
     @State private var checked = false
     @State private var remember: Bool
 
+    init(agent: Agent, path: String, settings: AppSettings, probe: @escaping () async throws -> String?,
+         cancel: @escaping () -> Void, delete: @escaping (_ removeWorktree: Bool) -> Void) {
+        self.agent = agent; self.path = path; self.settings = settings
+        self.probe = probe; self.cancel = cancel; self.delete = delete
+        _remember = State(initialValue: settings.worktreeDeleteAction != .ask)
+    }
+
+    /// An agent of this Mac's own workspace: git probes its checkout here.
     init(vm: ShepherdViewModel, agent: Agent) {
-        self.vm = vm
-        self.agent = agent
-        _remember = State(initialValue: vm.settings.worktreeDeleteAction != .ask)
+        let path = vm.worktreeCheckoutPath(agent), branch = agent.worktreeBranch ?? ""
+        self.init(agent: agent, path: path, settings: vm.settings, probe: {
+            // No checkout to probe (its space is gone): `git -C ""` would probe the app's own
+            // working directory instead.
+            guard !path.isEmpty else { return nil }
+            return await Task.detached(priority: .userInitiated) {
+                GitWorktree.unreconciledWork(worktree: path, branch: branch)
+            }.value
+        }, cancel: { vm.worktreeDeleteTarget = nil }) { removeWorktree in
+            // Same dismissal choreography as Remove Space: deleting tears down a mounted layout,
+            // so the sheet finishes dismissing first (`onDismiss`).
+            let id = agent.id
+            vm.afterDialogDismiss = { vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree) }
+            vm.worktreeDeleteTarget = nil
+        }
     }
 
     private var branch: String { agent.worktreeBranch ?? "" }
-
-    private var path: String { vm.worktreeCheckoutPath(agent) }
 
     var body: some View {
         DialogSheet(
@@ -252,9 +291,11 @@ struct WorktreeDeleteDialog: View {
             width: AppLayout.confirmSheetWideWidth,
             status: checked ? nil : "Checking for unsaved work…",
             actions: [
-                DialogAction("Cancel", kind: .cancel) { vm.worktreeDeleteTarget = nil },
+                DialogAction("Cancel", kind: .cancel, action: cancel),
                 DialogAction("Delete agent only") { confirm(removeWorktree: false) },
-                DialogAction("Delete agent and worktree", kind: .destructive, isEnabled: checked) { confirm(removeWorktree: true) },
+                DialogAction("Delete agent and worktree", kind: .destructive, isEnabled: checked && probeFailure == nil) {
+                    confirm(removeWorktree: true)
+                },
             ]
         ) {
             SheetRow("Worktree") {
@@ -275,31 +316,23 @@ struct WorktreeDeleteDialog: View {
             if let warning {
                 DialogBanner(title: "Unreconciled work", message: "\(warning) will be lost with the worktree.")
             }
+            if let probeFailure {
+                DialogBanner(state: .failed, title: "Couldn’t check the worktree", message: probeFailure)
+            }
             DontAskAgainToggle(isOn: $remember, caption: DontAskAgainToggle.worktreeCaption).dialogInset()
         }
         // The probe's answer arrives after the sheet is up: the warning discloses and the
         // "Checking…" status fades as the destructive action enables.
         .shAnimation(.disclosure, value: checked)
         .task(id: agent.id) {
-            let (path, branch) = (path, branch)
-            // No checkout to probe (its space is gone): `git -C ""` would probe the app's own
-            // working directory instead.
-            if !path.isEmpty {
-                warning = await Task.detached(priority: .userInitiated) {
-                    GitWorktree.unreconciledWork(worktree: path, branch: branch)
-                }.value
-            }
+            do { warning = try await probe() } catch { probeFailure = ActionError.describe(error) }
             checked = true
         }
     }
 
-    /// Same dismissal choreography as Remove Space: deleting tears down a mounted layout, so
-    /// the sheet finishes dismissing first (`onDismiss`).
     private func confirm(removeWorktree: Bool) {
-        let id = agent.id
-        vm.settings.rememberWorktreeDelete(remember, removeWorktree: removeWorktree)
-        vm.afterDialogDismiss = { vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree) }
-        vm.worktreeDeleteTarget = nil
+        settings.rememberWorktreeDelete(remember, removeWorktree: removeWorktree)
+        delete(removeWorktree)
     }
 }
 

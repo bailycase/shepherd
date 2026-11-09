@@ -553,7 +553,7 @@ struct RemoteWorktreeTests {
         }
 
         #expect(info.path == canonical(URL(fileURLWithPath: s.checkout)) && info.branch == "worktree/remote")
-        #expect(info.warning == "1 commits not on a remote" && info.fingerprint != nil)
+        #expect(info.warning == "1 commit not on a remote" && info.fingerprint != nil)
     }
 
     @Test func aConfirmedRemoteDeletionRetiresTheAgentAndRemovesTheCheckoutAndBranch() async throws {

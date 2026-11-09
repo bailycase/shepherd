@@ -106,4 +106,41 @@ extension PreviewTests {
         #expect(store.card?.branch == "agent/refund-events")
         #expect(store.card?.others.map(\.branch) == ["agent/webhook-retries"])
     }
+    /// Delete Worktree Agent on a thread of the host on this Mac: This Mac's own dialog, with the
+    /// checkout and loss warning the host reports.
+    @Test func localClientDeleteWorktreeDialog() async throws {
+        let workspace = try PreviewWorkspace(ownsWorkspace: false)
+        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
+        let repo = try makeScratchRepo()
+        defer { workspace.stop(); host.stop(); try? FileManager.default.removeItem(at: repo) }
+        _ = host.server.serveAgentQueries(WorktreeHosting(defaults: { .init(generateDescription: false) },
+                                                          deleteAgent: { id, _ in try await host.server.deleteAgent(id) }))
+        let space = Space(name: "acme-web", path: repo.path)
+        try await host.server.addSpace(space)
+        let checkout = try GitWorktree.add(repo: repo.path, branch: "agent/fix-login")
+        try "draft\n".write(to: URL(fileURLWithPath: checkout).appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        let pane = LeafPane(cwd: checkout)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "Fix the login redirect", spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true,
+                          worktreeBranch: "agent/fix-login", worktreeBase: "main", worktreePath: checkout)
+        try await host.server.addAgent(agent, withTab: tab)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let vm = workspace.vm
+        let connection = vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        try await eventuallyOnMain("the host on this Mac to connect", timeout: .seconds(30)) {
+            connection.phase == .connected && connection.state.agents.contains { $0.id == agent.id }
+        }
+        let target = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
+        vm.requestRemoteDelete(target)
+        let item = try #require(vm.thisMacWorktreeDelete)
+        try await Preview.render("sheet-delete-worktree-this-mac", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
+                                 untilGone: "Checking", showing: "Unreconciled work") {
+            // The host's warning; a made-up path in place of this machine's scratch folder.
+            WorktreeDeleteDialog(agent: item.agent, path: "~/Developer/acme-web-worktrees/agent-fix-login", settings: vm.settings,
+                                 probe: { try await vm.thisMacWorktreeInfo(target).warning }, cancel: {}, delete: { _ in })
+        }
+    }
 }

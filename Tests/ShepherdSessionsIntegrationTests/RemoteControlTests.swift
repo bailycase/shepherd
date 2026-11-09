@@ -373,7 +373,7 @@ struct RemoteControlTests {
         guard case .error(1, "unavailable", _) = try await client.next() else { Issue.record("expected unavailable"); return }
 
         let rows = [ChildRun(runID: "native-1", label: "w", state: "running")]
-        r.server.onRemoteAgentQuery = { id, query, done in
+        r.server.onRemoteAgentQuery = { id, query, _, done in
             done(id == agentID && query == .children ? .success(.children(rows)) : .failure(RemoteCreateAgentError("wrong")))
         }
         try client.send(.agentQuery(id: 2, agentID: agentID, query: .children))
