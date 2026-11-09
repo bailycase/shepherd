@@ -15,17 +15,18 @@ import Testing
 @MainActor
 struct LocalClientTests {
     /// The app, as `ShepherdApp` makes it when the host answers, connected to `socket`.
-    static func app(socket: String, token: String, host: ScratchServer) async throws
+    /// `settings`, else its own; `hooks`, else a scratch home's.
+    static func app(socket: String, token: String, host: ScratchServer, settings: AppSettings? = nil, hooks: HooksModel? = nil) async throws
         -> (ShepherdViewModel, RemoteHostStore, SessionServer, RemoteHostStore.Connection, URL, ScratchDefaults) {
         let clientDir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
         let idle = BackgroundHostClient.idleServer(directory: clientDir)
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
         let vm = ShepherdViewModel(
-            server: idle, ownsWorkspace: false, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+            server: idle, ownsWorkspace: false, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
-            hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
+            hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         let connection = vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace", timeout: .seconds(30)) {

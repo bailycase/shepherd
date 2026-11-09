@@ -64,11 +64,21 @@ extension ShepherdViewModel {
     func adoptLocalHost() {
         remoteHosts.hidesLocalHost = true
         sessions.startsSessions = false
+        // The host keeps its own settings from the shared preferences: each side follows the other's writes.
+        settings.followOtherProcesses()
         remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(Self.mirrored(state)) }
         // As the in-process session's notify (`sessions.onNotify`): a click opens the thread here.
         remoteHosts.onLocalAgentNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
+        }
+        // Settings pages that read the host's stores follow its changes, and catch up on each connect.
+        remoteHosts.onLocalSettingsChanged = { [weak self] page in Task { await self?.localHostSettingsChanged(page) } }
+        let connected = remoteHosts.onHostConnected
+        remoteHosts.onHostConnected = { [weak self] hostID in
+            connected?(hostID)
+            guard let self, hostID == self.localHost?.id else { return }
+            Task { for page in RemoteSettingsPage.allCases { await self.localHostSettingsChanged(page) } }
         }
         // The thread says when the host's pi stopped and why: its can't-start and sign-in cards.
         let configure = threadStores.configure
@@ -81,6 +91,22 @@ extension ShepherdViewModel {
             guard let self, ref.hostID == self.localHost?.id else { remoteChanged?(ref); return }
             self.threadStores.existing(for: ref.agentID)?.revisionAvailable()
             self.reconcileSidebarOpeningTurn(ref.agentID)
+        }
+    }
+
+    /// A Settings page's data changed on the host: the page reads it again, as in process the
+    /// server's `on…Changed` hands it over.
+    func localHostSettingsChanged(_ page: RemoteSettingsPage) async {
+        switch page {
+        case .instructions: await instructions.localFilesChanged()
+        case .suggestions: await suggestions.refresh()
+        case .skills:
+            guard case .skills(let snapshot)? = try? await localHost?.skillsClient?.skills(.fetch) else { return }
+            skills.hostChanged(Self.thisMacSkills, snapshot)
+        case .hooks: hooks.reload()
+        case .slashCommands:
+            guard let host = try? remoteHosts.thisMacHost(), let settings = try? await host.hostSettings() else { return }
+            slashCommands.catalog = settings.slashCommands
         }
     }
 

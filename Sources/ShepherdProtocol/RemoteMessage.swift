@@ -1181,6 +1181,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     }
 }
 
+/// The Settings pages of this Mac's app that read the background host's own stores
+/// (`RemoteReply.settingsChanged`).
+public enum RemoteSettingsPage: String, Codable, Hashable, Sendable, CaseIterable {
+    case instructions, suggestions, skills, hooks, slashCommands
+}
+
 /// Host → client. Replies correlate by request `id`; `stateChanged` is an
 /// unsolicited push after every host-side mutation.
 public enum RemoteReply: Codable, Hashable, Sendable {
@@ -1286,6 +1292,11 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// a local client that lists `RemoteProtocol.appRelayCapability`; answered
     /// `RemoteRequest.appRelayAnswer` with the same token.
     case appRelay(token: Int, job: AppRelayJob)
+    /// What a Settings page shows changed on the background host (a client's change, an agent's
+    /// suggestion, a newly listed slash command), pushed only to this Mac's app that shows the
+    /// host's threads as its own (`RemoteProtocol.localThreadsCapability`), whose pages read it
+    /// again. A hint; it carries nothing.
+    case settingsChanged(page: RemoteSettingsPage)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1298,6 +1309,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case url, push, missionID, live
         case token, jobFile, job
         case title, body
+        case page
     }
 
     private enum Kind: String, Codable {
@@ -1311,7 +1323,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay
+        case designRelay, agentNotify, appRelay, settingsChanged
     }
 
     public init(from decoder: Decoder) throws {
@@ -1336,6 +1348,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .agentNotify:
             self = .agentNotify(agentID: try c.decode(AgentID.self, forKey: .agentID), title: try c.decode(String.self, forKey: .title),
                                 body: try c.decode(String.self, forKey: .body))
+        case .settingsChanged:
+            self = .settingsChanged(page: try c.decode(RemoteSettingsPage.self, forKey: .page))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1624,6 +1638,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(title, forKey: .title)
             try c.encode(body, forKey: .body)
+        case .settingsChanged(let page):
+            try c.encode(Kind.settingsChanged, forKey: .type)
+            try c.encode(page, forKey: .page)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

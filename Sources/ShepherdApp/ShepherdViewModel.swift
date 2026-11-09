@@ -737,7 +737,7 @@ final class ShepherdViewModel {
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
         instructions.piHome = server.pi.home
         self.instructions = instructions
-        self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
+        self.suggestions = SuggestionsModel(store: server.suggestions, instructions: instructions, remoteHosts: hosts)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
         self.hooks = hooks ?? HooksModel(catalog: server.hooks)

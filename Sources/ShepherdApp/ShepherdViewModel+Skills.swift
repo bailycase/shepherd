@@ -37,7 +37,9 @@ extension ShepherdViewModel {
     /// Per host (Same skills on every host off) the host Settings' picker chose comes first: the
     /// one the list shows and a change goes to.
     var skillsHosts: [SkillsHost] {
-        let hosts = [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: localSkills, serves: true)]
+        // As the background host's client, This Mac's skills are the host's (offline while it is away).
+        let thisMac: (any SkillsClient)? = localHost.map { $0.skillsClient } ?? localSkills
+        let hosts = [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: thisMac, serves: true)]
             + remoteHosts.connections.map { connection in
                 let connected = connection.skillsClient
                 return SkillsHost(id: connection.id, name: connection.config.name, client: connected,
@@ -71,7 +73,9 @@ extension ShepherdViewModel {
     /// Where This Mac keeps a skill, on or off; nil when it isn't here.
     func skillFolder(_ name: String) -> URL? {
         let store = server.skills
-        for base in [store.directory, store.stateDirectory.appendingPathComponent("off", isDirectory: true)] {
+        // The background host keeps its skills' state in the support directory, as an in-process server does.
+        let state = localHost == nil ? store.stateDirectory : ShepherdPaths.supportDirectory().appendingPathComponent("skills", isDirectory: true)
+        for base in [store.directory, state.appendingPathComponent("off", isDirectory: true)] {
             let folder = base.appendingPathComponent(name, isDirectory: true)
             if FileManager.default.fileExists(atPath: folder.appendingPathComponent("SKILL.md").path) { return folder }
         }

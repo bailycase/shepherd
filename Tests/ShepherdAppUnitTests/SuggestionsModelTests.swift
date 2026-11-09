@@ -28,9 +28,10 @@ struct SuggestionsModelTests {
                                   source: SuggestionSource(kind: .thread, name: "Ledger cleanup"),
                                   now: Date(timeIntervalSince1970: Double(1_000 + offset)))
         }
-        let instructions = InstructionsModel(store: instructionsStore, remoteHosts: RemoteHostStore(defaults: defaults, connects: false), defaults: defaults)
+        let hosts = RemoteHostStore(defaults: defaults, connects: false)
+        let instructions = InstructionsModel(store: instructionsStore, remoteHosts: hosts, defaults: defaults)
         await instructions.refresh()
-        let model = SuggestionsModel(store: store, instructionsStore: instructionsStore, instructions: instructions)
+        let model = SuggestionsModel(store: store, instructions: instructions, remoteHosts: hosts)
         await model.refresh()
         return (model, instructions)
     }

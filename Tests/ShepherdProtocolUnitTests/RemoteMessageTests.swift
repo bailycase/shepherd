@@ -671,7 +671,7 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
@@ -747,6 +747,8 @@ struct RemoteReplyTests {
         .appRelay(token: 6, job: .review(agentID: AgentID(rawValue: "a"), cwd: "/tmp/acme-web", reference: "pr")),
         .appRelay(token: 7, job: .confirmSpaceDelete(spaceID: SpaceID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c34"))),
         .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
+        .settingsChanged(page: .instructions),
+        .settingsChanged(page: .slashCommands),
     ]
 
     static let relayDesign = DesignID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c33")
