@@ -43,6 +43,9 @@ extension ShepherdViewModel {
                          .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile,
                          .setWorktree: // the server answers it before this handler
                         return
+                    case .moveToCheckout(let path, let branch):
+                        try await self.moveThreadToCheckout(agentID, path: path, branch: branch)
+                        result = .ok
                     case .children:
                         result = .children(self.children(of: agentID))
                     case .search(let query):
