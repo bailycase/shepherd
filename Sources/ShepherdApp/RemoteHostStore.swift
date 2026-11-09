@@ -470,6 +470,7 @@ final class RemoteHostStore {
                     if connection.isThisMac { self.onLocalHostState?(state) }
                 }
                 connection.phase = .connected
+                self.rebindPanes(connection, to: client)
                 // A new connection holds no subscriptions: ask again for the threads on screen.
                 self.threadHints.forget(connection.id)
                 self.sendThreadHints()
@@ -573,13 +574,34 @@ final class RemoteHostStore {
             connection.designs.connect(nil, available: false)
             connection.connectMissions(nil)
             connection.stopChildRefresh()
-            for pane in connection.panes.values {
-                pane.phase = .failed("disconnected: \(reason)")
+            if connection.isThisMac {
+                // This Mac's host keeps its terminals across a dropped link: each pane keeps its
+                // surface and attaches again once the store reconnects (`rebindPanes`).
+                for pane in connection.panes.values { pane.suspend() }
+            } else {
+                for pane in connection.panes.values {
+                    pane.phase = .failed("disconnected: \(reason)")
+                }
+                connection.panes.removeAll()
             }
-            connection.panes.removeAll()
             if self.allConnections.contains(where: { $0 === connection }) {
                 self.scheduleReconnect(connection)
                 if connection.isThisMac { self.onLocalHostLost?() }
+            }
+        }
+    }
+
+    /// The panes a dropped link kept (This Mac's) attach on the new client, in place; the host's
+    /// replay starts with a reset, so each redraws its screen. A pane whose session the host no
+    /// longer has (it restarted) fails as before.
+    private func rebindPanes(_ connection: Connection, to client: RemoteHostClient) {
+        let live = Set(connection.state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
+        for (sessionID, pane) in connection.panes {
+            if live.contains(sessionID) {
+                pane.rebind(client)
+            } else {
+                pane.phase = .failed("the host restarted")
+                connection.panes.removeValue(forKey: sessionID)
             }
         }
     }
@@ -1007,6 +1029,21 @@ final class RemotePaneSession {
     func detach() {
         viewportDebounce?.cancel()
         client?.detach(sessionID: sessionID)
+    }
+
+    /// The link dropped and the store will reconnect: the surface stays as it is, waiting.
+    func suspend() {
+        viewportDebounce?.cancel()
+        attachStarted = false
+        phase = .connecting
+    }
+
+    /// The store reconnected: attach the same surface on the new client at its last grid.
+    func rebind(_ client: RemoteHostClient) {
+        self.client = client
+        attachStarted = false
+        phase = .connecting
+        attachIfNeeded()
     }
 }
 
