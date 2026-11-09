@@ -345,36 +345,36 @@ struct RPCWireTests {
     /// that time in ms, so a fold from this event and a read agree on the id.
     @Test func anAppendedCustomMessageEntryIsTheMessagePiListsForIt() throws {
         let hook = try Self.appended(#"""
-        {"type":"custom_message","id":"e1","parentId":"e0","timestamp":"2026-11-07T06:10:00.123Z","customType":"shepherd.hook",
+        {"type":"custom_message","id":"e1","parentId":"e0","timestamp":"2026-03-04T05:06:07.123Z","customType":"shepherd.hook",
          "content":"Keep going","display":true,"details":{"hook":"stop"}}
         """#)
         #expect(hook.type == "custom_message" && hook.id == "e1" && hook.parentID == "e0")
-        #expect(hook.message == RPCMessage(role: "custom", content: [.text("Keep going")], timestamp: 1_794_031_800_123,
+        #expect(hook.message == RPCMessage(role: "custom", content: [.text("Keep going")], timestamp: 1_772_600_767_123,
                                            customType: "shepherd.hook", display: true, details: .object(["hook": .string("stop")])))
 
-        let whole = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00Z","customType":"note","content":"x"}"#)
-        #expect(whole.message?.timestamp == 1_794_031_800_000)
+        let whole = try Self.appended(#"{"type":"custom_message","timestamp":"2026-03-04T05:06:07Z","customType":"note","content":"x"}"#)
+        #expect(whole.message?.timestamp == 1_772_600_767_000)
 
         let blocks = try Self.appended(#"""
-        {"type":"custom_message","timestamp":"2026-11-07T06:10:00.5Z","customType":"note","display":false,
+        {"type":"custom_message","timestamp":"2026-03-04T05:06:07.5Z","customType":"note","display":false,
          "content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}
         """#)
         #expect(blocks.message?.content == [.text("a"), .text("b")] && blocks.message?.display == false)
         #expect(blocks.id == nil && blocks.parentID == nil)
 
-        let bare = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00.123Z","customType":"note"}"#)
+        let bare = try Self.appended(#"{"type":"custom_message","timestamp":"2026-03-04T05:06:07.123Z","customType":"note"}"#)
         #expect(bare.message?.content == [] && bare.message?.display == nil)
     }
 
     @Test(arguments: ["shepherd.goal.check", "shepherd-peer-report", "shepherd.hook"])
     func anAppendedCustomMessageKeepsDetailsForTheTypesThatShowThem(customType: String) throws {
-        let entry = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00Z","customType":"\#(customType)","content":"x","details":{"n":1}}"#)
+        let entry = try Self.appended(#"{"type":"custom_message","timestamp":"2026-03-04T05:06:07Z","customType":"\#(customType)","content":"x","details":{"n":1}}"#)
         #expect(entry.message?.details == .object(["n": .number(1)]))
         #expect(RPCMessage.customTypesWithDetails.contains(customType))
     }
 
     @Test func anAppendedCustomMessageDropsDetailsForOtherTypes() throws {
-        let entry = try Self.appended(#"{"type":"custom_message","timestamp":"2026-11-07T06:10:00Z","customType":"shepherd.goal.continue","content":"x","details":{"n":1}}"#)
+        let entry = try Self.appended(#"{"type":"custom_message","timestamp":"2026-03-04T05:06:07Z","customType":"shepherd.goal.continue","content":"x","details":{"n":1}}"#)
         #expect(entry.message?.details == nil && entry.message?.customType == "shepherd.goal.continue")
     }
 
@@ -387,7 +387,7 @@ struct RPCWireTests {
 
     @Test(arguments: ["custom", "usage", "context_edit", "compaction", "label", "branch_summary", "model_change", "message", "future_kind"])
     func otherAppendedEntriesCarryNoMessage(type: String) throws {
-        let entry = try Self.appended(#"{"type":"\#(type)","id":"e2","parentId":"e1","timestamp":"2026-11-07T06:10:00.123Z","customType":"x","content":"c","summary":"s"}"#)
+        let entry = try Self.appended(#"{"type":"\#(type)","id":"e2","parentId":"e1","timestamp":"2026-03-04T05:06:07.123Z","customType":"x","content":"c","summary":"s"}"#)
         #expect(entry.type == type && entry.message == nil && entry.id == "e2" && entry.parentID == "e1")
     }
 
