@@ -63,12 +63,12 @@ public struct NativeProse: Equatable, Sendable {
     /// What the views of every chunk hold (`NativeMountedCost`).
     public var cost: Int { chunks.reduce(0) { $0 + $1.cost } }
 
-    /// What the views of a reply hold once built: the chunks a view lays out for real (`eagerTail`), all of them
-    /// for a reply that is not giant.
+    /// What the views of a reply hold once built: the chunks the Mac's view lays out for real (`eagerTail`), all of
+    /// them for a reply that is not giant. iOS lays out every chunk, so this undercounts a giant reply there.
     public var eagerCost: Int { chunks.suffix(eagerTail).reduce(0) { $0 + $1.cost } }
 
-    /// The chunk just before the eager tail, which a lazy stack builds first when the reader scrolls up from the
-    /// end. Nothing for a reply that is not giant.
+    /// The chunk just before the eager tail, which the Mac's lazy stack builds first when the reader scrolls up from
+    /// the end. Nothing for a reply that is not giant.
     public var lazyEdgeCost: Int {
         let index = chunks.count - eagerTail - 1
         return chunks.indices.contains(index) ? chunks[index].cost : 0
