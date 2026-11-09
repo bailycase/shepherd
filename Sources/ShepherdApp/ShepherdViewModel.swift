@@ -1343,7 +1343,13 @@ final class ShepherdViewModel {
             sidebarOpeningTurns.subtract(removed)
             sidebarOpeningTurns.subtract(serverState.agents.filter { $0.status != .idle }.map(\.id))
         }
+        // The checkout of the thread whose layout is on screen: its count is no layout's input, so
+        // its card is asked to read again when the count moves. A hidden card reads when shown.
+        let shown = selectedAgent.flatMap { $0.tabID == activeTabID ? ($0.id, $0.checkout) : nil }
         state = serverState
+        if let (id, checkout) = shown, state.agents.first(where: { $0.id == id })?.checkout != checkout {
+            branchCardStores[id]?.requestRefresh()
+        }
         // A move keeps the selected thread and its existing layout visible in its new space.
         if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
             selectedSpaceID = agent.spaceID

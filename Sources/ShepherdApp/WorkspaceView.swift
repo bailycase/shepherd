@@ -122,9 +122,11 @@ struct AgentLayoutModel: Equatable {
         let piSessionID: String
         /// Waiting for the first launch's copy, or not signed in: the line or card at its end.
         var authNotice: ThreadAuthNotice? = nil
-        /// Where it works, for the branch card beside the transcript; nil outside a git checkout
-        /// and for a design's chat.
-        var branch: AgentBranchLabel? = nil
+        /// The branch the card beside the transcript names; nil outside a git checkout and for a
+        /// design's chat. Deliberately not the checkout's changed-file count: a checkout read
+        /// writes every thread in it, and the count changing must rerun no layout. The card on
+        /// screen is asked to read again instead (`ShepherdViewModel.adopt`).
+        var branch: String? = nil
     }
 
     let tab: Tab
@@ -209,7 +211,7 @@ struct AgentLayoutModel: Equatable {
             let thread = agentsByTab[tab.id].flatMap { agent in
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
-                                  authNotice: notice(agent), branch: agent.designID == nil ? AgentBranchLabel(agent: agent) : nil) }
+                                  authNotice: notice(agent), branch: agent.designID == nil ? AgentBranchLabel(agent: agent)?.branch : nil) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
@@ -521,7 +523,8 @@ struct PaneLeafModel: Equatable {
     var piSessionID: String? = nil
     /// The line or card at the end of the thread (`ThreadAuthNotice`).
     var authNotice: ThreadAuthNotice? = nil
-    var branch: AgentBranchLabel? = nil
+    /// The branch the card names (`AgentLayoutModel.Thread.branch`).
+    var branch: String? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
     /// For a terminal pane, the agent whose thread its selection can be added to.
@@ -1169,7 +1172,8 @@ private struct RemotePaneLeafView: View {
                     // This Mac's background host checks out on this machine: its threads get the
                     // branch card, as the app's own do.
                     .modifier(BranchCardDock(store: thread.branch.map { _ in vm.branchCardStore(for: model.ref.agentID) },
-                                             branch: thread.branch, active: model.isVisible && shown))
+                                             branch: thread.branch?.branch, changedFiles: thread.branch?.changedFiles ?? 0,
+                                             active: model.isVisible && shown))
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
