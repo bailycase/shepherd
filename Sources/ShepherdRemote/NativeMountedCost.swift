@@ -18,7 +18,7 @@ import Foundation
 ///   as text, like a user row's; a subagent record is a `line` each, though a Project's or worker's thread draws none;
 /// - a row: `rowBase` and its items.
 ///
-/// Calibration: the Release QA app, 2026-11-08, three runs of a fresh app a row. Footprint with the purgeable
+/// Calibration: the Release QA app, three runs of a fresh app a row. Footprint with the purgeable
 /// graphics pool taken off, 5 s after the thread is shown with every row loaded; replies from the QA model. "First" is
 /// the first thread shown in the process, "second" a second thread of the same content shown after it.
 ///
@@ -67,8 +67,17 @@ import Foundation
 /// text block apart from its bytes, and a table that is not 12 cells (the 554 mixes a table's own cost with its cells').
 ///
 /// Placeholders: images (448 is the design's) and Mermaid (the app's footprint grew 22 MiB a diagram; its WebContent
-/// process was not measured, and 64 MiB is the design's guess at both). Not covered: the lazy part of a giant reply
-/// (the one giant fixture, a 202 KB fence, has every chunk in its eager tail).
+/// process was not measured, and 64 MiB is the design's guess at both).
+///
+/// The giant path (`eagerCost` of a reply of 128 KB or more, `lazyEdgeCost` of the chunk before its tail) runs low and is
+/// not fitted. Four replies of 205 KB on a first thread, three runs each: fences and tables (55 chunks, a tail of 3, 22.7 MiB
+/// eager and 9.1 for the edge) held 261 MiB (260 to 262) and 1,174 NSViews against an estimate of 105 (-60%); fences alone
+/// (36 chunks, a tail of 3, 15.6 and 7.5) held 214 and 769 against 75 (-65%). The views are the tail's (1,174 is about 10
+/// chunks at 117 each, against 103 in the 100 KB replies), so `eagerCost` prices the right chunks and too little for them:
+/// the footprint is 156 and 139 MiB over the estimate, close to the same for two fixtures whose estimates differ by 30.
+/// A one-time cost of the first thread (above) may be most of it; it was not isolated, since a second thread of such replies
+/// loaded 2 of 8 rows in 90 s and its delta (-44, +52 and -42 MiB) is noise. `lazyEdgeCost`: scrolling 8,000 points up from the
+/// end of the thread realized one more chunk of the last reply (+105 NSViews) and added 3 to 5 MiB, against the 9.1 it prices.
 ///
 /// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
 /// lazy stack realizes above its eager rows, and that a Mermaid fence still being written is drawn as code

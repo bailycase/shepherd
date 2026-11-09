@@ -132,7 +132,7 @@ struct NativeMountedCostTests {
         #expect(Cost.block(.code(diagram, language: "plantuml")) == Cost.fenceFloor, "drawn as source, not as a diagram")
     }
 
-    // MARK: Calibration pins (Release QA app, 2026-11-08; `NativeMountedCost` has the table)
+    // MARK: Calibration pins (Release QA app; `NativeMountedCost` has the table)
 
     private static let mib = 1024 * 1024
 
