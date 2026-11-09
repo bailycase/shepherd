@@ -738,7 +738,7 @@ struct SettingsPreviewTests {
         agent.worktreePath = repo.path
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         try await Preview.render("sheet-delete-worktree", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
-                                 untilGone: "Checking", showing: "uncommitted change") {
+                                 untilGone: "Checking", showing: "Unreconciled work") {
             WorktreeDeleteDialog(vm: workspace.vm, agent: agent)
         }
     }

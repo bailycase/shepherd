@@ -3,6 +3,16 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
+/// Delete worktree agent for a thread of the background host on this Mac: This Mac's own dialog
+/// (`WorktreeDeleteDialog`), with the checkout and loss warning the host reports (`worktreeInfo`).
+struct ThisMacWorktreeDelete: Identifiable {
+    let target: RemoteAgentRef
+    let agent: Agent
+    /// The host's checkout, its loss warning and the fingerprint its removal must match; nil until probed.
+    var info: RemoteWorktreeInfo?
+    var id: RemoteAgentRef { target }
+}
+
 extension ShepherdViewModel {
     func remoteAgent(_ target: RemoteAgentRef) -> Agent? {
         remoteHosts.connections.first { $0.id == target.hostID }?.state.agents.first { $0.id == target.agentID }
@@ -17,13 +27,17 @@ extension ShepherdViewModel {
 
     /// Delete on a host's agent (its row's menu, or ⇧⌘W) does what it does to This Mac's
     /// (`requestDeleteAgent`): a plain agent asks first unless Delete agent's "Don't ask again" is
-    /// set. A worktree agent opens the host's sheet unless Settings ▸ Worktrees remembers keeping
-    /// the checkout; a remembered removal opens it too: the sheet probes the host, starts on its
-    /// own when nothing would be lost, and shows the host's progress.
+    /// set. A worktree agent of a paired Mac opens the host's sheet unless Settings ▸ Worktrees
+    /// remembers keeping the checkout; a remembered removal opens it too: the sheet probes the
+    /// host, starts on its own when nothing would be lost, and shows the host's progress. The
+    /// background host's worktree agents are This Mac's and go through `requestThisMacWorktreeDelete`.
     func requestRemoteDelete(_ target: RemoteAgentRef) {
         guard let agent = remoteAgent(target) else { return }
         if agent.worktreeBranch != nil {
-            if settings.worktreeDeleteAction == .keepWorktree { performRemoteAction(target, action: .deleteKeepingWorktree) }
+            if remoteHosts.connections.first(where: { $0.id == target.hostID })?.isThisMac == true {
+                requestThisMacWorktreeDelete(target, agent: agent)
+            }
+            else if settings.worktreeDeleteAction == .keepWorktree { performRemoteAction(target, action: .deleteKeepingWorktree) }
             else { remoteWorktreeSheet = target }
         }
         else if settings.skipped(.deleteAgent) != nil { performRemoteAction(target, action: .deleteKeepingWorktree) }
@@ -35,5 +49,54 @@ extension ShepherdViewModel {
     func confirmRemoteDelete(_ target: RemoteAgentRef) {
         afterDialogDismiss = { [weak self] in self?.performRemoteAction(target, action: .deleteKeepingWorktree) }
         remoteDeleteTarget = nil
+    }
+
+    /// `requestWorktreeDelete` for the background host's worktree agent: Settings ▸ Worktrees'
+    /// choice, This Mac's dialog, and a remembered removal that deletes outright unless the
+    /// host reports work that would be lost.
+    func requestThisMacWorktreeDelete(_ target: RemoteAgentRef, agent: Agent) {
+        switch settings.worktreeDeleteAction {
+        case .ask: thisMacWorktreeDelete = ThisMacWorktreeDelete(target: target, agent: agent)
+        case .keepWorktree: deleteThisMacWorktreeAgent(target, removing: nil)
+        case .removeWorktree:
+            Task {
+                let info = try? await thisMacWorktreeInfo(target)
+                if let info, info.warning == nil { deleteThisMacWorktreeAgent(target, removing: info) }
+                else { thisMacWorktreeDelete = ThisMacWorktreeDelete(target: target, agent: agent, info: info) }
+            }
+        }
+    }
+
+    /// The host's checkout for the dialog, and the warning and fingerprint its removal is bound to.
+    func thisMacWorktreeInfo(_ target: RemoteAgentRef) async throws -> RemoteWorktreeInfo {
+        guard case .worktreeInfo(let info) = try await remoteHosts.agentQuery(target, query: .worktreeInfo) else {
+            throw RemoteHostClientError.rejected(code: "unexpected", message: "Shepherd's background service didn't describe the worktree.")
+        }
+        return info
+    }
+
+    /// `deleteWorktreeAgent`, done by the host: keeps the checkout when `info` is nil, else
+    /// removes the checkout `info` describes. The thread leaves the sidebar as the host retires
+    /// it; a failure reads as This Mac's.
+    func deleteThisMacWorktreeAgent(_ target: RemoteAgentRef, removing info: RemoteWorktreeInfo?) {
+        Task {
+            guard let info else {
+                do { try await remoteHosts.agentAction(target, action: .deleteKeepingWorktree) }
+                catch { fail("Couldn’t delete the agent", error) }
+                return
+            }
+            do {
+                let id = UUID()
+                var result = try await remoteHosts.agentQuery(target, query: .deleteWorktree(
+                    operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint))
+                while case .worktreeOperation(let operation) = result, !operation.finished {
+                    try await Task.sleep(for: .milliseconds(250))
+                    result = try await remoteHosts.agentQuery(target, query: .worktreeStatus(operationID: id))
+                }
+                if case .worktreeOperation(let operation) = result, let error = operation.error {
+                    actionError = ActionError(title: "Couldn’t delete the worktree", message: error)
+                }
+            } catch { fail("Couldn’t delete the worktree", error) }
+        }
     }
 }

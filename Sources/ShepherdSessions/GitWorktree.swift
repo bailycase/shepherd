@@ -331,8 +331,8 @@ public enum GitWorktree {
         }
         var parts: [String] = []
         let dirty = status.split(separator: "\n").count
-        if dirty > 0 { parts.append("\(dirty) uncommitted changes") }
-        if unpushed > 0 { parts.append("\(unpushed) commits not on a remote") }
+        if dirty > 0 { parts.append("\(dirty) uncommitted change\(dirty == 1 ? "" : "s")") }
+        if unpushed > 0 { parts.append("\(unpushed) commit\(unpushed == 1 ? "" : "s") not on a remote") }
         return parts.isEmpty ? nil : parts.joined(separator: " and ")
     }
 

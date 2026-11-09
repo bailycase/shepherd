@@ -92,7 +92,7 @@ struct WorktreeHostingTests {
             Issue.record("expected worktree info"); return
         }
         #expect(info.branch == "agent/fix-login")
-        #expect(info.warning == "1 commits not on a remote", "with no remote, the initial commit is the loss the client confirms")
+        #expect(info.warning == "1 commit not on a remote", "with no remote, the initial commit is the loss the client confirms")
 
         let id = UUID()
         _ = try await hosted.client.agentQuery(agentID: agentID, query: .deleteWorktree(operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint))
