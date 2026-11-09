@@ -15,24 +15,31 @@ import Foundation
 /// - any other line of a row (an activity burst, a thought, a note, an error, a steer): `line`;
 /// - a row: `rowBase` and its items.
 ///
-/// Calibration (Release QA app, host F, 2026-11-08; footprint with the purgeable graphics pool taken off,
-/// 5 s after the thread is shown, one app start per run). Measured: four replies of 100 KB of fences and
-/// tables (247 fences of 350 bytes and 82 tables of 12 cells each): 998, 999 and 996 MiB, 11,529 more
-/// NSViews; four replies of 100 KB of fences alone (282 fences each): 532 MiB, 5,669 NSViews. That is
-/// 483 bytes per unit of weight for a fence on its floor, and (from the difference) 554 for a table cell.
-/// What the design guessed from the soak (448 for both) was 7 and 19 percent low. Not measured, and
-/// still the design's estimates: the rate of a fence above its floor, text, images, lines, rows and Mermaid.
+/// Calibration (Release QA app, 2026-11-08; footprint with the purgeable graphics pool taken off, 5 s after the
+/// thread is shown, one app start per run). Measured, all of it below the giant gate: four replies of 100 KB of
+/// fences and tables (247 fences of 350 bytes and 82 tables of 12 cells each): 998, 999 and 996 MiB, 11,529 more
+/// NSViews; four replies of 100 KB of fences alone (282 fences each): 532 MiB, 5,669 NSViews. That is 483 bytes per
+/// unit of weight for a fence on its floor, and (from the difference) 554 for a table cell. What the design guessed
+/// from the soak (448 for both) was 7 and 19 percent low. Both fits are in-sample.
+///
+/// Placeholders, never measured: the rate of a fence above its floor (the floor's own, so a 100 KB fence costs about
+/// 49 MB), the table rate apart from its cells (the 554 mixes a table's own cost with its cells'), text, images,
+/// lines, rows and Mermaid, and everything above the gate (`NativeProse.eagerCost` and `lazyEdgeCost` of a giant reply).
+///
+/// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
+/// lazy stack realizes above its eager rows, and that a Mermaid fence still being written is drawn as code
+/// (`SHMermaidBlock.renders` wants it finished) though costed as a diagram.
 ///
 /// Costs are computed with the parse (a chunk's) and in the store's `derive` (a row's), never in a view body.
 public enum NativeMountedCost {
     // MARK: Constants
 
     /// A byte of a fence above the floor, and a unit of weight on it. Measured on the floor; the slope above it
-    /// is the floor's own rate until a run of one long fence sets it.
+    /// is the floor's own rate, a placeholder until a run of one long fence sets it.
     public static let fenceByte = 483
     /// A fence of up to 1 KB of code (the weight floor).
     public static let fenceFloor = fenceByte * NativeMarkdownBlock.codeFloor
-    /// A unit of weight of a table (a cell's floor is 256 units). Measured by difference.
+    /// A unit of weight of a table (a cell's floor is 256 units). Measured by difference, tables of 12 cells only.
     public static let tableWeight = 554
     /// A unit of weight of an image (an estimate).
     public static let imageWeight = 448
@@ -80,7 +87,7 @@ public enum NativeMountedCost {
         case .prose(_, _, let prose): prose.eagerCost
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
-        case .images(_, let images): images.count * Int(NativeMarkdownBlock.imageFloor) * imageWeight
+        case .images(_, let images): images.count * NativeMarkdownBlock.imageFloor * imageWeight
         case .thinking, .note, .goalRecord, .hook, .error, .retrying, .steer, .compaction, .question: line
         }
     }
