@@ -509,14 +509,7 @@ struct ThreadView: View {
         /// The row arrived with the thread's latest change (`ThreadArrivals`).
         let arriving: Bool
         @ViewBuilder let content: (NativeThreadRow, LiveTurnInputs) -> Content
-        @State private var memory = Memory()
-
-        /// What the row keeps between its renders. A reference, so keeping it current never redraws the row.
-        @MainActor private final class Memory {
-            let catchUp = CatchUpGate()
-            /// Whether the last render drew the shell; nil until the first.
-            var shell: Bool?
-        }
+        @State private var memory = ThreadRowMemory()
 
         /// What one render draws, and what its catch-up gate decided.
         private struct Drawn {
@@ -535,11 +528,14 @@ struct ThreadView: View {
             memory.shell = shell
             let moves = arriving || !flipped
             guard shell else {
+                memory.catchUp = nil
                 return Drawn(row: row, inputs: LiveTurnInputs(thinking: false, wait: NativeLiveWait(), settled: settled && moves))
             }
             SHRenderProbe.tick("thread.liveRow")
             let version = store.threadVersion
-            let catchingUp = memory.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: version, parent: parentCatchingUp)
+            let gate = memory.catchUp ?? CatchUpGate()
+            memory.catchUp = gate
+            let catchingUp = gate.catchingUp(caughtUpAt: store.catchUp?.thread, version: version, parent: parentCatchingUp)
             let thinking = store.showsThinking
             let inputs = LiveTurnInputs(thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(),
                                         settled: active && !catchingUp && moves)
@@ -774,6 +770,16 @@ final class CatchUpGate {
         guard let caughtUpAt else { return true }
         return caughtUpAt > drawn
     }
+}
+
+/// What a transcript row keeps between its renders (`ThreadRowContent`). A reference, so keeping it current never redraws the row.
+@MainActor
+private final class ThreadRowMemory {
+    /// The catch-up gate of the shell: made when the row draws the shell and dropped when it draws a finished reply, so a reply
+    /// that goes live again starts from the transcript's verdict, as a row made then would.
+    var catchUp: CatchUpGate?
+    /// Whether the last render drew the shell; nil until the first.
+    var shell: Bool?
 }
 
 /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
