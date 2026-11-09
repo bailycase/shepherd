@@ -4721,15 +4721,24 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .spawnAgent(let id, let agentID, let cwd, let prompt):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
             }
+            var level: ThinkingLevel?
+            if let thinking, !thinking.isEmpty {
+                guard let parsed = ThinkingLevel(rawValue: thinking) else {
+                    reply(.error(id: id, code: "invalid", message: "thinking must be one of " + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ")), to: client)
+                    return
+                }
+                level = parsed
+            }
+            let pinnedModel = model.flatMap { $0.isEmpty ? nil : $0 }
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
-            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level), requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -112,7 +112,7 @@ extension SessionServer {
                 }
             }
 
-        case .spawn(_, let cwd, let prompt):
+        case .spawn(_, let cwd, let prompt, let model, let thinking):
             let expanded = (cwd as NSString).expandingTildeInPath
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory),
@@ -126,8 +126,8 @@ extension SessionServer {
                 ?? state.spaces.first { !$0.hidden && expanded.hasPrefix($0.path + "/") }?.id
                 ?? sender.spaceID
             let defaults = hosting.defaults()
-            let config = NewAgentConfig(spaceID: spaceID, workingDirectory: expanded, model: defaults.model,
-                                        thinking: defaults.thinking, initialPrompt: prompt)
+            let config = NewAgentConfig(spaceID: spaceID, workingDirectory: expanded, model: model ?? defaults.model,
+                                        thinking: thinking ?? defaults.thinking, initialPrompt: prompt)
             Task { @MainActor in
                 do {
                     // Spawned threads never steal the user's focus.
