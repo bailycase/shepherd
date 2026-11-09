@@ -7,7 +7,7 @@ import ShepherdRemote
 extension ShepherdViewModel {
     func installRemoteInspection() {
         installWorktreeHosting()
-        server.onRemoteAgentQuery = { [weak self] agentID, query, completion in
+        server.onRemoteAgentQuery = { [weak self] agentID, query, _, completion in
             Task { @MainActor in
                 guard let self else {
                     completion(.failure(RemoteCreateAgentError("Host is shutting down")))

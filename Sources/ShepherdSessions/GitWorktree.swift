@@ -322,17 +322,21 @@ public enum GitWorktree {
         return parts.isEmpty ? nil : parts.joined(separator: " and ")
     }
 
-    /// Destructive remote operations must not treat a failed probe as a clean checkout.
-    public static func checkedUnreconciledWork(worktree: String, branch: String) throws -> String? {
+    /// Destructive remote operations must not treat a failed probe as a clean checkout. A paired
+    /// Mac counts every commit no remote has; `otherBranchesKeep` (this Mac's own app, as the
+    /// background host's client) spares commits another local branch reaches too, the
+    /// in-process rule (`unreconciledWork`), in its words.
+    public static func checkedUnreconciledWork(worktree: String, branch: String, otherBranchesKeep: Bool = false) throws -> String? {
         let status = try run(["-C", worktree, "status", "--porcelain"])
-        let count = try run(["-C", worktree, "rev-list", "--count", "HEAD", "--not", "--remotes"])
+        let kept = otherBranchesKeep ? ["--exclude=\(branch)", "--branches", "--remotes"] : ["--remotes"]
+        let count = try run(["-C", worktree, "rev-list", "--count", "HEAD", "--not"] + kept)
         guard let unpushed = Int(count.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw Failure(message: "Could not verify commits on the remote")
         }
         var parts: [String] = []
         let dirty = status.split(separator: "\n").count
         if dirty > 0 { parts.append("\(dirty) uncommitted change\(dirty == 1 ? "" : "s")") }
-        if unpushed > 0 { parts.append("\(unpushed) commit\(unpushed == 1 ? "" : "s") not on a remote") }
+        if unpushed > 0 { parts.append("\(unpushed) commit\(unpushed == 1 ? "" : "s") \(otherBranchesKeep ? "only on this branch" : "not on a remote")") }
         return parts.isEmpty ? nil : parts.joined(separator: " and ")
     }
 
