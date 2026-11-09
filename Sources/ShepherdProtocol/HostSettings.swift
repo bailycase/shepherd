@@ -93,10 +93,16 @@ public struct HostSettings: Codable, Hashable, Sendable {
 
     public var worktreeBase: WorktreeBase
     public var fetchBeforeCreating: Bool
+    /// Legacy: the removed Finalize's settings. Kept so older peers still decode; hosts send
+    /// the defaults and ignore changes to them.
     public var commitRemainingWork: Bool
+    /// Draft commit messages from review with a model.
     public var generatePRDescriptions: Bool
+    /// Legacy, like `commitRemainingWork`.
     public var deleteLocalBranch: Bool
+    /// Legacy, like `commitRemainingWork`.
     public var mergePRAutomatically: Bool
+    /// Legacy, like `commitRemainingWork`.
     public var mergeMethod: MergeMethod
     /// Settings ▸ Worktrees ▸ Close threads when their pull request merges
     /// (`hostSettingsCloseOnMergeCapability`). Older hosts omit it, which reads as off.
@@ -210,11 +216,11 @@ public struct HostSettings: Codable, Hashable, Sendable {
         projectsEnabled = try c.decodeIfPresent(Bool.self, forKey: .projectsEnabled) ?? false
         worktreeBase = try c.decode(WorktreeBase.self, forKey: .worktreeBase)
         fetchBeforeCreating = try c.decode(Bool.self, forKey: .fetchBeforeCreating)
-        commitRemainingWork = try c.decode(Bool.self, forKey: .commitRemainingWork)
+        commitRemainingWork = try c.decodeIfPresent(Bool.self, forKey: .commitRemainingWork) ?? true
         generatePRDescriptions = try c.decode(Bool.self, forKey: .generatePRDescriptions)
-        deleteLocalBranch = try c.decode(Bool.self, forKey: .deleteLocalBranch)
-        mergePRAutomatically = try c.decode(Bool.self, forKey: .mergePRAutomatically)
-        mergeMethod = try c.decode(MergeMethod.self, forKey: .mergeMethod)
+        deleteLocalBranch = try c.decodeIfPresent(Bool.self, forKey: .deleteLocalBranch) ?? true
+        mergePRAutomatically = try c.decodeIfPresent(Bool.self, forKey: .mergePRAutomatically) ?? false
+        mergeMethod = (try? c.decodeIfPresent(MergeMethod.self, forKey: .mergeMethod)) ?? nil ?? .squash
         closeOnMerge = try c.decodeIfPresent(Bool.self, forKey: .closeOnMerge) ?? false
         backgroundService = try c.decodeIfPresent(Bool.self, forKey: .backgroundService)
         designToolEnabled = try c.decodeIfPresent(Bool.self, forKey: .designToolEnabled) ?? false
@@ -292,6 +298,8 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case projectsEnabled(Bool)
     case worktreeBase(HostSettings.WorktreeBase)
     case fetchBeforeCreating(Bool)
+    /// Legacy: older clients' Finalize settings. A host ignores `commitRemainingWork`,
+    /// `deleteLocalBranch`, `mergePRAutomatically` and `mergeMethod`.
     case commitRemainingWork(Bool)
     case generatePRDescriptions(Bool)
     case deleteLocalBranch(Bool)

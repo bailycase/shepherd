@@ -111,14 +111,14 @@ struct DefaultsScreen: View {
     }
 }
 
-/// Settings ▸ Worktrees: how a host creates worktrees, and what Finalize does.
+/// Settings ▸ Worktrees: how a host creates worktrees, and what happens when a thread's work is done.
 struct WorktreesScreen: View {
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         let store = SettingsStore.of(hosts)
         HostSettingsPage(store: store, page: .worktrees,
-                         explanation: "How a host creates worktrees, and what Finalize does when a thread's work is done.") { settings, host in
+                         explanation: "How a host creates worktrees, and what happens when a thread's work is done.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("New worktrees") {
                 SHListCard {
@@ -132,27 +132,12 @@ struct WorktreesScreen: View {
                                       isOn: settings.fetchBeforeCreating) { post(.fetchBeforeCreating($0)) }
                 }
             }
-            SettingsSection("Finalize") {
+            SettingsSection("Commits") {
                 SHListCard {
-                    SettingsSwitchRow("Commit remaining work",
-                                      note: "Commits what's left with the PR's title. Off stops Finalize on a dirty worktree.",
-                                      isOn: settings.commitRemainingWork) { post(.commitRemainingWork($0)) }
-                    SettingsSwitchRow("Generate PR descriptions", note: "Drafts one from the branch's commits and diff.",
+                    SettingsSwitchRow("Draft commit messages", note: "Commit from review drafts one from the diff.",
                                       isOn: settings.generatePRDescriptions) { post(.generatePRDescriptions($0)) }
-                    SettingsSwitchRow("Delete local branch", note: "Once the worktree is gone and everything is on the remote.",
-                                      isOn: settings.deleteLocalBranch) { post(.deleteLocalBranch($0)) }
-                    SettingsSwitchRow("Merge PR automatically", note: "Uses GitHub auto-merge, so required checks still gate it.",
-                                      isOn: settings.mergePRAutomatically) { post(.mergePRAutomatically($0)) }
-                    if settings.mergePRAutomatically {
-                        SettingsControlRow("Merge method", note: "The repository must allow it.") {
-                            SettingsPicker("Merge method", selection: settings.mergeMethod, options: [.squash, .merge, .rebase],
-                                           title: HostSettingsPresentation.title) { post(.mergeMethod($0)) }
-                        }
-                    }
                 }
-                SettingsFootnote("Shepherd never deletes the remote branch: merging the PR cleans it up on GitHub.")
             }
-            .shAnimation(.disclosure, value: settings.mergePRAutomatically)
             let closeOnMerge = host.serves(RemoteProtocol.hostSettingsCloseOnMergeCapability)
             if host.serves(RemoteProtocol.hostSettingsV2Capability) || closeOnMerge {
                 SettingsSection("Deleting") {

@@ -241,7 +241,6 @@ public struct FleetThreadAbilities: Equatable, Sendable {
     /// older or offline host).
     public var moveSpaces: [Space]
     public var review: Bool
-    public var finalize: Bool
 
     public init(agent: Agent, state: ShepherdState, connected: Bool, capabilities: Set<String>) {
         let ordinary = state.isSidebarThread(agent)
@@ -256,7 +255,5 @@ public struct FleetThreadAbilities: Equatable, Sendable {
         moveSpaces = moves ? state.spaces.filter { !$0.hidden } : []
         review = connected && (capabilities.contains(RemoteProtocol.changesCapability)
             || capabilities.contains(RemoteProtocol.agentInspectionCapability))
-        finalize = ordinary && connected && worktree && capabilities.contains(RemoteProtocol.worktreeActionsCapability)
-            && capabilities.contains(RemoteProtocol.worktreeSetupCapability)
     }
 }

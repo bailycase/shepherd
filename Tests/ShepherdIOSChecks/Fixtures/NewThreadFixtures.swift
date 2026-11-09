@@ -21,10 +21,16 @@ extension FixtureCatalog {
                           }),
             FixtureScreen(name: "newthread-where", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
-                          prepare: { app in await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .host : .workspace } }),
+                          prepare: { app in
+                              await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .host : .workspace }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Run on") }
+                          }),
             FixtureScreen(name: "newthread-repo", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
-                          prepare: { app in await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .repo : .workspace } }),
+                          prepare: { app in
+                              await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .repo : .workspace }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Repo") }
+                          }),
             FixtureScreen(name: "newthread-worktree", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { app in
@@ -32,6 +38,7 @@ extension FixtureCatalog {
                                   form.workspaceAnchor = .worktree
                                   form.panel = app.navigator.layout == .pad ? .worktree : .workspace
                               }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("New worktree") }
                           }),
             // Where it runs' Base row pushed: the repo's branches, as the Mac's base picker lists them.
             FixtureScreen(name: "newthread-branches", hosts: NewThreadFixtures.hosts(),
@@ -43,6 +50,7 @@ extension FixtureCatalog {
                               try? await Task.sleep(for: .seconds(1))
                               NewThreadModel.active?.workspacePath = [.branches]
                               await FixtureWindows.wait("new thread branches", seconds: 5) { NewThreadModel.active?.branches != nil }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Base") }
                           }),
             // Where it runs' Repo row pushed: every repo, searchable.
             FixtureScreen(name: "newthread-repos", hosts: NewThreadFixtures.hosts(),
@@ -53,10 +61,14 @@ extension FixtureCatalog {
                                   try? await Task.sleep(for: .seconds(1))
                                   NewThreadModel.active?.workspacePath = [.repo]
                               }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Repo") }
                           }),
             FixtureScreen(name: "newthread-models", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
-                          prepare: { _ in await NewThreadFixtures.form { $0.panel = .model } }),
+                          prepare: { app in
+                              await NewThreadFixtures.form { $0.panel = .model }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Model") }
+                          }),
             FixtureScreen(name: "newthread-folders", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { app in
@@ -65,10 +77,14 @@ extension FixtureCatalog {
                               }
                               try? await Task.sleep(for: .seconds(1))
                               NewThreadModel.active?.browseFolders()
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Folders") }
                           }),
             FixtureScreen(name: "newthread-oldhost", hosts: NewThreadFixtures.hosts(oldBuildHost: true),
                           routes: NewThreadFixtures.behind, presented: .newThread(.compose(host: FixtureData.buildBox)),
-                          prepare: { app in await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .host : .workspace } }),
+                          prepare: { app in
+                              await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .host : .workspace }
+                              if app.navigator.layout == .pad { await NewThreadPopoverCheck.run("Run on") }
+                          }),
             FixtureScreen(name: "newthread-images", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { _ in
@@ -197,5 +213,88 @@ enum NewThreadFixtures {
         }
         guard let data = rendered.pngData() else { return nil }
         return NewThreadImages.prepare(data, name: name)
+    }
+}
+
+/// An iPad New thread popover as drawn (ipad-ui-3): it opens under its anchor, it is a header and a row tall or
+/// more, and nothing in it starts above its top edge. With little room under the anchor it gets shorter, keeps its
+/// header and scrolls the rest.
+@MainActor enum NewThreadPopoverCheck {
+    struct Sample: Equatable, CustomStringConvertible {
+        var frame: CGRect
+        var preferred: CGSize
+        var top: CGFloat
+        var arrow: UIPopoverArrowDirection
+        var description: String { "frame=\(frame) preferred=\(preferred) first top=\(top) arrow=\(arrow.rawValue)" }
+    }
+
+    static func run(_ name: String) async {
+        SidebarAutomationsCheck.enableAccessibility()
+        // Settled: presented, drawn, and the same sample for 10 polls (about 0.5 s). A popover can resize after it appears.
+        var last: Sample?
+        var steady = 0
+        await FixtureWindows.wait("the \(name) popover, presented and settled", seconds: 10) {
+            guard let sample = measure() else { steady = 0; last = nil; return false }
+            if sample == last { steady += 1 } else { steady = 0; print("FIXTURE ELEMENT \(name) popover \(sample)") }
+            last = sample
+            return steady >= 10
+        }
+        guard let sample = last else { FixtureCheck.fail("the \(name) popover closed") }
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        check(sample.arrow == .up, "the \(name) popover opens under its anchor, arrow up (arrow \(sample.arrow.rawValue))")
+        check(sample.frame.height >= MobileLayout.rowHeight * 2,
+              "the \(name) popover is a header and a row tall or more (\(Int(sample.frame.height))pt, preferred \(Int(sample.preferred.height))pt)")
+        check(sample.top >= sample.frame.minY - 1,
+              "nothing in the \(name) popover starts above its top edge (\(Int(max(0, sample.frame.minY - sample.top)))pt above, popover \(Int(sample.frame.height))pt)")
+    }
+
+    static func measure() -> Sample? {
+        guard let popover, popover.transitionCoordinator == nil, popover.view.window != nil,
+              let top = elements(in: popover).map(\.accessibilityFrame).filter({ !$0.isEmpty }).map(\.minY).min() else { return nil }
+        return Sample(frame: UIAccessibility.convertToScreenCoordinates(popover.view.bounds, in: popover.view),
+                      preferred: popover.preferredContentSize, top: top,
+                      arrow: popover.popoverPresentationController?.arrowDirection ?? .unknown)
+    }
+
+    /// The last popover in the primary scene's presentation chains (the New thread sheet presents it).
+    static var popover: UIViewController? {
+        var found: UIViewController?
+        for window in FixtureWindows.shared.primary?.windows ?? [] {
+            var top = window.rootViewController
+            while let next = top?.presentedViewController {
+                if next.modalPresentationStyle == .popover { found = next }
+                top = next
+            }
+        }
+        return found
+    }
+
+    /// Its drawn accessibility elements. A hidden view draws none (the worktree page hides its navigation bar).
+    static func elements(in controller: UIViewController) -> [NSObject] {
+        var found: [NSObject] = []
+        collect(controller.view, into: &found)
+        return found
+    }
+
+    private static func collect(_ object: NSObject, into found: inout [NSObject], depth: Int = 0) {
+        guard depth < 60 else { return }
+        guard let view = object as? UIView else {
+            found.append(object)
+            for case let item as NSObject in object.accessibilityElements ?? [] { collect(item, into: &found, depth: depth + 1) }
+            return
+        }
+        guard !view.isHidden, view.alpha > 0.01 else { return }
+        if view.isAccessibilityElement { found.append(view) }
+        if let list = view.accessibilityElements {
+            for case let item as NSObject in list { collect(item, into: &found, depth: depth + 1) }
+        } else if !view.isAccessibilityElement {
+            let count = view.accessibilityElementCount()
+            if count != NSNotFound, count > 0 {
+                for index in 0..<count {
+                    if let item = view.accessibilityElement(at: index) as? NSObject { collect(item, into: &found, depth: depth + 1) }
+                }
+            }
+        }
+        for subview in view.subviews { collect(subview, into: &found, depth: depth + 1) }
     }
 }

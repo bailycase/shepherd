@@ -7,7 +7,7 @@ import ShepherdRemote
 
 /// The branch card's Commit… (BranchCommit board): the checkout's changed files, all ticked; the
 /// message written from the file list, or generated from the diff on Generate from diff (the
-/// model Finalize drafts descriptions with); Amend the last commit; then Commit, or Commit & push
+/// model commit from review drafts with); Amend the last commit; then Commit, or Commit & push
 /// through the card's Push (never forced, so off when amending a pushed commit). All in `BranchGit`.
 struct BranchCommitSheet: View {
     let vm: ShepherdViewModel

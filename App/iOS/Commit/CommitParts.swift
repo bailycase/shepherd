@@ -124,7 +124,7 @@ struct CommitProgress: View {
 
 /// One step: its state glyph, its label, and what the host said.
 private struct CommitStepRow: View {
-    let step: FinalizeStep
+    let step: OperationStep
 
     var body: some View {
         HStack(alignment: .top, spacing: SH.Space.m) {

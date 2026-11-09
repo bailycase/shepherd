@@ -55,7 +55,7 @@ public final class ReviewCommitStore {
     public private(set) var submitting = false
     public private(set) var operationID: UUID?
     public private(set) var operation: RemoteWorktreeOperation?
-    public private(set) var steps: [FinalizeStep] = []
+    public private(set) var steps: [OperationStep] = []
     public var error: String?
     /// The file rows, derived once per change of the files or the selection.
     public private(set) var rows: [ReviewCommitFileRow] = []
@@ -379,7 +379,7 @@ public final class ReviewCommitStore {
         guard !invalidated else { return }
         operationID = status.id
         operation = status
-        steps = finalizeSteps(status.progress)
+        steps = operationSteps(status.progress)
         stage = .operation
     }
 
@@ -444,4 +444,45 @@ public struct ReviewCommitRefusal: Error, CustomStringConvertible, Sendable {
 enum ReviewCommitStoreError: Error, CustomStringConvertible {
     case reply
     var description: String { "The host answered something unexpected." }
+}
+
+/// One step of a host operation (a commit from review).
+public struct OperationStep: Identifiable, Equatable, Sendable {
+    public enum State: Equatable, Sendable {
+        case pending
+        case running
+        /// Done or skipped, with what the host said ("committed", "nothing to commit").
+        case done(String)
+        case failed(String)
+    }
+
+    public let label: String
+    public let state: State
+    public var id: String { label }
+
+    public init(label: String, state: State) {
+        self.label = label
+        self.state = state
+    }
+}
+
+/// The host's progress lines ("push branch to origin: pushed") as steps. A line without a
+/// detail is a step the host has finished.
+public func operationSteps(_ progress: [String]) -> [OperationStep] {
+    progress.map { line in
+        guard let colon = line.range(of: ": ") else { return OperationStep(label: line, state: .done("")) }
+        let label = String(line[..<colon.lowerBound])
+        let detail = String(line[colon.upperBound...])
+        let state: OperationStep.State
+        if detail == "pending" {
+            state = .pending
+        } else if detail == "working…" || detail == "working..." {
+            state = .running
+        } else if detail.hasPrefix("failed: ") {
+            state = .failed(String(detail.dropFirst("failed: ".count)))
+        } else {
+            state = .done(detail)
+        }
+        return OperationStep(label: label, state: state)
+    }
 }

@@ -31,13 +31,26 @@ struct ThreadMoveDrag: Codable, Equatable {
 
 @MainActor extension ShepherdViewModel {
     func moveThread(_ agentID: AgentID, to spaceID: SpaceID) async throws {
+        try await restartingAfterMove(agentID) { try await self.server.moveThread(agentID, to: spaceID) }
+        openProjectHoldingSelection()
+    }
+
+    /// The Switch branch picker's "move here": the thread's pi starts again in `path`, another
+    /// checkout already on `branch` (`SessionServer.moveThreadToCheckout`).
+    func moveThreadToCheckout(_ agentID: AgentID, path: String, branch: String) async throws {
+        try await restartingAfterMove(agentID) { try await self.server.moveThreadToCheckout(agentID, path: path, branch: branch) }
+    }
+
+    /// `move` stops the thread's pi; it starts again wherever the thread now is, or where it was
+    /// when the move failed after stopping it.
+    private func restartingAfterMove(_ agentID: AgentID, _ move: () async throws -> Bool) async throws {
         let before = server.state
         let sessionID = before.agents.first { $0.id == agentID }.flatMap { agent in
             before.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
         }
         let wasAlive = if let sessionID { await server.sessionInfo(sessionID: sessionID)?.isAlive == true } else { false }
         do {
-            guard try await server.moveThread(agentID, to: spaceID) else { return }
+            guard try await move() else { return }
         } catch {
             // A filesystem failure after shutdown leaves the original workspace intact.
             let code = (error as? ProjectFileError)?.code
@@ -52,7 +65,6 @@ struct ThreadMoveDrag: Codable, Equatable {
         adopt(canonical)
         threadStores.store(for: agentID).restarting()
         sessions.retryStart(agentID)
-        openProjectHoldingSelection()
     }
 
     func threadMoveSpaces(_ row: SidebarRowID) -> [Space] {

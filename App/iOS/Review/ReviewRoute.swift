@@ -1,22 +1,20 @@
 import SwiftUI
 import ShepherdUI
 
-/// Review's screens (review track): an agent's changes, one file's diff, and Finalize.
+/// Review's screens (review track): an agent's changes, one file's diff, and Commit.
 enum ReviewRoute: Hashable, Codable {
     /// Working tree vs HEAD (or the PR): the file list, comments, Request changes and Commit;
     /// `file` picks one (the changes card's file, an edit line).
     case changes(AgentRef, file: String?)
     /// One file's diff.
     case diff(AgentRef, path: String)
-    /// Finalize a worktree agent: commit, push, pull request, cleanup, run by its host. Presented.
-    case finalize(AgentRef)
     /// Commit from review on iPhone (Commit/): the message, the files, push or a pull request,
     /// run by the host. Presented; on iPad it is a popover beside Commit….
     case commit(AgentRef)
 
     var thread: AgentRef {
         switch self {
-        case .changes(let ref, _), .diff(let ref, _), .finalize(let ref), .commit(let ref): ref
+        case .changes(let ref, _), .diff(let ref, _), .commit(let ref): ref
         }
     }
 }
@@ -49,8 +47,6 @@ struct ReviewDestination: View {
             ChangesScreen(ref: ref, file: file)
         case .diff(let ref, let path):
             DiffScreen(ref: ref, path: path)
-        case .finalize(let ref):
-            FinalizeScreen(ref: ref)
         case .commit(let ref):
             CommitScreen(ref: ref)
         }

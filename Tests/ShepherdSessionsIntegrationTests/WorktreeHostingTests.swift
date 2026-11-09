@@ -29,7 +29,7 @@ struct WorktreeHostingTests {
     private func host() async throws -> Hosted {
         let h = try ScratchServer.fresh()
         let queries = h.server.serveAgentQueries(WorktreeHosting(defaults: {
-            .init(autoCommit: true, deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash", generateDescription: false)
+            .init(generateDescription: false)
         }, deleteAgent: { id, _ in try await h.server.deleteAgent(id) }))
         // `sh`, not the login shell, as the app's commit tests run it.
         queries.commitRunner = { script, cwd in
@@ -91,7 +91,7 @@ struct WorktreeHostingTests {
         guard case .worktreeInfo(let info) = try await hosted.client.agentQuery(agentID: agentID, query: .worktreeInfo) else {
             Issue.record("expected worktree info"); return
         }
-        #expect(info.branch == "agent/fix-login" && info.defaults.base == "main")
+        #expect(info.branch == "agent/fix-login")
         #expect(info.warning == "1 commits not on a remote", "with no remote, the initial commit is the loss the client confirms")
 
         let id = UUID()

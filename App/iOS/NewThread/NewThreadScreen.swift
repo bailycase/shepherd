@@ -206,7 +206,7 @@ private struct NewThreadForm: View {
                                 .navigationBarTitleDisplayMode(.inline)
                                 .navigationDestination(item: $model.folders) { NewThreadFolderScreen(model: model, browser: $0) }
                         }
-                        .frame(height: MobileLayout.newThreadPopoverHeight)
+                        .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
                     }
                 }
             chip(host, systemImage: "desktopcomputer", name: "Host", panel: pad ? .host : .workspace, active: pad ? .host : nil)
@@ -220,16 +220,17 @@ private struct NewThreadForm: View {
                                 .frame(minHeight: MobileLayout.rowHeight)
                                 .accessibilityAddTraits(.isHeader)
                             SHHairline()
-                            NewThreadHostList(model: model, carded: false)
+                            // Every host where there's room (iPadNewThread); with less, they scroll under the header.
+                            ScrollView { NewThreadHostList(model: model, carded: false) }
+                                .scrollBounceBehavior(.basedOnSize)
                         }
-                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             chip(NewThreadRules.shortModel(model.defaults.model), systemImage: "sparkle", name: "Model", panel: .model, active: .model)
                 .popover(isPresented: pad ? panel(.model) : .constant(false), arrowEdge: .top) {
                     popover("Model") {
                         NewThreadModelPicker(model: model) { model.panel = nil }
-                            .frame(height: MobileLayout.newThreadPopoverHeight)
+                            .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
                     }
                 }
             if model.offersThinking {
@@ -267,6 +268,9 @@ private struct NewThreadForm: View {
     private func popover<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         content()
             .frame(width: min(popoverWidth, MobileLayout.newThreadPopoverMaxWidth))
+            // Its ideal height sizes the popover. With less room under its anchor the popover is
+            // shorter and the content keeps its top: the header stays, the rest scrolls.
+            .frame(maxHeight: .infinity, alignment: .top)
             .background(Color.sh.bgRaised)
             .presentationCompactAdaptation(.popover)
             .presentationBackground(Color.sh.bgRaised)
@@ -307,7 +311,7 @@ private struct NewThreadForm: View {
                     .toolbar(.hidden, for: .navigationBar)
                     .newThreadPages(model)
                 }
-                .frame(height: MobileLayout.newThreadPopoverHeight)
+                .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
             }
         }
     }

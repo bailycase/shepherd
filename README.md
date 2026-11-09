@@ -46,7 +46,7 @@ coherent over covering every use case.
   agent's thread, steer or interrupt it, and wait for it to settle. Deleting another agent always
   asks you first.
 - **Worktrees.** Give an agent its own git worktree, branched from a fresh `origin/<default>`.
-  When the work is done, finalize it: commit, push, open a PR, and clean up.
+  When the work is done, commit, push and open a PR from its branch card or review, then delete it.
 - **Automations.** Saved monitoring prompts run as dedicated agents and notify you when
   something happens.
 - **Remote.** Run your projects on one Mac and drive them from another. The host serves its
@@ -137,7 +137,7 @@ A connected Mac can:
 - inspect subagents
 - search transcripts
 - review diffs
-- create, finalize, and delete worktrees on the host
+- create and delete worktrees on the host
 
 Dropped files upload to the host, up to 32 MiB each. Quitting the host stops its agents;
 disconnecting a client does not.

@@ -14,7 +14,7 @@ extension ShepherdViewModel {
                     return
                 }
                 switch query {
-                case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription:
+                case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .worktreeStatus:
                     do { completion(.success(try await self.handleRemoteWorktree(agentID, query: query))) }
                     catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
                     return
@@ -38,11 +38,14 @@ extension ShepherdViewModel {
                 do {
                     let result: RemoteAgentResult
                     switch query {
-                    case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription,
+                    case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .worktreeStatus,
                          .commitInfo, .commitMessage, .commit,
                          .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile,
                          .setWorktree: // the server answers it before this handler
                         return
+                    case .moveToCheckout(let path, let branch):
+                        try await self.moveThreadToCheckout(agentID, path: path, branch: branch)
+                        result = .ok
                     case .children:
                         result = .children(self.children(of: agentID))
                     case .search(let query):
@@ -106,29 +109,6 @@ extension ShepherdViewModel {
             adopt(server.state)
             return .inspectorFocus(layout.firstLeaf.id)
         }
-    }
-
-    func openRemoteUtilityTerminal(agent: Agent, cwd: String, key: String, command: String) async throws -> TabID {
-        try verifyCheckoutAvailable(cwd)
-        let reservation = UUID()
-        startingCheckoutUsers[reservation] = cwd
-        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
-        if let existing = hostRemoteInspectors[key], server.state.tabs.contains(where: { $0.id == existing }) {
-            return existing
-        }
-        let pane = LeafPane(cwd: cwd)
-        let tab = Tab(spaceID: agent.spaceID, order: (server.state.tabs.map(\.order).max() ?? 0) + 1,
-                      layout: .leaf(pane), inspectorFor: agent.id)
-        try await server.addTab(tab)
-        adopt(server.state)
-        sessions.stateDidChange(state)
-        _ = sessions.session(for: pane, in: tab)
-        guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else {
-            throw RemoteCreateAgentError("Host terminal failed to start")
-        }
-        server.typeCommand(command, sessionID: session)
-        hostRemoteInspectors[key] = tab.id
-        return tab.id
     }
 
     func openRemoteHostReview(_ target: RemoteAgentRef, pane: LeafPane) {

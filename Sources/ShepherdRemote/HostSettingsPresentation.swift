@@ -71,10 +71,6 @@ public enum HostSettingsPresentation {
         }
     }
 
-    public static func title(_ method: HostSettings.MergeMethod) -> String {
-        method.rawValue.capitalized
-    }
-
     public static func title(_ action: HostSettings.WorktreeDeleteAction) -> String {
         switch action {
         case .ask: "Ask"

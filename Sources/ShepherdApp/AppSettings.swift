@@ -7,11 +7,6 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// How an auto-merged finalize PR is merged (Settings ▸ Worktrees).
-enum WorktreeMergeMethod: String, CaseIterable {
-    case merge, squash, rebase
-}
-
 /// What Delete Worktree Agent does without its dialog: `ask` shows it; the others are the
 /// dialog's two deletes, remembered by its "Don't ask again".
 enum WorktreeDeleteAction: String, CaseIterable {
@@ -120,11 +115,7 @@ final class AppSettings {
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let worktreeBaseMode = "shepherd.worktree.baseMode"
         static let worktreeFetchBeforeCreate = "shepherd.worktree.fetchBeforeCreate"
-        static let worktreeAutoCommit = "shepherd.worktree.autoCommit"
         static let worktreeGeneratePRDescription = "shepherd.worktree.generatePRDescription"
-        static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
-        static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
-        static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
         static let worktreeDeleteAction = "shepherd.worktree.deleteAction"
         static let worktreeCloseOnMerge = "shepherd.worktree.closeOnMerge"
         static let skippedConfirmations = "shepherd.confirmations.skipped"
@@ -144,9 +135,7 @@ final class AppSettings {
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
             shareDiagnostics, remoteListenerEnabled, remoteListenerPort,
             worktreeBaseMode, worktreeFetchBeforeCreate,
-            worktreeAutoCommit, worktreeGeneratePRDescription,
-            worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
+            worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
             goalsEnabled, projectsEnabled, designToolEnabled, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
@@ -462,42 +451,16 @@ final class AppSettings {
         didSet { store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate) }
     }
 
-    /// Finalize commits remaining work automatically. Off = finalize stops
-    /// on a dirty worktree and asks the user to commit themselves.
-    var worktreeAutoCommit: Bool {
-        didSet { store.set(worktreeAutoCommit, forKey: Key.worktreeAutoCommit) }
-    }
-
-    /// Generate an editable pull-request description when Finalize opens.
-    /// Failure falls back to the branch's commit subjects.
+    /// Draft commit messages from review with a model. Off, or on a failure, the message is
+    /// written from the file list. The key keeps its name from when it drafted PR descriptions.
     var worktreeGeneratePRDescription: Bool {
         didSet { store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription) }
-    }
-
-    /// Finalize deletes the local branch after the worktree is removed. Off
-    /// keeps it (the remote branch is never touched either way).
-    var worktreeDeleteLocalBranch: Bool {
-        didSet { store.set(worktreeDeleteLocalBranch, forKey: Key.worktreeDeleteLocalBranch) }
-    }
-
-    /// Finalize merges the PR it just created. **Off by default** — merging
-    /// is the one finalize step that changes the shared branch, so it is
-    /// strictly opt-in. On: GitHub auto-merge first (respects branch
-    /// protection and checks), immediate merge as fallback; failure leaves
-    /// the PR open and never blocks cleanup.
-    var worktreeAutoMergePR: Bool {
-        didSet { store.set(worktreeAutoMergePR, forKey: Key.worktreeAutoMergePR) }
     }
 
     /// Close threads when their pull request merges: a worktree thread whose pull request merges
     /// is deleted with its worktree, its local branch and its branch on GitHub. **Off by default**.
     var worktreeCloseOnMerge: Bool {
         didSet { store.set(worktreeCloseOnMerge, forKey: Key.worktreeCloseOnMerge) }
-    }
-
-    /// Merge method for auto-merged finalize PRs.
-    var worktreeMergeMethod: WorktreeMergeMethod {
-        didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 
     /// Settings ▸ Worktrees ▸ Deleting a worktree agent: ask, or the delete the dialog remembered.
@@ -646,13 +609,8 @@ final class AppSettings {
         worktreeBaseMode = store.string(forKey: Key.worktreeBaseMode)
             .flatMap(WorktreeBaseMode.init(rawValue:)) ?? .fresh
         worktreeFetchBeforeCreate = store.object(forKey: Key.worktreeFetchBeforeCreate) as? Bool ?? true
-        worktreeAutoCommit = store.object(forKey: Key.worktreeAutoCommit) as? Bool ?? true
         worktreeGeneratePRDescription = store.object(forKey: Key.worktreeGeneratePRDescription) as? Bool ?? true
-        worktreeDeleteLocalBranch = store.object(forKey: Key.worktreeDeleteLocalBranch) as? Bool ?? true
-        worktreeAutoMergePR = store.bool(forKey: Key.worktreeAutoMergePR)
         worktreeCloseOnMerge = store.bool(forKey: Key.worktreeCloseOnMerge)
-        worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
-            .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
         worktreeDeleteAction = store.string(forKey: Key.worktreeDeleteAction)
             .flatMap(WorktreeDeleteAction.init(rawValue:)) ?? .ask
         let known = Set(SkippableConfirmation.allCases.map(\.rawValue))
@@ -749,12 +707,8 @@ final class AppSettings {
         editor = nil
         worktreeBaseMode = .fresh
         worktreeFetchBeforeCreate = true
-        worktreeAutoCommit = true
         worktreeGeneratePRDescription = true
-        worktreeDeleteLocalBranch = true
-        worktreeAutoMergePR = false
         worktreeCloseOnMerge = false
-        worktreeMergeMethod = .squash
         worktreeDeleteAction = .ask
         skippedConfirmations = [:]
         designToolEnabled = false

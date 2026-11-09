@@ -11,10 +11,6 @@ enum RemoteSamples {
     static let pane = PaneID(rawValue: "pane")
     static let tab = TabID(rawValue: "tab")
     static let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(cwd: "/a")), second: .leaf(LeafPane(cwd: "/b")))
-    static let finalize = RemoteFinalizeOptions(
-        base: "main", title: "fix", body: "details", autoCommit: false, deleteLocalBranch: true,
-        autoMergePR: true, mergeMethod: "squash"
-    )
 
     static let commitFile = RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "f1")
     static let renamedFile = RemoteCommitFile(path: "new name.swift", oldPath: "old.swift", status: "R", added: 0, removed: 0, fingerprint: "f2")
@@ -41,19 +37,11 @@ enum RemoteSamples {
     static let agentQueries: [RemoteAgentQuery] = [
         .deleteKeepingWorktree,
         .worktreeInfo,
-        .worktreeSetup(action: .check),
-        .worktreeSetup(action: .applyIdentity(name: "O'Neil", email: "test@example.invalid")),
-        .worktreeSetup(action: .installCommandLineTools),
-        .worktreeSetup(action: .enableDeleteBranchOnMerge),
-        .worktreeSetup(action: .enableAutoMerge),
-        .worktreeSetup(action: .loginShell),
-        .worktreeCommitCount(base: "release"),
         .setWorktree(branch: "feat/card", base: nil),
         .setWorktree(branch: nil, base: "release"),
-        .worktreeDescription(base: "release", title: "fix"),
+        .moveToCheckout(path: "/tmp/acme-web-feat", branch: "feat/card"),
         .deleteWorktree(operationID: op, confirmedWarning: "dirty", fingerprint: "hash"),
         .deleteWorktree(operationID: op, confirmedWarning: nil),
-        .finalizeWorktree(operationID: op, options: finalize),
         .worktreeStatus(operationID: op),
         .review(pullRequest: true),
         .reviewPane(paneID: pane, pullRequest: false),
@@ -120,18 +108,8 @@ enum RemoteSamples {
 
     static let agentResults: [RemoteAgentResult] = [
         .ok,
-        .worktreeInfo(RemoteWorktreeInfo(path: "/r", branch: "worktree/x", warning: "3 uncommitted files", defaults: finalize,
-                                         generateDescription: true, fingerprint: "abc")),
-        .worktreeInfo(RemoteWorktreeInfo(path: "/r", branch: "worktree/x", warning: nil, defaults: finalize)),
-        .worktreeSetup(RemoteWorktreeSetup(
-            repoPath: "/host/repo",
-            checks: ["git": .pass("installed"), "identity": .fail("missing"), "remote": .checking, "gh": .pending],
-            repoSettings: ["allowAutoMerge": .disabled, "deleteBranchOnMerge": .unavailable("admin required"),
-                           "a": .enabled, "b": .unknown, "c": .checking]
-        )),
-        .worktreeCommitCount(23),
-        .worktreeCommitCount(nil),
-        .worktreeDescription(body: "## Summary\nHost changes"),
+        .worktreeInfo(RemoteWorktreeInfo(path: "/r", branch: "worktree/x", warning: "3 uncommitted files", fingerprint: "abc")),
+        .worktreeInfo(RemoteWorktreeInfo(path: "/r", branch: "worktree/x", warning: nil)),
         .worktreeOperation(RemoteWorktreeOperation(id: op, finished: true, error: "failed", progress: ["push failed"], prURL: nil)),
         .worktreeOperation(RemoteWorktreeOperation(id: op, prURL: "https://example.invalid/pr/1")),
         .review(files: Data("[]".utf8), reference: "origin/main"),
@@ -1080,9 +1058,23 @@ struct RemoteReplyTests {
         #expect(newer.news == 2)
     }
 
-    @Test func worktreeCheckStatePassesOnlyWhenPassed() {
-        #expect(RemoteWorktreeCheckState.pass("ok").passed)
-        for state in [RemoteWorktreeCheckState.fail("x"), .pending, .checking] { #expect(!state.passed) }
+    /// Finalize was removed: a client from before still decodes `worktreeInfo`, whose `defaults`
+    /// it requires, and its Finalize requests no longer decode, so the host refuses them as
+    /// unknown by their id (`SessionServer.handleRemoteLine`).
+    @Test func finalizeLeftoversStayReadableByOlderClients() throws {
+        let info = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteWorktreeInfo(path: "/r", branch: "b", warning: nil))) as? [String: Any]
+        let defaults = try #require(info?["defaults"] as? [String: Any])
+        #expect(Set(defaults.keys) == ["base", "title", "body", "autoCommit", "deleteLocalBranch", "autoMergePR", "mergeMethod"])
+
+        let known = Data(#"{"type":"agentQuery","id":7,"agentID":"a","query":{"worktreeInfo":{}}}"#.utf8)
+        #expect(try NDJSON.decode(RemoteRequest.self, from: known) == .agentQuery(id: 7, agentID: AgentID(rawValue: "a"), query: .worktreeInfo))
+        for query in [#"{"finalizeWorktree":{"operationID":"\#(UUID().uuidString)","options":{}}}"#,
+                      #"{"worktreeSetup":{"action":{"check":{}}}}"#, #"{"worktreeCommitCount":{"base":"main"}}"#,
+                      #"{"worktreeDescription":{"base":"main","title":"t"}}"#] {
+            let line = Data(#"{"type":"agentQuery","id":7,"agentID":"a","query":\#(query)}"#.utf8)
+            #expect(throws: (any Error).self) { try NDJSON.decode(RemoteRequest.self, from: line) }
+            #expect((try JSONSerialization.jsonObject(with: line) as? [String: Any])?["id"] as? Int == 7)
+        }
     }
 }
 
@@ -1102,7 +1094,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability, RemoteProtocol.nativeStartupDialogsCapability,
             RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
-            RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability, RemoteProtocol.worktreeRecordCapability,
+            RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeRecordCapability, RemoteProtocol.worktreeMoveCapability,
             RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability, RemoteProtocol.creationBranchesCapability,
             RemoteProtocol.automationsCapability,
             RemoteProtocol.terminalActivityCapability,

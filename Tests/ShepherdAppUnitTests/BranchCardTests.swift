@@ -68,6 +68,36 @@ struct BranchCardTests {
         #expect(list.rows(query: "LEDGER", now: now).map(\.name) == ["baily/ledger-refactor"])
     }
 
+    /// Switch branch: a branch another checkout has moves the thread there (its worktree's thread,
+    /// or the main checkout, named); a busy thread is told why it can't; a free branch checks out.
+    @Test func switchBranchMovesToTheCheckoutThatHasABranchInUse() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var list = BranchPickerList(branches: ChangesBranches(defaultBase: "origin/main", branches: [
+            ChangesBranch(name: "agent/refund-events", isRemote: false, isCurrent: true, committedAt: now.timeIntervalSince1970),
+            ChangesBranch(name: "main", isRemote: false, worktree: "/tmp/acme-web", committedAt: now.timeIntervalSince1970 - 60),
+            ChangesBranch(name: "agent/payout-ui", isRemote: false, worktree: "/tmp/acme-web-payout", committedAt: now.timeIntervalSince1970 - 120),
+            ChangesBranch(name: "baily/ledger", isRemote: false, committedAt: now.timeIntervalSince1970 - 86_400),
+        ]), threads: ["/tmp/acme-web-payout": "Payout screen"], mainCheckout: "/tmp/acme-web")
+        let moving = list.rows(now: now, moves: true)
+        #expect(moving.map(\.pick) == [.checkout, .move("/tmp/acme-web"), .move("/tmp/acme-web-payout"), .checkout])
+        #expect(moving.map(\.detail) == ["now", "in use · main checkout · move here", "in use · Payout screen · move here", "1d"])
+        // Change base and a new thread's Branch list them but never move anything.
+        #expect(list.rows(now: now).map(\.pick) == [.checkout, .none, .none, .checkout])
+        #expect(list.rows(now: now)[2].detail == "in use · Payout screen")
+
+        list.busy = "running"
+        let busy = list.rows(now: now, moves: true)
+        #expect(busy.map(\.pick) == [.checkout, .none, .none, .checkout])
+        #expect(busy[2].detail == "in use · Payout screen · can’t move while running")
+    }
+
+    @Test(arguments: [(AgentStatus.idle, nil as String?, nil as String?), (.done, nil, nil), (.working, nil, "running"),
+                      (.blocked, nil, "it asks you"), (.idle, "Which base?", "it asks you")])
+    func aThreadMovesOnlyWhileItNeitherRunsNorAsks(status: AgentStatus, waitingOn: String?, blocker: String?) {
+        let agent = Agent(name: "t", spaceID: SpaceID(), tabID: TabID(), status: status, waitingOn: waitingOn)
+        #expect(ShepherdViewModel.moveBlocker(agent) == blocker)
+    }
+
     @Test func menuAndSheetWords() {
         #expect(BranchCardView.pushTitle(0) == "Push" && BranchCardView.pushTitle(1) == "Push 1 Commit" && BranchCardView.pushTitle(2) == "Push 2 Commits")
         #expect(BranchUpdateSheet.conflictTitle(.init(kind: .rebase, step: 2, steps: 4, files: ["a", "b"])) == "Stopped at commit 2 of 4: 2 files conflict")
