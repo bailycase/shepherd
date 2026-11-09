@@ -369,7 +369,9 @@ struct RemoteDesignChatPane: View {
             }
             ZStack {
                 RemoteAgentThreadPane(vm: vm, ref: agent, agentName: agentName,
-                                      isFocused: chat && vm.remoteFocusedPaneID == threadPaneID, designChat: true)
+                                      isFocused: chat && vm.remoteFocusedPaneID == threadPaneID, designChat: true,
+                                      inspectingRunID: vm.subagentInspector.remoteRuns[agent],
+                                      supportsChanges: vm.remoteHosts.connections.first { $0.id == agent.hostID }?.supportsChanges == true)
                     .environment(\.designCommentCards, screen.commentCards)
                     .shComposerSize(.compact)
                     .opacity(chat ? 1 : 0)
