@@ -218,6 +218,8 @@ extension ThreadBanners {
             onNotify?(id, title, body)
             MainActor.assumeIsolated {
                 guard let self, let agent = self.server.state.agents.first(where: { $0.id == id }) else { return }
+                // The app showing these threads as its own posts it, and its click opens the thread there.
+                if self.sink.quiet(), self.server.relayNotifyToLocalApp(agentID: id, title: title, body: body) { return }
                 self.sink.post(AgentBanners.agentNotify(agent, title: title, body: body))
             }
         }

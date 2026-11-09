@@ -258,4 +258,48 @@ struct LocalHostRoutingTests {
             #expect(FileManager.default.fileExists(atPath: agent.worktreePath ?? ""))
         }
     }
+
+    /// Locate Folder…: the host moves the space and its threads' folders, and the app starts
+    /// them again there.
+    @Test func locateFolderMovesTheSpaceOnTheHost() async throws {
+        let s = try await Self.setUp(agents: ["Fix the login redirect"])
+        defer { s.stop() }
+        let moved = s.host.dir.appendingPathComponent("acme-web-moved")
+        try FileManager.default.moveItem(at: URL(fileURLWithPath: s.space.path), to: moved)
+        await s.vm.relocateSpace(s.space.id, to: moved.path)
+        let canonical = moved.resolvingSymlinksInPath().path
+        #expect(s.host.server.state.spaces.first?.path == canonical)
+        let agent = try #require(s.host.server.state.agents.first)
+        #expect(s.host.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == canonical)
+        try await eventuallyOnMain("the app to show the new folder") { s.vm.state.spaces.first?.path == canonical }
+        #expect(s.vm.actionError == nil && !s.vm.missingSpaces.contains(s.space.id))
+    }
+
+    /// The notify tool's banner reaches the app (which posts it, so its click opens the thread
+    /// here), and the thread the app shows is the one the host's phone pushes skip.
+    @Test func notifyBannersAndTheWatchedThreadReachTheApp() async throws {
+        let s = try await Self.setUp(agents: ["Fix the login redirect"])
+        defer { s.stop() }
+        let agent = s.host.server.state.agents[0]
+        let banners = ThreadBanners(server: s.host.server, state: { s.host.server.state },
+                                    sink: { var sink = ThreadBanners.Sink(post: { _ in Issue.record("the host posted it") }, remove: { _ in },
+                                                                          isWatching: { _ in false }, notifyOnTurnFinished: { true })
+                                            sink.quiet = { s.host.server.localAppConnected }
+                                            return sink }())
+        banners.observeServer()
+        var heard: [String] = []
+        let posting = s.hosts.onLocalAgentNotify
+        s.hosts.onLocalAgentNotify = { id, title, body in heard.append(title); posting?(id, title, body) }
+        try await eventuallyOnMain("the app to be the host's own") { s.host.server.localAppConnected }
+        let pi = try ExtensionClient(path: s.host.socketPath)
+        defer { pi.closeConnection() }
+        try pi.send(.notify(agentID: agent.id, title: "CI passed", body: "PR #42 is green"))
+        try await eventuallyOnMain("the app to hear the banner") { heard == ["CI passed"] }
+
+        s.hosts.focusLocalThread(agent.id)
+        let server = s.host.server
+        try await eventuallyAsync("the host to know the watched thread") {
+            (try? await server.enqueue { @Sendable in server.pushNotifications.focused }) == agent.id
+        }
+    }
 }

@@ -29,7 +29,10 @@
   `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
   worktree's loss by the in-process rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
-  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. With no app, the host
+  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
+  `focusThread` (the thread it shows, so phone pushes for it stay quiet; cleared when it
+  disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
+  `agentNotify` push instead of posting on the host. With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves

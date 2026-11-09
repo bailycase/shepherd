@@ -36,6 +36,17 @@ extension ShepherdViewModel {
         remoteHosts.hidesLocalHost = true
         sessions.startsSessions = false
         remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(state) }
+        // As the in-process session's notify (`sessions.onNotify`): a click opens the thread here.
+        remoteHosts.onLocalAgentNotify = { [weak self] agentID, title, body in
+            guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
+            self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
+        }
+        // The thread says when the host's pi stopped and why: its can't-start and sign-in cards.
+        let configure = threadStores.configure
+        threadStores.configure = { [weak self] id, store in
+            configure?(id, store)
+            self?.watchStartProblem(id, store)
+        }
         let remoteChanged = remoteHosts.onNativeThreadChanged
         remoteHosts.onNativeThreadChanged = { [weak self] ref in
             guard let self, ref.hostID == self.localHost?.id else { remoteChanged?(ref); return }
@@ -84,6 +95,21 @@ extension ShepherdViewModel {
         }
         let server = server
         return await Task.detached(priority: .userInitiated) { server.modelListing() }.value
+    }
+
+    /// Runs `agentStopped` for each start problem the host's thread reports, for as long as the
+    /// store is the agent's (the in-process app hears it from the session instead).
+    private func watchStartProblem(_ id: AgentID, _ store: NativeThreadStore) {
+        let problem = store.startProblem
+        if problem != nil || cannotStart.contains(id) || notSignedIn[id] != nil {
+            agentStopped(id, problem: problem, stopped: problem != nil)
+        }
+        withObservationTracking { _ = store.startProblem } onChange: { [weak self, weak store] in
+            Task { @MainActor [weak self, weak store] in
+                guard let self, let store, self.threadStores.existing(for: id) === store else { return }
+                self.watchStartProblem(id, store)
+            }
+        }
     }
 
     /// A thread's requests: to the host that runs it, else the in-process server.

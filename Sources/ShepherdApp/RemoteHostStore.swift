@@ -252,6 +252,8 @@ final class RemoteHostStore {
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
     /// Each workspace the background host on this Mac pushes, after its connection holds it.
     @ObservationIgnored var onLocalHostState: ((ShepherdState) -> Void)?
+    /// An agent's notify tool on the background host on this Mac, for the app to post.
+    @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
@@ -499,6 +501,10 @@ final class RemoteHostStore {
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onProjectExecutionChanged?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID), key)
         }
+        client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAgentNotify?(agentID, title, body)
+        }
         client.onStateChanged = { [weak self, weak connection] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
@@ -722,6 +728,12 @@ final class RemoteHostStore {
     func localForge(_ request: RemoteForgeRequest) async -> Result<RemoteForgeResult, ForgeError> {
         guard let client = localHost?.client else { return .failure(ForgeError(.unreachable, "Shepherd's background service isn't running.")) }
         return await client.forge(request)
+    }
+
+    /// The thread the app shows, told to the background host on this Mac (`focusThread`).
+    func focusLocalThread(_ agentID: AgentID?) {
+        guard let client = localHost?.client, localHost?.phase == .connected else { return }
+        Task { try? await client.focusThread(agentID) }
     }
 
     /// Starts a thread on the background host on this Mac (`startThread`).

@@ -153,6 +153,20 @@ extension ShepherdViewModel {
     /// folder, and they start again there. A refusal shows why.
     func relocateSpace(_ id: SpaceID, to path: String) async {
         guard let old = state.spaces.first(where: { $0.id == id })?.path else { return }
+        if let host = localHost {
+            // The background host stops, moves and keeps them; they start again as Retry does.
+            let moving = state.agents.filter { agent in
+                state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())
+                    .map { SessionServer.relocated($0.cwd, from: old, to: path) != nil } == true
+            }
+            do { try await remoteHosts.spaceAction(hostID: host.id, spaceID: id, .relocate(path: path)) }
+            catch { fail("Couldn’t move the space", error) }
+            // Retry reads the folder from the workspace: wait for the host's push.
+            for _ in 0..<100 where state.spaces.first(where: { $0.id == id })?.path == old { try? await Task.sleep(for: .milliseconds(20)) }
+            checkMissingSpaces()
+            for agent in moving { retryAgentStart(agent.id) }
+            return
+        }
         let target = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
         let moving = state.agents.compactMap { agent -> (agent: Agent, from: String, to: String, session: SessionID?)? in
             guard let pane = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID()),

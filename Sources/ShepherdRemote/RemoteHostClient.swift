@@ -74,6 +74,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A design the background host on this Mac asks this client to draw off screen; answer it
     /// with `designRelayAnswer` and the same token. Main queue, in order.
     public var onDesignRelay: ((Int, DesignRelayJob) -> Void)?
+    /// An agent's notify tool on the background host, for this Mac's app to post (`agentNotify`).
+    /// Main queue, in order.
+    public var onAgentNotify: ((AgentID, String, String) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -140,6 +143,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
         case designRelay(Int, DesignRelayJob)
+        case agentNotify(AgentID, String, String)
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -400,6 +404,12 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected drain reply")
         }
+    }
+
+    /// The thread this Mac's own app shows (`focusThread`), so its phone pushes stay quiet.
+    public func focusThread(_ agentID: AgentID?) async throws {
+        let reply = try await request { id in .focusThread(id: id, agentID: agentID) }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
     }
 
     /// Starts a thread on the background host as this Mac's own app does (`startThread`).
@@ -1524,6 +1534,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.browserDrive(push), bytes: line.count)
         case .designRelay(let token, let job):
             self.push(.designRelay(token, job), bytes: line.count)
+        case .agentNotify(let agentID, let title, let body):
+            self.push(.agentNotify(agentID, title, body), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1638,6 +1650,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 case .designRelay(let token, let job): self.onDesignRelay?(token, job)
+                case .agentNotify(let agentID, let title, let body): self.onAgentNotify?(agentID, title, body)
                 }
             }
             finish()

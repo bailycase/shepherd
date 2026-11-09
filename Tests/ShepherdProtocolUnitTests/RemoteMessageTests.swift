@@ -392,13 +392,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .startThread, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 49
+    static let caseCount = 50
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -435,7 +435,10 @@ struct RemoteRequestTests {
         .spaceAction(id: 5, spaceID: S.space, action: .setSidebarHidden(hidden: true)),
         .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
         .spaceAction(id: 5, spaceID: S.space, action: .delete),
+        .spaceAction(id: 5, spaceID: S.space, action: .relocate(path: "/Users/demo/Developer/acme-web")),
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: nil, agentID: S.agent)),
+        .focusThread(id: 7, agentID: S.agent),
+        .focusThread(id: 7, agentID: nil),
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: S.space, cwd: "/tmp/acme-web-worktrees/fix", model: "anthropic/claude-4", thinking: .high,
                                                       serviceTier: .fast, initialPrompt: "fix it", name: "Fix it (fork)", piSessionID: "sess-1",
                                                       agentID: S.agent, worktreeBranch: "agent/fix", worktreeBase: "main",
@@ -650,11 +653,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 46
+    static let caseCount = 47
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -722,6 +725,7 @@ struct RemoteReplyTests {
         .browserClaimed(id: 34, url: nil),
         .browserDrive(.request(token: 12, agentID: S.agent, request: .click(ref: "e4", double: false, note: "paying"))),
         .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
+        .agentNotify(agentID: AgentID(rawValue: "a"), title: "CI passed", body: "PR #42 is green"),
         .designRelay(token: 3, job: .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
                                                             request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
                                                             deadline: Date(timeIntervalSince1970: 1_000)))),
