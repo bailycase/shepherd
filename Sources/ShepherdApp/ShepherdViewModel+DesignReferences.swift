@@ -115,7 +115,7 @@ extension ShepherdViewModel {
     /// works it waits in the host's queue, as any follow-up does.
     private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage] = [], to agentID: AgentID) async throws {
         let server = server
-        try await sendDirectly(references, text: text, images: images) { try await server.nativeThread(agentID: agentID, request: $0) }
+        try await sendDirectly(references, text: text, images: images) { try await nativeThread(agentID, request: $0) }
     }
 
     /// `sendDirectly` through whatever serves the thread: this Mac's server, or a host.

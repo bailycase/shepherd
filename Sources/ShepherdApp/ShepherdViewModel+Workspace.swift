@@ -171,7 +171,7 @@ extension ShepherdViewModel {
 
     /// Reconcile optimistic UI state after a queued persistence failure.
     private func reconcileFromServer() {
-        let canonical = server.state
+        let canonical = ownerState
         sessions.stateDidChange(canonical)
         adopt(canonical)
     }
@@ -286,8 +286,16 @@ extension ShepherdViewModel {
             return false
         }
         let tabID = state.tabs[tabIndex].id
-        sessions.detachPane(paneID)
-        setLayout(newLayout, forTab: tabID)
+        if let agent = state.agents.first(where: { $0.tabID == tabID }), let ref = localRef(agent.id) {
+            // The background host closes its terminal; the layout follows its push.
+            Task {
+                do { try await remoteHosts.closePane(hostID: ref.hostID, agentID: ref.agentID, paneID: paneID) }
+                catch { fail("Couldn’t close the terminal", error) }
+            }
+        } else {
+            sessions.detachPane(paneID)
+            setLayout(newLayout, forTab: tabID)
+        }
         discardReviewSession(paneID)
         if focusedPaneID == paneID {
             focusedPaneID = newLayout.firstLeaf.id
@@ -306,7 +314,7 @@ extension ShepherdViewModel {
 
     /// Retry in an agent's Can't start banner: starts its pi again (`newConversation`: without
     /// looking for the conversation it was resuming).
-    func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false) {
+    func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false, model: String? = nil) {
         // A thread whose folder is still gone: choose where it went (Locate Folder…) instead.
         if let agent = state.agents.first(where: { $0.id == agentID }),
            let cwd = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.cwd,
@@ -315,6 +323,14 @@ extension ShepherdViewModel {
             return
         }
         threadStores.store(for: agentID).restarting()
+        if let ref = localRef(agentID) {
+            // The background host runs the agent's pi and starts it again.
+            Task {
+                do { try await remoteHosts.agentAction(ref, action: .restartPi(newConversation: newConversation, model: model)) }
+                catch { fail("Couldn’t start the agent", error) }
+            }
+            return
+        }
         sessions.retryStart(agentID, newConversation: newConversation)
     }
 
@@ -406,6 +422,15 @@ extension ShepherdViewModel {
         case .ask: worktreeDeleteTarget = id
         case .keepWorktree: deleteAgent(id)
         case .removeWorktree:
+            if let ref = localRef(id) {
+                // The host removes the checkout, bound to the loss it reports.
+                Task {
+                    let info = try? await thisMacWorktreeInfo(ref)
+                    if let info, info.warning == nil { deleteThisMacWorktreeAgent(ref, removing: info) }
+                    else { hostWorktreeInfo = info; worktreeDeleteTarget = id }
+                }
+                return
+            }
             let (path, branch) = (worktreeCheckoutPath(agent), agent.worktreeBranch ?? "")
             guard !path.isEmpty else { worktreeDeleteTarget = id; return }
             Task {
@@ -423,12 +448,27 @@ extension ShepherdViewModel {
         guard !trimmed.isEmpty,
               let agent = state.agents.first(where: { $0.id == id }),
               agent.name != trimmed else { return }
-        enqueuePersistence("agent rename", failureTitle: "Couldn’t rename the agent") { try await $0.renameAgent(id, to: trimmed) }
+        let (hosts, ref) = (remoteHosts, localRef(id))
+        enqueuePersistence("agent rename", failureTitle: "Couldn’t rename the agent") {
+            if let ref { try await hosts.agentAction(ref, action: .rename(name: trimmed)) } else { try await $0.renameAgent(id, to: trimmed) }
+        }
     }
 
     /// Persist retirement and wait for the actual process exits before removing a checkout.
     func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {
         guard removeWorktree else { deleteAgent(id); return }
+        if let ref = localRef(id) {
+            // The checkout the dialog showed, with the loss it warned of.
+            let info = hostWorktreeInfo
+            Task {
+                do {
+                    let removing = if let info { info } else { try await thisMacWorktreeInfo(ref) }
+                    deleteThisMacWorktreeAgent(ref, removing: removing)
+                }
+                catch { fail("Couldn’t delete the worktree", error) }
+            }
+            return
+        }
         Task {
             do { try await removeWorktreeAgent(id) } catch { fail("Couldn’t delete the worktree", error) }
         }
@@ -479,7 +519,8 @@ extension ShepherdViewModel {
         let doomedTabs = state.tabs.filter { tab in
             state.agents.contains { $0.id == id && $0.tabID == tab.id }
         }
-        try await server.deleteAgent(id)
+        if let ref = localRef(id) { try await remoteHosts.agentAction(ref, action: .deleteKeepingWorktree) }
+        else { try await server.deleteAgent(id) }
         for leaf in doomedTabs.flatMap({ $0.layout.leaves }) { sessions.detachPane(leaf.id) }
         cancelReviews(for: id)
         subagentInspector.runByAgent.removeValue(forKey: id)
@@ -488,7 +529,7 @@ extension ShepherdViewModel {
         forgetPullRequestLink(id)
         if selectedAgentID == id { selectPreviousAgent(after: id) }
         else { selectionHistory.removeAll { $0 == id } }
-        adopt(server.state)
+        adopt(ownerState)
         sessions.stateDidChange(state)
     }
 
@@ -563,8 +604,8 @@ extension ShepherdViewModel {
 
     /// "Use another model": an agent not signed in starts again on `model`.
     func useAnotherModel(_ agentID: AgentID, model: String) {
-        sessions.modelOverrides[agentID] = model
-        retryAgentStart(agentID)
+        if localHost == nil { sessions.modelOverrides[agentID] = model }
+        retryAgentStart(agentID, model: model)
     }
 }
 

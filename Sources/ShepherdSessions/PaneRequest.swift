@@ -15,6 +15,13 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var worktreeBase: String?
     public var worktreeFetchFirst: Bool?
     public var worktreeBranch: String?
+    /// This Mac's own app's thread only (`RemoteRequest.startThread`): its name, the pi session it
+    /// resumes, its id, an existing checkout of `worktreeBranch`, and a folder of its own.
+    public var name: String?
+    public var piSessionID: String?
+    public var agentID: AgentID?
+    public var worktreePath: String?
+    public var standalone = false
 
     public init(
         spaceID: SpaceID,

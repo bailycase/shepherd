@@ -145,6 +145,14 @@ extension ShepherdViewModel {
             NSSound.beep()
             return
         }
+        if let agent = state.agents.first(where: { $0.tabID == tab.id }), let ref = localRef(agent.id) {
+            // The background host opens it, in the thread's folder, as a new tab.
+            Task {
+                do { focusedPaneID = try await remoteHosts.openPane(hostID: ref.hostID, agentID: ref.agentID, relativeTo: anchor, axis: axis) }
+                catch { fail("Couldn’t open a terminal", error) }
+            }
+            return
+        }
         do { try verifyCheckoutAvailable(leaf.cwd) }
         catch { fail("Couldn’t open a terminal", error); return }
         let terminal = LeafPane(cwd: leaf.cwd)
