@@ -219,6 +219,80 @@ struct ThreadPerformanceTests {
         print("thread-work history=\(count) paged=\(paged) updates=200 messages=\(store.projectedMessages - visits) rows=\(store.projectedRows - rows) comparisons=\(store.historyComparisons - comparisons)")
     }
 
+    @Test func mountedCostSumsTheEagerRowsAndReadsNoMore() async {
+        let history = (0..<100).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 1 + $0 % 3), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(running: true, messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        #expect(store.rows.count == 200)
+        let eager = store.rows.suffix(30).reduce(0) { $0 + NativeMountedCost.row($1) }
+        #expect(eager > 30 * NativeMountedCost.rowBase)
+        #expect(store.mountedCost(eagerRows: 30) == eager)
+        #expect(store.mountedCost(eagerRows: 0) == 0)
+        #expect(store.mountedCost(eagerRows: 1_000) == store.rows.reduce(0) { $0 + NativeMountedCost.row($1) }, "more rows than the thread has are all of them")
+
+        let computed = store.rowCostComputations
+        #expect(computed == 100, "one per reply, when its presentation was built")
+        let visited = (0..<100).map { _ in store.mountedCostWalk(eagerRows: 30, skipping: { _ in false }).visited }
+        #expect(visited.allSatisfy { $0 == 30 }, "a read passes the rows it sums and no more of the 200")
+
+        host.snapshot.revision += 1
+        host.snapshot.provisional = [F.assistant("chunk 1", status: "streaming", id: "live")]
+        await store.refresh()
+        #expect(store.rowCostComputations == computed + 1, "a streamed pull costs the live row alone")
+        #expect(store.mountedCost(eagerRows: 30) == store.rows.suffix(30).reduce(0) { $0 + NativeMountedCost.row($1) })
+        host.snapshot.revision += 1
+        host.snapshot.provisional = [F.assistant("chunk 1 and 2, with a fence\n\n```swift\nlet a = 1\n```", status: "streaming", id: "live")]
+        await store.refresh()
+        #expect(store.rowCostComputations == computed + 2)
+        #expect(store.mountedCost(eagerRows: 30) == store.rows.suffix(30).reduce(0) { $0 + NativeMountedCost.row($1) })
+
+        store.stop()
+        store.release()
+        #expect(store.rows.isEmpty && store.mountedCost(eagerRows: 30) == 0, "a released thread mounts nothing")
+    }
+
+    @Test func mountedCostReachesBackPastTheRowsTheViewLeavesOut() async {
+        let history = (0..<100).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 1 + $0 % 3), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        let replies = store.rows.filter { !$0.isUser }
+        #expect(replies.count == 100)
+        let hidden: (NativeThreadRow) -> Bool = { $0.isUser }
+        let expected = replies.suffix(30).reduce(0) { $0 + NativeMountedCost.row($1) }
+        let walk = store.mountedCostWalk(eagerRows: 30, skipping: hidden)
+        #expect(walk.cost == expected, "the last 30 rows the view draws, not 15 of them and 15 it leaves out")
+        #expect(store.mountedCost(eagerRows: 30, skipping: hidden) == expected)
+        #expect(walk.visited <= 60, "it passes the hidden rows between them and no others")
+        #expect(store.mountedCost(eagerRows: 30) < expected, "unfiltered, the last 30 rows hold half the replies")
+        #expect(store.mountedCost(eagerRows: 1_000, skipping: hidden) == replies.reduce(0) { $0 + NativeMountedCost.row($1) })
+        #expect(store.mountedCost(eagerRows: 30, skipping: { _ in true }) == 0, "nothing drawn costs nothing")
+    }
+
+    @Test func mountedCostAddsTheNextChunkOfTheLastGiantReplyOnce() async {
+        let giant = NativeMountedCostTests.gradedReply(fences: 60)
+        let host = FakeHost(F.snapshot(messages: [F.user(id: "u0"), F.assistant(giant, id: "a0"), F.user(id: "u1"), F.assistant("short", id: "a1"),
+                                                  F.user(id: "u2"), F.assistant(giant, id: "a2"), F.user(id: "u3")]))
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        await store.waitForProse()
+        #expect(store.rows.count == 7)
+        guard case .prose(_, _, let prose)? = store.rows[5].presentation?.items.last else {
+            Issue.record("the last reply is not prose")
+            return
+        }
+        let edge = prose.chunks[prose.chunks.count - prose.eagerTail - 1].cost
+        #expect(prose.isGiant && edge > 0)
+        let costs = store.rows.map { NativeMountedCost.row($0) }
+        #expect(store.mountedCost(eagerRows: 7) == costs.reduce(0, +) + edge, "the earlier giant reply adds nothing")
+        #expect(store.mountedCost(eagerRows: 2) == costs[6] + costs[5] + edge)
+        #expect(store.mountedCost(eagerRows: 1) == costs[6], "the last reply is out of the sum, and so is its next chunk")
+    }
+
     @Test func childProgressInvalidatesItsOwningSuffixRatherThanAllHistory() async {
         var history = (0..<500).flatMap { [F.user(id: "u\($0)"), F.assistant("answer", id: "a\($0)")] }
         history[999] = F.tool("shepherd_child_start", output: "started", id: "spawn", callID: "spawn")
