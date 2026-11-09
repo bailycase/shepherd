@@ -254,6 +254,11 @@ final class RemoteHostStore {
     @ObservationIgnored var onLocalHostState: ((ShepherdState) -> Void)?
     /// An agent's notify tool on the background host on this Mac, for the app to post.
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
+    /// What a Settings page shows changed on the background host on this Mac.
+    @ObservationIgnored var onLocalSettingsChanged: ((RemoteSettingsPage) -> Void)?
+    /// A tool call, or a line said, in a thread of the background host on this Mac.
+    @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
+    @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
@@ -294,6 +299,15 @@ final class RemoteHostStore {
     /// Designs, Automations, Projects and Missions pages still do, through `allConnections`: the app
     /// leaves what they own to them (`ShepherdViewModel.mirrored`).
     var hidesLocalHost = false
+    /// The background host on this Mac while its workspace is the app's own (`hidesLocalHost`):
+    /// This Mac's Settings pages read and change its stores, never the idle in-process server's.
+    /// Nil in process; throws while the host is away.
+    func thisMacHost() throws -> RemoteHostClient? {
+        guard hidesLocalHost else { return nil }
+        guard let host = localHost, host.phase == .connected, let client = host.client else { throw RemoteHostClientError.disconnected }
+        return client
+    }
+
     /// The background host on this Mac, whatever `hidesLocalHost` says.
     var localHost: Connection? { allConnections.first(where: \.isThisMac) }
 
@@ -505,6 +519,18 @@ final class RemoteHostStore {
         client.onProjectExecutionChanged = { [weak self, weak connection] key, _ in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onProjectExecutionChanged?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID), key)
+        }
+        client.onSettingsChanged = { [weak self, weak connection] page in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalSettingsChanged?(page)
+        }
+        client.onToolFinished = { [weak self, weak connection] agentID, tool in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalToolFinished?(agentID, tool)
+        }
+        client.onThreadNotice = { [weak self, weak connection] agentID, message in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalThreadNotice?(agentID, message)
         }
         client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }

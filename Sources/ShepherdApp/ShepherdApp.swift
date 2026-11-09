@@ -264,11 +264,13 @@ enum WorkspaceInUseAlert {
 
 extension ShepherdHost {
     /// What the app's view model applies to its server from Settings, applied to the host's: at
-    /// start and on each change a client makes (`HostSettingsMapping`). Serve this Mac opens the
+    /// start, on each change a client makes (`HostSettingsMapping`), and on each the app's own
+    /// Settings pages write to the shared preferences (`followOtherProcesses`). Serve this Mac opens the
     /// TCP listener as the app would; a change to it takes effect when the host next starts. The
     /// listener's port, when it opened.
     @discardableResult
     @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer) -> UInt16? {
+        settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
         server.setDefaultQueueMode(settings.queueDelivery)

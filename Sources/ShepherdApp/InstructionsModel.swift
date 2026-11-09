@@ -106,6 +106,7 @@ final class InstructionsModel {
         self.request = request ?? { machine, request in
             switch machine {
             case .local:
+                if let host = try await remoteHosts.thisMacHost() { return try await host.instructions(request) }
                 return try await Task.detached(priority: .userInitiated) {
                     switch request {
                     case .fetch: return store.snapshot()
@@ -164,6 +165,11 @@ final class InstructionsModel {
             drafts[key] = rebased == snapshot[file] ? nil : rebased
         }
         if sameEverywhere { Task { await pushToAll() } }
+    }
+
+    /// This Mac's files changed where they are kept (the background host's, as its client).
+    func localFilesChanged() async {
+        if let snapshot = try? await request(.local, .fetch) { localChanged(snapshot) }
     }
 
     /// What a host's files are, as far as the page knows now.

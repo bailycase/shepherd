@@ -6,6 +6,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import notify
+import os
 
 /// What Delete Worktree Agent does without its dialog: `ask` shows it; the others are the
 /// dialog's two deletes, remembered by its "Don't ask again".
@@ -769,6 +771,85 @@ final class AppSettings {
         }
         var seen = Set<String>()
         return shells.filter { seen.insert($0).inserted }
+    }
+
+    // MARK: Following another process
+
+    /// Follows the other process on this preferences domain: the background host and the app are
+    /// one bundle, so they share it, and each keeps its own `AppSettings`. A write here posts the
+    /// Darwin notification `notice`; on one from anywhere the store is read back and what differs is
+    /// assigned, so each `on*Change` fires as if it was set here. (`UserDefaults`'
+    /// `didChangeNotification` is this process's only, and its KVO can't watch a dotted key.)
+    /// Remote's listener applies when the host next starts.
+    func followOtherProcesses(notice: String = AppSettings.changeNotice) {
+        guard follower == nil else { return }
+        follower = SettingsFollower(store: store, notice: notice) { [weak self] in self?.reload() }
+    }
+
+    /// The Darwin notification this bundle's processes post when they write their settings.
+    nonisolated static var changeNotice: String { (Bundle.main.bundleIdentifier ?? "Shepherd") + ".settings-changed" }
+
+    @ObservationIgnored private var follower: SettingsFollower?
+
+    /// Takes every setting the store now holds that differs from this object's.
+    /// ponytail: a taken value's `didSet` writes it back; a second write by the app in that
+    /// instant is lost here until its next change. A host-side store with no write-back if it bites.
+    /// Its own writes post nothing: the other process holds them already.
+    func reload() {
+        let take = { [self] in
+            let fresh = AppSettings(store: store)
+            for take in Self.followed { take(self, fresh) }
+        }
+        if let follower { follower.muting(take) } else { take() }
+    }
+
+    private static func take<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<AppSettings, T>) -> (AppSettings, AppSettings) -> Void {
+        { settings, fresh in
+            if settings[keyPath: keyPath] != fresh[keyPath: keyPath] { settings[keyPath: keyPath] = fresh[keyPath: keyPath] }
+        }
+    }
+
+    /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them.
+    private static let followed: [(AppSettings, AppSettings) -> Void] = [
+        take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
+        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
+        take(\.namingModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
+        take(\.mcpSameEverywhere), take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
+        take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
+        take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle), take(\.sidebarGroupByHost),
+        take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),
+        take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piDesignReferences),
+        take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),
+        take(\.editor), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
+        take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),
+        take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled), take(\.missionsEnabled),
+        take(\.implementOpensThread),
+    ]
+}
+
+/// Posts `notice` when this process writes `store`, and runs `changed` on the main actor when any
+/// process posts it (this one too: the read-back then finds nothing new).
+private final class SettingsFollower: @unchecked Sendable {
+    private var token: Int32 = 0
+    private var observer: (any NSObjectProtocol)?
+    private let muted = OSAllocatedUnfairLock(initialState: false)
+
+    init(store: UserDefaults, notice: String, changed: @escaping @MainActor () -> Void) {
+        notify_register_dispatch(notice, &token, .main) { _ in MainActor.assumeIsolated { changed() } }
+        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: store, queue: nil) { [muted] _ in
+            if !muted.withLock({ $0 }) { notify_post(notice) }
+        }
+    }
+
+    func muting(_ body: () -> Void) {
+        muted.withLock { $0 = true }
+        body()
+        muted.withLock { $0 = false }
+    }
+
+    deinit {
+        notify_cancel(token)
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 }
 

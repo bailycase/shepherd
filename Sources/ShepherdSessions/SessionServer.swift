@@ -1223,7 +1223,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Merges a thread's listing into the catalog (server queue).
-    private func mergeSlashCommands(_ listed: [NativeCommand]) {
+    func mergeSlashCommands(_ listed: [NativeCommand]) {
         let next: [NativeCommand]? = slashCatalogLock.withLock {
             var byName = Dictionary(slashCatalog.map { ($0.name, $0) }, uniquingKeysWith: { _, new in new })
             for command in listed { byName[command.name] = command }
@@ -1233,6 +1233,7 @@ public final class SessionServer: @unchecked Sendable {
             return merged
         }
         guard let next else { return }
+        pushSettingsChanged(.slashCommands)
         DispatchQueue.main.async { [weak self] in self?.onSlashCommandCatalogChanged?(next) }
     }
 
@@ -3465,10 +3466,11 @@ public final class SessionServer: @unchecked Sendable {
             case .fetch:
                 snapshot = instructions.snapshot()
             case .save(let file, let content, let origin, let sync):
-                snapshot = try instructions.save(file, content: content, origin: origin, sync: sync)
+                // An empty origin is this Mac's own app, as the store's nil.
+                snapshot = try instructions.save(file, content: content, origin: origin.isEmpty ? nil : origin, sync: sync)
                 announceInstructions(snapshot)
             case .restore(let revisionID, let origin):
-                snapshot = try instructions.restore(revisionID: revisionID, origin: origin)
+                snapshot = try instructions.restore(revisionID: revisionID, origin: origin.isEmpty ? nil : origin)
                 announceInstructions(snapshot)
             }
             send(.instructions(id: id, snapshot: snapshot), to: client)
@@ -3480,6 +3482,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func announceInstructions(_ snapshot: InstructionsSnapshot) {
+        pushSettingsChanged(.instructions)
         guard let handler = onInstructionsChanged else { return }
         hopToMain { handler(snapshot) }
     }
@@ -3604,6 +3607,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func announceSuggestions(_ snapshot: SuggestionsSnapshot) {
+        pushSettingsChanged(.suggestions)
         guard let handler = onSuggestionsChanged else { return }
         hopToMain { handler(snapshot) }
     }
@@ -3790,8 +3794,9 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard let self else { return }
             self.queue.async {
-                if request.changesSkills, case .success(.skills(let snapshot)) = result, let handler = self.onSkillsChanged {
-                    self.hopToMain { handler(snapshot) }
+                if request.changesSkills, case .success(.skills(let snapshot)) = result {
+                    self.pushSettingsChanged(.skills)
+                    if let handler = self.onSkillsChanged { self.hopToMain { handler(snapshot) } }
                 }
                 guard self.clients[client.fd] === client else { return }
                 switch result {
@@ -3822,8 +3827,9 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard let self else { return }
             self.queue.async {
-                if request.changesHooks, case .success = result, let handler = self.onHooksChanged {
-                    self.hopToMain { handler() }
+                if request.changesHooks, case .success = result {
+                    self.pushSettingsChanged(.hooks)
+                    if let handler = self.onHooksChanged { self.hopToMain { handler() } }
                 }
                 guard self.clients[client.fd] === client else { return }
                 switch result {
@@ -4415,6 +4421,24 @@ public final class SessionServer: @unchecked Sendable {
             disconnect(client, reason: "read failed: errno \(errno)")
             return
         }
+    }
+
+    /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
+    /// page's data changed here; in process there is none, and the GUI's own `on…Changed` follow.
+    func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
+
+    /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
+    func sendToLocalApps(_ reply: RemoteReply) {
+        for app in clients.values where app.isLocal && app.authenticated
+            && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            send(reply, to: app)
+        }
+    }
+
+    /// Says `message` in `agentID`'s thread in this Mac's app showing the host's threads as its
+    /// own (the host has no window to say it in). Any thread.
+    public func noticeToLocalApps(agentID: AgentID, message: String) {
+        queue.async { [self] in sendToLocalApps(.threadNotice(agentID: agentID, message: message)) }
     }
 
     /// Server queue: tells the main actor whether this Mac's own app is connected now.
@@ -7539,12 +7563,7 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor
     public func relayNotifyToLocalApp(agentID: AgentID, title: String, body: String) -> Bool {
         guard localAppConnected else { return false }
-        queue.async { [self] in
-            for app in clients.values where app.isLocal && app.authenticated
-                && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(.agentNotify(agentID: agentID, title: title, body: body), to: app)
-            }
-        }
+        queue.async { [self] in sendToLocalApps(.agentNotify(agentID: agentID, title: title, body: body)) }
         return true
     }
 
@@ -8520,6 +8539,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.sendToLocalApps(.toolFinished(agentID: agentID, tool: name))
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread, weak serverWeak] event in

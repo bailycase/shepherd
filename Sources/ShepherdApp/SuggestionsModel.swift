@@ -6,7 +6,7 @@ import ShepherdSessions
 
 /// Settings ▸ Experiments ▸ Suggested instructions on the Mac: the
 /// experiment's settings and the lines this Mac's agents suggested, kept by the server's
-/// `SuggestionsStore`. Adding a line, or taking one back, changes This Mac's instructions, which
+/// `SuggestionsStore` (the background host's, as its client). Adding a line, or taking one back, changes This Mac's instructions, which
 /// `InstructionsModel` then sends to every host while Same on every host is on.
 @MainActor
 @Observable
@@ -20,21 +20,35 @@ final class SuggestionsModel {
     /// What went wrong with the last change, in words.
     private(set) var problem: String?
 
-    @ObservationIgnored private let store: SuggestionsStore
-    @ObservationIgnored private let instructionsStore: InstructionsStore
+    @ObservationIgnored private let request: (RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot
     @ObservationIgnored private let instructions: InstructionsModel
 
-    init(store: SuggestionsStore, instructionsStore: InstructionsStore, instructions: InstructionsModel) {
-        self.store = store
-        self.instructionsStore = instructionsStore
+    init(store: SuggestionsStore, instructions: InstructionsModel, remoteHosts: RemoteHostStore) {
+        request = { request in
+            if let host = try await remoteHosts.thisMacHost() { return try await host.suggestions(request) }
+            // The store's file work runs off the main actor.
+            return try await Task.detached(priority: .userInitiated) { try Self.perform(request, on: store) }.value
+        }
         self.instructions = instructions
+    }
+
+    /// `request` on this Mac's own store, as a host serves it.
+    nonisolated private static func perform(_ request: RemoteSuggestionsRequest, on store: SuggestionsStore) throws -> SuggestionsSnapshot {
+        switch request {
+        case .fetch: store.snapshot()
+        case .configure(let settings): try store.configure(settings)
+        case .add(let id, let line, let file): try store.add(id, line: line, file: file)
+        case .addAll: try store.addAll()
+        case .dismiss(let id): try store.dismiss(id)
+        case .undo(let id): try store.undo(id)
+        }
     }
 
     var settings: SuggestedInstructionsSettings { snapshot.settings }
 
     /// Reads the suggestions afresh (the page opening).
     func refresh() async {
-        if let snapshot = try? await detached({ $0.snapshot() }) { adopt(snapshot) }
+        if let snapshot = try? await request(.fetch) { adopt(snapshot) }
     }
 
     /// An agent suggested a line, or a remote client acted on the suggestions.
@@ -93,8 +107,7 @@ final class SuggestionsModel {
             return
         }
         await run {
-            let snapshot = try await self.detached { try $0.add(suggestion.id, line: line, file: file) }
-            self.adopt(snapshot)
+            self.adopt(try await self.request(.add(id: suggestion.id, line: line, file: file)))
             await self.instructionsChanged()
         }
     }
@@ -107,12 +120,7 @@ final class SuggestionsModel {
             return
         }
         await run {
-            let snapshot = try await self.detached { store in
-                var snapshot = store.snapshot()
-                for (id, line, file) in waiting { snapshot = try store.add(id, line: line, file: file) }
-                return snapshot
-            }
-            self.adopt(snapshot)
+            for (id, line, file) in waiting { self.adopt(try await self.request(.add(id: id, line: line, file: file))) }
             await self.instructionsChanged()
         }
     }
@@ -120,16 +128,14 @@ final class SuggestionsModel {
     /// Drops a waiting line; the same lesson is never suggested again.
     func dismiss(_ suggestion: InstructionSuggestion) async {
         await run {
-            let snapshot = try await self.detached { try $0.dismiss(suggestion.id) }
-            self.adopt(snapshot)
+            self.adopt(try await self.request(.dismiss(id: suggestion.id)))
         }
     }
 
     /// Takes an added line back out of its file.
     func undo(_ added: AddedSuggestion) async {
         await run {
-            let snapshot = try await self.detached { try $0.undo(added.id) }
-            self.adopt(snapshot)
+            self.adopt(try await self.request(.undo(id: added.id)))
             await self.instructionsChanged()
         }
     }
@@ -142,8 +148,7 @@ final class SuggestionsModel {
 
     private func configure(_ settings: SuggestedInstructionsSettings) async {
         await run {
-            let snapshot = try await self.detached { try $0.configure(settings) }
-            self.adopt(snapshot)
+            self.adopt(try await self.request(.configure(settings)))
         }
     }
 
@@ -158,9 +163,7 @@ final class SuggestionsModel {
     /// This Mac's files changed: the Instructions page follows, and with Same on every host on
     /// so does every host.
     private func instructionsChanged() async {
-        let store = instructionsStore
-        let snapshot = await Task.detached(priority: .userInitiated) { store.snapshot() }.value
-        instructions.localChanged(snapshot)
+        await instructions.localFilesChanged()
     }
 
     private func run(_ body: @escaping () async throws -> Void) async {
@@ -176,11 +179,5 @@ final class SuggestionsModel {
         } catch {
             problem = error.localizedDescription
         }
-    }
-
-    /// The store's file work runs off the main actor.
-    private func detached<T: Sendable>(_ work: @escaping @Sendable (SuggestionsStore) throws -> T) async throws -> T {
-        let store = store
-        return try await Task.detached(priority: .userInitiated) { try work(store) }.value
     }
 }

@@ -15,17 +15,18 @@ import Testing
 @MainActor
 struct LocalClientTests {
     /// The app, as `ShepherdApp` makes it when the host answers, connected to `socket`.
-    static func app(socket: String, token: String, host: ScratchServer) async throws
+    /// `settings`, else its own; `hooks`, else a scratch home's.
+    static func app(socket: String, token: String, host: ScratchServer, settings: AppSettings? = nil, hooks: HooksModel? = nil) async throws
         -> (ShepherdViewModel, RemoteHostStore, SessionServer, RemoteHostStore.Connection, URL, ScratchDefaults) {
         let clientDir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
         let idle = BackgroundHostClient.idleServer(directory: clientDir)
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
         let vm = ShepherdViewModel(
-            server: idle, ownsWorkspace: false, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+            server: idle, ownsWorkspace: false, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
-            hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
+            hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         let connection = vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace", timeout: .seconds(30)) {
@@ -121,6 +122,32 @@ struct LocalClientTests {
         // Nothing handed to the app is left behind.
         let relays = host.server.supportDirectory.appendingPathComponent("design-relay")
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: relays.path)) ?? []).isEmpty)
+    }
+
+    /// A host thread's finished tools fill its sidebar sparkline, and the host's account rotation
+    /// notice shows in the thread, as in process (A19, A4).
+    @Test func theHostsToolCallsAndNoticesReachTheApp() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        let id = AgentID(rawValue: "acme-thread")
+        for _ in 0..<2 {
+            host.server.queue.async { host.server.sendToLocalApps(.toolFinished(agentID: id, tool: "edit")) }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await eventuallyOnMain("the sparkline to take the host's tool calls") { !vm.sidebarActivityBox(id).samples.isEmpty }
+
+        let line = "Switched Acme to work: personal hit its limit."
+        host.server.noticeToLocalApps(agentID: id, message: line)
+        try await eventuallyOnMain("the thread to say the host's notice") { vm.threadStores.existing(for: id)?.notice == line }
     }
 
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
