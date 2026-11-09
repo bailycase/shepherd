@@ -219,7 +219,7 @@ struct ThreadPerformanceTests {
         print("thread-work history=\(count) paged=\(paged) updates=200 messages=\(store.projectedMessages - visits) rows=\(store.projectedRows - rows) comparisons=\(store.historyComparisons - comparisons)")
     }
 
-    @Test func mountedCostSumsTheEagerRowsWithoutWalkingTheHistory() async {
+    @Test func mountedCostSumsTheEagerRowsAndReadsNoMore() async {
         let history = (0..<100).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 1 + $0 % 3), id: "a\($0)")] }
         let host = FakeHost(F.snapshot(running: true, messages: history))
         let store = manualStore()
@@ -234,8 +234,9 @@ struct ThreadPerformanceTests {
 
         let computed = store.rowCostComputations
         #expect(computed == 100, "one per reply, when its presentation was built")
-        for _ in 0..<100 { _ = store.mountedCost(eagerRows: 30) }
-        #expect(store.rowCostComputations == computed, "a read walks no history and builds no presentation")
+        let visited = (0..<100).map { _ in store.mountedCostWalk(eagerRows: 30, skipping: { _ in false }).visited }
+        #expect(visited.allSatisfy { $0 <= 31 }, "a read passes the rows it sums and no more of the 200")
+        #expect(store.rowCostComputations == computed, "and builds no presentation")
 
         host.snapshot.revision += 1
         host.snapshot.provisional = [F.assistant("chunk 1", status: "streaming", id: "live")]
@@ -251,6 +252,25 @@ struct ThreadPerformanceTests {
         store.stop()
         store.release()
         #expect(store.rows.isEmpty && store.mountedCost(eagerRows: 30) == 0, "a released thread mounts nothing")
+    }
+
+    @Test func mountedCostReachesBackPastTheRowsTheViewLeavesOut() async {
+        let history = (0..<100).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 1 + $0 % 3), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        let replies = store.rows.filter { !$0.isUser }
+        #expect(replies.count == 100)
+        let hidden: (NativeThreadRow) -> Bool = { $0.isUser }
+        let expected = replies.suffix(30).reduce(0) { $0 + NativeMountedCost.row($1) }
+        let walk = store.mountedCostWalk(eagerRows: 30, skipping: hidden)
+        #expect(walk.cost == expected, "the last 30 rows the view draws, not 15 of them and 15 it leaves out")
+        #expect(store.mountedCost(eagerRows: 30, skipping: hidden) == expected)
+        #expect(walk.visited <= 60, "it passes the hidden rows between them and no others")
+        #expect(store.mountedCost(eagerRows: 30) < expected, "unfiltered, the last 30 rows hold half the replies")
+        #expect(store.mountedCost(eagerRows: 1_000, skipping: hidden) == replies.reduce(0) { $0 + NativeMountedCost.row($1) })
+        #expect(store.mountedCost(eagerRows: 30, skipping: { _ in true }) == 0, "nothing drawn costs nothing")
     }
 
     @Test func mountedCostAddsTheNextChunkOfTheLastGiantReplyOnce() async {

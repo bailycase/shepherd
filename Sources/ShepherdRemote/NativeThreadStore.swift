@@ -1437,19 +1437,34 @@ public final class NativeThreadStore {
     public var holdsHistory: Bool { snapshot != nil || !messages.isEmpty || images.heldBytes > 0 }
 
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
-    /// `eagerRows` rows, which the thread's view lays out for real whether or not it is on screen, and for the last reply
-    /// the chunk its lazy stack builds first beyond its eager tail (a giant reply's). It sums costs kept with the rows, so
-    /// it never walks the history; read it from the owner, never from a view body.
-    public func mountedCost(eagerRows: Int) -> Int {
-        let count = min(max(0, eagerRows), rowCosts.count)
-        guard count > 0 else { return 0 }
-        var total = rowCosts.suffix(count).reduce(0, +)
-        if let last = rows.lastIndex(where: { $0.presentation != nil }), last >= rows.count - count,
-           let items = rows[last].presentation?.items,
-           case .prose(_, _, let prose)? = items.last(where: { if case .prose = $0 { true } else { false } }) {
-            total += prose.lazyEdgeCost
+    /// `eagerRows` rows the thread's view draws, which it lays out for real whether or not it is on screen, and for the
+    /// last reply the chunk its lazy stack builds first beyond its eager tail (a giant reply's). `hidden` names the rows
+    /// the view leaves out (a Project's user turns made only of the runtime's wake-ups, `ThreadView`), so the walk
+    /// reaches back as far as the view's own last `eagerRows`. It sums costs kept with the rows and reads only the rows
+    /// it passes, never the rest of the history; read it from the owner, never from a view body.
+    public func mountedCost(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
+        mountedCostWalk(eagerRows: eagerRows, skipping: hidden).cost
+    }
+
+    /// `mountedCost` and how many rows it passed to reach it (a test pins that it stays at the tail).
+    func mountedCostWalk(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool) -> (cost: Int, visited: Int) {
+        var cost = 0, drawn = 0, visited = 0
+        var index = min(rows.count, rowCosts.count)
+        var edgeTaken = false
+        while drawn < eagerRows, index > 0 {
+            index -= 1
+            visited += 1
+            let row = rows[index]
+            if hidden(row) { continue }
+            cost += rowCosts[index]
+            drawn += 1
+            guard !edgeTaken, let items = row.presentation?.items else { continue }
+            edgeTaken = true
+            if case .prose(_, _, let prose)? = items.last(where: { if case .prose = $0 { true } else { false } }) {
+                cost += prose.lazyEdgeCost
+            }
         }
-        return total
+        return (cost, visited)
     }
 
     /// `catchingUp`: the first pull since the thread came on screen, which lands what happened
