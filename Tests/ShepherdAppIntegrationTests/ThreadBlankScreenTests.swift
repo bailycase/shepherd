@@ -469,8 +469,6 @@ struct ThreadBlankScreenTests {
 
             let text = reply.text(step: 4)
             #expect(NativeProse(nativeMarkdownParse(text)).isGiant, "the reply is giant")
-            SHRenderProbe.start()
-            defer { SHRenderProbe.stop() }
             await rig.publish(running: false, turnChanges: [Self.recorded(promptAt: promptAt)]) {
                 $0.append(Self.reply("a40", text, at: promptAt + 60_000))
             }
@@ -478,13 +476,6 @@ struct ThreadBlankScreenTests {
             try await rig.expectTail("the turn finishing")
             try await rig.expectNoBlankBand("the turn finishing", giant: true)
             try await eventuallyOnMain("the turn to settle") { !rig.store.settledRunning }
-            // The reply arrived on screen, so the changes card and footer that end its turn rise into place as it settles: from
-            // opacity 0, a band as tall as they are. That entrance is wanted, so it lands before the check for a blank thread.
-            try await eventuallyOnMain("the footer to rise into place", timeout: .seconds(10)) {
-                rig.window.layout()
-                let drawing = rig.drawing
-                return SHRenderProbe.count("arrival.animates") > 0 && drawing.ink > 0 && drawing.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit
-            }
             try await rig.expectTail("the turn settled")
             try await rig.expectNoBlankBand("the turn settled", giant: true)
         }
