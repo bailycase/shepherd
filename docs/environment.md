@@ -11,7 +11,9 @@
 - **`SHEPHERD_BACKGROUND_HOST=1`** makes the app a client of the background host
   (`Shepherd --host`) when its `<support>/host.sock` answers: the host owns the workspace and the
   app shows its threads and terminals as a host's. With no answer the app owns the workspace as
-  before. Shepherd Nightly needs no variable: it registers the host with launchd at launch
+  before. With **`SHEPHERD_THIS_MAC_LOCAL=1`** too (a migration gate), the host's workspace is the
+  app's own: its threads are This Mac's local threads, and This Mac is no host in the UI.
+  Shepherd Nightly needs no variable: it registers the host with launchd at launch
   (`BackgroundService`) and is its client while Login Items allows it. Any other build, or any
   launch with `SHEPHERD_SUPPORT_DIR` set, never registers; unset there, the app never looks for
   the host.

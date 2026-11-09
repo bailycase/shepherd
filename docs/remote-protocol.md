@@ -23,7 +23,13 @@
   which an app with a higher build number sends once connected (`BackgroundHostClient.asksToDrain`):
   it keeps serving and exits once no agent is working, blocked or starting, or after two hours
   (`HostDrain`). It drains on its own when its bundle's `CFBundleVersion` on disk changes or the
-  bundle is gone (`BundleVersionWatch`). With no app, the host
+  bundle is gone (`BundleVersionWatch`). Local clients alone may send `spaceAction` (rename,
+  base, hide, reorder or remove a space) and `startThread` (a thread with a fork's session, an
+  existing checkout, its own folder, a name or an id); TCP clients are refused. An app that lists
+  `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
+  banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
+  worktree's loss by the in-process rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
+  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves
