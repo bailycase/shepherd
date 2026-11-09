@@ -76,7 +76,8 @@ import Foundation
 /// chunks at 117 each, against 103 in the 100 KB replies), so `eagerCost` prices the right chunks and too little for them:
 /// the footprint is 156 and 139 MiB over the estimate, close to the same for two fixtures whose estimates differ by 30.
 /// A one-time cost of the first thread (above) may be most of it; it was not isolated, since a second thread of such replies
-/// loaded 2 of 8 rows in 90 s and its delta (-44, +52 and -42 MiB) is noise. `lazyEdgeCost`: scrolling 8,000 points up from the
+/// loaded 2 of 8 rows in 90 s and its delta (-44, +52 and -42 MiB) is noise. (One run in three fell 70 MiB within a minute
+/// of its reading, unexplained.) `lazyEdgeCost`: scrolling 8,000 points up from the
 /// end of the thread realized one more chunk of the last reply (+105 NSViews) and added 3 to 5 MiB, against the 9.1 it prices.
 ///
 /// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
