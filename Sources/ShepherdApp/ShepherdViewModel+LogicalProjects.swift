@@ -64,7 +64,7 @@ extension ShepherdViewModel {
     private func pushedLogicalProjects(_ home: LogicalProjectHome) -> [Project] {
         switch home {
         case .local: return state.projects
-        case .host(let id): return remoteHosts.connections.first { $0.id == id }?.state.projects ?? []
+        case .host(let id): return remoteHosts.allConnections.first { $0.id == id }?.state.projects ?? []
         }
     }
 
@@ -128,7 +128,7 @@ extension ShepherdViewModel {
     var allLogicalProjects: [(home: LogicalProjectHome, hostName: String?, project: Project)] {
         guard projectsEnabled else { return [] }
         var rows = state.projects.map { (home: LogicalProjectHome.local, hostName: String?.none, project: $0) }
-        for connection in remoteHosts.connections where connection.phase == .connected && connection.supportsLogicalProjects {
+        for connection in remoteHosts.allConnections where connection.phase == .connected && connection.supportsLogicalProjects {
             rows += connection.state.projects.map { (home: LogicalProjectHome.host(connection.id), hostName: connection.config.name, project: $0) }
         }
         return rows
@@ -179,7 +179,7 @@ extension ShepherdViewModel {
     func projectCarriesImages(_ home: LogicalProjectHome) -> Bool {
         switch home {
         case .local: true
-        case .host(let id): remoteHosts.connections.first { $0.id == id }?.supportsProjectMessageImages == true
+        case .host(let id): remoteHosts.allConnections.first { $0.id == id }?.supportsProjectMessageImages == true
         }
     }
 
@@ -188,7 +188,7 @@ extension ShepherdViewModel {
     func projectKeepsConversationThinking(_ home: LogicalProjectHome) -> Bool {
         switch home {
         case .local: true
-        case .host(let id): remoteHosts.connections.first { $0.id == id }?.supportsProjectConversationThinking == true
+        case .host(let id): remoteHosts.allConnections.first { $0.id == id }?.supportsProjectConversationThinking == true
         }
     }
 
@@ -216,7 +216,7 @@ extension ShepherdViewModel {
             }
             selectAgent(task.workerAgentID); return
         case (.local, .remote(let hostID, let bindingID)):
-            guard remoteHosts.connections.contains(where: { $0.id == hostID && $0.config.bindingID == bindingID }) else {
+            guard remoteHosts.allConnections.contains(where: { $0.id == hostID && $0.config.bindingID == bindingID }) else {
                 remoteActionError = "The thread's host is no longer set up as it was when the work was assigned."; return
             }
             route = RemoteAgentRef(hostID: hostID, agentID: task.workerAgentID)
@@ -226,7 +226,7 @@ extension ShepherdViewModel {
             remoteActionError = "This thread runs on a Mac that \(ownerName(of: .host(owner))) reaches. Read it here, or open it on that Mac."
             return
         }
-        guard remoteHosts.connections.first(where: { $0.id == route.hostID })?.phase == .connected, remoteAgent(route) != nil else {
+        guard remoteHosts.allConnections.first(where: { $0.id == route.hostID })?.phase == .connected, remoteAgent(route) != nil else {
             remoteActionError = "The thread's host is not connected, or no longer has this thread."; return
         }
         selectRemoteAgent(hostID: route.hostID, agentID: route.agentID)
@@ -353,14 +353,14 @@ extension ShepherdViewModel {
     func ownerSpaces(of home: LogicalProjectHome) -> [Space] {
         switch home {
         case .local: state.spaces
-        case .host(let id): remoteHosts.connections.first { $0.id == id }?.state.spaces ?? []
+        case .host(let id): remoteHosts.allConnections.first { $0.id == id }?.state.spaces ?? []
         }
     }
 
     func ownerName(of home: LogicalProjectHome) -> String {
         switch home {
         case .local: "This Mac"
-        case .host(let id): remoteHosts.connections.first { $0.id == id }?.config.name ?? "this host"
+        case .host(let id): remoteHosts.allConnections.first { $0.id == id }?.config.name ?? "this host"
         }
     }
 

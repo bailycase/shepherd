@@ -156,8 +156,8 @@ final class BrowserSessions {
         let remote = BrowserRemote(ref: ref, hosts: hosts, ports: ports, policy: viewerPolicy,
                                    claimant: BrowserDriveClaimant(grace: driveGrace))
         // The background host on this Mac shares its loopback: its ports load as they are.
-        if hosts?.connections.first(where: { $0.id == ref.hostID })?.isThisMac == true { remote.forwardsPorts = false }
-        let identifier = remoteStoreIDs[ref] ?? hosts?.connections.first { $0.id == ref.hostID }.flatMap { connection in
+        if hosts?.allConnections.first(where: { $0.id == ref.hostID })?.isThisMac == true { remote.forwardsPorts = false }
+        let identifier = remoteStoreIDs[ref] ?? hosts?.allConnections.first { $0.id == ref.hostID }.flatMap { connection in
             connection.state.agents.first { $0.id == ref.agentID }.map {
                 BrowserDataStores.identifier(for: $0, in: connection.state, hostID: ref.hostID)
             }
@@ -182,7 +182,7 @@ final class BrowserSessions {
     func prune(liveRemote: Set<RemoteAgentRef>, hosts: RemoteHostStore) {
         var identifiers: [RemoteAgentRef: UUID] = [:]
         var projects: Set<UUID> = []
-        for connection in hosts.connections {
+        for connection in hosts.allConnections {
             projects.formUnion(connection.state.spaces.filter { !$0.hidden }.map {
                 BrowserDataStores.identifier(forProject: $0.id, hostID: connection.id)
             })

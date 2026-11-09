@@ -109,7 +109,7 @@ extension ShepherdViewModel {
         if row.host.id == "local" { spaces = state.spaces; hostID = nil }
         else {
             guard let id = UUID(uuidString: row.host.id),
-                  let connection = remoteHosts.connections.first(where: { $0.id == id && $0.endpointID == row.host.endpointID }) else { return nil }
+                  let connection = remoteHosts.allConnections.first(where: { $0.id == id && $0.endpointID == row.host.endpointID }) else { return nil }
             spaces = connection.state.spaces; hostID = id
         }
         guard let space = spaces.first(where: { space in
@@ -121,7 +121,7 @@ extension ShepherdViewModel {
     private func cookieScopeExists(_ scope: ProjectCookieScope) -> Bool {
         let spaces: [Space]
         if let hostID = scope.hostID {
-            guard let host = remoteHosts.connections.first(where: { $0.id == hostID && $0.endpointID == scope.endpointID }) else { return false }
+            guard let host = remoteHosts.allConnections.first(where: { $0.id == hostID && $0.endpointID == scope.endpointID }) else { return false }
             spaces = host.state.spaces
         } else { spaces = state.spaces }
         return spaces.contains { $0.id == scope.projectID && !$0.hidden && !$0.holdsDesigns }

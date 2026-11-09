@@ -64,7 +64,9 @@ extension ShepherdViewModel {
         let swatches = Dictionary(systems.map { ($0.namespace, designSystemSwatches($0.namespace, count: 4)) },
                                   uniquingKeysWith: { first, _ in first })
         let building = Set(systems.map(\.namespace).filter(systemIsBuilding))
-        let inputs = DesignsPageInputs(designs: state.designs, spaces: state.spaces, firstBoards: firstBoards,
+        // The background host's designs are its section's (`mirrored`): its spaces build systems there,
+        // never on the idle in-process server.
+        let inputs = DesignsPageInputs(designs: state.designs, spaces: localHost == nil ? state.spaces : [], firstBoards: firstBoards,
                                        filter: designsPageFilter, selection: designsPageSelection, systems: systems,
                                        swatches: swatches, hosts: remoteDesignSections, importing: designImporting, building: building,
                                        comments: designCommentCounts, minute: Int(now.timeIntervalSince1970 / 60))
@@ -210,7 +212,7 @@ extension ShepherdViewModel {
 
     /// The connected hosts New design can make a design on: those serving designs.
     var newDesignHosts: [RemoteHostStore.Connection] {
-        remoteHosts.connections.filter { $0.phase == .connected && $0.supportsDesigns }
+        remoteHosts.allConnections.filter { $0.phase == .connected && $0.supportsDesigns }
     }
 
     func newDesignHost(_ id: UUID) -> RemoteHostStore.Connection? {

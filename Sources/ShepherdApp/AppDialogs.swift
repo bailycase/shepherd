@@ -216,7 +216,7 @@ struct AppDialogs: ViewModifier {
                 cancel: { vm.spacePickerTarget = nil }
             )
         case .host(let hostID):
-            if let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID }) {
+            if let connection = vm.remoteHosts.allConnections.first(where: { $0.id == hostID }) {
                 RemoteDirectoryPicker(
                     hostName: connection.config.name,
                     list: { path in try await vm.remoteHosts.listDir(hostID: hostID, path: path) },

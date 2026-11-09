@@ -18,7 +18,7 @@ extension ShepherdViewModel {
         if let store = reviewCommitStores[session.id] { return store }
         let query: (RemoteAgentQuery) async throws -> RemoteAgentResult
         if let target = remoteReviews.first(where: { $0.value === session })?.key {
-            guard remoteHosts.connections.first(where: { $0.id == target.hostID })?.supportsReviewCommit == true else { return nil }
+            guard remoteHosts.allConnections.first(where: { $0.id == target.hostID })?.supportsReviewCommit == true else { return nil }
             query = { [weak self] query in
                 guard let self else { throw ReviewCommitRefusal("Shepherd is closing.") }
                 return try await self.remoteHosts.agentQuery(target, query: query)
@@ -39,7 +39,7 @@ extension ShepherdViewModel {
     /// Whether the review can commit directly (a local review, or a host that takes it).
     func reviewCanCommit(_ session: ReviewSession) -> Bool {
         guard let target = remoteReviews.first(where: { $0.value === session })?.key else { return true }
-        return remoteHosts.connections.first(where: { $0.id == target.hostID })?.supportsReviewCommit == true
+        return remoteHosts.allConnections.first(where: { $0.id == target.hostID })?.supportsReviewCommit == true
     }
 
     /// Once a commit sheet closes on a finished commit, the review shows what is left.

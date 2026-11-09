@@ -39,7 +39,7 @@ extension ShepherdViewModel {
     func prepareDesignReference(_ reference: DesignReference) async throws -> PreparedDesignReference {
         if case .remote(let hostID) = reference.host {
             // A connected host's design: pinned by that host, from its own design.
-            guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
+            guard let connection = remoteHosts.allConnections.first(where: { $0.id == hostID }),
                   connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability),
                   let named = reference.onHost(hostID) else {
                 throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal)
@@ -136,7 +136,7 @@ extension ShepherdViewModel {
         guard references.count <= DesignReferenceRecord.maxPerMessage else {
             throw DesignReferenceFailure("A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
         }
-        guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
               connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) else {
             throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal)
         }

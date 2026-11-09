@@ -80,17 +80,23 @@ extension ShepherdViewModel {
         guard notifications.available else { return }
         var live = Set<RemoteAgentRef>()
         var hosts = Set<UUID>()
-        for connection in remoteHosts.connections {
+        // The background host's threads the app shows as its own post as in process; the rest of
+        // its threads (automation runs, Projects' workers) post here, as a host's.
+        let own = localHost.map { host in (host.id, Set(state.agents.map(\.id))) }
+        for connection in remoteHosts.allConnections {
             hosts.insert(connection.id)
+            let mirrored = own.flatMap { $0.0 == connection.id ? $0.1 : nil }
             let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen)
             let offline = BannerTarget.host(connection.id)
-            if away, notifications.offlineHosts.insert(connection.id).inserted, !isWatching(offline) {
+            if mirrored != nil {
+                // Transport only: losing it is `onLocalHostLost`'s, never a host-offline banner.
+            } else if away, notifications.offlineHosts.insert(connection.id).inserted, !isWatching(offline) {
                 notifications.post(AgentBanners.hostOffline(name: connection.config.name, hostID: connection.id))
             } else if !away, notifications.offlineHosts.remove(connection.id) != nil {
                 notifications.remove([AgentBanners.identifier("offline", offline)])
             }
             guard connection.phase == .connected else { continue }
-            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) {
+            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) && mirrored?.contains(agent.id) != true {
                 let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
                 let target = BannerTarget.remote(ref)
                 live.insert(ref)
@@ -107,7 +113,7 @@ extension ShepherdViewModel {
         }
         // Agents a connected host no longer has, and every agent of a removed host. A host away
         // keeps its questions, so one still asked when it is back does not post again.
-        let connected = Set(remoteHosts.connections.filter { $0.phase == .connected }.map(\.id))
+        let connected = Set(remoteHosts.allConnections.filter { $0.phase == .connected }.map(\.id))
         let gone = notifications.remoteAsks.prune { ref in
             !hosts.contains(ref.hostID) || (connected.contains(ref.hostID) && !live.contains(ref))
         }
@@ -150,7 +156,7 @@ extension ShepherdViewModel {
         case .agent(let id):
             if state.agents.contains(where: { $0.id == id }) { selectAgent(id) }
         case .remote(let ref):
-            if remoteHosts.connections.first(where: { $0.id == ref.hostID })?.state.agents.contains(where: { $0.id == ref.agentID }) == true {
+            if remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.state.agents.contains(where: { $0.id == ref.agentID }) == true {
                 selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID)
             }
         case .host:

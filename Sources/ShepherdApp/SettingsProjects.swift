@@ -41,7 +41,7 @@ struct ProjectsSettings: View {
         .sheet(item: $adding) { adding in
             AddSpaceSheet(model: adding, list: { host, path in
                 if host.id == "local" { return try await LocalDirectoryLister.load(path: path) }
-                guard vm.remoteHosts.connections.first(where: { $0.id.uuidString == host.id })?.endpointID == host.endpointID else {
+                guard vm.remoteHosts.allConnections.first(where: { $0.id.uuidString == host.id })?.endpointID == host.endpointID else {
                     throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")
                 }
                 return try await vm.remoteHosts.listDir(hostID: UUID(uuidString: host.id)!, path: path)

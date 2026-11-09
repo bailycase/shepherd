@@ -10,11 +10,31 @@ import ShepherdSessions
 /// connection, under the same view-model methods (`localRef`). The connection is transport only:
 /// no host list, picker or page shows it (`RemoteHostStore.hidesLocalHost`).
 extension ShepherdViewModel {
-    /// Whether this launch takes the host's workspace as its own: `SHEPHERD_THIS_MAC_LOCAL=1`
-    /// while the local paths learn to reach the host.
+    /// Whether this launch takes the host's workspace as its own: yes, unless
+    /// `SHEPHERD_THIS_MAC_LOCAL=0` (the switch back to This Mac as a host, while it lasts).
     /// ponytail: a migration gate; it goes when every local path routes to the host.
     static var routesThisMacLocally: Bool {
-        ProcessInfo.processInfo.environment["SHEPHERD_THIS_MAC_LOCAL"] == "1"
+        ProcessInfo.processInfo.environment["SHEPHERD_THIS_MAC_LOCAL"] != "0"
+    }
+
+    /// The host's workspace less what designs, automations, Projects and missions own: their pages
+    /// still reach those through the host's connection (`allConnections`), so the app's local views,
+    /// whose actions would go to the idle in-process server, never see them.
+    /// ponytail: a fallback until those features route through `localHost` too.
+    nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState {
+        let watchers = Set(state.automations.compactMap(\.agentID))
+        let owned = state.projectWorkerIDs.union(state.missionAgentIDs)
+        var copy = state.withoutDesigns.withoutProjectCoordinators
+        let gone = Set(copy.agents.filter { watchers.contains($0.id) || owned.contains($0.id) || $0.automationOrigin != nil }.map(\.id))
+        let tabs = Set(copy.agents.filter { gone.contains($0.id) }.map(\.tabID))
+        copy.agents.removeAll { gone.contains($0.id) }
+        copy.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(gone.contains) == true }
+        copy.spaces.removeAll(where: \.holdsDesigns)
+        copy.automations = []
+        copy.projects = []
+        copy.projectExecutions = []
+        copy.missions = []
+        return copy
     }
 
     /// The background host on this Mac, while its workspace is the app's own; nil in process.
@@ -27,15 +47,24 @@ extension ShepherdViewModel {
         localHost.map { RemoteAgentRef(hostID: $0.id, agentID: id) }
     }
 
-    /// The workspace's owner's copy: the host's, as a client, else the in-process server's.
-    var ownerState: ShepherdState { localHost?.state ?? server.state }
+    /// The workspace's owner's copy: the host's as the app mirrors it, as a client, else the
+    /// in-process server's.
+    var ownerState: ShepherdState { localHost.map { Self.mirrored($0.state) } ?? server.state }
 
-    /// Takes the background host's workspace as the app's own (`ShepherdApp`, before the host is
-    /// added). Its threads' revision hints go to the host as the in-process server's would.
+    /// Connects the background host on this Mac (`ShepherdApp`), its workspace taken as the app's
+    /// own unless `SHEPHERD_THIS_MAC_LOCAL=0`.
+    @discardableResult
+    func connectLocalHost(socket: String, token: String) -> RemoteHostStore.Connection {
+        if Self.routesThisMacLocally { adoptLocalHost() }
+        return remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+    }
+
+    /// Takes the background host's workspace as the app's own (`connectLocalHost`, before the host
+    /// is added). Its threads' revision hints go to the host as the in-process server's would.
     func adoptLocalHost() {
         remoteHosts.hidesLocalHost = true
         sessions.startsSessions = false
-        remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(state) }
+        remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(Self.mirrored(state)) }
         // As the in-process session's notify (`sessions.onNotify`): a click opens the thread here.
         remoteHosts.onLocalAgentNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }

@@ -230,7 +230,7 @@ extension ShepherdViewModel {
     private var newThreadPlaceName: String? {
         guard let place = newThread.place else { return nil }
         if let host = place.host {
-            return remoteHosts.connections.first { $0.id == host }?.state.spaces.first { $0.id == place.space }?.name
+            return remoteHosts.allConnections.first { $0.id == host }?.state.spaces.first { $0.id == place.space }?.name
         }
         return state.spaces.first { $0.id == place.space }?.name
     }
@@ -342,7 +342,7 @@ extension ShepherdViewModel {
         case .remoteAgent(let hostID, let agentID):
             selectRemoteAgent(hostID: hostID, agentID: agentID)
         case .remoteChild(let hostID, let agentID, _):
-            let children = remoteHosts.connections.first(where: { $0.id == hostID })?.children[agentID] ?? []
+            let children = remoteHosts.allConnections.first(where: { $0.id == hostID })?.children[agentID] ?? []
             guard let current = item.currentChild(in: children) else { return }
             openRemoteChild(RemoteAgentRef(hostID: hostID, agentID: agentID), child: current)
         case .remoteOperation(let hostID, let agentID):

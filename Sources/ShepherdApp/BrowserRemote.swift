@@ -47,7 +47,7 @@ final class BrowserRemote {
         self.claimant = claimant
     }
 
-    private var connection: RemoteHostStore.Connection? { hosts?.connections.first { $0.id == ref.hostID } }
+    private var connection: RemoteHostStore.Connection? { hosts?.allConnections.first { $0.id == ref.hostID } }
 
     /// The host's name as Settings has it now: the address field's chip, "Start on build-01".
     var hostName: String { connection?.config.name ?? "the host" }

@@ -32,7 +32,7 @@ extension ShepherdViewModel {
     var unreconciledTerminalTarget: TerminalTarget? {
         if let remote = selectedRemoteAgent {
             guard remoteInspectingAgent != remote,
-                  let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+                  let connection = remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                   let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
                   let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
             return TerminalTarget(key: TerminalPanelKey(host: remote.hostID, tab: tab.id), layout: tab.layout,

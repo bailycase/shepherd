@@ -58,7 +58,7 @@ extension ShepherdViewModel {
                 ? designScreens[id].map { $0.referenceSelection(designName: design(id)?.name ?? "").piece } : nil
             return DesignMenu.design(context, hasSystem: design(id)?.systemNamespace != nil, reference: reference)
         case .remote(let ref):
-            let connection = remoteHosts.connections.first { $0.id == ref.hostID }
+            let connection = remoteHosts.allConnections.first { $0.id == ref.hostID }
             // References to the host's design go to the host's threads, where it takes them.
             let references = context == .toolbar && connection?.supportsDesignCapability(RemoteProtocol.designReferencesCapability) == true
             let name = connection?.state.designs.first { $0.id == ref.designID }?.name ?? ""
@@ -85,7 +85,7 @@ extension ShepherdViewModel {
         case (.removeFromRecents, .local(let id)): removeDesignFromRecents(id)
         case (.delete, _): requestDesignDelete(target)
         case (.implement, .remote(let ref)), (.copyReference, .remote(let ref)):
-            let name = remoteHosts.connections.first { $0.id == ref.hostID }?.state.designs.first { $0.id == ref.designID }?.name ?? ""
+            let name = remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.designs.first { $0.id == ref.designID }?.name ?? ""
             if action == .implement { remoteDesignScreen(ref)?.implementSelection(designName: name) }
             else { remoteDesignScreen(ref)?.copySelectionReference(designName: name) }
         case (.implement, .local(let id)):
@@ -110,7 +110,7 @@ extension ShepherdViewModel {
         case .remote(let ref):
             return remoteDesignSystemMenu(ref)
         case .remoteBuild(let ref):
-            let connection = remoteHosts.connections.first { $0.id == ref.hostID }
+            let connection = remoteHosts.allConnections.first { $0.id == ref.hostID }
             guard let connection, connection.supportsDesignCapability(RemoteProtocol.designSystemsCapability) else {
                 return DesignMenu(sections: [[DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")]])
             }
@@ -160,7 +160,7 @@ extension ShepherdViewModel {
             guard let design = design(id) else { return }
             designRename = DesignRenameRequest(subject: .design(target), name: design.name)
         case .remote(let ref):
-            guard let design = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.state.designs.first(where: { $0.id == ref.designID })
+            guard let design = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.state.designs.first(where: { $0.id == ref.designID })
             else { return }
             designRename = DesignRenameRequest(subject: .design(target), name: design.name)
         }
@@ -179,7 +179,7 @@ extension ShepherdViewModel {
                     try await server.renameDesign(id, to: trimmed)
                     adopt(server.state)
                 case .design(.remote(let ref)):
-                    guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else { return }
+                    guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else { return }
                     _ = try await Self.remoteDesign(library, .updateIndex(designID: ref.designID, patch: .object(["title": .string(trimmed)]),
                                                                           baseRevision: nil))
                 case .system(let namespace):
@@ -221,7 +221,7 @@ extension ShepherdViewModel {
 
     /// Duplicate of a host's design: the host's own, its copy listed with the host's designs.
     func duplicateRemoteDesign(_ ref: RemoteDesignRef) {
-        guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else { return }
+        guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else { return }
         Task {
             do {
                 _ = try await Self.remoteDesign(library, .duplicate(designID: ref.designID))
@@ -234,7 +234,7 @@ extension ShepherdViewModel {
 
     /// Remove from Recents of a host's design, on its host: its row leaves Recents there and here.
     func removeRemoteDesignFromRecents(_ ref: RemoteDesignRef) {
-        guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else { return }
+        guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else { return }
         Task {
             do {
                 _ = try await Self.remoteDesign(library, .removeFromRecents(designID: ref.designID))
@@ -264,7 +264,7 @@ extension ShepherdViewModel {
                                               agentWorking: working, drawing: drawing)
                 presentDesignDelete(DesignDeleteRequest(target: target, name: design.name, words: words))
             case .remote(let ref):
-                guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+                guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
                       let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
                 let summary = connection.designs.listing?.designs.first { $0.id == ref.designID }
                 let agent = connection.state.agents.first { $0.id == design.agentID }
@@ -308,7 +308,7 @@ extension ShepherdViewModel {
                 sessions.stateDidChange(server.state)
                 adopt(server.state)
             case .remote(let ref):
-                guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else {
+                guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else {
                     throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
                 }
                 guard case .deleted(let answer) = try await Self.remoteDesign(library, .delete(designID: ref.designID)) else {
@@ -326,7 +326,7 @@ extension ShepherdViewModel {
                 reason = "\(Self.words(error)). It’s back where it was."
                 host = nil
             case .remote(let ref):
-                let hostName = remoteHosts.connections.first { $0.id == ref.hostID }?.config.name ?? "Its host"
+                let hostName = remoteHosts.allConnections.first { $0.id == ref.hostID }?.config.name ?? "Its host"
                 reason = DesignToast.remoteReason(host: hostName, error: error)
                 host = ref.hostID
             }
@@ -368,7 +368,7 @@ extension ShepherdViewModel {
             Task {
                 do {
                     if let host {
-                        guard let library = remoteHosts.connections.first(where: { $0.id == host })?.designs else {
+                        guard let library = remoteHosts.allConnections.first(where: { $0.id == host })?.designs else {
                             throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
                         }
                         _ = try await Self.remoteDesign(library, .undoDelete(designID: deletion.designID))
@@ -421,13 +421,13 @@ extension ShepherdViewModel {
                                           building: systemIsBuilding(namespace))
             presentDesignSystemDelete(DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words))
         case .remoteBuild(let ref):
-            guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+            guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
                   let build = connection.state.designs.first(where: { $0.id == ref.designID && $0.buildsSystem }) else { return }
             let repo = build.sourceSpaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
             presentDesignSystemDelete(DesignSystemDeleteRequest(
                 target: target, name: build.name, words: DeleteSystemWords(name: build.name, components: 0, usedBy: [], repo: repo, building: true)))
         case .remote(let ref):
-            guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+            guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
                   let summary = connection.designs.listing?.systems.first(where: { $0.namespace == ref.namespace }), !summary.builtIn else { return }
             let usedBy = connection.state.designs.filter { !$0.buildsSystem && $0.systemNamespace == ref.namespace }.map(\.name)
             let repo = summary.info.spaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
@@ -452,7 +452,7 @@ extension ShepherdViewModel {
         case .build(let id): shownDesign?.id == id
         case .remote(let ref): shownDestination == .designSystem && shownRemoteSystem == ref
         case .remoteBuild(let ref): selectedRemoteAgent.flatMap { selected in
-            remoteHosts.connections.first { $0.id == ref.hostID }?.state.agents.first { $0.id == selected.agentID }?.designID
+            remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.agents.first { $0.id == selected.agentID }?.designID
         } == ref.designID
         }
         if shown { openDestination(.designs) }
@@ -464,7 +464,7 @@ extension ShepherdViewModel {
                 try await changeRemoteSystem(ref, .deleteSystem(namespace: ref.namespace))
                 return
             case .remoteBuild(let ref):
-                guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else {
+                guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else {
                     throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
                 }
                 _ = try await Self.remoteDesign(library, .deleteSystemBuild(designID: ref.designID))
