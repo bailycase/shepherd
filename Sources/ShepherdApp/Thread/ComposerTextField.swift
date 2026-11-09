@@ -277,9 +277,11 @@ struct ComposerTextField: NSViewRepresentable {
         /// The field's words changed. Its size is asked again only when their height is not the one it last answered:
         /// a keystroke that keeps the height changes nothing SwiftUI laid out.
         func edited() {
-            // The width SwiftUI proposed: the frame is wider than the alignment rect the field is placed by.
-            let width = alignmentRect(forFrame: frame).width
-            if currentEditor() != nil, width > 0, answers[width] == fittingHeight(width: width) { return }
+            // The width SwiftUI proposed: the frame is wider than the alignment rect the field is placed by, and the
+            // rect is on whole points where the proposal need not be.
+            let placed = alignmentRect(forFrame: frame).width
+            if currentEditor() != nil, placed > 0, let answer = answers.nearest(to: placed, within: 1),
+               answer.height == fittingHeight(width: answer.width) { return }
             invalidateSize()
         }
 
@@ -392,6 +394,12 @@ struct ComposerTextField: NSViewRepresentable {
     /// A height for each of the last few widths a field was asked at.
     struct Heights {
         private var entries: [(width: CGFloat, height: CGFloat)] = []
+        /// The answer for the width nearest `width`, if one is within `tolerance` of it.
+        func nearest(to width: CGFloat, within tolerance: CGFloat) -> (width: CGFloat, height: CGFloat)? {
+            guard let best = entries.min(by: { abs($0.width - width) < abs($1.width - width) }),
+                  abs(best.width - width) < tolerance else { return nil }
+            return best
+        }
         subscript(width: CGFloat) -> CGFloat? {
             get { entries.first { $0.width == width }?.height }
             set {

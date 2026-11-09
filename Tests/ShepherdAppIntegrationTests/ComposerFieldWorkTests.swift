@@ -96,6 +96,33 @@ struct ComposerFieldWorkTests {
         #expect(broken["layout.composerFieldInvalidated", default: 0] == 1, "a new line is a new height: \(broken)")
     }
 
+    /// SwiftUI places the field on whole points, so the width it placed is not always the width it proposed.
+    @Test(arguments: [400.0, 400.5, 400.25, 333.33, 517.7])
+    func aSameHeightKeystrokeInvalidatesNoSizeAtAFractionalWidth(width: CGFloat) async throws {
+        final class Draft { var text = "" }
+        let draft = Draft()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 300))
+        defer { window.close() }
+        window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { draft.text = $0 }), placeholder: "Message",
+                                      label: "Message", focus: .constant(true), attach: { _ in })
+            .frame(width: width))
+        try await eventuallyOnMain("the native composer editor to focus") { window.window.firstResponder is ComposerTextField.Editor }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        func type(_ text: String) {
+            editor.insertText(text, replacementRange: NSRange(location: (editor.string as NSString).length, length: 0))
+            window.layout()
+        }
+        type("A line of the draft")
+        window.layout()
+
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        for letter in "hello" { type(String(letter)) }
+        let counts = SHRenderProbe.stop()
+        #expect(counts["layout.composerFieldInvalidated", default: 0] == 0, "five letters on one line at \(width) pt invalidated the field's size: \(counts)")
+        #expect(draft.text == "A line of the draft" + "hello")
+    }
+
     /// Asking again for the same words at the same width measures nothing; new words or a new width measure once.
     @Test func aWidthIsMeasuredOncePerEdit() async throws {
         let thread = ComposerThread(focused: true, animated: false)
