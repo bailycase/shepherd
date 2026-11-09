@@ -138,7 +138,8 @@ extension PreviewTests {
         let item = try #require(vm.thisMacWorktreeDelete)
         try await Preview.render("sheet-delete-worktree-this-mac", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
                                  untilGone: "Checking", showing: "Unreconciled work") {
-            WorktreeDeleteDialog(agent: item.agent, path: item.agent.worktreePath ?? "", settings: vm.settings,
+            // The host's warning; a made-up path in place of this machine's scratch folder.
+            WorktreeDeleteDialog(agent: item.agent, path: "~/Developer/acme-web-worktrees/agent-fix-login", settings: vm.settings,
                                  probe: { try await vm.thisMacWorktreeInfo(target).warning }, cancel: {}, delete: { _ in })
         }
     }

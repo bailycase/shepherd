@@ -104,10 +104,10 @@ extension SessionServer {
         // The branch picker's "move here" restarts pi, so it needs the launch settings here; every
         // other query goes on to `serveAgentQueries`' handler.
         let queries = onRemoteAgentQuery
-        onRemoteAgentQuery = { [weak self] agentID, query, completion in
+        onRemoteAgentQuery = { [weak self] agentID, query, local, completion in
             guard case .moveToCheckout(let path, let branch) = query else {
                 guard let queries else { return completion(.failure(RemoteCreateAgentError("Open Shepherd on the host for this."))) }
-                return queries(agentID, query, completion)
+                return queries(agentID, query, local, completion)
             }
             Task { @MainActor in
                 guard let self else { return completion(.failure(RemoteCreateAgentError("host is shutting down"))) }

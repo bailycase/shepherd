@@ -387,7 +387,8 @@ public final class SessionServer: @unchecked Sendable {
     public var onRemoteCreateDesign: ((RemoteDesignCreate, @escaping (Result<RemoteDesignCreated, RemoteCreateAgentError>) -> Void) -> Void)?
 
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
-    public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A client's agent query; the flag says it came over the local socket (this Mac's own app).
+    public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, Bool, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
     /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
@@ -2680,8 +2681,9 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "unavailable", message: "Agent inspection is unavailable on the host."), to: client)
                 return
             }
+            let local = client.isLocal
             hopToMain { [weak self] in
-                handler(agentID, query) { result in
+                handler(agentID, query, local) { result in
                     guard let self else { return }
                     self.queue.async {
                         guard self.clients[client.fd] === client else { return }

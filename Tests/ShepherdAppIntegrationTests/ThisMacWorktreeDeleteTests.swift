@@ -33,7 +33,7 @@ struct ThisMacWorktreeDeleteTests {
 
     /// A host serving a worktree thread whose branch its remote already has (nothing to lose),
     /// and the app as its client with Settings ▸ Worktrees at `action`.
-    private func setUp(_ action: WorktreeDeleteAction) async throws -> Setup {
+    private func setUp(_ action: WorktreeDeleteAction, remote: Bool = true) async throws -> Setup {
         let host = try ScratchServer()
         host.server.serveThreads(ThreadHosting(defaults: {
             ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
@@ -45,8 +45,9 @@ struct ThisMacWorktreeDeleteTests {
         try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
         try "# acme-web\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         _ = try git(["init", "-q", "--bare", origin.path], in: host.dir)
+        let publish = remote ? [["remote", "add", "origin", origin.path], ["push", "-q", "-u", "origin", "main"]] : []
         for args in [["init", "-q", "-b", "main"], ["config", "user.name", "Acme Tests"], ["config", "user.email", "tests@example.com"],
-                     ["add", "."], ["commit", "-qm", "initial"], ["remote", "add", "origin", origin.path], ["push", "-q", "-u", "origin", "main"]] {
+                     ["add", "."], ["commit", "-qm", "initial"]] + publish {
             _ = try git(args, in: repo)
         }
         let space = Space(name: "acme-web", path: repo.path)
@@ -118,6 +119,22 @@ struct ThisMacWorktreeDeleteTests {
         }
         #expect(s.vm.thisMacWorktreeDelete == nil && s.vm.remoteWorktreeSheet == nil)
         #expect(s.vm.actionError == nil)
+    }
+
+    /// With no remote, a fresh branch off `main` loses nothing in process (`main` keeps its
+    /// commit), so it loses nothing here either; a paired Mac's stricter rule still warns
+    /// (`RemoteHostTests.theDeleteConfirmationDescribesTheHostCheckout`).
+    @Test func aRememberedRemovalInARepoWithNoRemoteJustDeletesAsInProcess() async throws {
+        let s = try await setUp(.removeWorktree, remote: false)
+        defer { s.stop() }
+        #expect(GitWorktree.unreconciledWork(worktree: s.checkout, branch: "agent/fix-login") == nil)
+        #expect(try await s.vm.thisMacWorktreeInfo(s.target).warning == nil)
+        s.vm.requestRemoteDelete(s.target)
+
+        try await eventuallyOnMain("the host to remove the thread and checkout", timeout: .seconds(20)) {
+            !s.agentOnHost && !FileManager.default.fileExists(atPath: s.checkout)
+        }
+        #expect(s.vm.thisMacWorktreeDelete == nil && s.vm.actionError == nil)
     }
 
     @Test func aRememberedRemovalWithUnreconciledWorkAsksWithTheWarning() async throws {
