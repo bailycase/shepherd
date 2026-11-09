@@ -15,6 +15,8 @@ public enum SessionHost {
     nonisolated(unsafe) public private(set) static var banners: ThreadBanners?
     /// The host's own bundle, watched for an update while the host runs.
     nonisolated(unsafe) private static var watch: BundleVersionWatch?
+    /// Exits the host when its server queue or main queue stops answering.
+    nonisolated(unsafe) private static var watchdog: HostWatchdog?
 
     /// Runs `server` until a termination signal; never returns. A start that fails (another
     /// owner holds the workspace) exits with a failure status. `ready` runs once the server is
@@ -59,6 +61,14 @@ public enum SessionHost {
             exit(EXIT_FAILURE)
         }
         ShepherdLog.info("host serving (pid \(getpid()))")
+        // A hung queue never recovers by itself and every client request to it just times out:
+        // exit, and launchd (KeepAlive) starts a host that respawns the agents with unfinished
+        // work. No clean stop: it would wait on the hung queue. pi and the shells see their pipes
+        // and terminals close.
+        watchdog = HostWatchdog([("server", server.queue), ("main", .main)]) { name in
+            ShepherdLog.error("host exiting: its \(name) queue stopped answering")
+            _exit(EXIT_FAILURE)
+        }
         Task { @MainActor in
             // Handoff: a changed bundle, or a newer app's `drain`, lets the host exit once quiet.
             let drain = HostDrain(server: server, exit: stop)
