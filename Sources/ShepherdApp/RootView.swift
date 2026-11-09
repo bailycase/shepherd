@@ -276,7 +276,7 @@ private struct DestinationLayer: View {
         case .missions?:
             if let host = vm.missionsHost, let driver = vm.missionDriver(for: host) {
                 MissionsDestination(controller: driver, chrome: chrome)
-                    .environment(\.missionHostName, vm.remoteHosts.connections.first { $0.id == host }?.config.name ?? "Host")
+                    .environment(\.missionHostName, vm.remoteHosts.allConnections.first { $0.id == host }?.config.name ?? "Host")
                     .id(host)
             } else {
                 MissionsDestination(controller: vm.missions, chrome: chrome)
@@ -311,7 +311,7 @@ struct WorkspaceHeaderView: View {
     var body: some View {
         Group {
             if let remote = vm.selectedRemoteAgent,
-               let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+               let connection = vm.remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
                     PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)

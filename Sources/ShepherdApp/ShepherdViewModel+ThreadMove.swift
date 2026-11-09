@@ -80,7 +80,7 @@ struct ThreadMoveDrag: Codable, Equatable {
     func threadMoveSpaces(_ row: SidebarRowID) -> [Space] {
         switch row {
         case .local: state.spaces.filter { !$0.hidden }
-        case .remote(let ref): remoteHosts.connections.first { $0.id == ref.hostID }?.state.spaces.filter { !$0.hidden } ?? []
+        case .remote(let ref): remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.spaces.filter { !$0.hidden } ?? []
         case .design, .remoteDesign: []
         }
     }

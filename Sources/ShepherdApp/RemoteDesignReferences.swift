@@ -17,7 +17,7 @@ extension ShepherdViewModel {
     /// references to its designs; nil for a design's own chat and an older host.
     func remoteDesignReferenceChips(for ref: RemoteAgentRef) -> DesignReferenceChips? {
         guard settings.designToolEnabled,
-              let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+              let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
               connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability),
               let agent = connection.state.agents.first(where: { $0.id == ref.agentID }),
               !connection.state.isDesignAgent(agent), agent.designID == nil else { return nil }
@@ -75,7 +75,7 @@ extension ShepherdViewModel {
             },
             showBeside: { [weak self] in self?.showBoardBeside(.remote(ref), $0) },
             settle: { [weak self] id, accept in
-                guard let self, let connection = self.remoteHosts.connections.first(where: { $0.id == host }),
+                guard let self, let connection = self.remoteHosts.allConnections.first(where: { $0.id == host }),
                       connection.supportsDesignCapability(RemoteProtocol.designBoardsCapability), let library = self.remoteLibrary(host) else {
                     throw DesignReferenceFailure("Update Shepherd on the host to add boards its threads draw.")
                 }
@@ -94,7 +94,7 @@ extension ShepherdViewModel {
     }
 
     private func remoteLibrary(_ host: UUID) -> RemoteDesignLibrary? {
-        remoteHosts.connections.first { $0.id == host }?.designs
+        remoteHosts.allConnections.first { $0.id == host }?.designs
     }
 
     /// The @ picker, a pasted reference, "Send vN" in a host's thread: the piece pinned by the

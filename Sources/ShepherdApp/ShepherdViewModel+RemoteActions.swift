@@ -15,7 +15,7 @@ struct ThisMacWorktreeDelete: Identifiable {
 
 extension ShepherdViewModel {
     func remoteAgent(_ target: RemoteAgentRef) -> Agent? {
-        remoteHosts.connections.first { $0.id == target.hostID }?.state.agents.first { $0.id == target.agentID }
+        remoteHosts.allConnections.first { $0.id == target.hostID }?.state.agents.first { $0.id == target.agentID }
     }
 
     func performRemoteAction(_ target: RemoteAgentRef, action: RemoteAgentAction) {
@@ -34,7 +34,7 @@ extension ShepherdViewModel {
     func requestRemoteDelete(_ target: RemoteAgentRef) {
         guard let agent = remoteAgent(target) else { return }
         if agent.worktreeBranch != nil {
-            if remoteHosts.connections.first(where: { $0.id == target.hostID })?.isThisMac == true {
+            if remoteHosts.allConnections.first(where: { $0.id == target.hostID })?.isThisMac == true {
                 requestThisMacWorktreeDelete(target, agent: agent)
             }
             else if settings.worktreeDeleteAction == .keepWorktree { performRemoteAction(target, action: .deleteKeepingWorktree) }

@@ -251,7 +251,7 @@ extension ShepherdViewModel {
 
     /// A remote thread's tree, over its host's `files.v1`, rooted at the thread's folder there (as the host reads it).
     private func ensureRemoteFileTree(_ ref: RemoteAgentRef) {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }), connection.supportsFiles,
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }), connection.supportsFiles,
               let agent = connection.state.agents.first(where: { $0.id == ref.agentID }),
               let folder = connection.state.tabs.first(where: { $0.id == agent.tabID })?.layout.firstLeaf.cwd
                 ?? connection.state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
@@ -285,7 +285,7 @@ extension ShepherdViewModel {
             browser = true
         case .remote(let ref):
             hasRuns = remoteThreadStores.existing(for: ref)?.subagents.isEmpty == false
-            browser = remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true
+            browser = remoteHosts.allConnections.first { $0.id == ref.hostID }?.supportsBrowser == true
         }
         let pullRequest = if case .local(let id) = owner { branchPullRequests[id] != nil } else { false }
         return SidePaneTab.tabs(browser: browser, pullRequest: pullRequest, design: subagentInspector.boards[owner] != nil)

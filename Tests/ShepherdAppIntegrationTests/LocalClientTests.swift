@@ -10,7 +10,7 @@ import Testing
 
 /// The app as the background host's client (`SHEPHERD_BACKGROUND_HOST=1`): a headless host serves
 /// threads and terminals on its local socket, and the app's view model, on an idle server that
-/// owns nothing, shows and drives them through the remote-host paths.
+/// owns nothing, takes the host's workspace as its own (`connectLocalHost`).
 @Suite("The app as the background host's client", .mainActorExclusive)
 @MainActor
 struct LocalClientTests {
@@ -27,7 +27,7 @@ struct LocalClientTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
-        let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
+        let connection = vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace", timeout: .seconds(30)) {
             // Designs reach a client only while the host serves them, so they aren't compared.
             connection.phase == RemoteHostStore.Phase.connected && connection.state.spaces == host.server.state.spaces
@@ -85,7 +85,7 @@ struct LocalClientTests {
 
         let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
         defer {
-            for connection in hosts.connections { hosts.removeHost(id: connection.id) }
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
         }
         vm.designNetwork = .none
@@ -93,7 +93,7 @@ struct LocalClientTests {
         #expect(rendered.image.mimeType == "image/png" && rendered.text.hasPrefix("Two.dc.html at 400×300"))
     }
 
-    /// Add Space adds to the host, never the idle in-process server, whose spaces nothing lists.
+    /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()
         defer { host.stop() }
@@ -101,13 +101,13 @@ struct LocalClientTests {
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let (vm, hosts, _, connection, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
         defer {
-            for connection in hosts.connections { hosts.removeHost(id: connection.id) }
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
         }
         vm.addSpaceFromPanel()
-        #expect(vm.spacePickerTarget == .host(connection.id))
+        #expect(vm.spacePickerTarget == .local)
     }
 
     @Test func theHostsAgentDrivesTheAppsPageWithNoTunnel() async throws {
@@ -123,7 +123,7 @@ struct LocalClientTests {
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let (vm, hosts, _, connection, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
         defer {
-            for connection in hosts.connections { hosts.removeHost(id: connection.id) }
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
         }
         let web = try TinyWebServer(pages: BrowserAgentTests.pages)
@@ -138,9 +138,10 @@ struct LocalClientTests {
         let reply = try await Task.detached { try extensionClient.readReply(timeout: .seconds(60)) }.value
         guard case .browserResult(1, let text, _) = reply else { Issue.record("expected a result, got \(reply)"); return }
         #expect(text.contains("Checkout"))
-        let session = try #require(vm.browsers.existing(RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)))
+        // The thread is the app's own, so the page is its local one, as in process.
+        let session = try #require(vm.browsers.existing(agent.agent.id))
         #expect(session.url?.absoluteString == url, "the app's page loaded the dev server on this Mac's own loopback")
-        #expect(session.remote?.forwardsPorts == false)
+        #expect(vm.browsers.existing(RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)) == nil)
     }
 
     @Test func theAppShowsCreatesSendsToAndOpensATerminalOfTheHostsThreads() async throws {
@@ -162,30 +163,31 @@ struct LocalClientTests {
 
         let (vm, hosts, idle, connection, clientDir, defaults) = try await Self.app(socket: socket, token: token, host: host)
         defer {
-            for connection in hosts.connections { hosts.removeHost(id: connection.id) }
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
         }
         #expect(connection.capabilities.contains(RemoteProtocol.localCapability))
         #expect(defaults.data(forKey: RemoteHostStore.defaultsKey).map { String(decoding: $0, as: UTF8.self) } ?? "[]" == "[]",
                 "the host on this Mac is found again each launch, never saved")
 
-        // New thread, through the remote path.
-        vm.openNewThread(in: space.id, hostID: connection.id)
-        #expect(vm.newThread.place == NewThreadPlace(host: connection.id, space: space.id))
+        // New thread, This Mac's own, made on the host.
+        vm.openNewThread(in: space.id)
+        #expect(vm.newThread.place == NewThreadPlace(host: nil, space: space.id))
         vm.newThread.prompt = "Check the build"
         try await eventuallyOnMain("the host's defaults") { vm.newThread.blocker(vm) == nil }
         vm.newThread.send(vm)
         try await eventuallyOnMain("the host's new thread to be selected", timeout: .seconds(20)) {
-            vm.selectedRemoteAgent.map { ref in host.server.state.agents.contains { $0.id == ref.agentID } } == true
+            vm.selectedAgentID.map { id in host.server.state.agents.contains { $0.id == id } } == true
         }
-        let ref = try #require(vm.selectedRemoteAgent)
+        let ref = RemoteAgentRef(hostID: connection.id, agentID: try #require(vm.selectedAgentID))
         let row = try #require((vm.sidebarLists.needsYou + vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents)
-            .first { $0.id == .remote(ref) })
-        // The host on this Mac reads as This Mac: no host tag, one This Mac to start threads on,
+            .first { $0.id == .local(ref.agentID) })
+        // The host on this Mac is This Mac itself: a local row, one This Mac to start threads on,
         // the Hosts page's This Mac card counts its threads, and it isn't a host to remove.
         if case .tag = row.accessory { Issue.record("a thread of this Mac's host wears a host tag") }
         #expect(NewThreadState.hosts(vm).map(\.name) == ["This Mac"])
-        #expect(!host.server.localAppConnected, "an app showing This Mac as a host leaves its banners to the host")
+        #expect(hosts.connections.isEmpty, "This Mac is no host the UI lists")
+        try await eventuallyOnMain("the host to leave its threads' banners to the app") { host.server.localAppConnected }
         #expect(vm.hostsPageModel(agentVersion: nil).cards.count == 1)
         #expect(hosts.pairedConnections.isEmpty)
 

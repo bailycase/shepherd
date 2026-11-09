@@ -288,7 +288,9 @@ final class RemoteHostStore {
     /// threads are the app's own (`hidesLocalHost`).
     var connections: [Connection] { hidesLocalHost ? pairedConnections : allConnections }
     /// The background host on this Mac is transport only: its workspace is the app's own
-    /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it.
+    /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it. For now the
+    /// Designs, Automations, Projects and Missions pages still do, through `allConnections`: the app
+    /// leaves what they own to them (`ShepherdViewModel.mirrored`).
     var hidesLocalHost = false
     /// The background host on this Mac, whatever `hidesLocalHost` says.
     var localHost: Connection? { allConnections.first(where: \.isThisMac) }

@@ -521,13 +521,17 @@ extension ShepherdViewModel {
         if let madeProjects { return madeProjects }
         let model = ProjectsModel { [weak self] host, request in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            // This Mac's spaces are the background host's while the app is its client.
+            if host.id == "local", let owner = self.localHost {
+                return try await self.remoteHosts.projects(hostID: owner.id, endpointID: owner.endpointID, request: request)
+            }
             if host.id == "local" { return try await self.server.projects.request(request, state: self.server.state) }
             guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown space host.") }
             return try await self.remoteHosts.projects(hostID: id, endpointID: host.endpointID, request: request)
         }
         model.lookUpSkills = { [weak self] host, repo in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
-            let client: (any SkillsClient)? = host.id == "local" ? self.localSkills : self.remoteHosts.connections.first { $0.id.uuidString == host.id }?.skillsClient
+            let client: (any SkillsClient)? = host.id == "local" ? self.localSkills : self.remoteHosts.allConnections.first { $0.id.uuidString == host.id }?.skillsClient
             guard let client, case .repo(let found) = try await client.skills(.lookUp(repo: repo)) else {
                 throw ProjectFileError("unsupported", "Adding skills from a repository is unavailable on this host.")
             }
@@ -627,7 +631,7 @@ extension ShepherdViewModel {
             _ = try await handleProjectRequest(.register(path: path, name: URL(fileURLWithPath: path).lastPathComponent))
             return
         } else if let hostID = UUID(uuidString: host.id) {
-            guard remoteHosts.connections.first(where: { $0.id == hostID })?.endpointID == host.endpointID else {
+            guard remoteHosts.allConnections.first(where: { $0.id == hostID })?.endpointID == host.endpointID else {
                 throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")
             }
             _ = try await remoteHosts.addSpace(hostID: hostID, path: path)

@@ -130,7 +130,7 @@ extension ShepherdViewModel {
             cancelReview(existing)
             return
         }
-        let connection = remoteHosts.connections.first { $0.id == target.hostID }
+        let connection = remoteHosts.allConnections.first { $0.id == target.hostID }
         let agent = remoteAgent(target)
         let cwd = connection?.state.tabs.first { $0.id == agent?.tabID }?.layout.firstLeaf.cwd ?? "remote"
         if remoteReviews[target] == nil, connection?.supportsChanges == true {
@@ -186,7 +186,7 @@ extension ShepherdViewModel {
     func showRemoteInspector(_ target: RemoteAgentRef, tabID: TabID) {
         remoteInspectorTabs[target] = tabID
         remoteInspectingAgent = target
-        remoteFocusedPaneID = remoteHosts.connections.first { $0.id == target.hostID }?.state.tabs.first { $0.id == tabID }?.layout.firstLeaf.id
+        remoteFocusedPaneID = remoteHosts.allConnections.first { $0.id == target.hostID }?.state.tabs.first { $0.id == tabID }?.layout.firstLeaf.id
     }
 
     func controlRemoteInspector(_ target: RemoteAgentRef, action: RemoteInspectorPaneAction) {
@@ -202,7 +202,7 @@ extension ShepherdViewModel {
     }
 
     func remoteVisibleTab(_ target: RemoteAgentRef) -> Tab? {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }), let agent = remoteAgent(target) else { return nil }
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == target.hostID }), let agent = remoteAgent(target) else { return nil }
         let tabID = remoteInspectingAgent == target ? remoteInspectorTabs[target] ?? agent.tabID : agent.tabID
         return connection.state.tabs.first { $0.id == tabID }
     }

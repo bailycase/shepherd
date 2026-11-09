@@ -103,7 +103,7 @@ decodes on a concurrent queue while its session holds its later records in order
 
 In process it calls the server directly, with no socket, and adopts its `onStateChanged`
 snapshots; as the background service's client it never starts a server (`BackgroundHostClient`)
-and shows the host's threads as a host's, over `host.sock`. A
+and takes the host's workspace as its own over `host.sock` (`ShepherdViewModel+LocalHost`). A
 persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
 model reconciles itself and `TerminalSessionStore` from `server.state`.
 

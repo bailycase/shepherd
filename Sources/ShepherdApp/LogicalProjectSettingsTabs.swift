@@ -275,7 +275,7 @@ struct LogicalProjectAutomationsTab: View {
         switch ref.home {
         case .local: host = AutomationHost(id: PageHost.localID, name: vm.ownerName(of: .local), connected: true, manageable: true, state: vm.state)
         case .host(let id):
-            guard let connection = vm.remoteHosts.connections.first(where: { $0.id == id }) else { return [] }
+            guard let connection = vm.remoteHosts.allConnections.first(where: { $0.id == id }) else { return [] }
             host = AutomationHost(id: id, name: connection.config.name, connected: connection.phase == .connected,
                                   manageable: connection.supportsLogicalProjectAutomations, state: connection.state)
         }
