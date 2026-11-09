@@ -1361,14 +1361,7 @@ final class ShepherdViewModel {
         browsers.prune(state: state)
         notifyLocalQuestions()
         if let checkouts {
-            let layouts = Dictionary(state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
-            let directories = Dictionary(state.agents.compactMap { agent -> (AgentID, String)? in
-                let layout = layouts[agent.tabID]
-                guard let cwd = layout?.leaves.first(where: { $0.agentID == agent.id })?.cwd
-                    ?? agent.worktreePath ?? layout?.firstLeaf.cwd else { return nil }
-                return (agent.id, cwd)
-            }, uniquingKeysWith: { first, _ in first })
-            checkouts.sync(directories: directories, order: state.agents.map(\.id))
+            checkouts.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
         }
         // A deleted agent waits on no sign-in.
         if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {

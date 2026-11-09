@@ -1,5 +1,6 @@
 import ShepherdCore
 import Testing
+import ShepherdSessions
 @testable import ShepherdApp
 
 /// The header's branch chip reads `git status --porcelain=v2 --branch -z`: its branch, and one

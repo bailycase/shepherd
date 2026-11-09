@@ -238,6 +238,26 @@ struct StateMutationTests {
         #expect(h.broadcasts.current.isEmpty)
     }
 
+    /// `git switch` outside Shepherd: the checkout read records the new branch for every worktree
+    /// thread in that worktree, persisted; a detached HEAD (a rebase) records nothing.
+    @Test func aWorktreesNewBranchIsRecordedForEveryThreadInIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(path: "/acme-web-payout")
+        var threads = (0..<2).map { _ in Fixture.agent(in: space) }
+        for index in threads.indices {
+            threads[index].agent.worktreeBranch = "agent/payout-ui"
+            threads[index].agent.worktreePath = "/acme-web-payout"
+        }
+        try await h.seed(Fixture.workspace(threads, space: space))
+        let ids = threads.map(\.agent.id)
+        await h.server.setAgentCheckouts(ids, AgentCheckout(branch: "a1b2c3d", changedFiles: 0), directory: "/acme-web-payout")
+        #expect(h.server.state.agents.allSatisfy { $0.worktreeBranch == "agent/payout-ui" })
+        await h.server.setAgentCheckouts(ids, AgentCheckout(branch: "feat/payout-v2", changedFiles: 1), directory: "/acme-web-payout")
+        #expect(h.server.state.agents.allSatisfy { $0.worktreeBranch == "feat/payout-v2" && $0.checkout?.branch == "feat/payout-v2" })
+        #expect(try h.persisted().agents.allSatisfy { $0.worktreeBranch == "feat/payout-v2" })
+    }
+
     // MARK: - putState
 
     @Test func putStateReplacesTheWholeWorkspace() async throws {
