@@ -180,21 +180,4 @@ struct BranchCardPreviewTests {
             }
         }
     }
-
-    /// Finalize's plan (BranchFinalizePlan), staged as the sheet opens on a worktree with five files left.
-    @Test func theFinalizePlan() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let repo = try makeScratchRepo()
-        defer { try? FileManager.default.removeItem(at: repo) }
-        let space = Space(name: "payments", path: repo.path)
-        var (agent, tab) = try await workspace.agent("Emit refund events", in: space, order: 0, branch: "agent/refund-events")
-        agent.checkout = AgentCheckout(branch: "agent/refund-events", changedFiles: 5)
-        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        let plan = FinalizeWorktreeSheet.Plan(commit: true, commitMessage: "Emit refund events from the ledger outbox", merge: false)
-        try await Preview.render("finalize-plan", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 520)) {
-            FinalizeWorktreeSheet(vm: workspace.vm, agent: agent, space: space,
-                                  staged: .init(phase: .plan, base: "main", includedCommits: 6, plan: plan))
-        }
-    }
 }

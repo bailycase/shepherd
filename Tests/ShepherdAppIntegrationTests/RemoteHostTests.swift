@@ -127,7 +127,7 @@ struct RemoteHostTests {
             #expect(vm.remoteWorktreeSheet == nil)
             try await eventuallyOnMain("the host to delete the agent") { remote.host.server.state.agents.isEmpty }
         } else {
-            #expect(vm.remoteWorktreeSheet == ref && !vm.remoteWorktreeFinalize)
+            #expect(vm.remoteWorktreeSheet == ref)
             #expect(remote.host.server.state.agents.count == 1)
         }
     }
@@ -536,7 +536,6 @@ struct RemoteWorktreeTests {
         agent.agent.worktreePath = checkout
         agent.agent.worktreeBase = "origin/main"
         remote.host.settings.worktreeGeneratePRDescription = false
-        remote.host.settings.worktreeAutoCommit = false
         try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
         try await local.start()
         let connection = try await remote.connect(local.remoteHosts)
@@ -544,7 +543,7 @@ struct RemoteWorktreeTests {
                      target: RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id), checkout: checkout)
     }
 
-    @Test func theFinalizePreviewDescribesTheHostCheckoutWithTheHostsSettings() async throws {
+    @Test func theDeleteConfirmationDescribesTheHostCheckout() async throws {
         let s = try await setUp()
         defer { s.stop() }
         let remotes = s.local.remoteHosts
@@ -554,12 +553,7 @@ struct RemoteWorktreeTests {
         }
 
         #expect(info.path == canonical(URL(fileURLWithPath: s.checkout)) && info.branch == "worktree/remote")
-        #expect(info.defaults.base == "main" && info.defaults.title == "host feature")
-        #expect(!info.defaults.autoCommit && info.generateDescription == false)
-        #expect(info.warning == "1 commits not on a remote")
-        #expect(try await remotes.agentQuery(s.target, query: .worktreeCommitCount(base: "main")) == .worktreeCommitCount(1))
-        #expect(try await remotes.agentQuery(s.target, query: .worktreeCommitCount(base: "missing")) == .worktreeCommitCount(nil))
-        #expect(try await remotes.agentQuery(s.target, query: .worktreeDescription(base: "main", title: "feature")) == .worktreeDescription(body: ""))
+        #expect(info.warning == "1 commits not on a remote" && info.fingerprint != nil)
     }
 
     @Test func aConfirmedRemoteDeletionRetiresTheAgentAndRemovesTheCheckoutAndBranch() async throws {

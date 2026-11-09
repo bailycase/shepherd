@@ -233,7 +233,6 @@ struct BranchCardView: View {
         Button("Rename Branch…") { perform(.renameBranch) }
         if card.worktree { Button("Change Base…") { perform(.pickBase) } }
         Divider()
-        if card.worktree { Button("Finalize…") { perform(.finalize) } }
         Button("Copy Branch Name") { perform(.copyBranch) }
         if card.directory != nil { Button("Show in Finder") { perform(.showInFinder) } }
     }

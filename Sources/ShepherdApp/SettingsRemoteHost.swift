@@ -234,7 +234,7 @@ private struct RemoteSettingsSectionPage: View {
                 SettingsNote(text: "Notify when a turn finishes is this Mac's own: switch to This Mac to change it.")
             }
         case .worktrees:
-            SettingsPage(title: "Worktrees", explanation: "How \(host.name) creates worktrees, and what Finalize does.") {
+            SettingsPage(title: "Worktrees", explanation: "How \(host.name) creates worktrees, and what happens when a thread's work is done.") {
                 SettingsGroup(title: "New worktrees") {
                     SettingsRow(title: "Base branch") {
                         SHSegmentedPicker("Base branch", selection: bind(s.worktreeBase) { .worktreeBase($0) },
@@ -242,17 +242,8 @@ private struct RemoteSettingsSectionPage: View {
                     }
                     switchRow("Fetch before creating", s.fetchBeforeCreating) { .fetchBeforeCreating($0) }
                 }
-                SettingsGroup(title: "Finalize") {
-                    switchRow("Commit remaining work", s.commitRemainingWork) { .commitRemainingWork($0) }
-                    switchRow("Generate PR descriptions", s.generatePRDescriptions) { .generatePRDescriptions($0) }
-                    switchRow("Delete local branch", s.deleteLocalBranch) { .deleteLocalBranch($0) }
-                    switchRow("Merge PR automatically", s.mergePRAutomatically) { .mergePRAutomatically($0) }
-                    if s.mergePRAutomatically {
-                        SettingsRow(title: "Merge method") {
-                            SHSegmentedPicker("Merge method", selection: bind(s.mergeMethod) { .mergeMethod($0) },
-                                              options: [(.squash, "Squash"), (.merge, "Merge"), (.rebase, "Rebase")])
-                        }
-                    }
+                SettingsGroup(title: "Commits") {
+                    switchRow("Draft commit messages", s.generatePRDescriptions) { .generatePRDescriptions($0) }
                 }
                 SettingsGroup(title: "Delete") {
                     SettingsRow(title: "Deleting a worktree agent") {

@@ -289,7 +289,6 @@ extension AppLayout {
     static let confirmSheetWideWidth: CGFloat = 520
     static let newAgentSheetWidth: CGFloat = 560
     static let newWorktreeSheetWidth: CGFloat = 520
-    static let finalizeSheetWidth: CGFloat = 560
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.
@@ -307,7 +306,7 @@ extension AppLayout {
     static let branchCardWidth: CGFloat = 300
     static let branchCardInset: CGFloat = 14
     static let branchCardGlyph: CGFloat = 16
-    /// The branch card's sheets: Update from the base, New and Rename branch, the Finalize plan.
+    /// The branch card's sheets: Update from the base, New and Rename branch.
     static let branchSheetWidth: CGFloat = 520
     /// The branch card's Commit… (BranchCommit).
     static let branchCommitSheetWidth: CGFloat = 560
@@ -329,13 +328,9 @@ extension AppLayout {
     static let directoryPickerWidth: CGFloat = 480
     static let directoryListHeight: CGFloat = 260
     static let promptEditorHeight: CGFloat = 96
-    static let descriptionEditorHeight: CGFloat = 72
     static let baseFieldMaxWidth: CGFloat = 200
-    static let identityNameFieldMaxWidth: CGFloat = 140
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12
-    /// A spinner beside a sheet's caption ("Generating…").
-    static let sheetSpinner: CGFloat = 11
     /// The tool-output sheet ("… n more lines", Open Output): its minimum and ideal size.
     static let toolOutputMinWidth: CGFloat = 720
     static let toolOutputIdealWidth: CGFloat = 860

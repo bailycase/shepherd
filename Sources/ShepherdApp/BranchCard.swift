@@ -7,16 +7,16 @@ import ShepherdSessions
 import ShepherdUI
 
 // The thread's branch card (BranchCard, BranchCardMenu boards): where the agent works, read when
-// the card opens (git's status and GitHub's pull request). Its menu runs
-// Finalize…, and the branch changes in `BranchGit` (Commit…, Push, Update from the base, Switch,
-// New and Rename branch), each on the person's click; Change base only rewrites Shepherd's record.
+// the card opens (git's status and GitHub's pull request). Its menu runs the branch changes in
+// `BranchGit` (Commit…, Push, Update from the base, Switch, New and Rename branch), each on the
+// person's click; Change base only rewrites Shepherd's record.
 
 /// What the card shows before anything is read: the space, the branch, and the space's other
 /// branches.
 struct BranchCardModel: Equatable {
     var space: String
     var branch: String
-    /// A worktree Shepherd made: Finalize… applies.
+    /// A worktree Shepherd made: Change Base… applies.
     var worktree: Bool
     var directory: String?
     var others: [BranchCardOther]
@@ -48,7 +48,7 @@ struct BranchCardStatus: Equatable, Sendable {
 }
 
 enum BranchCardAction: Equatable {
-    case showChanges, commit, finalize, copyBranch, showInFinder
+    case showChanges, commit, copyBranch, showInFinder
     case push, update, newBranch, renameBranch
     /// The card swaps itself for the Branch picker (the view handles these).
     case pickBranch, pickBase
@@ -82,7 +82,7 @@ enum BranchCardGitReader {
                   result.status == 0 else { return nil }
             return String(decoding: result.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        // A worktree's base as Finalize reads it (origin's copy first); else origin's default branch.
+        // A worktree's recorded base (origin's copy first); else origin's default branch.
         let candidates = base.map { ["origin/\($0)", $0] } ?? [git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])].compactMap { $0 }
         let ref = candidates.first { git(["rev-parse", "--verify", "--quiet", "\($0)^{commit}"]) != nil }
         var status = BranchCardGit()
@@ -238,13 +238,6 @@ extension ShepherdViewModel {
         case .showChanges:
             if let remote = thisMacAgent(id) { openRemoteReview(remote.ref, path: nil) } else { openReview(agentID: id, path: nil) }
         case .commit: branchSheet = .commit(id)
-        case .finalize:
-            if let remote = thisMacAgent(id) {
-                remoteWorktreeFinalize = true
-                remoteWorktreeSheet = remote.ref
-            } else {
-                beginFinalizeWorktree(id)
-            }
         case .copyBranch:
             guard let branch = branchCard(id)?.branch else { return }
             NSPasteboard.general.clearContents()

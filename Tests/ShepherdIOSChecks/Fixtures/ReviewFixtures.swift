@@ -4,9 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Review track's screens: the changes, the diff reader, the iPad review docked and full screen
-// (unified and side by side), and Finalize. The host answers the review's reads (the diff, the
-// worktree checks and info, an operation's status); every screen state beyond that (comments,
-// viewed files, a selected line, a running operation) is set on this device's stores.
+// (unified and side by side). The host answers the review's reads (the diff); every screen
+// state beyond that (comments, viewed files, a selected line) is set on this device's stores.
 extension FixtureCatalog {
     static var review: [FixtureScreen] {
         let ref = FixtureData.ref(FixtureData.preview)
@@ -58,24 +57,6 @@ extension FixtureCatalog {
                           }),
             FixtureScreen(name: "review-worktree", hosts: ReviewFixture.hosts(worktree: true), routes: [thread, changes],
                           prepare: ReviewFixture.annotate),
-            FixtureScreen(name: "finalize", hosts: ReviewFixture.hosts(worktree: true), routes: [thread, changes],
-                          presented: .review(.finalize(ref)), prepare: { _ in
-                              let store = ReviewStores.shared.store(for: ref).finalize
-                              await ReviewFixture.until { store.stage == .form && store.includedCommits != nil && !store.generating }
-                          }),
-            FixtureScreen(name: "finalize-setup", hosts: ReviewFixture.hosts(worktree: true, checksPass: false), routes: [thread, changes],
-                          presented: .review(.finalize(ref)), prepare: { _ in
-                              let store = ReviewStores.shared.store(for: ref).finalize
-                              await ReviewFixture.until { store.stage == .setup }
-                          }),
-            FixtureScreen(name: "finalize-running", hosts: ReviewFixture.hosts(worktree: true, operation: ReviewFixture.running),
-                          routes: [thread, changes], presented: .review(.finalize(ref)), prepare: { _ in
-                              ReviewStores.shared.store(for: ref).finalize.adopt(ReviewFixture.running)
-                          }),
-            FixtureScreen(name: "finalize-done", hosts: ReviewFixture.hosts(worktree: true, operation: ReviewFixture.done),
-                          routes: [thread, changes], presented: .review(.finalize(ref)), prepare: { _ in
-                              ReviewStores.shared.store(for: ref).finalize.adopt(ReviewFixture.done)
-                          }),
         ]
     }
 }
@@ -186,39 +167,13 @@ enum ReviewFixture {
     +}
     """)
 
-    static let setupPassing = RemoteWorktreeSetup(repoPath: "/Users/dev/Shepherd", checks: [
-        "git": .pass("git 2.47"), "identity": .pass("Dev <dev@example.com>"), "remote": .pass("origin reachable"),
-        "gh": .pass("gh 2.63"), "ghAuth": .pass("signed in as dev"),
-    ], repoSettings: [:])
-    static let setupFailing = RemoteWorktreeSetup(repoPath: "/Users/dev/Shepherd", checks: [
-        "git": .pass("git 2.47"), "identity": .pass("Dev <dev@example.com>"), "remote": .pass("origin reachable"),
-        "gh": .pass("gh 2.63"), "ghAuth": .fail("Not signed in. Run gh auth login on the host."),
-    ], repoSettings: [:])
-
-    static let info = RemoteWorktreeInfo(
-        path: "/Users/dev/Shepherd/.worktrees/feat-live-preview", branch: branch, warning: "2 uncommitted files",
-        defaults: RemoteFinalizeOptions(base: "nightly", title: "Investigate SwiftUI live preview", body: "", autoCommit: true,
-                                        deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash"),
-        generateDescription: true, fingerprint: "fixture")
-
     /// What a host says when the agent's directory is no longer a repository.
     static let loadError = "git diff HEAD failed (128): fatal: not a git repository (or any of the parent directories): .git"
 
-    static let operationID = UUID(uuidString: "5E0A0000-0000-4000-8000-0000000000F1")!
-    static let running = RemoteWorktreeOperation(id: operationID, progress: [
-        "commit remaining work: committed", "push branch to origin: pushed", "create pull request: working…",
-        "merge pull request: pending", "verify nothing is left behind: pending", "remove worktree: pending", "delete local branch: pending",
-    ])
-    static let done = RemoteWorktreeOperation(id: operationID, finished: true, progress: [
-        "commit remaining work: committed", "push branch to origin: pushed", "create pull request: opened #24",
-        "merge pull request: skipped (auto-merge off)", "verify nothing is left behind: clean", "remove worktree: removed",
-        "delete local branch: deleted",
-    ], prURL: "https://github.com/example/shepherd/pull/24")
-
     /// The shared hosts, with Studio answering the review's reads for the preview agent.
     /// `legacy` is a host without the Changes engine (`changes.v1`), which answers `review` only.
-    static func hosts(files: [DiffFile] = files, worktree: Bool = false, checksPass: Bool = true,
-                      operation: RemoteWorktreeOperation? = nil, reviewError: String? = nil, legacy: Bool = false) -> [FixtureHostData] {
+    static func hosts(files: [DiffFile] = files, worktree: Bool = false, reviewError: String? = nil,
+                      legacy: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         if legacy {
             // An older host neither answers the engine nor records turns.
@@ -244,16 +199,6 @@ enum ReviewFixture {
             switch query {
             case .review(let pullRequest):
                 result = .review(files: pullRequest ? pr : working, reference: pullRequest ? "origin/nightly...HEAD" : nil)
-            case .worktreeSetup(.check):
-                result = .worktreeSetup(checksPass ? setupPassing : setupFailing)
-            case .worktreeInfo:
-                result = .worktreeInfo(info)
-            case .worktreeCommitCount:
-                result = .worktreeCommitCount(3)
-            case .worktreeDescription:
-                result = .worktreeDescription(body: "Removes the speaker labels and shows each tool row's command or path.")
-            case .worktreeStatus(let operationID) where operationID == operation?.id:
-                result = .worktreeOperation(operation!)
             default:
                 return legacy ? nil : changes(request)
             }

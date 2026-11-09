@@ -90,11 +90,7 @@ enum HostSettingsMapping {
             projectsEnabled: app.projectsEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
             fetchBeforeCreating: app.worktreeFetchBeforeCreate,
-            commitRemainingWork: app.worktreeAutoCommit,
             generatePRDescriptions: app.worktreeGeneratePRDescription,
-            deleteLocalBranch: app.worktreeDeleteLocalBranch,
-            mergePRAutomatically: app.worktreeAutoMergePR,
-            mergeMethod: HostSettings.MergeMethod(rawValue: app.worktreeMergeMethod.rawValue) ?? .squash,
             closeOnMerge: app.worktreeCloseOnMerge,
             designToolEnabled: app.designToolEnabled,
             missionsEnabled: app.missionsEnabled,
@@ -134,11 +130,9 @@ enum HostSettingsMapping {
         case .projectsEnabled(let on): app.projectsEnabled = on
         case .worktreeBase(let base): app.worktreeBaseMode = base == .head ? .head : .fresh
         case .fetchBeforeCreating(let on): app.worktreeFetchBeforeCreate = on
-        case .commitRemainingWork(let on): app.worktreeAutoCommit = on
         case .generatePRDescriptions(let on): app.worktreeGeneratePRDescription = on
-        case .deleteLocalBranch(let on): app.worktreeDeleteLocalBranch = on
-        case .mergePRAutomatically(let on): app.worktreeAutoMergePR = on
-        case .mergeMethod(let method): app.worktreeMergeMethod = WorktreeMergeMethod(rawValue: method.rawValue) ?? .squash
+        case .commitRemainingWork, .deleteLocalBranch, .mergePRAutomatically, .mergeMethod:
+            break // Legacy: an older client's Finalize settings; Finalize was removed.
         case .closeOnMerge(let on): app.worktreeCloseOnMerge = on
         case .bundledExtension(let id, let on):
             guard let keyPath = bundled.first(where: { $0.id == id })?.keyPath else { return nil }

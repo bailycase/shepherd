@@ -80,7 +80,7 @@ struct SidebarListRow: Identifiable, Equatable {
     var help: String
     /// "Fix the login, worktree, running, on horizon"; ", pinned" follows a pinned thread's.
     var accessibilityLabel: String
-    /// A worktree agent: its menu offers Finalize and Delete Worktree Agent.
+    /// A worktree agent: its menu offers Delete Worktree Agent.
     let worktree: Bool
     /// A run of one of This Mac's automations: its menu offers Stop or Run Now.
     let automation: AutomationID?

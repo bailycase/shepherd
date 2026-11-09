@@ -12,7 +12,7 @@ public enum GitDiff {
     /// remote default branch when gh is missing or there is no PR.
     public static func pullRequestReference(cwd: String) -> String {
         // gh lives on the user's PATH, not the GUI app's — resolve through a
-        // login shell like the worktree-finalize prerequisites do.
+        // login shell like commit from review does.
         if let base = try? runLoginShell("gh pr view --json baseRefName -q .baseRefName", cwd: cwd),
            base.status == 0 {
             let name = base.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
