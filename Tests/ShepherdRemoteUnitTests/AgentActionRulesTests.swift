@@ -58,10 +58,7 @@ struct AgentActionRulesTests {
     }
 
     static func info(warning: String?) -> RemoteWorktreeInfo {
-        RemoteWorktreeInfo(path: "/repo/.worktrees/one", branch: "worktree/one", warning: warning,
-                           defaults: RemoteFinalizeOptions(base: "main", title: "t", body: "", autoCommit: true,
-                                                           deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash"),
-                           fingerprint: "abc")
+        RemoteWorktreeInfo(path: "/repo/.worktrees/one", branch: "worktree/one", warning: warning, fingerprint: "abc")
     }
 
     @Test(arguments: [

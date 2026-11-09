@@ -276,16 +276,11 @@ final class ShepherdViewModel {
     var selectedRemoteAgent: RemoteAgentRef?
     var remoteFocusedPaneID: PaneID?
     var remoteWorktreeSheet: RemoteAgentRef?
-    var remoteWorktreeFinalize = false
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// This Mac's worktree operations and commits from review, as a host; the headless host has
     /// its own.
     let worktrees: WorktreeQueries
-    var hostPRDescriptionGenerator: WorktreePRDescriptionGenerator {
-        get { worktrees.descriptions }
-        set { worktrees.descriptions = newValue }
-    }
     var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] {
         get { worktrees.operations }
         set { worktrees.operations = newValue }
@@ -498,35 +493,11 @@ final class ShepherdViewModel {
     /// tearing a mounted layout down mid-dismissal wedges the modal session.
     @ObservationIgnored var afterDialogDismiss: (@MainActor () -> Void)?
 
-    /// A snapshot of the agent + space whose Finalize Worktree sheet is
-    /// open. Copies, not IDs: the pipeline's last act retires the agent, and
-    /// a live lookup would blank the sheet mid-success.
-    struct FinalizeRequest: Identifiable {
-        let id = UUID()
-        let agent: Agent
-        let space: Space
-    }
-    var finalizeRequest: FinalizeRequest?
     /// The branch card's Update from the base, New branch and Rename branch sheets.
     var branchSheet: BranchSheet?
     /// Each local thread's branch card, made when its card first shows.
     @ObservationIgnored var branchCardStores: [AgentID: BranchCardStore] = [:]
 
-    /// "Finalize Worktree…" on a worktree agent's context menu.
-    func beginFinalizeWorktree(_ agentID: AgentID) {
-        guard let agent = state.agents.first(where: { $0.id == agentID }),
-              agent.worktreeBranch != nil,
-              let space = state.spaces.first(where: { $0.id == agent.spaceID }) else { return }
-        finalizeRequest = FinalizeRequest(agent: agent, space: space)
-    }
-
-    /// The setup wizard's gh-authentication step: a terminal tab under the agent's thread
-    /// running `gh auth login`, because the login flow is interactive by design.
-    func openGhLogin(besideAgent agentID: AgentID) {
-        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
-        selectAgent(agentID)
-        openTerminalPane(besideAgent: agent, running: "gh auth login")
-    }
     @ObservationIgnored private var childSweepTimer: Timer?
     /// Focus is recorded per layout on every change (clicks, tab switches, new terminals),
     /// so returning to an agent restores the terminal (or thread) you were last working in.
@@ -1390,14 +1361,7 @@ final class ShepherdViewModel {
         browsers.prune(state: state)
         notifyLocalQuestions()
         if let checkouts {
-            let layouts = Dictionary(state.tabs.map { ($0.id, $0.layout) }, uniquingKeysWith: { first, _ in first })
-            let directories = Dictionary(state.agents.compactMap { agent -> (AgentID, String)? in
-                let layout = layouts[agent.tabID]
-                guard let cwd = layout?.leaves.first(where: { $0.agentID == agent.id })?.cwd
-                    ?? agent.worktreePath ?? layout?.firstLeaf.cwd else { return nil }
-                return (agent.id, cwd)
-            }, uniquingKeysWith: { first, _ in first })
-            checkouts.sync(directories: directories, order: state.agents.map(\.id))
+            checkouts.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
         }
         // A deleted agent waits on no sign-in.
         if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {

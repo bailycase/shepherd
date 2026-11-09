@@ -8,16 +8,15 @@ import ShepherdRemote
 // section heads, a file's diff with its comments, and the states before a diff arrives.
 
 /// The review's summary (MobileChanges board): "3 files", the diff stat, the worktree branch,
-/// the viewed progress, and Finalize for a worktree agent.
+/// and the viewed progress.
 struct ReviewSummaryCard: View {
     let totals: ReviewTotals
     let branch: String?
-    let onFinalize: (() -> Void)?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let sh = Color.sh
-        // At accessibility sizes the branch and Finalize's note get lines of their own.
+        // At accessibility sizes the branch gets two lines.
         let large = typeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: SH.Space.m) {
             // MobileChanges: the count and stat, the branch under them, then how much is viewed.
@@ -36,25 +35,6 @@ struct ReviewSummaryCard: View {
             Text(totals.viewedText).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                 .accessibilityLabel("Viewed")
                 .accessibilityValue(totals.viewedText)
-            if let onFinalize {
-                SHHairline()
-                Button(action: onFinalize) {
-                    HStack(spacing: SH.Space.m) {
-                        Label("Finalize worktree", systemImage: "checkmark.seal")
-                            .font(.sh(.ui))
-                            .foregroundStyle(sh.textPrimary)
-                        Spacer(minLength: SH.Space.s)
-                        if !large {
-                            Text("commit · push · PR").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                        }
-                        Image(systemName: "chevron.right").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textTertiary)
-                    }
-                    .frame(minHeight: SH.Height.touch)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Commits, pushes and opens a pull request on the host, then removes the worktree")
-            }
         }
         .padding(SH.Space.l + SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)

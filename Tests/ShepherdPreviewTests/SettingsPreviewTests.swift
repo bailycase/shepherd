@@ -520,97 +520,6 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// The finalize sheet's setup checklist: the scratch repo has no origin, so the wizard
-    /// stops on the checks instead of reaching the PR form.
-    @Test func finalizeSetupSheet() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let repo = try makeScratchRepo()
-        defer { try? FileManager.default.removeItem(at: repo) }
-        let space = Space(name: "Shepherd", path: repo.path)
-        let (agent, tab) = try await workspace.agent("Fix the login redirect", in: space, order: 0, branch: "worktree/fix-login")
-        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        try await Preview.render("sheet-finalize-setup", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 620), untilGone: "Checking", showing: "Re-run checks") {
-            FinalizeWorktreeSheet(vm: workspace.vm, agent: agent, space: space)
-        }
-    }
-
-    /// The pipeline rows as Finalize draws them mid-run: done, skipped, running, pending.
-    @Test func finalizePipeline() async throws {
-        let states: [WorktreeFinalizer.StepState] = [.done("2 files"), .done("worktree/fix-login → origin"), .running, .pending, .pending, .pending]
-        let steps = WorktreeFinalizer.Step.allCases.filter { $0 != .mergePR }
-        try await Preview.render("sheet-finalize-pipeline", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 380)) {
-            SHDialog("Finalize worktree",
-                     message: "Working — each step must succeed before the next runs. Nothing is deleted until the worktree is verified clean.",
-                     width: AppLayout.finalizeSheetWidth) {
-                ForEach(Array(zip(steps, states)), id: \.0) { step, state in
-                    let status = state.checklist
-                    SHChecklistRow(step.label, state: status.state, stateLabel: status.word, detail: status.detail)
-                }
-            } status: {
-                HStack(spacing: SH.Space.s) {
-                    ProgressView().progressViewStyle(.shSpinner)
-                    SHDialogStatus("Working…")
-                }
-            } actions: {
-                EmptyView()
-            }
-        }
-    }
-
-    private nonisolated static let prBody = """
-        ## Summary
-        Keeps the return URL through the OAuth round trip, so signing in lands where you started.
-
-        ## Testing
-        - swift test --filter LoginRedirectTests
-        """
-
-    /// The finalize form, and the sheet once the pipeline finished or stopped. Staged: nothing
-    /// runs git, gh or the network.
-    @Test(arguments: ["input", "done", "failed"])
-    func finalizeSheet(state: String) async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let space = Space(name: "Shepherd", path: "/Users/ada/Developer/Shepherd")
-        var (agent, _) = try await workspace.agent("Fix the login redirect", in: space, order: 0, branch: "worktree/fix-login")
-        agent.worktreePath = "/Users/ada/Developer/Shepherd-worktree-fix-login"
-        let done: [WorktreeFinalizer.Step: WorktreeFinalizer.StepState] = [
-            .commit: .done("committed"), .push: .done("pushed"), .pullRequest: .done("https://github.com/ada/shepherd/pull/128"),
-            .verifyClean: .done("clean"), .removeWorktree: .done("removed"), .deleteBranch: .done("deleted"),
-        ]
-        let rejected = """
-            To github.com:ada/shepherd.git
-             ! [rejected]        worktree/fix-login -> worktree/fix-login (fetch first)
-            error: failed to push some refs to 'github.com:ada/shepherd.git'
-            """
-        let staged: FinalizeWorktreeSheet.Staged = switch state {
-        case "input": .init(phase: .input, title: agent.name, body: Self.prBody, includedCommits: 3)
-        case "done": .init(phase: .done, steps: done, prURL: "https://github.com/ada/shepherd/pull/128")
-        default: .init(phase: .failed, steps: [.commit: .done("committed"),
-                                               .push: .failed(WorktreeFinalizer.failureDetail(.init(status: 1, stdout: "", stderr: rejected)))])
-        }
-        try await Preview.render("sheet-finalize-\(state)", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 560)) {
-            FinalizeWorktreeSheet(vm: workspace.vm, agent: agent, space: space, staged: staged)
-        }
-    }
-
-    /// The remote sheet's finalize form as a ready host fills it. Staged: no host is asked.
-    @Test func remoteFinalizeSheet() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
-        let host = try #require(workspace.vm.remoteHosts.connections.first)
-        let target = RemoteAgentRef(hostID: host.id, agentID: AgentID())
-        let defaults = RemoteFinalizeOptions(base: "main", title: "Fix the login redirect", body: Self.prBody, autoCommit: true,
-                                             deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash")
-        let info = RemoteWorktreeInfo(path: "/Users/ada/Developer/Shepherd-worktree-fix-login", branch: "worktree/fix-login", warning: nil,
-                                      defaults: defaults, generateDescription: true)
-        try await Preview.render("sheet-remote-finalize", size: CGSize(width: AppLayout.remoteWorktreeSheetWidth, height: 720)) {
-            RemoteWorktreeSheet(vm: workspace.vm, target: target, finalize: true, staged: .init(info: info, includedCommits: 3))
-        }
-    }
-
     /// The remote sheet's Delete over a checkout with unreconciled work, with "Don't ask again".
     /// Staged: no host is asked.
     @Test func remoteDeleteWorktreeSheet() async throws {
@@ -619,12 +528,10 @@ struct SettingsPreviewTests {
         workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
         let host = try #require(workspace.vm.remoteHosts.connections.first)
         let target = RemoteAgentRef(hostID: host.id, agentID: AgentID())
-        let defaults = RemoteFinalizeOptions(base: "main", title: "Fix the login redirect", body: "", autoCommit: true,
-                                             deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash")
         let info = RemoteWorktreeInfo(path: "/Users/ada/Developer/Shepherd-worktree-fix-login", branch: "worktree/fix-login",
-                                      warning: "2 uncommitted changes", defaults: defaults, generateDescription: false)
+                                      warning: "2 uncommitted changes")
         try await Preview.render("sheet-remote-delete-worktree", size: CGSize(width: AppLayout.remoteWorktreeSheetWidth, height: 460)) {
-            RemoteWorktreeSheet(vm: workspace.vm, target: target, finalize: false, staged: .init(info: info, includedCommits: nil))
+            RemoteWorktreeSheet(vm: workspace.vm, target: target, staged: info)
         }
     }
 
@@ -659,7 +566,7 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         let target = RemoteAgentRef(hostID: UUID(), agentID: AgentID())
         try await Preview.render("sheet-remote-worktree-unavailable", size: CGSize(width: AppLayout.remoteWorktreeSheetWidth, height: 300)) {
-            RemoteWorktreeSheet(vm: workspace.vm, target: target, finalize: false)
+            RemoteWorktreeSheet(vm: workspace.vm, target: target)
         }
     }
 

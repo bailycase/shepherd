@@ -44,10 +44,6 @@ struct AppDialogs: ViewModifier {
                 NewWorktreeSheet(vm: vm, space: space)
                     .dialogSheetFrame()
             }
-            .sheet(item: $vm.finalizeRequest) { request in
-                FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
-                    .dialogSheetFrame()
-            }
             .sheet(item: $vm.branchSheet) { sheet in
                 BranchSheetView(vm: vm, sheet: sheet).dialogSheetFrame()
             }
@@ -93,7 +89,7 @@ struct AppDialogs: ViewModifier {
                 }
             }
             .sheet(item: $vm.remoteWorktreeItem) { item in
-                RemoteWorktreeSheet(vm: vm, target: item.target, finalize: item.finalize)
+                RemoteWorktreeSheet(vm: vm, target: item.target)
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.spaceRenameSpace) { space in

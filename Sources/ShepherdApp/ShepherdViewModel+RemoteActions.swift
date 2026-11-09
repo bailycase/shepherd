@@ -24,10 +24,7 @@ extension ShepherdViewModel {
         guard let agent = remoteAgent(target) else { return }
         if agent.worktreeBranch != nil {
             if settings.worktreeDeleteAction == .keepWorktree { performRemoteAction(target, action: .deleteKeepingWorktree) }
-            else {
-                remoteWorktreeFinalize = false
-                remoteWorktreeSheet = target
-            }
+            else { remoteWorktreeSheet = target }
         }
         else if settings.skipped(.deleteAgent) != nil { performRemoteAction(target, action: .deleteKeepingWorktree) }
         else if remoteDeleteTarget != target { remoteDeleteTarget = target }

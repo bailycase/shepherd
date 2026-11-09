@@ -26,10 +26,9 @@ struct ActionError: Hashable {
     }
 }
 
-/// The remote worktree sheet: which remote agent, and whether it finalizes or deletes.
+/// The remote worktree sheet: which remote agent's delete it confirms.
 struct RemoteWorktreeSheetItem: Identifiable {
     let target: RemoteAgentRef
-    let finalize: Bool
     var id: RemoteAgentRef { target }
 }
 
@@ -107,7 +106,7 @@ extension ShepherdViewModel {
     }
 
     var remoteWorktreeItem: RemoteWorktreeSheetItem? {
-        get { remoteWorktreeSheet.map { RemoteWorktreeSheetItem(target: $0, finalize: remoteWorktreeFinalize) } }
+        get { remoteWorktreeSheet.map { RemoteWorktreeSheetItem(target: $0) } }
         set { remoteWorktreeSheet = newValue?.target }
     }
 

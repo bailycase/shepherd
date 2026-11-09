@@ -235,7 +235,14 @@ extension ShepherdViewModel {
         let cwd = agentCwd(agent)
         if let existing = fileTrees[agentID], existing.rootPath == cwd { return }
         // New or changed root: replace model, prune stale tabs
-        fileTrees[agentID] = FileTreeModel(rootPath: cwd)
+        fileTrees[agentID] = makeFileTree(agentID, cwd: cwd)
+    }
+
+    /// A local thread's tree: its Saves tell the branch chip and the Changes tab (`workingTreeChanged`).
+    private func makeFileTree(_ agentID: AgentID, cwd: String) -> FileTreeModel {
+        let model = FileTreeModel(rootPath: cwd)
+        model.onSaved = { [weak self] _ in self?.workingTreeChanged(agentID) }
+        return model
     }
 
     /// Reading from a view never creates stores or mutates observed state.
@@ -263,7 +270,7 @@ extension ShepherdViewModel {
                 continue
             }
             let cwd = agentCwd(agent)
-            if model.rootPath != cwd { fileTrees[id] = FileTreeModel(rootPath: cwd) }
+            if model.rootPath != cwd { fileTrees[id] = makeFileTree(id, cwd: cwd) }
         }
     }
 

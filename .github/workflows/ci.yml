@@ -174,7 +174,6 @@ jobs:
         run: |
           set -o pipefail
           bash Tests/ShepherdIOSChecks/run.sh --sidebar-only 2>&1 | tee "$RUNNER_TEMP/mobile-sidebar-check.log"
-          grep -Fxq 'PASS: retained Finalize refuses replacement, fresh Finalize reaches its exact client, unknown operation survives Reset' "$RUNNER_TEMP/mobile-sidebar-check.log"
           grep -Fxq 'SIDEBAR CHECK COMPLETE' "$RUNNER_TEMP/mobile-sidebar-check.log"
       # Each lane gets its own hosted VM. Never run process/server/UI tests concurrently
       # within that VM: it exhausts resources and times out unrelated tests.

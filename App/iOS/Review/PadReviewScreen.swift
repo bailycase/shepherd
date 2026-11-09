@@ -55,8 +55,6 @@ struct SidePaneChanges: View {
 /// The Changes tab's ⋯ items: what to compare, the diff's options, the file on screen as viewed, and Full screen.
 struct SidePaneChangesOptions: View {
     let ref: AgentRef
-    @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let store = ReviewStores.shared.store(for: ref)
@@ -72,15 +70,8 @@ struct SidePaneChangesOptions: View {
         Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") {
             withSHAnimation(.disclosure) { store.padLayout = .full }
         }
-        PadDiffOptionItems(store: store, compact: true, finalize: padFinalize(ref, hosts: hosts, navigator: navigator))
+        PadDiffOptionItems(store: store, compact: true)
     }
-}
-
-/// Finalize for a worktree agent, presented over the review; nil where it isn't offered.
-@MainActor func padFinalize(_ ref: AgentRef, hosts: MobileHosts, navigator: MobileNavigator) -> (() -> Void)? {
-    let host = hosts.host(ref.host)
-    guard ReviewFinalizeGate.available(host: host, agent: host?.agent(ref.agent)) else { return nil }
-    return { navigator.present(.review(.finalize(ref))) }
 }
 
 /// The full-screen review (iPadReviewSplit), from the Changes tab's Full screen: it takes the thread's column until "‹ Thread".
@@ -91,7 +82,7 @@ struct PadChangesFull: View {
 
     var body: some View {
         let store = ReviewStores.shared.store(for: ref)
-        PadFullReview(store: store, finalize: padFinalize(ref, hosts: hosts, navigator: navigator)) {
+        PadFullReview(store: store) {
             store.padLayout = .docked
             navigator.sidePane.isOpen = false
         }
@@ -219,11 +210,10 @@ private struct PaneFileSwitcher: View {
 }
 
 /// The toolbar (iPadReview, iPadReviewSplit): the scope pill, the whole scope's stat, then
-/// Commit… and Diff options, which holds Refresh, Collapse all, the diff style and Finalize.
+/// Commit… and Diff options, which holds Refresh, Collapse all and the diff style.
 private struct PadChangesToolbar: View {
     let store: ReviewStore
     let compact: Bool
-    let finalize: (() -> Void)?
 
     var body: some View {
         HStack(spacing: SH.Space.m) {
@@ -233,7 +223,7 @@ private struct PadChangesToolbar: View {
             }
             Spacer(minLength: SH.Space.s)
             PadCommitButton(store: store)
-            PadDiffOptions(store: store, compact: compact, finalize: finalize)
+            PadDiffOptions(store: store, compact: compact)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.shIcon(size: SH.Height.touch))
         }
@@ -311,15 +301,14 @@ private struct PadCommitButton: View {
 
 /// Diff options (iPadReview's •••): Refresh, Collapse all, split or unified (its glyph is the
 /// mode it switches to), then Word diffs, Hide whitespace changes, Load full files, Copy git apply
-/// command and Copy as patch, and Finalize worktree for a worktree agent.
+/// command and Copy as patch.
 private struct PadDiffOptions: View {
     let store: ReviewStore
     let compact: Bool
-    let finalize: (() -> Void)?
 
     var body: some View {
         Menu {
-            PadDiffOptionItems(store: store, compact: compact, finalize: finalize)
+            PadDiffOptionItems(store: store, compact: compact)
         } label: {
             Label("Diff options", systemImage: "ellipsis")
         }
@@ -330,7 +319,6 @@ private struct PadDiffOptions: View {
 struct PadDiffOptionItems: View {
     let store: ReviewStore
     let compact: Bool
-    let finalize: (() -> Void)?
 
     var body: some View {
         let split = padDiffStyle(store, compact: compact) == .split
@@ -367,9 +355,6 @@ struct PadDiffOptionItems: View {
                 Button("Copy as patch", systemImage: "doc.on.doc") { copy(command: false) }
             }
             .disabled(store.copyingPatch)
-        }
-        if let finalize {
-            Button("Finalize worktree\u{2026}", systemImage: "checkmark.seal", action: finalize)
         }
     }
 
@@ -602,13 +587,12 @@ func padPendingText(_ comments: [ReviewComment]) -> String {
 /// toolbar and compare row as docked; then the file list beside the stacked files, and the send bar.
 private struct PadFullReview: View {
     let store: ReviewStore
-    let finalize: (() -> Void)?
     let close: () -> Void
     @State private var scrollTarget: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            PadChangesToolbar(store: store, compact: false, finalize: finalize)
+            PadChangesToolbar(store: store, compact: false)
             PadCompareRow(store: store)
             // Half open (iPhone Duo), the file list ends at the fold and the files start after it.
             GeometryReader { proxy in

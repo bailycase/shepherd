@@ -28,7 +28,7 @@ final class PreviewWorkspace {
         try PreviewEnvironment.install()
         scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog, forgeRunner: forgeRunner)
         settings = AppSettings(store: defaults)
-        // Never ask a real model to write a PR description while rendering the finalize sheet.
+        // Never ask a real model to draft a commit message while rendering the commit sheet.
         settings.worktreeGeneratePRDescription = false
         vm = ShepherdViewModel(
             server: scratch.server, ownsWorkspace: ownsWorkspace, settings: settings, keybindings: KeybindingsStore(store: defaults),

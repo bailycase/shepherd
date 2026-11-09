@@ -187,6 +187,9 @@ extension ShepherdViewModel {
         let terminal = LeafPane(cwd: leaf.cwd)
         guard let layout = tab.layout.splitting(pane: anchor, axis: .horizontal, newPane: terminal) else { return }
         setLayout(layout, forTab: tab.id)
+        var grown = tab
+        grown.layout = layout
+        sessions.activateTerminal(terminal, in: grown)
         focusedPaneID = terminal.id
         Task {
             guard let session = await sessions.awaitSession(forPane: terminal.id, timeout: .seconds(10)) else { return }

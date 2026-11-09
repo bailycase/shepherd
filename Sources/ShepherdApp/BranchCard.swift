@@ -7,16 +7,16 @@ import ShepherdSessions
 import ShepherdUI
 
 // The thread's branch card (BranchCard, BranchCardMenu boards): where the agent works, read when
-// the card opens (git's status and GitHub's pull request). Its menu runs
-// Finalize…, and the branch changes in `BranchGit` (Commit…, Push, Update from the base, Switch,
-// New and Rename branch), each on the person's click; Change base only rewrites Shepherd's record.
+// the card opens (git's status and GitHub's pull request). Its menu runs the branch changes in
+// `BranchGit` (Commit…, Push, Update from the base, Switch, New and Rename branch), each on the
+// person's click; Change base only rewrites Shepherd's record.
 
 /// What the card shows before anything is read: the space, the branch, and the space's other
 /// branches.
 struct BranchCardModel: Equatable {
     var space: String
     var branch: String
-    /// A worktree Shepherd made: Finalize… applies.
+    /// A worktree Shepherd made: Change Base… applies.
     var worktree: Bool
     var directory: String?
     var others: [BranchCardOther]
@@ -48,11 +48,13 @@ struct BranchCardStatus: Equatable, Sendable {
 }
 
 enum BranchCardAction: Equatable {
-    case showChanges, commit, finalize, copyBranch, showInFinder
+    case showChanges, commit, copyBranch, showInFinder
     case push, update, newBranch, renameBranch
     /// The card swaps itself for the Branch picker (the view handles these).
     case pickBranch, pickBase
     case switchBranch(String)
+    /// Re-point the thread at another checkout that has the branch (branch, path); no git runs.
+    case moveToCheckout(String, String)
     case changeBase(String)
     case openPull(ForgeItemRef)
     case select(AgentID)
@@ -82,7 +84,7 @@ enum BranchCardGitReader {
                   result.status == 0 else { return nil }
             return String(decoding: result.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        // A worktree's base as Finalize reads it (origin's copy first); else origin's default branch.
+        // A worktree's recorded base (origin's copy first); else origin's default branch.
         let candidates = base.map { ["origin/\($0)", $0] } ?? [git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])].compactMap { $0 }
         let ref = candidates.first { git(["rev-parse", "--verify", "--quiet", "\($0)^{commit}"]) != nil }
         var status = BranchCardGit()
@@ -175,17 +177,27 @@ extension ShepherdViewModel {
             await self?.loadBranchCard(id, card) ?? BranchCardStatus(git: BranchCardGit())
         }, perform: { [weak self] action in self?.performBranchCard(action, on: id) }, branches: { [weak self] in
             guard let self, let directory = self.checkoutDirectory(of: id) else { throw BranchGit.Failure(message: "This thread has no checkout.") }
-            return try await self.branchPickerList(cwd: directory)
+            return try await self.branchPickerList(cwd: directory, for: self.cardAgent(id)?.agent)
         })
     }
 
-    /// A checkout's branches for a picker: `ChangesBranches` with each worktree's thread named.
-    func branchPickerList(cwd: String) async throws -> BranchPickerList {
-        let read = try await server.changes.branches(agentID: nil, cwd: (cwd as NSString).expandingTildeInPath)
+    /// A checkout's branches for a picker: `ChangesBranches` with each worktree's thread named,
+    /// and whether `agent` could move to another checkout now.
+    func branchPickerList(cwd: String, for agent: Agent? = nil) async throws -> BranchPickerList {
+        let directory = (cwd as NSString).expandingTildeInPath
+        let read = try await server.changes.branches(agentID: nil, cwd: directory)
         let agents = state.agents + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents ?? [])
         let threads = Dictionary(agents.compactMap { agent in agent.worktreePath.map { (Self.standard($0), agent.name) } },
                                  uniquingKeysWith: { first, _ in first })
-        return BranchPickerList(branches: read, threads: threads)
+        // git names worktrees by their real path (/private/var, not /var).
+        let main = await Task.detached { (try? GitWorktree.primaryCheckout(at: directory)).map { Self.standard(PiSessionFolder.realPath($0)) } }.value
+        return BranchPickerList(branches: read, threads: threads, mainCheckout: main, busy: agent.flatMap(Self.moveBlocker))
+    }
+
+    /// Why a thread can't move to another checkout now, in the picker's words; nil when it can.
+    nonisolated static func moveBlocker(_ agent: Agent) -> String? {
+        if agent.status == .blocked || agent.waitingOn != nil { return "it asks you" }
+        return agent.status == .working ? "running" : nil
     }
 
     /// A thread of This Mac's background host: its checkout is on this machine, so its branch card
@@ -197,7 +209,7 @@ extension ShepherdViewModel {
     }
 
     /// The agent the card is for, wherever it runs, and the workspace it is listed in.
-    private func cardAgent(_ id: AgentID) -> (agent: Agent, state: ShepherdState)? {
+    func cardAgent(_ id: AgentID) -> (agent: Agent, state: ShepherdState)? {
         if let agent = state.agents.first(where: { $0.id == id }) { return (agent, state) }
         return thisMacAgent(id).map { ($0.agent, $0.connection.state) }
     }
@@ -238,13 +250,6 @@ extension ShepherdViewModel {
         case .showChanges:
             if let remote = thisMacAgent(id) { openRemoteReview(remote.ref, path: nil) } else { openReview(agentID: id, path: nil) }
         case .commit: branchSheet = .commit(id)
-        case .finalize:
-            if let remote = thisMacAgent(id) {
-                remoteWorktreeFinalize = true
-                remoteWorktreeSheet = remote.ref
-            } else {
-                beginFinalizeWorktree(id)
-            }
         case .copyBranch:
             guard let branch = branchCard(id)?.branch else { return }
             NSPasteboard.general.clearContents()
@@ -265,6 +270,20 @@ extension ShepherdViewModel {
         case .switchBranch(let name):
             guard let cwd = checkoutDirectory(of: id) else { return }
             branchGit(id, "Couldn’t switch to \(name)", record: { local in (local, nil) }) { try BranchGit.switchBranch(cwd: cwd, to: name) }
+        case .moveToCheckout(let branch, let path):
+            Task {
+                do {
+                    if let remote = thisMacAgent(id) {
+                        _ = try await remoteHosts.agentQuery(remote.ref, query: .moveToCheckout(path: path, branch: branch))
+                    } else {
+                        try await moveThreadToCheckout(id, path: path, branch: branch)
+                    }
+                } catch {
+                    actionError = ActionError(title: "Couldn’t move to \(branch)", message: ActionError.describe(error))
+                }
+                checkouts?.refresh(id, priority: true)
+                branchCardStores[id]?.requestRefresh()
+            }
         case .changeBase(let base):
             Task {
                 do { try await recordWorktree(id, base: base) }

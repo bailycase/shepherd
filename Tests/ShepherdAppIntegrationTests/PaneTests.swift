@@ -136,7 +136,7 @@ struct PaneControlTests {
     }
 
     /// The agent's terminal opens as a tab under its thread without moving the user, gets a live
-    /// shell as soon as its view mounts, and runs the command the agent asked for.
+    /// shell without any view drawing it, and runs the command the agent asked for.
     @Test func anAgentOpenedTerminalRunsItsCommandWithoutMovingTheUser() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -159,14 +159,16 @@ struct PaneControlTests {
         }
         let terminal = try #require(opened)
         let tab = try #require(vm.state.tabs.first { $0.id == background.tab.id })
-        // What the terminal's view does when it renders.
-        _ = vm.sessions.session(for: terminal, in: tab)
         try await request.value
 
         guard case .paneOpened(6, let info)? = box.reply else { Issue.record("unexpected reply \(String(describing: box.reply))"); return }
         #expect(info.id == terminal.id && info.isAlive && !info.isAgentPane)
         #expect(vm.selectedAgentID == visible.agent.id && vm.focusedPaneID == visible.piPane.id)
         #expect(TerminalPanel.tabs(in: tab.layout, thread: background.piPane.id).map(\.id) == [terminal.id])
+        let started = await app.server.listSessions().filter(\.isAlive).count
+        // What the terminal's view does when it draws: it takes the session the open started.
+        let drawn = vm.sessions.session(for: terminal, in: tab)
+        #expect(drawn.sessionID != nil && drawn.sessionID == vm.sessions.liveSession(forPane: terminal.id))
         var lastRead = "no reply"
         do {
             try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
@@ -184,18 +186,18 @@ struct PaneControlTests {
                 return lines.contains { $0.contains("terminal-ready") }
             }
         } catch let error as TimedOut {
-            let pane = vm.sessions.session(for: terminal, in: tab)
             let phase: String
-            switch pane.phase {
+            switch drawn.phase {
             case .connecting: phase = "connecting"
             case .live: phase = "live"
             case .failed: phase = "failed"
             case .exited: phase = "exited"
             case .stopped: phase = "stopped"
             }
-            print("Agent-opened terminal: phase=\(phase), bound=\(pane.sessionID != nil), reported grid=\(pane.lastCols)x\(pane.lastRows), last read=\(lastRead)")
+            print("Agent-opened terminal: phase=\(phase), bound=\(drawn.sessionID != nil), reported grid=\(drawn.lastCols)x\(drawn.lastRows), last read=\(lastRead)")
             throw error
         }
+        #expect(await app.server.listSessions().filter(\.isAlive).count == started, "drawing the terminal started no second shell")
     }
 
     /// The panel of the thread on screen opens on the terminal the agent opened, and the keyboard
@@ -220,9 +222,10 @@ struct PaneControlTests {
             return opened != nil
         }
         let terminal = try #require(opened)
-        _ = vm.sessions.session(for: terminal, in: try #require(vm.state.tabs.first { $0.id == agent.tab.id }))
         try await request.value
 
+        guard case .paneOpened(8, let info)? = box.reply else { Issue.record("unexpected reply \(String(describing: box.reply))"); return }
+        #expect(info.id == terminal.id && info.isAlive)
         #expect(vm.terminalTarget?.tabs.map(\.id) == [terminal.id])
         #expect(vm.terminalPanels.panel(key).shown && vm.terminalPanels.panel(key).chosenTab == terminal.id)
         #expect(vm.focusedPaneID == agent.piPane.id)
@@ -252,11 +255,10 @@ struct PaneControlTests {
         }
         let grown = try #require(layout)
         let terminal = try #require(grown.leaves.first { $0.id != agent.piPane.id && $0.id != agent.auxiliary[0].id })
-        _ = vm.sessions.session(for: terminal, in: try #require(vm.state.tabs.first { $0.id == agent.tab.id }))
         try await request.value
 
         guard case .paneOpened(9, let info)? = box.reply else { Issue.record("unexpected reply \(String(describing: box.reply))"); return }
-        #expect(info.id == terminal.id)
+        #expect(info.id == terminal.id && info.isAlive)
         #expect(!grown.hasSplitTerminals(besideThread: agent.piPane.id), "no terminal shares a tab")
         #expect(TerminalPanel.tabs(in: grown, thread: agent.piPane.id).count == 2)
         #expect(vm.terminalTarget?.tabs.count == 2 && vm.terminalPanels.panel(key).chosenTab == terminal.id)
@@ -281,11 +283,59 @@ struct PaneControlTests {
             try await eventuallyOnMain("terminal \(id) to join the layout") {
                 (vm.state.tabs.first { $0.id == agent.tab.id }?.layout.leaves.count ?? 0) > before
             }
-            let tab = try #require(vm.state.tabs.first { $0.id == agent.tab.id })
-            for leaf in tab.layout.leaves where leaf.agentID == nil { _ = vm.sessions.session(for: leaf, in: tab) }
             try await request.value
             guard case .paneOpened(id, let info)? = box.reply else { Issue.record("unexpected reply \(String(describing: box.reply))"); return }
             #expect(info.cwd == (folder ?? space.path))
+        }
+    }
+
+    /// The host has no window here, so no view draws anything: a terminal another device opens (a
+    /// remote open, the Browser's Start) still gets its shell and runs its command.
+    @Test func aTerminalAnotherDeviceOpensStartsWithNoViewDrawingIt() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: local.dir.path)
+        let agent = Fixture.agent(in: space)
+        try await local.start(with: Fixture.state(spaces: [space], agents: []))
+        let host = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let connection = try await remote.connect(local.remoteHosts)
+
+        let opened = try await local.remoteHosts.openPane(hostID: connection.id, agentID: agent.agent.id,
+                                                          relativeTo: agent.piPane.id, axis: .vertical)
+        #expect(host.sessions.liveSession(forPane: opened) != nil)
+
+        let client = try #require(connection.browserClient)
+        // The command echo cannot contain its output marker, even with prompt redraws.
+        try await client.openTerminal(agentID: agent.agent.id, cwd: space.path, command: "printf 'remote-%s\\n' ready")
+        let layout = try #require(host.state.tabs.first { $0.id == agent.tab.id }?.layout)
+        let ran = try #require(layout.leaves.first { $0.id != agent.piPane.id && $0.id != opened })
+        let session = try #require(host.sessions.liveSession(forPane: ran.id))
+        try await eventuallyAsync("the command's output to reach the host's terminal", timeout: .seconds(20)) {
+            await remote.host.server.screenText(sessionID: session)?.contains { $0.contains("remote-ready") } == true
+        }
+    }
+
+    /// A terminal opened beside a thread to run a command gets its shell, and the command typed
+    /// into it, before any view draws it.
+    @Test func aTerminalOpenedBesideAThreadToRunACommandStartsWithoutAView() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+
+        vm.openTerminalPane(besideAgent: agent.agent, running: "printf 'tab-%s\\n' ready")
+
+        var opened: LeafPane?
+        try await eventuallyOnMain("the terminal to join the layout") {
+            opened = vm.state.tabs.first { $0.id == agent.tab.id }?.layout.leaves.first { $0.id != agent.piPane.id }
+            return opened != nil
+        }
+        let terminal = try #require(opened)
+        try await eventuallyOnMain("its shell to go live") { vm.sessions.liveSession(forPane: terminal.id) != nil }
+        let session = try #require(vm.sessions.liveSession(forPane: terminal.id))
+        try await eventuallyAsync("the command's output to reach its screen", timeout: .seconds(20)) {
+            await app.server.screenText(sessionID: session)?.contains { $0.contains("tab-ready") } == true
         }
     }
 }

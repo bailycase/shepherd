@@ -61,10 +61,12 @@ public enum RemoteProtocol {
     public static let paneControlCapability = "pane.control.v1"
     public static let agentActionsCapability = "agent.actions.v1"
     public static let worktreeActionsCapability = "agent.worktree.v1"
-    public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     /// The host answers `RemoteAgentQuery.setWorktree`: the branch or base it records for a
     /// worktree thread, after the client changed the checkout itself (the branch card on This Mac).
     public static let worktreeRecordCapability = "agent.worktree.record.v1"
+    /// The host answers `RemoteAgentQuery.moveToCheckout`: a thread re-pointed at another existing
+    /// checkout of its repository (the branch picker's "move here"), its pi restarted there.
+    public static let worktreeMoveCapability = "agent.worktree.move.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
     /// The host answers `RemoteAgentQuery.terminals`: what each of an agent's terminal panes runs
     /// and how far its output has got. Older hosts leave a client with plain tabs.
@@ -220,7 +222,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -358,65 +360,26 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     }
 }
 
-public struct RemoteFinalizeOptions: Codable, Hashable, Sendable {
-    public var base: String
-    public var title: String
-    public var body: String
-    public var autoCommit: Bool
-    public var deleteLocalBranch: Bool
-    public var autoMergePR: Bool
-    public var mergeMethod: String
-    public init(base: String, title: String, body: String, autoCommit: Bool, deleteLocalBranch: Bool, autoMergePR: Bool, mergeMethod: String) {
-        self.base = base; self.title = title; self.body = body
-        self.autoCommit = autoCommit; self.deleteLocalBranch = deleteLocalBranch
-        self.autoMergePR = autoMergePR; self.mergeMethod = mergeMethod
-    }
-}
-
-public enum RemoteWorktreeSetupAction: Codable, Hashable, Sendable {
-    case check
-    case applyIdentity(name: String, email: String)
-    case installCommandLineTools
-    case enableDeleteBranchOnMerge
-    case enableAutoMerge
-    case loginShell
-}
-
-public enum RemoteWorktreeCheckState: Codable, Hashable, Sendable {
-    case pending, checking
-    case pass(String), fail(String)
-    public var passed: Bool {
-        if case .pass = self { return true }
-        return false
-    }
-}
-
-public enum RemoteWorktreeRepoSettingState: Codable, Hashable, Sendable {
-    case unknown, checking, enabled, disabled
-    case unavailable(String)
-}
-
-public struct RemoteWorktreeSetup: Codable, Hashable, Sendable {
-    public var repoPath: String
-    public var checks: [String: RemoteWorktreeCheckState]
-    public var repoSettings: [String: RemoteWorktreeRepoSettingState]
-    public init(repoPath: String, checks: [String: RemoteWorktreeCheckState], repoSettings: [String: RemoteWorktreeRepoSettingState]) {
-        self.repoPath = repoPath; self.checks = checks; self.repoSettings = repoSettings
-    }
-}
-
 public struct RemoteWorktreeInfo: Codable, Hashable, Sendable {
     public var path: String
     public var branch: String
     public var warning: String?
-    public var defaults: RemoteFinalizeOptions
     public var fingerprint: String?
-    public var generateDescription: Bool?
-    public init(path: String, branch: String, warning: String?, defaults: RemoteFinalizeOptions, generateDescription: Bool? = nil, fingerprint: String? = nil) {
-        self.path = path; self.branch = branch; self.warning = warning; self.defaults = defaults
-        self.generateDescription = generateDescription
+    /// The removed Finalize form's defaults. Still sent, as placeholders, because clients from
+    /// before its removal decode `worktreeInfo` with this key required.
+    private var defaults = LegacyFinalizeDefaults()
+
+    public init(path: String, branch: String, warning: String?, fingerprint: String? = nil) {
+        self.path = path; self.branch = branch; self.warning = warning
         self.fingerprint = fingerprint
     }
+}
+
+/// The shape older clients require under `RemoteWorktreeInfo.defaults`; nothing reads it.
+private struct LegacyFinalizeDefaults: Codable, Hashable, Sendable {
+    var base = "", title = "", body = ""
+    var autoCommit = false, deleteLocalBranch = false, autoMergePR = false
+    var mergeMethod = "squash"
 }
 
 public struct RemoteWorktreeOperation: Codable, Hashable, Sendable {
@@ -472,14 +435,14 @@ public enum RemoteInspectorPaneAction: Codable, Hashable, Sendable {
 public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case deleteKeepingWorktree
     case worktreeInfo
-    case worktreeSetup(action: RemoteWorktreeSetupAction)
-    case worktreeCommitCount(base: String)
-    case worktreeDescription(base: String, title: String)
     case deleteWorktree(operationID: UUID, confirmedWarning: String?, fingerprint: String? = nil)
-    case finalizeWorktree(operationID: UUID, options: RemoteFinalizeOptions)
     case worktreeStatus(operationID: UUID)
     /// Record a worktree thread's branch or base (nil keeps it); answered `.ok` (`worktreeRecordCapability`).
     case setWorktree(branch: String?, base: String?)
+    /// Re-point the thread at `path`, another checkout of its repository that has `branch`
+    /// checked out, and restart its pi there; no git command runs. Answered `.ok`
+    /// (`worktreeMoveCapability`); refused while the thread runs or asks.
+    case moveToCheckout(path: String, branch: String)
     case review(pullRequest: Bool)
     case reviewPane(paneID: PaneID, pullRequest: Bool? = nil)
     case finishReview(paneID: PaneID, text: String?)
@@ -546,9 +509,6 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
 public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case ok
     case worktreeInfo(RemoteWorktreeInfo)
-    case worktreeSetup(RemoteWorktreeSetup)
-    case worktreeCommitCount(Int?)
-    case worktreeDescription(body: String)
     case worktreeOperation(RemoteWorktreeOperation)
     case review(files: Data, reference: String?)
     case children([ChildRun])
