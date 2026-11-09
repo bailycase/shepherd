@@ -169,7 +169,7 @@ struct NativeMountedCostTests {
         let small = NativeMarkdownBlock.details(summary: "Log", blocks: [])
         let big = NativeMarkdownBlock.details(summary: "Log", blocks: [Self.code(50_000), Self.table(rows: 30, columns: 5)])
         #expect(Cost.block(small) == Cost.block(big), "its content is not drawn until it is opened")
-        #expect(Cost.block(small) == (3 + NativeMarkdownBlock.detailsFloor) * Cost.textByte)
+        #expect(Cost.block(small) == 3 * Cost.textByte + Cost.line, "the summary's words and one line, not the chunking floor")
     }
 
     @Test func nestedListsAndQuotesCostTheirChildren() {
@@ -310,6 +310,7 @@ struct NativeMountedCostTests {
         #expect(Cost.item(.goalRecord(id: "g", text: "Goal met")) == line)
         #expect(Cost.item(.thinking(id: "t", text: "hm", blocks: [.paragraph("hm")], seconds: 2, live: false, since: nil)) == line)
         #expect(Cost.item(.subagents(id: "s", lines: [.init(title: "a", meta: ""), .init(title: "b", meta: "")])) == 2 * line)
+        #expect(Cost.item(.steer(id: "u", text: "use tables", sentAt: nil, images: 0)) == line + 10 * Cost.textByte, "a steer's words cost what a user row's do")
         #expect(Cost.item(.images(id: "i", images: [])) == 0)
     }
 

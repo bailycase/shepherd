@@ -11,9 +11,11 @@ import Foundation
 /// - a table: `tableWeight` per unit of weight, 256 to a cell at least;
 /// - an image: `imageFloor` units at `imageWeight`, whatever its source (a web or data image is a chip, a file a
 ///   bounded thumbnail);
-/// - text (paragraph, heading, list item, quote, footnote, a closed disclosure's summary): `textByte` a byte;
+/// - text (paragraph, heading, list item, quote, footnote): `textByte` a byte;
+/// - a closed disclosure: its summary as text, and a `line` (its content is not drawn until it is opened);
 /// - a Mermaid diagram: `mermaid`, mostly in its WebContent process, counted for what it costs the system;
-/// - any other line of a row (an activity burst, a thought, a note, an error, a steer): `line`;
+/// - any other line of a row (an activity burst, a thought, a note, an error): `line`; a steer is a `line` and its words
+///   as text, like a user row's; a subagent record is a `line` each, though a Project's or worker's thread draws none;
 /// - a row: `rowBase` and its items.
 ///
 /// Calibration: the Release QA app, 2026-11-08, three runs of a fresh app a row. Footprint with the purgeable
@@ -74,12 +76,12 @@ public enum NativeMountedCost {
     /// A unit of weight of an image, which costs its floor (an estimate).
     public static let imageWeight = 448
     /// A byte of text. Every block is a selectable text view of its own, so a byte of text costs five times a byte of
-    /// a fence on its floor. Measured on text blocks alone, and 40% short of a reply that mixes them with code.
+    /// a fence on its floor. Fitted on text blocks alone; the mixed reply, which holds code and tables too, checks it.
     public static let textByte = 2560
     /// A Mermaid diagram: a web view and its process. Mostly out of this process (an estimate).
     public static let mermaid = 64 * 1024 * 1024
-    /// One more line in a row: a burst, a thought, a note, an error, a steer, a subagent line. Measured on tool bursts
-    /// (0.6 MiB) and thoughts (0.35).
+    /// One more line in a row: a burst, a thought, a note, an error, a subagent line, a steer's frame. Measured on tool
+    /// bursts (0.6 MiB) and thoughts (0.35).
     public static let line = 512 * 1024
     /// What a row costs before its content: its chrome, spacing and footer. Measured, 0.59 MiB a row.
     public static let rowBase = 600 * 1024
@@ -104,7 +106,9 @@ public enum NativeMountedCost {
             return value.proseWeight * tableWeight
         case .image:
             return NativeMarkdownBlock.imageFloor * imageWeight
-        case .details, .footnotes:
+        case .details(let summary, _):
+            return summary.utf8.count * textByte + line
+        case .footnotes:
             return value.proseWeight * textByte
         }
     }
@@ -120,7 +124,8 @@ public enum NativeMountedCost {
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
         case .images(_, let images): images.count * NativeMarkdownBlock.imageFloor * imageWeight
-        case .thinking, .note, .goalRecord, .hook, .error, .retrying, .steer, .compaction, .question: line
+        case .steer(_, let text, _, _): line + text.utf8.count * textByte
+        case .thinking, .note, .goalRecord, .hook, .error, .retrying, .compaction, .question: line
         }
     }
 
