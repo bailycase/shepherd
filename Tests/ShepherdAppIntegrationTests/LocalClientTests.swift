@@ -60,11 +60,12 @@ struct LocalClientTests {
         try await eventuallyOnMain("the app to hear its host is gone") { lost >= 1 }
     }
 
-    @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysItsWindowIsClosed() async throws {
+    @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysShepherdIsNotOpen() async throws {
         _ = NSApplication.shared
         let host = try ScratchServer()
         defer { host.stop() }
         host.server.relayDesignDrawingToApp()
+        host.server.designRelayReconnectWait = 0.5
         let socket = host.dir.appendingPathComponent("h.sock").path
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
@@ -75,22 +76,51 @@ struct LocalClientTests {
         _ = try await host.server.updateDesignIndex(design.id, patch: .object(["boards": .object([
             "Two.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(400), "h": .number(300), "title": .string("Two")]),
         ])]))
+        // A real design's project carries more than one frame's worth (1 MiB): files, pictures.
+        let project = try #require(host.server.designs.projectFolder(for: design.id))
+        try Data(repeating: 0x61, count: 3 * NDJSON.maxPayloadBytes).write(to: project.appendingPathComponent("notes.txt"))
         let request = DesignRenderRequest(path: "Two.dc.html")
         do {
             _ = try await host.server.renderDesignBoard(design.id, request: request)
             Issue.record("drew with no app")
         } catch let failure as DesignRenderFailure {
-            #expect(failure.code == "render_unavailable" && failure.message.contains("Shepherd's window"))
+            #expect(failure.code == "render_unavailable" && failure.message.contains("isn't open"))
         }
 
+        // A render asked while the app is still connecting waits for it.
+        host.server.designRelayReconnectWait = 30
+        let waiting = Task { try await host.server.renderDesignBoard(design.id, request: request) }
         let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
         defer {
             for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
         }
         vm.designNetwork = .none
-        let rendered = try await host.server.renderDesignBoard(design.id, request: request)
+        let rendered = try await waiting.value
         #expect(rendered.image.mimeType == "image/png" && rendered.text.hasPrefix("Two.dc.html at 400×300"))
+
+        // board_interact is a render with steps.
+        var interact = request
+        interact.interactions = [DesignInteraction(action: .click, selector: "div[style*=\"left: 0\"]")]
+        let clicked = try await host.server.renderDesignBoard(design.id, request: interact)
+        #expect(clicked.image.mimeType == "image/png")
+
+        let exported = try await host.server.exportDesign(design.id, request: .init(format: .html, paths: ["Two.dc.html"]))
+        #expect(FileManager.default.fileExists(atPath: exported.path))
+
+        let path = try DesignPath.validate("Two.dc.html")
+        let pinned = try #require(DesignReference(designID: design.id, board: path))
+        let folder = try makeScratchDirectory("cap")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let captured = try await host.server.captureDesignReference(DesignReferenceCaptureRequest(
+            reference: pinned, boards: [.init(path: path, source: DesignAgentRenderFlowTests.board, isCurrent: true,
+                                              picture: DesignReferenceFileNames.image(pinned), html: DesignReferenceFileNames.html(pinned))],
+            folder: folder, files: try await host.server.designs.exportFiles(design.id, boards: [path])))
+        #expect(captured.boards.first?.picture != nil)
+
+        // Nothing handed to the app is left behind.
+        let relays = host.server.supportDirectory.appendingPathComponent("design-relay")
+        #expect(((try? FileManager.default.contentsOfDirectory(atPath: relays.path)) ?? []).isEmpty)
     }
 
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).

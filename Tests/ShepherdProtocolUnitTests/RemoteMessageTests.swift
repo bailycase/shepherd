@@ -489,6 +489,22 @@ struct RemoteRequestTests {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
     }
 
+    /// What the host writes to a relay's job file.
+    @Test(arguments: [DesignRelayJob]([
+        .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
+                                request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
+                                deadline: Date(timeIntervalSince1970: 1_000))),
+        .export(DesignExportJob(designID: RemoteReplyTests.relayDesign, request: DesignExportRequest(format: .png),
+                                files: RemoteReplyTests.files, destination: URL(fileURLWithPath: "/tmp/acme/exports/Two.png"))),
+        .capture(DesignReferenceCaptureRequest(
+            reference: DesignReference(designID: RemoteReplyTests.relayDesign, board: DesignPath("Two.dc.html"))!,
+            boards: [.init(path: DesignPath("Two.dc.html")!, source: "<x-dc></x-dc>", isCurrent: true, picture: "board.png", html: "board.html")],
+            folder: URL(fileURLWithPath: "/tmp/acme/refs"), files: RemoteReplyTests.files)),
+    ]))
+    func relayJobsRoundTrip(_ job: DesignRelayJob) throws {
+        #expect(try NDJSON.decode(DesignRelayJob.self, from: NDJSON.encode(job)) == job)
+    }
+
     @Test(arguments: samples)
     func roundTripsThroughNDJSON(_ request: RemoteRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
@@ -726,15 +742,7 @@ struct RemoteReplyTests {
         .browserDrive(.request(token: 12, agentID: S.agent, request: .click(ref: "e4", double: false, note: "paying"))),
         .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
         .agentNotify(agentID: AgentID(rawValue: "a"), title: "CI passed", body: "PR #42 is green"),
-        .designRelay(token: 3, job: .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
-                                                            request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
-                                                            deadline: Date(timeIntervalSince1970: 1_000)))),
-        .designRelay(token: 4, job: .export(DesignExportJob(designID: RemoteReplyTests.relayDesign, request: DesignExportRequest(format: .png),
-                                                            files: RemoteReplyTests.files, destination: URL(fileURLWithPath: "/tmp/acme/exports/Two.png")))),
-        .designRelay(token: 5, job: .capture(DesignReferenceCaptureRequest(
-            reference: DesignReference(designID: RemoteReplyTests.relayDesign, board: DesignPath("Two.dc.html"))!,
-            boards: [.init(path: DesignPath("Two.dc.html")!, source: "<x-dc></x-dc>", isCurrent: true, picture: "board.png", html: "board.html")],
-            folder: URL(fileURLWithPath: "/tmp/acme/refs"), files: RemoteReplyTests.files))),
+        .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
     ]
 
     static let relayDesign = DesignID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c33")

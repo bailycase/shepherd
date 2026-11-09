@@ -52,10 +52,12 @@
   app over `host.sock` (a `browserDrive` request to the local client that lists the drive
   capability), which runs it on its own page with no tunnel; with no app connected the call is
   refused as `unavailable`, saying Shepherd's window is closed.
-  It has no web view either, so `board_render`, `design_export` and a reference's copy go to the
-  same app as `designRelay` (`DesignRelayJob`, only to a local client that lists `designRelay.v1`),
-  answered `designRelayAnswer` with the token (`SessionServer.relayDesignDrawingToApp`); with no
-  app connected they fail as `render_unavailable` or `export_unavailable`.
+  It has no web view either, so `board_render`, `board_interact`, `design_export` and a reference's
+  copy go to the same app as `designRelay` (only to a local client that lists `designRelay.v2`),
+  answered `designRelayAnswer` with the token (`SessionServer.relayDesignDrawingToApp`). The
+  `DesignRelayJob` travels as a JSON file under `design-relay/` in the support directory, named
+  by `jobFile`, since a design's files outgrow a frame; the host removes it once answered. With no
+  app connected after a few seconds' wait they fail as `render_unavailable` or `export_unavailable`.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands

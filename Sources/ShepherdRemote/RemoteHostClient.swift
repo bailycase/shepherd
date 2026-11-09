@@ -1563,8 +1563,21 @@ public final class RemoteHostClient: @unchecked Sendable {
             tunnels.receive(frame)
         case .browserDrive(let push):
             self.push(.browserDrive(push), bytes: line.count)
-        case .designRelay(let token, let job):
-            self.push(.designRelay(token, job), bytes: line.count)
+        case .designRelay(let token, let jobFile):
+            // A design's files can be large: read them off the client queue, then deliver in turn.
+            let generation = connectionGeneration
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let job = Result { try JSONDecoder().decode(DesignRelayJob.self, from: Data(contentsOf: URL(fileURLWithPath: jobFile))) }
+                self?.queue.async {
+                    guard let self, self.connectionGeneration == generation else { return }
+                    switch job {
+                    case .success(let job): self.push(.designRelay(token, job), bytes: line.count)
+                    case .failure(let error):
+                        self.sendRequest(.designRelayAnswer(requestToken: token, result: .failed(
+                            code: "render_unavailable", message: "Shepherd couldn't read the design to draw: \(error.localizedDescription)")))
+                    }
+                }
+            }
         case .agentNotify(let agentID, let title, let body):
             self.push(.agentNotify(agentID, title, body), bytes: line.count)
         case .capabilitiesChanged(let list):
