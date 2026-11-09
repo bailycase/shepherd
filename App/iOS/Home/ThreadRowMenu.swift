@@ -75,9 +75,6 @@ struct ThreadRowMenuItems: View {
                 }
             }
             Section {
-                if abilities.finalize {
-                    Button("Finalize Worktree…", systemImage: "checkmark.seal") { navigator.present(.review(.finalize(thread))) }
-                }
                 if abilities.review {
                     Button("Review Uncommitted Changes", systemImage: "plus.forwardslash.minus") { review(pullRequest: false) }
                     Button("Review PR Changes", systemImage: "arrow.triangle.pull") { review(pullRequest: true) }

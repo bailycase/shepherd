@@ -6624,8 +6624,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The branch card's Rename branch…, Switch branch… and Change base…: what Shepherd records for
-    /// a worktree agent's branch and base, so Finalize pushes, targets and deletes the branch the
-    /// worktree is really on. Only a worktree agent has them; nil leaves a field as it is.
+    /// a worktree agent's branch and base, so the branch card and Delete Worktree act on the branch
+    /// the worktree is really on. Only a worktree agent has them; nil leaves a field as it is.
     public func setAgentWorktree(_ agentID: AgentID, branch: String? = nil, base: String? = nil) async throws {
         try await mutateStateOffQueue { state in
             guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {

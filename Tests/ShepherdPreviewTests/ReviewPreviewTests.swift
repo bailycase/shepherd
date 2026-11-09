@@ -138,7 +138,7 @@ enum CommitBoard {
             ], prURL: "https://github.com/ada/shepherd/pull/131"))
         case "failed":
             store.stage(info(), title: title, body: body, drafted: true)
-            let rejected = WorktreeFinalizer.failureDetail(.init(status: 1, stdout: "", stderr: """
+            let rejected = LoginShell.failureDetail(.init(status: 1, stdout: "", stderr: """
                 To github.com:ada/shepherd.git
                  ! [rejected]        HEAD -> feat/tool-rows (fetch first)
                 error: failed to push some refs to 'github.com:ada/shepherd.git'

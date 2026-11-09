@@ -168,8 +168,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// space. Decodes nil from older state files.
     public var worktreeBranch: String?
     /// The base the worktree branched from ("origin/main", "feat/x") —
-    /// recorded at creation so Finalize can target the PR at the branch the
-    /// work actually started from. Decodes nil from older state files.
+    /// recorded at creation so the branch card compares and updates against
+    /// the branch the work actually started from. Decodes nil from older state files.
     public var worktreeBase: String?
     /// The actual checkout path. Shepherd-created worktrees can derive it
     /// from repo + branch; imported worktrees may use any directory name.

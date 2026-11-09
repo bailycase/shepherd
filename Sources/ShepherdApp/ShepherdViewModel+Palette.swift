@@ -111,7 +111,7 @@ extension ShepherdViewModel {
             }
             // This Mac's thread: the sidebar row's commands (ThreadCommand), and Move to space.
             if selectedRemoteAgent == nil {
-                for command in ThreadCommand.commands(for: agent) where command != .reviewChanges {
+                for command in ThreadCommand.allCases where command != .reviewChanges {
                     items.append(PaletteItem(id: "action.thread.\(command.rawValue)", kind: .action("thread.\(command.rawValue)"),
                                              section: .thisThread, title: command.paletteTitle, subtitle: agent.name,
                                              shortcut: command.shortcut.map(keys.display), icon: command.symbol))

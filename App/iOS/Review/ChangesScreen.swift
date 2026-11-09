@@ -7,7 +7,7 @@ import ShepherdRemote
 /// An agent's changes on iPhone (MobileChanges board): "Changes" over the scope ("Branch · vs
 /// main ⌄", the scope menu), the summary with the branch and viewed progress, the file list
 /// (each opens its diff), your comments, then Send 1 comment and Commit…, which send the agent
-/// its next turn or commit on the host. A worktree agent's summary offers Finalize.
+/// its next turn or commit on the host.
 struct ChangesScreen: View {
     let ref: AgentRef
     let file: String?
@@ -28,9 +28,7 @@ struct ChangesScreen: View {
                     }
                     let branch = store.overview?.branch ?? agent?.worktreeBranch
                     if !store.entries.isEmpty || branch != nil {
-                        ReviewSummaryCard(totals: store.totals, branch: branch,
-                                          onFinalize: ReviewFinalizeGate.available(host: host, agent: agent)
-                                            ? { navigator.present(.review(.finalize(ref))) } : nil)
+                        ReviewSummaryCard(totals: store.totals, branch: branch)
                     }
                     ReviewLoadState(store: store) { store.refresh() }
                     if !store.entries.isEmpty {
@@ -77,8 +75,7 @@ struct ChangesScreen: View {
             }
             // The system's ••• menu, which overflows with the bar where it runs down the side.
             ToolbarOverflowMenu {
-                ReviewOptionsItems(store: store, finalize: ReviewFinalizeGate.available(host: host, agent: agent)
-                                   ? { navigator.present(.review(.finalize(ref))) } : nil,
+                ReviewOptionsItems(store: store,
                                    askAgentToCommit: CommitHooks.available(host: host) ? { dismiss() } : nil)
             }
         }
@@ -149,11 +146,10 @@ struct ReviewActionBar: View {
 }
 
 /// The review's options, in the bar's ••• menu: refresh, Discard comments, Ask agent to commit
-/// where Commit… commits directly (`askAgentToCommit` runs once the agent took it), and Finalize
-/// for a worktree agent. What to compare is the title's menu.
+/// where Commit… commits directly (`askAgentToCommit` runs once the agent took it). What to
+/// compare is the title's menu.
 struct ReviewOptionsItems: View {
     @Bindable var store: ReviewStore
-    let finalize: (() -> Void)?
     var askAgentToCommit: (() -> Void)? = nil
     @Environment(MobileHosts.self) private var hosts
 
@@ -168,16 +164,5 @@ struct ReviewOptionsItems: View {
             }
             .disabled(!store.canCommit)
         }
-        if let finalize {
-            Button("Finalize worktree…", systemImage: "checkmark.seal", action: finalize)
-        }
-    }
-}
-
-/// Finalize is offered for a worktree agent on a host that runs it remotely.
-enum ReviewFinalizeGate {
-    @MainActor static func available(host: MobileHost?, agent: Agent?) -> Bool {
-        guard let host, agent?.worktreeBranch != nil else { return false }
-        return host.supports(RemoteProtocol.worktreeActionsCapability) && host.supports(RemoteProtocol.worktreeSetupCapability)
     }
 }
