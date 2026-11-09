@@ -265,94 +265,12 @@ extension RPCThreadState {
     /// the instruction files it loaded, the conversation by part, tool results with the largest by what
     /// they read or ran, and the provider's count of the first call since the start or a compaction.
     static func estimate(_ messages: [RPCMessage]) -> ContextEstimate {
-        var result = ContextEstimate()
-        var sections: [String: String] = [:]
-        var tools: [String: Int] = [:]
-        var systemText = 0
-        var calls: [String: (name: String, args: JSONValue?)] = [:]
-        var items: [String: (item: NativeContextItem, best: Int)] = [:]
-        var order: [String] = []
+        var estimator = ContextEstimator()
         var seen: [String: Int] = [:]
-        var visible = 0
-        var baselineTaken = false
         for (index, message) in chronological(messages).enumerated() {
-            let entryID = historyEntryID(message, index: index, seen: &seen)
-            switch message.role {
-            case "system":
-                for (name, value) in message.sections ?? [:] {
-                    if let value { sections[name] = value } else { sections[name] = nil }
-                }
-                for tool in message.toolsRemoved ?? [] { if let name = tool["name"]?.stringValue { tools[name] = nil } }
-                for tool in message.toolsAdded ?? [] { if let name = tool["name"]?.stringValue { tools[name] = jsonLength(tool) } }
-                systemText += message.content.reduce(0) { sum, block in if case .text(let text) = block { sum + text.utf8.count } else { sum } }
-            case "toolResult":
-                let sized = size(message)
-                result.toolResults += sized.toolResults
-                result.images += sized.images
-                visible += sized.total
-                let call = message.toolCallId.flatMap { calls[$0] }
-                let item = contextItem(entryID: entryID, toolName: message.toolName ?? call?.name, args: call?.args, tokens: sized.toolResults)
-                let key = "\(item.kind.rawValue):\(item.label)"
-                if var existing = items[key] {
-                    existing.item.tokens += sized.toolResults
-                    if sized.toolResults > existing.best { existing.item.entryID = entryID; existing.best = sized.toolResults }
-                    items[key] = existing
-                } else {
-                    items[key] = (item, sized.toolResults)
-                    order.append(key)
-                }
-            case "compactionSummary", "branchSummary":
-                let sized = tokens(message.summary?.utf8.count ?? 0)
-                result.messages += sized
-                visible += sized
-                if message.role == "compactionSummary" {
-                    result.summaryEntryID = entryID
-                    result.summary = message.summary
-                    result.before = message.tokensBefore.flatMap(Int.init(reportedCount:))
-                    // What the provider counted before was a bigger context: the next call is the baseline.
-                    result.baseline = nil
-                    baselineTaken = false
-                }
-            default:
-                for case .toolCall(let id, let name, let args) in message.content { calls[id] = (name, args) }
-                let sized = size(message)
-                if message.role == "assistant", !baselineTaken, message.stopReason != "aborted", message.stopReason != "error",
-                   let prompt = message.usage?.prompt {
-                    result.baseline = ContextEstimate.Baseline(prompt: prompt, visible: visible)
-                    baselineTaken = true
-                }
-                result.messages += sized.messages
-                result.toolCalls += sized.toolCalls
-                result.reasoning += sized.reasoning
-                result.images += sized.images
-                visible += sized.total
-            }
+            estimator.add(message, entryID: historyEntryID(message, index: index, seen: &seen))
         }
-        let project = sections.removeValue(forKey: "project_context") ?? ""
-        let addendum = sections.removeValue(forKey: "addendum") ?? ""
-        result.instructions = tokens(project.utf8.count + addendum.utf8.count)
-        result.instructionFiles = instructionFiles(project)
-        var instructionParts = instructionFileSizes(project)
-        if !addendum.isEmpty { instructionParts.append(NativeContextPart(label: "APPEND_SYSTEM.md", tokens: tokens(addendum.utf8.count))) }
-        result.instructionParts = instructionParts.sorted { $0.tokens > $1.tokens }
-        // What the prompt and the tools are made of: the prompt's sections (the skills list apart), and the tools by group.
-        var parts: [String: Int] = [:]
-        for (name, text) in sections { parts[name == "skills" ? "skills" : "pi · system prompt", default: 0] += text.utf8.count }
-        if systemText > 0 { parts["pi · system prompt", default: 0] += systemText }
-        for (name, length) in tools { parts[ContextToolGroups.label(forTool: name), default: 0] += length }
-        let partTokens = parts.mapValues { tokens($0) }
-        result.system = partTokens.values.reduce(0, +)
-        result.systemParts = partTokens.filter { $0.value > 0 }.map { NativeContextPart(label: $0.key, tokens: $0.value) }
-            .sorted { $0.tokens != $1.tokens ? $0.tokens > $1.tokens : $0.label < $1.label }
-        // Largest first; ties keep the thread's order.
-        result.largest = order.enumerated()
-            .sorted { a, b in
-                let (x, y) = (items[a.element]!.item.tokens, items[b.element]!.item.tokens)
-                return x != y ? x > y : a.offset < b.offset
-            }
-            .prefix(NativeContextItem.limit)
-            .map { items[$0.element]!.item }
-        return result
+        return estimator.estimate()
     }
 
     /// A tool result named as the Largest list shows it: the file it read or wrote, the command
