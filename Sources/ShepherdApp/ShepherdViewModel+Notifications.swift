@@ -86,7 +86,7 @@ extension ShepherdViewModel {
         for connection in remoteHosts.allConnections {
             hosts.insert(connection.id)
             let mirrored = own.flatMap { $0.0 == connection.id ? $0.1 : nil }
-            let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen)
+            let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen, thisMac: connection.isThisMac)
             let offline = BannerTarget.host(connection.id)
             if mirrored != nil {
                 // Transport only: losing it is `onLocalHostLost`'s, never a host-offline banner.

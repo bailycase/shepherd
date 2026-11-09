@@ -585,9 +585,11 @@ final class RemoteHostStore {
     }
 
     private func scheduleReconnect(_ connection: Connection) {
-        let delay = connection.reconnectDelay
-        // Exponential backoff, capped at 30s. Reset on successful connect.
-        connection.reconnectDelay = min(.seconds(30), delay * 2)
+        // Exponential backoff, capped at 30s. Reset on successful connect. The host on this Mac
+        // restarts in about a second (an update's drain, a crash) and a try costs a local connect:
+        // 0.25 s, then doubling, never more than 2 s.
+        let delay = connection.isThisMac ? min(connection.reconnectDelay / 4, .seconds(2)) : connection.reconnectDelay
+        connection.reconnectDelay = min(.seconds(30), connection.reconnectDelay * 2)
         connection.retryPending = true
         connection.reconnectTask = Task { [weak self, weak connection] in
             try? await Task.sleep(for: delay)
