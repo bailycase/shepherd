@@ -11,6 +11,8 @@ extension MobileLayout {
     /// The iPad's repo, host, worktree and model popovers.
     static let newThreadPopoverWidth: CGFloat = 380
     static let newThreadPopoverMaxWidth: CGFloat = 640
+    /// The repo, worktree and model popovers' ideal height (the host popover's is its rows'). With less
+    /// room under their anchor they get shorter and scroll under their header.
     static let newThreadPopoverHeight: CGFloat = 460
     /// The iPad's prompt keeps room for this many lines before the chips.
     static let newThreadPadPromptLines = 6

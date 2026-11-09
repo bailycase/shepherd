@@ -1541,6 +1541,125 @@ struct ListPerformanceTests {
         #expect(rows["layout.paneTreeGeo", default: 0] == 0, "\(rows)")
     }
 
+    /// One checkout read writes every thread that shares the checkout. The count it carries is
+    /// not in a layout's model, so a change of it reruns no layout, thread or composer, hidden or
+    /// not; only the card on screen is asked to read again.
+    @Test func aCheckoutCountChangeAmongEightAgentsRedrawsNoLayout() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
+        defer { window.close() }
+        let ids = agents.map(\.agent.id)
+        await app.server.setAgentCheckouts(ids, AgentCheckout(branch: "main", changedFiles: 1))
+        try await eventuallyOnMain("every thread to carry the checkout") {
+            vm.state.agents.count == ids.count && vm.state.agents.allSatisfy { $0.checkout?.changedFiles == 1 }
+        }
+        try await eventuallyOnMain("the card on screen") {
+            ListPerf.settle(window)
+            return vm.branchCardStore(for: ids[0]).card != nil
+        }
+        ListPerf.settle(window)
+
+        var next = vm.state
+        for index in next.agents.indices { next.agents[index].checkout = AgentCheckout(branch: "main", changedFiles: 2) }
+        let rows = ListPerf.counting { ListPerf.time(window) { vm.adopt(next) } }
+
+        #expect(vm.state.agents.allSatisfy { $0.checkout?.changedFiles == 2 })
+        for key in ["layout.agentLayout", "layout.paneTreeGeo", "thread.view", "composer.body", "deck.update", "deck.hiddenLayout"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
+    /// The count still reaches the card that shows it: the visible thread's card is asked to
+    /// read again, a hidden one is not, and reads when its thread shows.
+    @Test func aCountChangeReadsOnlyTheCardOnScreenAgain() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
+        defer { window.close() }
+        let ids = agents.map(\.agent.id)
+        await app.server.setAgentCheckouts(ids, AgentCheckout(branch: "main", changedFiles: 1))
+        try await eventuallyOnMain("every thread to carry the checkout") {
+            vm.state.agents.count == ids.count && vm.state.agents.allSatisfy { $0.checkout?.changedFiles == 1 }
+        }
+        try await eventuallyOnMain("the card on screen") {
+            ListPerf.settle(window)
+            return vm.branchCardStore(for: ids[0]).card != nil
+        }
+        ListPerf.settle(window)
+        let before = ids.map { vm.branchCardStore(for: $0).refreshRequest }
+
+        var next = vm.state
+        for index in next.agents.indices { next.agents[index].checkout = AgentCheckout(branch: "main", changedFiles: 2) }
+        ListPerf.time(window) { vm.adopt(next) }
+
+        let after = ids.map { vm.branchCardStore(for: $0).refreshRequest }
+        #expect(after[0] == before[0] + 1, "the card on screen reads again: \(before) to \(after)")
+        #expect(Array(after.dropFirst()) == Array(before.dropFirst()), "a hidden card waits until its thread shows: \(before) to \(after)")
+
+        #expect(vm.branchCardStore(for: ids[3]).card == nil, "a hidden thread's card has not read")
+        vm.selectAgent(ids[3])
+        try await eventuallyOnMain("the shown thread's card") {
+            ListPerf.settle(window)
+            return vm.branchCardStore(for: ids[3]).card != nil
+        }
+    }
+
+    /// A host's push about another thread leaves a remote thread's layout alone
+    /// (`RemoteLayoutModel`): not the layout, its panel, the thread or the composer. With design
+    /// references on, the thread pane once read the connection for them, so every push rebuilt it.
+    @Test func aHostPushForAnotherThreadRedrawsNoRemoteLayout() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        local.settings.designToolEnabled = true
+        remote.host.settings.designToolEnabled = true
+        let space = Fixture.space("acme-web", path: remote.host.dir.path)
+        // The thread's pi is up before the host starts, so nothing binds to its layout while it is counted.
+        let shown = try await remote.host.liveAgent("Checkout funnel", in: space)
+        let other = Fixture.agent("Search index", in: space, order: 1)
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [shown, other]))
+        let vm = try await local.start()
+        let connection = try await remote.connect(local.remoteHosts, name: "build-01")
+        let ref = RemoteAgentRef(hostID: connection.id, agentID: shown.agent.id)
+        // The thread pane reads the connection only where the host takes references and the thread has chips.
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability))
+        #expect(vm.remoteDesignReferenceChips(for: ref) != nil)
+
+        vm.selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID)
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 700), RemoteAgentPane(vm: vm, ref: ref))
+        defer { window.close() }
+        try await eventuallyOnMain("the remote thread to mount") {
+            window.layout()
+            return ListPerf.scrollView(in: window) != nil
+        }
+        let store = vm.remoteThreadStores.store(for: ref)
+        try await eventuallyOnMain("the remote thread to load") { store.ready }
+        ListPerf.settle(window)
+
+        let reporter = try ExtensionClient(path: remote.host.scratch.socketPath)
+        func report(_ status: AgentStatus) async throws {
+            try reporter.send(.setAgentStatus(agentID: other.agent.id, status: status))
+            try await eventuallyOnMain("the host's \(status) report for the other thread") {
+                connection.state.agents.first { $0.id == other.agent.id }?.status == status
+            }
+            ListPerf.settle(window)
+        }
+        SHRenderProbe.start()
+        for edge in 0..<6 { try await report(edge.isMultiple(of: 2) ? .working : .done) }
+        let pushes = SHRenderProbe.stop()
+        for key in ["layout.remoteLayout", "layout.remotePaneTree", "thread.view", "composer.body"] {
+            #expect(pushes[key, default: 0] == 0, "\(key): \(pushes)")
+        }
+
+        // Control: the thread's own name changing redraws its layout.
+        SHRenderProbe.start()
+        try await remote.host.server.renameAgent(shown.agent.id, to: "Checkout funnel v2")
+        try await eventuallyOnMain("the host's rename") { connection.state.agents.first { $0.id == shown.agent.id }?.name == "Checkout funnel v2" }
+        ListPerf.settle(window)
+        let renamed = SHRenderProbe.stop()
+        #expect(renamed["layout.remoteLayout", default: 0] >= 1, "\(renamed)")
+    }
+
     /// Opening a review docks it beside one layout, and redraws that layout alone.
     @Test func openingAReviewRedrawsOnlyItsLayout() async throws {
         let app = try AppHarness()

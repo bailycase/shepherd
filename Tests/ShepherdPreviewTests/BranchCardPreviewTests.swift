@@ -49,14 +49,13 @@ struct BranchCardPreviewTests {
         let store = BranchCardStore(handle: BranchCardHandle(agentID: me.id, card: { card }, load: { _ in status }, perform: { _ in }))
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
-        let label = AgentBranchLabel(kind: .worktree, branch: card.branch, changedFiles: 3)
         // Wide: the card docked in its column, the transcript centered in the rest. Narrow (the
         // side pane open, a small window): one folded row.
         for (name, width) in [("wide", 1500.0), ("medium", 1100.0), ("narrow", 900.0)] {
             try await Preview.render("branch-card-\(name)", size: CGSize(width: width, height: 640),
                                      ready: { fixture.store.ready && !fixture.store.rows.isEmpty && store.status != nil }) {
                 fixture.thread(title: "Add refund events")
-                    .modifier(BranchCardDock(store: store, branch: label, active: true))
+                    .modifier(BranchCardDock(store: store, branch: card.branch, active: true))
             }
         }
     }

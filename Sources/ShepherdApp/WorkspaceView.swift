@@ -122,9 +122,11 @@ struct AgentLayoutModel: Equatable {
         let piSessionID: String
         /// Waiting for the first launch's copy, or not signed in: the line or card at its end.
         var authNotice: ThreadAuthNotice? = nil
-        /// Where it works, for the branch card beside the transcript; nil outside a git checkout
-        /// and for a design's chat.
-        var branch: AgentBranchLabel? = nil
+        /// The branch the card beside the transcript names; nil outside a git checkout and for a
+        /// design's chat. Deliberately not the checkout's changed-file count: a checkout read
+        /// writes every thread in it, and the count changing must rerun no layout. The card on
+        /// screen is asked to read again instead (`ShepherdViewModel.adopt`).
+        var branch: String? = nil
     }
 
     let tab: Tab
@@ -209,7 +211,7 @@ struct AgentLayoutModel: Equatable {
             let thread = agentsByTab[tab.id].flatMap { agent in
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
-                                  authNotice: notice(agent), branch: agent.designID == nil ? AgentBranchLabel(agent: agent) : nil) }
+                                  authNotice: notice(agent), branch: agent.designID == nil ? AgentBranchLabel(agent: agent)?.branch : nil) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
@@ -521,7 +523,8 @@ struct PaneLeafModel: Equatable {
     var piSessionID: String? = nil
     /// The line or card at the end of the thread (`ThreadAuthNotice`).
     var authNotice: ThreadAuthNotice? = nil
-    var branch: AgentBranchLabel? = nil
+    /// The branch the card names (`AgentLayoutModel.Thread.branch`).
+    var branch: String? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
     /// For a terminal pane, the agent whose thread its selection can be added to.
@@ -713,6 +716,226 @@ struct LiveTerminalPane: View {
     }
 }
 
+// MARK: Remote layout
+
+/// What one remote thread's layout shows, as plain values the pane resolves once per body
+/// (`Resolver`): the layout reads nothing observable, so a host's push or a change elsewhere in
+/// the view model that leaves these alone reruns none of it, the thread included. Whatever
+/// assumes the layout is on screen reads `isVisible`, which is always true on the overlay.
+struct RemoteLayoutModel: Equatable {
+    /// The layout's thread: the host's agent in it, and its pane.
+    struct Thread: Equatable {
+        let paneID: PaneID
+        let agentName: String
+        /// The thread's folder on the host: the hook glyph counts that host's hooks there.
+        let cwd: String
+        /// Where it works, for the branch card beside the transcript; only This Mac's threads have one.
+        var branch: AgentBranchLabel? = nil
+    }
+
+    let ref: RemoteAgentRef
+    /// By identity, for actions and pane sessions; never for its observed state.
+    let connection: RemoteHostStore.Connection
+    let hostName: String
+    let isVisible: Bool
+    /// The agent's layout, or the host's utility tab while it is inspected.
+    let tab: Tab
+    /// Nil in a utility tab.
+    let thread: Thread?
+    /// The focused pane while the layout is on screen and nothing covers the window.
+    let focusedPaneID: PaneID?
+    /// The subagent the side pane inspects, over its tabs.
+    let inspectingRunID: String?
+    /// The side pane's tab while it is open, and the tabs pi opened something in.
+    var sideTab: SidePaneTab?
+    var sideNews: Set<SidePaneTab> = []
+    /// The side pane over the whole layout (ChangesWide).
+    var sideMaximized = false
+    /// The Changes tab's review, by identity; nil where the host carries it as a leaf.
+    let review: ReviewSession?
+    /// Where a review leaf of an older host's layout reads its review: this agent, while it is on screen.
+    let hostReviewTarget: RemoteAgentRef?
+    /// The terminal panel under the thread, and its height.
+    var terminal = TerminalPanels.Panel()
+    var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
+    /// The thread's state while the panel is maximized over it, for its folded line; nil
+    /// otherwise, and while hidden, so a status report reruns no other layout.
+    var foldedState: AgentState?
+    /// The transport a terminal leaf asks its host to start over, while it may: on screen, past
+    /// Settings, connected, and the host starts terminals.
+    let terminalStart: UUID?
+    var supportsChanges = false
+    /// References to the host's designs, by identity; nil where the host or the thread has none.
+    let designReferences: DesignReferenceChips?
+
+    static func == (a: RemoteLayoutModel, b: RemoteLayoutModel) -> Bool {
+        let same = a.ref == b.ref && a.connection === b.connection && a.hostName == b.hostName && a.isVisible == b.isVisible
+            && a.tab == b.tab && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
+        let side = a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews
+            && a.sideMaximized == b.sideMaximized && a.review === b.review && a.hostReviewTarget == b.hostReviewTarget
+        let panel = a.terminal == b.terminal && a.terminalHeight == b.terminalHeight && a.foldedState == b.foldedState
+            && a.terminalStart == b.terminalStart
+        return same && side && panel && a.supportsChanges == b.supportsChanges && a.designReferences === b.designReferences
+    }
+}
+
+/// What a remote agent's pane draws: its layout, or what stands in for it.
+enum RemotePresentation: Equatable {
+    case layout(RemoteLayoutModel)
+    /// The agent draws a design of the host's: its canvas beside the agent's chat.
+    case design(RemoteDesignRef, agent: RemoteAgentRef, name: String, threadPaneID: PaneID?)
+    /// The host was connected earlier and is being reached again.
+    case away(host: String, hostID: UUID, lastSeen: Date, phase: RemoteHostStore.Phase.Kind)
+    case placeholder(String, phase: RemoteHostStore.Phase.Kind)
+
+    /// What the pane cross-fades on: the connection's phase, as when the pane read it.
+    var kind: RemoteHostStore.Phase.Kind {
+        switch self {
+        case .layout, .design: .connected
+        case .away(_, _, _, let phase), .placeholder(_, let phase): phase
+        }
+    }
+}
+
+extension RemoteLayoutModel {
+    /// A host, as the pane sees it.
+    struct Host {
+        let connection: RemoteHostStore.Connection
+        var name: String
+        var phase: RemoteHostStore.Phase
+        var lastSeen: Date?
+        var state: ShepherdState
+        var supportsChanges = false
+        /// The transport a terminal start goes over, where the host starts terminals.
+        var terminalTransport: UUID?
+        /// The background host on this Mac: it checks out on this machine.
+        var isThisMac = false
+    }
+
+    /// This Mac's side of the pane: the selection, the panes beside the thread, focus.
+    struct Screen {
+        var isVisible = true
+        /// The host's utility tab stands in for the agent's layout, and which tab it is.
+        var inspecting = false
+        var inspectorTab: TabID?
+        /// The host's design the agent draws, where it draws one.
+        var drawnDesign: DesignID?
+        var focusedPaneID: PaneID?
+        /// Settings, the gallery or the palette covers the window; Settings alone holds terminals back.
+        var covered = false
+        var settingsShown = false
+        var inspectingRunID: String?
+        /// The side pane's tab while it is open, and the tabs pi opened something in.
+        var sideTab: SidePaneTab?
+        var sideNews: Set<SidePaneTab> = []
+        var sideMaximized = false
+        var review: ReviewSession?
+        /// The terminal panel of a layout.
+        var panel: (TabID) -> TerminalPanels.Panel = { _ in TerminalPanels.Panel() }
+        var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
+        var designReferences: DesignReferenceChips?
+    }
+
+    /// What the pane of `ref` draws. A hidden layout keeps its place whatever its host does: the
+    /// banner and the placeholders are for a layout on screen.
+    @MainActor
+    static func presentation(ref: RemoteAgentRef, host: Host, screen: Screen) -> RemotePresentation {
+        let phase = host.phase.kind
+        let visible = screen.isVisible
+        if visible {
+            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen), let lastSeen = host.lastSeen {
+                return .away(host: host.name, hostID: host.connection.id, lastSeen: lastSeen, phase: phase)
+            }
+            switch host.phase {
+            case .connected: break
+            case .connecting: return .placeholder("connecting to \(host.name)…", phase: phase)
+            case .failed(let failure): return .placeholder(failure.message(host: host.name), phase: phase)
+            case .disconnected: return .placeholder("\(host.name) disconnected", phase: phase)
+            }
+        }
+        let missing = RemotePresentation.placeholder("agent has no layout on \(host.name)", phase: phase)
+        guard let agent = host.state.agents.first(where: { $0.id == ref.agentID }) else { return missing }
+        if !screen.inspecting, let design = screen.drawnDesign {
+            return .design(RemoteDesignRef(hostID: ref.hostID, designID: design), agent: ref, name: agent.name, threadPaneID: agent.paneID)
+        }
+        let tabID = screen.inspecting ? screen.inspectorTab ?? agent.tabID : agent.tabID
+        guard let tab = host.state.tabs.first(where: { $0.id == tabID }) else { return missing }
+
+        let own = host.state.agents.filter { $0.tabID == tab.id }
+        let thread = tab.layout.leaves.lazy.compactMap { leaf in
+            primaryAgent(in: tab, pane: leaf, agents: own).map {
+                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd, branch: host.isThisMac ? AgentBranchLabel(agent: $0) : nil)
+            }
+        }.first
+        let panel = screen.panel(tab.id)
+        let hasThread = thread != nil
+        return .layout(RemoteLayoutModel(
+            ref: ref, connection: host.connection, hostName: host.name, isVisible: visible, tab: tab, thread: thread,
+            focusedPaneID: visible && !screen.covered ? screen.focusedPaneID : nil,
+            inspectingRunID: hasThread ? screen.inspectingRunID : nil,
+            sideTab: hasThread ? screen.sideTab : nil,
+            sideNews: hasThread && screen.sideTab != nil ? screen.sideNews : [],
+            sideMaximized: screen.sideMaximized,
+            // A review a host layout still carries as a leaf (older hosts) renders there instead.
+            review: hasThread ? screen.review.flatMap { $0.hostReviewPane ? nil : $0 } : nil,
+            hostReviewTarget: visible ? ref : nil,
+            terminal: panel, terminalHeight: screen.terminalHeight,
+            foldedState: visible && panel.shown && panel.maximized ? AgentState(agent.status) : nil,
+            terminalStart: visible && !screen.settingsShown && host.phase == .connected ? host.terminalTransport : nil,
+            supportsChanges: host.supportsChanges, designReferences: screen.designReferences))
+    }
+
+    /// Gathers the view model's values once per body, and resolves a pane's presentation from them.
+    @MainActor
+    struct Resolver {
+        private let vm: ShepherdViewModel
+        private let connections: [RemoteHostStore.Connection]
+        private let inspecting: RemoteAgentRef?
+        private let inspectorTabs: [RemoteAgentRef: TabID]
+        private let panes: RightPaneState
+        private let reviews: [RemoteAgentRef: ReviewSession]
+        private let terminals: TerminalPanels
+        private let focusedPaneID: PaneID?
+        private let covered: Bool
+        private let settingsShown: Bool
+
+        init(vm: ShepherdViewModel) {
+            self.vm = vm
+            connections = vm.remoteHosts.connections
+            inspecting = vm.remoteInspectingAgent
+            inspectorTabs = vm.remoteInspectorTabs
+            panes = vm.subagentInspector
+            reviews = vm.remoteReviews
+            terminals = vm.terminalPanels
+            focusedPaneID = vm.remoteFocusedPaneID
+            covered = vm.showSettings || vm.showComponentGallery || vm.showCommandPalette
+            settingsShown = vm.showSettings
+        }
+
+        /// Nil when the host is gone.
+        func presentation(for ref: RemoteAgentRef, isVisible: Bool = true) -> RemotePresentation? {
+            guard let connection = connections.first(where: { $0.id == ref.hostID }) else { return nil }
+            let owner = SidePaneOwner.remote(ref)
+            let isInspecting = inspecting == ref
+            let sideTab = panes.open.contains(owner) ? panes.tab(for: owner) : nil
+            let terminals = terminals
+            let host = Host(connection: connection, name: connection.config.name, phase: connection.phase, lastSeen: connection.lastSeen,
+                            state: connection.state, supportsChanges: connection.supportsChanges,
+                            terminalTransport: connection.supportsTerminalStart ? connection.transportID : nil,
+                            isThisMac: connection.isThisMac)
+            let screen = Screen(
+                isVisible: isVisible, inspecting: isInspecting, inspectorTab: inspectorTabs[ref],
+                drawnDesign: isInspecting ? nil : vm.remoteDesign(drawnBy: ref)?.design.id,
+                focusedPaneID: focusedPaneID, covered: covered, settingsShown: settingsShown,
+                inspectingRunID: panes.remoteRuns[ref], sideTab: sideTab, sideNews: panes.news[owner] ?? [],
+                sideMaximized: panes.maximized.contains(owner), review: reviews[ref],
+                panel: { terminals.panel(TerminalPanelKey(host: ref.hostID, tab: $0)) }, terminalHeight: terminals.height,
+                designReferences: vm.remoteDesignReferenceChips(for: ref))
+            return RemoteLayoutModel.presentation(ref: ref, host: host, screen: screen)
+        }
+    }
+}
+
 /// An agent on a remote host: its native thread served by the host, plus any auxiliary
 /// shell panes in its layout streamed over that host's connection.
 struct RemoteAgentPane: View {
@@ -720,99 +943,80 @@ struct RemoteAgentPane: View {
     let ref: RemoteAgentRef
 
     var body: some View {
-        // Resolve connection → agent → bound session on every update; the
-        // remote state push that changes any of these re-renders this view.
-        if let connection = vm.remoteHosts.connections.first(where: { $0.id == ref.hostID }) {
-            RemoteAgentPaneContent(vm: vm, connection: connection, agentID: ref.agentID)
+        // Resolved once: a push from the host reruns this, and everything under it only when
+        // a value it draws changed.
+        if let presentation = RemoteLayoutModel.Resolver(vm: vm).presentation(for: ref) {
+            RemoteAgentPaneContent(vm: vm, presentation: presentation)
+                .equatable()
         } else {
             PanePlaceholder(text: "remote host removed")
         }
     }
 }
 
-private struct RemoteAgentPaneContent: View {
+private struct RemoteAgentPaneContent: View, Equatable {
     var vm: ShepherdViewModel
-    var connection: RemoteHostStore.Connection
-    let agentID: AgentID
+    let presentation: RemotePresentation
+
+    static func == (a: RemoteAgentPaneContent, b: RemoteAgentPaneContent) -> Bool {
+        a.vm === b.vm && a.presentation == b.presentation
+    }
 
     /// Connecting, unreachable, and disconnected placeholders cross-fade with the layout as the
     /// connection changes; switching to the host's inspector tab (`.id(tab.id)`) stays instant.
     var body: some View {
-        let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen)
         ZStack {
+            switch presentation {
             // One banner through every try (connecting, then waiting out the backoff), so it
             // never flickers between them.
-            if away {
-                HostAwayBanner(name: connection.config.name, lastSeen: connection.lastSeen ?? Date()) {
-                    vm.remoteHosts.reconnect(id: connection.id)
+            case .away(let host, let hostID, let lastSeen, _):
+                HostAwayBanner(name: host, lastSeen: lastSeen) {
+                    vm.remoteHosts.reconnect(id: hostID)
                 }
                 .shTransition(.content)
-            } else {
-                switch connection.phase {
-                case .connected:
-                    let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
-                    if vm.remoteInspectingAgent != ref, let (_, design) = vm.remoteDesign(drawnBy: ref),
-                       let agent = connection.state.agents.first(where: { $0.id == agentID }) {
-                        RemoteDesignLayoutView(vm: vm, ref: RemoteDesignRef(hostID: connection.id, designID: design.id), agent: ref,
-                                               agentName: agent.name, threadPaneID: agent.paneID)
-                            .id(design.id)
-                    } else if let agent = connection.state.agents.first(where: { $0.id == agentID }),
-                       let tab = connection.state.tabs.first(where: {
-                           let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
-                           return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
-                       }) {
-                        RemoteAgentLayoutView(
-                            vm: vm,
-                            connection: connection,
-                            ref: RemoteAgentRef(hostID: connection.id, agentID: agentID),
-                            tab: tab
-                        )
-                        .id(tab.id)
-                    } else {
-                        PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
-                            .shTransition(.content)
-                    }
-                case .connecting:
-                    PanePlaceholder(text: "connecting to \(connection.config.name)…")
-                        .shTransition(.content)
-                case .failed(let failure):
-                    PanePlaceholder(text: failure.message(host: connection.config.name))
-                        .shTransition(.content)
-                case .disconnected:
-                    PanePlaceholder(text: "\(connection.config.name) disconnected")
-                        .shTransition(.content)
-                }
+            case .design(let design, let agent, let name, let threadPaneID):
+                RemoteDesignLayoutView(vm: vm, ref: design, agent: agent, agentName: name, threadPaneID: threadPaneID)
+                    .id(design.designID)
+            case .layout(let model):
+                RemoteAgentLayoutView(vm: vm, model: model)
+                    .equatable()
+                    .id(model.tab.id)
+            case .placeholder(let text, let phase):
+                PanePlaceholder(text: text)
+                    .shTransition(.content)
+                    .id(phase)
             }
         }
-        .shAnimation(.content, value: connection.phase.kind)
+        .shAnimation(.content, value: presentation.kind)
     }
 }
 
 /// A remote agent's layout with its side pane docked beside the whole layout, as
-/// `AgentLayoutView` does locally. The host's inspector tab (a utility terminal) has none.
-private struct RemoteAgentLayoutView: View {
+/// `AgentLayoutView` does locally. The host's inspector tab (a utility terminal) has none. It
+/// reads only its model; `vm` is for actions.
+private struct RemoteAgentLayoutView: View, Equatable {
     var vm: ShepherdViewModel
-    var connection: RemoteHostStore.Connection
-    let ref: RemoteAgentRef
-    let tab: Tab
+    let model: RemoteLayoutModel
+
+    static func == (a: RemoteAgentLayoutView, b: RemoteAgentLayoutView) -> Bool {
+        a.vm === b.vm && a.model == b.model
+    }
 
     var body: some View {
-        let threadPaneID = tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: connection.state.agents) != nil }?.id
+        let _ = SHRenderProbe.tick("layout.remoteLayout")
+        let ref = model.ref
         let owner = SidePaneOwner.remote(ref)
-        let panes = vm.subagentInspector
-        let inspecting = threadPaneID == nil ? nil : panes.remoteRuns[ref]
-        let sideTab = threadPaneID != nil && panes.open.contains(owner) ? panes.tab(for: owner) : nil
-        // A review a host layout still carries as a leaf (older hosts) renders there instead.
-        let review = threadPaneID == nil ? nil : vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
-        RightPaneSplit(state: panes, showPane: inspecting != nil || sideTab != nil,
-                       maximized: inspecting == nil && panes.maximized.contains(owner)) {
-            RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: tab.layout, thread: threadPaneID)
+        let inspecting = model.inspectingRunID
+        let sideTab = model.sideTab
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
+                       maximized: inspecting == nil && model.sideMaximized) {
+            RemotePaneTreeView(vm: vm, model: model)
         } pane: {
-            if let threadPaneID {
+            if let thread = model.thread {
                 let store = vm.remoteThreadStores.store(for: ref)
-                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, (sideTab ?? .changes) == .changes ? review?.id : nil)) {
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, (sideTab ?? .changes) == .changes ? model.review?.id : nil)) {
                     if let inspecting {
-                        SubagentInspector(store: store, runID: inspecting, active: true, close: { [vm] in
+                        SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
                             vm.closeInspector(owner)
                         }, select: { [vm, ref] in vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
                         review: { [vm, ref] in vm.openRemoteReview(ref, path: $0) },
@@ -820,13 +1024,13 @@ private struct RemoteAgentLayoutView: View {
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .shTransition(.content)
                     } else if let sideTab {
-                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: panes.news[owner] ?? [], review: review, store: store,
-                                     maximized: panes.maximized.contains(owner),
+                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: model.sideNews, review: model.review, store: store,
+                                     maximized: model.sideMaximized, active: model.isVisible,
                                      inspect: { [vm, ref] in vm.subagentInspector.remoteRuns[ref] = $0.runID })
                             .shTransition(.content)
                     }
                 }
-                .simultaneousGesture(TapGesture().onEnded { [vm] in vm.remoteFocusedPaneID = threadPaneID })
+                .simultaneousGesture(TapGesture().onEnded { [vm] in vm.remoteFocusedPaneID = thread.paneID })
             }
         }
     }
@@ -836,18 +1040,15 @@ private struct RemoteAgentLayoutView: View {
 /// ID, so a tab switch or a hide never rebuilds a terminal.
 private struct RemotePaneTreeView: View {
     var vm: ShepherdViewModel
-    var connection: RemoteHostStore.Connection
-    let ref: RemoteAgentRef
-    let tab: Tab
-    let node: PaneNode
-    /// The agent's thread; nil for the host's utility terminal, which has no panel.
-    var thread: PaneID? = nil
+    let model: RemoteLayoutModel
     @State private var liveHeight: CGFloat?
 
+    private var tab: Tab { model.tab }
+    private var node: PaneNode { model.tab.layout }
     private var containerSpace: String { "remote-split-\(tab.id)" }
 
     var body: some View {
-        if let thread, node.contains(thread) {
+        if let thread = model.thread?.paneID, node.contains(thread) {
             panel(thread: thread)
         } else {
             tree
@@ -858,32 +1059,31 @@ private struct RemotePaneTreeView: View {
     /// screen are mounted: a remote terminal attaches while it shows (its grid counts toward the
     /// host's smallest-viewer size), and the host replays it when it comes back.
     private func panel(thread: PaneID) -> some View {
-        let key = TerminalPanelKey(host: connection.id, tab: tab.id)
-        let panel = vm.terminalPanels.panel(key)
-        let target = ShepherdViewModel.TerminalTarget(key: key, layout: node, thread: thread, remote: ref, focused: vm.remoteFocusedPaneID)
+        let key = TerminalPanelKey(host: model.ref.hostID, tab: tab.id)
+        let panel = model.terminal
+        let target = ShepherdViewModel.TerminalTarget(key: key, layout: node, thread: thread, remote: model.ref, focused: model.focusedPaneID)
         return GeometryReader { geo in
+            let _ = SHRenderProbe.tick("layout.remotePaneTree")
             let selected = TerminalPanel.selected(TerminalPanel.tabs(in: node, thread: thread), chosen: panel.chosenTab,
-                                                  focused: vm.remoteFocusedPaneID)
+                                                  focused: model.focusedPaneID)
             let geometry = terminalPanelGeometry(for: node, thread: thread, selected: selected, shown: panel.shown,
-                                                 maximized: panel.maximized, height: liveHeight ?? vm.terminalPanels.height,
+                                                 maximized: panel.maximized, height: liveHeight ?? model.terminalHeight,
                                                  in: geo.size)
             ZStack(alignment: .topLeading) {
-                ForEach(geometry.leaves.filter { $0.shown || $0.pane.id == thread }, id: \.pane.id) { leaf in
-                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane,
-                                       hasThread: true, active: leaf.shown)
+                ForEach(geometry.leaves.filter { ($0.shown && model.isVisible) || $0.pane.id == thread }, id: \.pane.id) { leaf in
+                    RemotePaneLeafView(vm: vm, model: model, leaf: leaf.pane, hasThread: true, shown: leaf.shown)
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
                 }
-                let agent = connection.state.agents.first { $0.id == ref.agentID }
-                TerminalPanelChrome(geometry: geometry, threadTitle: agent?.name ?? "",
-                                    threadState: agent.map { AgentState($0.status) } ?? .idle,
+                TerminalPanelChrome(geometry: geometry, threadTitle: model.thread?.agentName ?? "",
+                                    threadState: model.foldedState ?? .idle,
                                     restore: { [vm] in vm.toggleTerminalMaximized() })
                 if let bar = geometry.tabBar {
                     TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
-                                     onScreen: true, host: connection.config.name)
+                                     onScreen: model.isVisible, host: model.hostName)
                         .frame(width: bar.width, height: bar.height)
                         .overlay(alignment: .top) {
                             if !panel.maximized {
@@ -904,7 +1104,8 @@ private struct RemotePaneTreeView: View {
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
         .coordinateSpace(.named(containerSpace))
-        .modifier(TerminalActivityPoll(vm: vm, key: key, agent: ref.agentID, remote: ref, active: node.leaves.count > 1))
+        .modifier(TerminalActivityPoll(vm: vm, key: key, agent: model.ref.agentID, remote: model.ref,
+                                       active: model.isVisible && node.leaves.count > 1))
         .onChange(of: node.leaves.map(\.id), initial: true) {
             vm.terminalPanels.reconcile(key, layout: node, thread: thread)
         }
@@ -915,7 +1116,7 @@ private struct RemotePaneTreeView: View {
             let geometry = paneTreeGeometry(for: node, in: geo.size)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
-                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane)
+                    RemotePaneLeafView(vm: vm, model: model, leaf: leaf.pane)
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                 }
@@ -928,21 +1129,20 @@ private struct RemotePaneTreeView: View {
 
 private struct RemotePaneLeafView: View {
     var vm: ShepherdViewModel
-    var connection: RemoteHostStore.Connection
-    let ref: RemoteAgentRef
-    let tab: Tab
+    let model: RemoteLayoutModel
     let leaf: LeafPane
     /// The layout has the agent's thread (not a host's utility terminal): a terminal's
     /// selection can go to it.
     var hasThread = false
-    var active = true
+    /// The leaf shows in its panel (the thread always does).
+    var shown = true
 
     @State private var visible = false
     @Environment(\.scenePhase) private var scenePhase
 
     private struct TerminalDemand: Equatable {
         var paneID: PaneID
-        var transport: UUID
+        var transport: UUID?
         var active: Bool
     }
 
@@ -954,23 +1154,26 @@ private struct RemotePaneLeafView: View {
     /// A placeholder fades out as the review or the terminal it stood for arrives; a terminal
     /// surface itself appears at once and never animates.
     var body: some View {
-        let agent = primaryAgent(in: tab, pane: leaf, agents: connection.state.agents)
-        let reviewTarget = agent == nil && leaf.isReview == true ? vm.selectedRemoteAgent : nil
+        let thread = model.thread.flatMap { $0.paneID == leaf.id ? $0 : nil }
+        let reviewTarget = thread == nil && leaf.isReview == true ? model.hostReviewTarget : nil
         let review = reviewTarget.flatMap { vm.remoteReviews[$0] }.flatMap { $0.paneID == leaf.id ? $0 : nil }
-        let terminal: (id: SessionID, pane: RemotePaneSession)? = agent == nil && reviewTarget == nil
-            ? leaf.sessionID.flatMap { id in vm.remoteHosts.paneSession(connection: connection, sessionID: id).map { (id, $0) } }
+        let terminal: (id: SessionID, pane: RemotePaneSession)? = thread == nil && reviewTarget == nil
+            ? leaf.sessionID.flatMap { id in vm.remoteHosts.paneSession(connection: model.connection, sessionID: id).map { (id, $0) } }
             : nil
-        let showing: Showing = agent != nil ? .thread : reviewTarget != nil ? (review != nil ? .review : .loadingReview)
+        let showing: Showing = thread != nil ? .thread : reviewTarget != nil ? (review != nil ? .review : .loadingReview)
             : terminal.map { .terminal($0.id) } ?? .starting
         ZStack {
-            if let agent {
-                RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
-                                      isFocused: active && !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
-                                      active: active, cwd: leaf.cwd)
+            if let thread {
+                RemoteAgentThreadPane(vm: vm, ref: model.ref, agentName: thread.agentName,
+                                      isFocused: shown && model.focusedPaneID == leaf.id,
+                                      active: model.isVisible && shown, cwd: thread.cwd,
+                                      inspectingRunID: model.inspectingRunID, supportsChanges: model.supportsChanges,
+                                      designReferences: model.designReferences)
                     // This Mac's background host checks out on this machine: its threads get the
                     // branch card, as the app's own do.
-                    .modifier(BranchCardDock(store: connection.isThisMac ? vm.branchCardStore(for: agent.id) : nil,
-                                             branch: connection.isThisMac ? AgentBranchLabel(agent: agent) : nil, active: active))
+                    .modifier(BranchCardDock(store: thread.branch.map { _ in vm.branchCardStore(for: model.ref.agentID) },
+                                             branch: thread.branch?.branch, changedFiles: thread.branch?.changedFiles ?? 0,
+                                             active: model.isVisible && shown))
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -982,11 +1185,11 @@ private struct RemotePaneLeafView: View {
                 }
             } else if let terminal {
                 RemoteTerminalPane(pane: terminal.pane,
-                                   isFocused: !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
-                                   onFocusAcquired: { [vm] in vm.remoteFocusedPaneID = leaf.id },
-                                   addToMessage: hasThread ? { [vm, ref] in vm.addTerminalSelection($0, to: .remote(ref)) } : nil)
+                                   isFocused: model.focusedPaneID == leaf.id,
+                                   onFocusAcquired: { [vm, id = leaf.id] in vm.remoteFocusedPaneID = id },
+                                   addToMessage: hasThread ? { [vm, ref = model.ref] in vm.addTerminalSelection($0, to: .remote(ref)) } : nil)
                     .id(terminal.id)
-                    .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
+                    .onDisappear { [connection = model.connection] in vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
                     .transition(.identity)
             } else {
                 PanePlaceholder(text: "starting remote terminal…")
@@ -1000,19 +1203,19 @@ private struct RemotePaneLeafView: View {
         .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = leaf.id })
         .onAppear { visible = true }
         .onDisappear { visible = false }
-        .task(id: TerminalDemand(paneID: leaf.id, transport: connection.transportID,
-                                 active: visible && active && scenePhase == .active && !vm.showSettings && vm.selectedRemoteAgent == ref && connection.phase == .connected && connection.supportsTerminalStart)) {
-            guard visible, active, scenePhase == .active, !vm.showSettings, vm.selectedRemoteAgent == ref, connection.phase == .connected,
-                  connection.supportsTerminalStart, agent == nil, leaf.isReview != true else { return }
+        .task(id: TerminalDemand(paneID: leaf.id, transport: model.terminalStart,
+                                 active: visible && shown && scenePhase == .active && model.terminalStart != nil)) {
+            guard visible, shown, scenePhase == .active, model.terminalStart != nil, thread == nil, leaf.isReview != true else { return }
             // Bootstrap retains last run's sessionID. Demand must not depend on it being nil.
-            do { try await vm.remoteHosts.agentAction(ref, action: .startTerminal(paneID: leaf.id)) }
+            do { try await vm.remoteHosts.agentAction(model.ref, action: .startTerminal(paneID: leaf.id)) }
             catch { vm.fail("Couldn’t start the terminal", error) }
         }
     }
 }
 
 /// A remote agent's thread. Same view as a local agent's, with requests sent to the host; its
-/// right pane docks beside the whole layout (`RemoteAgentLayoutView`).
+/// right pane docks beside the whole layout (`RemoteAgentLayoutView`). It reads no view model
+/// state in its body: what it needs comes in as values, and the closures read the model when called.
 struct RemoteAgentThreadPane: View {
     var vm: ShepherdViewModel
     let ref: RemoteAgentRef
@@ -1023,13 +1226,18 @@ struct RemoteAgentThreadPane: View {
     var active = true
     /// The thread's folder on the host: the hook glyph counts that host's hooks there.
     var cwd: String? = nil
+    /// The subagent the side pane inspects: the composer gives it the keyboard.
+    var inspectingRunID: String? = nil
+    /// The host answers Changes: the thread's turns offer review, undo and redo.
+    var supportsChanges = false
+    /// References to the host's designs, where it takes them; nil for a design's own chat.
+    var designReferences: DesignReferenceChips? = nil
 
     var body: some View {
-        let inspecting = vm.subagentInspector.remoteRuns[ref]
         ThreadView(
             store: vm.remoteThreadStores.store(for: ref),
             active: active,
-            isFocused: isFocused && inspecting == nil,
+            isFocused: isFocused && inspectingRunID == nil,
             request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
             commandKey: ThreadCommandCenter.key(remote: ref),
             agentName: agentName,
@@ -1044,9 +1252,9 @@ struct RemoteAgentThreadPane: View {
                 vm.subagentInspector.remoteRuns[ref] = run.runID
                 vm.subagentInspector.steerRun = run.runID
             },
-            inspectedRunID: inspecting,
+            inspectedRunID: inspectingRunID,
             review: { path in vm.openRemoteReview(ref, path: path) },
-            turnActions: vm.remoteHosts.connections.first(where: { $0.id == ref.hostID })?.supportsChanges == true ? TurnChangesActions(
+            turnActions: supportsChanges ? TurnChangesActions(
                 review: { turnID, path in vm.openTurnReview(.remote(ref), turnID: turnID, path: path) },
                 undo: { await vm.undoTurn(.remote(ref), turnID: $0) },
                 redo: { await vm.redoTurn(.remote(ref), turnID: $0) }) : nil,
@@ -1058,7 +1266,7 @@ struct RemoteAgentThreadPane: View {
             designChat: designChat, hookDirectory: cwd, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
         // References to the host's own designs, where it takes them.
-        .environment(\.designReferences, designChat ? nil : vm.remoteDesignReferenceChips(for: ref))
+        .environment(\.designReferences, designReferences)
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))
     }

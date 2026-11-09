@@ -137,7 +137,8 @@ extension BranchCardModel {
 }
 
 /// One thread's branch card: what it last read, read again when the card shows, when the branch
-/// or its changed files move, when a turn ends, and every `interval` while it is on screen.
+/// moves, when the view model asks (its checkout's count moved while the thread was on screen),
+/// when a turn ends, and every `interval` while it is on screen.
 @MainActor
 @Observable
 final class BranchCardStore {
