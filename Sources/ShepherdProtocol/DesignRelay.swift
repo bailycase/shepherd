@@ -1,8 +1,9 @@
 import Foundation
 
 /// Drawing a background host's design off screen, which needs a web view the host doesn't have:
-/// the host hands the job to the app over `host.sock` (`RemoteReply.designRelay`, only to a local
-/// client that lists `RemoteProtocol.designRelayCapability`), and the app answers
+/// the host writes the job to a file and hands its path to the app over `host.sock`
+/// (`RemoteReply.designRelay`, only to a local client that lists
+/// `RemoteProtocol.designRelayCapability`), and the app answers
 /// (`RemoteRequest.designRelayAnswer`). Paths in a job are the host's, which are the app's: both
 /// run on this Mac.
 public enum DesignRelayJob: Codable, Hashable, Sendable {
