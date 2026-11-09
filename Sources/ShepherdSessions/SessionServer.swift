@@ -870,10 +870,12 @@ public final class SessionServer: @unchecked Sendable {
     /// entry, so a request is answered at most once.
     private var driveRequests: [Int: DriveRequest] = [:]
     private var nextDriveToken = 0
-    /// Designs handed to the app to draw (`relayDesign`), by token: the connection it went to and
-    /// who waits for the answer. Server queue.
-    var designRelays: [Int: (fd: Int32, answer: (DesignRelayResult?) -> Void)] = [:]
+    /// Designs handed to the app to draw (`relayDesign`), by token: the connection it went to, the
+    /// job's file, the code a failure carries and who waits for the answer. Server queue.
+    var designRelays: [Int: (fd: Int32, file: URL, code: String, answer: (DesignRelayResult) -> Void)] = [:]
     var nextDesignRelayToken = 0
+    /// How long a relay waits for the app to connect (or reconnect) before it fails.
+    var designRelayReconnectWait: TimeInterval = 5
 
     private struct DriveRequest {
         let asker: ExtensionConnection
@@ -2637,7 +2639,7 @@ public final class SessionServer: @unchecked Sendable {
             remoteBrowserAnswer(token: token, outcome: outcome, client: client)
         case .designRelayAnswer(let token, let result):
             guard designRelays[token]?.fd == client.fd else { return }
-            designRelays.removeValue(forKey: token)?.answer(result)
+            endDesignRelay(token, result)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
         case .agentQuery(let id, let agentID, .setWorktree(let branch, let base)):
@@ -4392,7 +4394,9 @@ public final class SessionServer: @unchecked Sendable {
             // A closed window shows nothing: every thread's phone pushes go out again.
             pushNotifications.focused = nil
         }
-        for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
+        for (token, relay) in designRelays where relay.fd == client.fd {
+            endDesignRelay(token, .failed(code: relay.code, message: Self.appLeftWhileDrawing))
+        }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -7475,17 +7479,54 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Hands `job` to the app connected over `host.sock` to draw, for a host with no web view of
-    /// its own. `answer` gets the app's result, or nil when no app that draws is connected or it
-    /// went away first. Any thread; `answer` is called on the server queue.
-    func relayDesign(_ job: DesignRelayJob, answer: @escaping (DesignRelayResult?) -> Void) {
-        queue.async { [self] in
-            guard let app = clients.values.first(where: {
-                $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.designRelayCapability)
-            }) else { return answer(nil) }
-            nextDesignRelayToken += 1
-            designRelays[nextDesignRelayToken] = (app.fd, answer)
-            send(.designRelay(token: nextDesignRelayToken, job: job), to: app)
+    /// its own. The job goes as a file in `design-relay/` (a design's files outgrow a frame), which
+    /// is removed once answered. With no app that draws, it waits `designRelayReconnectWait` for
+    /// one. `answer` gets the app's result, or a failure with `code`. Any thread; `answer` is
+    /// called on the server queue.
+    func relayDesign(_ job: DesignRelayJob, code: String, answer: @escaping (DesignRelayResult) -> Void) {
+        let until = Date().addingTimeInterval(designRelayReconnectWait)
+        let file = designRelayFolder.appendingPathComponent(UUID().uuidString + ".json")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                try FileManager.default.createDirectory(at: designRelayFolder, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+                try JSONEncoder().encode(job).write(to: file, options: .atomic)
+            } catch {
+                return queue.async { answer(.failed(code: code, message: "Shepherd couldn't hand the design to its app: \(error.localizedDescription)")) }
+            }
+            queue.async { self.handOffDesign(file, code: code, until: until, answer: answer) }
         }
+    }
+
+    var designRelayFolder: URL { supportDirectory.appendingPathComponent("design-relay", isDirectory: true) }
+
+    private func handOffDesign(_ file: URL, code: String, until: Date, answer: @escaping (DesignRelayResult) -> Void) {
+        let apps = clients.values.filter { $0.isLocal && $0.authenticated }
+        guard let app = apps.first(where: { $0.clientCapabilities.contains(RemoteProtocol.designRelayCapability) }) else {
+            guard Date() >= until else {
+                queue.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.handOffDesign(file, code: code, until: until, answer: answer) }
+                return
+            }
+            try? FileManager.default.removeItem(at: file)
+            return answer(.failed(code: code, message: apps.isEmpty ? Self.appNotOpen : Self.appTooOld))
+        }
+        nextDesignRelayToken += 1
+        let token = nextDesignRelayToken
+        designRelays[token] = (app.fd, file, code, answer)
+        send(.designRelay(token: token, jobFile: file.path), to: app)
+        // An app that never answers doesn't keep the file: well past any drawing's own deadline.
+        queue.asyncAfter(deadline: .now() + 5 * designRenderDeadline) { [weak self] in
+            guard let self, designRelays[token] != nil else { return }
+            endDesignRelay(token, .failed(code: code, message: "Shepherd's app didn't draw the design."))
+        }
+    }
+
+    /// Answers relay `token` and removes its job file. Server queue.
+    private func endDesignRelay(_ token: Int, _ result: DesignRelayResult) {
+        guard let relay = designRelays.removeValue(forKey: token) else { return }
+        try? FileManager.default.removeItem(at: relay.file)
+        relay.answer(result)
     }
 
     /// One answer to a render, whichever of the app and the deadline comes first.

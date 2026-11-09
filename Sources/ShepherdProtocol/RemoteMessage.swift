@@ -48,8 +48,9 @@ public enum RemoteProtocol {
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
     /// And it browses a thread's folder (`filesCapability`), which a host offers only to a client that lists it.
     /// And it draws a background host's designs off screen when the host asks
-    /// (`designRelayCapability`), which a host asks only of a local client that lists it.
-    public static let designRelayCapability = "designRelay.v1"
+    /// (`designRelayCapability`), which a host asks only of a local client that lists it. v2: the
+    /// job travels as a file, since a design's files outgrow a frame.
+    public static let designRelayCapability = "designRelay.v2"
     public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
@@ -1260,10 +1261,11 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A viewer's part in an agent's browser (`BrowserDrivePush`), pushed only to a client that lists
     /// `RemoteProtocol.browserDriveCapability`.
     case browserDrive(BrowserDrivePush)
-    /// A design to draw off screen for the background host (`DesignRelayJob`), pushed only to a
-    /// local client that lists `RemoteProtocol.designRelayCapability`; answered
-    /// `RemoteRequest.designRelayAnswer` with the same token.
-    case designRelay(token: Int, job: DesignRelayJob)
+    /// A design to draw off screen for the background host, pushed only to a local client that
+    /// lists `RemoteProtocol.designRelayCapability`; answered `RemoteRequest.designRelayAnswer`
+    /// with the same token. `jobFile` is the path of a `DesignRelayJob`'s JSON on this Mac, which
+    /// the app reads (a design's files outgrow `NDJSON.maxPayloadBytes`); the host removes it.
+    case designRelay(token: Int, jobFile: String)
     /// An agent's notify tool (or its goal) on the background host, pushed only to this Mac's
     /// app that shows its threads as its own (`RemoteProtocol.localThreadsCapability`), which
     /// posts the banner; the host doesn't.
@@ -1278,7 +1280,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case snapshot, settings, status
         case designID, revision, commentsRevision
         case url, push, missionID, live
-        case token, job
+        case token, jobFile
         case title, body
     }
 
@@ -1312,7 +1314,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .browserDrive:
             self = .browserDrive(try c.decode(BrowserDrivePush.self, forKey: .push))
         case .designRelay:
-            self = .designRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(DesignRelayJob.self, forKey: .job))
+            self = .designRelay(token: try c.decode(Int.self, forKey: .token), jobFile: try c.decode(String.self, forKey: .jobFile))
         case .agentNotify:
             self = .agentNotify(agentID: try c.decode(AgentID.self, forKey: .agentID), title: try c.decode(String.self, forKey: .title),
                                 body: try c.decode(String.self, forKey: .body))
@@ -1591,10 +1593,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .browserDrive(let push):
             try c.encode(Kind.browserDrive, forKey: .type)
             try c.encode(push, forKey: .push)
-        case .designRelay(let token, let job):
+        case .designRelay(let token, let jobFile):
             try c.encode(Kind.designRelay, forKey: .type)
             try c.encode(token, forKey: .token)
-            try c.encode(job, forKey: .job)
+            try c.encode(jobFile, forKey: .jobFile)
         case .agentNotify(let agentID, let title, let body):
             try c.encode(Kind.agentNotify, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
