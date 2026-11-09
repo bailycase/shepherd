@@ -142,6 +142,9 @@ final class FileTreeModel {
     /// The source writes files (this Mac's disk). A remote host's tree is read-only.
     var canEdit: Bool { source.write != nil }
 
+    /// Told the path of every file a Save wrote, so the branch chip and the Changes tab follow.
+    @ObservationIgnored var onSaved: (@MainActor (String) -> Void)?
+
     // MARK: Private
 
     /// Paths currently expanded, persisted across reloads.
@@ -391,9 +394,13 @@ final class FileTreeModel {
         defer { saving = false }
         let text = edit.text, expected = edit.conflict ?? edit.saved
         let result = await Task.detached(priority: .userInitiated) { await write(path, text, expected) }.value
-        guard edits[path] != nil else { return }
+        guard edits[path] != nil else {
+            if result == .saved { onSaved?(path) }
+            return
+        }
         switch result {
         case .saved:
+            onSaved?(path)
             saveError = nil
             edits[path]?.didSave(text)
             if selectedPath == path, case .text(_, let ext) = selectedContent {
