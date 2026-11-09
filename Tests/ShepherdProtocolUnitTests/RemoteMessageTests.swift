@@ -392,13 +392,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .startThread, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 48
+    static let caseCount = 49
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -435,6 +435,11 @@ struct RemoteRequestTests {
         .spaceAction(id: 5, spaceID: S.space, action: .setSidebarHidden(hidden: true)),
         .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
         .spaceAction(id: 5, spaceID: S.space, action: .delete),
+        .startThread(id: 6, thread: RemoteThreadStart(spaceID: nil, agentID: S.agent)),
+        .startThread(id: 6, thread: RemoteThreadStart(spaceID: S.space, cwd: "/tmp/acme-web-worktrees/fix", model: "anthropic/claude-4", thinking: .high,
+                                                      serviceTier: .fast, initialPrompt: "fix it", name: "Fix it (fork)", piSessionID: "sess-1",
+                                                      agentID: S.agent, worktreeBranch: "agent/fix", worktreeBase: "main",
+                                                      worktreePath: "/tmp/acme-web-worktrees/fix")),
         .createAgent(id: 6, spaceID: S.space, cwd: "/tmp/checkout", model: "anthropic/claude-4", thinking: .high,
                      initialPrompt: "fix the \"thing\"\nplease", worktreeBranch: "worktree/a", worktreeBase: "origin/release",
                      worktreeFetchFirst: false,

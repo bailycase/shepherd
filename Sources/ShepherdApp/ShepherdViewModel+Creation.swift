@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
@@ -231,11 +232,11 @@ extension ShepherdViewModel {
     /// from the key window already.
     @discardableResult
     func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true, focusWindow: Bool = true) async throws -> AgentID {
+        if let host = localHost {
+            return try await startHostedAgent(config, host: host, selectAfter: selectAfter, focusWindow: focusWindow)
+        }
         guard let space = state.spaces.first(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
-        }
-        if let host = localHost {
-            return try await startHostedAgent(config, in: space, host: host, selectAfter: selectAfter, focusWindow: focusWindow)
         }
         guard !missingSpaces.contains(space.id), Self.folderExists(config.workingDirectory) else {
             checkMissingSpaces()
@@ -311,20 +312,20 @@ extension ShepherdViewModel {
         return agentID
     }
 
-    /// `startAgent` as the background host's client: the host makes the thread (and its worktree,
-    /// when `config` names a branch it hasn't made yet), and it shows and selects here as the
-    /// host's push lands.
-    private func startHostedAgent(_ config: NewAgentConfig, in space: Space, host: RemoteHostStore.Connection,
+    /// `startAgent` as the background host's client: the host makes the thread (its worktree, when
+    /// `config` names a branch without a checkout; its own folder, for a standalone thread whose
+    /// space doesn't exist yet), and it shows and selects here as the host's push lands.
+    private func startHostedAgent(_ config: NewAgentConfig, host: RemoteHostStore.Connection,
                                   selectAfter: Bool, focusWindow: Bool) async throws -> AgentID {
-        // ponytail: the host's create request takes none of these yet; each needs a compatible field on `createAgent`.
-        guard config.piSessionID == nil, config.worktreePath == nil, config.designID == nil, config.coordinatorFor == nil,
-              !config.openingReferencesPending else {
-            throw AgentStartFailure(message: "Shepherd's background service can't start this kind of thread yet.")
+        let space = state.spaces.first { $0.id == config.spaceID }
+        guard config.designID == nil, config.coordinatorFor == nil, space != nil || config.reservedAgentID != nil else {
+            throw AgentStartFailure(message: space == nil ? "space no longer exists" : "Shepherd's background service can't start this kind of thread yet.")
         }
-        let id = try await remoteHosts.createAgent(
-            hostID: host.id, spaceID: space.id, cwd: config.workingDirectory, model: config.model, thinking: config.thinking,
-            initialPrompt: config.initialPrompt, worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase,
-            initialImages: config.initialImages, serviceTier: config.serviceTier)
+        let id = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
+            spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
+            serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
+            name: config.initialName, piSessionID: config.piSessionID, agentID: config.reservedAgentID,
+            worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
         // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
         let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: server.pi.home),
                                            thinking: config.thinking.rawValue)

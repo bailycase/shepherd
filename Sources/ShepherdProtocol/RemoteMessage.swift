@@ -368,6 +368,36 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     }
 }
 
+/// A new thread this Mac's own app starts on its background host (`RemoteRequest.startThread`),
+/// with what `createAgent` doesn't carry: a fork's copied conversation, an existing checkout, a
+/// standalone thread's own folder, its name and id.
+public struct RemoteThreadStart: Codable, Hashable, Sendable {
+    /// Nil: a standalone thread, in a folder of its own the host makes (needs `agentID`).
+    public var spaceID: SpaceID?
+    public var cwd: String?
+    public var model: String?
+    public var thinking: ThinkingLevel?
+    public var serviceTier: ServiceTier?
+    public var initialPrompt: String?
+    public var initialImages: [NativeImage]?
+    public var name: String?
+    /// The pi session it resumes (a fork's copy, in the host's pi home).
+    public var piSessionID: String?
+    public var agentID: AgentID?
+    /// A new worktree on this branch, or with `worktreePath` the existing checkout of it.
+    public var worktreeBranch: String?
+    public var worktreeBase: String?
+    public var worktreePath: String?
+
+    public init(spaceID: SpaceID?, cwd: String? = nil, model: String? = nil, thinking: ThinkingLevel? = nil, serviceTier: ServiceTier? = nil,
+                initialPrompt: String? = nil, initialImages: [NativeImage]? = nil, name: String? = nil, piSessionID: String? = nil,
+                agentID: AgentID? = nil, worktreeBranch: String? = nil, worktreeBase: String? = nil, worktreePath: String? = nil) {
+        self.spaceID = spaceID; self.cwd = cwd; self.model = model; self.thinking = thinking; self.serviceTier = serviceTier
+        self.initialPrompt = initialPrompt; self.initialImages = initialImages; self.name = name; self.piSessionID = piSessionID
+        self.agentID = agentID; self.worktreeBranch = worktreeBranch; self.worktreeBase = worktreeBase; self.worktreePath = worktreePath
+    }
+}
+
 /// What this Mac's own app does to a space of its background host (`RemoteRequest.spaceAction`),
 /// as the in-process app does to its own: the sidebar's project menu and the base picker.
 public enum RemoteSpaceAction: Codable, Hashable, Sendable {
@@ -607,6 +637,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Local clients only (`localCapability`): this Mac's own app changes one of its background
     /// host's spaces. Answered `ok`.
     case spaceAction(id: Int, spaceID: SpaceID, action: RemoteSpaceAction)
+    /// Local clients only (`localCapability`): this Mac's own app starts a thread on its
+    /// background host as it would in process. Answered `agentCreated`.
+    case startThread(id: Int, thread: RemoteThreadStart)
     /// Create an agent on the host: the host GUI runs its normal creation
     /// flow (spawn pi, seed the session file, bind the pane) and the new
     /// agent arrives at every client via the state push.
@@ -692,6 +725,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
+        case thread
     }
 
     private enum Kind: String, Codable {
@@ -699,7 +733,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, addSpace, spaceAction, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, addSpace, spaceAction, startThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -864,6 +898,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 path: try c.decode(String.self, forKey: .path)
             )
+        case .startThread:
+            self = .startThread(id: try c.decode(Int.self, forKey: .id), thread: try c.decode(RemoteThreadStart.self, forKey: .thread))
         case .spaceAction:
             self = .spaceAction(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1091,6 +1127,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(path, forKey: .path)
+        case .startThread(let id, let thread):
+            try c.encode(Kind.startThread, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(thread, forKey: .thread)
         case .spaceAction(let id, let spaceID, let action):
             try c.encode(Kind.spaceAction, forKey: .type)
             try c.encode(id, forKey: .id)

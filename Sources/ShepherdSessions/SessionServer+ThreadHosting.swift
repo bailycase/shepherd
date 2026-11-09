@@ -203,14 +203,32 @@ extension SessionServer {
     @MainActor
     func startRequestedAgent(_ request: RemoteCreateAgentRequest, hosting: ThreadHosting) async throws -> AgentID {
         let defaults = hosting.defaults()
-        guard let space = state.spaces.first(where: { $0.id == request.spaceID }) else {
+        var spaceID = request.spaceID, cwd = request.cwd
+        if request.standalone, let agentID = request.agentID {
+            (spaceID, cwd) = try await standaloneThreadFolder(for: agentID)
+        }
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else {
             throw RemoteCreateAgentError("Space no longer exists")
         }
-        var config = NewAgentConfig(spaceID: request.spaceID, workingDirectory: request.cwd ?? space.path,
+        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: cwd ?? space.path,
                                     model: request.model ?? defaults.model, thinking: request.thinking ?? defaults.thinking,
                                     initialPrompt: request.initialPrompt, initialImages: request.initialImages,
                                     serviceTier: request.serviceTier)
-        if let branch = request.worktreeBranch {
+        config.initialName = request.name
+        config.piSessionID = request.piSessionID
+        config.reservedAgentID = request.agentID
+        if let path = request.worktreePath, let branch = request.worktreeBranch {
+            // An existing checkout (an imported worktree): it must be the space's repository's, on `branch`.
+            let identity = try await Task.detached { try GitWorktree.identity(at: path) }.value
+            let repo = try await Task.detached { try GitWorktree.primaryCheckout(at: space.path) }.value
+            guard identity.repo == repo, identity.branch == branch else {
+                throw RemoteCreateAgentError("That checkout isn't \(branch) of \(space.name)'s repository.")
+            }
+            config.workingDirectory = identity.path
+            config.worktreeBranch = branch
+            config.worktreeBase = request.worktreeBase
+            config.worktreePath = identity.path
+        } else if let branch = request.worktreeBranch {
             let repo = config.workingDirectory
             let fetchFirst = request.worktreeFetchFirst ?? defaults.worktreeFetchBeforeCreate
             let chosen = request.worktreeBase?.trimmingCharacters(in: .whitespacesAndNewlines)

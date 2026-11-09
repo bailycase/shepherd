@@ -3054,6 +3054,25 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
+        case .startThread(let id, let thread):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
+                return
+            }
+            var request = RemoteCreateAgentRequest(
+                spaceID: thread.spaceID ?? SpaceID(rawValue: ""), cwd: thread.cwd, model: thread.model, thinking: thread.thinking,
+                initialPrompt: thread.initialPrompt, worktreeBranch: thread.worktreeBranch, worktreeBase: thread.worktreeBase,
+                initialImages: thread.initialImages ?? [], serviceTier: thread.serviceTier)
+            request.name = thread.name
+            request.piSessionID = thread.piSessionID
+            request.agentID = thread.agentID
+            request.worktreePath = thread.worktreePath
+            request.standalone = thread.spaceID == nil
+            guard !request.standalone || thread.agentID != nil else {
+                send(.error(id: id, code: "invalid", message: "A standalone thread needs its id."), to: client)
+                return
+            }
+            remoteCreateAgent(id: id, request: request, client: client)
         case .spaceAction(let id, let spaceID, let action):
             guard client.isLocal else {
                 send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
@@ -4007,7 +4026,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "unsupported", message: "host cannot create agents (no GUI)"), to: client)
             return
         }
-        guard store.state.spaces.contains(where: { $0.id == request.spaceID }) else {
+        guard request.standalone || store.state.spaces.contains(where: { $0.id == request.spaceID }) else {
             send(.error(id: id, code: "no_such_space", message: "unknown space \(request.spaceID)"), to: client)
             return
         }

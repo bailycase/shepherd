@@ -477,7 +477,10 @@ final class NewThreadState {
                     let spaceID: SpaceID
                     let directory: String
                     var projectBase: String?
-                    if let standaloneID {
+                    if standaloneID != nil, vm.localHost != nil {
+                        // The background host makes the thread's folder as it starts it.
+                        (spaceID, directory) = (SpaceID(rawValue: ""), "")
+                    } else if let standaloneID {
                         (spaceID, directory) = try await vm.server.standaloneThreadFolder(for: standaloneID)
                         vm.adopt(vm.server.state)
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {
@@ -501,15 +504,7 @@ final class NewThreadState {
                         config.initialImages = images
                     }
                     config.serviceTier = tier
-                    if useWorktree, vm.localHost != nil {
-                        // The background host makes the worktree, as it runs the thread.
-                        switch submittedBranch {
-                        case .existing: throw AgentStartFailure(message: "Shepherd's background service can't check out an existing branch yet.")
-                        case .named(let name): config.worktreeBranch = name
-                        case nil: config.worktreeBranch = GitWorktree.generatedBranch()
-                        }
-                        config.worktreeBase = submittedBase
-                    } else if useWorktree {
+                    if useWorktree {
                         let repo = directory
                         let picked = submittedBranch
                         let mode = vm.settings.worktreeBaseMode

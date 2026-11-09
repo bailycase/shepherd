@@ -163,6 +163,33 @@ struct LocalHostRoutingTests {
         #expect(s.vm.newThread.error == nil)
     }
 
+    /// A new thread in a worktree: the checkout is made here, as in process, and the host's
+    /// thread runs in it; a standalone thread gets its own folder on the host.
+    @Test func aWorktreeThreadAndAStandaloneThreadStartOnTheHost() async throws {
+        try StubPi.installAsEngine()
+        let s = try await Self.setUp()
+        defer { s.stop() }
+
+        s.vm.openNewThread(in: s.space.id)
+        s.vm.newThread.worktree = true
+        s.vm.newThread.worktreeBranch = .named("agent/fix-login")
+        s.vm.newThread.prompt = "Fix the login redirect"
+        try await eventuallyOnMain("the new thread's defaults") { s.vm.newThread.blocker(s.vm) == nil }
+        s.vm.newThread.send(s.vm)
+        try await eventuallyOnMain("the host's worktree thread", timeout: .seconds(20)) {
+            s.vm.selectedAgentID.flatMap(s.onHost)?.worktreeBranch == "agent/fix-login"
+        }
+        let agent = try #require(s.vm.selectedAgentID.flatMap(s.onHost))
+        #expect(agent.worktreePath.map { FileManager.default.fileExists(atPath: $0) } == true)
+        #expect(s.vm.newThread.error == nil)
+
+        let id = try await s.vm.startAgent(NewAgentConfig(spaceID: SpaceID(rawValue: ""), workingDirectory: "", reservedAgentID: AgentID(),
+                                                          thinking: .medium))
+        let standalone = try #require(s.onHost(id))
+        #expect(s.host.server.state.spaces.first { $0.id == standalone.spaceID }?.holdsThreads == true)
+        #expect(s.vm.selectedAgentID == id)
+    }
+
     @Test func aTerminalOpensAndClosesOnTheHost() async throws {
         _ = NSApplication.shared
         let s = try await Self.setUp(agents: ["Fix the login redirect"])

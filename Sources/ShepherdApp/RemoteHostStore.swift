@@ -716,6 +716,12 @@ final class RemoteHostStore {
         return try await client.listModels()
     }
 
+    /// Starts a thread on the background host on this Mac (`startThread`).
+    func startThread(hostID: UUID, _ thread: RemoteThreadStart) async throws -> AgentID {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.startThread(thread)
+    }
+
     /// Changes a space of the background host on this Mac (`spaceAction`).
     func spaceAction(hostID: UUID, spaceID: SpaceID, _ action: RemoteSpaceAction) async throws {
         guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }

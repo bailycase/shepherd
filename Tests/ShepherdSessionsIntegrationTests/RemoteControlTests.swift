@@ -375,6 +375,9 @@ struct RemoteControlTests {
         try client.send(.spaceAction(id: 1, spaceID: space.id, action: .rename(name: "renamed")))
         guard case .error(1, "unsupported", _) = try await client.next() else { Issue.record("expected unsupported"); return }
         #expect(r.server.state.spaces.first?.name == "acme-web")
+        try client.send(.startThread(id: 2, thread: RemoteThreadStart(spaceID: space.id)))
+        guard case .error(2, "unsupported", _) = try await client.next() else { Issue.record("expected unsupported"); return }
+        #expect(r.server.state.agents.isEmpty)
     }
 
     @Test func agentQueriesRouteToTheHost() async throws {
