@@ -26,11 +26,11 @@ import Foundation
 /// | --- | --- | --- | --- |
 /// | 8: four of 100 KB, fences (350 bytes) and tables (12 cells) | 997 MiB, 11,529 NSViews | 397, 4 of 8 rows loaded | 1,003 (501 for 4 rows) |
 /// | 20: ten of 10 KB, the same | 328, 2,921 | 247, 2,932 | 260 |
-/// | 8: four of 100 KB, fences alone (282 each) | 530, 5,669 | 166, 4 of 8 rows loaded | 537 (268 for 4 rows) |
+/// | 8: four of 100 KB, fences alone (282 each) | 530, 5,669 | 167, 4 of 8 rows loaded | 537 (268 for 4 rows) |
 /// | 8: four of 30 KB, tables alone (199 each) | 1,296, 15,949 | 1,414, 15,960 | 1,297 |
 /// | 8: four of 10 KB, text blocks alone | 97, 541 | 101, 552 | 100 |
 /// | 20: ten of 3.8 KB, text, 5 fences and a table | 193, 781 | 93, 792 | 96 |
-/// | 4: two of one 202 KB fence | 42, 29 | not read | 42 |
+/// | 4: two of one 202 KB fence | 42, 29 | -18 to +6, 2 of 4 rows loaded (noise) | 42 |
 /// | 20: ten of one 19 KB fence | 35, 141 | not read | 36 |
 /// | 8: four of one 67 KB fence | 26 (one run 39), 57 | not read | 31 |
 /// | 30: fifteen of one 3.2 KB fence | 58, 211 | 26, 222 | 30 |
@@ -39,11 +39,13 @@ import Foundation
 ///
 /// The estimate is within 6% of the first thread for the fences and tables, the text, the rows, the tool bursts and the
 /// 19 and 202 KB fences, 16% over for the thoughts and 21% over for the 67 KB fence. Against the second thread it is
-/// within 15% wherever every row loaded. The second threads of the two 100 KB fixtures did not: the run waits 90 s for
-/// the store to land every row and stopped with 4 of 8 (why the store was that slow was not looked into), so the "half
-/// the views" they drew is half the rows. The estimate for those four rows (501 and 268 MiB) is 24 to 28% over the
-/// second thread of the mixed reply (393 to 403 MiB, +26% on average) and 57 to 61% over that of the fences (166 to 170
-/// MiB, +60% on average; one run read 96, +179%).
+/// within 17% wherever every row loaded. In every fixture with replies of 100 KB or more (both 100 KB fixtures, the
+/// 202 KB fence and the 200 KB replies) the second thread did not load every row: the run waits 90 s and stopped with
+/// half of them. Its history stopped at about 1.4-1.5 MB each time, which looks like one history page, so the cause is
+/// more likely paging than a slow store; it was not looked into. The "half the views" those threads drew is half the
+/// rows. The estimate for those four rows (501 and 268 MiB) is 24 to 28% over the second thread of the fences and tables
+/// (393 to 403 MiB, +26% on average) and 57 to 61% over that of the fences alone (166 to 170 MiB, +60% on average; one
+/// run read 96, +179%).
 ///
 /// The first thread held more than the second, by 82 MiB for fences in Swift and Python (ten of 10 KB), 33 for Python
 /// alone (the 3.2 KB fences) and 100 for the mixed reply, and by nothing for text or tables alone (the second held more).
@@ -55,7 +57,7 @@ import Foundation
 /// - the second reading is a difference taken after the first thread was hidden, so it is net of whatever the first gave
 ///   back then.
 /// Whatever the cause, it is inside the fences' rate: 483 is the first thread's, so the estimate runs 21% under the first
-/// of ten 10 KB replies and 50% under the first of the mixed reply and of the 3.2 KB fences, and 5, 3 and 15% over
+/// of ten 10 KB replies and 50% under the first of the mixed reply and of the 3.2 KB fences, and 5, 3 and 17% over
 /// their second. The process's one-time cost, if that is it, is not a separate term. A budget that reads this for the
 /// threads after the first may be 25 to 60% high for code-heavy replies, and should measure again with distinct content
 /// in each thread before it derives its numbers.
