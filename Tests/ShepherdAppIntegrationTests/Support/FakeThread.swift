@@ -29,6 +29,8 @@ final class FakeThread {
         let reduceMotion: Bool?
         /// A design's chat: its comment cards, as the design screen draws it.
         let designCards: DesignCommentCards?
+        /// A Project conversation's typed references, as its thread is drawn: its turns draw no footer.
+        let projectCards: ProjectActionCards?
         let input: ThreadInput
 
         var body: some View {
@@ -41,6 +43,7 @@ final class FakeThread {
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
                            listModels: { .empty }, designChat: designCards != nil, retainedInput: input)
                     .environment(\.designCommentCards, designCards)
+                    .environment(\.projectActionCards, projectCards)
                     .shComposerSize(designCards == nil ? .regular : .compact)
             }
             // As the workspace hides a layout it keeps mounted.
@@ -71,7 +74,8 @@ final class FakeThread {
     /// setting (CI's VM has it on).
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
-         header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil) {
+         header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil,
+         projectCards: ProjectActionCards? = nil) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
@@ -100,7 +104,7 @@ final class FakeThread {
             }
         }
         window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
-                           reduceMotion: reduceMotion, designCards: designCards, input: input))
+                           reduceMotion: reduceMotion, designCards: designCards, projectCards: projectCards, input: input))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.
