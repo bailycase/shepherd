@@ -16,31 +16,36 @@ struct NativeMountedCostTests {
                                    rows: Array(repeating: Array(repeating: cell, count: columns), count: rows), source: ""))
     }
 
-    /// A reply of `cycles` cycles of a Swift, a Python and a diff fence and a 3x3 table, the shape of a
-    /// 100 KB reply of the QA model (82 cycles, 103 KB, 246 fences and 82 tables). Its fences are 300 to 450 bytes,
-    /// on the 1 KB floor.
-    static func bigReply(cycles: Int) -> String {
-        var text = ""
-        for n in 1...cycles {
-            text += """
-            ```swift
-            @MainActor @Observable
-            final class Store\(n) {
-                private(set) var items: [Item] = []
-                private var task: Task<Void, Never>?
+    /// A Swift fence of 300 to 450 bytes, on the 1 KB floor.
+    static func swiftFence(_ n: Int) -> String {
+        """
+        ```swift
+        @MainActor @Observable
+        final class Store\(n) {
+            private(set) var items: [Item] = []
+            private var task: Task<Void, Never>?
 
-                func reload() {
-                    task?.cancel()
-                    task = Task { [weak self] in
-                        guard let fresh = try? await Loader.fetch(page: \(n)) else { return }
-                        self?.items = fresh.sorted { $0.updatedAt > $1.updatedAt }
-                    }
+            func reload() {
+                task?.cancel()
+                task = Task { [weak self] in
+                    guard let fresh = try? await Loader.fetch(page: \(n)) else { return }
+                    self?.items = fresh.sorted { $0.updatedAt > $1.updatedAt }
                 }
             }
-            ```
+        }
+        ```
 
 
-            """
+        """
+    }
+
+    /// A reply of `cycles` cycles of a Swift, a Python and a diff fence and a 3x3 table (the shape of the QA model's
+    /// 100 KB reply: 82 cycles and the Swift fence of the 83rd, where it stops, 247 fences and 82 tables). Its fences
+    /// are 300 to 450 bytes, on the 1 KB floor. `endingMidCycle` adds that fence.
+    static func bigReply(cycles: Int, endingMidCycle: Bool = false) -> String {
+        var text = ""
+        for n in 1...cycles {
+            text += swiftFence(n)
             text += """
             ```python
             def summarize_\(n)(rows, limit=\(n * 10)):
@@ -80,10 +85,18 @@ struct NativeMountedCostTests {
 
             """
         }
+        if endingMidCycle { text += swiftFence(cycles + 1) }
         return text
     }
 
-    static func prose(cycles: Int) -> NativeProse { NativeProse(nativeMarkdownParse(bigReply(cycles: cycles))) }
+    static func prose(cycles: Int, endingMidCycle: Bool = false) -> NativeProse {
+        NativeProse(nativeMarkdownParse(bigReply(cycles: cycles, endingMidCycle: endingMidCycle)))
+    }
+
+    /// `count` fences of 350 bytes and no other block, the shape of the QA model's `fences:` reply (282 in 100 KB).
+    static func fencesReply(count: Int) -> String {
+        (1...count).map { _ in "```swift\n\(String(repeating: "x", count: 350))\n```\n\n" }.joined()
+    }
 
     // MARK: Blocks
 
@@ -130,7 +143,7 @@ struct NativeMountedCostTests {
         let small = NativeMarkdownBlock.details(summary: "Log", blocks: [])
         let big = NativeMarkdownBlock.details(summary: "Log", blocks: [Self.code(50_000), Self.table(rows: 30, columns: 5)])
         #expect(Cost.block(small) == Cost.block(big), "its content is not drawn until it is opened")
-        #expect(Cost.block(small) == (3 + Int(NativeMarkdownBlock.detailsFloor)) * Cost.textByte)
+        #expect(Cost.block(small) == (3 + NativeMarkdownBlock.detailsFloor) * Cost.textByte)
     }
 
     @Test func nestedListsAndQuotesCostTheirChildren() {
@@ -169,19 +182,29 @@ struct NativeMountedCostTests {
     }
 
     @Test func aReplyBelowTheGateCostsAllItsChunksAndEagerlyToo() {
-        let reply = Self.prose(cycles: 82)
+        let reply = Self.prose(cycles: 82, endingMidCycle: true)
         #expect(!reply.isGiant && reply.eagerTail == reply.chunks.count, "a 100 KB reply is laid out whole")
         #expect(reply.eagerCost == reply.cost)
         #expect(reply.lazyEdgeCost == 0, "there are no chunks the lazy stack could build")
-        // 246 fences on the floor and 82 tables of 12 cells. Measured on the Release QA app, a thread of four such replies
-        // held 998 MiB more once shown: about 249.5 MiB a reply, the soak's 250 MB.
+        // 247 fences on the floor and 82 tables of 12 cells. Measured on the Release QA app, a thread of four such replies
+        // held 998 MiB more once shown: about 249.5 MiB a reply. (The soak's 250 MB was a larger reply, 117 KB and 273 fences.)
         let weight = reply.chunks.reduce(0) { $0 + $1.weight }
-        #expect(weight == 246 * 1024 + 82 * 12 * 256, "the fixture is the reply the model was fitted on")
+        #expect(weight == 247 * 1024 + 82 * 12 * 256, "the fixture is the reply the model was fitted on")
         #expect(abs(reply.cost - Self.measuredBigHundred) <= Self.measuredBigHundred * 3 / 100)
     }
 
     /// What a mounted 100 KB reply of fences and tables held, in bytes (the calibration: 998 MiB for four).
     static let measuredBigHundred = 998 * 1024 * 1024 / 4
+
+    /// Fences alone pin `fenceByte` apart from `tableWeight`, which `aReplyBelowTheGate...` pins through the tables.
+    @Test func aReplyOfFencesAloneCostsWhatTheCalibrationMeasured() {
+        let reply = NativeProse(nativeMarkdownParse(Self.fencesReply(count: 282)))
+        #expect(!reply.isGiant && reply.eagerCost == reply.cost)
+        #expect(reply.chunks.reduce(0) { $0 + $1.weight } == 282 * 1024, "every fence is on the floor")
+        // Four such replies held 532 MiB more once shown.
+        let measured = 532 * 1024 * 1024 / 4
+        #expect(abs(reply.cost - measured) <= measured * 3 / 100)
+    }
 
     @Test func aGiantReplyCostsItsEagerTailWhateverItsLength() {
         let small = Self.prose(cycles: 368)
