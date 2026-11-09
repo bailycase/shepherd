@@ -323,6 +323,14 @@ extension ShepherdViewModel {
             return
         }
         threadStores.store(for: agentID).restarting()
+        if let ref = localRef(agentID) {
+            // The background host runs the agent's pi and starts it again.
+            Task {
+                do { try await remoteHosts.agentAction(ref, action: .restartPi(newConversation: newConversation)) }
+                catch { fail("Couldn’t start the agent", error) }
+            }
+            return
+        }
         sessions.retryStart(agentID, newConversation: newConversation)
     }
 
