@@ -15,7 +15,7 @@ import Testing
 @MainActor
 struct LocalClientTests {
     /// The app, as `ShepherdApp` makes it when the host answers, connected to `socket`.
-    private static func app(socket: String, token: String, host: ScratchServer) async throws
+    static func app(socket: String, token: String, host: ScratchServer) async throws
         -> (ShepherdViewModel, RemoteHostStore, SessionServer, RemoteHostStore.Connection, URL, ScratchDefaults) {
         let clientDir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
