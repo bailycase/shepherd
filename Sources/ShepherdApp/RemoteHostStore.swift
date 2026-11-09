@@ -451,7 +451,9 @@ final class RemoteHostStore {
                     host: connection.config.host,
                     port: connection.config.port,
                     token: connection.config.token,
-                    clientName: Host.current().localizedName ?? "shepherd"
+                    clientName: Host.current().localizedName ?? "shepherd",
+                    capabilities: RemoteProtocol.clientCapabilities
+                        + (connection.isThisMac && self.hidesLocalHost ? [RemoteProtocol.localThreadsCapability] : [])
                 )
                 guard !Task.isCancelled,
                       connection.client === client,

@@ -95,6 +95,7 @@ struct LocalHostRoutingTests {
         let ids = s.host.server.state.agents.map(\.id)
 
         #expect(s.hosts.connections.isEmpty, "This Mac is no host the UI lists")
+        try await eventuallyOnMain("the host to leave its threads' banners to the app") { s.host.server.localAppConnected }
         let rows = (s.vm.sidebarLists.needsYou + s.vm.sidebarLists.working + s.vm.sidebarLists.done + s.vm.sidebarLists.recents).map(\.id)
         #expect(Set(rows) == Set(ids.map { SidebarRowID.local($0) }))
         #expect(NewThreadState.hosts(s.vm).map(\.name) == [NewThreadPlaces.thisMac])

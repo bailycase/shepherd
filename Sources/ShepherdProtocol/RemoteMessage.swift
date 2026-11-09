@@ -170,6 +170,9 @@ public enum RemoteProtocol {
     /// Offered only on the local socket: the host takes `RemoteRequest.drain`, from an app newer
     /// than it. Older hosts leave it off and drain once they see the new bundle.
     public static let hostDrainCapability = "host.drain.v1"
+    /// A client capability, from this Mac's own app only: it shows its background host's threads
+    /// as its own and posts their turns' and questions' banners itself, so the host doesn't.
+    public static let localThreadsCapability = "local.threads.v1"
     /// The host takes the terminal panel's actions on an agent's terminal panes
     /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill
     /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`

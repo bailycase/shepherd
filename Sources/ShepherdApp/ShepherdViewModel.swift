@@ -632,7 +632,8 @@ final class ShepherdViewModel {
         sink: .init(post: { [unowned self] in self.notifications.post($0) },
                     remove: { [unowned self] in self.notifications.remove($0) },
                     isWatching: { [unowned self] in self.isWatching($0) },
-                    notifyOnTurnFinished: { [unowned self] in self.settings.notifyOnTurnFinished }))
+                    notifyOnTurnFinished: { [unowned self] in self.settings.notifyOnTurnFinished }),
+        request: { [unowned self] in try await self.nativeThread($0, request: $1) })
     let settings: AppSettings
     private let sidebarDefaults: UserDefaults
     let keybindings: KeybindingsStore

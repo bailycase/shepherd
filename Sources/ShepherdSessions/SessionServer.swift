@@ -388,6 +388,9 @@ public final class SessionServer: @unchecked Sendable {
 
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A client's agent query; the flag says it came over the local socket (this Mac's own app).
+    /// This Mac's own app is connected over the local socket and shows the host's threads as its
+    /// own (`localThreadsCapability`): it posts their turns' and questions' banners itself.
+    @MainActor public private(set) var localAppConnected = false
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, Bool, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
@@ -2414,6 +2417,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             client.authenticated = true
             client.clientCapabilities = Set(capabilities ?? [])
+            if client.isLocal { localAppsChanged() }
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
@@ -4352,6 +4356,14 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: tells the main actor whether this Mac's own app is connected now.
+    private func localAppsChanged() {
+        let connected = clients.values.contains {
+            $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
+        }
+        hopToMain { [weak self] in MainActor.assumeIsolated { self?.localAppConnected = connected } }
+    }
+
     private func disconnect(_ client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
         hostUpdateRequests[client.fd] = nil
@@ -4368,6 +4380,7 @@ public final class SessionServer: @unchecked Sendable {
         Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
+        if client.isLocal, client.authenticated { localAppsChanged() }
         for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")

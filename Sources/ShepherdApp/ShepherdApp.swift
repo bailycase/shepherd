@@ -361,9 +361,12 @@ public enum ShepherdHost {
                 notifications.post(AgentBanners.pullRequestKept(agent, number: link.ref.number, reason: reason))
             }
             return hosting
-        }, banners: { _ in
-            ThreadBanners.Sink(post: notifications.post, remove: notifications.remove, isWatching: { _ in false },
-                               notifyOnTurnFinished: { settings.notifyOnTurnFinished })
+        }, banners: { server in
+            var sink = ThreadBanners.Sink(post: notifications.post, remove: notifications.remove, isWatching: { _ in false },
+                                          notifyOnTurnFinished: { settings.notifyOnTurnFinished })
+            // The app, connected and showing these threads as its own, posts their banners.
+            sink.quiet = { server.localAppConnected }
+            return sink
         })
     }
 }
