@@ -16,10 +16,46 @@ import Foundation
 /// - any other line of a row (an activity burst, a thought, a note, an error, a steer): `line`;
 /// - a row: `rowBase` and its items.
 ///
-/// Calibration (Release QA app, 2026-11-08; footprint with the purgeable graphics pool taken off, 5 s after the
-/// thread is shown, the first thread shown in a fresh process): 483 bytes per unit of weight for a fence on its floor,
-/// 554 for a table, 100 for a byte of a fence above its floor, about 2.5 KB for a byte of text, 0.5 MiB for a line and
-/// 0.6 MiB for a row. Images and Mermaid are still the design's guesses.
+/// Calibration: the Release QA app, 2026-11-08, three runs of a fresh app a row. Footprint with the purgeable
+/// graphics pool taken off, 5 s after the thread is shown with every row loaded; replies from the QA model. "First" is
+/// the first thread shown in the process, "second" a second thread of the same content shown after it.
+///
+/// | Fixture (rows, content) | First | Second | Estimate |
+/// | --- | --- | --- | --- |
+/// | 8: four of 100 KB, fences (350 bytes) and tables (12 cells) | 994 MiB, 11,529 NSViews | 398, half the views | 1,003 |
+/// | 20: ten of 10 KB, the same | 329, 2,921 | 247, 2,932 | 260 |
+/// | 8: four of 100 KB, fences alone (282 each) | 530, 5,669 | 166, half the views | 537 |
+/// | 8: four of 30 KB, tables alone (199 each) | 1,296, 15,949 | 1,414, 15,960 | 1,297 |
+/// | 8: four of 10 KB, text blocks alone | 97, 541 | 101, 552 | 101 |
+/// | 20: ten of 3.8 KB, text, 5 fences and a table | 193, 781 | 93, 792 | 96 |
+/// | 4: two of one 202 KB fence | 41, 29 | not read | 42 |
+/// | 20: ten of one 19 KB fence | 34, 141 | not read | 34 |
+/// | 8: four of one 67 KB fence | 26 (one run 39), 57 | not read | 31 |
+/// | 30: fifteen of one 3.2 KB fence | 59, 211 | 26, 222 | 29 |
+/// | 8 and 28: one short line of text | 4.7 and 16.7, 33 and 113 | not read | 4.7 and 16.4 |
+/// | 20: ten of 4 tool calls; ten of a thought | 38 and 15, 193 and 81 | not read | 34 and 17 |
+///
+/// The estimate is within 13% of the second thread everywhere, and within 10% of the first except for the 67 KB fence
+/// (21% over) and the fixtures that pay what the process does once. Against its second, the first thread holds 82 MiB
+/// more for fences in Swift and Python, 33 for Python alone and 100 for the mixed reply, and nothing more for text or
+/// tables alone (consistent with the tree-sitter grammars `CodeHighlight` loads and caches; not isolated). That share
+/// is inside the fence rate (483 is the first thread's), so the estimate runs 21% under the first of ten 10 KB replies and
+/// 50% under the first of the mixed reply and of the 3.2 KB fences, and 5, 3 and 13% over their second.
+///
+/// The fits: 483 bytes per unit of weight for a fence on its floor (fences alone), 554 for a table (tables alone; fences
+/// with tables, by difference, agree within 1%), 100 a byte of a fence above its floor (the 202 KB fence; the 19 and 67
+/// KB fences agree within 25%), 2.5 KB a byte of text (text alone; the mixed reply checks it), 0.5 MiB a line (a tool
+/// burst holds 0.6, a thought 0.35) and 0.6 MiB a row (8 and 28 rows). Unmeasured: a fence of 1 to 3 KB, the length of a
+/// text block apart from its bytes, and a table that is not 12 cells (the 554 mixes a table's own cost with its cells').
+///
+/// Placeholders: images (448 is the design's) and Mermaid (the app's footprint grew 22 MiB a diagram; its WebContent
+/// process was not measured, and 64 MiB is the design's guess at both). Not covered: the lazy part of a giant reply
+/// (the one giant fixture, a 202 KB fence, has every chunk in its eager tail). The second thread of 100 KB replies drew
+/// half the first's views at 5 s and held steady; the estimate counts what the first drew.
+///
+/// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
+/// lazy stack realizes above its eager rows, and that a Mermaid fence still being written is drawn as code
+/// (`SHMermaidBlock.renders` wants it finished) though costed as a diagram.
 ///
 /// Costs are computed with the parse (a chunk's) and in the store's `derive` (a row's), never in a view body.
 public enum NativeMountedCost {
