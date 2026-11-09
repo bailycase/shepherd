@@ -268,6 +268,60 @@ struct ChangesTextTests {
         ChangesFollow.turnChanged(session, old: done, turn: undone, actions: actions)
         #expect(refreshes == 1, "an Undo reloads a working-tree scope")
     }
+
+    /// A pane that was hidden catches up when it shows: a turn that settled meanwhile and a Save
+    /// made in the Files tab, with one reload between them.
+    @Test func aPaneThatWasHiddenReloadsOnceForWhatHappenedMeanwhile() {
+        var refreshes = 0
+        var actions = ReviewActions(setPullRequest: { _ in }, requestChanges: {}, commit: {}, close: {})
+        actions.refresh = { refreshes += 1 }
+        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil)
+        session.engine = ChangesEngine.unused
+        session.scope = .uncommitted
+        let ended = ChangesTurn(startedAt: 1, endedAt: 2, state: .ready)
+
+        ChangesFollow.shown(session, latestTurn: nil, actions: actions)
+        #expect(refreshes == 0, "nothing happened meanwhile")
+        ChangesFollow.shown(session, latestTurn: ended, actions: actions)
+        #expect(refreshes == 1 && session.followedTurn == ended, "a turn ended while the tab was hidden")
+        ChangesFollow.shown(session, latestTurn: ended, actions: actions)
+        #expect(refreshes == 1, "a turn the pane followed is not followed again")
+
+        session.workingTreeChanged = true
+        ChangesFollow.shown(session, latestTurn: ended, actions: actions)
+        #expect(refreshes == 2 && !session.workingTreeChanged, "a Save made meanwhile")
+
+        var next = ended
+        next.id = UUID()
+        session.workingTreeChanged = true
+        ChangesFollow.shown(session, latestTurn: next, actions: actions)
+        #expect(refreshes == 3 && !session.workingTreeChanged && session.followedTurn == next, "a turn and a Save share one reload")
+    }
+
+    @Test func aSaveReloadsOnlyAScopeThatReadsTheWorkingTree() {
+        var refreshes = 0
+        var actions = ReviewActions(setPullRequest: { _ in }, requestChanges: {}, commit: {}, close: {})
+        actions.refresh = { refreshes += 1 }
+        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil)
+        session.engine = ChangesEngine.unused
+        var reloads: [ChangesScope] = []
+        let recorded = UUID()
+        for scope in [ChangesScope.uncommitted, .branch(base: nil), .lastTurn, .turn(id: recorded), .staged, .pullRequest] {
+            session.scope = scope
+            session.workingTreeChanged = true
+            let before = refreshes
+            ChangesFollow.workingTreeChanged(session, actions: actions)
+            #expect(!session.workingTreeChanged, "the mark is spent")
+            if refreshes > before { reloads.append(scope) }
+        }
+        #expect(reloads == [.uncommitted, .branch(base: nil), .lastTurn, .turn(id: recorded)], "the working tree and the turns, as a turn's end reloads")
+
+        session.engine = nil
+        session.scope = .uncommitted
+        session.workingTreeChanged = true
+        ChangesFollow.shown(session, latestTurn: nil, actions: actions)
+        #expect(refreshes == reloads.count && session.workingTreeChanged, "a legacy review has no engine to reload")
+    }
 }
 
 enum ChangesTimeFixture {
