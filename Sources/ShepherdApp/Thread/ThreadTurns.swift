@@ -297,9 +297,9 @@ struct AgentTurn: View, Equatable {
                 if openThinking.remove(id) == nil { openThinking.insert(id) }
             }
             .equatable()
-        case .prose(_, _, let blocks, let openFence):
+        case .prose(_, _, let prose):
             // The fence a streaming reply is writing is colored as it grows, not on every chunk.
-            Prose(blocks: blocks, maxWidth: projectCards != nil || workerStyle != nil ? SHLeadMetrics.columnWidth : AppLayout.proseMaxWidth, writingFence: live && openFence).equatable()
+            Prose(prose: prose, maxWidth: projectCards != nil || workerStyle != nil ? SHLeadMetrics.columnWidth : AppLayout.proseMaxWidth, writingFence: live && prose.endsInOpenFence).equatable()
         case .activity(_, let bursts):
             ActivityLinesView(bursts: bursts, review: review, cards: projectCards, planCallID: planCallID).equatable()
         case .subagents where projectCards != nil || workerStyle != nil:

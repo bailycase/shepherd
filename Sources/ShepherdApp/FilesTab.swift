@@ -923,13 +923,13 @@ private final class FilesTextView: NSTextView {
 /// Parsing runs off the main actor to avoid blocking the UI with large files.
 private struct FilesMarkdownPreview: View {
     let lines: [String]
-    @State private var blocks: [NativeMarkdownBlock]?
+    @State private var prose: NativeProse?
 
     var body: some View {
         Group {
-            if let blocks {
+            if let prose {
                 ScrollView {
-                    Prose(blocks: blocks, maxWidth: .infinity)
+                    Prose(prose: prose, maxWidth: .infinity)
                         .padding(SH.Space.l)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -946,7 +946,7 @@ private struct FilesMarkdownPreview: View {
         .task(id: lines) {
             let source = lines
             let work = Task.detached(priority: .userInitiated) {
-                nativeMarkdownBlocks(source.joined(separator: "\n"))
+                NativeProse(nativeMarkdownBlocks(source.joined(separator: "\n")))
             }
             let parsed = await withTaskCancellationHandler {
                 await work.value
@@ -954,7 +954,7 @@ private struct FilesMarkdownPreview: View {
                 work.cancel()
             }
             guard !Task.isCancelled else { return }
-            blocks = parsed
+            prose = parsed
         }
     }
 }

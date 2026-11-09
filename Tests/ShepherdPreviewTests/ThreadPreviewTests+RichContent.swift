@@ -48,6 +48,36 @@ extension ThreadPreviewTests {
         }
     }
 
+    /// A reply of four chunks: an ordered list that carries on across two chunk boundaries (its
+    /// numbering and 4pt item gap unbroken), a table that closes its chunk by weight so the heading
+    /// after it starts the next, then a quote and a fence. Every gap between blocks matches the gap inside a chunk.
+    @Test func threadProseLong() async throws {
+        let items = (0..<70).map { "\($0 + 3). Step \($0 + 3) of the plan, kept short" }
+        var table = ["| " + (0..<8).map { "H\($0)" }.joined(separator: " | ") + " |", "|" + String(repeating: "---|", count: 8)]
+        for row in 0..<7 { table.append("| " + (0..<8).map { "r\(row)c\($0)" }.joined(separator: " | ") + " |") }
+        var lines: [String] = ["## Where it stands", "", "The migration is under way. These are the steps, numbered from three because the first two already shipped:", ""]
+        lines += items
+        lines += ["", "Every step ran against this table of checks:", ""]
+        lines += table
+        lines += ["", "## What comes after", "", "> A note from the review: keep each chunk's text in view as it scrolls.", ""]
+        lines += ["```swift", "func finish() -> Bool {", "    return steps.allSatisfy(\\.isDone)", "}", "```", "", "That is the plan."]
+        let text = lines.joined(separator: "\n")
+        let prose = NativeProse(nativeMarkdownParse(text))
+        #expect(prose.chunks.count >= 4, "the reply has several chunks: \(prose.chunks.map(\.id))")
+        #expect(prose.chunks.filter(\.continuesList).count == 2, "the list carries on across two boundaries")
+        #expect(prose.chunks.contains { if case .heading? = $0.parts.first?.block { true } else { false } }, "a heading starts a chunk")
+        let expected = prose.chunks.count
+        let fixture = ThreadFixture(Self.reply(text))
+        defer { fixture.store.stop() }
+        try await Preview.render("thread-prose-long", size: CGSize(width: 900, height: 3600), ready: {
+            fixture.store.ready && fixture.store.rows.last?.presentation?.items.contains {
+                if case .prose(_, _, let shown) = $0 { shown.chunks.count == expected } else { false }
+            } == true
+        }) {
+            fixture.thread()
+        }
+    }
+
     /// A table wider than the thread scrolls inside its card; a keycap; mermaid and math fences
     /// drawn as labelled source.
     @Test func threadRichWide() async throws {

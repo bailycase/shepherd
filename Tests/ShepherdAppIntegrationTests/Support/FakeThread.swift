@@ -29,6 +29,7 @@ final class FakeThread {
         let reduceMotion: Bool?
         /// A design's chat: its comment cards, as the design screen draws it.
         let designCards: DesignCommentCards?
+        let input: ThreadInput
 
         var body: some View {
             VStack(spacing: 0) {
@@ -38,7 +39,7 @@ final class FakeThread {
                                  togglePane: {}, showChanges: {}, rename: {})
                 }
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
-                           listModels: { .empty }, designChat: designCards != nil)
+                           listModels: { .empty }, designChat: designCards != nil, retainedInput: input)
                     .environment(\.designCommentCards, designCards)
                     .shComposerSize(designCards == nil ? .regular : .compact)
             }
@@ -52,6 +53,8 @@ final class FakeThread {
 
     let store: NativeThreadStore
     let visibility = Visibility()
+    /// The thread's input state: `readerScrolled(upward:)` is the wheel monitor's word that a reader, not layout, moved the view.
+    let input = ThreadInput()
     /// Keyboard commands for the thread (⌥⌘↑/↓ turn jumps), as the app sends them.
     let commands = ThreadCommandCenter()
     var snapshot: NativeThreadSnapshot
@@ -97,7 +100,7 @@ final class FakeThread {
             }
         }
         window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
-                           reduceMotion: reduceMotion, designCards: designCards))
+                           reduceMotion: reduceMotion, designCards: designCards, input: input))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.

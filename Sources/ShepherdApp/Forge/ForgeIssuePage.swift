@@ -75,8 +75,8 @@ private struct ForgeIssueContent: View {
                 .padding(.top, SH.Space.l)
             ForgeByline(author: summary.author, you: isViewer(summary.author), verb: "opened", age: ForgePresentation.ago(issue.createdAt, now: now))
                 .padding(.top, SH.Space.m)
-            if !store.bodyBlocks.isEmpty {
-                Prose(blocks: store.bodyBlocks, maxWidth: AppLayout.forgeContentWidth).padding(.top, SH.Space.xl)
+            if !store.bodyProse.isEmpty {
+                Prose(prose: store.bodyProse, maxWidth: AppLayout.forgeContentWidth).padding(.top, SH.Space.xl)
             }
             SHHairline().padding(.vertical, SH.Space.xl)
             ForgeActivity(store: store, events: issue.events, viewer: issue.viewer, kind: .issue)

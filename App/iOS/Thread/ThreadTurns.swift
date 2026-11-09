@@ -154,8 +154,8 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
                 if expansion.openThinking.remove(id) == nil { expansion.openThinking.insert(id) }
             }
             .equatable()
-        case .prose(_, _, let blocks, let openFence):
-            ProseView(blocks: blocks, writingFence: live && openFence).equatable()
+        case .prose(_, _, let prose):
+            ProseView(prose: prose, writingFence: live && prose.endsInOpenFence).equatable()
         case .activity(_, let bursts):
             // The proposals card stands for its call.
             let shown = proposals == nil ? bursts : bursts.filter { !$0.calls.allSatisfy { $0.name == "markup_propose" } }
@@ -254,12 +254,27 @@ struct QuestionRecordView: View {
 /// Agent prose: parsed Markdown drawn by `SHAgentProse`, inline runs styled once per text
 /// (`SHProseInline`). A host's files are not on this device, so its images show as chips.
 struct ProseView: View, Equatable {
-    let blocks: [NativeMarkdownBlock]
+    let prose: NativeProse
     var writingFence = false
 
-    var body: some View {
-        SHAgentProse(Self.proseBlocks(blocks), writingFence: writingFence)
+    init(prose: NativeProse, writingFence: Bool = false) {
+        self.prose = prose
+        self.writingFence = writingFence
     }
+
+    var body: some View {
+        let last = prose.chunks.last?.id
+        SHProseChunks(prose.chunks, id: \.id, continuesList: \.continuesList, eagerTail: Self.lazyChunks ? prose.eagerTail : .max) { chunk in
+            ProseChunkView(chunk: chunk, writingFence: writingFence && chunk.id == last).equatable()
+        }
+        .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
+    }
+
+    /// Every chunk is laid out for real on iOS, a giant reply's too (`NativeProse.eagerTail`): the transcript anchors on
+    /// row ids and the subagent run opens at its tail under a native bottom anchor, and a lazy stack nested in those lazy
+    /// rows (whose height they estimate) drew a reply blank on iOS 27.0. Laziness for iOS 27.1 and later waits on the
+    /// scroll-up check on the iPhone and the iPad there, at light and dark, in the thread and in a subagent run.
+    static let lazyChunks = false
 
     static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [SHProseBlock] {
         blocks.map { block in
@@ -292,6 +307,17 @@ struct ProseView: View, Equatable {
                 .footnotes(notes.map { SHProseFootnote(number: $0.number, text: SHProseInline.attributed($0.text)) })
             }
         }
+    }
+}
+
+/// One chunk of a reply's prose (`ProseView`), drawn by `SHAgentProse`. Equatable, so a chunk
+/// that did not change is not drawn again.
+struct ProseChunkView: View, Equatable {
+    let chunk: NativeProseChunk
+    let writingFence: Bool
+
+    var body: some View {
+        SHAgentProse(ProseView.proseBlocks(chunk.blocks), writingFence: writingFence)
     }
 }
 

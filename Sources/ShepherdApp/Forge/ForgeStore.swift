@@ -65,8 +65,8 @@ final class ForgeStore {
     var tab: Tab = .summary { didSet { if tab == .changes, files == nil { loadFiles() } } }
     private(set) var pullRequest: PullRequestDetail?
     private(set) var issue: IssueDetail?
-    /// The body, parsed once per load.
-    private(set) var bodyBlocks: [NativeMarkdownBlock] = []
+    /// The body, parsed and chunked once per load.
+    private(set) var bodyProse = NativeProse.empty
     private(set) var detailLoading = false
     private(set) var detailError: ForgeError?
     private(set) var files: PullRequestFiles?
@@ -351,7 +351,7 @@ final class ForgeStore {
         tab = .summary
         pullRequest = nil
         issue = nil
-        bodyBlocks = []
+        bodyProse = .empty
         files = nil
         filesError = nil
         logs = [:]
@@ -364,7 +364,7 @@ final class ForgeStore {
         selection = nil
         pullRequest = nil
         issue = nil
-        bodyBlocks = []
+        bodyProse = .empty
         files = nil
         detailError = nil
     }
@@ -378,7 +378,7 @@ final class ForgeStore {
         detailLoading = false
         switch result {
         case .success(.pullRequest(let detail)):
-            if detail.body != pullRequest?.body { bodyBlocks = nativeMarkdownBlocks(detail.body) }
+            if detail.body != pullRequest?.body { bodyProse = NativeProse(nativeMarkdownBlocks(detail.body)) }
             if pullRequest?.ref != detail.ref {
                 mergeOptions = MergeOptions(method: detail.defaultMergeMethod ?? detail.mergeMethods.first ?? .squash,
                                             whenReady: !detail.blockers.isEmpty, deleteBranch: !detail.deletesBranchOnMerge,
@@ -386,7 +386,7 @@ final class ForgeStore {
             }
             pullRequest = detail
         case .success(.issue(let detail)):
-            if detail.body != issue?.body { bodyBlocks = nativeMarkdownBlocks(detail.body) }
+            if detail.body != issue?.body { bodyProse = NativeProse(nativeMarkdownBlocks(detail.body)) }
             issue = detail
         case .failure(let failure): detailError = failure
         default: break

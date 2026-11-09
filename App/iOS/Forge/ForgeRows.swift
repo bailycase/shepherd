@@ -91,7 +91,7 @@ struct ForgePullRequestModel: Equatable {
     let byline: String
     /// "payments · Open".
     let subtitle: String
-    let body: [NativeMarkdownBlock]
+    let body: NativeProse
     let status: [ForgeStatusLine]
     let note: ForgeNote?
     let activity: [ForgeActivityItem]
@@ -118,7 +118,7 @@ struct ForgeIssueModel: Equatable {
     let byline: String
     /// "payments · Issue".
     let subtitle: String
-    let body: [NativeMarkdownBlock]
+    let body: NativeProse
     let comments: [ForgeActivityItem]
     let thread: ForgeThreadLink?
 }
@@ -277,7 +277,7 @@ enum ForgeRows {
             detail: detail, badge: badge.label, badgeTone: badge.tone,
             byline: "\(summary.author) · \(ForgePresentation.ago(summary.updatedAt, now: now))",
             subtitle: "\(summary.ref.repoName) · \(badge.label)",
-            body: nativeMarkdownBlocks(detail.body), status: status, note: note,
+            body: NativeProse(nativeMarkdownBlocks(detail.body)), status: status, note: note,
             activity: activity(detail.events, viewer: detail.viewer, now: now),
             checks: checks, failing: checks.filter { $0.check.state == .failing },
             checksTone: ForgePresentation.tone(summary.checks), primary: ForgePresentation.primaryAction(detail),
@@ -297,7 +297,7 @@ enum ForgeRows {
         }
         return ForgeIssueModel(detail: detail, badge: badge.label, badgeTone: badge.tone,
                                labels: summary.labels.map { ForgeLabelTag(name: $0.name, tone: tone(hex: $0.color)) },
-                               byline: byline, subtitle: "\(summary.ref.repoName) · Issue", body: nativeMarkdownBlocks(detail.body),
+                               byline: byline, subtitle: "\(summary.ref.repoName) · Issue", body: NativeProse(nativeMarkdownBlocks(detail.body)),
                                comments: comments, thread: summary.thread)
     }
 
