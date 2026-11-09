@@ -30,7 +30,8 @@ enum TerminalSessionStoreError: Error, CustomStringConvertible {
 final class TerminalSessionStore {
 
     /// One pane's session. Views observe phase and dormancy; everything else is attach and replay
-    /// bookkeeping, and the terminal model is built lazily while a view renders.
+    /// bookkeeping, and the terminal model is built lazily when the session is made (a view draws
+    /// it or something demands it).
     @MainActor
     @Observable
     final class PaneSession {
@@ -385,12 +386,6 @@ final class TerminalSessionStore {
         serverState = state
     }
 
-    /// Wait for a pane to have a live session bound.
-    ///
-    /// A pane's process is spawned when its view first renders, so a pane the
-    /// agent just opened has none yet. Polls rather than adding a callback
-    /// path: this is only used by agent-driven pane opening, where a short
-    /// wait is fine and a missed callback would hang the request.
     /// Live session bound to a pane, if any.
     func liveSession(forPane paneID: PaneID) -> SessionID? {
         guard let sessionID = sessions[paneID]?.sessionID, aliveSessions.contains(sessionID) else {
@@ -399,6 +394,12 @@ final class TerminalSessionStore {
         return sessionID
     }
 
+    /// Wait for a pane to have a live session bound.
+    ///
+    /// A pane's process starts when its view first renders or when the code that opened it
+    /// activates it. Polls rather than adding a callback path: this is only used where a terminal
+    /// is opened and must report on it or type into it, where a short wait is fine and a missed
+    /// callback would hang the request.
     func awaitSession(forPane paneID: PaneID, timeout: Duration) async -> SessionID? {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
@@ -610,8 +611,9 @@ final class TerminalSessionStore {
         }
     }
 
-    /// Demand for one auxiliary pane (a remote viewer's, or its tab shown on this Mac) starts
-    /// only it, without selecting its agent; a pane already started is left as it is.
+    /// Demand for one auxiliary pane (a remote viewer's, its tab shown on this Mac, or the code
+    /// that opened it) starts only it, without selecting its agent; a pane already started is
+    /// left as it is.
     func activateTerminal(_ pane: LeafPane, in tab: Tab) {
         activatePane(pane, in: tab)
     }

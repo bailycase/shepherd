@@ -76,10 +76,13 @@ struct ReviewPane: View, Equatable {
         // edited, the current file, and syntax colors all belonged to the old diff.
         ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths, chrome: chrome, maximized: maximized)
             .id(Identity(session: session.id, cwd: session.cwd))
+            // The pane mounts when its tab shows: it catches up on what happened while it was hidden.
+            .task(id: session.id) { ChangesFollow.shown(session, latestTurn: latestTurn, actions: actions) }
             .onChange(of: latestTurn) { old, turn in
                 guard let turn, old != turn, session.engine != nil else { return }
                 ChangesFollow.turnChanged(session, old: old, turn: turn, actions: actions)
             }
+            .modifier(ReloadsOnSave(session: session, actions: actions))
     }
 
     private struct Identity: Hashable {
@@ -88,19 +91,58 @@ struct ReviewPane: View, Equatable {
     }
 }
 
+/// A Save in the Files tab while the pane shows reloads it at once. The mark is read here, so its
+/// change re-evaluates this modifier and not the pane.
+private struct ReloadsOnSave: ViewModifier {
+    let session: ReviewSession
+    let actions: ReviewActions
+
+    func body(content: Content) -> some View {
+        content.onChange(of: session.workingTreeChanged) { _, changed in
+            if changed { ChangesFollow.workingTreeChanged(session, actions: actions) }
+        }
+    }
+}
+
 /// How the pane follows the agent's turns: a turn that ends, is undone or redone reloads a scope
-/// it can change; the agent's reply to a sent review turns the pane to Last turn.
+/// it can change; the agent's reply to a sent review turns the pane to Last turn. A pane that was
+/// hidden catches up when it shows (`shown`), and a Save made in the Files tab reloads it too.
 @MainActor
 enum ChangesFollow {
-    static func turnChanged(_ session: ReviewSession, old: ChangesTurn?, turn: ChangesTurn, actions: ReviewActions) {
+    /// Returns whether it loaded the pane.
+    @discardableResult
+    static func turnChanged(_ session: ReviewSession, old: ChangesTurn?, turn: ChangesTurn, actions: ReviewActions) -> Bool {
+        session.followedTurn = turn
         let settled = turn.state != .running && (old?.id != turn.id || old?.state != turn.state)
-        guard settled else { return }
+        guard settled else { return false }
         if let sentAt = session.sentAt, turn.startedAt >= sentAt, !session.scopeChosen {
             session.sentAt = nil
             actions.setScope(.lastTurn)
-            return
+            return true
         }
-        if session.scope.comparesWorkingTree || session.scope.kind == .lastTurn { actions.refresh() }
+        guard session.scope.comparesWorkingTree || session.scope.kind == .lastTurn else { return false }
+        actions.refresh()
+        return true
+    }
+
+    /// The pane mounted: follows a turn that changed since it last looked, then a Save made
+    /// meanwhile, with one reload between them.
+    static func shown(_ session: ReviewSession, latestTurn: ChangesTurn?, actions: ReviewActions) {
+        guard session.engine != nil else { return }
+        var reloaded = false
+        if let turn = latestTurn, turn != session.followedTurn {
+            reloaded = turnChanged(session, old: session.followedTurn, turn: turn, actions: actions)
+        }
+        workingTreeChanged(session, actions: actions, reloaded: reloaded)
+    }
+
+    /// Files changed in the working tree (a Files-tab Save): the mark is spent, and a scope that
+    /// reads the working tree loads again unless a load just did (`reloaded`).
+    static func workingTreeChanged(_ session: ReviewSession, actions: ReviewActions, reloaded: Bool = false) {
+        guard session.workingTreeChanged else { return }
+        session.workingTreeChanged = false
+        guard !reloaded, session.engine != nil, session.scope.comparesWorkingTree || session.scope.kind == .lastTurn else { return }
+        actions.refresh()
     }
 }
 
