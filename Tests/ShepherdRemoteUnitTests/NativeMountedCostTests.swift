@@ -104,8 +104,8 @@ struct NativeMountedCostTests {
         #expect(Cost.block(Self.code(0)) == Cost.fenceFloor)
         #expect(Cost.block(Self.code(1)) == Cost.fenceFloor)
         #expect(Cost.block(Self.code(1024)) == Cost.fenceFloor)
-        #expect(Cost.block(Self.code(1025)) == Cost.fenceFloor + Cost.fenceByte)
-        #expect(Cost.block(Self.code(100 * 1024)) == Cost.fenceFloor + 99 * 1024 * Cost.fenceByte)
+        #expect(Cost.block(Self.code(1025)) == Cost.fenceFloor + Cost.fenceSlope)
+        #expect(Cost.block(Self.code(100 * 1024)) == Cost.fenceFloor + 99 * 1024 * Cost.fenceSlope)
         #expect(Cost.block(Self.code(10, language: nil)) == Cost.fenceFloor, "no language is still a fence")
     }
 
@@ -118,7 +118,7 @@ struct NativeMountedCostTests {
     }
 
     @Test func textCostsAQuarterOfAFencesRatePerByte() {
-        #expect(Cost.textByte == Cost.fenceByte / 4)
+        #expect(Cost.textByte == Cost.fenceWeight / 4)
         #expect(Cost.block(.paragraph(String(repeating: "x", count: 1000))) == 1000 * Cost.textByte)
         #expect(Cost.block(.heading(level: 2, text: "Plan")) == 4 * Cost.textByte)
         #expect(Cost.block(.paragraph("é")) == 2 * Cost.textByte, "UTF-8 bytes")
@@ -197,7 +197,7 @@ struct NativeMountedCostTests {
     /// What a mounted 100 KB reply of fences and tables held, in bytes (the calibration: 998 MiB for four).
     static let measuredBigHundred = 998 * 1024 * 1024 / 4
 
-    /// Fences alone pin `fenceByte` apart from `tableWeight`, which `aReplyBelowTheGate...` pins through the tables.
+    /// Fences alone pin `fenceWeight` apart from `tableWeight`, which `aReplyBelowTheGate...` pins through the tables.
     @Test func aReplyOfFencesAloneCostsWhatTheCalibrationMeasured() {
         let reply = NativeProse(nativeMarkdownParse(Self.fencesReply(count: 282)))
         #expect(!reply.isGiant && reply.eagerCost == reply.cost)

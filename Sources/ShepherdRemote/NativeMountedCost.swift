@@ -7,7 +7,7 @@ import Foundation
 /// its own text system, and a table measures and draws every cell.
 ///
 /// The unit is `NativeMarkdownBlock.proseWeight` (a floor per fence, table cell and image), costed per kind:
-/// - a fence: `fenceFloor` up to a kilobyte of code, then `fenceByte` for each byte above it;
+/// - a fence: `fenceFloor` up to a kilobyte of code, then `fenceSlope` for each byte above it;
 /// - a table: `tableWeight` per unit of weight, 256 to a cell at least;
 /// - an image: `imageFloor` units at `imageWeight`, whatever its source (a web or data image is a chip, a file a
 ///   bounded thumbnail);
@@ -35,17 +35,18 @@ import Foundation
 public enum NativeMountedCost {
     // MARK: Constants
 
-    /// A byte of a fence above the floor, and a unit of weight on it. Measured on the floor; the slope above it
-    /// is the floor's own rate, a placeholder until a run of one long fence sets it.
-    public static let fenceByte = 483
+    /// A unit of weight of a fence on its floor. Measured on fences of 350 bytes.
+    public static let fenceWeight = 483
     /// A fence of up to 1 KB of code (the weight floor).
-    public static let fenceFloor = fenceByte * NativeMarkdownBlock.codeFloor
+    public static let fenceFloor = fenceWeight * NativeMarkdownBlock.codeFloor
+    /// A byte of a fence above the floor. A placeholder, the floor's own rate, until a run of one long fence sets it.
+    public static let fenceSlope = fenceWeight
     /// A unit of weight of a table (a cell's floor is 256 units). Measured by difference, tables of 12 cells only.
     public static let tableWeight = 554
     /// A unit of weight of an image, which costs its floor (an estimate).
     public static let imageWeight = 448
     /// A byte of text: a quarter of a fence's, text being one view per block and a fence a text system (an estimate).
-    public static let textByte = fenceByte / 4
+    public static let textByte = fenceWeight / 4
     /// A Mermaid diagram: a web view and its process. Mostly out of this process (an estimate).
     public static let mermaid = 64 * 1024 * 1024
     /// One more line in a row: a burst, a thought, a note, an error, a steer, a subagent line (an estimate).
@@ -66,7 +67,7 @@ public enum NativeMountedCost {
             return inner.reduce(0) { $0 + block($1) }
         case .code(let text, let language):
             if language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "mermaid" { return mermaid }
-            return fenceFloor + max(0, text.utf8.count - NativeMarkdownBlock.codeFloor) * fenceByte
+            return fenceFloor + max(0, text.utf8.count - NativeMarkdownBlock.codeFloor) * fenceSlope
         case .rule:
             return 0
         case .table:
