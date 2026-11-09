@@ -17,19 +17,9 @@ import Foundation
 /// - a row: `rowBase` and its items.
 ///
 /// Calibration (Release QA app, 2026-11-08; footprint with the purgeable graphics pool taken off, 5 s after the
-/// thread is shown, one app start per run). Measured, all of it below the giant gate: four replies of 100 KB of
-/// fences and tables (247 fences of 350 bytes and 82 tables of 12 cells each): 998, 999 and 996 MiB, 11,529 more
-/// NSViews; four replies of 100 KB of fences alone (282 fences each): 532 MiB, 5,669 NSViews. That is 483 bytes per
-/// unit of weight for a fence on its floor, and (from the difference) 554 for a table cell. What the design guessed
-/// from the soak (448 for both) was 7 and 19 percent low. Both fits are in-sample.
-///
-/// Placeholders, never measured: the rate of a fence above its floor (the floor's own, so a 100 KB fence costs about
-/// 49 MB), the table rate apart from its cells (the 554 mixes a table's own cost with its cells'), text, images,
-/// lines, rows and Mermaid, and everything above the gate (`NativeProse.eagerCost` and `lazyEdgeCost` of a giant reply).
-///
-/// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
-/// lazy stack realizes above its eager rows, and that a Mermaid fence still being written is drawn as code
-/// (`SHMermaidBlock.renders` wants it finished) though costed as a diagram.
+/// thread is shown, the first thread shown in a fresh process): 483 bytes per unit of weight for a fence on its floor,
+/// 554 for a table, 100 for a byte of a fence above its floor, about 2.5 KB for a byte of text, 0.5 MiB for a line and
+/// 0.6 MiB for a row. Images and Mermaid are still the design's guesses.
 ///
 /// Costs are computed with the parse (a chunk's) and in the store's `derive` (a row's), never in a view body.
 public enum NativeMountedCost {
@@ -39,20 +29,22 @@ public enum NativeMountedCost {
     public static let fenceWeight = 483
     /// A fence of up to 1 KB of code (the weight floor).
     public static let fenceFloor = fenceWeight * NativeMarkdownBlock.codeFloor
-    /// A byte of a fence above the floor. A placeholder, the floor's own rate, until a run of one long fence sets it.
-    public static let fenceSlope = fenceWeight
-    /// A unit of weight of a table (a cell's floor is 256 units). Measured by difference, tables of 12 cells only.
+    /// A byte of a fence above the floor. Measured on fences of 19, 67 and 202 KB, which agree within 15%.
+    public static let fenceSlope = 100
+    /// A unit of weight of a table (a cell's floor is 256 units). Measured on tables of 12 cells only.
     public static let tableWeight = 554
     /// A unit of weight of an image, which costs its floor (an estimate).
     public static let imageWeight = 448
-    /// A byte of text: a quarter of a fence's, text being one view per block and a fence a text system (an estimate).
-    public static let textByte = fenceWeight / 4
+    /// A byte of text. Every block is a selectable text view of its own, so a byte of text costs five times a byte of
+    /// a fence on its floor. Measured on text blocks alone, and 40% short of a reply that mixes them with code.
+    public static let textByte = 2560
     /// A Mermaid diagram: a web view and its process. Mostly out of this process (an estimate).
     public static let mermaid = 64 * 1024 * 1024
-    /// One more line in a row: a burst, a thought, a note, an error, a steer, a subagent line (an estimate).
-    public static let line = 128 * 1024
-    /// What a row costs before its content: its chrome, spacing and footer (an estimate).
-    public static let rowBase = 256 * 1024
+    /// One more line in a row: a burst, a thought, a note, an error, a steer, a subagent line. Measured on tool bursts
+    /// (0.6 MiB) and thoughts (0.35).
+    public static let line = 512 * 1024
+    /// What a row costs before its content: its chrome, spacing and footer. Measured, 0.59 MiB a row.
+    public static let rowBase = 600 * 1024
 
     // MARK: Kinds
 

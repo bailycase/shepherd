@@ -117,8 +117,7 @@ struct NativeMountedCostTests {
         #expect(Cost.block(.table(long)) == 2001 * Cost.tableWeight, "cells longer than the floors weigh their bytes")
     }
 
-    @Test func textCostsAQuarterOfAFencesRatePerByte() {
-        #expect(Cost.textByte == Cost.fenceWeight / 4)
+    @Test func textCostsItsBytes() {
         #expect(Cost.block(.paragraph(String(repeating: "x", count: 1000))) == 1000 * Cost.textByte)
         #expect(Cost.block(.heading(level: 2, text: "Plan")) == 4 * Cost.textByte)
         #expect(Cost.block(.paragraph("é")) == 2 * Cost.textByte, "UTF-8 bytes")
@@ -131,6 +130,32 @@ struct NativeMountedCostTests {
         #expect(Cost.block(.code(diagram, language: "mermaid")) == Cost.mermaid)
         #expect(Cost.block(.code(String(repeating: "x", count: 20_000), language: " Mermaid ")) == Cost.mermaid, "the view trims and ignores case")
         #expect(Cost.block(.code(diagram, language: "plantuml")) == Cost.fenceFloor, "drawn as source, not as a diagram")
+    }
+
+    // MARK: Calibration pins (Release QA app, host F, 2026-11-08; `NativeMountedCost` has the table)
+
+    private static let mib = 1024 * 1024
+
+    @Test func aLongFenceCostsWhatTheCalibrationMeasured() {
+        // Fences of 202, 67 and 19 KB (3000, 1000 and 300 lines of Python) added about 19.7, 6 and 2.2 MiB each.
+        for (bytes, measured) in [(202_208, 197), (67_000, 60), (19_600, 22)] {
+            let cost = Cost.block(Self.code(bytes))
+            #expect(abs(cost - measured * Self.mib / 10) <= measured * Self.mib / 10 * 15 / 100, "\(bytes) bytes")
+        }
+    }
+
+    @Test func rowsCostWhatTheCalibrationMeasured() {
+        // 8 and 28 rows of one short reply each held 4.7 and 16.7 MiB.
+        for (rows, measured) in [(8, 47), (28, 167)] {
+            #expect(abs(rows * Cost.rowBase - measured * Self.mib / 10) <= measured * Self.mib / 10 * 8 / 100, "\(rows) rows")
+        }
+    }
+
+    @Test func aTurnOfToolCallsCostsWhatTheCalibrationMeasured() {
+        // Ten replies of four tool calls each and a line of closing text, with their prompts: 38 MiB.
+        let words = NativeMarkdownBlock.paragraph(String(repeating: "x", count: 89))
+        let reply = 20 * Cost.rowBase + 40 * Cost.line + 10 * Cost.block(words)
+        #expect(abs(reply - 38 * Self.mib) <= 38 * Self.mib * 15 / 100)
     }
 
     @Test func anImageCostsItsFloorWhateverItsSource() {
@@ -205,6 +230,45 @@ struct NativeMountedCostTests {
         // Four such replies held 532 MiB more once shown.
         let measured = 532 * 1024 * 1024 / 4
         #expect(abs(reply.cost - measured) <= measured * 3 / 100)
+    }
+
+    /// The text blocks of the QA model's reply, 10 KB of headings, paragraphs, lists and quotes (`prose:10`).
+    static func textReply(cycles: Int) -> String {
+        (1...cycles).map { n in
+            """
+            ## Findings, part \(n)
+
+            I read through the module and the main flow is straightforward, but there are a few places where `Session\(n)` holds state longer than it needs to. The interesting bit is how **ownership** moves between the view model and the store; see [the design notes](https://example.com/design/notes-\(n)) for the background.
+
+            ### What I changed
+
+            - Moved the `refresh\(n)()` call out of the render path
+            - Replaced the ad hoc cache with a bounded `LRU\(n)` of 64 entries
+            - Made `load(id:)` cancel the previous task before starting a new one
+            - Added a regression test for the empty-state case
+
+            ### Steps to verify
+
+            1. Build the project with `swift build`
+            2. Run the focused suite: `swift test --filter CacheTests\(n)`
+            3. Open the sample project and scroll the list quickly
+            4. Confirm the frame time stays under 8 ms
+
+            > The slowest path was never the one we profiled first. Measure, then change one thing at a time. (note \(n))
+
+            The remaining risk is the `retry` path: it still takes a lock on the main actor, which is fine for now but worth a follow-up. Details are in [issue #\(100 + n)](https://example.com/issues/\(100 + n)).
+
+
+            """
+        }.joined()
+    }
+
+    @Test func aReplyOfTextBlocksCostsWhatTheCalibrationMeasured() {
+        // Four replies of 10 KB of text blocks held 97 MiB, 4.7 of it rows.
+        let reply = NativeProse(nativeMarkdownParse(Self.textReply(cycles: 9)))
+        #expect(!reply.isGiant && reply.eagerCost == reply.cost)
+        let measured = (97 * Self.mib - 47 * Self.mib / 10) / 4
+        #expect(abs(reply.cost - measured) <= measured * 20 / 100)
     }
 
     @Test func aGiantReplyCostsItsEagerTailWhateverItsLength() {
