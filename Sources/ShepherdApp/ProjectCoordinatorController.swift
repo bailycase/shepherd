@@ -99,7 +99,7 @@ final class ProjectCoordinatorController {
         }
         switch task.destination {
         case .local:
-            let result = try await vm.server.nativeThread(agentID: task.workerAgentID, request: request)
+            let result = try await vm.nativeThread(task.workerAgentID, request: request)
             _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
             try await vm.server.validateProjectWorkerRead(projectID, grant: grant, task: task)
             return result

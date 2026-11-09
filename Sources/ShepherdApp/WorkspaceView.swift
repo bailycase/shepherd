@@ -542,6 +542,8 @@ struct PaneLeafView: View, Equatable {
 
     var body: some View {
         let pane = model.pane
+        // As the background host's client, the host runs every session: none starts here.
+        let host = vm.localHost
         Group {
             if pane.isReview == true {
                 PanePlaceholder(text: "review unavailable")
@@ -551,12 +553,12 @@ struct PaneLeafView: View, Equatable {
                 // (`AgentLayoutView`).
                 let inspecting = model.inspectingRunID
                 AgentThreadPane(
-                    session: vm.sessions.session(for: pane, in: tab),
+                    session: host == nil ? vm.sessions.session(for: pane, in: tab) : nil,
                     store: vm.threadStores.store(for: agentID),
                     input: vm.threadStores.input(for: agentID),
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
-                    request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
+                    request: { [vm] in try await vm.nativeThread(agentID, request: $0) },
                     preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot) },
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
@@ -584,6 +586,10 @@ struct PaneLeafView: View, Equatable {
                 // The branch card's column at the thread's right; the transcript keeps its identity.
                 .modifier(BranchCardDock(store: model.branch.map { _ in vm.branchCardStore(for: agentID) }, branch: model.branch,
                                          active: model.isVisible))
+            } else if let host, let agentID = model.threadAgentID ?? vm.state.agents.first(where: { $0.tabID == tab.id })?.id {
+                HostTerminalLeaf(vm: vm, connection: host, ref: RemoteAgentRef(hostID: host.id, agentID: agentID), pane: pane,
+                                 isFocused: model.isFocused, isVisible: model.isVisible,
+                                 addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } })
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
@@ -609,7 +615,8 @@ struct PaneLeafView: View, Equatable {
 /// An agent's only surface. Observes the pane session for exit/failure so a dead pi shows
 /// the same placeholder a shell pane would.
 struct AgentThreadPane: View {
-    var session: TerminalSessionStore.PaneSession
+    /// Nil where the background host runs the agent: its thread says when pi stops.
+    var session: TerminalSessionStore.PaneSession?
     var store: NativeThreadStore
     var input: ThreadInput? = nil
     let active: Bool
@@ -637,7 +644,7 @@ struct AgentThreadPane: View {
         // The placeholder cross-fades in when pi dies; connecting → live changes nothing here, nor
         // does a pi that stopped: its thread says why.
         ZStack {
-            switch session.phase {
+            switch session?.phase ?? .live {
             case .connecting, .live, .stopped:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
@@ -652,7 +659,7 @@ struct AgentThreadPane: View {
                     .shTransition(.content)
             }
         }
-        .shAnimation(.content, value: session.phase.isRunning)
+        .shAnimation(.content, value: session?.phase.isRunning ?? true)
     }
 }
 
@@ -1272,12 +1279,15 @@ struct RemoteAgentThreadPane: View {
     }
 }
 
-private struct RemoteTerminalPane: View {
+struct RemoteTerminalPane: View {
     var pane: RemotePaneSession
     let isFocused: Bool
+    var isRendering = true
     var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil in a host's utility terminal.
     var addToMessage: ((String) -> Void)? = nil
+    /// The background host's terminal in the app's own layout: `LiveTerminalPane`'s words.
+    var local = false
 
     var body: some View {
         // As `LiveTerminalPane`: placeholders fade, the surface never moves.
@@ -1285,9 +1295,9 @@ private struct RemoteTerminalPane: View {
             switch pane.phase {
             case .connecting, .live:
                 ZStack(alignment: .topLeading) {
-                    AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: true)
+                    AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: isRendering)
                     if case .connecting = pane.phase {
-                        PanePlaceholder(text: "attaching…").allowsHitTesting(false)
+                        PanePlaceholder(text: local ? "starting session…" : "attaching…").allowsHitTesting(false)
                             .shTransition(.content)
                     }
                     if let addToMessage {
@@ -1296,10 +1306,11 @@ private struct RemoteTerminalPane: View {
                 }
                 .background(Color.sh.bgWindow)
             case .failed(let reason):
-                PanePlaceholder(text: "remote session unavailable · \(reason)")
+                PanePlaceholder(text: "\(local ? "" : "remote ")session unavailable · \(reason)")
                     .shTransition(.content)
             case .exited(let code):
-                PanePlaceholder(text: code.map { "remote session exited (\($0))" } ?? "remote session exited")
+                let session = local ? "session" : "remote session"
+                PanePlaceholder(text: code.map { "\(session) exited (\($0))" } ?? "\(session) exited")
                     .shTransition(.content)
             }
         }

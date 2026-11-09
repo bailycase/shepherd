@@ -217,11 +217,11 @@ extension ShepherdViewModel {
     /// Queue `text` as the agent's next user turn: delivered now when idle, as a follow-up
     /// when the agent is mid-turn.
     func sendUserMessage(_ text: String, to agentID: AgentID) async throws {
-        guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: agentID, request: .snapshot()),
+        guard case .snapshot(let snapshot) = try await nativeThread(agentID, request: .snapshot()),
               !snapshot.piSessionID.isEmpty else {
             throw AgentStartFailure(message: "The agent is not ready yet. Try again in a moment.")
         }
-        let result = try await server.nativeThread(agentID: agentID, request: .send(
+        let result = try await nativeThread(agentID, request: .send(
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
             operationID: UUID(), text: text, delivery: .followUp))
         if case .failure(_, let message) = result { throw AgentStartFailure(message: message) }

@@ -67,7 +67,7 @@ final class ShepherdViewModel {
     var sidebarOpeningTurns: Set<AgentID> = [] {
         didSet {
             if oldValue != sidebarOpeningTurns {
-                sessions.watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns))
+                watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns))
             }
         }
     }
@@ -279,6 +279,9 @@ final class ShepherdViewModel {
     /// A worktree agent of the background host on this Mac waiting in This Mac's own Delete
     /// worktree agent dialog (`requestRemoteDelete`), with the host's checkout once probed.
     var thisMacWorktreeDelete: ThisMacWorktreeDelete?
+    /// What the background host reported for the worktree in Delete worktree agent's dialog
+    /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
+    var hostWorktreeInfo: RemoteWorktreeInfo?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// This Mac's worktree operations and commits from review, as a host; the headless host has
@@ -765,7 +768,9 @@ final class ShepherdViewModel {
         spacePins = SpacePins(defaults: sidebarDefaults)
 
         sessions.onStateChanged = { [weak self] serverState in
-            self?.adopt(serverState)
+            // As the host's client, the idle in-process server's empty workspace is nobody's.
+            guard let self, self.localHost == nil else { return }
+            self.adopt(serverState)
         }
         // The selected thread keeps its history whatever its recency (`NativeThreadStores`).
         threadStores.protected = { [weak self] in self?.selectedAgentID.map { [$0] } ?? [] }
@@ -821,7 +826,7 @@ final class ShepherdViewModel {
         threadStores.drafts = ComposerDrafts(defaults: sidebarDefaults)
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }
-            sessions.watchThreadRevisions(of: live.union(sidebarOpeningTurns))
+            watchThreadRevisions(of: live.union(sidebarOpeningTurns))
         }
         sessions.onThreadRevision = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()

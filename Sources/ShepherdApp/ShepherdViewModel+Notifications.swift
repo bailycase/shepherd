@@ -211,7 +211,7 @@ extension ShepherdViewModel {
 
     private func request(_ target: BannerTarget, _ request: NativeThreadRequest) async throws -> NativeThreadResult? {
         switch target {
-        case .agent(let id): try await server.nativeThread(agentID: id, request: request)
+        case .agent(let id): try await nativeThread(id, request: request)
         case .remote(let ref): try await remoteHosts.nativeThread(ref, request: request)
         case .host: nil
         }
