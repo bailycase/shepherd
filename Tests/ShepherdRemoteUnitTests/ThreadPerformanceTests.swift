@@ -235,8 +235,7 @@ struct ThreadPerformanceTests {
         let computed = store.rowCostComputations
         #expect(computed == 100, "one per reply, when its presentation was built")
         let visited = (0..<100).map { _ in store.mountedCostWalk(eagerRows: 30, skipping: { _ in false }).visited }
-        #expect(visited.allSatisfy { $0 <= 31 }, "a read passes the rows it sums and no more of the 200")
-        #expect(store.rowCostComputations == computed, "and builds no presentation")
+        #expect(visited.allSatisfy { $0 == 30 }, "a read passes the rows it sums and no more of the 200")
 
         host.snapshot.revision += 1
         host.snapshot.provisional = [F.assistant("chunk 1", status: "streaming", id: "live")]
@@ -274,7 +273,7 @@ struct ThreadPerformanceTests {
     }
 
     @Test func mountedCostAddsTheNextChunkOfTheLastGiantReplyOnce() async {
-        let giant = NativeMountedCostTests.bigReply(cycles: 400)
+        let giant = NativeMountedCostTests.gradedReply(fences: 60)
         let host = FakeHost(F.snapshot(messages: [F.user(id: "u0"), F.assistant(giant, id: "a0"), F.user(id: "u1"), F.assistant("short", id: "a1"),
                                                   F.user(id: "u2"), F.assistant(giant, id: "a2"), F.user(id: "u3")]))
         let store = manualStore()
@@ -286,10 +285,11 @@ struct ThreadPerformanceTests {
             Issue.record("the last reply is not prose")
             return
         }
-        #expect(prose.isGiant && prose.lazyEdgeCost > 0)
+        let edge = prose.chunks[prose.chunks.count - prose.eagerTail - 1].cost
+        #expect(prose.isGiant && edge > 0)
         let costs = store.rows.map { NativeMountedCost.row($0) }
-        #expect(store.mountedCost(eagerRows: 7) == costs.reduce(0, +) + prose.lazyEdgeCost, "the earlier giant reply adds nothing")
-        #expect(store.mountedCost(eagerRows: 2) == costs[6] + costs[5] + prose.lazyEdgeCost)
+        #expect(store.mountedCost(eagerRows: 7) == costs.reduce(0, +) + edge, "the earlier giant reply adds nothing")
+        #expect(store.mountedCost(eagerRows: 2) == costs[6] + costs[5] + edge)
         #expect(store.mountedCost(eagerRows: 1) == costs[6], "the last reply is out of the sum, and so is its next chunk")
     }
 

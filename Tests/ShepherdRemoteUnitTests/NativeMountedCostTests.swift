@@ -132,7 +132,7 @@ struct NativeMountedCostTests {
         #expect(Cost.block(.code(diagram, language: "plantuml")) == Cost.fenceFloor, "drawn as source, not as a diagram")
     }
 
-    // MARK: Calibration pins (Release QA app, host F, 2026-11-08; `NativeMountedCost` has the table)
+    // MARK: Calibration pins (Release QA app, 2026-11-08; `NativeMountedCost` has the table)
 
     private static let mib = 1024 * 1024
 
@@ -152,9 +152,23 @@ struct NativeMountedCostTests {
     }
 
     @Test func aTurnOfToolCallsCostsWhatTheCalibrationMeasured() {
-        // Ten replies of four tool calls each and a line of closing text, with their prompts: 38 MiB.
-        let words = NativeMarkdownBlock.paragraph(String(repeating: "x", count: 89))
-        let reply = 20 * Cost.rowBase + 40 * Cost.line + 10 * Cost.block(words)
+        // Ten replies of four tool calls of different kinds and a line of closing text, with their prompts: 38 MiB.
+        func call(_ name: String, _ id: String, _ args: String) -> NativeThreadMessage {
+            Fixture.tool(name, args: args, id: "e-\(id)", callID: id)
+        }
+        let words = String(repeating: "x", count: 89)
+        let messages = [
+            call("read", "r", #"{"path":"a.swift"}"#), call("edit", "e", #"{"path":"a.swift"}"#),
+            call("bash", "b", #"{"command":"ls"}"#), call("lint", "l", "{}"),
+            Fixture.assistant(words),
+        ]
+        let presentation = nativeTurnPresentation(messages, live: false)
+        let bursts = presentation.items.reduce(0) { total, item in
+            if case .activity(_, let bursts) = item { total + bursts.count } else { total }
+        }
+        #expect(bursts == 4, "one line to a kind of call")
+        #expect(Cost.presentation(presentation) == 4 * Cost.line + words.utf8.count * Cost.textByte)
+        let reply = 10 * (2 * Cost.rowBase + Cost.presentation(presentation))
         #expect(abs(reply - 38 * Self.mib) <= 38 * Self.mib * 15 / 100)
     }
 
@@ -272,8 +286,8 @@ struct NativeMountedCostTests {
     }
 
     @Test func aGiantReplyCostsItsEagerTailWhateverItsLength() {
-        let small = Self.prose(cycles: 368)
-        let large = Self.prose(cycles: 736)
+        let small = Self.prose(cycles: 140)
+        let large = Self.prose(cycles: 280)
         #expect(small.isGiant && large.isGiant)
         #expect(small.eagerTail == large.eagerTail && small.eagerTail < small.chunks.count)
         let eager = small.chunks.suffix(small.eagerTail).reduce(0) { $0 + $1.cost }
@@ -282,15 +296,25 @@ struct NativeMountedCostTests {
         let chunk = small.chunks.dropLast().map(\.cost).max() ?? 0
         #expect(abs(large.eagerCost - small.eagerCost) <= chunk, "the tail costs the same however long the reply grows, to a chunk (the last is part full)")
         // At the gate a reply stops costing all of its chunks and costs its tail.
-        let below = Self.prose(cycles: 82), above = Self.prose(cycles: 140)
+        let below = Self.prose(cycles: 82)
         #expect(!below.isGiant && below.eagerCost == below.cost)
-        #expect(above.isGiant && above.eagerCost < above.cost / 3)
+        #expect(small.eagerCost < small.cost / 3)
+    }
+
+    /// Fences that grow with each one (1,088 bytes, then 64 more), so that chunks of them cost different amounts.
+    static func gradedReply(fences: Int) -> String {
+        (1...fences).map { "```swift\n\(String(repeating: "x", count: 1024 + 64 * $0))\n```\n\n" }.joined()
     }
 
     @Test func aGiantRepliesLazyEdgeIsTheChunkBeforeItsEagerTail() {
-        let reply = Self.prose(cycles: 368)
-        let edge = reply.chunks[reply.chunks.count - reply.eagerTail - 1]
-        #expect(reply.lazyEdgeCost == edge.cost && edge.cost > 0)
+        let reply = NativeProse(nativeMarkdownParse(Self.gradedReply(fences: 60)))
+        #expect(reply.isGiant && reply.eagerTail > 1)
+        let costs = reply.chunks.map(\.cost)
+        #expect(Set(costs).count == costs.count, "no two chunks cost the same, or the index would not show")
+        let edge = reply.chunks.count - reply.eagerTail - 1
+        #expect(edge >= 1 && edge + 1 < costs.count)
+        #expect(reply.lazyEdgeCost == costs[edge])
+        #expect(reply.lazyEdgeCost != costs[edge - 1] && reply.lazyEdgeCost != costs[edge + 1], "not the chunk on either side of it")
         #expect(NativeProse.empty.lazyEdgeCost == 0 && NativeProse.empty.cost == 0 && NativeProse.empty.eagerCost == 0)
     }
 
