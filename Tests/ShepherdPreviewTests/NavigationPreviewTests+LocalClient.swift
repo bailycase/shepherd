@@ -246,6 +246,12 @@ extension PreviewTests {
             vm.openNewThread(in: space.id)
             try await eventuallyOnMain("the New thread page's defaults") { !vm.newThread.loadingDefaults }
             try await Preview.render("this-mac-new-thread-\(mode)", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
+            // The place menu open: This Mac's "No space" first, then its space.
+            #expect(NewThreadPlaces.sections(NewThreadState.hosts(vm), chosen: vm.newThread.place).flatMap(\.options).map(\.title)
+                == ["No space", "acme-web"])
+            try await Preview.render("this-mac-new-thread-places-\(mode)", size: CGSize(width: 1000, height: 700)) {
+                NewThreadPage(vm: vm, chrome: PageHeaderChrome(), placeOpen: true)
+            }
 
             let dialog = WorktreeDeleteDialog(vm: vm, agent: agent)
             try await Preview.render("this-mac-delete-worktree-\(mode)", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
@@ -254,6 +260,7 @@ extension PreviewTests {
             }
         }
         try expectSameRenders("this-mac-new-thread-in-process", "this-mac-new-thread-client")
+        try expectSameRenders("this-mac-new-thread-places-in-process", "this-mac-new-thread-places-client")
         try expectSameRenders("this-mac-delete-worktree-in-process", "this-mac-delete-worktree-client")
     }
 }
