@@ -55,9 +55,11 @@ struct SidebarCompletions: Equatable {
         // keeps its old generation (a seen thread stays seen); a host completion token would fix that.
         let newCompletion = finished && previous?.finished != true
         if newCompletion { generation += 1 }
+        // A completion keeps its edge's time; one seen before its time was known (a run's settle,
+        // read from the background host's run log after its state) takes it once known.
         records[id] = Record(finished: finished, activity: activity,
                              generation: newCompletion ? generation : previous?.generation ?? 0,
-                             completedAt: newCompletion ? completedAt : previous?.completedAt)
+                             completedAt: newCompletion ? completedAt : previous?.completedAt ?? (finished ? completedAt : nil))
     }
 }
 

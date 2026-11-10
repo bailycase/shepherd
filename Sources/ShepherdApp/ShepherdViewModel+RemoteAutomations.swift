@@ -54,9 +54,10 @@ extension ShepherdViewModel {
 
     // MARK: Triggers
 
-    /// Connected hosts that serve triggers.
+    /// Connected hosts that serve triggers (not the background host on this Mac: its automations
+    /// are This Mac's).
     private var triggerConnections: [RemoteHostStore.Connection] {
-        remoteHosts.allConnections.filter { $0.phase == .connected && $0.supportsAutomationTriggers }
+        remoteHosts.connections.filter { $0.phase == .connected && $0.supportsAutomationTriggers }
     }
 
     /// This Mac, or a connected host that serves triggers: the editor sends its settings there.
@@ -151,10 +152,7 @@ extension ShepherdViewModel {
 
     /// The models a run on `host` can pin.
     func automationEditorModels(_ host: UUID) async -> [String] {
-        if host == PageHost.localID {
-            let server = server
-            return await Task.detached { server.modelListing().models }.value
-        }
+        if host == PageHost.localID { return await modelListing().models }
         return (try? await remoteHosts.listModels(hostID: host))?.models ?? []
     }
 

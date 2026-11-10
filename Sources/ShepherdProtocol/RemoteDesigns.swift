@@ -29,7 +29,14 @@ extension RemoteProtocol {
     /// Every capability a host offers only while it serves designs.
     public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability,
                                                          designAgentCapability, designLifecycleCapability, designSystemsCapability,
-                                                         designReferencesCapability, designImportCapability, designBoardsCapability]
+                                                         designReferencesCapability, designImportCapability, designBoardsCapability,
+                                                         designThreadNotesCapability, designGitCapability]
+    /// The host shares, reads, commits, pulls and merges its designs through Git, and clones one
+    /// as a new design (`RemoteDesignRequest.gitState` … `gitStopMerge`). Offered with `designsCapability`.
+    public static let designGitCapability = "design.git.v1"
+    /// The host reads and removes the notes its threads left on a design
+    /// (`RemoteDesignRequest.threadNotes`, `removeThreadNote`). Offered with `designsCapability`.
+    public static let designThreadNotesCapability = "design.threadNotes.v1"
     /// The host adds or applies, and discards, the boards its threads drew for its designs
     /// (`RemoteDesignRequest.settleBoardProposal`). Offered with `designsCapability`.
     public static let designBoardsCapability = "design.boards.v1"
@@ -353,6 +360,15 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     case importChunk(uploadID: UUID, offset: Int, data: Data)
     case importFinish(uploadID: UUID)
     case importCancel(uploadID: UUID)
+    /// This Mac's own Import, from its app only (`designImportCapability`): the host reads the
+    /// project at `path` (a ZIP or a folder on the disk they share) and stages it. Answered
+    /// `importPrepared` or `importFailed`; its steps reach that app as `designImportProgress`.
+    case importPrepare(path: String)
+    /// The staged project becomes a design named `name` (else its title), its agent started on
+    /// the import's brief. Answered `created` or `importFailed`.
+    case importConfirm(preview: DesignImportPreview, name: String?, skippingUnreadable: Bool)
+    /// The staged project goes. Answered `ok`.
+    case importDiscard(previewID: UUID)
     /// Pins a piece of one of the host's designs (`designReferencesCapability`), named as the
     /// host sees it (`local`), at its revision now unless the reference names one.
     case pinReference(DesignReference)
@@ -371,19 +387,47 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// A board a host's thread drew (`DesignReferencePayload.Proposal`): add or apply it to the
     /// design (`accept`), or discard it (`designBoardsCapability`). Answered with `referenceKept`.
     case settleBoardProposal(agentID: AgentID, payloadID: UUID, accept: Bool)
+    /// Every design's rows for the composer's @ picker, to this Mac's app only (it can pass a
+    /// remote frame; `designReferencesCapability`). Answered `mentionCatalog`.
+    case mentionCatalog
+    /// The notes threads left on a design, oldest first (`designThreadNotesCapability`).
+    case threadNotes(designID: DesignID)
+    /// Removes a thread's note (the canvas's Resolve). Answered `ok`.
+    case removeThreadNote(designID: DesignID, noteID: UUID)
+    /// A design's Git state, nil while it isn't shared; `fetch` asks the remote first
+    /// (`designGitCapability`). Answered `gitState`, as are share, commit and push.
+    case gitState(designID: DesignID, fetch: Bool)
+    /// One file's committed and working text (`merge`: the design's against its merge copy's).
+    case gitPreview(designID: DesignID, path: String, merge: Bool)
+    case gitShare(designID: DesignID, url: String, message: String)
+    /// Open from Git: the repository cloned as a new design. Answered `gitOpened`.
+    case gitOpen(url: String)
+    /// Commit, or the reviewed merge's commit (`merge`), and push if asked.
+    case gitCommit(designID: DesignID, message: String, push: Bool, merge: Bool)
+    case gitPush(designID: DesignID)
+    /// Answered `gitPulled`.
+    case gitPull(designID: DesignID)
+    /// The merge's Drop, Resolve with agent and Stop. Answered `ok`.
+    case gitDropMerge(designID: DesignID)
+    case gitResolveMerge(designID: DesignID)
+    case gitStopMerge(designID: DesignID)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
         switch self {
         case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
-             .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel: nil
+             .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel, .gitOpen, .importPrepare, .importConfirm,
+             .importDiscard: nil
         case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
-        case .referenceKept, .referencePicture, .referenceLookedAt, .settleBoardProposal: nil
+        case .referenceKept, .referencePicture, .referenceLookedAt, .settleBoardProposal, .mentionCatalog: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
              .sendMarkup(let id, _), .settleProposals(let id, _, _, _), .delete(let id), .undoDelete(let id),
-             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id), .deleteSystemBuild(let id):
+             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id), .deleteSystemBuild(let id),
+             .threadNotes(let id), .removeThreadNote(let id, _), .gitState(let id, _), .gitPreview(let id, _, _),
+             .gitShare(let id, _, _), .gitCommit(let id, _, _, _), .gitPush(let id), .gitPull(let id), .gitDropMerge(let id),
+             .gitResolveMerge(let id), .gitStopMerge(let id):
             id
         }
     }
@@ -394,7 +438,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
              .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .settleBoardProposal,
              .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
-             .importBegin, .importChunk, .importFinish, .importCancel: true
+             .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard, .removeThreadNote, .gitShare, .gitOpen, .gitCommit,
+             .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge: true
         default: false
         }
     }
@@ -408,10 +453,14 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .duplicate, .removeFromRecents: RemoteProtocol.designLifecycleCapability
         case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild:
             RemoteProtocol.designSystemsCapability
-        case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt:
+        case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .mentionCatalog:
             RemoteProtocol.designReferencesCapability
-        case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
+        case .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard:
+            RemoteProtocol.designImportCapability
         case .settleBoardProposal: RemoteProtocol.designBoardsCapability
+        case .threadNotes, .removeThreadNote: RemoteProtocol.designThreadNotesCapability
+        case .gitState, .gitPreview, .gitShare, .gitOpen, .gitCommit, .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge:
+            RemoteProtocol.designGitCapability
         default: nil
         }
     }
@@ -460,6 +509,18 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     /// An import began (`importBegin`): send its bytes under this id.
     case importStarted(uploadID: UUID)
     case ok
+    /// `threadNotes`'s answer.
+    case threadNotes([DesignThreadNote])
+    case gitState(DesignGitState?)
+    case gitPreview(before: String?, after: String?)
+    case gitOpened(Design)
+    case gitPulled(DesignGitPullResult)
+    /// `importPrepare`'s answer: the project staged, waiting for the app's choice.
+    case importPrepared(DesignImportPreview)
+    /// Why `importPrepare` or `importConfirm` made no design (the app's ImportFailed dialog).
+    case importFailed(DesignImportFailure)
+    /// `mentionCatalog`'s answer: ShepherdRemote's `DesignMentionCatalog`, as JSON.
+    case mentionCatalog(Data)
 }
 
 /// Stable codes a host refuses a design request with (beside `DesignStoreError.code`).
