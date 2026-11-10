@@ -25,12 +25,53 @@ struct RuntimeHosting {
     var nativeThread: (AgentID, NativeThreadRequest) async throws -> NativeThreadResult
     /// The checkouts a worktree operation holds, shared with the owner's other git operations.
     let worktrees: WorktreeQueries
-    /// Paired hosts a Project may place work on: the app's connections. The headless host has none.
-    var connections: () -> [RemoteHostStore.Connection] = { [] }
+    /// Paired Macs a Project may place work on: the app's connections, or the headless host's
+    /// relay through this Mac's app while it runs (`relayed`).
+    var executors = ProjectExecutors()
     /// The app's own: open a thread, and its thread store. The headless host shows nothing.
     var selectAgent: (AgentID) -> Void = { _ in }
     var threadStore: (AgentID) -> NativeThreadStore? = { _ in nil }
     var missionStartRequested: (get: () -> Bool, set: (Bool) -> Void) = ({ false }, { _ in })
+
+    /// The paired Macs a Project reaches, each addressed only by its exact host and binding: never
+    /// another host, never a local path.
+    struct ProjectExecutors {
+        /// The connected ones, with their visible Spaces when they take placements (nil: they don't).
+        var hosts: () async -> [ProjectHostOption] = { [] }
+        var place: (ProjectHostReference, ProjectExecutionRequest) async throws -> ProjectExecutionResult = { _, _ in
+            throw AgentStartFailure(message: "The exact executor binding is unavailable. No fallback host was selected.")
+        }
+        var workerThread: (ProjectHostReference, AgentID, NativeThreadRequest) async throws -> NativeThreadResult = { _, _, _ in
+            throw LogicalProjectsError("executor_unavailable", "The thread's exact executor binding is unavailable. No fallback host was selected.")
+        }
+
+        /// The background host's: through this Mac's app, which holds the connections, while it runs.
+        static func relayed(through server: SessionServer) -> ProjectExecutors {
+            server.relayProjectPlacementThroughApp()
+            func relay(_ job: AppRelayJob) async throws -> AppRelayResult {
+                let result = await withCheckedContinuation { done in server.relayToApp(job) { done.resume(returning: $0) } }
+                switch result {
+                case nil: throw LogicalProjectsError("app_closed", SessionServer.appClosedForPlacement)
+                case .failed(let code, let message)?: throw LogicalProjectsError(code, message)
+                case let result?: return result
+                }
+            }
+            return ProjectExecutors(
+                hosts: { await server.appProjectExecutors() },
+                place: { host, request in
+                    guard case .projectExecution(let result) = try await relay(.projectPlacement(host: host, request: request)) else {
+                        throw LogicalProjectsError("protocol", "unexpected answer")
+                    }
+                    return result
+                },
+                workerThread: { host, agentID, request in
+                    guard case .nativeThread(let result) = try await relay(.projectWorkerThread(host: host, agentID: agentID, request: request)) else {
+                        throw LogicalProjectsError("protocol", "unexpected answer")
+                    }
+                    return result
+                })
+        }
+    }
 
     /// The host's: agents start with the app's settings and MCP servers, as automation runs do.
     static func headless(server: SessionServer, settings: AppSettings, worktrees: WorktreeQueries,
@@ -56,7 +97,7 @@ struct RuntimeHosting {
             },
             notify: notify,
             nativeThread: { try await server.nativeThread(agentID: $0, request: $1) },
-            worktrees: worktrees)
+            worktrees: worktrees, executors: .relayed(through: server))
     }
 
     /// Builds the three controllers on `server` and serves their requests: missions (`missions.v1`
@@ -98,7 +139,7 @@ extension ShepherdViewModel {
             notify: { [unowned self] title, body in notifications.post(AgentBanners.automation(title: title, body: body)) },
             nativeThread: { [unowned self] in try await nativeThread($0, request: $1) },
             worktrees: worktrees)
-        hosting.connections = { [unowned self] in remoteHosts.allConnections }
+        hosting.executors = remoteHosts.projectExecutors
         hosting.selectAgent = { [unowned self] in selectAgent($0) }
         hosting.threadStore = { [unowned self] in threadStores.store(for: $0) }
         hosting.missionStartRequested = ({ [unowned self] in missionStartRequested }, { [unowned self] in missionStartRequested = $0 })

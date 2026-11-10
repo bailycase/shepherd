@@ -465,6 +465,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
     }
 
+    /// The paired Macs this Mac's own app is connected to, for its background host's Projects (`projectExecutors`).
+    public func projectExecutors(_ update: ProjectExecutorsUpdate) async throws {
+        let reply = try await request { id in .projectExecutors(id: id, update: update) }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+    }
+
     /// Starts a thread on the background host as this Mac's own app does (`startThread`).
     public func startThread(_ thread: RemoteThreadStart) async throws -> AgentID {
         let reply = try await request { id in .startThread(id: id, thread: thread) }
