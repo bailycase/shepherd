@@ -63,6 +63,8 @@ final class PushNotifications: @unchecked Sendable {
     var transport: Transport
     /// The thread you are watching on this Mac (`SessionServer.setFocusedThread`); it sends no pushes.
     var focused: AgentID?
+    /// Whether the person muted this thread's pushes (`Agent.pushMuted`); set by the server.
+    var muted: (AgentID) -> Bool = { _ in false }
     var now: () -> Date = Date.init
     /// Seconds since the person last touched this Mac, for away-only phones.
     var idleSeconds: () -> TimeInterval = {
@@ -192,6 +194,7 @@ final class PushNotifications: @unchecked Sendable {
             return skip("no phone wants \(topic.rawValue) now (Mac idle \(Int(idle))s, \(registrations.count) registered)")
         }
         guard agentID != focused else { return skip("the thread is watched on this Mac") }
+        guard !muted(agentID) else { return skip("the thread is muted") }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
         guard eventCount < 30 else { return skip("over 30 a minute") }

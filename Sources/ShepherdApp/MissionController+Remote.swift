@@ -190,7 +190,7 @@ extension MissionController {
         let mission = try record(id)
         if mission.run?.publicationApproval != nil {
             switch action {
-            case .plan, .answer, .save, .launch, .revalidate, .changes, .specKitConsent, .specKitSetUp, .acceptConvergence, .applyPatch:
+            case .plan, .answer, .save, .launch, .revalidate, .changes, .specKitConsent, .specKitSetUp, .acceptConvergence, .applyPatch, .retryLane:
                 throw MissionError("mission_published", "Publication was already authorized. These receipts cannot be reused for new work.")
             default: break
             }
@@ -233,6 +233,7 @@ extension MissionController {
         case .skipSoak: try await skipSoak(id: id, revision: mission.revision)
         case .laneLock(let lane, let choice): try await chooseLock(id: id, lane: lane, choice: choice)
         case .saveTemplate(let name, let summary, let team): try await saveTemplate(id: id, name: name, summary: summary, team: team)
+        case .retryLane(let attempts, let hint): try await retryLane(id: id, revision: current, attempts: attempts, hint: hint)
         }
         return nil
     }

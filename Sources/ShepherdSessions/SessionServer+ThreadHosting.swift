@@ -292,6 +292,7 @@ extension SessionServer {
             }
             await startThreadPi(agentID, hosting: hosting, checksResume: !newConversation, model: model)
         case .markSeen(let upTo): try await markCompletionSeen(agentID, upTo: upTo)
+        case .mutePushes(let muted): try await setPushMuted(agentID, muted: muted)
         }
     }
 

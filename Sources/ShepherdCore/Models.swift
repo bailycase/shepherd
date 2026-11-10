@@ -228,6 +228,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The latest `completedAt` a person opened on any device (`RemoteAgentAction.markSeen`).
     /// Persisted; nil when none was, and from older hosts and state files.
     public var seenCompletedAt: Double? = nil
+    /// The person muted this thread's pushes (`RemoteAgentAction.mutePushes`): the host sends none
+    /// for it, to any phone. Persisted, written only when true; false from older state files.
+    public var pushMuted = false
 
     /// What the host says of the latest completion: true once it was opened on some device, false
     /// while it wasn't, nil when the host doesn't track it (an older host: each device decides).
@@ -294,7 +297,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted
     }
 
     public init(from decoder: Decoder) throws {
@@ -341,6 +344,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before Done was shared between devices.
         completedAt = try c.decodeIfPresent(Double.self, forKey: .completedAt)
         seenCompletedAt = try c.decodeIfPresent(Double.self, forKey: .seenCompletedAt)
+        pushMuted = (try? c.decodeIfPresent(Bool.self, forKey: .pushMuted)) ?? false
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -375,6 +379,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(automationOrigin, forKey: .automationOrigin)
         try c.encodeIfPresent(completedAt, forKey: .completedAt)
         try c.encodeIfPresent(seenCompletedAt, forKey: .seenCompletedAt)
+        if pushMuted { try c.encode(true, forKey: .pushMuted) }
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)

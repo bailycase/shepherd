@@ -659,8 +659,11 @@ public final class SessionServer: @unchecked Sendable {
     private let hooksQueue = DispatchQueue(label: "shepherd.hooks", qos: .userInitiated)
 
     let queue = DispatchQueue(label: "shepherd.sessions")
-    lazy var pushNotifications = PushNotifications(
-        file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
+    lazy var pushNotifications: PushNotifications = {
+        let pushes = PushNotifications(file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
+        pushes.muted = { [weak self] id in self?.store.state.agents.first { $0.id == id }?.pushMuted == true }
+        return pushes
+    }()
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
     /// Recovery checkpoints gate a thread's published output (`RPCThreadState.commit`), so they
     /// never wait behind project file reads or state staging on `logicalProjectFiles` (#449).
@@ -7032,6 +7035,16 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Mutes or unmutes the thread's pushes on this host, for every phone (`RemoteAgentAction.mutePushes`).
+    public func setPushMuted(_ agentID: AgentID, muted: Bool) async throws {
+        try await mutateStateOffQueue { state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            state.agents[index].pushMuted = muted
+        }
+    }
+
     public func reorderAgent(_ agentID: AgentID, onto target: AgentID) async throws {
         try await mutateStateOffQueue { state in
             let agents = state.agents
@@ -7111,7 +7124,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// A triggered run that never started.
     public func recordAutomationFailure(_ automationID: AutomationID, trigger: String?, triggerURL: String?, message: String) async {
-        await enqueueValue { self.runLog.recordFailure(automationID, trigger: trigger, triggerURL: triggerURL, message: message) }
+        await enqueueValue {
+            self.runLog.recordFailure(automationID, trigger: trigger, triggerURL: triggerURL, message: message)
+            // No thread to fail: the automation itself is what the push names (and opens).
+            guard let automation = self.store.state.automations.first(where: { $0.id == automationID }),
+                  let id = UUID(uuidString: automationID.rawValue) else { return }
+            self.pushNotifications.send(agentID: AgentID(rawValue: id.uuidString.lowercased()), kind: .error, title: automation.name,
+                                        preview: message, group: "automation:\(automationID.rawValue)", subtitle: "Automation failed")
+        }
     }
 
     /// The user opened a run's thread: its runs lose their unread dot.
