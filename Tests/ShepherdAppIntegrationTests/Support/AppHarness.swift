@@ -107,7 +107,9 @@ final class AppHarness {
         if host == nil {
             let notice = "shepherd-test-settings-\(UUID().uuidString)"
             settings.followOtherProcesses(notice: notice)
-            let hostSettings = AppSettings(store: defaults)
+            // Its own instance over the same preferences, as the host process's own: a write
+            // (and its change notice) is one side's, so neither follows its own.
+            let hostSettings = AppSettings(store: UserDefaults(suiteName: defaults.name)!)
             hostSettings.followOtherProcesses(notice: notice)
             self.hostSettings = hostSettings
             let services = ShepherdHost.Services(
