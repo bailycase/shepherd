@@ -25,6 +25,7 @@ struct RemoteDesignRefusal: Error, Sendable {
         case let error as RemoteDesignRefusal: self = error
         case let error as DesignStoreError: self.init(error.code, error.description)
         case let error as DesignSystemError: self.init(error.code, error.description)
+        case let error as DesignGitError: self.init(error.code, error.message)
         case SessionServerError.noSuchDesign(let id): self.init(DesignStoreError.noSuchDesign(id).code, "unknown design \(id)")
         case let error as SessionServerError: self.init("design_refused", error.description)
         default: self.init("design_failed", String(describing: error))
@@ -195,6 +196,31 @@ struct RemoteDesignService: Sendable {
             return .threadNotes(try await server.designThreadNotes(designID))
         case .removeThreadNote(let designID, let noteID):
             try await server.removeDesignThreadNote(designID, noteID: noteID)
+            return .ok
+        case .gitState(let id, let fetch):
+            return .gitState(try await server.designGitState(id, fetch: fetch))
+        case .gitPreview(let id, let path, let merge):
+            let (before, after) = try await server.designGitPreview(id, path: path, merge: merge)
+            return .gitPreview(before: before, after: after)
+        case .gitShare(let id, let url, let message):
+            return .gitState(try await server.shareDesignWithGit(id, url: url, message: message))
+        case .gitOpen(let url):
+            return .gitOpened(try await server.openDesignFromGit(url))
+        case .gitCommit(let id, let message, let push, let merge):
+            return .gitState(merge ? try await server.commitDesignMerge(id, message: message, push: push)
+                : try await server.commitDesign(id, message: message, push: push))
+        case .gitPush(let id):
+            return .gitState(try await server.pushDesign(id))
+        case .gitPull(let id):
+            return .gitPulled(try await server.pullDesign(id))
+        case .gitDropMerge(let id):
+            await server.keepDesignLocal(id)
+            return .ok
+        case .gitResolveMerge(let id):
+            try await server.resolveDesignMergeWithAgent(id)
+            return .ok
+        case .gitStopMerge(let id):
+            await server.stopDesignMerge(id)
             return .ok
         case .referenceLookedAt(let agentID, let ref, let aspects):
             guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }

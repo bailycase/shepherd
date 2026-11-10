@@ -297,6 +297,74 @@ struct LocalClientTests {
         #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
+    /// A design's Git panel as the host's client: share, commit, push and Open from Git run on the
+    /// host, its refusals keep their titles, and its pushes reach the chip (slice 2b).
+    @Test func theHostsDesignGitIsTheAppsOwn() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(2)), in: design.id, on: host.server)
+        let config = try #require(ProcessInfo.processInfo.environment["GIT_CONFIG_GLOBAL"])
+        _ = try git(["config", "--file", config, "user.name", "Ada"], in: host.dir)
+        _ = try git(["config", "--file", config, "user.email", "ada@example.com"], in: host.dir)
+        let remote = try makeScratchDirectory("remote").appendingPathComponent("checkout-design.git", isDirectory: true)
+        _ = try git(["init", "-q", "--bare", "-b", "main", remote.path], in: remote.deletingLastPathComponent())
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        try await eventuallyOnMain("the host's design in the app") { vm.design(design.id) != nil }
+
+        // Share with Git: the host commits and pushes, and the chip reads its branch.
+        let share = DesignGitShareModel(designID: design.id, designName: design.name, boards: 2)
+        share.repository = remote.path
+        vm.designGitShare = share
+        vm.runDesignGitShare(share)
+        try await eventuallyOnMain("the share", timeout: .seconds(60)) { vm.designGitShare == nil }
+        let git = vm.designGit(design.id)
+        #expect(git.state?.status.branch == "main" && git.state?.status.isClean == true)
+
+        // A change the host commits itself reaches the chip by its push.
+        let a = try DesignPath.validate("A.dc.html")
+        let source = try await host.server.designBoard(design.id, path: a).source
+        _ = try await host.server.writeDesignBoard(design.id, path: a, source: source.replacingOccurrences(of: "</x-dc>", with: "<!-- n --></x-dc>"),
+                                                   baseRevision: nil)
+        _ = try await host.server.commitDesign(design.id, message: "Count in the header", push: false)
+        try await eventuallyOnMain("the host's commit on the chip", timeout: .seconds(30)) { git.state?.status.ahead == 1 }
+
+        // Push from the panel runs on the host.
+        vm.pushDesignGit(design.id)
+        try await eventuallyOnMain("the push", timeout: .seconds(60)) { git.state?.status.ahead == 0 && !git.working }
+        #expect(try ShepherdTestSupport.git(["log", "-1", "--format=%s", "main"], in: remote).trimmingCharacters(in: .whitespacesAndNewlines)
+            == "Count in the header")
+
+        // Open from Git: a refusal keeps its title; a clone becomes the host's design.
+        let bad = DesignGitOpenModel()
+        bad.repository = "/nowhere/at/all.git"
+        vm.runDesignGitOpen(bad)
+        try await eventuallyOnMain("the error box", timeout: .seconds(60)) { bad.error != nil }
+        #expect(bad.error?.title == "Repository unavailable")
+        let open = DesignGitOpenModel()
+        open.repository = remote.path
+        vm.designGitOpen = open
+        vm.runDesignGitOpen(open)
+        try await eventuallyOnMain("the clone", timeout: .seconds(60)) { vm.designGitOpen == nil }
+        let opened = try #require(host.server.state.designs.first { $0.id != design.id })
+        #expect(vm.design(opened.id) != nil && vm.designGit(opened.id).openedNotice?.hasPrefix("2 boards") == true)
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()

@@ -674,11 +674,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .designNotesChanged, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .designNotesChanged, .designGitChanged, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 52
+    static let caseCount = 53
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -755,6 +755,7 @@ struct RemoteReplyTests {
         .settingsChanged(page: .slashCommands),
         .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
         .designNotesChanged(designID: DesignID(rawValue: "d1")),
+        .designGitChanged(designID: DesignID(rawValue: "d1")),
         .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
     ]
 
@@ -1161,6 +1162,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
             RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability, RemoteProtocol.designBoardsCapability, RemoteProtocol.designThreadNotesCapability,
+            RemoteProtocol.designGitCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.
