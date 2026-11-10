@@ -618,6 +618,9 @@ public final class SessionServer: @unchecked Sendable {
     /// imports it as its own Import does (a project already in Designs as a copy, unreadable boards
     /// refused), starts its agent, and answers the design. Main actor; the file goes after.
     public var onRemoteImportDesign: ((URL, @escaping (Result<RemoteDesignCreated, RemoteDesignImportFailure>) -> Void) -> Void)?
+    /// This Mac's own Import, confirmed in its app (`RemoteDesignRequest.importConfirm`): the staged
+    /// project becomes a design and its agent starts on the import's brief. Main actor.
+    var onLocalFinishImport: ((DesignImportPreview, String?, Bool, @escaping (Result<RemoteDesignCreated, Error>) -> Void) -> Void)?
     /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
     /// before they delete.
     public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
@@ -3679,12 +3682,19 @@ public final class SessionServer: @unchecked Sendable {
         case .importBegin, .importChunk, .importFinish, .importCancel:
             remoteDesignImport(id: id, request: request, client: client)
             return
+        case .importPrepare, .importConfirm, .importDiscard:
+            localDesignImport(id: id, request: request, client: client)
+            return
+        case .mentionCatalog where !client.isLocal:
+            send(.error(id: id, code: "local_only", message: "The whole catalog goes only to this Mac's app."), to: client)
+            return
         default:
             break
         }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
+        let limit = maxPayloadBytes(for: client)
         Task.detached { [weak self] in
             let answer: RemoteReply
             do {
@@ -3695,7 +3705,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             // Encoded here, not on the server queue: a reply carries up to a chunk of file bytes.
             let payload: Data
-            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= NDJSON.maxPayloadBytes {
+            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= limit {
                 payload = encoded
             } else if let refusal = try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large",
                                                                           message: "The answer exceeds the remote payload limit.")) {
@@ -4079,6 +4089,60 @@ public final class SessionServer: @unchecked Sendable {
                         }
                     }
                 }
+            }
+        default:
+            break
+        }
+    }
+
+    /// Server queue: this Mac's own Import, from its app (the host reads the same disk), with the
+    /// choices the in-process Import offers: unreadable boards and a project already in Designs ask.
+    private func localDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
+        guard client.isLocal else {
+            send(.error(id: id, code: "local_only", message: "Only this Mac's app imports from its disk."), to: client)
+            return
+        }
+        let reply = { [weak self] (result: Result<RemoteDesignResult, Error>) in
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.design(id: id, result: answer), to: client)
+                case .failure(let failure as DesignImportFailure): self.send(.design(id: id, result: .importFailed(failure)), to: client)
+                case .failure(let error):
+                    let refusal = RemoteDesignRefusal(error)
+                    self.send(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+                }
+            }
+        }
+        switch request {
+        case .importPrepare(let path):
+            Task {
+                do {
+                    let preview = try await self.prepareDesignImport(from: URL(fileURLWithPath: path)) { [weak self] step in
+                        self?.queue.async {
+                            guard let self, self.clients[client.fd] === client else { return }
+                            self.send(.designImportProgress(step), to: client)
+                        }
+                    }
+                    reply(.success(.importPrepared(preview)))
+                } catch {
+                    reply(.failure(error))
+                }
+            }
+        case .importConfirm(let preview, let name, let skipping):
+            guard let handler = onLocalFinishImport else {
+                send(.error(id: id, code: "unsupported", message: "host cannot import designs"), to: client)
+                return
+            }
+            hopToMain {
+                handler(preview, name, skipping) { result in
+                    reply(result.map { .created(designID: $0.designID, agentID: $0.agentID) })
+                }
+            }
+        case .importDiscard(let previewID):
+            Task {
+                await self.cancelDesignImport(previewID)
+                reply(.success(.ok))
             }
         default:
             break
@@ -5028,7 +5092,7 @@ public final class SessionServer: @unchecked Sendable {
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
             let kept = try await server.designs.addThreadNote(designID, note)
-            server.hopToMain { [weak server] in server?.onDesignThreadNotesChanged?(designID) }
+            server.designNotesChanged(designID)
             return .designNote(id: id, note: kept)
         }
     }
@@ -5201,7 +5265,14 @@ public final class SessionServer: @unchecked Sendable {
         guard try await designs.removeThreadNote(designID, noteID: noteID) else {
             throw DesignReferenceError("no_such_note", "That note is no longer on the design.")
         }
+        designNotesChanged(designID)
+    }
+
+    /// A design's thread notes changed: the app's canvas reads them again, in process or as the
+    /// background host's client (`designNotesChanged`). Any thread.
+    func designNotesChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
+        queue.async { [self] in sendToLocalApps(.designNotesChanged(designID: designID)) }
     }
 
     private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {

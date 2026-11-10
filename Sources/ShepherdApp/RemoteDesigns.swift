@@ -217,6 +217,8 @@ extension ShepherdViewModel {
     func remoteDesignChanged(_ ref: RemoteDesignRef, revision: UInt64?, comments: UInt64?) {
         // The background host's designs are this app's own (`localHostDesignScreen`).
         let own = ref.hostID == localHost?.id && Self.routesThisMacLocally
+        // A board write changes the Git panel's file list, as the server's `onDesignRevision` does.
+        if own, revision != nil, designGitStates[ref.designID]?.state != nil { refreshDesignGit(ref.designID) }
         guard let screen = own ? designScreens[ref.designID] : remoteDesignScreens[ref] else { return }
         Task {
             if revision == nil, comments != nil { await screen.refreshComments() } else { await screen.refresh() }

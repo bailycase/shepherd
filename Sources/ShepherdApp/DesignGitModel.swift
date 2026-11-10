@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
@@ -79,12 +80,26 @@ extension ShepherdViewModel {
     /// Reads the design's Git state again (the server announced a change, or the panel opened).
     /// `fetch` asks the remote first: only on a press (Open the panel, Pull), never on a timer.
     func refreshDesignGit(_ id: DesignID, fetch: Bool = false) {
-        let server = server
         Task {
-            let state = try? await server.designGitState(id, fetch: fetch)
+            let state = try? await designGitState(id, fetch: fetch)
             designGitStates[id]?.set(state)
             if let git = designGitStates[id], let path = git.selected, git.panelOpen { loadDesignGitPreview(id, path: path) }
         }
+    }
+
+    /// A Git step on whoever keeps the design: the background host as its client (`design.git.v1`),
+    /// else the server. `id` nil is Open from Git, which makes a design.
+    private func designGitCall<T>(_ id: DesignID?, _ request: RemoteDesignRequest, local: (SessionServer) async throws -> T,
+                                  remote: (RemoteDesignResult) -> T?) async throws -> T {
+        let onHost = id.map { hostDesign($0) != nil } ?? Self.routesThisMacLocally
+        guard onHost, let library = localHost?.designs else { return try await local(server) }
+        guard let value = remote(try await Self.remoteDesign(library, request)) else { throw RemoteDesignReply.unexpected }
+        return value
+    }
+
+    private func designGitState(_ id: DesignID, fetch: Bool = false) async throws -> DesignGitState? {
+        try await designGitCall(id, .gitState(designID: id, fetch: fetch), local: { try await $0.designGitState(id, fetch: fetch) },
+                                remote: { if case .gitState(let state) = $0 { state } else { nil } })
     }
 
     /// Whether the design's agent is in a turn: Git waits for it (GitDesignStates › drawing).
@@ -134,11 +149,12 @@ extension ShepherdViewModel {
     }
 
     private func loadDesignGitPreview(_ id: DesignID, path: String) {
-        let server = server
         let merge = designGitStates[id]?.state?.merge?.phase == .ready
         let boards = designScreens[id]?.snapshot?.index.boards ?? [:]
         Task {
-            guard let (before, after) = try? await server.designGitPreview(id, path: path, merge: merge) else { return }
+            guard let (before, after) = try? await designGitCall(
+                id, .gitPreview(designID: id, path: path, merge: merge), local: { try await $0.designGitPreview(id, path: path, merge: merge) },
+                remote: { if case .gitPreview(let before, let after) = $0 { (before, after) } else { nil } }) else { return }
             guard designGitStates[id]?.selected == path else { return }
             designGitStates[id]?.preview = DesignGitPresentation.preview(path: path, before: before, after: after, boards: boards, merge: merge)
         }
@@ -167,10 +183,12 @@ extension ShepherdViewModel {
         guard !url.isEmpty, !message.isEmpty, !model.working else { return }
         model.working = true
         model.error = nil
-        let server = server
+        let id = model.designID
         Task {
             do {
-                let state = try await server.shareDesignWithGit(model.designID, url: url, message: message)
+                let state = try await designGitCall(id, .gitShare(designID: id, url: url, message: message),
+                                                    local: { try await $0.shareDesignWithGit(id, url: url, message: message) },
+                                                    remote: { if case .gitState(let state) = $0 { state } else { nil } })
                 designGit(model.designID).set(state)
                 if designGitShare === model { designGitShare = nil }
             } catch {
@@ -191,13 +209,18 @@ extension ShepherdViewModel {
         guard !url.isEmpty, !model.working else { return }
         model.working = true
         model.error = nil
-        let server = server
         Task {
             do {
-                let design = try await server.openDesignFromGit(url)
-                adopt(server.state)
+                let design = try await designGitCall(nil, .gitOpen(url: url), local: { try await $0.openDesignFromGit(url) },
+                                                     remote: { if case .gitOpened(let design) = $0 { design } else { nil } })
+                if hostDesign(design.id) == nil {
+                    adopt(server.state)
+                } else {
+                    // ponytail: polls for the host's push, as `createDesign` does.
+                    for _ in 0..<100 where self.design(design.id) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                }
                 // The canvas's toast (GitDesignCoworker): what came with it.
-                let comments = (try? await server.designComments(design.id).comments.filter { $0.resolvedAt == nil }.count) ?? 0
+                let comments = (try? await ownerDesignComments(design.id).comments.filter { $0.resolvedAt == nil }.count) ?? 0
                 let boards = design.boardCount ?? 0
                 var detail = [boards == 1 ? "1 board" : "\(boards) boards"]
                 if let system = design.systemNamespace { detail.append(system) }
@@ -221,56 +244,55 @@ extension ShepherdViewModel {
         // The commit buttons are disabled while the message is empty.
         guard !git.working, !message.isEmpty else { return }
         let merging = git.state?.merge?.phase == .ready
-        runDesignGit(id) { server in
-            let state = merging ? try await server.commitDesignMerge(id, message: message, push: push)
+        runDesignGit(id, .gitCommit(designID: id, message: message, push: push, merge: merging)) { server in
+            merging ? try await server.commitDesignMerge(id, message: message, push: push)
                 : try await server.commitDesign(id, message: message, push: push)
-            await MainActor.run {
-                git.message = ""
-                git.selected = nil
-                git.preview = nil
-            }
-            return state
+        } done: {
+            git.message = ""
+            git.selected = nil
+            git.preview = nil
         }
     }
 
     func pushDesignGit(_ id: DesignID) {
-        runDesignGit(id) { try await $0.pushDesign(id) }
+        runDesignGit(id, .gitPush(designID: id)) { try await $0.pushDesign(id) }
     }
 
     func pullDesignGit(_ id: DesignID) {
         let git = designGit(id)
         guard !git.working else { return }
         git.working = true
-        let server = server
         Task {
             defer { git.working = false }
             do {
                 git.failure = nil
-                switch try await server.pullDesign(id) {
+                switch try await designGitCall(id, .gitPull(designID: id), local: { try await $0.pullDesign(id) },
+                                               remote: { if case .gitPulled(let result) = $0 { result } else { nil } }) {
                 case .needsMerge:
                     git.panelOpen = false
                     designGitMergeDialog = id
                 case .updated, .upToDate: break
                 }
-                git.set(try await server.designGitState(id))
+                git.set(try await designGitState(id))
             } catch {
                 git.failure = Self.message(error)
             }
         }
     }
 
-    private func runDesignGit(_ id: DesignID, _ body: @escaping @Sendable (SessionServer) async throws -> DesignGitState) {
+    private func runDesignGit(_ id: DesignID, _ request: RemoteDesignRequest, _ local: @escaping (SessionServer) async throws -> DesignGitState,
+                              done: @escaping () -> Void = {}) {
         let git = designGit(id)
         guard !git.working else { return }
         git.working = true
-        let server = server
         Task {
             defer { git.working = false }
             do {
                 git.failure = nil
-                _ = try await body(server)
+                _ = try await designGitCall(id, request, local: local, remote: { if case .gitState(let state) = $0 { state } else { nil } })
+                done()
                 // A push that failed shows as the panel's push-failed state, with Retry push.
-                git.set(try await server.designGitState(id))
+                git.set(try await designGitState(id))
             } catch {
                 git.failure = Self.message(error)
             }
@@ -295,7 +317,7 @@ extension ShepherdViewModel {
     func dropDesignGitMerge(_ id: DesignID) {
         designGitMergeDialog = nil
         Task {
-            await server.keepDesignLocal(id)
+            try? await designGitCall(id, .gitDropMerge(designID: id), local: { await $0.keepDesignLocal(id) }, remote: { _ in () })
             refreshDesignGit(id)
         }
     }
@@ -305,10 +327,10 @@ extension ShepherdViewModel {
     func resolveDesignGitMerge(_ id: DesignID) {
         designGitMergeDialog = nil
         designGit(id).failure = nil
-        let server = server
         Task {
             do {
-                try await server.resolveDesignMergeWithAgent(id)
+                try await designGitCall(id, .gitResolveMerge(designID: id), local: { try await $0.resolveDesignMergeWithAgent(id) },
+                                        remote: { _ in () })
                 designScreens[id]?.paneTab = .chat
             } catch {
                 designGit(id).failure = Self.message(error)
@@ -321,7 +343,7 @@ extension ShepherdViewModel {
 
     func stopDesignGitMerge(_ id: DesignID) {
         Task {
-            await server.stopDesignMerge(id)
+            try? await designGitCall(id, .gitStopMerge(designID: id), local: { await $0.stopDesignMerge(id) }, remote: { _ in () })
             refreshDesignGit(id)
         }
     }
@@ -335,11 +357,16 @@ extension ShepherdViewModel {
     // MARK: Errors
 
     static func message(_ error: Error) -> String {
-        (error as? DesignGitError)?.message ?? String(describing: error)
+        if case RemoteHostClientError.rejected(_, let message) = error { return message }
+        return (error as? DesignGitError)?.message ?? String(describing: error)
     }
 
     static func sheetError(_ error: Error) -> SHGitSheetError {
         if let git = error as? DesignGitError { return SHGitSheetError(title: git.title, detail: git.message) }
+        // The background host's refusal: its code names the title (`DesignGitError.code`).
+        if case RemoteHostClientError.rejected(let code, let message) = error {
+            return SHGitSheetError(title: DesignGitError.title(code: code), detail: message)
+        }
         return SHGitSheetError(title: "Git couldn't finish", detail: String(describing: error))
     }
 }

@@ -28,7 +28,7 @@ extension ShepherdViewModel {
         return chips
     }
 
-    private func remoteReferenceIO(_ ref: RemoteAgentRef) -> DesignReferenceChips.IO {
+    func remoteReferenceIO(_ ref: RemoteAgentRef) -> DesignReferenceChips.IO {
         let host = ref.hostID
         let agent = ref.agentID
         return DesignReferenceChips.IO(

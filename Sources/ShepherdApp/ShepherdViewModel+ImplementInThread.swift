@@ -21,8 +21,22 @@ extension ShepherdViewModel {
         return DesignReferenceCanvasActions(
             implement: { [weak self] in self?.openImplementSheet($0) },
             copy: { [weak self] in self?.copyDesignReference($0) },
-            notes: { try await server.designThreadNotes($0) },
-            removeNote: { try await server.removeDesignThreadNote($0, noteID: $1) },
+            notes: { [weak self] id in
+                // As the background host's client, its notes (`threadNotes`), else the server's.
+                guard let self, let library = self.hostDesign(id).flatMap({ _ in self.localHost?.designs }) else {
+                    return try await server.designThreadNotes(id)
+                }
+                guard case .threadNotes(let notes) = try await Self.remoteDesign(library, .threadNotes(designID: id)) else {
+                    throw RemoteDesignReply.unexpected
+                }
+                return notes
+            },
+            removeNote: { [weak self] id, note in
+                guard let self, let library = self.hostDesign(id).flatMap({ _ in self.localHost?.designs }) else {
+                    return try await server.removeDesignThreadNote(id, noteID: note)
+                }
+                _ = try await Self.remoteDesign(library, .removeThreadNote(designID: id, noteID: note))
+            },
             openThread: { [weak self] in self?.selectAgent($0) },
             threadExists: { [weak self] id in self?.state.agents.contains { $0.id == id } == true },
             report: { [weak self] in self?.remoteActionError = $0 })
