@@ -317,6 +317,11 @@ struct WorkspaceNavigationTests {
         // The adoption landed on one of them; the others have never been shown.
         let landed = try #require(vm.activeTabID)
         let rest = agents.filter { $0.tab.id != landed }
+        let landedAgent = try #require(agents.first { $0.tab.id == landed })
+        try await eventuallyOnMain("the thread on screen to load", timeout: .seconds(60)) {
+            ListPerf.settle(window)
+            return vm.threadStores.store(for: landedAgent.agent.id).ready
+        }
         func mounted(_ expected: Set<TabID>) -> [TabID] { agents.map(\.tab.id).filter(expected.contains) }
         #expect(vm.mountedTabs.map(\.id) == [landed], "only the one on screen")
 
