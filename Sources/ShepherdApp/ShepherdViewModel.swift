@@ -288,9 +288,6 @@ final class ShepherdViewModel {
     var selectedRemoteAgent: RemoteAgentRef?
     var remoteFocusedPaneID: PaneID?
     var remoteWorktreeSheet: RemoteAgentRef?
-    /// A worktree agent of the background host on this Mac waiting in This Mac's own Delete
-    /// worktree agent dialog (`requestRemoteDelete`), with the host's checkout once probed.
-    var thisMacWorktreeDelete: ThisMacWorktreeDelete?
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
     var hostWorktreeInfo: RemoteWorktreeInfo?
@@ -1471,7 +1468,7 @@ final class ShepherdViewModel {
         pruneDesigns()
         pruneFileTrees()
         pruneSidebarPins()
-        let live = Set(state.agents.map(\.id) + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents.map(\.id) ?? []))
+        let live = Set(state.agents.map(\.id))
         branchCardStores = branchCardStores.filter { live.contains($0.key) }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }

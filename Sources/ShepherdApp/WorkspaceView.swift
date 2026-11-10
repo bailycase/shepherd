@@ -736,8 +736,6 @@ struct RemoteLayoutModel: Equatable {
         let agentName: String
         /// The thread's folder on the host: the hook glyph counts that host's hooks there.
         let cwd: String
-        /// Where it works, for the branch card beside the transcript; only This Mac's threads have one.
-        var branch: AgentBranchLabel? = nil
     }
 
     let ref: RemoteAgentRef
@@ -815,8 +813,6 @@ extension RemoteLayoutModel {
         var supportsChanges = false
         /// The transport a terminal start goes over, where the host starts terminals.
         var terminalTransport: UUID?
-        /// The background host on this Mac: it checks out on this machine.
-        var isThisMac = false
     }
 
     /// This Mac's side of the pane: the selection, the panes beside the thread, focus.
@@ -850,13 +846,11 @@ extension RemoteLayoutModel {
         let phase = host.phase.kind
         let visible = screen.isVisible
         if visible {
-            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen, thisMac: host.isThisMac), let lastSeen = host.lastSeen {
+            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen), let lastSeen = host.lastSeen {
                 return .away(host: host.name, hostID: host.connection.id, lastSeen: lastSeen, phase: phase)
             }
             switch host.phase {
             case .connected: break
-            // This Mac's host back within its grace (`HostAway.thisMacGrace`): its last state stands.
-            case _ where host.isThisMac && host.lastSeen.map { Date().timeIntervalSince($0) < HostAway.thisMacGrace } == true: break
             case .connecting: return .placeholder("connecting to \(host.name)…", phase: phase)
             case .failed(let failure): return .placeholder(failure.message(host: host.name), phase: phase)
             case .disconnected: return .placeholder("\(host.name) disconnected", phase: phase)
@@ -873,7 +867,7 @@ extension RemoteLayoutModel {
         let own = host.state.agents.filter { $0.tabID == tab.id }
         let thread = tab.layout.leaves.lazy.compactMap { leaf in
             primaryAgent(in: tab, pane: leaf, agents: own).map {
-                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd, branch: host.isThisMac ? AgentBranchLabel(agent: $0) : nil)
+                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd)
             }
         }.first
         let panel = screen.panel(tab.id)
@@ -930,8 +924,7 @@ extension RemoteLayoutModel {
             let terminals = terminals
             let host = Host(connection: connection, name: connection.config.name, phase: connection.phase, lastSeen: connection.lastSeen,
                             state: connection.state, supportsChanges: connection.supportsChanges,
-                            terminalTransport: connection.supportsTerminalStart ? connection.transportID : nil,
-                            isThisMac: connection.isThisMac)
+                            terminalTransport: connection.supportsTerminalStart ? connection.transportID : nil)
             let screen = Screen(
                 isVisible: isVisible, inspecting: isInspecting, inspectorTab: inspectorTabs[ref],
                 drawnDesign: isInspecting ? nil : vm.remoteDesign(drawnBy: ref)?.design.id,
@@ -1178,11 +1171,6 @@ private struct RemotePaneLeafView: View {
                                       active: model.isVisible && shown, cwd: thread.cwd,
                                       inspectingRunID: model.inspectingRunID, supportsChanges: model.supportsChanges,
                                       designReferences: model.designReferences)
-                    // This Mac's background host checks out on this machine: its threads get the
-                    // branch card, as the app's own do.
-                    .modifier(BranchCardDock(store: thread.branch.map { _ in vm.branchCardStore(for: model.ref.agentID) },
-                                             branch: thread.branch?.branch, changedFiles: thread.branch?.changedFiles ?? 0,
-                                             active: model.isVisible && shown))
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)

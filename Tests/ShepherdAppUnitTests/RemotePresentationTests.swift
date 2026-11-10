@@ -40,10 +40,9 @@ struct RemotePresentationTests {
             if let index = state.agents.firstIndex(where: { $0.id == id }) { change(&state.agents[index]) }
         }
 
-        func host(_ phase: RemoteHostStore.Phase = .connected, lastSeen: Date? = nil, terminalTransport: UUID? = nil,
-                  isThisMac: Bool = false) -> RemoteLayoutModel.Host {
+        func host(_ phase: RemoteHostStore.Phase = .connected, lastSeen: Date? = nil, terminalTransport: UUID? = nil) -> RemoteLayoutModel.Host {
             .init(connection: connection, name: "build-01", phase: phase, lastSeen: lastSeen, state: state,
-                  supportsChanges: true, terminalTransport: terminalTransport, isThisMac: isThisMac)
+                  supportsChanges: true, terminalTransport: terminalTransport)
         }
 
         func presentation(_ host: RemoteLayoutModel.Host? = nil, _ screen: RemoteLayoutModel.Screen = .init()) -> RemotePresentation {
@@ -112,16 +111,6 @@ struct RemotePresentationTests {
         #expect(model.tab == hosted.tab)
         #expect(model.hostName == "build-01" && model.connection === hosted.connection)
         #expect(model.supportsChanges)
-    }
-
-    @Test func onlyThisMacsThreadsCarryABranchLabel() throws {
-        var hosted = Hosted()
-        hosted.edit(hosted.agentID) { $0.checkout = AgentCheckout(branch: "main", changedFiles: 3) }
-        #expect(try hosted.model(hosted.host(isThisMac: false)).thread?.branch == nil)
-        #expect(try hosted.model(hosted.host(isThisMac: true)).thread?.branch
-            == AgentBranchLabel(kind: .checkout, branch: "main", changedFiles: 3))
-        hosted.edit(hosted.agentID) { $0.checkout = nil }
-        #expect(try hosted.model(hosted.host(isThisMac: true)).thread?.branch == nil)
     }
 
     @Test func aHostsUtilityTabHasNoThread() throws {

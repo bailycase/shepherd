@@ -50,7 +50,7 @@ extension ShepherdViewModel {
             return PreparedDesignReference(pin: pin, host: hostID)
         }
         // The background host's design, as this app's own: the host pins it, named as it sees it (`local`).
-        if Self.routesThisMacLocally, let library = localHost?.designs {
+        if let library = localHost?.designs {
             guard case .referencePinned(let pin) = try await Self.remoteDesign(library, .pinReference(reference)) else {
                 throw RemoteDesignReply.unexpected
             }

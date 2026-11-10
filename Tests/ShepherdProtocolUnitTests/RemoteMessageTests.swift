@@ -675,11 +675,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 56
+    static let caseCount = 57
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -759,6 +759,8 @@ struct RemoteReplyTests {
         .designGitChanged(designID: DesignID(rawValue: "d1")),
         .designImportProgress(.boards(done: 2, of: 5, title: "Checkout funnel", system: nil)),
         .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
+        .agentStartProblem(agentID: AgentID(rawValue: "a"), problem: NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: ["No models available"])),
+        .agentStartProblem(agentID: AgentID(rawValue: "a"), problem: nil),
         .automationsChanged,
         .automationNotify(title: "Watch CI", body: "The run couldn't start: acme-web is missing."),
     ]
