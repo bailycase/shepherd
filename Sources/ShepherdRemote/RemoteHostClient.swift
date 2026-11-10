@@ -93,6 +93,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onDesignImportProgress: ((DesignImportProgress) -> Void)?
     /// A line the background host on this Mac says in a thread (`threadNotice`). Main queue.
     public var onThreadNotice: ((AgentID, String) -> Void)?
+    /// Why one of the background host on this Mac's agents waits, or nil once it starts again (`agentStartProblem`). Main queue.
+    public var onAgentStartProblem: ((AgentID, NativeStartProblem?) -> Void)?
     /// The background host on this Mac's automations changed (`automationsChanged`). Main queue.
     public var onAutomationsChanged: (() -> Void)?
     /// An automation's banner from the background host on this Mac (`automationNotify`). Main queue.
@@ -175,6 +177,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case designGitChanged(DesignID)
         case designImportProgress(DesignImportProgress)
         case threadNotice(AgentID, String)
+        case agentStartProblem(AgentID, NativeStartProblem?)
         case automationsChanged
         case automationNotify(String, String)
     }
@@ -1639,6 +1642,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.designImportProgress(step), bytes: line.count)
         case .threadNotice(let agentID, let message):
             self.push(.threadNotice(agentID, message), bytes: line.count)
+        case .agentStartProblem(let agentID, let problem):
+            self.push(.agentStartProblem(agentID, problem), bytes: line.count)
         case .automationsChanged:
             self.push(.automationsChanged, bytes: line.count)
         case .automationNotify(let title, let body):
@@ -1765,6 +1770,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .designGitChanged(let designID): self.onDesignGitChanged?(designID)
                 case .designImportProgress(let step): self.onDesignImportProgress?(step)
                 case .threadNotice(let agentID, let message): self.onThreadNotice?(agentID, message)
+                case .agentStartProblem(let agentID, let problem): self.onAgentStartProblem?(agentID, problem)
                 case .automationsChanged: self.onAutomationsChanged?()
                 case .automationNotify(let title, let body): self.onAutomationNotify?(title, body)
                 }

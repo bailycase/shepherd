@@ -121,7 +121,7 @@ final class RemoteMissionDriver: MissionDriving {
     private(set) var templates: [MissionTemplate] = []
     var startTemplate: MissionTemplate?
     func loadTemplates() async {
-        guard isThisMac, let list = try? await missions.templates(), list != templates else { return }
+        guard isLocalHost, let list = try? await missions.templates(), list != templates else { return }
         templates = list
     }
 
@@ -143,10 +143,10 @@ final class RemoteMissionDriver: MissionDriving {
     func isLive(_ agent: AgentID) -> Bool { connection?.state.agents.contains { $0.id == agent } == true }
 
     /// The background host on this Mac, whose threads are the app's own (`localHost`).
-    private var isThisMac: Bool { vm?.localHost?.id == hostID }
+    private var isLocalHost: Bool { vm?.localHost?.id == hostID }
 
     func openThread(_ id: AgentID) {
-        if isThisMac { vm?.selectAgent(id) } else { vm?.selectRemoteAgent(hostID: hostID, agentID: id) }
+        if isLocalHost { vm?.selectAgent(id) } else { vm?.selectRemoteAgent(hostID: hostID, agentID: id) }
     }
 
     func thread(for attemptID: UUID) -> MissionThreadSource? {
@@ -168,10 +168,10 @@ final class RemoteMissionDriver: MissionDriving {
             }
         }
         let steerable = attempt.status == .running && mission.run?.phase.active == true
-        let store = isThisMac ? vm.threadStores.store(for: agentID) : vm.remoteThreadStores.store(for: ref)
+        let store = isLocalHost ? vm.threadStores.store(for: agentID) : vm.remoteThreadStores.store(for: ref)
         // This Mac's session files are the app's to read, as in process: a finished step shows its history.
         var preview: NativeThreadStore.Preview?
-        if isThisMac, let agent = connection?.state.agents.first(where: { $0.id == agentID }),
+        if isLocalHost, let agent = connection?.state.agents.first(where: { $0.id == agentID }),
            let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path {
             preview = PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: cwd, sessionsRoot: vm.server.pi.sessionsRoot)
         }
@@ -211,7 +211,7 @@ final class RemoteMissionDriver: MissionDriving {
         case .skipSoak: wire = .skipSoak
         case .laneLock(let lane, let choice): wire = .laneLock(spaceID: lane, choice: choice)
         case .saveTemplate(let name, let summary, let team):
-            guard isThisMac else { throw MissionError("mission_template", "Save templates on the Mac that ran the mission.") }
+            guard isLocalHost else { throw MissionError("mission_template", "Save templates on the Mac that ran the mission.") }
             wire = .saveTemplate(name: name, summary: summary, team: team)
         }
         let made = try await remote { try await self.missions.perform(id, revision: shown, wire) }

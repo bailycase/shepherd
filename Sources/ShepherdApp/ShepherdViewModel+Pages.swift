@@ -197,21 +197,18 @@ extension ShepherdViewModel {
 
     /// This Mac and every configured host, as the Hosts page shows them.
     func hostsPageModel(agentVersion: String?) -> HostsPageModel {
-        HostsPageModel.make(local: hostsPageLocal, agentVersion: agentVersion, remotes: hostsPageRemotes, columns: AppLayout.hostColumns)
+        HostsPageModel.make(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes, columns: AppLayout.hostColumns)
     }
 
     /// The page as its view draws it, derived again only when what it reads changed.
     func hostsPage(agentVersion: String?) -> HostsPageModel {
-        let inputs = HostsPageInputs(local: hostsPageLocal, agentVersion: agentVersion, remotes: hostsPageRemotes)
+        let inputs = HostsPageInputs(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes)
         if let cached = hostsPageCache, cached.inputs == inputs { return cached.model }
         let model = HostsPageModel.make(local: inputs.local, agentVersion: agentVersion, remotes: inputs.remotes,
                                         columns: AppLayout.hostColumns)
         hostsPageCache = (inputs, model)
         return model
     }
-
-    /// This Mac's card: the background host's state in client mode, else the app's own.
-    private var hostsPageLocal: ShepherdState { remoteHosts.connections.first(where: \.isThisMac)?.state ?? state }
 
     private var hostsPageRemotes: [HostsPageRemote] {
         remoteHosts.pairedConnections.map { connection in

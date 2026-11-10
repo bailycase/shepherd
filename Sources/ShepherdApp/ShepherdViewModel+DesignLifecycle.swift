@@ -104,7 +104,7 @@ extension ShepherdViewModel {
 
     /// The background host's handle on one of the app's designs, while the app is its client.
     func hostDesign(_ id: DesignID) -> RemoteDesignRef? {
-        guard Self.routesThisMacLocally, let host = localHost else { return nil }
+        guard let host = localHost else { return nil }
         return RemoteDesignRef(hostID: host.id, designID: id)
     }
 
@@ -139,7 +139,7 @@ extension ShepherdViewModel {
     /// What a system's menu item does.
     func performDesignSystemMenu(_ action: DesignMenuAction, on target: DesignSystemTarget) {
         // As the background host's client its systems change on the host, as a paired Mac's do.
-        if Self.routesThisMacLocally, let host = localHost, [.resync, .rename, .duplicateSystem, .deleteSystem].contains(action) {
+        if let host = localHost, [.resync, .rename, .duplicateSystem, .deleteSystem].contains(action) {
             switch target {
             case .system(let namespace): return performDesignSystemMenu(action, on: .remote(RemoteSystemRef(hostID: host.id, namespace: namespace)))
             case .build(let id) where action == .deleteSystem:
@@ -361,7 +361,7 @@ extension ShepherdViewModel {
     private func designIsShown(_ target: DesignTarget) -> Bool {
         switch target {
         case .local(let id): return shownDesign?.id == id
-        case .remote(let ref) where ref.hostID == localHost?.id && Self.routesThisMacLocally: return shownDesign?.id == ref.designID
+        case .remote(let ref) where ref.hostID == localHost?.id: return shownDesign?.id == ref.designID
         case .remote(let ref):
             guard let remote = selectedRemoteAgent, remote.hostID == ref.hostID else { return false }
             return remoteDesign(drawnBy: remote)?.design.id == ref.designID
@@ -558,7 +558,7 @@ extension ShepherdViewModel {
 
     /// The background host's design library while the app is its client: it imports from the
     /// same disk (`importPrepare`), with the same choices. Nil: the server imports.
-    private var importingHost: RemoteDesignLibrary? { Self.routesThisMacLocally ? localHost?.designs : nil }
+    private var importingHost: RemoteDesignLibrary? { localHost?.designs }
 
     private func prepareDesignImport(_ url: URL) async throws -> DesignImportPreview {
         guard let library = importingHost else {
