@@ -13,14 +13,7 @@ import ShepherdSessions
 /// `SessionHost.ownedExitStatus` and the supervisor follows that owner until it lets go. The
 /// child's stdin is a pipe from the app, so it stops when the app does, even by a crash.
 final class HostSupervisor: @unchecked Sendable {
-    /// Whether this launch is the supervisor's client (`SHEPHERD_SUPERVISED_HOST=1`). Off until
-    /// Designs, Automations, Projects and Missions route through the host; the flip makes it
-    /// always on and deletes the in-process start.
-    static func isEnabled(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        environment["SHEPHERD_SUPERVISED_HOST"] == "1"
-    }
-
-    /// The launch's supervisor, while the flag is on; the delegate stops its child at Quit.
+    /// The launch's supervisor; the delegate stops its child at Quit.
     nonisolated(unsafe) static var shared: HostSupervisor?
     /// The agents the app's own child runs, for the quit question (the mirrored workspace's).
     @MainActor static var agents: () -> [Agent] = { [] }

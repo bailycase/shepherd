@@ -48,13 +48,10 @@ settings, and each configuration compiles only its own icon.
 
 **The background service** (`Shepherd --host` under launchd, [ARCHITECTURE](../ARCHITECTURE.md))
 registers only for Shepherd Nightly run from a stable, signed bundle (`BackgroundService.mayRegister`).
-Dev and Prod run in process: Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`, so it never
-registers. To try the client path in Dev, start a host on Dev's folder
-(`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`) and run the scheme with
-`SHEPHERD_BACKGROUND_HOST=1` ([environment](environment.md)).
-
-With `SHEPHERD_SUPERVISED_HOST=1` in the scheme, Dev runs its agents in its own child,
-`Shepherd --host --supervised`. To debug that process, run the scheme, then Debug ▸ Attach to
+Dev and Prod never register it (Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`), so
+they run their agents in the app's own child, `Shepherd --host --supervised` (`HostSupervisor`).
+A host you start by hand on Dev's folder (`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`)
+owns the workspace first, and the scheme follows it instead. To debug that process, run the scheme, then Debug ▸ Attach to
 Process and pick the second `Shepherd` (or attach by its pid, which `log show --predicate
 'subsystem == "com.shepherd.app"'` prints in "host child started"). Its stderr shows in the
 app's console. Stopping the app in Xcode closes the child's stdin, so the child stops too.

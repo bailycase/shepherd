@@ -106,8 +106,8 @@ escalates to SIGKILL.
   `Agent.lastFailure` (a failed turn's error, or why pi couldn't start or stopped) is what survives it.
 - Startup reconciliation drops shell tabs, `inspectorFor` tabs, review leaves and automation runs,
   and settles design agents into the designs space. Never keep a run agent across a server start.
-  A server start is the host's start (login, a drain, Quit and Stop Agents, a crash) or, in
-  process, the app's launch. Relaunching the app as the background service's client is not one:
+  A server start is the host's start: login, a drain, Quit and Stop Agents, a crash, or the
+  launch of the app's own child host. Relaunching the app while launchd's host runs is not one:
   the host keeps its shells, terminals and runs.
 - Agent names settle once: `setAgentName` never overwrites a final name, naming never blocks pi,
   and moving an agent to a different pi session clears `nameIsFinal`.
