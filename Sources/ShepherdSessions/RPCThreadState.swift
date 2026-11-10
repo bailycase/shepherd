@@ -102,6 +102,14 @@ final class RPCThreadState {
     // Only a successfully installed history supersedes an older request still hydrating images.
     private var historyRequestSequence: UInt64 = 0
     private var appliedHistorySequence: UInt64 = 0
+    // What a test sees of the folds (`HistoryFold.swift`).
+    /// Why the last read of the whole history was made.
+    private(set) var lastRefetchReason: HistoryRefetchReason?
+    private(set) var historyFoldCount = 0, historyFoldedMessageCount = 0, historyReadMessageCount = 0
+    /// Past this many bytes held, the messages pi saved fold into history at once, mid-run.
+    var tailByteLimit = 4 << 20
+    /// A fold or read is due or in flight, or a check of pi's message count is outstanding.
+    var historyWorkPending: Bool { false }
     static let signposter = OSSignposter(subsystem: "com.shepherd.sessions", category: "Thread work")
     private static let historySlots = DispatchSemaphore(value: 4)
     private var activeHistoryJobs = 0
@@ -1812,7 +1820,7 @@ final class RPCThreadState {
     }
 
     /// A live row pi has persisted: a fetch of its history from then on holds it.
-    private static func persisted(_ item: LiveItem) -> Bool {
+    static func persisted(_ item: LiveItem) -> Bool {
         switch item.kind {
         case .assistant, .user, .compaction: item.ended
         case .tool: item.value.status == "complete" || item.value.status == "aborted"
