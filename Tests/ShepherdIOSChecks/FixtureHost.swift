@@ -338,7 +338,7 @@ final class FixtureHost: @unchecked Sendable {
         case .mission(let id, let request):
             // Reading missions, their reviews and Spec Kit files changes nothing; every action and New mission writes.
             switch request {
-            case .list, .get, .startOptions, .review, .reviewFile, .specKit: return nil
+            case .list, .get, .startOptions, .review, .reviewFile, .specKit, .templates: return nil
             case .create, .action:
                 mutation("mission." + String(describing: request).prefix { $0 != "(" })
                 return [.error(id: id, code: "fixture", message: refused)]

@@ -43,6 +43,9 @@ public enum SHGlyph: CaseIterable, Sendable {
     case hook
     /// A skill (SentCommandsA's "Used skill" line; the composer's skill chip): the outline book.
     case skill
+    /// Mute a thread's notifications (the brief for the notification follow-ups; no board): the Mac's thread
+    /// options menu, the iPhone's row menu and its Notifications settings.
+    case mute
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -61,6 +64,7 @@ public enum SHGlyph: CaseIterable, Sendable {
         case .responseTiming: "stopwatch"
         case .hook: "point.topright.arrow.triangle.backward.to.point.bottomleft.scurvepath"
         case .skill: "book"
+        case .mute: "bell.slash"
         }
     }
 

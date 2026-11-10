@@ -35,6 +35,20 @@ struct PushTests {
                == ["option:0", "option:1", "reply", "open"])
         assert(PushButtons.actions(kind: "error", options: nil, mission: true)?.map(\.identifier) == ["openMission"])
         assert(PushButtons.actions(kind: "error", options: nil, mission: false) == nil)
+        // A stuck lane adds Retry with hint, a text field, before Open mission (NotifPhoneRich).
+        let retryButtons = PushButtons.actions(kind: "error", options: nil, mission: true, stuck: "orders")
+        assert(retryButtons?.map(\.identifier) == ["retry", "openMission"])
+        assert((retryButtons?.first as? UNTextInputNotificationAction)?.textInputPlaceholder == "A hint for orders")
+        let blocked: [AnyHashable: Any] = ["shepherd": ["detail": ["stuck": ["lane": "orders", "count": 3, "tries": []]]]]
+        assert(PushButtons.retryTarget(userInfo: blocked, thread: "mission:\(missionID)")! == (missionID, 3))
+        assert(PushButtons.retryTarget(userInfo: blocked, thread: "thread:\(missionID)") == nil)
+        assert(PushButtons.retryTarget(userInfo: ["shepherd": [:]], thread: "mission:\(missionID)") == nil)
+        // An automation run that never started opens its automation.
+        let automationID = UUID().uuidString.lowercased()
+        var automationPush = PushPayload.from(["shepherd": ["hostID": hostID.uuidString, "agentID": automationID,
+            "eventID": eventID.uuidString, "kind": "error"]])!
+        automationPush.destination = .automation(automationID)
+        assert(PushRouter.route(automationPush) == .automations(.detail(host: hostID, automation: AutomationID(rawValue: automationID))))
         assert(PushButtons.actions(kind: "needsAnswer", options: [], mission: false) == nil)
         let asked: [AnyHashable: Any] = ["shepherd": ["detail": ["options": ["order_id", "payment_id"]]]]
         assert(PushButtons.optionText("option:1", userInfo: asked) == "payment_id")

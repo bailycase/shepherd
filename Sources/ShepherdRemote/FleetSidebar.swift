@@ -267,6 +267,9 @@ public struct FleetThreadAbilities: Equatable, Sendable {
     /// older or offline host).
     public var moveSpaces: [Space]
     public var review: Bool
+    /// Whether the thread's pushes are muted on its host (`Agent.pushMuted`); nil while Mute isn't offered (an
+    /// older or offline host).
+    public var muted: Bool?
 
     public init(agent: Agent, state: ShepherdState, connected: Bool, capabilities: Set<String>) {
         let ordinary = state.isSidebarThread(agent)
@@ -281,5 +284,6 @@ public struct FleetThreadAbilities: Equatable, Sendable {
         moveSpaces = moves ? state.spaces.filter { !$0.hidden } : []
         review = connected && (capabilities.contains(RemoteProtocol.changesCapability)
             || capabilities.contains(RemoteProtocol.agentInspectionCapability))
+        muted = connected && capabilities.contains(RemoteProtocol.pushMuteCapability) ? agent.pushMuted : nil
     }
 }
