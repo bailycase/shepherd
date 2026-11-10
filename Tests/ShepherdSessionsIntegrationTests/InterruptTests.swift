@@ -282,8 +282,9 @@ struct InterruptTests {
     }
 
     /// In a thread whose history holds images, Steer now's message stays in the thread from the press until its turn is over.
-    /// The stopped run's history is read off the queue for its images, and pi starts the message in the meantime: that
-    /// history does not hold it yet, so it must stay a live row, not leave the thread (it used to, until the next run ended).
+    /// A history read off the queue for its images (here one asked for as the stopped run settles; a compaction or a count check
+    /// would ask for one) lands after pi has started the message: that history does not hold it yet, so it must stay a live row,
+    /// not leave the thread (it used to, until the next run ended).
     @Test func steerNowStaysInTheThreadWhileAHistoryWithImagesIsRead() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -297,11 +298,15 @@ struct InterruptTests {
         try JSONSerialization.data(withJSONObject: history).write(to: file)
         let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_MESSAGES_FILE": file.path])
         let running = try await startRun(pi, "tools:2 build")
-        // Hold every image read from here: the stopped run's history is read, and pi starts the message, before it lands.
+        // Hold every image read from here: the read is asked for, and pi starts the message, before it lands.
         let held = DispatchSemaphore(value: 0), reads = Locked(0)
         defer { for _ in 0..<8 { held.signal() } }
         try await h.server.enqueue {
-            h.server.rpcThread(forAgent: pi.agent.id)?.beforeHistoryImages = { reads.withValue { $0 += 1 }; held.wait() }
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            thread.beforeHistoryImages = { reads.withValue { $0 += 1 }; held.wait() }
+            // A run's end folds its messages and reads nothing: ask for the read as the stopped run settles.
+            let previous = thread.onActualTurnSettled
+            thread.onActualTurnSettled = { [weak thread] in previous?(); thread?.refreshMessages() }
         }
         func shown(_ s: NativeThreadSnapshot, _ op: UUID) -> [NativeThreadMessage] {
             (s.messages + s.provisional).filter { $0.role == "user" && ($0.operationID == op || $0.entryID == "pending:\(op.uuidString)") }

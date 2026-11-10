@@ -93,8 +93,9 @@ struct HistoryFreshnessTests {
         } catch { h.stop(); throw error }
     }
 
-    /// B has been sent on the actual RPC pipe, but it cannot answer yet. A must still install
-    /// useful canonical history, including when B's timeout has already marked history incomplete.
+    /// B has been sent on the actual RPC pipe, but it cannot answer yet. A, the read pi's message count asked for after the
+    /// stub saved 120 messages no event announced, must still install useful canonical history, including when B's timeout
+    /// has already marked history incomplete.
     @Test(arguments: [false, true]) func aNewerPendingOrFailedRequestDoesNotSupersedeUsefulOlderHistory(newerTimesOut: Bool) async throws {
         let (h, pi, ready, gate) = try await idleImageFixture()
         defer { h.stop() }
@@ -103,12 +104,12 @@ struct HistoryFreshnessTests {
         try await h.server.enqueue {
             h.server.rpcThread(forAgent: pi.agent.id)?.beforeHistoryImages = { entered.withValue { $0 = true }; held.wait() }
         }
-        let op = UUID(), text = "tools:0 canonical before pending history"
+        let op = UUID(), text = "fill"
         #expect(try await pi.send(text, operationID: op, from: ready) == .accepted(operationID: op))
-        try await eventually("A is hydrating the completed turn") { entered.current }
+        try await eventually("A is hydrating the history pi's count asked for") { entered.current }
         try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.beforeHistoryImages = nil }
         let before = try #require(try await pi.request(.snapshot()).snapshotValue)
-        #expect(!before.messages.contains { $0.operationID == op })
+        #expect(!before.messages.contains { $0.blocks.first?.text == "filler 0" })
         try FileManager.default.removeItem(at: gate)
         let replies = Locked<[Result<RPCResponse, RPCError>]>([]), requests = pi.stdin("get_messages").count
         try await h.server.enqueue {
@@ -125,11 +126,13 @@ struct HistoryFreshnessTests {
         } else { #expect(replies.current.isEmpty) }
         held.signal()
         let applied = try await pi.snapshot("A installs canonical history despite B's issuance or failure") {
-            !$0.running && $0.messages.contains { $0.operationID == op && $0.role == "user" }
+            !$0.running && $0.messages.last?.blocks.first?.text == "filler 119"
         }
-        #expect(applied.messages.count > before.messages.count)
-        #expect(applied.messages.filter { $0.operationID == op && $0.role == "user" }.count == 1)
+        // The snapshot is a page of the 122 messages pi holds now: the last 50, each once.
+        #expect(applied.messages.count == RPCThreadState.pageSize && applied.messages.count > before.messages.count)
+        #expect(Set(applied.messages.map(\.entryID)).count == applied.messages.count)
         #expect(applied.clips?.history != true)
+        #expect(try await pi.thread { $0.lastRefetchReason } == .countMismatch)
         try Data().write(to: gate)
         try await eventually("B callback completed once") { replies.current.count == 1 }
         let refreshed = Locked(false)

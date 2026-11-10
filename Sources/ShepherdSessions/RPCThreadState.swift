@@ -102,14 +102,43 @@ final class RPCThreadState {
     // Only a successfully installed history supersedes an older request still hydrating images.
     private var historyRequestSequence: UInt64 = 0
     private var appliedHistorySequence: UInt64 = 0
-    // What a test sees of the folds (`HistoryFold.swift`).
-    /// Why the last read of the whole history was made.
-    private(set) var lastRefetchReason: HistoryRefetchReason?
-    private(set) var historyFoldCount = 0, historyFoldedMessageCount = 0, historyReadMessageCount = 0
-    /// Past this many bytes held, the messages pi saved fold into history at once, mid-run.
+    // Folds. What pi saves is appended to `history` from its own message events (`foldTail`), in O(the turn); the whole
+    // history is read only where events cannot say what pi saved (`HistoryRefetchReason`).
+    /// pi's transcript as far as `history` holds it: what the next fold appends to.
+    private var projector = HistoryProjector()
+    /// What pi saved since the last fold or read answer, in pi's order, and roughly how many bytes it holds.
+    private var tail: [RPCMessage] = []
+    private var tailBytes = 0
+    /// Past this the tail folds at once, mid-run: screenshots and long tool output are not held until the turn ends.
     var tailByteLimit = 4 << 20
-    /// A fold or read is due or in flight, or a check of pi's message count is outstanding.
-    var historyWorkPending: Bool { false }
+    /// The fold projecting off the queue: its messages (a read that answers meanwhile merges them) and its token (nil: none).
+    private var foldingMessages: [RPCMessage] = []
+    private var foldToken: UUID?
+    private var foldDue = false, foldAfterRead = false, foldAfterFold = false
+    /// Reads asked of pi whose callback has not run, by request sequence, and the superseding read a fold asked for.
+    private var historyReadsPending: Set<UInt64> = []
+    private var supersedingRead: UInt64?
+    /// An older answer can still install over what a fold would append.
+    private var readCouldInstall: Bool { historyReadsPending.contains { $0 > appliedHistorySequence } }
+    /// Why the next fold reads the whole history instead, and the last reason a read was made for (tests and the log).
+    private var refetchReason: HistoryRefetchReason?
+    private(set) var lastRefetchReason: HistoryRefetchReason?
+    /// What the last read or fold left in `history`: the latest start of one of pi's rows, and the record rows placed.
+    private var historyMaxStart = -Double.infinity
+    private var historyRecordIDs: Set<String> = []
+    /// Each nested tool execution's parent call (bounded by `timingLimit`): their live rows leave with the parent's result.
+    private var toolParents: [String: String] = [:]
+    private var toolParentOrder: [String] = []
+    /// The message events this host saw of the roles pi saves as message entries, and pi's count beside them at the last
+    /// check that agreed.
+    private var savedMessageEvents = SavedMessageCounts()
+    private var countCheckpoint: (pi: SavedMessageCounts, host: SavedMessageCounts)?
+    /// After a mismatch: the request sequence a read must pass before the baseline is taken again.
+    private var rebaselineAfter: UInt64?
+    private var verifyingStats = 0
+    private(set) var historyFoldCount = 0, historyFoldedMessageCount = 0, historyReadMessageCount = 0
+    /// Tests: a fold or read is due or in flight, or a verifying stats answer is outstanding.
+    var historyWorkPending: Bool { foldDue || foldToken != nil || verifyingStats > 0 || readCouldInstall }
     static let signposter = OSSignposter(subsystem: "com.shepherd.sessions", category: "Thread work")
     private static let historySlots = DispatchSemaphore(value: 4)
     private var activeHistoryJobs = 0
@@ -427,13 +456,11 @@ final class RPCThreadState {
 
     private var operations: [(id: String, operation: Operation)] = []
     /// The host could not read pi's history the last time it asked (`refreshMessages`), so the thread
-    /// may be missing messages: the snapshot says so (`clips.history`) until a fetch lands whole.
+    /// may be missing messages: the snapshot says so (`clips.history`) until a read lands whole.
     var historyUnread = false
-    /// Rows of the running turn's output `trimLive` dropped since history was last read: the snapshot
-    /// says so (`clips.live`), and the finished turn's history brings them back.
+    /// Rows of the running turn's output `trimLive` dropped since history was last read or folded: the snapshot
+    /// says so (`clips.live`), and the fold that holds them brings them back.
     private(set) var liveLeftOut = 0
-    /// A `foldLive` fetch is in flight.
-    private var liveFoldPending = false
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
     /// That error's message, when pi gave one.
@@ -621,6 +648,7 @@ final class RPCThreadState {
         self.originStore = originStore
         self.readCache = readCache
         self.transcriptReader = ChildTranscriptReader(cache: readCache, owner: readCacheOwner)
+        session.onRecordDropped = { [weak self] in self?.recordDropped() }
     }
 
     deinit { readCache.remove(owner: readCacheOwner) }
@@ -631,7 +659,7 @@ final class RPCThreadState {
         if session.hasGoalController { setGoalsEnabled(goalsEnabled) }
         refreshState(timeout: timeout, acceptLateResponse: true)
         refreshMessages(timeout: timeout, bootstrap: true)
-        refreshStats(timeout: timeout, acceptLateResponse: true)
+        refreshStats(timeout: timeout, acceptLateResponse: true, verifiesHistory: true)
         refreshCommands(timeout: timeout, acceptLateResponse: true)
         bootstrapTimeout = timeout
         bootstrapWaitingForHuman = nil
@@ -756,6 +784,7 @@ final class RPCThreadState {
     // MARK: - Events (session queue)
 
     func handle(_ event: RPCEvent) {
+        if case .messageEnd(let message) = event { readSaved(message) }
         switch event {
         case .skillsChanged:
             skillsNeedRefresh = true
@@ -800,9 +829,9 @@ final class RPCThreadState {
                 captureResult(message, final: true)
             }
             dropStreamingCalls()
-            refreshMessages()
+            requestFold()
             refreshState()
-            refreshStats()
+            refreshStats(verifiesHistory: true)
         case .agentSettled:
             recoveryResumePending = false
             if !runFailed, !stopRequested {
@@ -843,6 +872,7 @@ final class RPCThreadState {
                 onActualTurnSettled?()
             }
             settled()
+            requestFold()
             refreshSkillsIfIdle()
         case .messageStart(let message) where message.role == "user":
             onTurnEvent?(.message(timestamp: message.timestamp, text: DesignViewRecord.strippingFence(from: message.content.compactMap { block -> String? in
@@ -888,10 +918,10 @@ final class RPCThreadState {
             upsertAssistant(raw, ended: false, thinking: streamingThinking.mapValues(\.normalized))
             streamToolCall(delta, in: raw)
         case .messageEnd(let message) where message.role == "custom" && message.display == true && message.customType != "shepherd-child":
-            // A message an extension displays (a command's report) is in pi's history already, and
-            // an idle pi has no turn whose end would refresh it. A hook's row says what just
-            // happened to the step the agent is on, so it shows while pi works too.
-            if !running || message.customType == "shepherd.hook" { refreshMessages() }
+            // A message an extension displays (a command's report) is in pi's history already, with a time its event does
+            // not carry (`readSaved` asked for the whole history), and an idle pi has no turn whose end would read it.
+            // A hook's row says what just happened to the step the agent is on, so it shows while pi works too.
+            if !running || message.customType == "shepherd.hook" { requestFold() }
         case .messageEnd(let message):
             guard message.role == "assistant" else { break }
             endDiagnostic("model.response")
@@ -925,7 +955,8 @@ final class RPCThreadState {
             }) : [])
             // The ring moves once per reply, never per token.
             refreshStats()
-        case .toolExecutionStart(let id, let name, let args, _):
+        case .toolExecutionStart(let id, let name, let args, let parent):
+            if let parent { rememberParent(parent, of: id) }
             let operation = "tool." + DiagnosticFailureDetails.ToolKind(name: name).rawValue
             beginDiagnostic("tool:" + id, operation: operation)
             if Self.asksUser(name) {
@@ -982,9 +1013,12 @@ final class RPCThreadState {
             retry = nil
         case .turnStart:
             beginDiagnostic("model.response", operation: "model.response")
-        case .turnEnd, .unknown, .entryAppended:
+        case .entryAppended(let entry):
+            entryAppended(entry)
+        case .turnEnd, .unknown:
             break
         }
+        runDueFold()
         commit()
     }
 
@@ -1631,6 +1665,7 @@ final class RPCThreadState {
                 self.loadOrigins(sessionID: id)
                 if switched {
                     self.refreshMessages(timeout: timeout)
+                    self.refreshStats(timeout: timeout, verifiesHistory: true)
                     // session_start's restored widget can precede this get_state response.
                     if goalController {
                         self.session.request(.prompt(message: "/shepherd-goal {\"action\":\"status\"}", streamingBehavior: .steer)) { _ in }
@@ -1706,16 +1741,28 @@ final class RPCThreadState {
         }
     }
 
-    /// Bootstrap keeps late history answers and never serves a timed-out fetch as empty history.
+    /// Bootstrap keeps late history answers and never serves a timed-out fetch as empty history. Returns the request's sequence.
+    @discardableResult
     func refreshMessages(timeout: TimeInterval = 10, bootstrap: Bool = false,
-                         done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+                         done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) -> UInt64 {
         let generation = generation
         historyRequestSequence += 1
         let sequence = historyRequestSequence
+        historyReadsPending.insert(sequence)
+        // This read is the one the reason asked for.
+        refetchReason = nil
         let started = ContinuousClock.now
         let measured: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             let elapsed = started.duration(to: .now).components
             self?.onDiagnosticDuration?("history.refresh", Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
+            if let self {
+                self.historyReadsPending.remove(sequence)
+                if self.supersedingRead == sequence { self.supersedingRead = nil }
+                if self.foldAfterRead, !self.readCouldInstall {
+                    self.foldAfterRead = false
+                    self.requestFold()
+                }
+            }
             done?(result)
         }
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
@@ -1728,12 +1775,18 @@ final class RPCThreadState {
                 self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, projected: nil, persisted: persisted, done: measured)
                 return
             }
+            // What pi announced before it answered is in the answer, but for a message saved in the step that wrote the
+            // answer (`unread`). The tail starts over: what comes after this answer folds once the read has installed.
+            let pending = self.tail + self.foldingMessages
+            self.tail.removeAll()
+            self.tailBytes = 0
             // Projecting the whole history (and reading + hashing its images) is O(messages); it runs here, off the thread's
             // queue, from a snapshot of the small tables the projection consults. The queue only swaps in the result.
             let hook = self.beforeHistoryImages
             let stopped = self.stoppedReplies
             let sentReferences = self.origins.compactMapValues(\.references)
             let adjust = self.historyAdjuster()
+            let sessionID = self.session.id
             self.enqueueHistoryProjection(sequence: sequence, superseded: { measured(result) }) { [weak self] in
                 guard let self else { return }
                 self.historyProjectionCount += 1
@@ -1744,15 +1797,18 @@ final class RPCThreadState {
                     let interval = Self.signposter.beginInterval("History projection", id: Self.signposter.makeSignpostID())
                     // One pass: marking only turns an error into an abort, which the estimate's baseline skips alike.
                     let ordered = Self.chronological(Self.markingStopped(messages, stopped: stopped))
+                    let extra = Self.unread(pending, in: ordered)
+                    if !extra.isEmpty { ShepherdLog.info("rpc session \(sessionID): \(extra.count) messages pi announced are not in its answer; adding them") }
                     var projector = HistoryProjector()
-                    let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: projector.shown(ordered)) : [:]
-                    let history = projector.append(ordered, sentReferences: sentReferences, images: images, adjust: adjust)
+                    let all = extra.isEmpty ? ordered : ordered + Self.markingStopped(extra, stopped: stopped)
+                    let images = ThreadImages.hasImages(all) ? ThreadImages.table(for: projector.shown(all)) : [:]
+                    let history = projector.append(all, sentReferences: sentReferences, images: images, adjust: adjust)
                     let estimate = projector.estimator.estimate()
                     Self.signposter.endInterval("History projection", interval)
                     Self.historySlots.signal()
                     self?.queue.async { [weak self] in
-                        self?.reconcileHistory(history, estimate: estimate, result: result, generation: generation,
-                                               sequence: sequence, bootstrap: bootstrap, persisted: persisted) { [weak self] result in
+                        self?.reconcileHistory(history, estimate: estimate, projector: projector, messageCount: all.count, result: result,
+                                               generation: generation, sequence: sequence, bootstrap: bootstrap, persisted: persisted) { [weak self] result in
                             measured(result)
                             self?.finishHistoryProjection()
                         }
@@ -1762,6 +1818,7 @@ final class RPCThreadState {
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
+        return sequence
     }
 
     /// Two in flight preserve newer-success progress while an older answer hydrates. Only
@@ -1787,9 +1844,19 @@ final class RPCThreadState {
         }
     }
 
-    private typealias ReconciledHistory = (history: [NativeThreadMessage], estimate: ContextEstimate, changed: Bool, sizes: [Int])
+    private struct ReconciledHistory {
+        var history: [NativeThreadMessage]
+        var estimate: ContextEstimate
+        var changed: Bool
+        var sizes: [Int]
+        /// What the next fold appends to, and what `history` holds of records and the latest row start.
+        var projector: HistoryProjector
+        var maxStart: Double
+        var recordIDs: Set<String>
+        var messageCount: Int
+    }
 
-    private func reconcileHistory(_ projected: [NativeThreadMessage], estimate: ContextEstimate,
+    private func reconcileHistory(_ projected: [NativeThreadMessage], estimate: ContextEstimate, projector: HistoryProjector, messageCount: Int,
                                   result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64,
                                   bootstrap: Bool, persisted: Set<String>, done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         guard generation == self.generation, sequence > appliedHistorySequence else { done(result); return }
@@ -1803,18 +1870,25 @@ final class RPCThreadState {
             let kept = Self.keepingSummarized(previous: previous, next: Self.interleave(records, into: projected))
             let changed = kept != previous
             let sizes = changed ? Array(repeating: -1, count: kept.count) : []
+            var maxStart = -Double.infinity
+            var recordIDs = Set<String>()
+            for row in kept {
+                if Self.isRecordRow(row) { recordIDs.insert(row.entryID) } else if let start = Self.rowStart(row) { maxStart = max(maxStart, start) }
+            }
             Self.signposter.endInterval("History reconciliation", interval)
             Self.historySlots.signal()
             self?.queue.async { [weak self] in
                 guard let self else { return }
                 guard generation == self.generation, sequence > self.appliedHistorySequence else { done(result); return }
                 guard version == self.historyVersion, questions == self.questions, notices == self.commandNotices else {
-                    self.reconcileHistory(projected, estimate: estimate, result: result, generation: generation,
-                                          sequence: sequence, bootstrap: bootstrap, persisted: persisted, done: done)
+                    self.reconcileHistory(projected, estimate: estimate, projector: projector, messageCount: messageCount, result: result,
+                                          generation: generation, sequence: sequence, bootstrap: bootstrap, persisted: persisted, done: done)
                     return
                 }
                 self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap,
-                                   projected: (kept, estimate, changed, sizes), persisted: persisted, done: done)
+                                   projected: ReconciledHistory(history: kept, estimate: estimate, changed: changed, sizes: sizes, projector: projector,
+                                                                maxStart: maxStart, recordIDs: recordIDs, messageCount: messageCount),
+                                   persisted: persisted, done: done)
             }
         }
     }
@@ -1881,7 +1955,7 @@ final class RPCThreadState {
                 self.announceIfServable()
                 self.drainIfReady()
             }
-            guard let (history, estimate, changed, sizes) = projected else {
+            guard let projected else {
                 self.historyUnread = true
                 return
             }
@@ -1890,12 +1964,16 @@ final class RPCThreadState {
             self.appliedHistorySequence = sequence
             self.historyUnread = false
             self.liveLeftOut = 0
-            if changed {
-                self.history = history
-                self.historyBytes = sizes
+            self.projector = projected.projector
+            self.historyMaxStart = projected.maxStart
+            self.historyRecordIDs = projected.recordIDs
+            self.historyReadMessageCount += projected.messageCount
+            if projected.changed {
+                self.history = projected.history
+                self.historyBytes = projected.sizes
                 self.historyVersion += 1
             }
-            if estimate != self.estimate { self.estimate = estimate }
+            if projected.estimate != self.estimate { self.estimate = projected.estimate }
             // message_end precedes persistence: what had ended when pi answered is now history.
             self.live.removeAll { item in
                 switch item.kind {
@@ -1905,6 +1983,12 @@ final class RPCThreadState {
                 }
             }
             self.updateContext()
+            // A read made after a count mismatch holds what pi saved: the next check starts from here.
+            if let after = self.rebaselineAfter, sequence > after {
+                self.rebaselineAfter = nil
+                self.countCheckpoint = nil
+                self.refreshStats(verifiesHistory: true)
+            }
         }
     }
 
@@ -1920,12 +2004,222 @@ final class RPCThreadState {
         }
     }
 
-    func refreshStats(timeout: TimeInterval = 10, acceptLateResponse: Bool = false) {
+    // MARK: - Folds
+
+    /// pi saved `message` (its `message_end`, which pi emits and saves in one step): keep it for the next fold, or note that
+    /// only a whole read can show it.
+    private func readSaved(_ message: RPCMessage) {
+        switch message.role {
+        case "user", "assistant", "toolResult", "system":
+            savedMessageEvents.add(role: message.role)
+            appendToTail(message)
+        case "custom" where message.display == true && message.customType != "shepherd-child":
+            // pi saves it with the time it saved it, which the event does not carry.
+            if refetchReason == nil { refetchReason = .displayedMessage }
+        case "custom":
+            // Hidden: no row, and its time names nothing.
+            appendToTail(message)
+        default:
+            if refetchReason == nil { refetchReason = .unknownMessage }
+        }
+    }
+
+    private func appendToTail(_ message: RPCMessage) {
+        tail.append(message)
+        tailBytes += Self.approximateBytes(message)
+        guard tailBytes > tailByteLimit else { return }
+        if isServable {
+            requestFold()
+        } else {
+            // Nothing folds before the first read lands: keep none of it, and read the whole history once serving.
+            tail.removeAll()
+            tailBytes = 0
+            if refetchReason == nil { refetchReason = .droppedRecord }
+        }
+    }
+
+    /// pi announced an entry it appended outside any message's events. Only a custom message is in pi's transcript with a
+    /// row of its own; the entries that carry state, usage or edits are in none of it.
+    private func entryAppended(_ entry: RPCSessionEntry) {
+        switch entry.type {
+        case "custom_message":
+            if let message = entry.message { appendToTail(message) } else if refetchReason == nil { refetchReason = .entry }
+            // A Stop hook's row shows at once.
+            requestFold()
+        case "custom", "usage", "context_edit", "label", "session_info", "model_change", "thinking_level_change":
+            break
+        default:
+            // A compaction, a branch summary, an entry of a newer pi.
+            if refetchReason == nil { refetchReason = .entry }
+            requestFold()
+        }
+    }
+
+    private func rememberParent(_ parent: String, of id: String) {
+        if toolParents[id] == nil {
+            toolParentOrder.append(id)
+            if toolParentOrder.count > Self.timingLimit { toolParents[toolParentOrder.removeFirst()] = nil }
+        }
+        toolParents[id] = parent
+    }
+
+    private func recordDropped() {
+        if refetchReason == nil { refetchReason = .droppedRecord }
+        requestFold()
+    }
+
+    /// An extension command was answered. It can move pi's session or tree without an event, and pi answers only once its
+    /// handler returned, so the history is read after `get_state` (which shows a switched session).
+    func readAfterCommand() {
+        refreshState()
+        if refetchReason == nil { refetchReason = .command }
+        requestFold()
+    }
+
+    /// Folds what pi saved into history: at the end of the event being handled, or on the queue's next turn.
+    func requestFold() {
+        guard !foldDue else { return }
+        foldDue = true
+        queue.async { [weak self] in self?.runDueFold() }
+    }
+
+    private func runDueFold() {
+        guard foldDue else { return }
+        foldDue = false
+        foldTail()
+    }
+
+    private func recordNeeds() -> RecordNeeds {
+        Self.recordNeeds(in: history, records: placedRecords, placed: historyRecordIDs, maxStart: historyMaxStart)
+    }
+
+    /// Appends what pi saved since the last fold to `history`, in O(the tail), or reads the whole history where the events
+    /// cannot say what pi saved. A fold starts only when no read could install: an older answer would lose what it appends.
+    private func foldTail() {
+        let needs = recordNeeds()
+        guard !tail.isEmpty || refetchReason != nil || historyUnread || needs.hasNew || needs.late else { return }
+        guard isServable else { foldAfterRead = true; return }
+        if readCouldInstall {
+            // An older answer may still install over what a fold would append. Read again once (a newer answer ends the
+            // older one's chance), or wait for the one already asked.
+            if supersedingRead == nil, !tail.isEmpty || refetchReason != nil {
+                lastRefetchReason = .readInFlight
+                supersedingRead = refreshMessages()
+            } else {
+                foldAfterRead = true
+            }
+            return
+        }
+        if let reason = refetchReason ?? (historyUnread ? .unread : nil) ?? (needs.late ? .records : nil) {
+            lastRefetchReason = reason
+            ShepherdLog.info("rpc session \(session.id) reads its history whole: \(reason.rawValue)")
+            refreshMessages()
+            return
+        }
+        if foldToken != nil { foldAfterFold = true; return }
+        let messages = tail, bytes = tailBytes
+        tail.removeAll()
+        tailBytes = 0
+        // The projector is moved, not copied: the job that appends to it is its only owner.
+        let box = ProjectorBox(projector)
+        projector = HistoryProjector()
+        let adjust = historyAdjuster(), stopped = stoppedReplies, sent = origins.compactMapValues(\.references)
+        let generation = generation, applied = appliedHistorySequence
+        let work: () -> Fold = {
+            let interval = Self.signposter.beginInterval("History fold", id: Self.signposter.makeSignpostID())
+            defer { Self.signposter.endInterval("History fold", interval) }
+            let marked = Self.markingStopped(messages, stopped: stopped)
+            let images = ThreadImages.hasImages(marked) ? ThreadImages.table(for: box.value.shown(marked)) : [:]
+            let rows = box.value.append(marked, sentReferences: sent, images: images, adjust: adjust)
+            return Fold(rows: rows, messages: messages, projector: box.value, estimate: box.value.estimator.estimate(),
+                        generation: generation, applied: applied, token: nil)
+        }
+        if messages.count <= 256, bytes <= 512 << 10, !ThreadImages.hasImages(messages) {
+            installFold(work())
+        } else {
+            let token = UUID()
+            foldToken = token
+            foldingMessages = messages
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                Self.historySlots.wait()
+                var fold = work()
+                Self.historySlots.signal()
+                fold.token = token
+                self?.queue.async { self?.installFold(fold) }
+            }
+        }
+    }
+
+    private func installFold(_ fold: Fold) {
+        if let token = fold.token {
+            // A session reset discarded it.
+            guard token == foldToken else { return }
+            foldToken = nil
+            foldingMessages = []
+        }
+        defer { if foldAfterFold { foldAfterFold = false; requestFold() } }
+        // A read installed since (it holds these messages), or the session changed: the fold is moot.
+        guard fold.generation == generation, fold.applied == appliedHistorySequence else { return }
+        projector = fold.projector
+        // A read asked for meanwhile merges these messages. If it fails, `historyUnread` makes the next fold a read.
+        guard !readCouldInstall else { return }
+        let needs = recordNeeds()
+        let placed = Self.placingRecords(needs, among: fold.rows, maxStart: historyMaxStart, placed: historyRecordIDs)
+        if !fold.rows.isEmpty || !placed.newRecordIDs.isEmpty {
+            history.removeSubrange(needs.trailingStart...)
+            historyBytes.removeSubrange(needs.trailingStart...)
+            history += placed.rows
+            historyBytes += repeatElement(-1, count: placed.rows.count)
+            historyVersion += 1
+        }
+        historyRecordIDs = placed.recordIDs
+        historyMaxStart = max(historyMaxStart, fold.rows.compactMap(Self.rowStart).max() ?? -.infinity)
+        if fold.estimate != estimate { estimate = fold.estimate }
+        for index in Self.liveRowsLeaving(live, folded: fold.messages, rows: fold.rows, placedRecordIDs: placed.newRecordIDs,
+                                          parents: toolParents).reversed() {
+            live.remove(at: index)
+        }
+        liveLeftOut = 0
+        historyFoldCount += 1
+        historyFoldedMessageCount += fold.messages.count
+        updateContext()
+        commit()
+        if needs.late, refetchReason == nil {
+            refetchReason = .records
+            requestFold()
+        }
+    }
+
+    /// pi's message count, from a `get_session_stats` answer, against the message events this host saw since the last time
+    /// they agreed. It catches a message pi saved with no event (or an event repeated). A mismatch keeps the old checkpoint
+    /// until a read made after it lands: the answer and an event can cross, and the next check then starts from a read.
+    private func verifyHistoryCount(_ pi: SavedMessageCounts?) {
+        guard let pi else { return }
+        let host = savedMessageEvents
+        guard let last = countCheckpoint else { countCheckpoint = (pi, host); return }
+        guard Self.countsDisagree(piDelta: pi - last.pi, hostDelta: host - last.host) else { countCheckpoint = (pi, host); return }
+        ShepherdLog.info("rpc session \(session.id): pi saved \(pi.total - last.pi.total) messages, this host saw \(host.total - last.host.total); reading the history again")
+        if refetchReason == nil { refetchReason = .countMismatch }
+        rebaselineAfter = historyRequestSequence
+        requestFold()
+    }
+
+    /// `verifiesHistory`: pi's message count in the answer is checked against the message events this host saw.
+    func refreshStats(timeout: TimeInterval = 10, acceptLateResponse: Bool = false, verifiesHistory: Bool = false) {
         let generation = generation
+        if verifiesHistory { verifyingStats += 1 }
+        var counted = verifiesHistory
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
-            guard let self, (!acceptLateResponse || self.generation == generation),
+            guard let self else { return }
+            // Counted until the request's completion has run once: a timeout, then a late answer, is one request.
+            if counted {
+                counted = false
+                self.verifyingStats -= 1
+            }
+            guard !acceptLateResponse || self.generation == generation,
                   case .success(let response) = result, response.success, let data = response.data else { return }
             self.stats = Self.projectStats(data)
+            if verifiesHistory, self.generation == generation { self.verifyHistoryCount(SavedMessageCounts(stats: data)) }
             self.updateContext()
             self.commit()
         }
@@ -2098,6 +2392,21 @@ final class RPCThreadState {
         onGoalChanged?(nil)
         history.removeAll()
         historyBytes.removeAll()
+        // Folds restart with the new session. Read bookkeeping (`historyReadsPending`, `supersedingRead`, `foldAfterRead`)
+        // spans sessions: request sequences are global, and an old answer is dropped by its generation.
+        tail.removeAll()
+        tailBytes = 0
+        foldingMessages.removeAll()
+        foldToken = nil
+        foldAfterFold = false
+        projector = HistoryProjector()
+        refetchReason = nil
+        countCheckpoint = nil
+        rebaselineAfter = nil
+        historyMaxStart = -.infinity
+        historyRecordIDs.removeAll()
+        toolParents.removeAll()
+        toolParentOrder.removeAll()
         resetVerifiedImages()
         historyVersion += 1
         currentAssistant = nil
@@ -2228,20 +2537,10 @@ final class RPCThreadState {
             guard live.count(where: { matches($0.kind) }) > Self.pageSize, let first = live.firstIndex(where: { matches($0.kind) }) else { return }
             let dropped = live.remove(at: first)
             liveLeftOut += 1
-            if Self.persisted(dropped) { foldLive() }
+            if Self.persisted(dropped) { requestFold() }
         }
         trim { if case .assistant = $0 { true } else { false } }
         trim { if case .tool = $0 { true } else { false } }
-    }
-
-    /// A long run outgrew what a snapshot carries live. Its ended rows are in pi's history already,
-    /// so fetch it: they show as history now instead of hiding until the turn ends. One fetch at a
-    /// time; it moves every ended row out of `live`, so the next is due only when the run outgrows
-    /// the snapshot again.
-    private func foldLive() {
-        guard !liveFoldPending, !historyPending else { return }
-        liveFoldPending = true
-        refreshMessages { [weak self] _ in self?.liveFoldPending = false }
     }
 
     private func upsertAssistant(_ raw: RPCMessage, ended: Bool, thinking: [Int: String] = [:]) {
@@ -2650,9 +2949,9 @@ final class RPCThreadState {
                     guard let self, let index = self.dialogs.firstIndex(where: { $0.id == request.id }) else { return }
                     self.recordQuestion(self.dialogs.remove(at: index), answer: nil)
                     self.commit()
-                    // pi may already have settled and its history refresh beaten this timer.
-                    // Place the record in history even when no later turn will refresh it.
-                    self.refreshMessages()
+                    // pi may already have settled and its fold beaten this timer.
+                    // Place the record in history even when no later turn will fold.
+                    self.requestFold()
                 }
             }
         case "setWidget":
@@ -2876,8 +3175,8 @@ final class RPCThreadState {
             base, baseBytes: baseBytes, active: active, dialogs: sizedDialogs,
             historyEnd: end, history: { self.historyEntry($0) }
         )
-        // The budget left ended rows out: fold them into history (`foldLive`).
-        if beforeEntryID == nil, (budgeted.snapshot.clips?.live ?? 0) > liveLeftOut, live.contains(where: Self.persisted) { foldLive() }
+        // The budget left ended rows out: fold them into history.
+        if beforeEntryID == nil, (budgeted.snapshot.clips?.live ?? 0) > liveLeftOut, live.contains(where: Self.persisted) { requestFold() }
         #if DEBUG
         encodesByLastSnapshot = encodesSinceSnapshot
         bytesEncodedByLastSnapshot = bytesEncodedSinceSnapshot

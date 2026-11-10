@@ -54,6 +54,9 @@ final class RPCSession: @unchecked Sendable {
 
     /// Every stdout record that is not a `response` (unknown types included).
     var onEvent: ((RPCEvent) -> Void)?
+    /// A stdout record was dropped (too long, or not JSON the wire decodes): what it said is lost, so a
+    /// history built from events can be missing a message. Called on the session queue.
+    var onRecordDropped: (() -> Void)?
     /// One stderr line at a time, for the log.
     var onStderr: ((String) -> Void)?
     /// Invoked after reaping, stdout decoding, and final stderr delivery. nil = signal.
@@ -582,6 +585,7 @@ final class RPCSession: @unchecked Sendable {
             let end = lf > start && stdoutBuffer[base + lf - 1] == 0x0D ? lf - 1 : lf
             if end - start > Self.maxRecordBytes {
                 ShepherdLog.warning("rpc session \(id) dropped a \(end - start)-byte record (limit \(Self.maxRecordBytes))")
+                onRecordDropped?()
                 continue
             }
             if end == start { continue }
@@ -594,6 +598,7 @@ final class RPCSession: @unchecked Sendable {
             ShepherdLog.warning("rpc session \(id) dropping an unterminated record over \(Self.maxRecordBytes) bytes")
             stdoutBuffer.removeAll(keepingCapacity: false)
             discardingRecord = true
+            onRecordDropped?()
         }
     }
 
@@ -642,7 +647,9 @@ final class RPCSession: @unchecked Sendable {
         defer { updateStdoutPressure() }
         switch decoded {
         case .success(let incoming): dispatch(incoming)
-        case .failure(let error): ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
+        case .failure(let error):
+            ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
+            onRecordDropped?()
         }
         var waiting = deferredRecords[...]
         deferredRecords.removeAll()
@@ -667,6 +674,7 @@ final class RPCSession: @unchecked Sendable {
             incoming = try NDJSON.decode(RPCIncoming.self, from: line)
         } catch {
             ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
+            onRecordDropped?()
             return
         }
         dispatch(incoming)

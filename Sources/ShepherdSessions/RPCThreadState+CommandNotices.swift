@@ -37,6 +37,7 @@ extension RPCThreadState {
         commandWindows.insert(token)
         return { [weak self] in
             guard let self else { return }
+            self.readAfterCommand()
             self.queue.asyncAfter(deadline: .now() + self.commandNoticeGrace) { [weak self] in
                 self?.commandWindows.remove(token)
             }
