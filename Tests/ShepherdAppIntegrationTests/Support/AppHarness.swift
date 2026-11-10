@@ -128,7 +128,7 @@ final class AppHarness {
     }
 
     func stop() {
-        for connection in remoteHosts.connections { remoteHosts.removeHost(id: connection.id) }
+        for connection in remoteHosts.allConnections { remoteHosts.removeHost(id: connection.id) }
         vm = nil
         scratch.stop()
     }
