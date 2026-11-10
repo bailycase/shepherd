@@ -68,6 +68,9 @@ enum RemoteDesignSamples {
         .importChunk(uploadID: comment, offset: 262_144, data: Data([0x50, 0x4B, 0x03, 0x04])),
         .importFinish(uploadID: comment),
         .importCancel(uploadID: comment),
+        .importPrepare(path: "/tmp/acme-checkout.zip"),
+        .importConfirm(preview: importPreview, name: "Checkout funnel 2", skippingUnreadable: true),
+        .importDiscard(previewID: comment),
         .pinReference(DesignReference(designID: design, board: board, element: DesignElementID(board: board.viewName, tid: 5, path: [1, 1, 0]))!),
         .pinReference(DesignReference(designID: design, revision: 7)!),
         .referenceKept(agentID: AgentID(rawValue: "thread"), payloadID: comment),
@@ -89,6 +92,11 @@ enum RemoteDesignSamples {
         .gitStopMerge(designID: design),
     ]
 
+    static let importPreview = DesignImportPreview(
+        id: comment, file: "acme-checkout.zip", title: "Checkout funnel", boards: 1, pages: 0,
+        systems: [.init(namespace: "checkout-ds", title: "Checkout DS", existing: "checkout-ds")],
+        unreadable: [DesignImportUnreadable(path: "Empty.dc.html", title: "Empty", reason: "is empty")],
+        origin: DesignImportOrigin(file: "acme-checkout.zip", title: "Checkout funnel", stamp: "{\"at\":\"2026\"}", importedAt: 1))
     static let gitCommit = DesignGitStatus.Commit(hash: "abc1234", subject: "Tighten the header", author: "Ada", files: ["project/A.dc.html"])
     static let gitMerge = DesignGitMerge(phase: .ready, ours: gitCommit, theirs: gitCommit, oursHash: "abc1234", theirsHash: "def5678",
                                          reviewedTree: "0123abc")
@@ -160,6 +168,11 @@ enum RemoteDesignSamples {
         .gitOpened(record),
         .gitPulled(.upToDate),
         .gitPulled(.needsMerge(gitMerge)),
+        .importPrepared(importPreview),
+        .importFailed(.notAProject),
+        .importFailed(.linksOutside([DesignImportLink(board: "A.dc.html", target: "a link")])),
+        .importFailed(.unreadableBoards(importPreview.unreadable, readable: 1)),
+        .importFailed(.fileTooLarge(path: "hero.mp4", bytes: 9, limit: 8)),
     ]
 }
 
@@ -187,7 +200,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal, .threadNotes, .removeThreadNote,
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard, .settleBoardProposal, .threadNotes, .removeThreadNote,
              .gitState, .gitPreview, .gitShare, .gitOpen, .gitCommit, .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge:
             Wire.caseName(request)
         }
@@ -198,14 +211,14 @@ struct RemoteDesignMessageTests {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
              .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced,
              .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok, .threadNotes,
-             .gitState, .gitPreview, .gitOpened, .gitPulled:
+             .gitState, .gitPreview, .gitOpened, .gitPulled, .importPrepared, .importFailed:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 52)
-        #expect(Set(S.results.map(Self.caseName)).count == 29)
+        #expect(Set(S.requests.map(Self.caseName)).count == 55)
+        #expect(Set(S.results.map(Self.caseName)).count == 31)
     }
 
     @Test(arguments: [
@@ -259,7 +272,7 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
                 #expect(!request.writes)
                 #expect(request.designID == nil)
-            case .importBegin, .importChunk, .importFinish, .importCancel:
+            case .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard:
                 #expect(request.capability == RemoteProtocol.designImportCapability)
                 #expect(request.writes)
                 #expect(request.designID == nil)

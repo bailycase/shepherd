@@ -1316,6 +1316,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A design's Git state changed on the background host, pushed only to this Mac's app that
     /// shows its threads as its own: its Git chip reads it again (`RemoteDesignRequest.gitState`).
     case designGitChanged(designID: DesignID)
+    /// How this Mac's own Import is going on the background host (`RemoteDesignRequest.importPrepare`),
+    /// pushed only to the app that asked: Designs' card fills as its boards land.
+    case designImportProgress(DesignImportProgress)
     /// A line the background host says in one of its threads (its account rotation), pushed only
     /// to this Mac's app that shows its threads as its own; never persisted.
     case threadNotice(agentID: AgentID, message: String)
@@ -1345,7 +1348,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, designNotesChanged, designGitChanged
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, designNotesChanged, designGitChanged, designImportProgress
     }
 
     public init(from decoder: Decoder) throws {
@@ -1376,6 +1379,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .designNotesChanged(designID: try c.decode(DesignID.self, forKey: .designID))
         case .designGitChanged:
             self = .designGitChanged(designID: try c.decode(DesignID.self, forKey: .designID))
+        case .designImportProgress:
+            self = .designImportProgress(try c.decode(DesignImportProgress.self, forKey: .status))
         case .toolFinished:
             self = .toolFinished(agentID: try c.decode(AgentID.self, forKey: .agentID), tool: try c.decode(String.self, forKey: .tool))
         case .threadNotice:
@@ -1677,6 +1682,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .designGitChanged(let designID):
             try c.encode(Kind.designGitChanged, forKey: .type)
             try c.encode(designID, forKey: .designID)
+        case .designImportProgress(let step):
+            try c.encode(Kind.designImportProgress, forKey: .type)
+            try c.encode(step, forKey: .status)
         case .toolFinished(let agentID, let tool):
             try c.encode(Kind.toolFinished, forKey: .type)
             try c.encode(agentID, forKey: .agentID)

@@ -674,11 +674,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .designNotesChanged, .designGitChanged, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 53
+    static let caseCount = 54
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -756,6 +756,7 @@ struct RemoteReplyTests {
         .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
         .designNotesChanged(designID: DesignID(rawValue: "d1")),
         .designGitChanged(designID: DesignID(rawValue: "d1")),
+        .designImportProgress(.boards(done: 2, of: 5, title: "Checkout funnel", system: nil)),
         .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
     ]
 

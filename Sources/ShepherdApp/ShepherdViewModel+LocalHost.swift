@@ -72,6 +72,7 @@ extension ShepherdViewModel {
         // Its design systems are the Designs page's own (slice 2), as the server's `onDesignSystemsChanged`.
         remoteHosts.onLocalDesignSystemsChanged = { [weak self] in self?.designSystemsChanged() }
         remoteHosts.onLocalDesignNotesChanged = { [weak self] in self?.designThreadNotesChanged($0) }
+        remoteHosts.onLocalDesignImportProgress = { [weak self] in self?.designImporting?.apply($0) }
         remoteHosts.onLocalDesignGitChanged = { [weak self] id in
             if self?.designGitStates[id] != nil { self?.refreshDesignGit(id) }
         }

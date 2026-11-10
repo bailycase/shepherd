@@ -124,7 +124,7 @@ struct RemoteDesignService: Sendable {
             return .deleted(try await server.deleteDesign(id))
         case .undoDelete:
             return .ok
-        case .importBegin, .importChunk, .importFinish, .importCancel:
+        case .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard:
             // Kept with the connection, on the server queue's own path (`remoteDesignImport`).
             throw RemoteDesignRefusal("unsupported", "An import goes through the host's connection.")
         case .buildSystem:

@@ -365,6 +365,64 @@ struct LocalClientTests {
         #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
+    /// Import as the host's client: the host reads the project from the shared disk and the app keeps
+    /// its questions (an unreadable board, the same project again) and its failure dialog (slice 2b).
+    @Test func importAsTheHostsClientKeepsItsQuestions() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        host.server.setDesignsServed(true)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.designNetwork = .none
+        let folder = try makeScratchDirectory("zip")
+
+        // Not a project: the failure dialog, nothing on the host.
+        let junk = folder.appendingPathComponent("checkout-funnel.zip")
+        try TestZip.make([.file("checkout/readme.txt", "no canvas here")]).write(to: junk)
+        vm.importDesignProject(junk)
+        try await eventuallyOnMain("the failure") { vm.designImportPrompt != nil }
+        #expect(vm.designImportPrompt == .failed(file: "checkout-funnel.zip", .notAProject))
+        vm.cancelDesignImport(try #require(vm.designImportPrompt))
+
+        // A board that can't be read asks first; leaving it out brings the rest in on the host.
+        let zip = folder.appendingPathComponent("acme-checkout.zip")
+        let canvas = #"""
+         {"v":3,"title":"Checkout funnel","boards":{"Funnel.dc.html":{"x":0,"y":0,"w":390,"h":844,"title":"Funnel"},
+          "Empty.dc.html":{"x":470,"y":0,"w":390,"h":844,"title":"Empty"}},"order":["Funnel.dc.html","Empty.dc.html"]}
+         """#
+        try TestZip.make([.file("checkout-funnel/project/canvas.json", canvas),
+                          .file("checkout-funnel/project/Funnel.dc.html", DesignFixtures.source(DesignFixtures.checkout[3])),
+                          .file("checkout-funnel/project/Empty.dc.html", "")]).write(to: zip)
+        vm.importDesignProject(zip)
+        try await eventuallyOnMain("the question") { vm.designImportPrompt != nil }
+        guard case .unreadable(let preview)? = vm.designImportPrompt else { Issue.record("expected the unreadable board's choice"); return }
+        #expect(preview.unreadable.map(\.path) == ["Empty.dc.html"] && preview.boards == 1)
+        vm.resolveDesignImport(try #require(vm.designImportPrompt))
+        try await eventuallyOnMain("the design on the host and here", timeout: .seconds(30)) {
+            vm.designImporting == nil && vm.state.designs.map(\.name) == ["Checkout funnel"]
+        }
+        #expect(host.server.state.designs.first?.importedFrom?.file == "acme-checkout.zip")
+
+        // The same project again asks again, from the app's own copy of the host's designs.
+        vm.importDesignProject(zip)
+        try await eventuallyOnMain("the question again") { vm.designImportPrompt != nil }
+        vm.cancelDesignImport(try #require(vm.designImportPrompt))
+        #expect(host.server.state.designs.count == 1 && idle.state.designs.isEmpty)
+    }
+
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()

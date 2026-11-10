@@ -59,6 +59,20 @@ extension SessionServer {
                 catch { completion(.failure(error as? RemoteDesignImportFailure ?? RemoteDesignImportFailure("import_failed", "\(error)"))) }
             }
         }
+        onLocalFinishImport = { [weak self] preview, name, skipping, completion in
+            Task { @MainActor in
+                guard let self else { return completion(.failure(RemoteCreateAgentError("host is shutting down"))) }
+                do {
+                    let design = try await self.finishDesignImport(preview, name: name, skippingUnreadable: skipping)
+                    await hosting.changed()
+                    let agent = try? await hosting.startAgent(design, DesignBrief.imported(file: preview.file), .init())
+                    completion(.success(RemoteDesignCreated(designID: design.id, agentID: agent)))
+                } catch {
+                    await self.cancelDesignImport(preview.id)
+                    completion(.failure(error))
+                }
+            }
+        }
         onRemoteBuildDesignSystem = { [weak self] spaceID, completion in
             Task { @MainActor in
                 guard let self else { return completion(.failure(RemoteCreateAgentError("host is shutting down"))) }

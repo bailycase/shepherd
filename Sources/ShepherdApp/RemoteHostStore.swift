@@ -265,6 +265,8 @@ final class RemoteHostStore {
     @ObservationIgnored var onLocalDesignNotesChanged: ((DesignID) -> Void)?
     /// A design's Git state changed on the background host on this Mac.
     @ObservationIgnored var onLocalDesignGitChanged: ((DesignID) -> Void)?
+    /// How this Mac's own Import is going on the background host on this Mac.
+    @ObservationIgnored var onLocalDesignImportProgress: ((DesignImportProgress) -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
@@ -541,6 +543,10 @@ final class RemoteHostStore {
         client.onDesignGitChanged = { [weak self, weak connection] designID in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalDesignGitChanged?(designID)
+        }
+        client.onDesignImportProgress = { [weak self, weak connection] step in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalDesignImportProgress?(step)
         }
         client.onThreadNotice = { [weak self, weak connection] agentID, message in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }

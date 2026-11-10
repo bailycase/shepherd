@@ -360,6 +360,15 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     case importChunk(uploadID: UUID, offset: Int, data: Data)
     case importFinish(uploadID: UUID)
     case importCancel(uploadID: UUID)
+    /// This Mac's own Import, from its app only (`designImportCapability`): the host reads the
+    /// project at `path` (a ZIP or a folder on the disk they share) and stages it. Answered
+    /// `importPrepared` or `importFailed`; its steps reach that app as `designImportProgress`.
+    case importPrepare(path: String)
+    /// The staged project becomes a design named `name` (else its title), its agent started on
+    /// the import's brief. Answered `created` or `importFailed`.
+    case importConfirm(preview: DesignImportPreview, name: String?, skippingUnreadable: Bool)
+    /// The staged project goes. Answered `ok`.
+    case importDiscard(previewID: UUID)
     /// Pins a piece of one of the host's designs (`designReferencesCapability`), named as the
     /// host sees it (`local`), at its revision now unless the reference names one.
     case pinReference(DesignReference)
@@ -404,7 +413,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     public var designID: DesignID? {
         switch self {
         case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
-             .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel, .gitOpen: nil
+             .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel, .gitOpen, .importPrepare, .importConfirm,
+             .importDiscard: nil
         case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
         case .referenceKept, .referencePicture, .referenceLookedAt, .settleBoardProposal: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
@@ -425,7 +435,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
              .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .settleBoardProposal,
              .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
-             .importBegin, .importChunk, .importFinish, .importCancel, .removeThreadNote, .gitShare, .gitOpen, .gitCommit,
+             .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard, .removeThreadNote, .gitShare, .gitOpen, .gitCommit,
              .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge: true
         default: false
         }
@@ -442,7 +452,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
             RemoteProtocol.designSystemsCapability
         case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt:
             RemoteProtocol.designReferencesCapability
-        case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
+        case .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard:
+            RemoteProtocol.designImportCapability
         case .settleBoardProposal: RemoteProtocol.designBoardsCapability
         case .threadNotes, .removeThreadNote: RemoteProtocol.designThreadNotesCapability
         case .gitState, .gitPreview, .gitShare, .gitOpen, .gitCommit, .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge:
@@ -501,6 +512,10 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case gitPreview(before: String?, after: String?)
     case gitOpened(Design)
     case gitPulled(DesignGitPullResult)
+    /// `importPrepare`'s answer: the project staged, waiting for the app's choice.
+    case importPrepared(DesignImportPreview)
+    /// Why `importPrepare` or `importConfirm` made no design (the app's ImportFailed dialog).
+    case importFailed(DesignImportFailure)
 }
 
 /// Stable codes a host refuses a design request with (beside `DesignStoreError.code`).
