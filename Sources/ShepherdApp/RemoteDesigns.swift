@@ -82,7 +82,27 @@ extension ShepherdViewModel {
         let source = library.source(ref.designID)
         let id = ref.designID
         let snapshot: DesignScreenModel.Snapshot = { _ in try await source.sync().snapshot }
-        let tweak = DesignTweakIO(
+        let tweak = Self.remoteDesignTweak(library, id)
+        let agentRef = connection.state.designs.first { $0.id == id }?.agentID.map { RemoteAgentRef(hostID: ref.hostID, agentID: $0) }
+        let screen = DesignScreenModel(designID: id, host: rendering.host(for: id), snapshot: snapshot,
+                                       source: { _, path in try await source.source(path) },
+                                       comments: remoteDesignCommentActions(library), tweak: tweak,
+                                       actions: remoteDesignCanvasActions(library, agent: agentRef))
+        if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
+            screen.tweak?.systemName = system
+        }
+        // Implement and Copy reference hand its pieces to the host's own threads, where it takes them.
+        if connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) {
+            screen.referenceActions = remoteDesignReferenceCanvasActions(ref.hostID)
+        }
+        remoteDesignScreens[ref] = screen
+        return screen
+    }
+
+    /// A design's Tweak tab through the host.
+    static func remoteDesignTweak(_ library: RemoteDesignLibrary, _ id: DesignID) -> DesignTweakIO {
+        let source = library.source(id)
+        return DesignTweakIO(
             snapshot: { try await source.sync().snapshot },
             board: { path in
                 let text = try await source.source(path)
@@ -111,25 +131,12 @@ extension ShepherdViewModel {
             projectTokens: { await source.projectTokens() },
             // A stale revision reads as the local store's (`remoteDesign`).
             isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
-        let agentRef = connection.state.designs.first { $0.id == id }?.agentID.map { RemoteAgentRef(hostID: ref.hostID, agentID: $0) }
-        let screen = DesignScreenModel(designID: id, host: rendering.host(for: id), snapshot: snapshot,
-                                       source: { _, path in try await source.source(path) },
-                                       comments: remoteDesignCommentActions(library), tweak: tweak,
-                                       actions: remoteDesignCanvasActions(library, agent: agentRef))
-        if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
-            screen.tweak?.systemName = system
-        }
-        // Implement and Copy reference hand its pieces to the host's own threads, where it takes them.
-        if connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) {
-            screen.referenceActions = remoteDesignReferenceCanvasActions(ref.hostID)
-        }
-        remoteDesignScreens[ref] = screen
-        return screen
     }
 
     /// Duplicate and moves through the host, and messages to its design agent over the native
     /// thread, the view record riding the send where the host takes one.
-    private func remoteDesignCanvasActions(_ library: RemoteDesignLibrary, agent: RemoteAgentRef?) -> DesignCanvasActions {
+    func remoteDesignCanvasActions(_ library: RemoteDesignLibrary, agent: RemoteAgentRef?,
+                                   ask local: ((AgentID, String, DesignViewRecord) async -> Bool)? = nil) -> DesignCanvasActions {
         DesignCanvasActions(
             snapshot: { id in try await library.source(id).sync().snapshot },
             duplicate: { id, path, base in
@@ -141,6 +148,7 @@ extension ShepherdViewModel {
             },
             updateIndex: { id, patch, base in try await Self.remoteIndexUpdate(library, id, patch, base) },
             ask: { [weak self] _, text, record in
+                if let local, let agent { return await local(agent.agentID, text, record) }
                 guard let self, let agent, self.remoteHosts.allConnections.first(where: { $0.id == agent.hostID })?
                     .state.agents.contains(where: { $0.id == agent.agentID }) == true else { return false }
                 await self.remoteThreadStores.store(for: agent).send(text: text, designContext: record)
@@ -151,7 +159,7 @@ extension ShepherdViewModel {
 
     /// Comments through the host: pinned, answered and resolved there, handed to its design agent
     /// fenced as data. A change based on comments that moved on is read again and goes once more.
-    private func remoteDesignCommentActions(_ library: RemoteDesignLibrary) -> DesignCommentActions {
+    func remoteDesignCommentActions(_ library: RemoteDesignLibrary) -> DesignCommentActions {
         func list(_ id: DesignID) async throws -> DesignComments {
             guard case .comments(let comments) = try await Self.remoteDesign(library, .comments(designID: id)) else { throw RemoteDesignReply.unexpected }
             return comments
@@ -207,7 +215,9 @@ extension ShepherdViewModel {
 
     /// A host pushed a change to a design on screen: its canvas pulls what changed.
     func remoteDesignChanged(_ ref: RemoteDesignRef, revision: UInt64?, comments: UInt64?) {
-        guard let screen = remoteDesignScreens[ref] else { return }
+        // The background host's designs are this app's own (`localHostDesignScreen`).
+        let own = ref.hostID == localHost?.id && Self.routesThisMacLocally
+        guard let screen = own ? designScreens[ref.designID] : remoteDesignScreens[ref] else { return }
         Task {
             if revision == nil, comments != nil { await screen.refreshComments() } else { await screen.refresh() }
         }

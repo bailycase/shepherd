@@ -49,7 +49,7 @@ extension ShepherdViewModel {
             return design.sourceSpaceID.flatMap { id in state.spaces.first { $0.id == id } }
                 .map { URL(fileURLWithPath: ($0.path as NSString).expandingTildeInPath, isDirectory: true) }
         }
-        return server.designs.folder(for: design.id)
+        return designStore.folder(for: design.id)
     }
 
     // MARK: Pages
@@ -176,7 +176,7 @@ extension ShepherdViewModel {
             }
             folder = space.path
         } else {
-            guard let own = server.designs.folder(for: design.id) else {
+            guard let own = designStore.folder(for: design.id) else {
                 throw AgentStartFailure(message: "That design has no folder.")
             }
             folder = own.path
@@ -252,6 +252,7 @@ extension ShepherdViewModel {
     /// The canvas state of `id`, made the first time it is shown.
     func designScreen(_ id: DesignID) -> DesignScreenModel {
         if let screen = designScreens[id] { return screen }
+        if let host = localHost { return localHostDesignScreen(id, library: host.designs) }
         let server = server
         let project = design(id).flatMap(designWorkingFolder)
         let tweak = DesignTweakIO(
@@ -270,6 +271,33 @@ extension ShepherdViewModel {
         screen.referenceActions = designReferenceCanvasActions()
         designScreens[id] = screen
         return screen
+    }
+
+    /// The canvas of one of the background host's designs, as this app's own: its files read from
+    /// the host's folder on this Mac (`designFolder`), its changes and comments through the host,
+    /// and messages to its agent through the app's own thread.
+    private func localHostDesignScreen(_ id: DesignID, library: RemoteDesignLibrary) -> DesignScreenModel {
+        let source = library.source(id)
+        let tweak = Self.remoteDesignTweak(library, id)
+        let actions = remoteDesignCanvasActions(library, agent: design(id)?.agentID.map { RemoteAgentRef(hostID: library.hostID, agentID: $0) },
+                                                ask: { [weak self] agentID, text, record in
+            guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return false }
+            await self.threadStores.store(for: agentID).send(text: text, designContext: record)
+            return true
+        })
+        let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
+                                       snapshot: { _ in try await source.sync().snapshot },
+                                       source: { _, path in try await source.source(path) },
+                                       comments: remoteDesignCommentActions(library), tweak: tweak, actions: actions)
+        if let design = design(id), let system = designSystemName(design) { screen.tweak?.systemName = system }
+        screen.referenceActions = designReferenceCanvasActions()
+        designScreens[id] = screen
+        return screen
+    }
+
+    /// The designs whose revisions are pushed: the background host's, as its client, else the server's.
+    private func watchDesigns() {
+        if let host = localHost { host.designs.watch(visibleDesigns) } else { server.watchDesignRevisions(of: visibleDesigns) }
     }
 
     /// The canvas's own changes through the server (Duplicate, a board moved), and its messages to
@@ -323,7 +351,7 @@ extension ShepherdViewModel {
     func designVisibility(_ id: DesignID, visible: Bool) {
         designScreen(id).setActive(visible)
         let changed = visible ? visibleDesigns.insert(id).inserted : visibleDesigns.remove(id) != nil
-        if changed { server.watchDesignRevisions(of: visibleDesigns) }
+        if changed { watchDesigns() }
     }
 
     /// The host pushed a design's new revision: its canvas pulls what changed.
@@ -339,7 +367,7 @@ extension ShepherdViewModel {
         for id in Set(designScreens.keys).subtracting(live) { designScreens.removeValue(forKey: id) }
         if !visibleDesigns.isSubset(of: live) {
             visibleDesigns.formIntersection(live)
-            server.watchDesignRevisions(of: visibleDesigns)
+            watchDesigns()
         }
         if let selection = designsPageSelection, !live.contains(selection) { designsPageSelection = nil }
         madeDesignRendering?.prune(keeping: live)

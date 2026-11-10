@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -148,6 +149,53 @@ struct LocalClientTests {
         let line = "Switched Acme to work: personal hit its limit."
         host.server.noticeToLocalApps(agentID: id, message: line)
         try await eventuallyOnMain("the thread to say the host's notice") { vm.threadStores.existing(for: id)?.notice == line }
+    }
+
+    /// One of the host's designs opens as the app's own canvas: drawn from the host's folder on
+    /// this Mac, its moves, comments and pushed revisions through the host (slice 2's seam).
+    @Test func theHostsDesignOpensAsTheAppsOwnCanvas() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(2)), in: design.id, on: host.server)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        #expect(vm.designStore.folder(for: design.id) == host.server.designs.folder(for: design.id), "drawn from the host's folder")
+
+        let screen = vm.designScreen(design.id)
+        vm.designVisibility(design.id, visible: true)
+        let opened = try await host.server.designSnapshot(design.id)
+        try await eventuallyOnMain("the canvas to read the host's design") { screen.snapshot == opened }
+
+        let task = screen.move(SHBoardMove(board: "B.dc.html", offset: CGSize(width: 40, height: 20), ended: true))
+        await task?.value
+        let b = try #require(DesignPath("B.dc.html"))
+        #expect(try await host.server.designSnapshot(design.id).index.boards[b]?.y == 20, "moved on the host")
+
+        let rewritten = try await host.server.writeDesignBoard(design.id, path: try #require(DesignPath("A.dc.html")),
+                                                               source: DesignFixtures.source(DesignFixtures.checkout[0], note: "v2"))
+        try await eventuallyOnMain("the host's write to reach the app's canvas") { screen.snapshot?.revision == rewritten.revision }
+
+        let board = try #require(DesignPath("A.dc.html"))
+        let element = try #require(DesignElementID(board: board.viewName, tid: 2, path: [1]))
+        screen.beginComment(on: DesignElementPick(board: board, id: element, rect: CGRect(x: 0, y: 0, width: 1280, height: 800),
+                                                  kind: .shape, label: nil, tag: "card"))
+        screen.draftText = "Tighten the header."
+        await screen.submitComment()?.value
+        #expect(try await host.server.designComments(design.id).comments.map(\.text) == ["Tighten the header."])
+        #expect(vm.server.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).

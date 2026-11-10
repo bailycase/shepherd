@@ -55,6 +55,9 @@ extension ShepherdViewModel {
     /// own unless `SHEPHERD_THIS_MAC_LOCAL=0`.
     @discardableResult
     func connectLocalHost(socket: String, token: String) -> RemoteHostStore.Connection {
+        // The host keeps its designs beside its socket, in its support folder on this Mac.
+        if Self.routesThisMacLocally { localHostDesigns = DesignStore(directory: URL(fileURLWithPath: socket).deletingLastPathComponent()
+            .appendingPathComponent("designs", isDirectory: true)) }
         if Self.routesThisMacLocally { adoptLocalHost() }
         return remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
     }
