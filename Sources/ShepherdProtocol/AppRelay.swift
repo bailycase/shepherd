@@ -12,6 +12,10 @@ public enum AppRelayJob: Codable, Hashable, Sendable {
     case confirmSpaceDelete(spaceID: SpaceID)
     /// A paired device's Update this Mac (`RemoteRequest.hostUpdate`): Sparkle runs in the app.
     case hostUpdate(request: RemoteHostUpdateRequest)
+    /// A Project the host owns places work on a paired Mac, or reads its worker's thread there:
+    /// through the app's own connection to exactly that host and binding, never another.
+    case projectPlacement(host: ProjectHostReference, request: ProjectExecutionRequest)
+    case projectWorkerThread(host: ProjectHostReference, agentID: AgentID, request: NativeThreadRequest)
 }
 
 /// The app's answer to an `AppRelayJob`: the text the agent is told, or why not.
@@ -20,4 +24,16 @@ public enum AppRelayResult: Codable, Hashable, Sendable {
     case failed(code: String, message: String)
     /// The app's update status, for `AppRelayJob.hostUpdate`.
     case hostUpdate(status: HostUpdateStatus)
+    /// The paired Mac's answers, for `projectPlacement` and `projectWorkerThread`.
+    case projectExecution(result: ProjectExecutionResult)
+    case nativeThread(result: NativeThreadResult)
+}
+
+/// This Mac's own app tells its background host what it knows of the paired Macs a Project may
+/// place work on, since only the app holds connections to them (`RemoteRequest.projectExecutors`).
+public enum ProjectExecutorsUpdate: Codable, Hashable, Sendable {
+    /// The connected paired hosts, each with its visible Spaces when it takes placements (nil: it doesn't).
+    case hosts([ProjectHostOption])
+    /// A paired host's execution changed (`key`), or it connected again (nil): its receipts are read again.
+    case changed(host: ProjectHostReference, key: ProjectExecutionKey?)
 }

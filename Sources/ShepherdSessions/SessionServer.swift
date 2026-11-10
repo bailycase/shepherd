@@ -733,6 +733,10 @@ public final class SessionServer: @unchecked Sendable {
     public var projectEligibleHosts: [ProjectHostReference] = [.local]
     /// Owner-relative connected, execution-capable destinations. Never a path mapping.
     var projectExecutionSpaces: [ProjectHostReference: [Space]] = [:]
+    /// The paired Macs this Mac's own app reaches, for a host's Projects (`applyProjectExecutors`).
+    var appExecutors: [ProjectHostOption] = []
+    /// Placement on another Mac goes through this Mac's app (a background host's).
+    var projectPlacementThroughApp = false
     // Only current directory routes retain tokens. Removed/restored routes get a new authority.
     var projectExecutionSpaceAuthority: [ProjectHostReference: [SpaceID: UUID]] = [:]
     public var onProjectDefaultModel: (@Sendable () async -> String?)?
@@ -3145,6 +3149,13 @@ public final class SessionServer: @unchecked Sendable {
             }
             pushNotifications.focused = agentID
             send(.ok(id: id), to: client)
+        case .projectExecutors(let id, let update):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says which Macs it reaches."), to: client)
+                return
+            }
+            applyProjectExecutors(update)
+            send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
             guard client.isLocal else {
                 send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
@@ -4632,6 +4643,7 @@ public final class SessionServer: @unchecked Sendable {
             endDesignRelay(token, .failed(code: relay.code, message: Self.appLeftWhileDrawing))
         }
         for (token, relay) in appRelays where relay.fd == client.fd { appRelays.removeValue(forKey: token)?.answer(nil) }
+        if client.isLocal { appExecutorsLeft() }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -7797,10 +7809,15 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: whether this Mac's own app is connected and answers relays (`relayToApp`).
+    var appRelayConnected: Bool {
+        clients.values.contains { $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability) }
+    }
+
     /// Hands `job` to the app connected over `host.sock`, for a host with no window of its own.
     /// `answer` gets the app's result, or nil when no such app is connected or it went away
     /// first. Any thread; `answer` is called on the server queue.
-    func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
+    public func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
         queue.async { [self] in
             guard let app = clients.values.first(where: {
                 $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability)

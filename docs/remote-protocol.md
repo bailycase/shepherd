@@ -40,6 +40,11 @@
   post), `automationsChanged` (a run log or trigger changed: read the runs and statuses again) and
   `agentStartProblem` (why an agent's pi stopped and it waits, nil once pi starts again; every
   agent's once when the client connects).
+  A local client with `appRelay.v1` also sends `projectExecutors` (the paired Macs it is connected
+  to, and their execution hints), and answers the host's `projectPlacement` and
+  `projectWorkerThread` relays through its connection to exactly that host and binding: a Project
+  the host owns places work on another Mac only while this Mac's app runs, and says to open it
+  otherwise.
   Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
   run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails

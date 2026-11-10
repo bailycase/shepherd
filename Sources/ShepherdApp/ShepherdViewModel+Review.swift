@@ -48,7 +48,31 @@ extension ShepherdViewModel {
             case .hostUpdate(let request):
                 // The host checked the device before relaying; its gate fences the install.
                 Task { answer(.hostUpdate(status: await AppUpdater.shared.remoteUpdate(request, authorized: { true }))) }
+            // A Project the host owns reaches a paired Mac through this app's connection to it, as
+            // the app's own Projects did in process; the host keeps the owner's checks.
+            case .projectPlacement(let host, let request):
+                let executors = self.remoteHosts.projectExecutors
+                Task {
+                    do { answer(.projectExecution(result: try await executors.place(host, request))) }
+                    catch { answer(Self.relayFailure(error)) }
+                }
+            case .projectWorkerThread(let host, let agentID, let request):
+                let executors = self.remoteHosts.projectExecutors
+                Task {
+                    do { answer(.nativeThread(result: try await executors.workerThread(host, agentID, request))) }
+                    catch { answer(Self.relayFailure(error)) }
+                }
             }
+        }
+    }
+
+    /// An error, as the background host reads it back (`RuntimeHosting.ProjectExecutors.relayed`).
+    nonisolated static func relayFailure(_ error: Error) -> AppRelayResult {
+        switch error {
+        case let error as LogicalProjectsError: .failed(code: error.code, message: error.description)
+        case RemoteHostClientError.rejected(let code, let message): .failed(code: code, message: message)
+        case RemoteHostClientError.outcomeUnknown(let message): .failed(code: "outcome_unknown", message: message)
+        default: .failed(code: "executor_unavailable", message: String(describing: error))
         }
     }
 
