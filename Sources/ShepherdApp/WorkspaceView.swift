@@ -18,8 +18,9 @@ struct WorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                // Every mounted layout stays mounted; switching agents only
-                // changes which one is visible. Unmounting would destroy the
+                // A layout mounts the first time its agent is shown and stays
+                // mounted: an agent nobody has opened has none. Switching agents
+                // only changes which one is visible. Unmounting would destroy the
                 // Ghostty views and force a re-attach + full replay on every
                 // switch, which is what made switching flash. Hidden panes
                 // keep their surfaces, scrollback, and their process's real
@@ -60,12 +61,10 @@ struct WorkspaceView: View {
             guard let window = column.window, note.object as? NSWindow === window else { return }
             frozenSize = nil
         }
-        // Every path that changes the active tab lands here: keep parking bookkeeping current.
+        // Every path that changes the active tab lands here: it records the layout on screen as
+        // shown (a selection that skips selectAgent, the launch's own among them) and keeps
+        // parking bookkeeping current.
         .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
-        // The first frame holds the visible layout alone; the rest mount after it, a few per
-        // run-loop turn. Keyed on there being any, so layouts that start waiting after this
-        // view first drew (the restored workspace adopted late) still mount.
-        .task(id: vm.pendingMountTabIDs.isEmpty) { await vm.drainPendingMounts() }
         .background(Color.sh.bgWindow)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden

@@ -669,12 +669,11 @@ final class ShepherdViewModel {
     /// Layouts currently unmounted by cold parking. Observed: parking and
     /// unparking must re-evaluate `mountedTabs`.
     var parkedTabIDs: Set<TabID> = []
-    /// Layouts not mounted yet at launch (`WorkspaceSelection.pendingMountTabIDs`): the
-    /// workspace's first frame builds the visible layout alone, then `drainPendingMounts`
-    /// mounts the rest. Observed, like `parkedTabIDs`.
-    var pendingMountTabIDs: Set<TabID> = []
-    /// The first adopt with agents plans the launch's mounting, once.
-    @ObservationIgnored var mountingPlanned = false
+    /// Layouts shown at least once this session (`WorkspaceSelection.shownTabIDs`): a layout
+    /// mounts the first time its agent is shown and stays mounted. Not observed: it changes only
+    /// alongside the active tab, which is, and recording the tab on screen never changes what
+    /// mounts at that moment.
+    @ObservationIgnored var shownTabIDs: Set<TabID> = []
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
@@ -1436,7 +1435,7 @@ final class ShepherdViewModel {
                 selectedSpaceID = agent.spaceID
             }
         }
-        // Classify restored panes before hidden layouts mount. Selected and unfinished ordinary
+        // Classify restored panes before any layout mounts. Selected and unfinished ordinary
         // work start now; settled threads wait for selection or explicit native/remote demand.
         if restoresAgentsAtLaunch, !didStartRestoredAgents {
             didStartRestoredAgents = true
@@ -1448,7 +1447,6 @@ final class ShepherdViewModel {
         } else {
             syncFocus()
         }
-        planMounting()
     }
 
     /// What only follows which agents, tabs, spaces and designs exist (reviews, designs' screens and reference chips, file

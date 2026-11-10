@@ -4,6 +4,7 @@ import Foundation
 import ShepherdCore
 import ShepherdSessions
 import ShepherdTestSupport
+import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
@@ -213,7 +214,9 @@ struct WorkspaceNavigationTests {
         #expect(focus() == agent.piPane.id)
     }
 
-    @Test func deferredHiddenMountsStartTheirParkingClockWithoutNavigation() async throws {
+    /// A layout's parking clock starts when it is shown and then hidden. One nobody has opened is
+    /// not mounted: it has no clock and never parks.
+    @Test func aShownTerminalLayoutStartsItsParkingClockOnlyOnceHidden() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -221,13 +224,21 @@ struct WorkspaceNavigationTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         vm.selectAgent(agents[0].agent.id)
         vm.noteActiveTabVisited()
-        while vm.mountNextPending() {}
-        let active = vm.activeTabID
-        #expect(vm.mountedTabs.count == agents.count)
+        #expect(vm.mountedTabs.map(\.id) == [agents[0].tab.id], "nobody else has been shown")
+        #expect(vm.tabHiddenSince.isEmpty)
         vm.sweepColdPanes(now: Date().addingTimeInterval(60))
-        #expect(!vm.parkedTabIDs.isEmpty)
-        #expect(active.map { !vm.parkedTabIDs.contains($0) } == true)
-        #expect(vm.tabHiddenSince.count == agents.count - 1)
+        #expect(vm.parkedTabIDs.isEmpty, "the layout on screen never parks")
+
+        for agent in agents[1...5] {
+            vm.selectAgent(agent.agent.id)
+            vm.noteActiveTabVisited()
+        }
+        #expect(Set(vm.tabHiddenSince.keys) == Set(agents[0...4].map(\.tab.id)),
+                "a clock for each layout shown and hidden since, none for the two nobody opened")
+        vm.sweepColdPanes(now: Date().addingTimeInterval(60))
+        #expect(vm.parkedTabIDs == [agents[0].tab.id], "past the delay and outside the four most recently shown")
+        #expect(vm.mountedTabs.count == 5)
+        #expect(!vm.mountedTabs.contains { $0.id == agents[6].tab.id || $0.id == agents[7].tab.id })
     }
 
     /// A layout that is only a thread never parks: it has no surface to release and polls
@@ -249,48 +260,53 @@ struct WorkspaceNavigationTests {
         #expect(vm.mountedTabs.count == agents.count)
     }
 
-    /// At launch the visible layout mounts first and the rest follow; an agent switched to
-    /// before its turn mounts then, once, and switching to it later is a flip.
+    /// At launch only the visible layout mounts. An agent nobody has opened mounts when it is
+    /// shown, once, and switching to it later is a flip.
     @Test func switchingToAnAgentNotYetMountedMountsItOnce() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app, mounting: .launch)
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
         defer { window.close() }
-        ListPerf.settle(window)
+        try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) {
+            ListPerf.settle(window)
+            return vm.threadStores.store(for: agents[0].agent.id).ready
+        }
         func scrollViews() -> Set<ObjectIdentifier> {
             func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
             return Set(all(window.host).map(ObjectIdentifier.init))
         }
         let late = agents[5]
-        #expect(!vm.mountedTabs.contains { $0.id == late.tab.id }, "its turn to mount has not come")
+        #expect(vm.mountedTabs.map(\.id) == [agents[0].tab.id], "nobody has shown the others")
         let before = scrollViews()
 
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
         vm.selectAgent(late.agent.id)
         ListPerf.settle(window)
         let mounted = scrollViews().subtracting(before)
         #expect(mounted.count == 1, "its thread mounted")
-        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
-        for agent in [agents[0], late, agents[2], late] {
+        #expect(SHRenderProbe.count("deck.mount") == 1)
+        #expect(vm.mountedTabs.map(\.id) == [agents[0].tab.id, late.tab.id])
+        for agent in [agents[0], late, agents[0], late] {
             vm.selectAgent(agent.agent.id)
             ListPerf.settle(window)
         }
 
         #expect(scrollViews().isSuperset(of: mounted), "it was never mounted again")
+        #expect(SHRenderProbe.count("deck.mount") == 1 && SHRenderProbe.count("deck.unmount") == 0)
     }
 
     /// The workspace can draw before the restored agents reach it (its first adoption was still
-    /// empty): the layouts that wait to mount still mount after it, so every agent's pane binds
-    /// its pi without being shown.
-    @Test func layoutsThatArriveAfterTheFirstFrameStillMount() async throws {
+    /// empty): the agents that arrive after the first frame mount when they are shown, and not
+    /// before.
+    @Test func layoutsThatArriveAfterTheFirstFrameMountWhenShown() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
         defer { window.close() }
         ListPerf.settle(window)
-        // Past the first frame's mounting pass, which found nothing to mount.
-        try await Task.sleep(for: .milliseconds(50))
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<3 { agents.append(try await app.liveAgent("a\(index)", in: space, order: index)) }
@@ -298,8 +314,276 @@ struct WorkspaceNavigationTests {
         try await app.server.putState(Fixture.state(spaces: [space], agents: agents))
         try await eventuallyOnMain("the workspace to adopt its agents") { vm.state.agents.count == agents.count }
         ListPerf.settle(window)
+        // The adoption landed on one of them; the others have never been shown.
+        let landed = try #require(vm.activeTabID)
+        let rest = agents.filter { $0.tab.id != landed }
+        func mounted(_ expected: Set<TabID>) -> [TabID] { agents.map(\.tab.id).filter(expected.contains) }
+        #expect(vm.mountedTabs.map(\.id) == [landed], "only the one on screen")
 
-        try await eventuallyOnMain("every layout to mount", timeout: .seconds(5)) { vm.mountedTabs.count == agents.count }
+        try await MountedWorkspace.show(rest[1], in: vm, window: window)
+        #expect(vm.mountedTabs.map(\.id) == mounted([landed, rest[1].tab.id]), "in the stable order")
+        let deck = try Self.deck(in: window)
+        #expect(deck.pages.count == 2 && deck.pages[rest[0].tab.id] == nil)
+        try await MountedWorkspace.show(rest[0], in: vm, window: window)
+        #expect(vm.mountedTabs.map(\.id) == agents.map(\.tab.id))
+        #expect(deck.pages.count == 3)
+    }
+
+    /// The first show mounts a layout, once: every later switch, to it or back, flips hosting views
+    /// that were already there, in the order they were added.
+    @Test func aFirstShowMountsTheLayoutOnceAndLaterSwitchesFlipIt() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(4, in: app, mounting: .launch)
+        defer { window.close() }
+        let deck = try Self.deck(in: window)
+        let first = try #require(deck.pages[agents[0].tab.id]?.host)
+        func scrollViews(in host: NSView) -> Set<ObjectIdentifier> {
+            func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
+            return Set(all(host).map(ObjectIdentifier.init))
+        }
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+
+        try await MountedWorkspace.show(agents[2], in: vm, window: window)
+        #expect(SHRenderProbe.count("deck.mount") == 1)
+        let third = try #require(deck.pages[agents[2].tab.id]?.host)
+        let thirdScrolls = scrollViews(in: third)
+        var order = deck.subviews.map(ObjectIdentifier.init)
+        #expect(order == [first, third].map(ObjectIdentifier.init))
+
+        var mounts = 1
+        for (step, index) in [0, 2, 3, 2, 0].enumerated() {
+            try await MountedWorkspace.show(agents[index], in: vm, window: window)
+            if index == 3 { mounts += 1 }
+            #expect(SHRenderProbe.count("deck.mount") == mounts, "step \(step) to agent \(index)")
+            #expect(SHRenderProbe.count("deck.unmount") == 0, "step \(step) to agent \(index)")
+            #expect(deck.pages[agents[0].tab.id]?.host === first)
+            #expect(deck.pages[agents[2].tab.id]?.host === third)
+            #expect(scrollViews(in: third).isSuperset(of: thirdScrolls), "agent 2's views were never rebuilt")
+            let now = deck.subviews.map(ObjectIdentifier.init)
+            #expect(now.starts(with: order), "hosts are only ever appended")
+            order = now
+        }
+        #expect(order.count == 3)
+    }
+
+    /// The agent the launch picks is shown without anyone selecting it (the fallback writes the
+    /// selection directly), and the window records it: switching away from it keeps its layout.
+    @Test func theLaunchsOwnSelectionStaysMountedAfterTheFirstSwitch() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var agents: [AgentFixture] = []
+        for index in 0..<2 {
+            var agent = try await app.liveAgent("agent \(index)", in: space, order: index)
+            agent.agent.lastActiveAt = Double(2 - index)
+            agents.append(agent)
+        }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        #expect(vm.selectedAgentID == agents[0].agent.id, "the launch picked the most recently active agent")
+        #expect(vm.shownTabIDs.isEmpty, "nothing recorded it yet: only the window does")
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the launch's thread to load", timeout: .seconds(60)) {
+            ListPerf.settle(window)
+            return vm.threadStores.store(for: agents[0].agent.id).ready
+        }
+        let deck = try Self.deck(in: window)
+        let launch = try #require(deck.pages[agents[0].tab.id]?.host)
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+
+        try await MountedWorkspace.show(agents[1], in: vm, window: window)
+        try await MountedWorkspace.show(agents[0], in: vm, window: window)
+
+        #expect(deck.pages[agents[0].tab.id]?.host === launch)
+        #expect(SHRenderProbe.count("deck.unmount") == 0)
+        #expect(SHRenderProbe.count("deck.mount") == 1, "only agent 1's first show")
+    }
+
+    /// Typing after switching to an agent for the first time: the layout it just mounted takes
+    /// the keyboard, the text lands in its draft alone, and the keyboard is never in a hidden
+    /// layout.
+    @Test func typingAfterAFirstShowLandsInTheShownAgentsDraftAlone() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(4, in: app, mounting: .launch)
+        defer { window.close() }
+        func fieldEditor() async throws -> NSTextView {
+            var editor: NSTextView?
+            try await eventuallyOnMain("the composer to take the keyboard") {
+                ListPerf.settle(window)
+                editor = (window.window.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0 : nil }
+                return editor != nil
+            }
+            return try #require(editor)
+        }
+        func drafts() -> [String] { agents.map { vm.threadStores.store(for: $0.agent.id).draft } }
+        let deck = try Self.deck(in: window)
+
+        for (from, to) in [(0, 1), (1, 2), (2, 3)] {
+            vm.selectAgent(agents[from].agent.id)
+            vm.focusedPaneID = agents[from].piPane.id
+            _ = try await fieldEditor()
+            #expect(deck.pages[agents[to].tab.id] == nil, "agent \(to) has not been shown")
+            vm.selectAgent(agents[to].agent.id)
+            ListPerf.settle(window)
+            let responder = window.window.firstResponder as? NSView
+            #expect(responder?.isHiddenOrHasHiddenAncestor != true, "the keyboard stayed in a hidden layout")
+
+            vm.focusedPaneID = agents[to].piPane.id
+            let before = drafts()
+            try await fieldEditor().insertText("z", replacementRange: NSRange(location: NSNotFound, length: 0))
+            ListPerf.settle(window)
+            let changed = agents.indices.filter { drafts()[$0] != before[$0] }
+            #expect(changed == [to])
+            for agent in agents { vm.threadStores.store(for: agent.agent.id).draft = "" }
+        }
+    }
+
+    /// A terminal a tool opens for an agent nobody has opened runs at once with no layout to draw
+    /// it, at the grid this Mac's terminals last reported. The layout mounts when the agent is
+    /// shown, and its terminal's surface takes the shell that was already running.
+    @Test func aTerminalAToolOpensForAnAgentNobodyOpenedRunsAndShowsWhenOpened() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let shown = try await app.liveAgent("shown", in: space, order: 0, auxiliary: 1)
+        let unopened = Fixture.agent("nobody opened", in: space, order: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [shown, unopened]))
+        vm.selectAgent(shown.agent.id)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        let deck = try Self.deck(in: window)
+
+        // The shown agent's terminal draws in its panel and reports the grid it measured.
+        let measuring = vm.sessions.session(for: shown.auxiliary[0], in: shown.tab)
+        var measured: [String] = []
+        let report = measuring.terminal.onResize
+        measuring.terminal.onResize = { cols, rows in
+            measured.append("\(rows) \(cols)")
+            report?(cols, rows)
+        }
+        vm.terminalPanels.update(.init(host: nil, tab: shown.tab.id)) { $0.shown = true }
+        try await eventuallyOnMain("the shown agent's terminal to draw and report its grid", timeout: .seconds(30)) {
+            ListPerf.settle(window)
+            return !measured.isEmpty && TerminalFirstResponder.view(ownedBy: measuring.terminal.model.viewState, in: window.window) != nil
+        }
+        #expect(deck.pages[unopened.tab.id] == nil, "nobody has opened the other agent")
+
+        // Its pi opens a terminal beside its thread, running a command that prints this shell's grid.
+        let opened = try await app.extensionRequest(.openPane(
+            id: 30, agentID: unopened.agent.id, axis: .vertical, cwd: nil, relativeTo: nil,
+            command: "printf 'terminal-%s\\n' ready; stty size"))
+        guard case .paneOpened(30, let info) = opened else { Issue.record("unexpected reply \(opened)"); return }
+        #expect(info.isAlive && !info.isAgentPane)
+        let tab = try #require(vm.state.tabs.first { $0.id == unopened.tab.id })
+        let terminal = try #require(tab.layout.leaf(withID: info.id))
+        let marker = try await readTerminal(terminal.id, for: unopened, in: app, until: { lines in
+            lines.contains { $0.contains("terminal-ready") } && !Self.grids(in: lines).isEmpty
+        })
+        #expect(Self.grids(in: marker) == [try #require(measured.last)], "the shell started at the grid already measured")
+        #expect(deck.pages[unopened.tab.id] == nil && !vm.mountedTabs.contains { $0.id == unopened.tab.id }, "still no layout")
+
+        // Showing the agent mounts its layout, its panel on that terminal, drawing the same shell.
+        let session = vm.sessions.session(for: terminal, in: tab)
+        #expect(session.sessionID != nil && session.sessionID == vm.sessions.liveSession(forPane: terminal.id))
+        var drawn: [String] = []
+        let reportDrawn = session.terminal.onResize
+        session.terminal.onResize = { cols, rows in
+            drawn.append("\(rows) \(cols)")
+            reportDrawn?(cols, rows)
+        }
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        try await MountedWorkspace.show(unopened, in: vm, window: window)
+        #expect(SHRenderProbe.count("deck.mount") == 1)
+        let key = TerminalPanelKey(host: nil, tab: unopened.tab.id)
+        let target = try #require(vm.terminalTarget)
+        let panel = vm.terminalPanels.panel(key)
+        #expect(target.tabs.map(\.id) == [terminal.id])
+        #expect(panel.shown && TerminalPanel.selected(target.tabs, chosen: panel.chosenTab, focused: target.focused)?.id == terminal.id,
+                "the panel is up, on the terminal the tool opened")
+        try await eventuallyOnMain("the terminal's surface to draw and report its own grid", timeout: .seconds(30)) {
+            ListPerf.settle(window)
+            return !drawn.isEmpty && TerminalFirstResponder.view(ownedBy: session.terminal.model.viewState, in: window.window) != nil
+        }
+        #expect(session.phase == .live && session.sessionID == vm.sessions.liveSession(forPane: terminal.id))
+        let sessionID = try #require(session.sessionID)
+        let server = app.server
+        try await eventuallyAsync("the shell to take the grid its surface measured", timeout: .seconds(20)) {
+            await server.listSessions().first { $0.id == sessionID }.map { "\($0.rows) \($0.cols)" } == drawn.last
+        }
+
+        let typed = try await app.extensionRequest(.sendPaneInput(id: 31, agentID: unopened.agent.id, paneID: terminal.id, text: "stty size", submit: true))
+        guard case .ok = typed else { Issue.record("unexpected reply \(typed)"); return }
+        let after = try await readTerminal(terminal.id, for: unopened, in: app, until: { Self.grids(in: $0).count == 2 })
+        #expect(Self.grids(in: after).last == drawn.last, "a second stty size prints the surface's own grid")
+    }
+
+    /// An agent nobody has opened has no layout and needs none: a status report reaches its
+    /// sidebar row and redraws no layout, and a request for its thread starts its pi and is served.
+    @Test func anAgentNobodyOpenedWorksWithoutItsLayout() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var agents = (0..<2).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        for index in agents.indices { agents[index].agent.lastActiveAt = Double(2 - index) }
+        let (shown, unopened) = (agents[0], agents[1])
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        let window = OffscreenWindow(size: CGSize(width: 1400, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the shown thread to serve", timeout: .seconds(60)) {
+            ListPerf.settle(window)
+            return vm.threadStores.store(for: shown.agent.id).ready
+        }
+        let deck = try Self.deck(in: window)
+        func row() -> SidebarListRow? { vm.sidebarLists.all.first { $0.id.agentID == unopened.agent.id } }
+        let rowBefore = try #require(row())
+        #expect(deck.pages[unopened.tab.id] == nil)
+
+        var next = vm.state
+        let index = try #require(next.agents.firstIndex { $0.id == unopened.agent.id })
+        next.agents[index].status = .working
+        let counts = ListPerf.counting { ListPerf.time(window) { vm.adopt(next) } }
+
+        #expect(row() != rowBefore, "the report reached its sidebar row")
+        #expect(counts["sidebar.row", default: 0] > 0, "\(counts)")
+        for key in ["layout.agentLayout", "layout.paneTreeGeo", "thread.view", "composer.body", "deck.update", "deck.mount"] {
+            #expect(counts[key, default: 0] == 0, "\(key): \(counts)")
+        }
+        let server = app.server
+        _ = try? await server.nativeThread(agentID: unopened.agent.id, request: .snapshot())
+        try await eventuallyAsync("its thread to be served", timeout: .seconds(30)) {
+            if case .snapshot? = try? await server.nativeThread(agentID: unopened.agent.id, request: .snapshot()) { return true }
+            return false
+        }
+        #expect(vm.sessions.startQueue.started.contains(unopened.agent.id), "asking for the thread started its pi")
+        ListPerf.settle(window)
+        #expect(deck.pages[unopened.tab.id] == nil && !vm.mountedTabs.contains { $0.id == unopened.tab.id })
+    }
+
+    /// The screen a tool's terminal printed, once `done` holds of it.
+    private func readTerminal(_ pane: PaneID, for agent: AgentFixture, in app: AppHarness,
+                              until done: @escaping ([String]) -> Bool) async throws -> [String] {
+        var lines: [String] = []
+        try await eventuallyAsync("the terminal to print what the test waits for", timeout: .seconds(20)) {
+            let reply = try await app.extensionRequest(.readPane(id: 32, agentID: agent.agent.id, paneID: pane))
+            guard case .paneContent(_, _, let content) = reply else { return false }
+            lines = content
+            return done(content)
+        }
+        return lines
+    }
+
+    /// The "rows cols" lines `stty size` printed.
+    private static func grids(in lines: [String]) -> [String] {
+        lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { line in
+            let words = line.split(separator: " ")
+            return words.count == 2 && words.allSatisfy { $0.allSatisfy(\.isNumber) }
+        }
     }
 
     /// Switching away from an agent and back is a flip: the older pages read in its thread and
@@ -579,6 +863,7 @@ struct WorkspaceNavigationTests {
         }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         vm.selectAgent(agents[0].agent.id)
+        MountedWorkspace.markEveryLayoutShown(vm)
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 700), dark: true, WorkspaceView(vm: vm))
         defer { window.close() }
         try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }

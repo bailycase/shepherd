@@ -147,13 +147,23 @@ final class FakeThread {
 }
 
 /// A restored workspace of agents, each on a running stub pi, in an off-screen window with the
-/// first one on screen and its thread loaded: every layout mounted. A review loads a fixed
-/// one-file diff.
+/// first one on screen and its thread loaded. By default every layout counts as shown earlier
+/// this session, so the window mounts them all; `mounting: .launch` leaves only the selected one,
+/// as a launch does. A review loads a fixed one-file diff.
 @MainActor
 enum MountedWorkspace {
+    /// Which layouts the first window mounts.
+    enum Mounting {
+        /// Every layout counts as shown (`markEveryLayoutShown`): the window mounts them all.
+        case every
+        /// Only the selected agent's layout mounts, as at a launch; the rest mount when shown.
+        case launch
+    }
+
     /// The workspace restored, the first agent selected, and no window yet. The first agent is
     /// the most recently active, so it is the one the launch shows.
-    static func start(_ count: Int, in app: AppHarness, env: (Int) -> [String: String] = { _ in [:] }) async throws -> (ShepherdViewModel, [AgentFixture]) {
+    static func start(_ count: Int, in app: AppHarness, env: (Int) -> [String: String] = { _ in [:] },
+                      mounting: Mounting = .every) async throws -> (ShepherdViewModel, [AgentFixture]) {
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<count {
@@ -168,20 +178,43 @@ enum MountedWorkspace {
         let files = [ListFixtures.diffFile("Sources/A.swift", lines: 12)]
         vm.changesEngineOverride = { _, _ in .fixed(files) }
         vm.selectAgent(agents[0].agent.id)
+        if mounting == .every { markEveryLayoutShown(vm) }
         return (vm, agents)
     }
 
+    /// Counts every layout as shown earlier this session, with its thread not loaded (as for a
+    /// thread shown and then released), so the first window mounts them all. Call it before the
+    /// window exists: the set is bookkeeping, and a mounted workspace reads it only when it updates.
+    static func markEveryLayoutShown(_ vm: ShepherdViewModel) {
+        vm.shownTabIDs = Set(vm.state.tabs.map(\.id))
+    }
+
     static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800),
-                     env: (Int) -> [String: String] = { _ in [:] })
+                     env: (Int) -> [String: String] = { _ in [:] }, mounting: Mounting = .every)
         async throws -> (ShepherdViewModel, OffscreenWindow, [AgentFixture]) {
-        let (vm, agents) = try await start(count, in: app, env: env)
+        let (vm, agents) = try await start(count, in: app, env: env, mounting: mounting)
         let window = OffscreenWindow(size: size, dark: true, WorkspaceView(vm: vm))
         let visible = vm.threadStores.store(for: agents[0].agent.id)
         try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
-        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
-        try await Task.sleep(for: .milliseconds(300))
+        switch mounting {
+        case .every:
+            try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+            try await Task.sleep(for: .milliseconds(300))
+        case .launch:
+            try await eventuallyOnMain("the selected layout to mount") { vm.mountedTabs.count == 1 }
+        }
         ListPerf.settle(window)
         return (vm, window, agents)
+    }
+
+    /// Shows `agent` the way the sidebar does: selects it, then settles until its layout's host is
+    /// in the window. The real first-show path, unlike `markEveryLayoutShown`.
+    static func show(_ agent: AgentFixture, in vm: ShepherdViewModel, window: OffscreenWindow) async throws {
+        vm.selectAgent(agent.agent.id)
+        try await eventuallyOnMain("the layout of \(agent.agent.name) to be in the window") {
+            ListPerf.settle(window)
+            return try WorkspaceNavigationTests.deck(in: window).pages[agent.tab.id].map { !$0.host.isHidden } ?? false
+        }
     }
 }
 
