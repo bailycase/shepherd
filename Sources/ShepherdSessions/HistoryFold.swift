@@ -135,6 +135,13 @@ extension RPCThreadState {
         row.entryID.hasPrefix("q:") || row.entryID.hasPrefix("n:")
     }
 
+    /// The records a whole read has dealt with: every record it was given. One that `interleave` left out (it ends before the
+    /// first row a compaction kept) is as placed as any other, and must not look new to the next fold, which would read the
+    /// whole history for it every time. A record row `keepingSummarized` kept from before is not a record to place.
+    static func handledRecordIDs(_ records: [(at: Double, row: NativeThreadMessage)]) -> Set<String> {
+        Set(records.lazy.map(\.row.entryID))
+    }
+
     /// What history needs placed of the host's records, given the rows it holds.
     struct RecordNeeds {
         /// The index after the last row of pi's; the record rows from there on were put at the end because no row started after them.

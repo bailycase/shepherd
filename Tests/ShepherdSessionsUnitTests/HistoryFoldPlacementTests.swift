@@ -103,6 +103,22 @@ struct HistoryFoldPlacementTests {
         #expect(!kept.late && kept.wanted.isEmpty && !kept.hasNew)
     }
 
+    /// After a restart the questions the origin store kept come back beside a history that starts at a compaction's summary: one that
+    /// ended before the first kept row is left out by the placement, and is not a new record for the folds that follow.
+    @Test func aRecordTheCompactionLeftBehindIsNotNewToTheNextFold() {
+        let summary = NativeThreadMessage(entryID: "m:2", role: "compactionSummary", blocks: [], timestamp: 900)
+        let projected = [Self.row("user:500", at: 500), Self.row("assistant:600", "assistant", at: 600), summary]
+        let records = [Self.question("old", at: 100)]
+        let history = State.interleave(records, into: projected)
+        #expect(history.count == projected.count, "the record went with what was summarized")
+        let handled = State.handledRecordIDs(records)
+        #expect(handled == ["q:old"])
+        let needs = State.recordNeeds(in: history, records: records, placed: handled, maxStart: 900)
+        #expect(!needs.hasNew && !needs.late && needs.wanted.isEmpty, "nothing to read for it, at every turn end")
+        let unhandled = State.recordNeeds(in: history, records: records, placed: [], maxStart: 900)
+        #expect(unhandled.late, "counted as new, it would read the history whole each time")
+    }
+
     @Test func recordsAtTheEndAreWantedAgainOnlyForTheRowsAfterThem() {
         let history = State.interleave([Self.question("a", at: 300)], into: [Self.row("user:1", at: 100)])
         let placed: Set<String> = ["q:a"]

@@ -1871,10 +1871,10 @@ final class RPCThreadState {
             let changed = kept != previous
             let sizes = changed ? Array(repeating: -1, count: kept.count) : []
             var maxStart = -Double.infinity
-            var recordIDs = Set<String>()
-            for row in kept {
-                if Self.isRecordRow(row) { recordIDs.insert(row.entryID) } else if let start = Self.rowStart(row) { maxStart = max(maxStart, start) }
+            for row in kept where !Self.isRecordRow(row) {
+                if let start = Self.rowStart(row) { maxStart = max(maxStart, start) }
             }
+            let recordIDs = Self.handledRecordIDs(records)
             Self.signposter.endInterval("History reconciliation", interval)
             Self.historySlots.signal()
             self?.queue.async { [weak self] in
