@@ -387,10 +387,10 @@ test("real Pi RPC: abort kills a running bash", { timeout: 60000 }, async () => 
     assert.equal(pi.settled(), 1);
 
     // FINDING: the aborted batch still leads to one more model step. It sends no request and ends as an empty
-    // assistant message with stopReason "error" (not "aborted") and errorMessage "This operation was aborted".
+    // assistant message with stopReason "aborted" (pi 1.0 said "error") and errorMessage "This operation was aborted".
     assert.equal(pi.requests.length, 1, "no second model call after the abort");
     const messages = await pi.messages();
-    assert.deepEqual(messages.map((m) => `${m.role}${m.stopReason ? `(${m.stopReason})` : ""}`), ["user", "assistant(toolUse)", "toolResult", "assistant(error)"]);
+    assert.deepEqual(messages.map((m) => `${m.role}${m.stopReason ? `(${m.stopReason})` : ""}`), ["user", "assistant(toolUse)", "toolResult", "assistant(aborted)"]);
     assert.equal(messages[2].isError, true);
     assert.deepEqual(messages[3].content, []);
     assert.match(messages[3].errorMessage, /aborted/i);
@@ -415,10 +415,12 @@ test("real Pi RPC: abort drops a tool call that was still streaming in", { timeo
 
     const messages = await pi.messages();
     assert.deepEqual(messages.map((m) => `${m.role}${m.stopReason ? `(${m.stopReason})` : ""}`), ["user", "assistant(aborted)"]);
-    // FINDING: the aborted message keeps the tool call as it stood, arguments cut short and nothing to answer it.
+    // FINDING: the aborted message keeps the tool call with nothing to answer it. Since pi 1.5 its arguments are
+    // empty and `argumentsError` carries the cut-short JSON (pi 1.0 kept `{ command: "echo hal" }`).
     const call = messages[1].content.find((part) => part.type === "toolCall");
     assert.equal(call?.id, "call_half");
-    assert.equal(call.arguments.command, "echo hal");
+    assert.deepEqual(call.arguments, {});
+    assert.match(call.argumentsError, /"command": "echo hal$/);
     assert(!("partialArgs" in call), "the streaming scratch buffer is not kept");
 
     assert.equal((await pi.request({ type: "prompt", message: "again" })).success, true);

@@ -152,7 +152,9 @@ test("real Pi RPC: a request stopped while the call is written ends aborted with
     const ended = pi.updates("toolcall_end");
     assert.equal(ended.length, 1, "pi ends the call it was writing");
     assert.equal(ended[0].toolCall.id, "call_abc");
-    assert.deepEqual(ended[0].toolCall.arguments, { path: "src/big" }, "with what it parsed so far");
+    // pi 1.5 parses a call's arguments once, at its end: a cut-short call has none, and its raw text in argumentsError.
+    assert.deepEqual(ended[0].toolCall.arguments, {}, "with nothing parsed");
+    assert.match(ended[0].toolCall.argumentsError, /src\/big/);
     const reply = pi.events.find((e) => e.type === "message_end" && e.message.role === "assistant");
     assert.equal(reply.message.stopReason, "aborted");
     assert.deepEqual(reply.message.content.filter((b) => b.type === "toolCall").map((b) => b.id), ["call_abc"], "the aborted message still carries the call");

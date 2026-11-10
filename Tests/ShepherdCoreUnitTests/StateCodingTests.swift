@@ -85,6 +85,20 @@ struct StateCodingTests {
         #expect(agent.lastActiveAt == nil && agent.waitingOn == nil && agent.waitingReason == nil,
                 "older hosts and state files carry none")
         #expect(agent.checkout == nil, "older hosts and state files carry no checkout")
+        #expect(agent.completedAt == nil && agent.seenCompletedAt == nil && agent.completionSeen == nil,
+                "an older host leaves Done to each device")
+    }
+
+    /// The host's completion and what was seen of it cross the wire and state.json; Done follows them.
+    @Test func aCompletionAndWhatWasSeenOfItRoundTrip() throws {
+        var agent = Agent(name: "n", spaceID: SpaceID(), tabID: TabID(), status: .done)
+        agent.completedAt = 2_000
+        #expect(agent.completionSeen == false)
+        agent.seenCompletedAt = 1_000
+        #expect(agent.completionSeen == false, "an earlier completion was seen, not this one")
+        agent.seenCompletedAt = 2_000
+        #expect(agent.completionSeen == true)
+        #expect(try Fixture.roundTrip(agent) == agent)
     }
 
     /// An agent keeps any level pi has; one this build does not know reads as pi's default.

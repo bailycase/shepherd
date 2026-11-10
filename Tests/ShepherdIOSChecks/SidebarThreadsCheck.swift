@@ -84,7 +84,31 @@ struct SidebarThreadsCheck {
         try await waitUntil("forgetting a host takes its pins") { sidebar.state.pins.isEmpty }
         check(defaults.data(forKey: SidebarThreads.pinsKey).flatMap { try? JSONDecoder().decode([FleetRef].self, from: $0) } == [],
               "the forgotten pins are gone from the preferences too")
+
+        // Done is the host's: leaving a finished thread tells its own host which completion was seen, only when the host
+        // keeps it (completionSeenCapability). build-01 lacks it, so its finished thread stays this device's alone.
+        func finished(_ id: AgentID) -> ShepherdState {
+            var done = state([id, AgentID(rawValue: "keep")])
+            done.agents[0].status = .done
+            done.agents[0].completedAt = 1_700
+            return done
+        }
+        let seenHost = try ActionHost(state: finished(shared), completionSeen: true)
+        let seenID = try hosts.add(RemoteHostEntry(name: "mini", address: "127.0.0.1", port: String(seenHost.port), token: ActionHost.token))
+        build.push(finished(shared))
+        func model() -> FleetModel {
+            FleetModel(hosts: hosts.hosts.map { FleetHost(id: $0.id, name: $0.name, address: "", port: 0, phase: $0.phase, state: $0.threadState) },
+                       digests: [:])
+        }
+        try await waitUntil("both finished threads in Done") { sidebar.groups(model()).done.count == 2 }
+        sidebar.select(AgentRef(host: seenID, agent: shared))
+        sidebar.select(AgentRef(host: buildID, agent: shared))
+        try await waitUntil("mini told the completion was seen") { seenHost.received == [.markSeen(upTo: 1_700)] }
+        sidebar.select(AgentRef(host: seenID, agent: AgentID(rawValue: "keep")))
+        check(build.received.isEmpty, "a host without the capability is never told (\(build.received))")
+        check(seenHost.received == [.markSeen(upTo: 1_700)], "mini heard once, about its own thread (\(seenHost.received))")
         hosts.setForeground(false)
+        print("PASS: Done marks reach only the thread's own host that keeps them, never one without the capability")
         print("PASS: sidebar pins per device and host, restored in order, kept offline, dropped with their thread or host; Move to Space reaches only its own host with the exact space, refusals and offline shown, nothing sent elsewhere")
     }
 
@@ -131,9 +155,12 @@ final class ActionHost: @unchecked Sendable {
         for (client, reply) in pending { try? write(client, reply) }
     }
 
-    init(state: ShepherdState, terminalActivity: Bool = false) throws {
+    private let completionSeen: Bool
+
+    init(state: ShepherdState, terminalActivity: Bool = false, completionSeen: Bool = false) throws {
         current = state
         self.terminalActivity = terminalActivity
+        self.completionSeen = completionSeen
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -178,7 +205,8 @@ final class ActionHost: @unchecked Sendable {
                   token == Self.token else { return }
             try write(client, .helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [
                 RemoteProtocol.agentActionsCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.worktreeActionsCapability,
-            ] + (terminalActivity ? [RemoteProtocol.terminalActivityCapability] : [])))
+            ] + (terminalActivity ? [RemoteProtocol.terminalActivityCapability] : [])
+              + (completionSeen ? [RemoteProtocol.completionSeenCapability] : [])))
             while true {
                 let request = try NDJSON.decode(RemoteRequest.self, from: readLine(client))
                 switch request {

@@ -540,7 +540,7 @@ struct RemoteRequestTests {
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
                       .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x")])
+                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123)])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -1162,7 +1162,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.agentRestartCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,

@@ -4770,7 +4770,10 @@ public final class SessionServer: @unchecked Sendable {
             applyAgentSession(agentID: agentID, piSessionID: piSessionID)
         case .setAgentChildren(let agentID, let children):
             // Rows feed both the thread snapshot (cards) and the sidebar (onAgentChildren).
+            let active = { (rows: [ChildRun]) in rows.contains { !$0.isTerminal && $0.paused != true } }
+            let wasActive = rpcThread(forAgent: agentID).map { active($0.subagents) } ?? false
             rpcThread(forAgent: agentID)?.setSubagents(children)
+            if wasActive, !active(children) { noteChildrenSettled(agentID) }
             hopToMain { [weak self] in self?.onAgentChildren?(agentID, children) }
         case .childScope(let id, let agentID, let sessionID, let userTimestamp):
             guard client.childrenAgentID == agentID, client.projectChildScopes else {
@@ -6128,6 +6131,9 @@ public final class SessionServer: @unchecked Sendable {
             store.updateLive {
                 $0.agents[index].status = status
                 if moved { $0.agents[index].lastActiveAt = now }
+                // Each completion names itself by its time, always past the one before (even within a
+                // millisecond, or with the clock set back), so it is never mistaken for one already seen.
+                if status == .done { $0.agents[index].completedAt = max(now, ($0.agents[index].completedAt ?? 0) + 1) }
             }
             runLog.record(from: before, to: store.state)
             // A turn's failure outlives the status (which a relaunch resets): written to state.json.
@@ -6188,6 +6194,18 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingOn = question
             $0.agents[index].waitingReason = reason
         }
+        let committedState = store.state
+        broadcastRemoteState(committedState)
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Server queue: a done agent's last child settled. The sidebar showed it working while they
+    /// ran, so their end is a completion of its own (`Agent.completedAt`), unseen on every device.
+    private func noteChildrenSettled(_ agentID: AgentID) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
+              store.state.agents[index].status == .done else { return }
+        let now = Self.nowMilliseconds()
+        store.updateLive { $0.agents[index].completedAt = max(now, ($0.agents[index].completedAt ?? 0) + 1) }
         let committedState = store.state
         broadcastRemoteState(committedState)
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -7000,6 +7018,20 @@ public final class SessionServer: @unchecked Sendable {
             if let base = base?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
                 state.agents[index].worktreeBase = base
             }
+        }
+    }
+
+    /// A person opened the agent's completion `upTo` on some device: Done drops it everywhere.
+    /// Only raises what was seen, and never past the agent's latest completion.
+    public func markCompletionSeen(_ agentID: AgentID, upTo: Double) async throws {
+        try await mutateStateOffQueue { state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            let agent = state.agents[index]
+            let seen = min(upTo, agent.completedAt ?? upTo)
+            guard seen > (agent.seenCompletedAt ?? -.infinity) else { return }
+            state.agents[index].seenCompletedAt = seen
         }
     }
 

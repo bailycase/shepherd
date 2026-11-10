@@ -37,8 +37,10 @@ Pi and its SDK modules by install location, version, registry tarball and `sha51
 1. Downloads Node's `SHASUMS256.txt` and checks it lists the pinned archive with the pinned
    hash, then the archive, checked against the pin.
 2. Downloads Pi's and the modules' tarballs, checked against their integrity. The module set must
-   match Pi's non-optional production shrinkwrap entries, except esbuild. Each module's version
-   and any integrity recorded in the shrinkwrap must match. Scoped packages have distinct cache keys.
+   match Pi's non-optional production shrinkwrap entries, except esbuild. Pi stopped publishing
+   `npm-shrinkwrap.json` after 1.0.0, so the pin's `lock` names pi.dev's release lockfile for the
+   pinned version (`scripts/pi-engine-lock/`, checked by SHA-256), which stands in for it. Each
+   module's version and any integrity recorded in it must match. Scoped packages have distinct cache keys.
 3. Unpacks with `tarfile`: no npm, and no package script ever runs. Links, devices, traversal and
    multiple archive roots are refused. Named roots used by `@types` packages are supported.
 4. Sets the staged package's `piConfig` to `name: "pi", configDir: ".shepherd"`. Pi reads this
@@ -72,7 +74,7 @@ job timeout remains the outer bound. Nothing is written outside the repo's `.bui
 **Bumping the pin:** take the `darwin-arm64` archive's SHA-256 from
 `https://nodejs.org/dist/vX.Y.Z/SHASUMS256.txt` (Node 24 LTS or a later even line; pi's
 `engines` is checked at staging), and each package's `dist.integrity` from
-`https://registry.npmjs.org/<name>/<version>`. The module versions must match pi's shrinkwrap.
+`https://registry.npmjs.org/<name>/<version>`. The module versions must match the release lockfile (`https://pi.dev/api/installer/releases/<version>/package-lock.json`).
 Then stage, build, and run the smoke test.
 
 A new Pi can need modules the old one didn't. Update the locked SDK dependency tree as well as
@@ -97,7 +99,7 @@ with `ERR_MODULE_NOT_FOUND`.
 
 ## Pinned runtime patches
 
-`scripts/pi-engine-patches/skills.json` is a narrowly scoped, tracked patch to pi 1.0.0's readable
+`scripts/pi-engine-patches/skills.json` is a narrowly scoped, tracked patch to pi 1.5.1's readable
 modular resource loader, package discovery, agent session and RPC mode, plus the small native
 watcher source `skill-watch.js`. It also removes command-based configuration value resolution
 from the modular runtime and SDK bundle, and finishes MCP's owned process group when its server
@@ -158,7 +160,7 @@ requests remain native Pi. `scripts/pi-engine-patches/anthropic-oauth/` carries 
 stream, conversion, prompt, auth and version modules with MIT notices, transpiled by Node 24's
 `stripTypeScriptTypes` (`transform` for auth's parameter property, `strip` for the others).
 `upstream/` retains the original source and hashes as an independent test oracle. The small
-`anthropic-oauth.js` adapter translates pi 1.0's auth interaction/credential API; upstream login
+`anthropic-oauth.js` adapter translates pi's auth interaction/credential API (since 1.0); upstream login
 and refresh replace Pi's differing callback validation, fallback and refresh semantics. No new
 runtime dependency is installed. Upstream's extension registration is replaced by automatic
 engine routing; its `~/.Claude Code` symlink setup is deliberately **not** shipped.
@@ -313,6 +315,6 @@ would need `SettingsManager.getOrCreateDeviceId` and a catalog row), Anthropic's
 
 ## Size
 
-The staged Node, Pi bundle and modular SDK contain about 236 MB of file data, with 119 pinned
+The staged Node, Pi bundle and modular SDK contain about 236 MB of file data, with 121 pinned
 module locations. The original bundle-only engine was about 135 MB. The additional SDK files
 and dependencies are required by detached extension runners, not by Shepherd's native children.
