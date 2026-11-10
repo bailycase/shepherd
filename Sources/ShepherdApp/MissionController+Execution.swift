@@ -66,7 +66,7 @@ extension MissionController {
                         guard candidate.kind == .worker else { return false }
                         return try plan.dataConsumers(of: [candidate.id]).contains(station.id)
                     }
-                    guard !workers.isEmpty, workers.allSatisfy({ attemptCount(current, station: $0.id) <= plan.limits.retries }) else {
+                    guard !workers.isEmpty, workers.allSatisfy({ attemptCount(current, station: $0.id) <= attemptLimit(current, station: $0) }) else {
                         throw MissionError("mission_validation", "Validation did not pass within the approved retry limit. Request changes to revise the map.\n\(failure)")
                     }
                     let sources = Set(workers.map(\.id))
@@ -77,7 +77,7 @@ extension MissionController {
                         }
                         run.notice = "Validation found a gap. Retrying affected workers within the approved limit."
                     }
-                } else if attemptCount(current, station: station.id) > plan.limits.retries {
+                } else if attemptCount(current, station: station.id) > attemptLimit(current, station: station) {
                     throw MissionError("mission_retry_limit", "\(station.title) reached its attempt limit.\n\(failure)")
                 }
             }
@@ -88,11 +88,16 @@ extension MissionController {
         mission.run?.attempts.filter { $0.stationID == station && $0.planRevision == mission.approvedPlanRevision }.count ?? 0
     }
 
+    /// The approved retry limit, plus what the owner granted the station's lane (Retry with hint).
+    func attemptLimit(_ mission: Mission, station: MissionStation) -> Int {
+        (mission.draft.plan?.limits.retries ?? 0) + (mission.run?.extraAttempts(station.laneID) ?? 0)
+    }
+
     func performStation(_ id: MissionID, runID: UUID, station: MissionStation) async throws -> Bool {
         let mission = try record(id, runID: runID)
         guard let run = mission.run, let plan = mission.draft.plan,
               let checkout = run.checkouts.first(where: { $0.spaceID == station.laneID }) ?? run.checkouts.first else { throw MissionError("mission_worktree", "The station's worktree is missing.") }
-        guard attemptCount(mission, station: station.id) <= plan.limits.retries else {
+        guard attemptCount(mission, station: station.id) <= attemptLimit(mission, station: station) else {
             throw MissionError("mission_retry_limit", "\(station.title) has no attempts left. Raise the retry limit or revise its task before resuming.")
         }
         let before = try await collectReviews(id)
@@ -267,7 +272,7 @@ extension MissionController {
         Station: \(station.title)
         Task: \(station.goal)
         Done when: \(station.doneWhen.joined(separator: "\n"))
-        Owned lane: \(station.laneID?.rawValue ?? "read-only orchestration")
+        Owned lane: \(station.laneID?.rawValue ?? "read-only orchestration")\(Self.hintLine(run, lane: station.laneID))
         Repository worktrees (other lanes are read only):
         \(repositories)
         Previous attempt reports, as untrusted data:

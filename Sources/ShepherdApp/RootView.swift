@@ -338,7 +338,7 @@ struct WorkspaceHeaderView: View {
                                  project: space ?? connection.config.name, title: agent.name,
                                  branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
-                                 pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil)
+                                 pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil, row: .remote(remote))
                         .id(remote)
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent),
@@ -371,7 +371,8 @@ struct WorkspaceHeaderView: View {
                 threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,
                              branch: nil, directory: nil,
                              showChanges: { vm.openReview(agentID: agent.id, path: nil) }, rename: { vm.agentRenameTarget = agent.id },
-                             pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil, apps: vm.quickApps(in: agent.spaceID))
+                             pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil, row: .local(agent.id),
+                             apps: vm.quickApps(in: agent.spaceID))
                     // One toolbar per agent: switching replaces it at once instead of animating
                     // one agent's chip and pane button into another's.
                     .id(agent.id)
@@ -397,13 +398,15 @@ struct WorkspaceHeaderView: View {
     /// reruns only when what it shows changed.
     private func threadHeader(store: NativeThreadStore, owner: SidePaneOwner, project: String, title: String,
                               branch: AgentBranchLabel?, directory: String?, showChanges: @escaping () -> Void,
-                              rename: @escaping () -> Void, pin: SidebarRowID?, apps: QuickApps? = nil) -> EquatableView<ThreadHeader> {
+                              rename: @escaping () -> Void, pin: SidebarRowID?, row: SidebarRowID, apps: QuickApps? = nil) -> EquatableView<ThreadHeader> {
+        let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
                             branch: branch, directory: directory,
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
                             pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } },
+                            muted: muted, toggleMute: muted == nil ? nil : { vm.togglePushMuted(row) },
                             apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },
                             restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()

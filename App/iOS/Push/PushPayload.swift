@@ -13,8 +13,9 @@ struct PushPayload: Codable, Hashable, Sendable {
 
     /// Where a tap or an action goes; not part of the push.
     var destination = Destination.thread
-    /// `mission`: the mission a blocked push stacks under (its `mission:<id>` thread identifier).
-    enum Destination: Hashable, Sendable { case thread, changes, missionReview, mission(String) }
+    /// `mission`: the mission a blocked push stacks under (its `mission:<id>` thread identifier);
+    /// `automation`: the automation a run that never started names (`automation:<id>`).
+    enum Destination: Hashable, Sendable { case thread, changes, missionReview, mission(String), automation(String) }
     private enum CodingKeys: String, CodingKey { case hostID, agentID, eventID, kind, mission }
 
     struct Mission: Codable, Hashable, Sendable {

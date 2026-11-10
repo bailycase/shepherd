@@ -742,7 +742,8 @@ extension MissionController {
                 throw MissionError("mission_limit", "This mission has kept too many turns to give \(task.id) its own. Relaunch: the rest implements in one stock turn.")
             }
             return try await self.specKitTurn(id, runID: runID, space: space, command: .implement,
-                                              text: SpecKitCommand.implement.invocation(SpecKit.taskScope(task, first: first)),
+                                              text: SpecKitCommand.implement.invocation(SpecKit.taskScope(task, first: first)
+                                                  + Self.hintLine(try self.record(id, runID: runID).run, lane: space)),
                                               station: SpecKit.stationID(id, space, "phase-\(slot.phase)"), reuse: nil, keepAlive: false, task: task.id)
         }
         guard SpecKit.taskReported(result.text, task: task.id) else {
@@ -773,14 +774,14 @@ extension MissionController {
         let implemented = run.attempts.last { $0.stationID == implementStation && $0.task == nil }
         if implemented?.status != .succeeded || implemented?.planRevision != mission.approvedPlanRevision {
             let used = run.attempts.filter { $0.stationID == implementStation && $0.command == .implement && $0.task == nil }.count
-            guard used <= mission.draft.limits.retries else {
+            guard used <= mission.draft.limits.retries + run.extraAttempts(space) else {
                 throw MissionError("mission_retry_limit", "Implement reached the approved attempt limit across this mission. Raise the retry limit or revise the tasks.")
             }
             if let batches = try await taskBatches(id, runID: runID, checkout: checkout, feature: feature) {
                 try await implementByTask(id, runID: runID, space: space, checkout: checkout, feature: feature, batches: batches)
             } else {
                 let result = try await slots(id).run {
-                    try await self.specKitTurn(id, runID: runID, space: space, command: .implement, text: SpecKitCommand.implement.invocation(""),
+                    try await self.specKitTurn(id, runID: runID, space: space, command: .implement, text: SpecKitCommand.implement.invocation(Self.hintLine(run, lane: space)),
                                                station: implementStation, reuse: nil, keepAlive: false)
                 }
                 guard try record(id, runID: runID).run?.attempts.first(where: { $0.id == result.attemptID })?.status == .succeeded else {

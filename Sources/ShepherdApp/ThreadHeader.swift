@@ -7,7 +7,7 @@ import ShepherdSessions
 
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
 /// screen: "space / title", then the one side-pane button, the options menu (Refresh Thread,
-/// Rename…, Pin), and another host's thread's branch chip. Everything comes in as values, compared by
+/// Rename…, Pin, Mute Notifications), and another host's thread's branch chip. Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
 /// ⌘J, the Terminal menu and the palette show it.
@@ -18,6 +18,7 @@ struct ThreadHeader: View, Equatable {
             && a.paneOpen == b.paneOpen && a.paneNews == b.paneNews && a.paneShortcut == b.paneShortcut
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
             && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
+            && a.muted == b.muted && (a.toggleMute == nil) == (b.toggleMute == nil)
             && a.apps == b.apps
     }
 
@@ -42,6 +43,9 @@ struct ThreadHeader: View, Equatable {
     /// automation's run, or the project tree on screen).
     var pinned: Bool?
     var togglePin: (() -> Void)?
+    /// Whether the thread's pushes are muted on its host, and Mute or Unmute; nil where its host takes no Mute.
+    var muted: Bool?
+    var toggleMute: (() -> Void)?
     /// The space's quick actions (AppsQuickAction board); nil draws no Run button.
     var apps: QuickApps?
     var runApp: (AppKey) -> Void = { _ in }
@@ -63,12 +67,15 @@ struct ThreadHeader: View, Equatable {
             }
             SHOptionsMenu("Thread options") {
                 Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
-                if rename != nil || togglePin != nil { Divider() }
+                if rename != nil || togglePin != nil || toggleMute != nil { Divider() }
                 if let rename {
                     Button("Rename…", action: rename)
                 }
                 if let pinned, let togglePin {
                     Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned), action: togglePin)
+                }
+                if let muted, let toggleMute {
+                    Button(MuteWords.menuTitle(muted: muted), systemImage: MuteWords.symbol(muted: muted), action: toggleMute)
                 }
             }
             // A thread whose branch this Mac can't read a card for (another host's) keeps the plain
