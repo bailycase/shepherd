@@ -320,7 +320,7 @@ struct WorktreeAgentTests {
 
     @Test(arguments: [false, true])
     func deletingASwitchedWorktreePreservesItsCurrentBranch(originalBranchDeleted: Bool) async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }

@@ -29,7 +29,7 @@ final class MissionSpecKitFixture {
             selected.append(Space(name: "Repository \(index + 1)", path: repo.path))
         }
         repos = sources; spaces = selected
-        app = try AppHarness(modelCatalog: { .init(models: [Self.model], defaultModel: Self.model) })
+        app = try AppHarness(modelCatalog: { .init(models: [Self.model], defaultModel: Self.model) }, inProcess: true)
         try StubPi.installAsEngine()
         let config = root.appendingPathComponent("fixture.json")
         try JSONSerialization.data(withJSONObject: ["root": root.path, "stub": StubPi.path]).write(to: config)
