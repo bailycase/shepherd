@@ -191,6 +191,11 @@ struct RemoteDesignService: Sendable {
             } catch let error as DesignReferenceError {
                 throw RemoteDesignRefusal(error.code, error.message)
             }
+        case .threadNotes(let designID):
+            return .threadNotes(try await server.designThreadNotes(designID))
+        case .removeThreadNote(let designID, let noteID):
+            try await server.removeDesignThreadNote(designID, noteID: noteID)
+            return .ok
         case .referenceLookedAt(let agentID, let ref, let aspects):
             guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
             return .referenceLookedAt(await server.designReferenceLookedAt(agentID: agentID, ref: ref, aspects: Set(aspects)))

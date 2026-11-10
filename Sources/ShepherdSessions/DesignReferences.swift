@@ -60,9 +60,10 @@ public struct PreparedDesignReference: Hashable, Sendable {
 }
 
 extension PreparedDesignReference {
-    /// A host's pin (`RemoteDesignRequest.pinReference`), its reference named from this device.
-    public init(pin: RemoteDesignReferencePin, host: UUID) {
-        reference = pin.reference.fromHost(host)
+    /// A host's pin (`RemoteDesignRequest.pinReference`), its reference named from this device;
+    /// nil keeps the host's own naming (the background host's design, as this app's own).
+    public init(pin: RemoteDesignReferencePin, host: UUID?) {
+        reference = host.map { pin.reference.fromHost($0) } ?? pin.reference
         reference.label = pin.label
         design = pin.design
         boardTitle = pin.boardTitle

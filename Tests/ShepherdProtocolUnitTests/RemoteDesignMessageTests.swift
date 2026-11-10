@@ -75,6 +75,8 @@ enum RemoteDesignSamples {
         .referenceFreshness(DesignReference(designID: design, board: board, revision: 7)!),
         .referenceLookedAt(agentID: AgentID(rawValue: "thread"), ref: "shepherd-design-ref://local/design-1/A@7", aspects: [.summary]),
         .settleBoardProposal(agentID: AgentID(rawValue: "thread"), payloadID: comment, accept: true),
+        .threadNotes(designID: design),
+        .removeThreadNote(designID: design, noteID: comment),
     ]
 
     static let keptPayload = DesignReferencePayload(agentID: AgentID(rawValue: "thread"), reference: DesignReference(designID: design, board: board, revision: 7)!,
@@ -134,6 +136,7 @@ enum RemoteDesignSamples {
                                                   boardTitle: "A · Funnel first", pageTitle: nil, elementLabel: nil, elementName: nil,
                                                   width: 1280, height: 800, outline: DesignReferenceOutline(kind: .board, styles: 12, tokens: 4))),
         .ok,
+        .threadNotes([]),
     ]
 }
 
@@ -161,7 +164,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal:
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal, .threadNotes, .removeThreadNote:
             Wire.caseName(request)
         }
     }
@@ -170,14 +173,14 @@ struct RemoteDesignMessageTests {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
              .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced,
-             .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok:
+             .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok, .threadNotes:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 40)
-        #expect(Set(S.results.map(Self.caseName)).count == 24)
+        #expect(Set(S.requests.map(Self.caseName)).count == 42)
+        #expect(Set(S.results.map(Self.caseName)).count == 25)
     }
 
     @Test(arguments: [
@@ -247,6 +250,10 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designBoardsCapability && RemoteProtocol.designBoardsCapability == "design.boards.v1")
                 #expect(request.writes)
                 #expect(request.designID == nil)
+            case .threadNotes, .removeThreadNote:
+                #expect(request.capability == RemoteProtocol.designThreadNotesCapability)
+                #expect(request.writes == (Self.caseName(request) == "removeThreadNote"))
+                #expect(request.designID == S.design)
             case .deleteSystemBuild:
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
                 #expect(request.writes)

@@ -85,6 +85,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onSettingsChanged: ((RemoteSettingsPage) -> Void)?
     /// A tool call a thread of the background host on this Mac finished (`toolFinished`). Main queue.
     public var onToolFinished: ((AgentID, String) -> Void)?
+    /// A design's thread notes changed on the background host on this Mac (`designNotesChanged`). Main queue.
+    public var onDesignNotesChanged: ((DesignID) -> Void)?
     /// A line the background host on this Mac says in a thread (`threadNotice`). Main queue.
     public var onThreadNotice: ((AgentID, String) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
@@ -161,6 +163,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case appRelay(Int, AppRelayJob)
         case settingsChanged(RemoteSettingsPage)
         case toolFinished(AgentID, String)
+        case designNotesChanged(DesignID)
         case threadNotice(AgentID, String)
     }
     private struct QueuedEvent {
@@ -1616,6 +1619,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.settingsChanged(page), bytes: line.count)
         case .toolFinished(let agentID, let tool):
             self.push(.toolFinished(agentID, tool), bytes: line.count)
+        case .designNotesChanged(let designID):
+            self.push(.designNotesChanged(designID), bytes: line.count)
         case .threadNotice(let agentID, let message):
             self.push(.threadNotice(agentID, message), bytes: line.count)
         case .capabilitiesChanged(let list):
@@ -1736,6 +1741,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .appRelay(let token, let job): self.onAppRelay?(token, job)
                 case .settingsChanged(let page): self.onSettingsChanged?(page)
                 case .toolFinished(let agentID, let tool): self.onToolFinished?(agentID, tool)
+                case .designNotesChanged(let designID): self.onDesignNotesChanged?(designID)
                 case .threadNotice(let agentID, let message): self.onThreadNotice?(agentID, message)
                 }
             }

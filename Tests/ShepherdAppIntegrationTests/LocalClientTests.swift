@@ -246,6 +246,57 @@ struct LocalClientTests {
         #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
+    /// A design's thread notes and a thread's design references, as the host's client: notes read,
+    /// pushed and resolved on the host; pieces pinned and judged by the host (slice 2b).
+    @Test func theHostsDesignNotesAndReferencesAreTheAppsOwn() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        host.server.setDesignsServed(true)
+        let space = Space(name: "acme-web", path: host.dir.path)
+        let thread = Fixture.agent("Fix the checkout total rounding", in: Fixture.space("acme-web", path: host.dir.path))
+        try await host.server.putState(Fixture.state(spaces: [thread.space], agents: [thread]))
+        _ = space
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(2)), in: design.id, on: host.server)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        let board = try #require(DesignPath("A.dc.html"))
+
+        // Notes: a note the host keeps reaches the canvas by its push, and Resolve removes it there.
+        let screen = vm.designScreen(design.id)
+        let note = DesignThreadNote(agentID: thread.agent.id, thread: "Fix the checkout total rounding", board: board, revision: 1,
+                                    text: "Used the funnel header.", createdAt: 1_000)
+        _ = try await host.server.designs.addThreadNote(design.id, note)
+        host.server.designNotesChanged(design.id)
+        try await eventuallyOnMain("the host's note on the app's canvas") { screen.threadNotes.map(\.id) == [note.id] }
+        await screen.resolveNote(note.id)?.value
+        #expect(try await host.server.designThreadNotes(design.id).isEmpty, "resolved on the host")
+
+        // References: the host pins the piece, named as its own, and judges it current.
+        let piece = try #require(DesignReference(designID: design.id, board: board))
+        let prepared = try await vm.prepareDesignReference(piece)
+        #expect(prepared.reference.host == .local && prepared.reference.revision != nil && prepared.design == design.name)
+        let chips = try #require(vm.designReferenceChips(for: thread.agent.id), "a thread's chips as the host's client")
+        _ = chips
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()

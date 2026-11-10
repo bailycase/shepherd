@@ -29,7 +29,11 @@ extension RemoteProtocol {
     /// Every capability a host offers only while it serves designs.
     public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability,
                                                          designAgentCapability, designLifecycleCapability, designSystemsCapability,
-                                                         designReferencesCapability, designImportCapability, designBoardsCapability]
+                                                         designReferencesCapability, designImportCapability, designBoardsCapability,
+                                                         designThreadNotesCapability]
+    /// The host reads and removes the notes its threads left on a design
+    /// (`RemoteDesignRequest.threadNotes`, `removeThreadNote`). Offered with `designsCapability`.
+    public static let designThreadNotesCapability = "design.threadNotes.v1"
     /// The host adds or applies, and discards, the boards its threads drew for its designs
     /// (`RemoteDesignRequest.settleBoardProposal`). Offered with `designsCapability`.
     public static let designBoardsCapability = "design.boards.v1"
@@ -371,6 +375,10 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// A board a host's thread drew (`DesignReferencePayload.Proposal`): add or apply it to the
     /// design (`accept`), or discard it (`designBoardsCapability`). Answered with `referenceKept`.
     case settleBoardProposal(agentID: AgentID, payloadID: UUID, accept: Bool)
+    /// The notes threads left on a design, oldest first (`designThreadNotesCapability`).
+    case threadNotes(designID: DesignID)
+    /// Removes a thread's note (the canvas's Resolve). Answered `ok`.
+    case removeThreadNote(designID: DesignID, noteID: UUID)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
@@ -383,7 +391,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
              .sendMarkup(let id, _), .settleProposals(let id, _, _, _), .delete(let id), .undoDelete(let id),
-             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id), .deleteSystemBuild(let id):
+             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id), .deleteSystemBuild(let id),
+             .threadNotes(let id), .removeThreadNote(let id, _):
             id
         }
     }
@@ -394,7 +403,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
              .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .settleBoardProposal,
              .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
-             .importBegin, .importChunk, .importFinish, .importCancel: true
+             .importBegin, .importChunk, .importFinish, .importCancel, .removeThreadNote: true
         default: false
         }
     }
@@ -412,6 +421,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
             RemoteProtocol.designReferencesCapability
         case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
         case .settleBoardProposal: RemoteProtocol.designBoardsCapability
+        case .threadNotes, .removeThreadNote: RemoteProtocol.designThreadNotesCapability
         default: nil
         }
     }
@@ -460,6 +470,8 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     /// An import began (`importBegin`): send its bytes under this id.
     case importStarted(uploadID: UUID)
     case ok
+    /// `threadNotes`'s answer.
+    case threadNotes([DesignThreadNote])
 }
 
 /// Stable codes a host refuses a design request with (beside `DesignStoreError.code`).

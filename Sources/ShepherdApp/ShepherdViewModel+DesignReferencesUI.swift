@@ -22,7 +22,8 @@ extension ShepherdViewModel {
     func designReferenceChips(for agentID: AgentID) -> DesignReferenceChips? {
         guard settings.designToolEnabled else { return nil }
         if let chips = referenceChips[agentID] { return chips }
-        let state = server.state
+        // As the background host's client the app's own copy of its workspace (the server's is empty).
+        let state = localHost == nil ? server.state : self.state
         guard let agent = state.agents.first(where: { $0.id == agentID }), !state.isDesignAgent(agent), agent.designID == nil else {
             return nil
         }
@@ -56,7 +57,7 @@ extension ShepherdViewModel {
 
     private func referenceIO(_ agentID: AgentID) -> DesignReferenceChips.IO {
         let server = server
-        return DesignReferenceChips.IO(
+        var io = DesignReferenceChips.IO(
             payload: { await server.designReferencePayload(agentID: agentID, payloadID: $0) },
             freshness: { await server.designReferenceFreshness(agentID: agentID, payloadID: $0) },
             pinnedFreshness: { await server.designReferenceFreshness($0) },
@@ -86,6 +87,22 @@ extension ShepherdViewModel {
                 }
             },
             startDesign: { [weak self] in self?.openNewDesign() })
+        // As the background host's client, what the host keeps and reads of its designs' pieces
+        // comes from it, as for a host's thread; the pictures, opening and sending stay the app's own.
+        if Self.routesThisMacLocally, let host = localHost {
+            let remote = remoteReferenceIO(RemoteAgentRef(hostID: host.id, agentID: agentID))
+            io.payload = remote.payload
+            io.freshness = remote.freshness
+            io.pinnedFreshness = remote.pinnedFreshness
+            io.lookedAt = remote.lookedAt
+            io.catalog = remote.catalog
+            io.settle = remote.settle
+            io.wantPictures = { [weak self] scope in
+                self?.wantMentionPictures(scope)
+                self?.wantRemoteMentionPictures(scope, host: host.id)
+            }
+        }
+        return io
     }
 
     /// Designs changed (a revision, a deletion, a new board): chips read how they stand again.

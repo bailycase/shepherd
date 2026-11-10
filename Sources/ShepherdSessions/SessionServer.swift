@@ -5021,7 +5021,7 @@ public final class SessionServer: @unchecked Sendable {
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
             let kept = try await server.designs.addThreadNote(designID, note)
-            server.hopToMain { [weak server] in server?.onDesignThreadNotesChanged?(designID) }
+            server.designNotesChanged(designID)
             return .designNote(id: id, note: kept)
         }
     }
@@ -5194,7 +5194,14 @@ public final class SessionServer: @unchecked Sendable {
         guard try await designs.removeThreadNote(designID, noteID: noteID) else {
             throw DesignReferenceError("no_such_note", "That note is no longer on the design.")
         }
+        designNotesChanged(designID)
+    }
+
+    /// A design's thread notes changed: the app's canvas reads them again, in process or as the
+    /// background host's client (`designNotesChanged`). Any thread.
+    func designNotesChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
+        queue.async { [self] in sendToLocalApps(.designNotesChanged(designID: designID)) }
     }
 
     private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {
