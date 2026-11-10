@@ -40,8 +40,8 @@ struct SpaceResourcesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
-            // ProjectChildSkills: only skills inherit from the parent space.
-            if model.kind == .skill, let parent = model.parent {
+            // ProjectChildSkills: skills, slash commands and extensions inherit from the parent space.
+            if model.inheritedKinds.contains(model.kind), let parent = model.parent {
                 SpaceInheritanceBanner(title: "Inherited from \(parent.name)", message: SpaceInheritanceBanner.childMessage(project.project.name),
                                        open: openParent.map { ("Open \(parent.name)", $0) }, disabled: model.saving)
             }
@@ -50,7 +50,7 @@ struct SpaceResourcesView: View {
                               options: ProjectResource.Kind.allCases.map { ($0, $0.title) })
                 .shControlScale(.settings).fixedSize()
             HStack(alignment: .top, spacing: SH.Space.xl) {
-                SettingsHeader(title: model.kind.title, explanation: model.kind == .skill && model.parent != nil
+                SettingsHeader(title: model.kind.title, explanation: model.inheritedKinds.contains(model.kind) && model.parent != nil
                                ? "Inherited resources from \(model.parent!.name) stay read-only. Overrides change only \(project.project.name)."
                                : model.kind.subtitle(project.project.name))
                 Spacer(minLength: 0)
@@ -184,7 +184,7 @@ private struct SpaceResourceRow: View {
                 HStack(spacing: SH.Space.m) {
                     Toggle("Enable \(item.name) in \(project)", isOn: Binding(get: { row.enabled }, set: toggle))
                         .toggleStyle(.shSwitch).labelsHidden().disabled(locked || !row.canToggle)
-                        .help(row.canToggle ? "" : row.inheritedFrom != nil ? "Update Shepherd on this space’s host to turn off inherited skills." : "Global subagents are turned on or off in Settings ▸ Subagents.")
+                        .help(row.canToggle ? "" : row.inheritedFrom != nil ? "Update Shepherd on this space’s host to turn off inherited \(model.kind.title.lowercased())." : "Global subagents are turned on or off in Settings ▸ Subagents.")
                     Text(row.enabled ? "Enabled" : "Disabled").font(.sh(.caption))
                         .foregroundStyle(row.enabled ? Color.sh.textSecondary : Color.sh.textTertiary)
                 }.frame(width: AppLayout.resourceStatusWidth, alignment: .leading)

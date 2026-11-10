@@ -1257,6 +1257,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard !request.requiresInheritance || capabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills.")
         }
+        guard !request.requiresParent || capabilities.contains(RemoteProtocol.projectParentCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a parent space.")
+        }
+        if case .inheritance(_, let excluded) = request, !(excluded.prompts.isEmpty && excluded.extensions.isEmpty),
+           !capabilities.contains(RemoteProtocol.projectInheritedResourcesCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited slash commands and extensions.")
+        }
         let reply = try await self.request { .projects(id: $0, request: request) }
         switch reply {
         case .projects(_, let result): return result
