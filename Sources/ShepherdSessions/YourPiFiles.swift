@@ -252,7 +252,7 @@ public enum YourPiFiles {
 public enum PiProviders {
     public static let names: [String: String] = [
         "amazon-bedrock": "Amazon Bedrock", "ant-ling": "Ant Ling", "anthropic": "Anthropic",
-        "azure-openai-responses": "Azure OpenAI", "baseten": "Baseten", "cerebras": "Cerebras",
+        "azure": "Azure OpenAI", "baseten": "Baseten", "cerebras": "Cerebras",
         "cloudflare-ai-gateway": "Cloudflare AI Gateway", "cloudflare-workers-ai": "Cloudflare Workers AI",
         "deepseek": "DeepSeek", "fireworks": "Fireworks", "github-copilot": "GitHub Copilot", "google": "Google",
         "google-vertex": "Google Vertex AI", "groq": "Groq", "huggingface": "Hugging Face", "kimi-coding": "Kimi For Coding",
@@ -266,7 +266,7 @@ public enum PiProviders {
     public static let environmentKeys: [String: [String]] = [
         "anthropic": ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
         "github-copilot": ["COPILOT_GITHUB_TOKEN"],
-        "ant-ling": ["ANT_LING_API_KEY"], "openai": ["OPENAI_API_KEY"], "azure-openai-responses": ["AZURE_OPENAI_API_KEY"],
+        "ant-ling": ["ANT_LING_API_KEY"], "openai": ["OPENAI_API_KEY"], "azure": ["AZURE_OPENAI_API_KEY"],
         "nvidia": ["NVIDIA_API_KEY"], "deepseek": ["DEEPSEEK_API_KEY"], "google": ["GEMINI_API_KEY"],
         "google-vertex": ["GOOGLE_CLOUD_API_KEY"], "groq": ["GROQ_API_KEY"], "cerebras": ["CEREBRAS_API_KEY"],
         "xai": ["XAI_API_KEY"], "radius": ["RADIUS_API_KEY"], "openrouter": ["OPENROUTER_API_KEY"],
