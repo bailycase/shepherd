@@ -6277,6 +6277,8 @@ public final class SessionServer: @unchecked Sendable {
         if state.agents.count < before.agents.count {
             let live = Set(state.agents.map(\.id))
             peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }
+            // A deleted agent's turns end, but what it wrote stays on record for the turns it overlapped.
+            for gone in before.agents where !live.contains(gone.id) { changes.agentEnded(gone.id) }
         }
         if !retiredRPCSessions.isEmpty {
             let bound = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
@@ -8742,6 +8744,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.discardPreparedTurn = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.changes.promptDiscarded(agentID: agentID)
                 server.changes.captureQueue(agentID).async {
                     _ = server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
                 }
@@ -8776,6 +8779,8 @@ public final class SessionServer: @unchecked Sendable {
                 case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
                 case .settled:
                     server.changes.turnSettled(agentID: agentID)
+                case .callStarted(let id, let path): server.changes.callStarted(agentID: agentID, callID: id, path: path)
+                case .callEnded(let id, let ok): server.changes.callEnded(agentID: agentID, callID: id, ok: ok)
                 }
             }
             sessions[sid] = .rpc(session, thread)
@@ -9139,6 +9144,7 @@ public final class SessionServer: @unchecked Sendable {
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
             designMergeAgentExited(agentID: agent)
+            changes.agentEnded(agent)
         }
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
@@ -9784,6 +9790,9 @@ extension SessionServer {
         changes.agentContext = { [weak self] agentID in
             guard let self else { return nil }
             return Self.changesContext(self.state, agentID)
+        }
+        changes.agentName = { [weak self] agentID in
+            self?.state.agents.first { $0.id == agentID }?.name
         }
         changes.onTurnsChanged = { [weak self] agentID, turns in
             self?.queue.async { self?.setTurnChanges(turns, for: agentID) }

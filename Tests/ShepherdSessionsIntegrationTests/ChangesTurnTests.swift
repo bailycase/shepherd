@@ -250,6 +250,10 @@ struct ChangesTurnTests {
     }
 
     private func drain(_ service: ChangesService, _ agent: AgentID) async {
+        await Self.drain(service, agent)
+    }
+
+    static func drain(_ service: ChangesService, _ agent: AgentID) async {
         await withCheckedContinuation { continuation in
             service.captureQueue(agent).async { continuation.resume() }
         }
@@ -301,6 +305,8 @@ struct ChangesTurnTests {
         try repo.write("a.txt", "changed a\n")
         h.service.turnSettled(agentID: h.agent)
         await drain(h.service, h.agent)
+        // The person prompts the second agent after the first turn ended: its turn begins at the prompt.
+        await withCheckedContinuation { continuation in h.service.prepareTurn(agentID: second) { continuation.resume() } }
         h.service.turnStarted(agentID: second)
         await drain(h.service, second)
         try repo.write("b.txt", "changed b\n")
@@ -568,5 +574,306 @@ struct ChangesTurnTests {
         try await eventually("the second turn's baseline") { changes.turnStore.latest(pi.agent.id)?.turn.id != turnID && changes.turnStore.latest(pi.agent.id)?.startTree != nil }
         #expect(changes.turns(agentID: pi.agent.id).first { $0.id == turnID }?.canRedo == false)
         FileManager.default.createFile(atPath: repo.url.appendingPathComponent("tool-2").path, contents: nil)
+    }
+
+    // MARK: Agents sharing a checkout
+
+    /// Two stub pis in one checkout, each playing a script held on gate files in the checkout.
+    struct Shared {
+        let host: ScratchServer
+        let repo: ChangesRepo
+        let a: PiAgent
+        let b: PiAgent
+        var changes: ChangesService { host.server.changes }
+
+        func turns(_ pi: PiAgent) -> [ChangesTurn] { changes.turns(agentID: pi.agent.id) }
+
+        func open(_ gate: String) {
+            FileManager.default.createFile(atPath: repo.url.appendingPathComponent("gate-\(gate)").path, contents: nil)
+        }
+
+        /// Sends `prompt` and waits for the turn's baseline.
+        func start(_ pi: PiAgent, _ prompt: String) async throws {
+            let idle = try await pi.snapshot("the agent to bootstrap") { !$0.piSessionID.isEmpty && $0.supportedActions.contains("send") }
+            let before = changes.turnStore.all(pi.agent.id).count
+            #expect(try await pi.send(prompt, from: idle).failureCode == nil)
+            try await eventually("the baseline of \(prompt)") {
+                let records = changes.turnStore.all(pi.agent.id)
+                return records.count == before + 1 && records.last?.startTree != nil
+            }
+        }
+
+        /// Waits until the thread shows the `write` call as done: the engine has heard it.
+        func calls(_ pi: PiAgent, _ count: Int) async throws {
+            _ = try await pi.snapshot("\(count) write call(s) done") {
+                ($0.provisional + $0.messages).filter { $0.toolName == "write" && $0.status == "complete" }.count >= count
+            }
+        }
+
+        func settled(_ pi: PiAgent) async throws -> ChangesTurn {
+            try await eventually("the turn to end") { turns(pi).last?.state == .ready }
+            return try #require(turns(pi).last)
+        }
+    }
+
+    static func write(_ path: String) -> [String: Any] {
+        ["tool": ["toolName": "write", "arguments": ["path": path, "content": "x\n"], "content": [["type": "text", "text": "ok"]]]]
+    }
+
+    static func hold(_ gate: String) -> [String: Any] { ["wait": "gate-" + gate] }
+
+    /// Two agents in a repository of `files`, playing `prompts` (the stub's `project-script.json`).
+    static func sharedCheckout(files: [String: String], prompts: [String: [[String: Any]]]) async throws -> Shared {
+        let repo = try ChangesRepo(files: files)
+        try "project-script.json\ngate-*\n".write(to: repo.url.appendingPathComponent(".git/info/exclude"), atomically: true, encoding: .utf8)
+        try JSONSerialization.data(withJSONObject: ["prompts": prompts]).write(to: repo.url.appendingPathComponent("project-script.json"))
+        let host = try ScratchServer.fresh()
+        let a = try await PiAgent.launch(on: host, cwd: repo.url)
+        let b = try await PiAgent.launch(on: host, cwd: repo.url)
+        return Shared(host: host, repo: repo, a: a, b: b)
+    }
+
+    /// Both agents write in one checkout at once, and so does the person (c.txt, which no agent
+    /// names). Each turn lists, counts and undoes only the files its own calls named.
+    @Test func twoAgentsInOneCheckoutEachRecordOnlyTheirOwnFilesAndUndoLeavesTheOthers() async throws {
+        let t = try await Self.sharedCheckout(files: ["a.txt": "a\n", "b.txt": "b\n"], prompts: [
+            "edit a": [Self.hold("a-edit"), Self.write("a.txt"), Self.hold("a-end")],
+            "edit b": [Self.hold("b-edit"), Self.write("b.txt"), Self.hold("b-end")],
+        ])
+        defer { t.host.stop() }
+        try await t.start(t.a, "edit a")
+        try await t.start(t.b, "edit b")
+        let index = try Data(contentsOf: t.repo.url.appendingPathComponent(".git/index"))
+        try t.repo.write("a.txt", "a edited\n")
+        try t.repo.write("b.txt", "b edited\n")
+        try t.repo.write("c.txt", "nobody named me\n")
+        t.open("a-edit")
+        t.open("b-edit")
+        try await t.calls(t.a, 1)
+        try await t.calls(t.b, 1)
+
+        t.open("a-end")
+        let first = try await t.settled(t.a)
+        #expect(first.files.map(\.path) == ["a.txt"] && first.fileCount == 1 && first.canUndo)
+        let thread = try await t.a.snapshot("the turn in the thread") { $0.turnChanges?.last?.state == .ready }
+        #expect(thread.turnChanges?.last?.files.map(\.path) == ["a.txt"] && thread.turnChanges?.last?.canUndo == true)
+        #expect(try await t.changes.list(agentID: t.a.agent.id, scope: .lastTurn).summary == ["M a.txt"])
+
+        let undone = try await t.changes.undoTurn(agentID: t.a.agent.id, turnID: first.id)
+        #expect(undone.state == .undone && undone.title == "Undid the agent\u{2019}s edits to 1 file")
+        #expect(t.repo.read("a.txt") == "a\n")
+        #expect(t.repo.read("b.txt") == "b edited\n" && t.repo.read("c.txt") == "nobody named me\n")
+
+        t.open("b-end")
+        let second = try await t.settled(t.b)
+        #expect(second.files.map(\.path) == ["b.txt"] && second.canUndo)
+        let redone = try await t.changes.redoTurn(agentID: t.a.agent.id, turnID: first.id)
+        #expect(redone.state == .ready)
+        #expect(t.repo.read("a.txt") == "a edited\n" && t.repo.read("b.txt") == "b edited\n" && t.repo.read("c.txt") == "nobody named me\n")
+        #expect(try Data(contentsOf: t.repo.url.appendingPathComponent(".git/index")) == index)
+    }
+
+    /// A file both agents named is on neither card, and neither Undo touches it.
+    @Test func bothAgentsNamingOneFileLeaveItOutOfBothUndos() async throws {
+        let t = try await Self.sharedCheckout(files: ["a.txt": "a\n", "b.txt": "b\n", "shared.txt": "s\n"], prompts: [
+            "edit a": [Self.hold("a-edit"), Self.write("a.txt"), Self.write("shared.txt"), Self.hold("a-end")],
+            "edit b": [Self.hold("b-edit"), Self.write("b.txt"), Self.write("shared.txt"), Self.hold("b-end")],
+        ])
+        defer { t.host.stop() }
+        try await t.start(t.a, "edit a")
+        try await t.start(t.b, "edit b")
+        try t.repo.write("a.txt", "a edited\n")
+        try t.repo.write("b.txt", "b edited\n")
+        try t.repo.write("shared.txt", "s edited by both\n")
+        t.open("a-edit")
+        t.open("b-edit")
+        try await t.calls(t.a, 2)
+        try await t.calls(t.b, 2)
+
+        t.open("a-end")
+        let first = try await t.settled(t.a)
+        #expect(first.files.map(\.path) == ["a.txt"])
+        _ = try await t.changes.undoTurn(agentID: t.a.agent.id, turnID: first.id)
+        #expect(t.repo.read("a.txt") == "a\n" && t.repo.read("shared.txt") == "s edited by both\n" && t.repo.read("b.txt") == "b edited\n")
+
+        t.open("b-end")
+        let second = try await t.settled(t.b)
+        #expect(second.files.map(\.path) == ["b.txt"])
+    }
+
+    /// Undo puts files back while another agent's turn runs: that turn did not write them.
+    @Test func anUndoDuringAnotherAgentsTurnIsNotPartOfThatTurn() async throws {
+        let t = try await Self.sharedCheckout(files: ["a.txt": "a\n", "b.txt": "b\n"], prompts: [
+            "edit a": [Self.hold("a-edit"), Self.write("a.txt")],
+            "edit b": [Self.hold("b-edit"), Self.write("b.txt")],
+        ])
+        defer { t.host.stop() }
+        try await t.start(t.a, "edit a")
+        try t.repo.write("a.txt", "a edited\n")
+        t.open("a-edit")
+        let first = try await t.settled(t.a)
+        #expect(first.files.map(\.path) == ["a.txt"])
+
+        try await t.start(t.b, "edit b")
+        _ = try await t.changes.undoTurn(agentID: t.a.agent.id, turnID: first.id)
+        try t.repo.write("b.txt", "b edited\n")
+        t.open("b-edit")
+        let second = try await t.settled(t.b)
+        #expect(second.files.map(\.path) == ["b.txt"], "A's Undo is not B's work")
+        #expect(t.repo.read("a.txt") == "a\n")
+    }
+
+    // MARK: Writers the engine hears late or from elsewhere
+
+    /// The engine on its own with a second agent, `other`, in the same checkout: it is named
+    /// "Fix flaky tests" and hears its calls through the same entry points the server uses.
+    struct Pair {
+        let h: ChangesHarness
+        let repo: ChangesRepo
+        let other = AgentID()
+        var service: ChangesService { h.service }
+        var agent: AgentID { h.agent }
+
+        init(files: [String: String]) throws {
+            repo = try ChangesRepo(files: files)
+            h = try ChangesHarness(repo: repo)
+            let context = ChangesService.AgentContext(cwd: repo.path)
+            let other = other
+            h.service.agentContext = { _ in context }
+            h.service.agentName = { $0 == other ? "Fix flaky tests" : nil }
+        }
+
+        /// `agent` edits `path` and names it, as pi reports a call.
+        func edit(_ agent: AgentID, _ path: String, id: String, text: String, ok: Bool = true) throws {
+            try repo.write(path, text)
+            service.callStarted(agentID: agent, callID: id, path: path)
+            service.callEnded(agentID: agent, callID: id, ok: ok)
+        }
+
+        func settle() async throws -> ChangesTurn {
+            service.turnSettled(agentID: agent)
+            await ChangesTurnTests.drain(service, agent)
+            return try #require(service.turns(agentID: agent).last)
+        }
+    }
+
+    /// A writer whose event reaches the engine after the card showed re-cuts the card, and an
+    /// Undo that runs before the card has heard of it refuses, naming the thread, and writes nothing.
+    @Test func aLateWriterCorrectsTheTurnAndUndoRefuses() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let started = ChangesService.nowMs()
+        p.service.turnStarted(agentID: p.agent, at: started)
+        await Self.drain(p.service, p.agent)
+        try p.edit(p.agent, "a.txt", id: "mine", text: "a edited\n")
+        try p.edit(p.agent, "b.txt", id: "mine-too", text: "b edited\n")
+        let turn = try await p.settle()
+        #expect(turn.files.map(\.path) == ["a.txt", "b.txt"] && turn.canUndo, "nobody else wrote: the turn is solo")
+        let before = try p.repo.state()
+
+        // The other thread's call lands in the log without the usual flag to re-cut: only Undo can notice.
+        p.service.writers.withValue { _ = $0.startCall(id: "theirs", agent: p.other, cwd: p.repo.path, path: "a.txt", receivedAt: started + 100) }
+        let error = await #expect(throws: ChangesError.self) { _ = try await p.service.undoTurn(agentID: p.agent, turnID: turn.id) }
+        #expect(error?.code == ChangesError.invalid)
+        #expect(error?.message == "Didn’t undo: “Fix flaky tests” also edited a.txt during this turn. Nothing was touched.")
+        #expect(error?.files == ["a.txt"])
+        try p.repo.expectUnchanged(since: before)
+        let corrected = try #require(p.service.turns(agentID: p.agent).last)
+        #expect(corrected.files.map(\.path) == ["b.txt"] && corrected.fileCount == 1 && corrected.canUndo && corrected.state == .ready)
+        #expect(try await p.service.list(agentID: p.agent, scope: .lastTurn).summary == ["M b.txt"])
+
+        _ = try await p.service.undoTurn(agentID: p.agent, turnID: turn.id)
+        #expect(p.repo.read("b.txt") == "b\n" && p.repo.read("a.txt") == "a edited\n")
+    }
+
+    /// The same writer, announced the usual way, corrects the card without anyone asking.
+    @Test func aWriterThatArrivesAfterTheCardShowedDropsTheFileItNamed() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let started = ChangesService.nowMs()
+        p.service.turnStarted(agentID: p.agent, at: started)
+        await Self.drain(p.service, p.agent)
+        try p.edit(p.agent, "a.txt", id: "mine", text: "a edited\n")
+        try p.edit(p.agent, "b.txt", id: "mine-too", text: "b edited\n")
+        let published = Locked<[[ChangesTurn]]>([])
+        p.service.onTurnsChanged = { _, turns in published.withValue { $0.append(turns) } }
+        let turn = try await p.settle()
+        #expect(turn.fileCount == 2)
+
+        p.service.callStarted(agentID: p.other, callID: "theirs", path: "b.txt", at: started + 100)
+        try await eventually("the card to drop b.txt") { p.service.turns(agentID: p.agent).last?.files.map(\.path) == ["a.txt"] }
+        let after = try #require(p.service.turns(agentID: p.agent).last)
+        #expect(after.fileCount == 1 && after.canUndo && published.current.last?.last?.files.map(\.path) == ["a.txt"])
+        _ = try await p.service.undoTurn(agentID: p.agent, turnID: turn.id)
+        #expect(p.repo.read("a.txt") == "a\n" && p.repo.read("b.txt") == "b edited\n")
+    }
+
+    /// A deleted agent's edits stay on record: the turn they overlapped keeps leaving them out.
+    @Test func aDeletedAgentsLeftoverEditsKeepAnOverlappingTurnShared() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let started = ChangesService.nowMs()
+        p.service.turnStarted(agentID: p.agent, at: started)
+        await Self.drain(p.service, p.agent)
+        try p.edit(p.agent, "a.txt", id: "mine", text: "a edited\n")
+        try p.edit(p.agent, "b.txt", id: "mine-too", text: "b edited\n")
+        p.service.callStarted(agentID: p.other, callID: "theirs", path: "b.txt", at: started + 100)
+        p.service.agentEnded(p.other)
+        let turn = try await p.settle()
+        #expect(turn.files.map(\.path) == ["a.txt"])
+    }
+
+    /// pi resolves an absolute path wherever the agent works, so an agent in another checkout can
+    /// write here: the turn it overlapped is shared, and the file it named is not that turn's.
+    @Test func anotherAgentsEditFromOutsideTheCheckoutMakesTheTurnShared() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "a\n", "x.txt": "x\n"])
+        let elsewhere = try ChangesRepo()
+        let h = try ChangesHarness(repo: repo)
+        let other = AgentID()
+        let inRepo = ChangesService.AgentContext(cwd: repo.path), inElsewhere = ChangesService.AgentContext(cwd: elsewhere.path)
+        h.service.agentContext = { $0 == other ? inElsewhere : inRepo }
+        h.service.turnStarted(agentID: h.agent)
+        await Self.drain(h.service, h.agent)
+        try repo.write("a.txt", "a edited\n")
+        try repo.write("x.txt", "x edited by the other checkout's agent\n")
+        h.service.callStarted(agentID: h.agent, callID: "mine", path: "a.txt")
+        h.service.callEnded(agentID: h.agent, callID: "mine", ok: true)
+        h.service.callStarted(agentID: other, callID: "theirs", path: repo.path + "/x.txt")
+        h.service.callEnded(agentID: other, callID: "theirs", ok: true)
+        h.service.turnSettled(agentID: h.agent)
+        await Self.drain(h.service, h.agent)
+        let turn = try #require(h.service.turns(agentID: h.agent).last)
+        #expect(turn.files.map(\.path) == ["a.txt"] && turn.canUndo)
+
+        _ = try await h.service.undoTurn(agentID: h.agent, turnID: turn.id)
+        #expect(repo.read("a.txt") == "a\n" && repo.read("x.txt") == "x edited by the other checkout's agent\n")
+    }
+
+    /// A shared turn whose only changes came from bash, or from a call that failed, owns nothing:
+    /// its card goes and Undo has nothing to take back.
+    @Test func aSharedTurnWithNothingOfItsOwnIsRecordedWithNoFiles() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let started = ChangesService.nowMs()
+        p.service.turnStarted(agentID: p.agent, at: started)
+        p.service.turnStarted(agentID: p.other, at: started)
+        await Self.drain(p.service, p.agent)
+        try p.repo.write("a.txt", "a edited by bash\n")
+        try p.edit(p.agent, "b.txt", id: "failed", text: "b edited\n", ok: false)
+        let turn = try await p.settle()
+        #expect(turn.state == .ready && turn.fileCount == 0 && turn.files.isEmpty && !turn.canUndo)
+        #expect(try await p.service.list(agentID: p.agent, scope: .lastTurn).files.isEmpty)
+        #expect(p.repo.read("a.txt") == "a edited by bash\n")
+    }
+
+    /// What Shepherd writes for the person while a turn runs is not that turn's, even when the
+    /// turn is otherwise solo and owns what bash wrote.
+    @Test func aTurnNeverOwnsWhatShepherdWroteForThePersonWhileItRan() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let repository = try p.service.repository(p.repo.path)
+        let span = p.service.beginWrite(repository, paths: ["a.txt"])
+        p.service.turnStarted(agentID: p.agent)
+        await Self.drain(p.service, p.agent)
+        try p.repo.write("a.txt", "a put back by Shepherd\n")
+        try p.repo.write("b.txt", "b edited by the agent\n")
+        p.service.endWrite(span)
+        let turn = try await p.settle()
+        #expect(turn.files.map(\.path) == ["b.txt"], "a solo turn owns what bash wrote, but not what Shepherd wrote for the person")
     }
 }

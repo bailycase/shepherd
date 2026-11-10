@@ -358,6 +358,9 @@ final class RPCThreadState {
     /// Longest short reason kept; the sidebar shows far less.
     static let shortReasonLimit = 120
 
+    /// The tools that write a file at a path they are given (pi's `edit` and `write`).
+    private static func writesFiles(_ name: String) -> Bool { name == "edit" || name == "write" }
+
     /// An asking call's `short` argument as one trimmed line, or nil when it gave none.
     static func shortReason(in args: JSONValue?) -> String? {
         guard case .object(let fields) = args, case .string(let text) = fields["short"] else { return nil }
@@ -441,6 +444,8 @@ final class RPCThreadState {
     /// failed as it aborted them, and the error replies pi ended those runs with (by pi's
     /// timestamp).
     private var stoppedCalls: Set<String> = []
+    /// The `edit` and `write` calls the Changes engine was told began, until they end.
+    private var fileCalls: Set<String> = []
     private var stoppedReplies: Set<Double> = []
 
     // Queue state (RPCThreadState+Queue.swift).
@@ -925,6 +930,11 @@ final class RPCThreadState {
                 askingCalls.append((id, Self.shortReason(in: args)))
             }
             streamingCalls[id] = nil
+            if Self.writesFiles(name), case .object(let fields)? = args, case .string(let path)? = fields["path"], !path.isEmpty {
+                if fileCalls.count >= Self.timingLimit, let any = fileCalls.first { fileCalls.remove(any) }
+                fileCalls.insert(id)
+                onTurnEvent?(.callStarted(id: id, path: path))
+            }
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial, _):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
@@ -935,6 +945,7 @@ final class RPCThreadState {
                 diagnosticActivity("tool.failed", details: .init(category: .other, toolKind: .init(name: name)))
             }
             askingCalls.removeAll { $0.id == id }
+            if fileCalls.remove(id) != nil { onTurnEvent?(.callEnded(id: id, ok: !isError)) }
             if stopped {
                 if stoppedCalls.count >= Self.timingLimit, let any = stoppedCalls.first { stoppedCalls.remove(any) }
                 stoppedCalls.insert(id)
@@ -2081,6 +2092,7 @@ final class RPCThreadState {
         requestSeq = nil
         responseMarks.removeAll()
         stoppedCalls.removeAll()
+        fileCalls.removeAll()
         stoppedReplies.removeAll()
         widgets.removeAll()
         goal = nil
@@ -3314,4 +3326,8 @@ enum TurnEvent: Equatable {
     case message(timestamp: Double?, text: String)
     /// pi's run settled.
     case settled
+    /// An `edit` or `write` call began on `path`, as pi was given it. Nested calls count.
+    case callStarted(id: String, path: String)
+    /// That call ended; a failed or stopped one is not `ok`.
+    case callEnded(id: String, ok: Bool)
 }

@@ -42,6 +42,25 @@ struct ChangesRevertTests {
         #expect(try await h.list(.staged).summary == ["A staged.txt"], "the index still holds staged.txt, as Undo would leave it")
     }
 
+    /// A Revert is Shepherd writing for the person: a turn that was running keeps the file out.
+    @Test func aFileRevertedWhileATurnRunsIsNotThatTurns() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "one\n", "b.txt": "bee\n"])
+        try repo.write("a.txt", "one\ntwo, by the user\n")
+        let h = try ChangesHarness(repo: repo)
+        let shown = try await h.list(.uncommitted)
+        h.service.turnStarted(agentID: h.agent)
+        await ChangesTurnTests.drain(h.service, h.agent)
+
+        try await h.service.revertFile(agentID: h.agent, revision: shown.revision, path: "a.txt")
+        try repo.write("b.txt", "bee, by the agent\n")
+        h.service.turnSettled(agentID: h.agent)
+        await ChangesTurnTests.drain(h.service, h.agent)
+
+        let turn = try #require(h.service.turns(agentID: h.agent).last)
+        #expect(repo.read("a.txt") == "one\n")
+        #expect(turn.files.map(\.path) == ["b.txt"], "the revert is not the agent's work")
+    }
+
     @Test func refusesAFileThatChangedSinceItWasShownAndAnyOtherRevision() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\n", "b.txt": "bee\n"])
         try repo.write("a.txt", "one\ntwo\n")
