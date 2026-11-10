@@ -20,8 +20,8 @@ struct ProjectPlacementFlowTests {
         var projectID = ProjectID()
         var project: Project { owner.server.state.projects.first { $0.id == projectID }! }
         init() throws {
-            owner = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") })
-            executor = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") })
+            owner = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }, inProcess: true)
+            executor = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }, inProcess: true)
             // Each host opts in on its own; the owner is also the viewer of the executor.
             owner.settings.projectsEnabled = true; executor.settings.projectsEnabled = true
             spaceA = Space(name: "Owner sources", path: owner.dir.path)

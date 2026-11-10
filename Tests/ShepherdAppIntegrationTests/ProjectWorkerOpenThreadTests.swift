@@ -28,8 +28,8 @@ struct ProjectWorkerOpenThreadTests {
         init() throws {
             AccessibilityNode.enable()
             let catalog: SessionServer.ModelCatalog = { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }
-            owner = try AppHarness(modelCatalog: catalog)
-            executor = try AppHarness(modelCatalog: catalog)
+            owner = try AppHarness(modelCatalog: catalog, inProcess: true)
+            executor = try AppHarness(modelCatalog: catalog, inProcess: true)
             owner.settings.projectsEnabled = true; executor.settings.projectsEnabled = true
             local = Space(name: "Owner", path: owner.dir.path)
             remote = Space(name: "Executor", path: executor.dir.path)
@@ -170,7 +170,7 @@ struct ProjectWorkerOpenThreadTests {
         let ownerWorker = try await r.resolvedTask(remote: false)
         let placed = try await r.resolvedTask(remote: true)
 
-        let viewer = try AppHarness(); defer { viewer.stop() }
+        let viewer = try AppHarness(inProcess: true); defer { viewer.stop() }
         viewer.settings.projectsEnabled = true
         _ = try await viewer.start()
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")

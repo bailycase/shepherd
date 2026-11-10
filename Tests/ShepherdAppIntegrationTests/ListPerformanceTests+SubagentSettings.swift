@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 extension ListPerformanceTests {
     @Test func openingTheSubagentManagerBuildsOnlyVisibleDefinitions() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let vm = try await app.start()
         let store = try SubagentFixtures.store(in: app.dir)

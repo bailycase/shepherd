@@ -27,7 +27,7 @@ struct TerminalRestoreTests {
         try JSONEncoder().encode(Fixture.state(spaces: [space], agents: [shown, hidden]))
             .write(to: directory.appendingPathComponent("state.json"))
 
-        let app = try AppHarness(directory: directory)
+        let app = try AppHarness(directory: directory, inProcess: true)
         defer { app.stop() }
         let vm = try await app.start(restoringAgents: true)
         #expect(vm.selectedAgentID == shown.agent.id)

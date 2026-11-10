@@ -77,7 +77,7 @@ struct SpaceTests {
 
     /// With the last project gone, nothing is selected: never the reserved designs space.
     @Test func deletingTheLastSpaceNeverSelectsTheDesignsSpace() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space("repo", path: app.dir.path)
         let agent = Fixture.agent(in: space)
@@ -99,7 +99,7 @@ struct SpaceTests {
     /// A space whose folder moves away is marked within the watch's interval, takes no thread,
     /// and Locate Folder… points it (and a child space inside it) at the folder's new place.
     @Test func aSpaceWhoseFolderMovesIsMarkedRefusesThreadsAndCanBeLocated() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let fm = FileManager.default
         let folder = app.dir.appendingPathComponent("monitor", isDirectory: true)

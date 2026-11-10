@@ -183,7 +183,7 @@ struct AgentLifecycleTests {
 
     /// pi exiting on its own keeps the agent with its layout: its pane waits, stopped, for Retry.
     @Test func anAgentWhosePiExitsKeepsItsLayoutUntilRetry() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = try await app.liveAgent(in: space)
@@ -214,7 +214,7 @@ struct AgentLifecycleTests {
 struct AgentLaunchTests {
     @Test func startingAnAgentSpawnsPiOverRPCAndSendsTheOpeningPrompt() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let other = Fixture.agent("other", in: space)
@@ -244,7 +244,7 @@ struct AgentLaunchTests {
 
     @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsPaneMounts() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         // A layout from a previous run: bound to a session that died with that run.

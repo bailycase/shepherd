@@ -88,7 +88,7 @@ struct ReviewFlowTests {
     /// review; without it, the agent's own directory. Comments belong to the diff they were
     /// made on, so a new target starts over and the same target keeps them.
     @Test func anAgentsReviewFollowsTheRequestedRepositoryAndStartsOverWhenItChanges() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let own = try dirtyRepo()
         let other = try makeScratchRepo(files: ["other.txt": "before\n"])

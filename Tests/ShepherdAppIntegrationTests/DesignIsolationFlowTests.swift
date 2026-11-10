@@ -26,7 +26,7 @@ struct DesignIsolationFlowTests {
 
     @Test(arguments: [false, true])
     func thePaletteListsOnlyAThreadsSubagents(designToolOn: Bool) async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let (vm, thread, drawer) = try await start(app, designToolOn: designToolOn)
 
@@ -42,7 +42,7 @@ struct DesignIsolationFlowTests {
 
     @Test(arguments: [false, true])
     func aBannersReviewNeverOpensChangesForADesignsAgent(designToolOn: Bool) async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let (vm, thread, drawer) = try await start(app, designToolOn: designToolOn)
 

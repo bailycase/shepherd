@@ -64,7 +64,7 @@ struct WorkspaceNavigationTests {
     /// A page covers the thread without unmounting it; picking a row brings the thread back as
     /// a flip, and the sidebar is asked to reveal that row.
     @Test func aPageHidesTheThreadAndPickingARowReturnsToIt() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -159,7 +159,7 @@ struct WorkspaceNavigationTests {
     /// delay and outside the four most recently shown, unmounts; selecting it again remounts it
     /// at once. An agent's pane is its RPC thread, so its pane session survives parking.
     @Test func hiddenLayoutsParkPastTheDelayAndUnparkWhenSelected() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         // The first agent's pi is running, so mounting its pane binds to it rather than spawning;
@@ -423,7 +423,7 @@ struct WorkspaceNavigationTests {
     /// A layout hidden and shown again is the same views where it was left: the Changes pane's
     /// diff is the same scroll view, scrolled to the same place.
     @Test func aHiddenLayoutKeepsItsViewsAndScrollPosition() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let workspace = try await HiddenAgentsWorkspace.open(hidden: 2, in: app)
         defer { workspace.close() }
@@ -568,7 +568,7 @@ struct WorkspaceNavigationTests {
     /// its values while hidden: its thread stops polling and its terminal stops drawing, and the
     /// agent shown instead starts both. The hosts stay in mount order.
     @Test func hiddenLayoutsSuspendTheirThreadAndStopTheirTerminalsDrawing() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []

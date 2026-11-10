@@ -131,7 +131,7 @@ struct RemoteBrowserDriveTests {
                           grace: TimeInterval? = nil, policy: BrowserViewerPolicy? = nil, capabilities: [String]? = nil,
                           diagnostic: (@Sendable (String) -> Void)? = nil) async throws -> Setup {
         diagnostic?("setup.local-fixture.before")
-        let local = try AppHarness()
+        let local = try AppHarness(inProcess: true)
         diagnostic?("setup.local-fixture.after")
         diagnostic?("setup.remote-fixture.before")
         let remote = try RemoteHostHarness()
@@ -369,7 +369,7 @@ struct RemoteBrowserDriveTests {
     @Test func theMostRecentViewerToClaimDrivesAndTheOtherIsToldAndCanTakeItBack() async throws {
         let s = try await setup()
         defer { s.stop() }
-        let second = try AppHarness()
+        let second = try AppHarness(inProcess: true)
         defer { second.stop() }
         let vm2 = try await second.start(with: Fixture.state(spaces: [Fixture.space(path: second.dir.path)], agents: []))
         let connection2 = try await s.remote.connect(second.remoteHosts, name: "build-01")

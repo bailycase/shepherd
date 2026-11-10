@@ -67,7 +67,7 @@ struct TerminalMotionTests {
     /// Dragging the window's edge resizes a hidden layout's shell once, when the drag ends: every
     /// grid it reports is a SIGWINCH to a process no one is looking at.
     @Test func hiddenShellsGetOneGridReportPerLiveResize() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let shown = try await app.liveAgent("shown", in: space, order: 0, auxiliary: 1)
@@ -154,7 +154,7 @@ struct ShellTerminalMotionTests {
     /// here, so it docks), not inside the thread's half (603pt, where it would overlay the
     /// thread): the shell narrows with the layout, once.
     @Test func aShellPaneBesideTheThreadResizesOncePerSidebarSlideAndOnceForTheRightPane() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = try await app.liveAgent("agent", in: space, auxiliary: 1)

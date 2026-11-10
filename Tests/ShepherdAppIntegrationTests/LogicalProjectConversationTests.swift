@@ -321,7 +321,7 @@ struct LogicalProjectConversationTests {
     private static func rig() async throws -> Rig {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         let folder = app.dir.appendingPathComponent("sample-app-api")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1253,7 +1253,7 @@ private static func chipsAndLinks() async throws {
         var state = Fixture.state(spaces: [space], agents: [fixture])
         state.projects = [project]
         try JSONEncoder().encode(state).write(to: stateURL)
-        let app = try AppHarness(directory: directory)
+        let app = try AppHarness(directory: directory, inProcess: true)
         defer { app.stop() }
         app.settings.projectsEnabled = true
         let vm = try await app.start()
@@ -1776,7 +1776,7 @@ private static func chipsAndLinks() async throws {
         var state = Fixture.state(spaces: [held], agents: [fixture])
         state.projects = [project]
         try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
-        let app = try AppHarness(directory: directory)
+        let app = try AppHarness(directory: directory, inProcess: true)
         defer { app.stop() }
         app.settings.projectsEnabled = true
         let sessionsDirectory = PiSessionFile.projectDirectory(forCwd: folder.path, sessionsRoot: app.server.pi.sessionsRoot)
@@ -1876,7 +1876,7 @@ private static func chipsAndLinks() async throws {
         var state = Fixture.state(spaces: [held], agents: [fixture])
         state.projects = [project]
         try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
-        let app = try AppHarness(directory: directory)
+        let app = try AppHarness(directory: directory, inProcess: true)
         defer { app.stop() }
         app.settings.projectsEnabled = true
         let vm = try await app.start()

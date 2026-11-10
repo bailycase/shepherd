@@ -12,7 +12,7 @@ import Testing
 @MainActor
 struct TerminalPanelTests {
     @Test func aNewTabIsATerminalBesideTheThreadAndTakesTheKeyboard() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -33,7 +33,7 @@ struct TerminalPanelTests {
 
     /// ⌘D in a terminal no longer splits it: it opens a new tab, from a terminal as from the thread.
     @Test func newTerminalFromATerminalOpensATabNotASplit() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -52,7 +52,7 @@ struct TerminalPanelTests {
     /// ⌘J in a thread with no terminal opens one in the thread's folder, shows the panel on it and
     /// gives it the keyboard: there is never an empty panel to show.
     @Test func showingTheTerminalWithNoneOpensOne() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
@@ -155,7 +155,7 @@ struct TerminalPanelTests {
     }
 
     @Test func closingATabClosesItsTerminalButNeverTheThread() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)

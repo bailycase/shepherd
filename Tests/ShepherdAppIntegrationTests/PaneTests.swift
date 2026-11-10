@@ -83,7 +83,7 @@ struct PaneControlTests {
 
     /// The list is the agent's terminals, oldest first; its own thread is never among them.
     @Test func listingTheTerminalsNeverIncludesTheThread() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 2)
@@ -101,7 +101,7 @@ struct PaneControlTests {
     }
 
     @Test func aLayoutsOnlyTerminalCannotBeClosed() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         // An agent from before its pi leaf was marked: its only leaf is an ordinary one.
@@ -138,7 +138,7 @@ struct PaneControlTests {
     /// The agent's terminal opens as a tab under its thread without moving the user, gets a live
     /// shell without any view drawing it, and runs the command the agent asked for.
     @Test func anAgentOpenedTerminalRunsItsCommandWithoutMovingTheUser() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let background = Fixture.agent("background", in: space, order: 0)
@@ -292,7 +292,7 @@ struct PaneControlTests {
     /// The host has no window here, so no view draws anything: a terminal another device opens (a
     /// remote open, the Browser's Start) still gets its shell and runs its command.
     @Test func aTerminalAnotherDeviceOpensStartsWithNoViewDrawingIt() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space)
@@ -318,7 +318,7 @@ struct PaneControlTests {
     /// A terminal opened beside a thread to run a command gets its shell, and the command typed
     /// into it, before any view draws it.
     @Test func aTerminalOpenedBesideAThreadToRunACommandStartsWithoutAView() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
@@ -342,7 +342,7 @@ struct PaneControlTests {
     /// A terminal no view has measured starts at the grid this Mac's terminals last reported, not
     /// at 80×24, and keeps it as its own until its surface reports one.
     @Test func aTerminalNoViewMeasuredStartsAtTheLastLocalGrid() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let measured = Fixture.agent("measured", in: space, order: 0, auxiliary: 1)
@@ -417,7 +417,7 @@ struct PaneControlTests {
 @MainActor
 struct PaneLayoutTests {
     @Test func aNewTerminalIsATabUnderTheThreadInItsFolderAndTakesTheKeyboard() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)

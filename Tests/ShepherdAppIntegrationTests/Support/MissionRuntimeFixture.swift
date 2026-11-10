@@ -41,7 +41,7 @@ final class MissionRuntimeFixture {
             heads.append(try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines))
         }
         repos = sources; remotes = destinations; spaces = selected; initialHeads = heads
-        app = try AppHarness(modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) })
+        app = try AppHarness(modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) }, inProcess: true)
         try installExecutables()
     }
 
