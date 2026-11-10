@@ -68,7 +68,7 @@ Integration and preview targets use `Tests/ShepherdTestSupport`, which re-export
   browser tests. Never the network.
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout` saying
   what never happened. Never sleep a fixed amount.
-- `AppHarness`: the Mac app's stores and views over a scratch server, with a per-harness pi home.
+- `AppHarness`: the Mac app's stores and views as the client of a scratch server served as `Shepherd --host` serves (`ShepherdHost.Services`) over a real `host.sock`, with a per-harness pi home. `inProcess: true` marks a test not yet moved off the in-process app.
 - `OffscreenWindow`, `ControlPress`: an off-screen window and a press through the accessibility
   tree (below).
 - `ScrollTrace`: a thread's scroll view recorded as it changes, for scroll-rule tests.
