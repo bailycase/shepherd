@@ -521,10 +521,18 @@ struct WorkspaceNavigationTests {
             await server.listSessions().first { $0.id == sessionID }.map { "\($0.rows) \($0.cols)" } == drawn.last
         }
 
-        let typed = try await app.extensionRequest(.sendPaneInput(id: 31, agentID: unopened.agent.id, paneID: terminal.id, text: "stty size", submit: true))
-        guard case .ok = typed else { Issue.record("unexpected reply \(typed)"); return }
-        let after = try await readTerminal(terminal.id, for: unopened, in: app, until: { Self.grids(in: $0).count == 2 })
-        #expect(Self.grids(in: after).last == drawn.last, "a second stty size prints the surface's own grid")
+        // The shell's size follows the surface's report a moment later, so a command typed meanwhile can still see the old one.
+        var attempt = 0, printed = ""
+        try await eventuallyAsync("a command typed in the shell to print the grid its surface measured", timeout: .seconds(20)) {
+            attempt += 1
+            let key = "grid\(attempt)"
+            let typed = try await app.extensionRequest(.sendPaneInput(id: 31, agentID: unopened.agent.id, paneID: terminal.id, text: "echo \(key)=$(stty size)", submit: true))
+            guard case .ok = typed else { return false }
+            let screen = try await self.readTerminal(terminal.id, for: unopened, in: app, until: { $0.contains { $0.hasPrefix("\(key)=") } })
+            printed = screen.first { $0.hasPrefix("\(key)=") }.map { String($0.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces) } ?? ""
+            return printed == drawn.last
+        }
+        #expect(printed == drawn.last, "the shell prints the grid its surface measured")
     }
 
     /// An agent nobody has opened has no layout and needs none: a status report reaches its
