@@ -16,6 +16,20 @@ extension ShepherdViewModel {
     static let systemBuildBrief = DesignBrief.systemBuild
 
     var designSystemReader: DesignSystemReader {
+        // As the background host's client, its systems are the page's own, read through it.
+        if Self.routesThisMacLocally, let library = localHost?.designs {
+            return DesignSystemReader(summaries: { @MainActor in
+                await library.refresh()
+                return library.listing?.systems ?? []
+            }, system: { @MainActor namespace in
+                try await library.system(namespace)
+            }, resync: { @MainActor namespace in
+                guard case .systemSynced(let result) = try await Self.remoteDesign(library, .resyncSystem(namespace: namespace)) else {
+                    throw RemoteDesignReply.unexpected
+                }
+                return result
+            })
+        }
         let server = server
         return DesignSystemReader(summaries: { await server.designSystemSummaries() },
                                   system: { try await server.designSystem($0) },
@@ -104,6 +118,16 @@ extension ShepherdViewModel {
         Task {
             defer { startingSystemBuilds.remove(spaceID) }
             do {
+                // As the background host's client the host makes the build and starts its agent.
+                if Self.routesThisMacLocally, let library = localHost?.designs {
+                    guard case .created(let build, _) = try await Self.remoteDesign(library, .buildSystem(spaceID: spaceID)) else {
+                        throw RemoteDesignReply.unexpected
+                    }
+                    // ponytail: polls for the host's push, as `startHostedAgent` does.
+                    for _ in 0..<100 where design(build) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                    lastDesignSystem = .build(build)
+                    return
+                }
                 let design = Design(name: space.name, createdAt: SessionServer.nowMilliseconds(), buildsSystem: true,
                                     sourceSpaceID: space.id)
                 _ = try await server.createDesign(design)
@@ -172,7 +196,10 @@ extension ShepherdViewModel {
         let revision = "\(summary.info.revision)/\(summary.builtIn)"
         let specimens = designRendering.specimens
         guard !specimens.has(namespace, revision: revision) else { return }
-        guard let files = try? await server.designSystemContents(namespace) else { return }
+        let read: [String: Data]?
+        if Self.routesThisMacLocally, let library = localHost?.designs { read = try? await library.systemFiles(namespace) }
+        else { read = try? await server.designSystemContents(namespace) }
+        guard let files = read else { return }
         let tokens = designSystems.tokens(namespace)
         let background = DesignSystemPresentation.background(tokens)?.light
         specimens.update(namespace, revision: revision, files: files,

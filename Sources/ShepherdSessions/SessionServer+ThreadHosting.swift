@@ -124,9 +124,9 @@ extension SessionServer {
         onNativeThreadDemand = { [weak self] agentID in
             Task { @MainActor in await self?.startThreadPi(agentID, hosting: hosting) }
         }
-        serveDesigns(DesignHosting(startAgent: { [weak self] design, brief in
+        serveDesigns(DesignHosting(startAgent: { [weak self] design, brief, options in
             guard let self else { throw RemoteCreateAgentError("host is shutting down") }
-            return try await self.startDesignAgent(design, brief: brief, hosting: hosting)
+            return try await self.startDesignAgent(design, brief: brief, options: options, hosting: hosting)
         }))
         // No web view here: the app's window draws boards.
         relayDesignDrawingToApp()

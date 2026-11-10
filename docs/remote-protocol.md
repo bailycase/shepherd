@@ -366,9 +366,13 @@
     (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
     "Build one from a repo" in a host's space), references to the host's own designs in its
     threads (`design.references.v1`), adding or discarding the boards those threads drew
-    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), and a
-    pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
-    experiment turns on or off).
+    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), the notes
+    threads left on a design (`design.threadNotes.v1`), a design's Git sharing and Open from Git
+    (`design.git.v1`), and a pushed `designChanged` for the designs a client watches
+    (`capabilitiesChanged` when the experiment turns on or off). This Mac's own app alone may
+    import from a path on the shared disk (`importPrepare`, `importConfirm`, `importDiscard`) and
+    read the whole @ picker catalog (`mentionCatalog`); it alone gets `designNotesChanged`,
+    `designGitChanged` and its import's `designImportProgress` pushes.
     Answered by the server itself; boards render on the client
   - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
     drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists

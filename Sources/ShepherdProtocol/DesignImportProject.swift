@@ -13,7 +13,7 @@ extension DesignImport {
 
 /// A board, or a file of the project, that points outside it (ImportFailed › links outside):
 /// where it is, and what it points to.
-public struct DesignImportLink: Hashable, Sendable {
+public struct DesignImportLink: Hashable, Sendable, Codable {
     public var board: String
     public var target: String
 
@@ -24,7 +24,7 @@ public struct DesignImportLink: Hashable, Sendable {
 }
 
 /// A board canvas.json lists that can't be read (ImportFailed › unreadable board).
-public struct DesignImportUnreadable: Hashable, Sendable {
+public struct DesignImportUnreadable: Hashable, Sendable, Codable {
     public var path: String
     /// Its title on the canvas, else its path.
     public var title: String
@@ -40,7 +40,7 @@ public struct DesignImportUnreadable: Hashable, Sendable {
 
 /// Why a project didn't become a design. Nothing is ever half imported: every failure leaves
 /// nothing behind. The words are ImportFailed's.
-public enum DesignImportFailure: Error, Hashable, Sendable, CustomStringConvertible {
+public enum DesignImportFailure: Error, Hashable, Sendable, Codable, CustomStringConvertible {
     /// No canvas.json at the top of the ZIP or folder.
     case notAProject
     /// The project unpacked is over `DesignImport.maxProjectBytes`: checked before a ZIP is
@@ -377,7 +377,7 @@ public enum DesignArchive {
 
 /// A project read, checked and staged, waiting for the viewer's choice (ImportAgain, or
 /// ImportFailed's unreadable board): what the dialogs name. Nothing is in Designs yet.
-public struct DesignImportPreview: Hashable, Sendable, Identifiable {
+public struct DesignImportPreview: Hashable, Sendable, Codable, Identifiable {
     public var id: UUID
     /// The ZIP's or folder's name ("checkout-funnel.zip").
     public var file: String
@@ -392,7 +392,7 @@ public struct DesignImportPreview: Hashable, Sendable, Identifiable {
     public var unreadable: [DesignImportUnreadable]
     public var origin: DesignImportOrigin
 
-    public struct System: Hashable, Sendable {
+    public struct System: Hashable, Sendable, Codable {
         public var namespace: String
         public var title: String
         /// A system this host already has with the same files: the import uses it.
@@ -425,7 +425,7 @@ public struct DesignImportPreview: Hashable, Sendable, Identifiable {
 
 /// How an import is going (ImportProgress): its checks, then its boards as they land, then the
 /// design opening.
-public enum DesignImportProgress: Hashable, Sendable {
+public enum DesignImportProgress: Hashable, Sendable, Codable {
     case checking(file: String)
     /// Boards copied so far, of all; the project's title and its first system's.
     case boards(done: Int, of: Int, title: String, system: String?)
