@@ -1172,7 +1172,7 @@ struct RemoteProtocolConstantTests {
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.
-            RemoteProtocol.missionsCapability,
+            RemoteProtocol.missionsCapability, RemoteProtocol.missionsTrainCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)

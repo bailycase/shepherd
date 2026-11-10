@@ -394,7 +394,9 @@
     the app sends these only to the background host on its own Mac). Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
-    `consentFingerprint` the client showed, and the host checks both again. Missions never ride
+    `consentFingerprint` the client showed, and the host checks both again. A host with
+    `missions.train.v1` also serves a published mission's merge train (`MissionRun.train` in the
+    record, `pauseTrain` and `resumeTrain`); the iPhone and iPad show the train only there. Missions never ride
     `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
     its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
     and executions) as the app holds it in process; a capable client gets a pushed
