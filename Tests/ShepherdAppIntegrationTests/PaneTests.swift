@@ -292,7 +292,7 @@ struct PaneControlTests {
     /// The host has no window here, so no view draws anything: a terminal another device opens (a
     /// remote open, the Browser's Start) still gets its shell and runs its command.
     @Test func aTerminalAnotherDeviceOpensStartsWithNoViewDrawingIt() async throws {
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space)
@@ -436,7 +436,7 @@ struct PaneLayoutTests {
     }
 
     @Test func closingTheFocusedTerminalReturnsFocusToTheThread() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -468,7 +468,7 @@ struct PaneLayoutTests {
     }
 
     @Test func layoutWritesPersistInOrderAndARejectedWriteRollsBack() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let first = LeafPane(cwd: space.path), second = LeafPane(cwd: space.path)
@@ -486,7 +486,7 @@ struct PaneLayoutTests {
     }
 
     @Test func restructuringALayoutKeepsItsTerminalsSessionBindings() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let sessionID = SessionID()

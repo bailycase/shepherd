@@ -12,7 +12,7 @@ import ShepherdTestSupport
 @MainActor
 struct ProjectEditingFlowTests {
     @Test func editToolsMoveOrganizationButNotFoldersAndDeletionOnlyRequestsConfirmation() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let own = getpid()
         app.server.extensionPeerCheck = { _, peer in peer == own }
@@ -98,7 +98,7 @@ struct ProjectEditingFlowTests {
     }
 
     @Test func explicitNestedParentsAppearAtEveryLevelAndRootOverrideDoesNotMoveData() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let parent = Fixture.space("Parent", path: app.dir.appendingPathComponent("parent").path)
         let child = Fixture.space("Child", path: app.dir.appendingPathComponent("child").path)

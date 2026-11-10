@@ -59,7 +59,7 @@ struct ProjectCoordinatorFlowTests {
 
     @Test func actualAppLauncherKeepsTheCoordinatorIsolatedAndDoesNotSelectAnOrdinaryThread() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-opus-4-5", "anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-opus-4-5") }); defer { app.stop() }
+        let app = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-opus-4-5", "anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-opus-4-5", inProcess: true) }); defer { app.stop() }
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment; set before start so the view model's binding applies it
         let vm = try await app.start()
         let id = ProjectID()

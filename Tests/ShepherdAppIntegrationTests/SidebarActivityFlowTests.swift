@@ -205,7 +205,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteChildRefreshKeepsADoneParentWorkingAndThenCreatesAnUnseenCompletion() async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
@@ -237,7 +237,7 @@ struct SidebarActivityFlowTests {
 
     @Test(arguments: [(false, "running"), (true, "running"), (true, "complete"), (true, "removed"), (true, "deleted")])
     func disconnectingOrReconnectingDuringRemoteChildWorkDoesNotInventACompletion(disconnect: Bool, childState: String) async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
