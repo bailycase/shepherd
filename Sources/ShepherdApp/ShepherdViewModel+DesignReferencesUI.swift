@@ -89,7 +89,7 @@ extension ShepherdViewModel {
             startDesign: { [weak self] in self?.openNewDesign() })
         // As the background host's client, what the host keeps and reads of its designs' pieces
         // comes from it, as for a host's thread; the pictures, opening and sending stay the app's own.
-        if Self.routesThisMacLocally, let host = localHost {
+        if let host = localHost {
             let remote = remoteReferenceIO(RemoteAgentRef(hostID: host.id, agentID: agentID))
             io.payload = remote.payload
             io.freshness = remote.freshness

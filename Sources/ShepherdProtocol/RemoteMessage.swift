@@ -1322,6 +1322,11 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A line the background host says in one of its threads (its account rotation), pushed only
     /// to this Mac's app that shows its threads as its own; never persisted.
     case threadNotice(agentID: AgentID, message: String)
+    /// Why one of the background host's agents waits with its pi stopped (it couldn't start, or
+    /// stopped on its own), or nil once pi starts again. Pushed only to this Mac's app that shows
+    /// its threads as its own, as it happens and for every waiting agent when the app connects:
+    /// the thread's can't-start and sign-in cards, opened or not, as the in-process session's exit.
+    case agentStartProblem(agentID: AgentID, problem: NativeStartProblem?)
     /// The background host's automations changed: a run's log, or a trigger's status. Pushed only
     /// to this Mac's app that shows its threads as its own, which reads them again. A hint; it
     /// carries nothing.
@@ -1341,7 +1346,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case url, push, missionID, live
         case token, jobFile, job
         case title, body
-        case page, tool
+        case page, tool, problem
     }
 
     private enum Kind: String, Codable {
@@ -1355,7 +1360,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, agentStartProblem, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress
     }
 
     public init(from decoder: Decoder) throws {
@@ -1392,6 +1397,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .toolFinished(agentID: try c.decode(AgentID.self, forKey: .agentID), tool: try c.decode(String.self, forKey: .tool))
         case .threadNotice:
             self = .threadNotice(agentID: try c.decode(AgentID.self, forKey: .agentID), message: try c.decode(String.self, forKey: .message))
+        case .agentStartProblem:
+            self = .agentStartProblem(agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                      problem: try c.decodeIfPresent(NativeStartProblem.self, forKey: .problem))
         case .automationsChanged:
             self = .automationsChanged
         case .automationNotify:
@@ -1704,6 +1712,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.threadNotice, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(message, forKey: .message)
+        case .agentStartProblem(let agentID, let problem):
+            try c.encode(Kind.agentStartProblem, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(problem, forKey: .problem)
         case .automationsChanged:
             try c.encode(Kind.automationsChanged, forKey: .type)
         case .automationNotify(let title, let body):

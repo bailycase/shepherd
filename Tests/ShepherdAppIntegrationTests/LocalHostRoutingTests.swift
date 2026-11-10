@@ -55,9 +55,10 @@ struct LocalHostRoutingTests {
         let space = Space(name: "acme-web", path: repo.path)
         try await host.server.addSpace(space)
         for (index, name) in names.enumerated() {
-            let pane = LeafPane(cwd: repo.path)
+            let id = AgentID()
+            let pane = LeafPane(cwd: repo.path, agentID: id)
             let tab = ShepherdCore.Tab(spaceID: space.id, order: index, layout: .leaf(pane))
-            try await host.server.addAgent(Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true), withTab: tab)
+            try await host.server.addAgent(Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true), withTab: tab)
         }
         if let worktree {
             let checkout = try GitWorktree.add(repo: repo.path, branch: worktree)
@@ -84,8 +85,7 @@ struct LocalHostRoutingTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
-        // As `ShepherdApp` connects it, with `SHEPHERD_THIS_MAC_LOCAL` at its default.
-        #expect(ShepherdViewModel.routesThisMacLocally)
+        // As `ShepherdApp` connects it.
         await beforeConnect(vm)
         vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) {
@@ -285,7 +285,7 @@ struct LocalHostRoutingTests {
             defer { s.stop() }
             let id = s.host.server.state.agents[0].id
             s.vm.requestDeleteAgent(id)
-            #expect(s.vm.worktreeDeleteTarget == id && s.vm.remoteWorktreeSheet == nil && s.vm.thisMacWorktreeDelete == nil)
+            #expect(s.vm.worktreeDeleteTarget == id && s.vm.remoteWorktreeSheet == nil)
         }
         // A remembered removal with nothing to lose just deletes.
         do {
@@ -367,5 +367,72 @@ struct LocalHostRoutingTests {
         try await eventuallyAsync("the host to know the watched thread") {
             (try? await server.enqueue { @Sendable in server.pushNotifications.focused }) == agent.id
         }
+    }
+
+    /// A thread nobody opened here whose pi can't start shows its sign-in card and its Needs you
+    /// row, as in process: one that stopped while the app was connected, and both for an app that
+    /// connects afterwards. Retry everyone waiting starts each again on the host.
+    @Test func startProblemsOfUnopenedThreadsReachTheAppAndRetryEveryoneStartsThem() async throws {
+        try StubPi.installAsEngine()
+        let s = try await Self.setUp(agents: ["Fix the login redirect", "Upgrade the payments SDK"])
+        defer { s.stop() }
+        let server = s.host.server
+        let ids = server.state.agents.map(\.id)
+        let startup = URL(fileURLWithPath: s.space.path).appendingPathComponent("stub-pi-startup.json")
+        try JSONSerialization.data(withJSONObject: [
+            "exit": "1", "stderr": "No models available. Use /login to log into a provider via OAuth or API key.",
+        ]).write(to: startup)
+        // Another device opens each thread on the host; this app never does.
+        for id in ids { Task { _ = try? await server.nativeThread(agentID: id, request: .snapshot()) } }
+        try await eventuallyOnMain("both threads to wait for a sign-in", timeout: .seconds(30)) {
+            Set(s.vm.notSignedIn.keys) == Set(ids) && s.vm.cannotStart == Set(ids)
+        }
+        #expect(ids.allSatisfy { s.vm.threadStores.existing(for: $0) == nil }, "the app opened neither thread")
+        #expect(Set(s.vm.sidebarLists.needsYou.map(\.id)) == Set(ids.map { SidebarRowID.local($0) }))
+
+        // An app that connects now hears both at once.
+        let late = try Self.connectApp(to: s.host)
+        defer { late.stop() }
+        try await eventuallyOnMain("the late app to hear both", timeout: .seconds(30)) {
+            Set(late.vm.notSignedIn.keys) == Set(ids) && late.vm.cannotStart == Set(ids)
+        }
+
+        try FileManager.default.removeItem(at: startup)
+        #expect(s.vm.retrySignedOutAgents(nil) == 2)
+        try await eventuallyOnMain("both threads to start again and their cards to go", timeout: .seconds(30)) {
+            s.vm.notSignedIn.isEmpty && s.vm.cannotStart.isEmpty && late.vm.notSignedIn.isEmpty && late.vm.cannotStart.isEmpty
+        }
+        try await eventuallyOnMain("both threads' pis to serve on the host", timeout: .seconds(30)) {
+            server.state.agents.allSatisfy { $0.lastFailure == nil }
+        }
+    }
+
+    /// Another app on this Mac taking `host`'s workspace as its own.
+    @MainActor
+    struct App {
+        let vm: ShepherdViewModel
+        let hosts: RemoteHostStore
+        let dir: URL
+        func stop() {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: dir)
+        }
+    }
+
+    static func connectApp(to host: ScratchServer) throws -> App {
+        let token = try String(contentsOf: host.dir.appendingPathComponent("remote-token"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let dir = try makeScratchDirectory("cli")
+        let defaults = ScratchDefaults()
+        let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
+        let vm = ShepherdViewModel(
+            server: BackgroundHostClient.idleServer(directory: dir), ownsWorkspace: false, settings: AppSettings(store: defaults),
+            keybindings: KeybindingsStore(store: defaults),
+            themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            hooks: HooksModel(home: dir.appendingPathComponent("hooks-home").path, support: dir.appendingPathComponent("hooks-support")),
+            apps: AppsModel(home: dir.appendingPathComponent("apps-home").path))
+        vm.connectLocalHost(socket: host.dir.appendingPathComponent("h.sock").path, token: token)
+        return App(vm: vm, hosts: hosts, dir: dir)
     }
 }

@@ -425,8 +425,8 @@ extension ShepherdViewModel {
             if let ref = localRef(id) {
                 // The host removes the checkout, bound to the loss it reports.
                 Task {
-                    let info = try? await thisMacWorktreeInfo(ref)
-                    if let info, info.warning == nil { deleteThisMacWorktreeAgent(ref, removing: info) }
+                    let info = try? await localHostWorktreeInfo(ref)
+                    if let info, info.warning == nil { deleteLocalHostWorktreeAgent(ref, removing: info) }
                     else { hostWorktreeInfo = info; worktreeDeleteTarget = id }
                 }
                 return
@@ -462,8 +462,8 @@ extension ShepherdViewModel {
             let info = hostWorktreeInfo
             Task {
                 do {
-                    let removing = if let info { info } else { try await thisMacWorktreeInfo(ref) }
-                    deleteThisMacWorktreeAgent(ref, removing: removing)
+                    let removing = if let info { info } else { try await localHostWorktreeInfo(ref) }
+                    deleteLocalHostWorktreeAgent(ref, removing: removing)
                 }
                 catch { fail("Couldn’t delete the worktree", error) }
             }
