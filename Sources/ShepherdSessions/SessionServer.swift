@@ -260,7 +260,8 @@ public final class SessionServer: @unchecked Sendable {
     /// paths.
     public static let shared = SessionServer(
         socketPath: ShepherdPaths.socketURL().path,
-        stateURL: ShepherdPaths.stateURL()
+        stateURL: ShepherdPaths.stateURL(),
+        refreshesModelCatalog: true
     )
 
     /// PTY output for an attached session. Delivered on the main actor.
@@ -764,6 +765,7 @@ public final class SessionServer: @unchecked Sendable {
     var projectFolderOperation = false
     private var projectDirectoryRequests = 0
     private let modelCatalog: ModelCatalog
+    private let refreshesModelCatalog: Bool
     /// Which pi this server's agents run, and its home (`PiSetup`).
     public let pi: PiSetup
     /// Where each delivered message came from, per pi session (support directory).
@@ -1122,7 +1124,10 @@ public final class SessionServer: @unchecked Sendable {
     /// skills live: the `skills/` of `pi`'s home, the only folder its pi reads skills from, unless
     /// a test passes its own; `piSkills` stands in for an older host's outside skills.
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
+    /// `refreshesModelCatalog` refreshes `pi`'s pi.dev catalog overlay from `start()` and daily
+    /// (`PiModelCatalog.refreshDaily`); only the app's own server, so no test reaches the network.
     public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
+                refreshesModelCatalog: Bool = false,
                 skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash,
                 triggerSource: AutomationTriggers.Source? = nil, forgeRunner: ForgeService.Runner? = nil) {
@@ -1135,6 +1140,7 @@ public final class SessionServer: @unchecked Sendable {
                                              systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
                                              globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } }, pi: pi)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
+        self.refreshesModelCatalog = refreshesModelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.agentRecovery = AgentRecoveryStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("agent-recovery", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
@@ -1286,6 +1292,7 @@ public final class SessionServer: @unchecked Sendable {
                 acceptOnQueue()
                 recoverCommittedProjectPublications()
             }
+            if refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()

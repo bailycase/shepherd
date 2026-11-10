@@ -219,6 +219,43 @@ struct EngineSmokeTests {
         #expect(!FileManager.default.fileExists(atPath: home.sessions.path), "reading capabilities creates no saved conversation")
     }
 
+    /// pi.dev's catalog overlay reaches the host's catalog: `refresh()` runs the real engine's
+    /// `update --models` through the launcher (whose `PI_OFFLINE` stays), against a local stand-in
+    /// for pi.dev (`catalog-stub.mjs`, which refuses every other host), and the next ask lists
+    /// the model the stand-in added, beside the bundled ones.
+    @Test func aRefreshOverlaysPiDevsCatalogOnTheHostsCatalog() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("engine-overlay")
+        let home = PiHome(directory: scratch.appendingPathComponent("pi"), engine: .bundled(engine), userHome: scratch.path)
+        try home.install()
+        try Data(#"{"anthropic":{"type":"api_key","key":"fixture-only"}}"#.utf8).write(to: home.directory.appendingPathComponent("auth.json"))
+        let published = scratch.appendingPathComponent("catalog.json")
+        try Data("{}".utf8).write(to: published)
+        let stub = try RPCProcess(executable: engine.node.path,
+                                  arguments: [EngineSmoke.repository.appendingPathComponent("Tests/Extensions/fixtures/catalog-stub.mjs").path,
+                                              scratch.path, published.path],
+                                  directory: scratch, environment: ["PATH": "/usr/bin:/bin"])
+        defer { stub.stop() }
+        try await eventually("the stand-in listens") { !stub.records.isEmpty || !stub.isRunning }
+        let started = try #require(stub.records.first, "\(stub.errors)")
+        let proxy = try #require(started["proxy"] as? String), ca = try #require(started["ca"] as? String)
+        let environment = ["HOME": scratch.path, "TMPDIR": scratch.path + "/", "ZDOTDIR": scratch.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                           "HTTPS_PROXY": proxy, "NODE_EXTRA_CA_CERTS": ca]
+        let catalog = PiModelCatalog(home: home, timeout: 20, environment: environment, ready: { true })
+        let id = "anthropic/claude-fixture-9"
+        let bundled = Set(catalog.entries().map(\.id))
+        #expect(bundled.contains { $0.hasPrefix("anthropic/") }, "the bundled catalog")
+        #expect(!bundled.contains(id))
+
+        try Data(#"{"anthropic":[{"id":"claude-fixture-9","name":"Fixture 9","api":"anthropic-messages","reasoning":true,"input":["text"],"cost":{"input":8,"output":40,"cacheRead":0,"cacheWrite":0},"contextWindow":1000000,"maxTokens":128000}]}"#.utf8)
+            .write(to: published)
+        #expect(catalog.refresh())
+        let entry = try #require(catalog.entries().first { $0.id == id }, "the overlaid model")
+        #expect(entry.contextWindow == 1_000_000)
+        #expect(catalog.listing().models.contains(id), "the listing the host reports")
+        #expect(bundled.isSubset(of: catalog.entries().map(\.id)), "the overlay adds to the bundled catalog")
+    }
+
     /// Ad-hoc builds (the Dev scheme, CI's unsigned releases) run node without the hardened
     /// runtime. A Developer ID build turns it on, and V8 then needs the engine's entitlements:
     /// this signs a scratch copy the way `scripts/sign-app.sh` does, with the runtime, and runs it.
@@ -758,6 +795,7 @@ final class RPCProcess: @unchecked Sendable {
     }
 
     var errors: String { String(decoding: stderr.current, as: UTF8.self) }
+    var records: [[String: Any]] { lines.current.records }
     var isRunning: Bool { process.isRunning }
     var processIdentifier: Int32 { process.processIdentifier }
 
