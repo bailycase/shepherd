@@ -611,6 +611,71 @@ struct PushNotificationsTests {
         #expect(last["preview"] as? String == "Reply to tools:0 third")
     }
 
+    /// Mute, from the app over `host.sock` as from a phone (`RemoteAgentAction.mutePushes`): the host keeps it on the
+    /// thread, and its settled turns post nothing to any phone until it is unmuted.
+    @Test func aThreadMutedOnTheBackgroundHostPostsNothingUntilUnmuted() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        // The background host serves the app's threads itself (`Shepherd --host`).
+        await MainActor.run {
+            host.server.serveThreads(ThreadHosting(defaults: {
+                ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                       worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+            }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        }
+        let socket = host.dir.appendingPathComponent("h.sock").path, tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let events = try record(host.server)
+        let pi = try await PiAgent.launch(on: host)
+        let app = RemoteHostClient(localSocket: socket)
+        _ = try await app.connect(host: "", port: 0, token: try String(contentsOf: tokenURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), clientName: "Shepherd")
+        defer { app.disconnect() }
+        #expect(app.capabilities.contains(RemoteProtocol.pushMuteCapability))
+        func turn(_ text: String) async throws {
+            _ = try await pi.send(text, from: try await pi.ready())
+            _ = try await pi.snapshot("\(text) settled") { s in !s.running && s.messages.contains { $0.blocks.contains { $0.text == "Reply to \(text)" } } }
+        }
+
+        try await app.agentAction(agentID: pi.agent.id, action: .mutePushes(true))
+        #expect(host.server.state.agents.first { $0.id == pi.agent.id }?.pushMuted == true)
+        try await turn("tools:0 muted")
+        try host.server.queue.sync {}
+        #expect(events.current.isEmpty, "a muted thread posts nothing")
+
+        try await app.agentAction(agentID: pi.agent.id, action: .mutePushes(false))
+        #expect(host.server.state.agents.first { $0.id == pi.agent.id }?.pushMuted == false)
+        try await turn("tools:0 heard")
+        try await eventually("the unmuted thread's push") { events.current == ["done"] }
+    }
+
+    /// An automation's failed run says so under the automation's name: its thread's failed turn, and a run that
+    /// never started (no thread, so the push names and opens the automation).
+    @Test func anAutomationsFailedRunPushesAutomationFailed() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        let events = try record(host.server, payloads: payloads)
+        let pi = try await PiAgent.launch(on: host)
+        let watcher = Automation(name: "pr-watch acme-web", prompt: "Watch the PR", cwd: host.dir.path, agentID: pi.agent.id)
+        let triggered = Automation(name: "issue triage", prompt: "Triage", cwd: host.dir.path)
+        host.server.queue.sync { host.server.store.updateLive { $0.automations = [watcher, triggered] } }
+
+        _ = try await pi.send("provider-error", from: try await pi.ready())
+        _ = try await pi.snapshot { $0.running }
+        try Data().write(to: host.dir.appendingPathComponent("fail-turn"))
+        try await eventually("the run's failed turn") { events.current == ["error"] }
+        #expect(payloads.current[0]["title"] == "pr-watch acme-web" && payloads.current[0]["subtitle"] == "Automation failed")
+        #expect(payloads.current[0]["group"] == "automation:\(watcher.id.rawValue)" && payloads.current[0]["agentID"] == pi.agent.id.rawValue)
+        #expect(payloads.current[0]["preview"] == "529 overloaded")
+
+        await host.server.recordAutomationFailure(triggered.id, trigger: "acme-web#12 opened", triggerURL: nil, message: "Couldn't make the worktree")
+        try await eventually("the run that never started") { events.current == ["error", "error"] }
+        #expect(payloads.current[1]["title"] == "issue triage" && payloads.current[1]["subtitle"] == "Automation failed")
+        #expect(payloads.current[1]["agentID"] == triggered.id.rawValue && payloads.current[1]["group"] == "automation:\(triggered.id.rawValue)")
+        #expect(payloads.current[1]["preview"] == "Couldn't make the worktree")
+    }
+
     @Test func retryInsideATurnDoesNotNotifyUntilFinalSettlement() async throws {
         let host = try ScratchServer.fresh()
         defer { host.stop() }
