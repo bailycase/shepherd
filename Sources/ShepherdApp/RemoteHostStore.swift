@@ -256,9 +256,20 @@ final class RemoteHostStore {
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
     @ObservationIgnored var onLocalSettingsChanged: ((RemoteSettingsPage) -> Void)?
+    /// The background host on this Mac's design systems changed.
+    @ObservationIgnored var onLocalDesignSystemsChanged: (() -> Void)?
     /// A tool call, or a line said, in a thread of the background host on this Mac.
     @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
     @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
+    /// The background host on this Mac's automations changed, or one of them posts a banner.
+    @ObservationIgnored var onLocalAutomationsChanged: (() -> Void)?
+    @ObservationIgnored var onLocalAutomationNotify: ((String, String) -> Void)?
+    /// A design's thread notes changed on the background host on this Mac.
+    @ObservationIgnored var onLocalDesignNotesChanged: ((DesignID) -> Void)?
+    /// A design's Git state changed on the background host on this Mac.
+    @ObservationIgnored var onLocalDesignGitChanged: ((DesignID) -> Void)?
+    /// How this Mac's own Import is going on the background host on this Mac.
+    @ObservationIgnored var onLocalDesignImportProgress: ((DesignImportProgress) -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
@@ -295,9 +306,8 @@ final class RemoteHostStore {
     /// threads are the app's own (`hidesLocalHost`).
     var connections: [Connection] { hidesLocalHost ? pairedConnections : allConnections }
     /// The background host on this Mac is transport only: its workspace is the app's own
-    /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it. For now the
-    /// Designs and Automations pages still do, through `allConnections`: the app
-    /// leaves what they own to them (`ShepherdViewModel.mirrored`).
+    /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it. Lookups by host
+    /// id (`allConnections`) still find it: requests the app routes to it go that way.
     var hidesLocalHost = false
     /// The background host on this Mac while its workspace is the app's own (`hidesLocalHost`):
     /// This Mac's Settings pages read and change its stores, never the idle in-process server's.
@@ -528,9 +538,29 @@ final class RemoteHostStore {
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalToolFinished?(agentID, tool)
         }
+        client.onDesignNotesChanged = { [weak self, weak connection] designID in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalDesignNotesChanged?(designID)
+        }
+        client.onDesignGitChanged = { [weak self, weak connection] designID in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalDesignGitChanged?(designID)
+        }
+        client.onDesignImportProgress = { [weak self, weak connection] step in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalDesignImportProgress?(step)
+        }
         client.onThreadNotice = { [weak self, weak connection] agentID, message in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalThreadNotice?(agentID, message)
+        }
+        client.onAutomationsChanged = { [weak self, weak connection] in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAutomationsChanged?()
+        }
+        client.onAutomationNotify = { [weak self, weak connection] title, body in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAutomationNotify?(title, body)
         }
         client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
@@ -563,9 +593,10 @@ final class RemoteHostStore {
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.changed(design, revision: revision, commentsRevision: comments)
         }
-        client.onDesignSystemsChanged = { [weak connection] in
+        client.onDesignSystemsChanged = { [weak self, weak connection] in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.systemsChanged()
+            if connection.isThisMac { self?.onLocalDesignSystemsChanged?() }
         }
         client.onMissionChanged = { [weak connection] mission, revision in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }

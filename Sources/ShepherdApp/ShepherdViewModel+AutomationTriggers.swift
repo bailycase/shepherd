@@ -15,8 +15,23 @@ extension ShepherdViewModel {
         let automations = state.automations.filter(\.isTriggered)
         Task { @MainActor in
             var statuses: [AutomationID: AutomationTriggerStatus] = [:]
-            for automation in automations { statuses[automation.id] = await triggers.status(of: automation) }
-            let allPaused = await triggers.allPaused
+            var allPaused: Bool
+            if localHost != nil {
+                // The host's statuses; one it can't answer keeps what was read before. Each says
+                // whether all are paused; with none triggered nothing is.
+                for automation in automations {
+                    guard let key = localAutomationKey(automation.id) else { continue }
+                    if case .status(let status)? = try? await remoteHosts.automation(key, request: .status) {
+                        statuses[automation.id] = status
+                    } else {
+                        statuses[automation.id] = automationTriggerStatuses[automation.id]
+                    }
+                }
+                allPaused = statuses.values.first?.allPaused ?? false
+            } else {
+                for automation in automations { statuses[automation.id] = await triggers.status(of: automation) }
+                allPaused = await triggers.allPaused
+            }
             if statuses != automationTriggerStatuses { automationTriggerStatuses = statuses }
             if allPaused != automationTriggersAllPaused { automationTriggersAllPaused = allPaused }
             await loadLocalAutomationRuns()
@@ -30,7 +45,7 @@ extension ShepherdViewModel {
 
     /// Finished worktree runs: the PR their branch opened, read once per run through `gh`.
     private func findRunPullRequests() async {
-        for (_, runs) in localAutomationRuns {
+        for (automationID, runs) in localAutomationRuns {
             for run in runs where run.pullRequestURL == nil && run.settledAt != nil {
                 guard let agentID = run.agentID, !checkedRunPullRequests.contains(agentID),
                       let agent = state.agents.first(where: { $0.id == agentID }), agent.automationOrigin != nil,
@@ -40,7 +55,11 @@ extension ShepherdViewModel {
                 let output = await LoginShell.run("gh pr view \(shellQuoted(branch)) --json url --jq .url", cwd: cwd, timeout: 20)
                 let url = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                 if output.status == 0, url.hasPrefix("https://") {
-                    await server.setAutomationRunPullRequest(agentID: agentID, url: url)
+                    if let key = localAutomationKey(automationID) {
+                        _ = try? await remoteHosts.automation(key, request: .setRunPullRequest(agentID: agentID, url: url))
+                    } else {
+                        await server.setAutomationRunPullRequest(agentID: agentID, url: url)
+                    }
                 } else {
                     // Look again after its next turn.
                     Task { @MainActor [weak self] in
@@ -55,6 +74,13 @@ extension ShepherdViewModel {
     /// The user opened a run's thread: its unread dot goes.
     func markAutomationRunsRead(_ agentID: AgentID) {
         guard localAutomationRuns.values.contains(where: { $0.contains { $0.agentID == agentID && $0.unread } }) else { return }
+        if localHost != nil {
+            for (id, runs) in localAutomationRuns {
+                guard let key = localAutomationKey(id) else { continue }
+                for run in runs where run.agentID == agentID && run.unread { sendToLocalHost(key, .markRead(runID: run.id)) }
+            }
+            return
+        }
         Task { @MainActor in
             await server.markAutomationRunsRead(agentID: agentID)
             await loadLocalAutomationRuns()
@@ -64,22 +90,30 @@ extension ShepherdViewModel {
     // MARK: Controls (the Automations page and sidebar)
 
     func pauseAutomationTrigger(_ id: AutomationID) {
+        if let key = localAutomationKey(id) { return sendToLocalHost(key, .pause) }
         let triggers = server.automationTriggers
         Task { await triggers.pause(id); refreshAutomationTriggers() }
     }
 
     func resumeAutomationTrigger(_ id: AutomationID) {
+        if let key = localAutomationKey(id) { return sendToLocalHost(key, .resume) }
         let triggers = server.automationTriggers
         Task { await triggers.resume(id); await triggers.tick(); refreshAutomationTriggers() }
     }
 
     func setAllAutomationTriggersPaused(_ paused: Bool) {
+        // The host's request names an automation; any triggered one does.
+        if localHost != nil {
+            guard let key = state.automations.first(where: \.isTriggered).flatMap({ localAutomationKey($0.id) }) else { return }
+            return sendToLocalHost(key, .setAllPaused(paused: paused))
+        }
         let triggers = server.automationTriggers
         Task { await triggers.setAllPaused(paused); refreshAutomationTriggers() }
     }
 
     func runPendingAutomationEvent(_ id: AutomationID, eventID: String) {
         guard let automation = state.automations.first(where: { $0.id == id }) else { return }
+        if let key = localAutomationKey(id) { return sendToLocalHost(key, .runEvent(eventID: eventID)) }
         let triggers = server.automationTriggers
         Task { @MainActor in
             do { try await triggers.runPending(automation, eventID: eventID) } catch {
@@ -90,6 +124,7 @@ extension ShepherdViewModel {
     }
 
     func dismissAutomationEvent(_ id: AutomationID, eventID: String) {
+        if let key = localAutomationKey(id) { return sendToLocalHost(key, .dismissEvent(eventID: eventID)) }
         let triggers = server.automationTriggers
         Task { await triggers.dismiss(id, eventID: eventID); refreshAutomationTriggers() }
     }

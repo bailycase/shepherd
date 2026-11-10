@@ -260,7 +260,8 @@ public final class SessionServer: @unchecked Sendable {
     /// paths.
     public static let shared = SessionServer(
         socketPath: ShepherdPaths.socketURL().path,
-        stateURL: ShepherdPaths.stateURL()
+        stateURL: ShepherdPaths.stateURL(),
+        refreshesModelCatalog: true
     )
 
     /// PTY output for an attached session. Delivered on the main actor.
@@ -617,6 +618,9 @@ public final class SessionServer: @unchecked Sendable {
     /// imports it as its own Import does (a project already in Designs as a copy, unreadable boards
     /// refused), starts its agent, and answers the design. Main actor; the file goes after.
     public var onRemoteImportDesign: ((URL, @escaping (Result<RemoteDesignCreated, RemoteDesignImportFailure>) -> Void) -> Void)?
+    /// This Mac's own Import, confirmed in its app (`RemoteDesignRequest.importConfirm`): the staged
+    /// project becomes a design and its agent starts on the import's brief. Main actor.
+    var onLocalFinishImport: ((DesignImportPreview, String?, Bool, @escaping (Result<RemoteDesignCreated, Error>) -> Void) -> Void)?
     /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
     /// before they delete.
     public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
@@ -764,6 +768,7 @@ public final class SessionServer: @unchecked Sendable {
     var projectFolderOperation = false
     private var projectDirectoryRequests = 0
     private let modelCatalog: ModelCatalog
+    private let refreshesModelCatalog: Bool
     /// Which pi this server's agents run, and its home (`PiSetup`).
     public let pi: PiSetup
     /// Where each delivered message came from, per pi session (support directory).
@@ -1122,7 +1127,10 @@ public final class SessionServer: @unchecked Sendable {
     /// skills live: the `skills/` of `pi`'s home, the only folder its pi reads skills from, unless
     /// a test passes its own; `piSkills` stands in for an older host's outside skills.
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
+    /// `refreshesModelCatalog` refreshes `pi`'s pi.dev catalog overlay from `start()` and daily
+    /// (`PiModelCatalog.refreshDaily`); only the app's own server, so no test reaches the network.
     public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
+                refreshesModelCatalog: Bool = false,
                 skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash,
                 triggerSource: AutomationTriggers.Source? = nil, forgeRunner: ForgeService.Runner? = nil) {
@@ -1135,6 +1143,7 @@ public final class SessionServer: @unchecked Sendable {
                                              systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
                                              globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } }, pi: pi)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
+        self.refreshesModelCatalog = refreshesModelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.agentRecovery = AgentRecoveryStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("agent-recovery", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
@@ -1286,6 +1295,7 @@ public final class SessionServer: @unchecked Sendable {
                 acceptOnQueue()
                 recoverCommittedProjectPublications()
             }
+            if refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2310,6 +2320,8 @@ public final class SessionServer: @unchecked Sendable {
         try queue.sync {
             try requireStarted()
             guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+            // This Mac's app reads the run log again after each change (`automationsChanged`).
+            runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
             var addr = try Self.socketAddress(for: path)
             localToken = try Self.loadOrCreateRemoteToken(at: tokenURL)
             // Only the workspace's owner binds here, and this server holds the ownership lock: any
@@ -3387,7 +3399,7 @@ public final class SessionServer: @unchecked Sendable {
         } else if !exists {
             return fail("no_such_automation", "The automation no longer exists on the host.")
         }
-        let reads: Bool = switch request { case .runs, .status, .markRead: true; default: false }
+        let reads: Bool = switch request { case .runs, .status, .markRead, .setRunPullRequest: true; default: false }
         if !reads, store.state.automations.contains(where: { $0.id == automationID && $0.projectID != nil }) {
             return fail(Self.projectAutomationScopeError.code, Self.projectAutomationScopeError.description)
         }
@@ -3414,6 +3426,13 @@ public final class SessionServer: @unchecked Sendable {
             return
         case .markRead(let runID):
             runLog.markRead(runID: runID)
+            send(.automationResult(id: id, result: .ok), to: client)
+            return
+        case .setRunPullRequest(let agentID, let url):
+            // This Mac's app reads it with its gh, as in process; no paired device sets one.
+            guard client.isLocal else { return fail("unsupported", "Only Shepherd on this Mac records a run's pull request.") }
+            guard url.hasPrefix("https://") else { return fail("invalid_url", "A pull request's address starts with https://.") }
+            runLog.setPullRequest(agentID: agentID, url: url)
             send(.automationResult(id: id, result: .ok), to: client)
             return
         case .status:
@@ -3672,12 +3691,19 @@ public final class SessionServer: @unchecked Sendable {
         case .importBegin, .importChunk, .importFinish, .importCancel:
             remoteDesignImport(id: id, request: request, client: client)
             return
+        case .importPrepare, .importConfirm, .importDiscard:
+            localDesignImport(id: id, request: request, client: client)
+            return
+        case .mentionCatalog where !client.isLocal:
+            send(.error(id: id, code: "local_only", message: "The whole catalog goes only to this Mac's app."), to: client)
+            return
         default:
             break
         }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
+        let limit = maxPayloadBytes(for: client)
         Task.detached { [weak self] in
             let answer: RemoteReply
             do {
@@ -3688,7 +3714,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             // Encoded here, not on the server queue: a reply carries up to a chunk of file bytes.
             let payload: Data
-            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= NDJSON.maxPayloadBytes {
+            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= limit {
                 payload = encoded
             } else if let refusal = try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large",
                                                                           message: "The answer exceeds the remote payload limit.")) {
@@ -4078,6 +4104,60 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: this Mac's own Import, from its app (the host reads the same disk), with the
+    /// choices the in-process Import offers: unreadable boards and a project already in Designs ask.
+    private func localDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
+        guard client.isLocal else {
+            send(.error(id: id, code: "local_only", message: "Only this Mac's app imports from its disk."), to: client)
+            return
+        }
+        let reply = { [weak self] (result: Result<RemoteDesignResult, Error>) in
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.design(id: id, result: answer), to: client)
+                case .failure(let failure as DesignImportFailure): self.send(.design(id: id, result: .importFailed(failure)), to: client)
+                case .failure(let error):
+                    let refusal = RemoteDesignRefusal(error)
+                    self.send(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+                }
+            }
+        }
+        switch request {
+        case .importPrepare(let path):
+            Task {
+                do {
+                    let preview = try await self.prepareDesignImport(from: URL(fileURLWithPath: path)) { [weak self] step in
+                        self?.queue.async {
+                            guard let self, self.clients[client.fd] === client else { return }
+                            self.send(.designImportProgress(step), to: client)
+                        }
+                    }
+                    reply(.success(.importPrepared(preview)))
+                } catch {
+                    reply(.failure(error))
+                }
+            }
+        case .importConfirm(let preview, let name, let skipping):
+            guard let handler = onLocalFinishImport else {
+                send(.error(id: id, code: "unsupported", message: "host cannot import designs"), to: client)
+                return
+            }
+            hopToMain {
+                handler(preview, name, skipping) { result in
+                    reply(result.map { .created(designID: $0.designID, agentID: $0.agentID) })
+                }
+            }
+        case .importDiscard(let previewID):
+            Task {
+                await self.cancelDesignImport(previewID)
+                reply(.success(.ok))
+            }
+        default:
+            break
+        }
+    }
+
     /// The design systems changed: the app lists them again, and so does each remote client
     /// that reads the push (`designSystemsCapability`). Any thread.
     private func designSystemsDidChange() {
@@ -4452,6 +4532,12 @@ public final class SessionServer: @unchecked Sendable {
             disconnect(client, reason: "read failed: errno \(errno)")
             return
         }
+    }
+
+    /// Tells this Mac's app showing the host's threads as its own that automations' triggers
+    /// changed (`AutomationHosting.triggersChanged`). Any thread.
+    func pushAutomationsChanged() {
+        queue.async { [self] in sendToLocalApps(.automationsChanged) }
     }
 
     /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
@@ -5030,7 +5116,7 @@ public final class SessionServer: @unchecked Sendable {
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
             let kept = try await server.designs.addThreadNote(designID, note)
-            server.hopToMain { [weak server] in server?.onDesignThreadNotesChanged?(designID) }
+            server.designNotesChanged(designID)
             return .designNote(id: id, note: kept)
         }
     }
@@ -5203,7 +5289,14 @@ public final class SessionServer: @unchecked Sendable {
         guard try await designs.removeThreadNote(designID, noteID: noteID) else {
             throw DesignReferenceError("no_such_note", "That note is no longer on the design.")
         }
+        designNotesChanged(designID)
+    }
+
+    /// A design's thread notes changed: the app's canvas reads them again, in process or as the
+    /// background host's client (`designNotesChanged`). Any thread.
+    func designNotesChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
+        queue.async { [self] in sendToLocalApps(.designNotesChanged(designID: designID)) }
     }
 
     private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {
@@ -7598,6 +7691,15 @@ public final class SessionServer: @unchecked Sendable {
     public func relayNotifyToLocalApp(agentID: AgentID, title: String, body: String) -> Bool {
         guard localAppConnected else { return false }
         queue.async { [self] in sendToLocalApps(.agentNotify(agentID: agentID, title: title, body: body)) }
+        return true
+    }
+
+    /// Hands an automation's banner to this Mac's app showing the host's threads as its own;
+    /// false (nothing sent) when no such app is connected. Main actor.
+    @MainActor
+    public func relayAutomationNotifyToLocalApp(title: String, body: String) -> Bool {
+        guard localAppConnected else { return false }
+        queue.async { [self] in sendToLocalApps(.automationNotify(title: title, body: body)) }
         return true
     }
 

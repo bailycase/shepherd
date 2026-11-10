@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -150,6 +151,280 @@ struct LocalClientTests {
         try await eventuallyOnMain("the thread to say the host's notice") { vm.threadStores.existing(for: id)?.notice == line }
     }
 
+    /// One of the host's designs opens as the app's own canvas: drawn from the host's folder on
+    /// this Mac, its moves, comments and pushed revisions through the host (slice 2's seam).
+    @Test func theHostsDesignOpensAsTheAppsOwnCanvas() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(2)), in: design.id, on: host.server)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        #expect(vm.designStore.folder(for: design.id) == host.server.designs.folder(for: design.id), "drawn from the host's folder")
+
+        let screen = vm.designScreen(design.id)
+        vm.designVisibility(design.id, visible: true)
+        let opened = try await host.server.designSnapshot(design.id)
+        try await eventuallyOnMain("the canvas to read the host's design") { screen.snapshot == opened }
+
+        let task = screen.move(SHBoardMove(board: "B.dc.html", offset: CGSize(width: 40, height: 20), ended: true))
+        await task?.value
+        let b = try #require(DesignPath("B.dc.html"))
+        #expect(try await host.server.designSnapshot(design.id).index.boards[b]?.y == 20, "moved on the host")
+
+        let rewritten = try await host.server.writeDesignBoard(design.id, path: try #require(DesignPath("A.dc.html")),
+                                                               source: DesignFixtures.source(DesignFixtures.checkout[0], note: "v2"))
+        try await eventuallyOnMain("the host's write to reach the app's canvas") { screen.snapshot?.revision == rewritten.revision }
+
+        let board = try #require(DesignPath("A.dc.html"))
+        let element = try #require(DesignElementID(board: board.viewName, tid: 2, path: [1]))
+        screen.beginComment(on: DesignElementPick(board: board, id: element, rect: CGRect(x: 0, y: 0, width: 1280, height: 800),
+                                                  kind: .shape, label: nil, tag: "card"))
+        screen.draftText = "Tighten the header."
+        await screen.submitComment()?.value
+        #expect(try await host.server.designComments(design.id).comments.map(\.text) == ["Tighten the header."])
+        #expect(vm.server.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
+    /// New design, Rename, Duplicate, Delete and its Undo on one of the host's designs, from the
+    /// app as its own: each happens on the host, never on the idle in-process server (slice 2).
+    @Test func theAppsDesignActionsChangeTheHost() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        host.server.setDesignsServed(true)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.settings.skip(.deleteDesign, with: "delete")
+
+        // New design with a model chosen: the host makes it and starts its agent on that model.
+        let id = try await vm.createDesign(brief: "A checkout funnel dashboard", images: [], model: "stub/model-b", thinking: .high)
+        #expect(host.server.state.designs.map(\.id) == [id])
+        let agent = try #require(host.server.state.agents.first { $0.designID == id })
+        #expect(agent.model == "stub/model-b" && agent.thinkingLevel == .high)
+        try await eventuallyOnMain("the design and its thread as the app's own") {
+            vm.state.designs.map(\.id) == [id] && vm.state.agents.contains { $0.id == agent.id }
+        }
+
+        vm.performDesignMenu(.rename, on: .local(id))
+        let rename = try #require(vm.designRename)
+        vm.commitDesignRename(rename, to: "Checkout funnel")
+        try await eventuallyOnMain("the host to rename it") { host.server.state.designs.first?.name == "Checkout funnel" }
+
+        vm.performDesignMenu(.duplicate, on: .local(id))
+        try await eventuallyOnMain("the host to duplicate it") { host.server.state.designs.count == 2 }
+
+        vm.performDesignMenu(.delete, on: .local(id))
+        try await eventuallyOnMain("the host to delete it") { !host.server.state.designs.contains { $0.id == id } }
+        let toast = try #require(vm.designToast)
+        vm.performDesignToast(toast)
+        try await eventuallyOnMain("Undo to bring it back on the host") { host.server.state.designs.contains { $0.id == id } }
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
+    /// A design's thread notes and a thread's design references, as the host's client: notes read,
+    /// pushed and resolved on the host; pieces pinned and judged by the host (slice 2b).
+    @Test func theHostsDesignNotesAndReferencesAreTheAppsOwn() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        host.server.setDesignsServed(true)
+        let space = Space(name: "acme-web", path: host.dir.path)
+        let thread = Fixture.agent("Fix the checkout total rounding", in: Fixture.space("acme-web", path: host.dir.path))
+        try await host.server.putState(Fixture.state(spaces: [thread.space], agents: [thread]))
+        _ = space
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(2)), in: design.id, on: host.server)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        let board = try #require(DesignPath("A.dc.html"))
+
+        // Notes: a note the host keeps reaches the canvas by its push, and Resolve removes it there.
+        let screen = vm.designScreen(design.id)
+        let note = DesignThreadNote(agentID: thread.agent.id, thread: "Fix the checkout total rounding", board: board, revision: 1,
+                                    text: "Used the funnel header.", createdAt: 1_000)
+        _ = try await host.server.designs.addThreadNote(design.id, note)
+        host.server.designNotesChanged(design.id)
+        try await eventuallyOnMain("the host's note on the app's canvas") { screen.threadNotes.map(\.id) == [note.id] }
+        await screen.resolveNote(note.id)?.value
+        #expect(try await host.server.designThreadNotes(design.id).isEmpty, "resolved on the host")
+
+        // References: the host pins the piece, named as its own, and judges it current.
+        let piece = try #require(DesignReference(designID: design.id, board: board))
+        let prepared = try await vm.prepareDesignReference(piece)
+        #expect(prepared.reference.host == .local && prepared.reference.revision != nil && prepared.design == design.name)
+        let chips = try #require(vm.designReferenceChips(for: thread.agent.id), "a thread's chips as the host's client")
+        // The @ picker lists every board of a design never opened here, as in process.
+        let catalog = await chips.io.catalog()
+        #expect(catalog.designs.map(\.title) == [design.name] && catalog.boards[design.id]?.count == 2)
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
+    /// A design's Git panel as the host's client: share, commit, push and Open from Git run on the
+    /// host, its refusals keep their titles, and its pushes reach the chip (slice 2b).
+    @Test func theHostsDesignGitIsTheAppsOwn() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(2)), in: design.id, on: host.server)
+        let config = try #require(ProcessInfo.processInfo.environment["GIT_CONFIG_GLOBAL"])
+        _ = try git(["config", "--file", config, "user.name", "Ada"], in: host.dir)
+        _ = try git(["config", "--file", config, "user.email", "ada@example.com"], in: host.dir)
+        let remote = try makeScratchDirectory("remote").appendingPathComponent("checkout-design.git", isDirectory: true)
+        _ = try git(["init", "-q", "--bare", "-b", "main", remote.path], in: remote.deletingLastPathComponent())
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        try await eventuallyOnMain("the host's design in the app") { vm.design(design.id) != nil }
+
+        // Share with Git: the host commits and pushes, and the chip reads its branch.
+        let share = DesignGitShareModel(designID: design.id, designName: design.name, boards: 2)
+        share.repository = remote.path
+        vm.designGitShare = share
+        vm.runDesignGitShare(share)
+        try await eventuallyOnMain("the share", timeout: .seconds(60)) { vm.designGitShare == nil }
+        let git = vm.designGit(design.id)
+        #expect(git.state?.status.branch == "main" && git.state?.status.isClean == true)
+
+        // A change the host commits itself reaches the chip by its push.
+        let a = try DesignPath.validate("A.dc.html")
+        let source = try await host.server.designBoard(design.id, path: a).source
+        _ = try await host.server.writeDesignBoard(design.id, path: a, source: source.replacingOccurrences(of: "</x-dc>", with: "<!-- n --></x-dc>"),
+                                                   baseRevision: nil)
+        _ = try await host.server.commitDesign(design.id, message: "Count in the header", push: false)
+        try await eventuallyOnMain("the host's commit on the chip", timeout: .seconds(30)) { git.state?.status.ahead == 1 }
+
+        // Push from the panel runs on the host.
+        vm.pushDesignGit(design.id)
+        try await eventuallyOnMain("the push", timeout: .seconds(60)) { git.state?.status.ahead == 0 && !git.working }
+        #expect(try ShepherdTestSupport.git(["log", "-1", "--format=%s", "main"], in: remote).trimmingCharacters(in: .whitespacesAndNewlines)
+            == "Count in the header")
+
+        // Open from Git: a refusal keeps its title; a clone becomes the host's design.
+        let bad = DesignGitOpenModel()
+        bad.repository = "/nowhere/at/all.git"
+        vm.runDesignGitOpen(bad)
+        try await eventuallyOnMain("the error box", timeout: .seconds(60)) { bad.error != nil }
+        #expect(bad.error?.title == "Repository unavailable")
+        let open = DesignGitOpenModel()
+        open.repository = remote.path
+        vm.designGitOpen = open
+        vm.runDesignGitOpen(open)
+        try await eventuallyOnMain("the clone", timeout: .seconds(60)) { vm.designGitOpen == nil }
+        let opened = try #require(host.server.state.designs.first { $0.id != design.id })
+        #expect(vm.design(opened.id) != nil && vm.designGit(opened.id).openedNotice?.hasPrefix("2 boards") == true)
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
+    /// Import as the host's client: the host reads the project from the shared disk and the app keeps
+    /// its questions (an unreadable board, the same project again) and its failure dialog (slice 2b).
+    @Test func importAsTheHostsClientKeepsItsQuestions() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        host.server.setDesignsServed(true)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.designNetwork = .none
+        let folder = try makeScratchDirectory("zip")
+
+        // Not a project: the failure dialog, nothing on the host.
+        let junk = folder.appendingPathComponent("checkout-funnel.zip")
+        try TestZip.make([.file("checkout/readme.txt", "no canvas here")]).write(to: junk)
+        vm.importDesignProject(junk)
+        try await eventuallyOnMain("the failure") { vm.designImportPrompt != nil }
+        #expect(vm.designImportPrompt == .failed(file: "checkout-funnel.zip", .notAProject))
+        vm.cancelDesignImport(try #require(vm.designImportPrompt))
+
+        // A board that can't be read asks first; leaving it out brings the rest in on the host.
+        let zip = folder.appendingPathComponent("acme-checkout.zip")
+        let canvas = #"""
+         {"v":3,"title":"Checkout funnel","boards":{"Funnel.dc.html":{"x":0,"y":0,"w":390,"h":844,"title":"Funnel"},
+          "Empty.dc.html":{"x":470,"y":0,"w":390,"h":844,"title":"Empty"}},"order":["Funnel.dc.html","Empty.dc.html"]}
+         """#
+        try TestZip.make([.file("checkout-funnel/project/canvas.json", canvas),
+                          .file("checkout-funnel/project/Funnel.dc.html", DesignFixtures.source(DesignFixtures.checkout[3])),
+                          .file("checkout-funnel/project/Empty.dc.html", "")]).write(to: zip)
+        vm.importDesignProject(zip)
+        try await eventuallyOnMain("the question") { vm.designImportPrompt != nil }
+        guard case .unreadable(let preview)? = vm.designImportPrompt else { Issue.record("expected the unreadable board's choice"); return }
+        #expect(preview.unreadable.map(\.path) == ["Empty.dc.html"] && preview.boards == 1)
+        vm.resolveDesignImport(try #require(vm.designImportPrompt))
+        try await eventuallyOnMain("the design on the host and here", timeout: .seconds(30)) {
+            vm.designImporting == nil && vm.state.designs.map(\.name) == ["Checkout funnel"]
+        }
+        #expect(host.server.state.designs.first?.importedFrom?.file == "acme-checkout.zip")
+
+        // The same project again asks again, from the app's own copy of the host's designs.
+        vm.importDesignProject(zip)
+        try await eventuallyOnMain("the question again") { vm.designImportPrompt != nil }
+        vm.cancelDesignImport(try #require(vm.designImportPrompt))
+        #expect(host.server.state.designs.count == 1 && idle.state.designs.isEmpty)
+    }
+
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()
@@ -274,5 +549,76 @@ struct LocalClientTests {
         vm.setRemoteListenerEnabled(true, persist: false)
         #expect(vm.remoteListenerBoundPort == nil && vm.remoteListenerFailure == nil)
         #expect(idle.state.agents.isEmpty && idle.state.spaces.isEmpty)
+    }
+
+    /// This Mac's automations as the host's client: the Automations page's actions go to the host
+    /// by `AutomationKey(host:)`, the page lists them under This Mac (no host of its own), the run's
+    /// thread is the app's own sidebar row, its run log reads back, and the automation's banner
+    /// posts from the app while it is connected.
+    @Test func theAppManagesTheHostsAutomationsAsThisMacs() async throws {
+        try StubPi.installAsEngine()
+        let host = try ScratchServer()
+        defer { host.stop() }
+        var hostBanners = 0
+        var hosting = host.server.headlessAutomationHosting(launch: { AgentLaunchSettings() }, defaults: {
+            AutomationHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                       worktreeFetchBeforeCreate: false, projectsEnabled: false)
+        })
+        hosting.notify = { _, _ in hostBanners += 1 }
+        host.server.serveAutomations(hosting)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, connection, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+
+        // Create, from the editor on This Mac: saved on the host, shown as This Mac's.
+        let draft = RemoteAutomationDraft(name: "Watch CI", prompt: "Watch CI", cwd: host.dir.path, enabled: false)
+        try await vm.saveAutomation(nil, host: PageHost.localID, draft: draft)
+        let key = try #require(vm.automationsPageSelection)
+        #expect(key.host == PageHost.localID)
+        #expect(host.server.state.automations.map(\.id) == [key.automation] && idle.state.automations.isEmpty)
+        try await eventuallyOnMain("the automation in the app's workspace") { vm.state.automations.map(\.id) == [key.automation] }
+        #expect(vm.automationHosts.map(\.id) == [PageHost.localID], "the host on this Mac is no host on the page")
+        #expect(vm.automationEditorHosts.map(\.id) == [PageHost.localID])
+
+        // Start: the run's thread is the app's own, in the sidebar, and its run log reads back.
+        vm.runAutomation(key)
+        try await eventuallyOnMain("the run on the host", timeout: .seconds(20)) { host.server.state.automations.first?.agentID != nil }
+        let run = try #require(host.server.state.automations.first?.agentID)
+        try await eventuallyOnMain("the run's thread in the sidebar") {
+            vm.state.agents.contains { $0.id == run } && vm.sidebarLists.all.contains { $0.id == .local(run) }
+        }
+        try await eventuallyOnMain("the host's run log, as the app's") {
+            vm.localAutomationRuns[key.automation]?.last?.agentID == run && vm.openAutomationRuns[key.automation]?.agentID == run
+        }
+        let row = try #require(vm.sidebarLists.all.first { $0.id == .local(run) })
+        #expect(row.automation == key.automation, "the run's row offers Stop and Run Now")
+        #expect(vm.automationRun(try #require(vm.state.automations.first), agent: vm.automationAgent(try #require(vm.state.automations.first))) != nil)
+
+        // The automation's banner posts here, not on the host, while the app is connected.
+        var heard: [String] = []
+        let posts = hosts.onLocalAutomationNotify
+        hosts.onLocalAutomationNotify = { title, body in heard.append(title); posts?(title, body) }
+        try await eventuallyOnMain("the host to know its app is connected") { host.server.localAppConnected }
+        host.server.automationHosting?.notify("Watch CI", "The run needs you.")
+        try await eventuallyOnMain("the app to hear the banner") { heard == ["Watch CI"] }
+        #expect(hostBanners == 0)
+
+        // Turn on, stop, delete: each on the host.
+        vm.setAutomationEnabled(key, true)
+        try await eventuallyOnMain("the host to turn it on") { host.server.state.automations.first?.enabled == true }
+        vm.stopAutomation(key)
+        try await eventuallyOnMain("the run to stop", timeout: .seconds(20)) {
+            !host.server.state.agents.contains { $0.id == run } && !vm.state.agents.contains { $0.id == run }
+        }
+        vm.deleteAutomation(key)
+        try await eventuallyOnMain("the automation to go") { host.server.state.automations.isEmpty && vm.state.automations.isEmpty }
+        #expect(vm.remoteActionError == nil)
+        #expect(idle.state.automations.isEmpty && idle.state.agents.isEmpty)
     }
 }

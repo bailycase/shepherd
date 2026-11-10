@@ -180,15 +180,21 @@ final class PushNotifications: @unchecked Sendable {
               group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil,
               topic: RemotePushPreferences.Topic? = nil, missionID: String? = nil, detail: PushDetail? = nil) {
         let topic = topic ?? Self.topic(kind)
-        let away = idleSeconds() >= RemotePushPreferences.awayAfter
+        let skip = { (why: String) in ShepherdLog.push("push \(kind.rawValue) for \(agentID.rawValue) skipped: \(why)") }
+        guard !registrations.isEmpty else { return skip("no phone registered") }
+        let idle = idleSeconds()
+        let away = idle >= RemotePushPreferences.awayAfter
         let wanted = registrations.values.filter { registration in
             guard let preferences = registration.preferences else { return true }
             return (away || !preferences.awayOnly) && preferences.allows(topic, mission: missionID ?? mission?.id)
         }
-        guard !wanted.isEmpty, agentID != focused else { return }
+        guard !wanted.isEmpty else {
+            return skip("no phone wants \(topic.rawValue) now (Mac idle \(Int(idle))s, \(registrations.count) registered)")
+        }
+        guard agentID != focused else { return skip("the thread is watched on this Mac") }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
-        guard eventCount < 30 else { return }
+        guard eventCount < 30 else { return skip("over 30 a minute") }
         eventCount += 1
         let (level, relevance) = Self.presentation(kind)
         let detail = detail?.mapText { Self.notificationText($0, limit: 240) ?? "" }
@@ -204,11 +210,14 @@ final class PushNotifications: @unchecked Sendable {
             guard let body = try? JSONEncoder().encode(event.shaped(for: level)) else { return }
             if bodies.last?.1 != body, level != .detail || body.count <= 2048 { bodies.append((level, body)) }
         }
-        guard !bodies.isEmpty else { return }
+        guard !bodies.isEmpty else { return skip("no body fits the relay") }
         // No pending queue: overload drops deliveries rather than growing memory or replaying later.
+        var posted = 0
         for registration in wanted where deliveries.count < 16 {
             post(bodies[...], to: registration)
+            posted += 1
         }
+        ShepherdLog.push("push \(kind.rawValue) for \(agentID.rawValue) posted to \(posted) of \(wanted.count) phones")
     }
 
     /// One delivery of `bodies.first`; the rest are the same event in older relays' shapes, each sent once
@@ -224,6 +233,7 @@ final class PushNotifications: @unchecked Sendable {
         request.httpBody = body
         let cancel = transport(request) { [weak self] status in
             guard let self else { return }
+            ShepherdLog.push("push relay answered \(status.map(String.init) ?? "no response") (\(bodies.first?.0 ?? .legacy) shape)")
             self.queue.async {
                 self.deliveries.removeValue(forKey: id)
                 // The relay validates before it claims the event id, so the same event may go again.

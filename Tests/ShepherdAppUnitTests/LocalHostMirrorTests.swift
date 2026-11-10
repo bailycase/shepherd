@@ -3,10 +3,10 @@ import Testing
 @testable import ShepherdApp
 
 /// What the app takes as its own of the background host's workspace (`ShepherdViewModel.mirrored`):
-/// the ordinary threads, Projects and missions with their threads (they run on the host), never what
-/// designs and automations own, which their pages still reach through the host.
+/// the whole workspace: ordinary threads, designs with their agents (slice 2), automations and their
+/// runs (slice 3), Projects and missions with their threads (slice 4), all through the host.
 @Suite struct LocalHostMirrorTests {
-    @Test func theMirrorKeepsOrdinaryThreadsAndLeavesTheFeaturesTheirs() {
+    @Test func theMirrorIsTheWholeWorkspace() {
         let space = Space(name: "acme-web", path: "/tmp/acme-web")
         func agent(_ name: String, _ change: (inout Agent) -> Void = { _ in }) -> (Agent, ShepherdCore.Tab) {
             let pane = LeafPane(cwd: space.path)
@@ -29,10 +29,10 @@ import Testing
                                   designs: [design], projects: [project])
 
         let mirrored = ShepherdViewModel.mirrored(state)
-        #expect(mirrored.agents.map(\.id) == [thread.0.id, coordinator.0.id, worker.0.id])
-        #expect(mirrored.tabs.map(\.id) == [thread.1.id, coordinator.1.id, worker.1.id])
+        #expect(mirrored.agents.map(\.id) == [thread.0.id, watcher.0.id, run.0.id, drawer.0.id, coordinator.0.id, worker.0.id])
+        #expect(mirrored.tabs.map(\.id) == [thread.1.id, watcher.1.id, run.1.id, drawer.1.id, coordinator.1.id, worker.1.id])
         #expect(mirrored.spaces == [space])
-        #expect(mirrored.automations.isEmpty && mirrored.designs.isEmpty)
+        #expect(mirrored.automations == [automation] && mirrored.designs == [design])
         #expect(mirrored.projects == [project], "Projects run on the host and draw as the app's own")
         #expect(ShepherdViewModel.mirrored(ShepherdState(spaces: [space], tabs: [thread.1], agents: [thread.0]))
             == ShepherdState(spaces: [space], tabs: [thread.1], agents: [thread.0]), "an ordinary workspace mirrors whole")

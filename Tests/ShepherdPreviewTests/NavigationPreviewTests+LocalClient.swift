@@ -265,7 +265,7 @@ extension PreviewTests {
     }
 }
 
-/// Designs, automations and Projects keep the background host's section on their pages while the
+/// Projects keep the background host's section on their page while the
 /// app takes the rest of its workspace as its own (`ShepherdViewModel.mirrored`): the same pages as
 /// with This Mac shown as a host (`SHEPHERD_THIS_MAC_LOCAL=0`), from the same host.
 extension PreviewTests {
@@ -324,26 +324,100 @@ extension PreviewTests {
                     && connection.state.automations.count == 1 && connection.state.projects.count == 1
             }
             if mode == "local" {
-                try await eventuallyOnMain("the ordinary thread as the app's own") { vm.state.agents.map(\.id) == [thread.0.id] }
+                // Designs (slice 2) and automations (slice 3) route through the host: their agents are the app's own.
+                try await eventuallyOnMain("the threads as the app's own") {
+                    Set(vm.state.agents.map(\.id)) == [thread.0.id, watcher.0.id, drawer.0.id]
+                }
                 #expect(vm.remoteHosts.connections.isEmpty)
             }
 
-            await vm.loadAutomationPageRuns()
-            vm.automationsPageSelection = AutomationKey(host: connection.id, automation: automation.id)
-            try await Preview.render("this-mac-automations-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
-
-            await vm.loadRemoteDesigns()
-            try await Preview.render("this-mac-designs-\(mode)", size: pageSize, ready: {
-                vm.remoteDesignRenderings[connection.id]?.thumbnails.image(design.id) != nil
-            }) { DesignsDestination(vm: vm) }
 
             vm.openLogicalProject(LogicalProjectRef(home: .host(connection.id), id: project.id))
             #expect(vm.shownDestination == .project)
             try await Preview.render("this-mac-project-\(mode)", size: pageSize) { LogicalProjectDestination(vm: vm) }
             for connection in vm.remoteHosts.allConnections { vm.remoteHosts.removeHost(id: connection.id) }
         }
-        try expectSameRenders("this-mac-automations-host", "this-mac-automations-local")
-        try expectSameRenders("this-mac-designs-host", "this-mac-designs-local")
         try expectSameRenders("this-mac-project-host", "this-mac-project-local")
+    }
+}
+
+/// Automations as This Mac's own (always-host 3): the same fixture, in process and as the
+/// background host's client, renders the same Automations page, run log and sidebar.
+extension PreviewTests {
+    @Test func localHostAutomationsMatchInProcess() async throws {
+        let pageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
+        let folder = try makeScratchDirectory("acme-web")
+        let space = Space(name: "acme-web", path: folder.path)
+        let runs = Space(name: "Automations", path: "~", hidden: true)
+        // Each thread last active two hours ago, so both renders read the same ages.
+        let active = (Date().timeIntervalSince1970 - 7_200) * 1000
+        func agent(_ name: String, in space: Space, order: Int, status: AgentStatus) -> (Agent, ShepherdCore.Tab) {
+            let id = AgentID()
+            let pane = LeafPane(cwd: space.path, agentID: id)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
+            var agent = Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, status: status, nameIsFinal: true)
+            agent.lastActiveAt = active
+            return (agent, tab)
+        }
+        let thread = agent("Fix the checkout total rounding", in: space, order: 0, status: .done)
+        let triage = agent("Triage new issues", in: runs, order: 0, status: .blocked)
+        let bumps = agent("Weekly dependency bumps", in: runs, order: 1, status: .working)
+        // A made-up folder in place of this machine's scratch one.
+        let shown = "~/Developer/acme-web"
+        let cleanup = Automation(name: "Stale branch cleanup", prompt: "List branches merged a month ago.", cwd: shown, enabled: false)
+        var past = agent("Clean up merged branches", in: space, order: 1, status: .done)
+        past.0.automationOrigin = AutomationOrigin(automationID: cleanup.id)
+        // Off, so neither owner starts a run of its own.
+        let automations = [
+            Automation(name: "Triage new issues", prompt: "Look at what came in overnight and say what needs a person.",
+                       cwd: shown, enabled: false, agentID: triage.0.id),
+            Automation(name: "Weekly dependency bumps", prompt: "Bump the dependencies and open a pull request.",
+                       cwd: shown, enabled: false, agentID: bumps.0.id),
+            cleanup,
+        ]
+        let records = [thread, triage, bumps, past]
+        let fixture = ShepherdState(spaces: [space, runs], tabs: records.map(\.1), agents: records.map(\.0), automations: automations)
+        // The page's clocks tick from when each owner logged its runs, so the page's fixture has
+        // none: both watchers ask, and the off automation never ran.
+        var asking = bumps
+        asking.0.status = .blocked
+        let page = ShepherdState(spaces: [space, runs], tabs: [thread.1, triage.1, asking.1], agents: [thread.0, triage.0, asking.0],
+                                 automations: [automations[0], automations[1],
+                                               Automation(name: "Stale branch cleanup", prompt: "List branches merged a month ago.",
+                                                          cwd: shown, enabled: false)])
+        // A run's start reads to the minute: not across one between the two renders.
+        let second = Calendar.current.component(.second, from: Date())
+        if second >= 50 { try await Task.sleep(for: .seconds(61 - second)) }
+
+        for mode in ["in-process", "client"] {
+            let workspace = try PreviewWorkspace(ownsWorkspace: mode == "in-process")
+            var host: ScratchServer?
+            defer { workspace.stop(); host?.stop() }
+            if mode == "in-process" { try await workspace.seed(fixture) } else { host = try await adoptHost(fixture, into: workspace) }
+            let vm = workspace.vm
+            await vm.loadAutomationPageRuns()
+            // The two watchers' runs and the past run's thread, each open.
+            try await eventuallyOnMain("the run log of each live run") {
+                vm.openAutomationRuns.count == 3 && vm.localAutomationRuns.values.joined().count == 3
+            }
+            #expect(vm.automationHosts.map(\.id) == [PageHost.localID])
+            #expect(vm.blockedCount == 1, "the watcher asking counts in Needs you")
+            try await Preview.render("this-mac-automations-sidebar-\(mode)", size: CGSize(width: 260, height: 520)) {
+                SidebarView(vm: vm).frame(width: 260).background(Color.sh.bgBase)
+            }
+
+            if let host { try await host.server.putState(page) } else { try await workspace.server.putState(page) }
+            try await eventuallyOnMain("the page's fixture and its runs") {
+                vm.state.automations.map(\.id) == page.automations.map(\.id) && vm.state.agents.map(\.status) == page.agents.map(\.status)
+                    && vm.openAutomationRuns.values.map(\.result) == [.needsYou, .needsYou]
+            }
+            await vm.loadAutomationPageRuns()
+            try await Preview.render("this-mac-automations-page-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
+            vm.automationsPageSelection = AutomationKey(host: PageHost.localID, automation: automations[0].id)
+            try await Preview.render("this-mac-automation-runs-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
+        }
+        try expectSameRenders("this-mac-automations-page-in-process", "this-mac-automations-page-client")
+        try expectSameRenders("this-mac-automation-runs-in-process", "this-mac-automation-runs-client")
+        try expectSameRenders("this-mac-automations-sidebar-in-process", "this-mac-automations-sidebar-client")
     }
 }

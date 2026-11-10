@@ -8,29 +8,6 @@ import ShepherdProtocol
 // write is. Nothing here runs on its own: every step is a user's press, and the one model call
 // (Resolve with agent) is a single bounded turn of the design's own agent that commits nothing.
 
-/// What the app shows for a design's Git state, and what each change answers.
-public struct DesignGitState: Equatable, Sendable {
-    public var status: DesignGitStatus
-    /// A pull that needs a merge, while it is being handled.
-    public var merge: DesignGitMerge?
-    /// The merge copy's changed files, once it is ready to review.
-    public var mergeFiles: [DesignGitStatus.File]
-
-    public init(status: DesignGitStatus, merge: DesignGitMerge? = nil, mergeFiles: [DesignGitStatus.File] = []) {
-        self.status = status
-        self.merge = merge
-        self.mergeFiles = mergeFiles
-    }
-}
-
-/// What a pull did.
-public enum DesignGitPullResult: Equatable, Sendable {
-    case upToDate
-    /// The design's files took the remote's commit; the canvas reloads.
-    case updated
-    case needsMerge(DesignGitMerge)
-}
-
 /// The merge's bounds: one attempt, a time cap, and no commit or push without the user.
 public enum DesignGitMergeLimits {
     /// The agent's one merge turn is stopped after this long.
@@ -448,9 +425,11 @@ extension SessionServer {
 
     // MARK: Announcing
 
-    /// The design's Git state changed: the app reads it again.
+    /// The design's Git state changed: the app reads it again, in process or as the background
+    /// host's client (`designGitChanged`). Any thread.
     func designGitChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignGitChanged?(designID) }
+        queue.async { [self] in sendToLocalApps(.designGitChanged(designID: designID)) }
     }
 
     /// After git replaced the design's files: the canvas reloads (one revision), the board count

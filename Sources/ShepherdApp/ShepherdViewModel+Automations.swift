@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 /// Automations: saved monitoring prompts run by ordinary agents. The
@@ -30,20 +31,52 @@ extension ShepherdViewModel {
         server.serveAutomations(hosting)
     }
 
+    /// This Mac's automation as the background host's request key, while the host owns the
+    /// workspace; nil in process.
+    func localAutomationKey(_ id: AutomationID) -> AutomationKey? {
+        localHost.map { AutomationKey(host: $0.id, automation: id) }
+    }
+
+    /// One of this Mac's automations' changes, sent to the background host that owns them; a
+    /// refusal shows the failed-action dialog. The host's `automationsChanged` brings the result,
+    /// and a trigger's change reads its status again here too.
+    func sendToLocalHost(_ key: AutomationKey, _ request: RemoteAutomationRequest) {
+        Task { @MainActor in
+            do { try await remoteHosts.automation(key, request: request) } catch {
+                remoteActionError = AutomationsModel.failureText(request, error)
+            }
+            if request.needsTriggers { refreshAutomationTriggers() }
+        }
+    }
+
     func startAutomation(_ id: AutomationID) async throws {
-        try await server.startAutomation(id)
+        guard let key = localAutomationKey(id) else { return try await server.startAutomation(id) }
+        // The run on screen gives way to its replacement, as `replacingRun` selects it in process.
+        let old = state.automations.first { $0.id == id }?.agentID
+        let onScreen = old != nil && selectedAgentID == old
+        try await remoteHosts.automation(key, request: .run)
+        if onScreen, let new = state.automations.first(where: { $0.id == id })?.agentID, new != old,
+           state.agents.contains(where: { $0.id == new }) {
+            selectAgent(new)
+        }
     }
 
     /// Stop an unscoped run. Project-owned runs require the owner's revision-checked service,
     /// even when a sidebar menu was opened before its association reached the view model.
     func stopAutomation(_ id: AutomationID) {
+        if let key = localAutomationKey(id) { return sendToLocalHost(key, .stop) }
         do { try server.stopAutomation(id) } catch { remoteActionError = "\(error)" }
     }
 
     func deleteAutomation(_ id: AutomationID) {
-        guard server.state.automations.first(where: { $0.id == id })?.projectID == nil else {
+        guard ownerState.automations.first(where: { $0.id == id })?.projectID == nil else {
             remoteActionError = "Use the Project's revision-checked automation settings."
             return
+        }
+        // The host stops its run, removes it and forgets its trigger in one request.
+        if let key = localAutomationKey(id) {
+            localAutomationRuns[id] = nil
+            return sendToLocalHost(key, .delete)
         }
         stopAutomation(id)
         Task { @MainActor in
@@ -58,6 +91,8 @@ extension ShepherdViewModel {
     /// user wants the watch standing.
     func autoStartAutomations() {
         startRemoteAutomationWatch()
+        // The background host starts its own at its launch.
+        guard localHost == nil else { return }
         let server = server
         Task { @MainActor in await server.autoStartAutomations() }
     }
@@ -90,6 +125,7 @@ extension ShepherdViewModel {
     func setAutomationEnabled(_ id: AutomationID, _ enabled: Bool) {
         guard var automation = state.automations.first(where: { $0.id == id }), automation.enabled != enabled else { return }
         automation.enabled = enabled
+        if let key = localAutomationKey(id) { return sendToLocalHost(key, .setEnabled(enabled: enabled)) }
         Task { @MainActor in
             do {
                 try await server.updateAutomation(automation)
@@ -104,6 +140,14 @@ extension ShepherdViewModel {
     /// switch, as the agents' `automation_*` tools do. A new one starts no run. Returns its id.
     @discardableResult
     func saveAutomation(_ id: AutomationID?, draft: RemoteAutomationDraft) async throws -> AutomationID {
+        if let host = localHost {
+            let key = AutomationKey(host: host.id, automation: id ?? AutomationID())
+            let request: RemoteAutomationRequest = id == nil ? .create(draft: draft) : .update(draft: draft)
+            do { try await remoteHosts.automation(key, request: request) } catch {
+                throw AgentStartFailure(message: AutomationsModel.failureText(request, error))
+            }
+            return key.automation
+        }
         if let id {
             guard var automation = state.automations.first(where: { $0.id == id }) else {
                 throw AgentStartFailure(message: "The automation no longer exists")
@@ -130,9 +174,27 @@ extension ShepherdViewModel {
     func loadLocalAutomationRuns() async {
         var runs: [AutomationID: [AutomationRun]] = [:]
         for automation in state.automations {
-            runs[automation.id] = await server.automationRuns(automation.id)
+            if let key = localAutomationKey(automation.id) {
+                // One the host can't answer keeps what was read before.
+                guard case .runs(let list)? = try? await remoteHosts.automation(key, request: .runs) else {
+                    runs[automation.id] = localAutomationRuns[automation.id]
+                    continue
+                }
+                runs[automation.id] = list
+            } else {
+                runs[automation.id] = await server.automationRuns(automation.id)
+            }
         }
         if runs != localAutomationRuns { localAutomationRuns = runs }
+        // As the client, the open runs come from the runs read (`AutomationRunLog.openRuns`).
+        guard localHost != nil else { return }
+        let open = runs.compactMapValues { list in
+            list.last.flatMap { run in run.endedAt == nil || (run.agentID != nil && run.settledAt == nil) ? run : nil }
+        }
+        if open != openAutomationRuns {
+            openAutomationRuns = open
+            reconcileSidebarCompletions()
+        }
     }
 
     private func adoptCanonical() {

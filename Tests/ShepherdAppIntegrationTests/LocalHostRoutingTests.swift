@@ -34,7 +34,9 @@ struct LocalHostRoutingTests {
     /// A host serving threads and worktrees in `acme-web` (a repo whose `main` its remote has),
     /// with `agents` in it, and the app as its client taking its workspace as its own.
     static func setUp(agents names: [String] = [], worktree: String? = nil,
-                      settings configure: (AppSettings) -> Void = { _ in }) async throws -> Setup {
+                      settings configure: (AppSettings) -> Void = { _ in },
+                      pins: (ShepherdState) -> [String] = { _ in [] },
+                      beforeConnect: (ShepherdViewModel) async -> Void = { _ in }) async throws -> Setup {
         let host = try ScratchServer()
         host.server.serveThreads(ThreadHosting(defaults: {
             ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
@@ -71,6 +73,7 @@ struct LocalHostRoutingTests {
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let clientDir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
+        defaults.set(pins(host.server.state), forKey: SidebarPins.defaultsKey)
         let settings = AppSettings(store: defaults)
         configure(settings)
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
@@ -83,6 +86,7 @@ struct LocalHostRoutingTests {
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         // As `ShepherdApp` connects it, with `SHEPHERD_THIS_MAC_LOCAL` at its default.
         #expect(ShepherdViewModel.routesThisMacLocally)
+        await beforeConnect(vm)
         vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) {
             vm.state.agents == host.server.state.agents && vm.state.spaces == host.server.state.spaces
@@ -106,10 +110,25 @@ struct LocalHostRoutingTests {
         #expect(s.vm.selectedAgentID == ids[0] && s.vm.selectedRemoteAgent == nil)
     }
 
-    /// Designs and automations still reach the host as This Mac's host section on
-    /// their pages: the app's own workspace never holds them, so nothing acts on them through the
-    /// idle server, and a run opens as the host's thread.
-    @Test func automationsStayOnThisMacsHostSection() async throws {
+    /// Pins made before the background host connects survive the connection: the app never
+    /// prunes This Mac's pins against an empty or filtered copy of the host's workspace.
+    @Test func pinsSurviveConnectingToTheHost() async throws {
+        let s = try await Self.setUp(agents: ["Fix the login redirect", "Upgrade the payments SDK"],
+                                     pins: { state in state.agents.map { "local:\($0.id.rawValue)" } },
+                                     // At launch the idle server's empty workspace can be adopted
+                                     // (and pruned against) before the host is connected.
+                                     beforeConnect: { vm in vm.adopt(ShepherdState()); vm.pruneSidebarPins() })
+        defer { s.stop() }
+        let ids = s.host.server.state.agents.map(\.id)
+        try await eventuallyOnMain("the host to leave its threads' banners to the app") { s.host.server.localAppConnected }
+        s.vm.pruneSidebarPins()
+        #expect(Set(ids.map { SidebarRowID.local($0) }).isSubset(of: Set(s.vm.sidebarLists.pinned.map(\.id))))
+    }
+
+    /// The host's automations and their runs are This Mac's own: the app's workspace holds them,
+    /// the Automations page lists them under This Mac with no host section, and a run opens as a
+    /// local thread (`LocalClientTests` drives their actions).
+    @Test func automationsAreThisMacsOwn() async throws {
         let s = try await Self.setUp(agents: ["Fix the login redirect"])
         defer { s.stop() }
         var state = s.host.server.state
@@ -127,12 +146,15 @@ struct LocalHostRoutingTests {
             thisMac.state.automations.map(\.id) == [automation.id] && thisMac.state.agents.contains { $0.id == run.id }
         }
 
-        #expect(s.vm.state.automations.isEmpty && !s.vm.state.agents.contains { $0.id == run.id })
-        #expect(s.vm.state.agents.count == 1, "the ordinary thread stays the app's own")
-        #expect(s.vm.automationHosts.contains { $0.id == thisMac.id && $0.state.automations.map(\.id) == [automation.id] })
+        try await eventuallyOnMain("the automation and its run as the app's own") {
+            s.vm.state.automations.map(\.id) == [automation.id] && s.vm.state.agents.contains { $0.id == run.id }
+        }
+        #expect(s.vm.automationHosts.map(\.id) == [PageHost.localID])
+        #expect(s.vm.automationHosts.first?.state.automations.map(\.id) == [automation.id])
         #expect(s.hosts.connections.isEmpty, "no other surface lists This Mac")
-        s.vm.selectRemoteAgent(hostID: thisMac.id, agentID: run.id)
-        #expect(s.vm.selectedRemoteAgent == RemoteAgentRef(hostID: thisMac.id, agentID: run.id))
+        #expect(s.vm.sidebarLists.all.contains { $0.id == .local(run.id) })
+        s.vm.selectAgent(run.id)
+        #expect(s.vm.selectedAgentID == run.id && s.vm.selectedRemoteAgent == nil)
     }
 
     @Test func renameAndDeleteReachTheHost() async throws {
