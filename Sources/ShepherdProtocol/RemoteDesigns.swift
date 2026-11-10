@@ -221,10 +221,27 @@ public struct RemoteDesignCreate: Codable, Hashable, Sendable {
     public var brief: String
     /// A design system the host has (`ds/<namespace>` name); nil draws in none.
     public var systemNamespace: String?
+    /// What New design chose beyond the brief; nil (an older client) starts its agent on the
+    /// host's defaults with no images.
+    public var options: Options?
 
-    public init(brief: String, systemNamespace: String? = nil) {
+    /// The model and level New design picked (nil: the host's defaults) and the brief's pictures.
+    public struct Options: Codable, Hashable, Sendable {
+        public var model: String?
+        public var thinking: ThinkingLevel?
+        public var images: [NativeImage]
+
+        public init(model: String? = nil, thinking: ThinkingLevel? = nil, images: [NativeImage] = []) {
+            self.model = model
+            self.thinking = thinking
+            self.images = images
+        }
+    }
+
+    public init(brief: String, systemNamespace: String? = nil, options: Options? = nil) {
         self.brief = brief
         self.systemNamespace = systemNamespace
+        self.options = options
     }
 
     /// A brief is at most this many UTF-8 bytes, as a comment is.

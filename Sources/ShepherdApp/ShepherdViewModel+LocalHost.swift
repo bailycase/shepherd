@@ -17,19 +17,19 @@ extension ShepherdViewModel {
         ProcessInfo.processInfo.environment["SHEPHERD_THIS_MAC_LOCAL"] != "0"
     }
 
-    /// The host's workspace less what designs, automations, Projects and missions own: their pages
+    /// The host's workspace less what automations, Projects and missions own: their pages
     /// still reach those through the host's connection (`allConnections`), so the app's local views,
     /// whose actions would go to the idle in-process server, never see them.
     /// ponytail: a fallback until those features route through `localHost` too.
     nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState {
         let watchers = Set(state.automations.compactMap(\.agentID))
         let owned = state.projectWorkerIDs.union(state.missionAgentIDs)
-        var copy = state.withoutDesigns.withoutProjectCoordinators
+        // Designs and their agents are the app's own (slice 2): they route through the host.
+        var copy = state.withoutProjectCoordinators
         let gone = Set(copy.agents.filter { watchers.contains($0.id) || owned.contains($0.id) || $0.automationOrigin != nil }.map(\.id))
         let tabs = Set(copy.agents.filter { gone.contains($0.id) }.map(\.tabID))
         copy.agents.removeAll { gone.contains($0.id) }
         copy.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(gone.contains) == true }
-        copy.spaces.removeAll(where: \.holdsDesigns)
         copy.automations = []
         copy.projects = []
         copy.projectExecutions = []
@@ -55,6 +55,9 @@ extension ShepherdViewModel {
     /// own unless `SHEPHERD_THIS_MAC_LOCAL=0`.
     @discardableResult
     func connectLocalHost(socket: String, token: String) -> RemoteHostStore.Connection {
+        // The host keeps its designs beside its socket, in its support folder on this Mac.
+        if Self.routesThisMacLocally { localHostDesigns = DesignStore(directory: URL(fileURLWithPath: socket).deletingLastPathComponent()
+            .appendingPathComponent("designs", isDirectory: true)) }
         if Self.routesThisMacLocally { adoptLocalHost() }
         return remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
     }
@@ -66,6 +69,8 @@ extension ShepherdViewModel {
         sessions.startsSessions = false
         // The host keeps its own settings from the shared preferences: each side follows the other's writes.
         settings.followOtherProcesses()
+        // Its design systems are the Designs page's own (slice 2), as the server's `onDesignSystemsChanged`.
+        remoteHosts.onLocalDesignSystemsChanged = { [weak self] in self?.designSystemsChanged() }
         remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(Self.mirrored(state)) }
         // As the in-process session's notify (`sessions.onNotify`): a click opens the thread here.
         remoteHosts.onLocalAgentNotify = { [weak self] agentID, title, body in

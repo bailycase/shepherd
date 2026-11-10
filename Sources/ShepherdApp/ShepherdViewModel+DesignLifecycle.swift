@@ -72,6 +72,12 @@ extension ShepherdViewModel {
 
     /// What a design's menu item does.
     func performDesignMenu(_ action: DesignMenuAction, on target: DesignTarget) {
+        // As the background host's client its designs change on the host, as a paired Mac's do;
+        // they open, show their system and hand off pieces here, as this app's own.
+        if case .local(let id) = target, let ref = hostDesign(id),
+           [.rename, .duplicate, .export, .removeFromRecents, .delete].contains(action) {
+            return performDesignMenu(action, on: .remote(ref))
+        }
         switch (action, target) {
         case (.open, .local(let id)): openDesign(id)
         case (.open, .remote(let ref)): openRemoteDesign(ref)
@@ -94,6 +100,12 @@ extension ShepherdViewModel {
             if let design = design(id) { designScreen(id).copySelectionReference(designName: design.name) }
         default: break
         }
+    }
+
+    /// The background host's handle on one of the app's designs, while the app is its client.
+    func hostDesign(_ id: DesignID) -> RemoteDesignRef? {
+        guard Self.routesThisMacLocally, let host = localHost else { return nil }
+        return RemoteDesignRef(hostID: host.id, designID: id)
     }
 
     /// A design system's menu (SystemMenu), for its card or its page.
@@ -126,6 +138,15 @@ extension ShepherdViewModel {
 
     /// What a system's menu item does.
     func performDesignSystemMenu(_ action: DesignMenuAction, on target: DesignSystemTarget) {
+        // As the background host's client its systems change on the host, as a paired Mac's do.
+        if Self.routesThisMacLocally, let host = localHost, [.resync, .rename, .duplicateSystem, .deleteSystem].contains(action) {
+            switch target {
+            case .system(let namespace): return performDesignSystemMenu(action, on: .remote(RemoteSystemRef(hostID: host.id, namespace: namespace)))
+            case .build(let id) where action == .deleteSystem:
+                return performDesignSystemMenu(action, on: .remoteBuild(RemoteDesignRef(hostID: host.id, designID: id)))
+            default: break
+            }
+        }
         switch (action, target) {
         case (.open, .system(let namespace)): openDesignSystem(namespace)
         case (.open, .build(let id)): openSystemBuild(id)
@@ -253,9 +274,10 @@ extension ShepherdViewModel {
             switch target {
             case .local(let id):
                 guard let design = design(id) else { return }
-                let snapshot = try? await server.designSnapshot(id)
-                let versions = try? await server.designs.versionCount(id)
-                let comments = try? await server.designComments(id).comments.count
+                let snapshot = try? await ownerDesignSnapshot(id)
+                // The host's versions aren't read over the connection: the dialog leaves them out, as for a paired Mac.
+                let versions = hostDesign(id) == nil ? try? await server.designs.versionCount(id) : nil
+                let comments = try? await ownerDesignComments(id).comments.count
                 let agent = state.agents.first { $0.id == design.agentID } ?? state.agents.first { $0.designID == id }
                 let working = agent?.status == .working
                 let drawing = agent.flatMap { threadStores.existing(for: $0.id)?.messages }.map(designBoardsDrawing) ?? 0
@@ -339,6 +361,7 @@ extension ShepherdViewModel {
     private func designIsShown(_ target: DesignTarget) -> Bool {
         switch target {
         case .local(let id): return shownDesign?.id == id
+        case .remote(let ref) where ref.hostID == localHost?.id && Self.routesThisMacLocally: return shownDesign?.id == ref.designID
         case .remote(let ref):
             guard let remote = selectedRemoteAgent, remote.hostID == ref.hostID else { return false }
             return remoteDesign(drawnBy: remote)?.design.id == ref.designID

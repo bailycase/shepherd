@@ -197,11 +197,18 @@ final class ShepherdViewModel {
     /// first shown.
     var designRendering: DesignRendering {
         if let made = madeDesignRendering { return made }
-        let made = DesignRendering(folder: { [server] in server.designs.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
+        let store = designStore
+        let made = DesignRendering(folder: { store.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
         madeDesignRendering = made
         return made
     }
     @ObservationIgnored private(set) var madeDesignRendering: DesignRendering?
+    /// The background host's designs on this Mac, read-only, while the app is its client
+    /// (`connectLocalHost`): the host writes them; the app draws them from where they are.
+    @ObservationIgnored var localHostDesigns: DesignStore?
+
+    /// Where the designs' files are on this Mac: the background host's folder as its client, else the server's.
+    var designStore: DesignStore { localHostDesigns ?? server.designs }
     /// Tests turn Google Fonts off so boards never reach the network, and previews take no live
     /// views; both are set before the first design draws.
     @ObservationIgnored var designNetwork: DesignRenderingNetwork = .googleFonts
@@ -1059,9 +1066,10 @@ final class ShepherdViewModel {
             }
         }
         // Another device's New design, Open, Import and Build, made here as this Mac's own are.
-        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief in
+        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief, options in
             guard let self else { throw RemoteCreateAgentError("host is shutting down") }
-            return try await self.startDesignAgent(design, brief: brief, images: [], select: false)
+            return try await self.startDesignAgent(design, brief: brief, images: options.images, select: false,
+                                                   model: options.model, thinking: options.thinking)
         }, changed: { [weak self] in
             guard let self else { return }
             self.adopt(self.server.state)
