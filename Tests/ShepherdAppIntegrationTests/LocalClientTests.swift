@@ -9,7 +9,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The app as the background host's client (`SHEPHERD_BACKGROUND_HOST=1`): a headless host serves
+/// The app as its host's client: a headless host serves
 /// threads and terminals on its local socket, and the app's view model, on an idle server that
 /// owns nothing, takes the host's workspace as its own (`connectLocalHost`).
 @Suite("The app as the background host's client", .mainActorExclusive)
@@ -38,7 +38,7 @@ struct LocalClientTests {
         return (vm, hosts, idle, connection, clientDir, defaults)
     }
 
-    @Test func aNewerAppAsksItsHostToDrainAndHearsWhenItsHostIsGone() async throws {
+    @Test func aNewerAppAsksItsHostToDrainAndReconnectsWhenItsHostIsGone() async throws {
         let host = try ScratchServer()
         defer { host.stop() }
         host.server.hostBuild = "1201"
@@ -51,15 +51,13 @@ struct LocalClientTests {
 
         let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
         hosts.appBuild = "1202"
-        var lost = 0
-        hosts.onLocalHostLost = { lost += 1 }
         let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
         defer { hosts.removeHost(id: connection.id) }
         try await eventuallyOnMain("the app to connect") { connection.phase == .connected }
         try await eventuallyOnMain("the older host to be asked to drain") { asked.current == 1 }
 
         host.stop()
-        try await eventuallyOnMain("the app to hear its host is gone") { lost >= 1 }
+        try await eventuallyOnMain("the app to see its host is gone") { connection.phase != .connected }
     }
 
     @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysShepherdIsNotOpen() async throws {

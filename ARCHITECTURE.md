@@ -18,10 +18,11 @@ remote-host paths it uses for a paired Mac, plus `local.v1` for what only this M
 Browser and design drawing run in the app's web views). Quitting the app leaves agents running;
 the host drains and restarts on its own when an update replaces the bundle (`HostDrain`).
 
-**In process** (Shepherd and Dev, the service off in Login Items, or tests): the app owns
-everything above itself. Quitting Shepherd ends every child process, and relaunching restores the
-workspace and respawns each agent in its pi session. `SHEPHERD_BACKGROUND_HOST=1` lets any build be
-a running host's client.
+**Supervised child** (Shepherd and Dev, or the service off in Login Items): the app runs the same
+`Shepherd --host --supervised` as its child (`HostSupervisor`) and is its client the same way. The
+supervisor restarts it with backoff after a crash and stops it at Quit (after the mid-turn
+question); an app crash closes its stdin, which stops it too. Relaunching restores the workspace
+and respawns each agent in its pi session. Only tests run a `SessionServer` in process.
 
 Either owner can also serve its agents to other devices over an authenticated TCP listener.
 
@@ -101,9 +102,8 @@ decodes on a concurrent queue while its session holds its later records in order
 - the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
-In process it calls the server directly, with no socket, and adopts its `onStateChanged`
-snapshots; as the background service's client it never starts a server (`BackgroundHostClient`)
-and takes the host's workspace as its own over `host.sock` (`ShepherdViewModel+LocalHost`). A
+It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
+`host.sock` (`ShepherdViewModel+LocalHost`). Its in-process server form remains only for tests. A
 persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
 model reconciles itself and `TerminalSessionStore` from `server.state`.
 
