@@ -997,6 +997,7 @@ final class ShepherdViewModel {
                     case .restartPi(let newConversation, let model):
                         if let model { self.sessions.modelOverrides[agentID] = model }
                         self.retryAgentStart(agentID, newConversation: newConversation)
+                    case .markSeen(let upTo): try await self.server.markCompletionSeen(agentID, upTo: upTo)
                     }
                     completion(.success(()))
                 } catch {
