@@ -205,9 +205,9 @@ extension MissionController {
             mission.run?.attempts.first { $0.id == attemptID }.map { (mission, $0) }
         }).first, let agentID = attempt.agentID, let agent = hosting.state().agents.first(where: { $0.id == agentID }),
               let store = hosting.threadStore(agentID) else { return nil }
+        let server = server, missionID = mission.id
         let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path
         let preview = cwd.map { PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: $0, sessionsRoot: server.pi.sessionsRoot) }
-        let server = server, missionID = mission.id
         let request: NativeThreadStore.Request = { value in
             switch value {
             case .snapshot, .image, .subagentTranscript:
