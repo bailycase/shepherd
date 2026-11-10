@@ -61,6 +61,13 @@ public enum PiLaunch {
              + " --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve")
     }
 
+    /// `pi update --models` from inside the home: fetches pi.dev's newer model catalog into the
+    /// home's `models-store.json`, which every later pi overlays on its bundled catalog. The
+    /// launcher's `PI_OFFLINE` keeps agents from refreshing it themselves.
+    public static func refreshModels(home: PiHome) -> Line {
+        Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) update --models")
+    }
+
     /// `pi mcp <arguments>` from inside the home, so no project's `.shepherd` applies: what Settings ▸
     /// MCP servers runs for a server's state and tools (`list --json`) and for signing in and out
     /// (`login <server>`, `logout <server>`). pi's own MCP does the work; the launcher passes

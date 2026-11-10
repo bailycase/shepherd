@@ -5,8 +5,8 @@ import ShepherdProtocol
 /// The live model catalog, asked of Shepherd's pi itself (`get_available_models` over RPC through
 /// the launcher in its home, `PiLaunch.listModels`): models are dynamic (engine updates, sign-ins),
 /// so no config file is the truth. One per `PiSetup`: an answer is kept until the home's
-/// `auth.json`, `models.json` or `settings.json` changes (a sign-in, a re-import), or
-/// `invalidate()` forgets it.
+/// `auth.json`, `models.json`, `settings.json` or `models-store.json` changes (a sign-in, a
+/// re-import, a `refresh()`), or `invalidate()` forgets it.
 public final class PiModelCatalog: @unchecked Sendable {
     /// One catalog row: `provider/model`, its context window as pi prints it ("200K", "1M"),
     /// and whether it takes a thinking level.
@@ -40,6 +40,7 @@ public final class PiModelCatalog: @unchecked Sendable {
     private let environment: [String: String]
     private let lock = NSLock()
     private var cached: (fingerprint: [Double], entries: [Entry], defaultModel: String?)?
+    private var refreshTimer: DispatchSourceTimer?
 
     public convenience init(home: PiHome, ready: @escaping @Sendable () -> Bool) {
         self.init(home: home, timeout: 20, ready: ready)
@@ -105,9 +106,32 @@ public final class PiModelCatalog: @unchecked Sendable {
         return entries
     }
 
+    /// Fetches pi.dev's newer catalog into the home's `models-store.json`
+    /// (`PiLaunch.refreshModels`), which every later pi, and so the next ask, overlays on the
+    /// engine's bundled catalog. Agents run `PI_OFFLINE`, so nothing else refreshes it. Blocking,
+    /// like `entries()`. False when pi couldn't run or a provider's catalog failed.
+    @discardableResult public func refresh() -> Bool {
+        guard ready() else { return false }
+        let line = PiLaunch.refreshModels(home: files)
+        return (try? BoundedCommand.run(line.argv, environment: environment, timeout: max(timeout, 30), outputLimit: 1 << 20))?.status == 0
+    }
+
+    /// `refresh()` now and then daily, off the caller's thread, for the catalog's lifetime (the
+    /// host's). Wall-clock, so a Mac that slept through the day refreshes when it wakes.
+    public func refreshDaily() {
+        lock.withLock {
+            guard refreshTimer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+            timer.schedule(wallDeadline: .now(), repeating: .seconds(24 * 60 * 60), leeway: .seconds(10 * 60))
+            timer.setEventHandler { [weak self] in self?.refresh() }
+            timer.resume()
+            refreshTimer = timer
+        }
+    }
+
     /// The modification dates of what the catalog depends on in the home (-1 while missing).
     private func fingerprint() -> [Double] {
-        ["auth.json", "models.json", "settings.json"].map { name in
+        ["auth.json", "models.json", "settings.json", "models-store.json"].map { name in
             var info = stat()
             guard stat(files.directory.appendingPathComponent(name).path, &info) == 0 else { return -1 }
             return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1e9
