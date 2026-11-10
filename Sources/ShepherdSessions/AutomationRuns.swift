@@ -23,6 +23,8 @@ final class AutomationRunLog: @unchecked Sendable {
     private let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
     private let openLock = NSLock()
     private var published: [AutomationID: AutomationRun] = [:]
+    /// After every change, on the server queue (`startLocalListener`: this Mac's app reads the runs again).
+    var changed: () -> Void = {}
 
     init(url: URL) {
         self.url = url
@@ -318,6 +320,7 @@ final class AutomationRunLog: @unchecked Sendable {
     }
 
     private func save() {
+        changed()
         let file = File(runs: Dictionary(uniqueKeysWithValues: runs.map { ($0.key.rawValue, $0.value) }))
         let url = url
         writes.async {

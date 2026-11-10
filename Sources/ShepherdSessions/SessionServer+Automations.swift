@@ -108,6 +108,18 @@ extension SessionServer {
     /// (`onAutomationRequest`), and the trigger clock's runs. Once per server.
     @MainActor
     public func serveAutomations(_ hosting: AutomationHosting) {
+        var hosting = hosting
+        // This Mac's app showing the host's threads as its own reads runs and triggers again, and
+        // posts the automation's banners; the host posts them only with no such app connected.
+        let (triggersChanged, notify) = (hosting.triggersChanged, hosting.notify)
+        hosting.triggersChanged = { [weak self] in
+            triggersChanged()
+            self?.pushAutomationsChanged()
+        }
+        hosting.notify = { [weak self] title, body in
+            if self?.relayAutomationNotifyToLocalApp(title: title, body: body) == true { return }
+            notify(title, body)
+        }
         automationHosting = hosting
         onAutomationRequest = { [weak self] request, completion in
             guard let self else { return completion(.failed(code: "shutdown", message: "host is shutting down")) }

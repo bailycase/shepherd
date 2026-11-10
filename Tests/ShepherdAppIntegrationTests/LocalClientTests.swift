@@ -550,4 +550,75 @@ struct LocalClientTests {
         #expect(vm.remoteListenerBoundPort == nil && vm.remoteListenerFailure == nil)
         #expect(idle.state.agents.isEmpty && idle.state.spaces.isEmpty)
     }
+
+    /// This Mac's automations as the host's client: the Automations page's actions go to the host
+    /// by `AutomationKey(host:)`, the page lists them under This Mac (no host of its own), the run's
+    /// thread is the app's own sidebar row, its run log reads back, and the automation's banner
+    /// posts from the app while it is connected.
+    @Test func theAppManagesTheHostsAutomationsAsThisMacs() async throws {
+        try StubPi.installAsEngine()
+        let host = try ScratchServer()
+        defer { host.stop() }
+        var hostBanners = 0
+        var hosting = host.server.headlessAutomationHosting(launch: { AgentLaunchSettings() }, defaults: {
+            AutomationHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                       worktreeFetchBeforeCreate: false, projectsEnabled: false)
+        })
+        hosting.notify = { _, _ in hostBanners += 1 }
+        host.server.serveAutomations(hosting)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, connection, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+
+        // Create, from the editor on This Mac: saved on the host, shown as This Mac's.
+        let draft = RemoteAutomationDraft(name: "Watch CI", prompt: "Watch CI", cwd: host.dir.path, enabled: false)
+        try await vm.saveAutomation(nil, host: PageHost.localID, draft: draft)
+        let key = try #require(vm.automationsPageSelection)
+        #expect(key.host == PageHost.localID)
+        #expect(host.server.state.automations.map(\.id) == [key.automation] && idle.state.automations.isEmpty)
+        try await eventuallyOnMain("the automation in the app's workspace") { vm.state.automations.map(\.id) == [key.automation] }
+        #expect(vm.automationHosts.map(\.id) == [PageHost.localID], "the host on this Mac is no host on the page")
+        #expect(vm.automationEditorHosts.map(\.id) == [PageHost.localID])
+
+        // Start: the run's thread is the app's own, in the sidebar, and its run log reads back.
+        vm.runAutomation(key)
+        try await eventuallyOnMain("the run on the host", timeout: .seconds(20)) { host.server.state.automations.first?.agentID != nil }
+        let run = try #require(host.server.state.automations.first?.agentID)
+        try await eventuallyOnMain("the run's thread in the sidebar") {
+            vm.state.agents.contains { $0.id == run } && vm.sidebarLists.all.contains { $0.id == .local(run) }
+        }
+        try await eventuallyOnMain("the host's run log, as the app's") {
+            vm.localAutomationRuns[key.automation]?.last?.agentID == run && vm.openAutomationRuns[key.automation]?.agentID == run
+        }
+        let row = try #require(vm.sidebarLists.all.first { $0.id == .local(run) })
+        #expect(row.automation == key.automation, "the run's row offers Stop and Run Now")
+        #expect(vm.automationRun(try #require(vm.state.automations.first), agent: vm.automationAgent(try #require(vm.state.automations.first))) != nil)
+
+        // The automation's banner posts here, not on the host, while the app is connected.
+        var heard: [String] = []
+        let posts = hosts.onLocalAutomationNotify
+        hosts.onLocalAutomationNotify = { title, body in heard.append(title); posts?(title, body) }
+        try await eventuallyOnMain("the host to know its app is connected") { host.server.localAppConnected }
+        host.server.automationHosting?.notify("Watch CI", "The run needs you.")
+        try await eventuallyOnMain("the app to hear the banner") { heard == ["Watch CI"] }
+        #expect(hostBanners == 0)
+
+        // Turn on, stop, delete: each on the host.
+        vm.setAutomationEnabled(key, true)
+        try await eventuallyOnMain("the host to turn it on") { host.server.state.automations.first?.enabled == true }
+        vm.stopAutomation(key)
+        try await eventuallyOnMain("the run to stop", timeout: .seconds(20)) {
+            !host.server.state.agents.contains { $0.id == run } && !vm.state.agents.contains { $0.id == run }
+        }
+        vm.deleteAutomation(key)
+        try await eventuallyOnMain("the automation to go") { host.server.state.automations.isEmpty && vm.state.automations.isEmpty }
+        #expect(vm.remoteActionError == nil)
+        #expect(idle.state.automations.isEmpty && idle.state.agents.isEmpty)
+    }
 }

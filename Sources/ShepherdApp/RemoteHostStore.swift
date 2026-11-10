@@ -261,6 +261,9 @@ final class RemoteHostStore {
     /// A tool call, or a line said, in a thread of the background host on this Mac.
     @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
     @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
+    /// The background host on this Mac's automations changed, or one of them posts a banner.
+    @ObservationIgnored var onLocalAutomationsChanged: (() -> Void)?
+    @ObservationIgnored var onLocalAutomationNotify: ((String, String) -> Void)?
     /// A design's thread notes changed on the background host on this Mac.
     @ObservationIgnored var onLocalDesignNotesChanged: ((DesignID) -> Void)?
     /// A design's Git state changed on the background host on this Mac.
@@ -304,7 +307,7 @@ final class RemoteHostStore {
     var connections: [Connection] { hidesLocalHost ? pairedConnections : allConnections }
     /// The background host on this Mac is transport only: its workspace is the app's own
     /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it. For now the
-    /// Designs, Automations, Projects and Missions pages still do, through `allConnections`: the app
+    /// Projects and Missions pages still do, through `allConnections`: the app
     /// leaves what they own to them (`ShepherdViewModel.mirrored`).
     var hidesLocalHost = false
     /// The background host on this Mac while its workspace is the app's own (`hidesLocalHost`):
@@ -551,6 +554,14 @@ final class RemoteHostStore {
         client.onThreadNotice = { [weak self, weak connection] agentID, message in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalThreadNotice?(agentID, message)
+        }
+        client.onAutomationsChanged = { [weak self, weak connection] in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAutomationsChanged?()
+        }
+        client.onAutomationNotify = { [weak self, weak connection] title, body in
+            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAutomationNotify?(title, body)
         }
         client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
             guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }

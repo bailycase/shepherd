@@ -36,7 +36,10 @@
   Settings page (instructions, suggestions, skills, hooks, slash commands) whose data changed on the
   host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
   activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
-  it the same way. The local link ends only when its socket
+  it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
+  post) and `automationsChanged` (a run log or trigger changed: read the runs and statuses again).
+  Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
+  run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
   alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
   workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops
@@ -189,8 +192,8 @@
     the host. With `automationTriggers.v1` a draft also carries `settings` (trigger, destination,
     workspace, author gate, limits, pins; a nil field keeps the host's value, so an older client's
     edit never clears a trigger), runs carry their trigger, PR link, unread dot and failure, and
-    the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead` and
-    `setAllPaused`. The Mac shows a host's
+    the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead`,
+    `setAllPaused` and (local clients only) `setRunPullRequest`. The Mac shows a host's
     automations under its sidebar section; the iOS client in Automations. A host without the
     capability shows them read-only
   - `forge` (`issuesAndPRs.v1`, `RemoteForgeRequest`, answered `forgeResult` or an error whose
