@@ -158,6 +158,13 @@
     The shared Mac/iOS client checks the capability before sending; older hosts refuse it.
     State broadcasts carry the updated agent space, tab space and thread cwd. This does not
     transfer a thread between hosts. The Mac adds controls; the iOS layout is unchanged.
+  - `agentAction.markSeen(upTo:)`, behind `agent.seen.v1`: the host names each completion
+    (`Agent.completedAt`, set on every move to done and when a done thread's last child settles,
+    always past the one before) and keeps the latest one a person opened (`Agent.seenCompletedAt`,
+    persisted, never lowered). Every client's Done lists a finished thread only while the two
+    differ, and reports the completion it showed when the person leaves it or presses Mark all
+    seen. The Mac as the background host's client sends it over `host.sock`; in process it calls
+    the server. Clients of an older host (no `completedAt`) keep their own per-device Done.
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,

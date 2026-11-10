@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 
 /// The Mac sidebar's thread groups on this device: Needs you, Working, Done, Pinned and Recents,
@@ -79,13 +80,29 @@ final class SidebarThreads {
             hosts.host(ref.host)?.state.agents.first { $0.id == ref.agent }?.automationOrigin
                 .map { AutomationKey(host: ref.host, automation: $0.automationID) }
         }
+        var marks: [(FleetRef, Double)] = []
         mutate { state in
-            state.select(ref.map(Self.fleet))
+            marks = state.select(ref.map(Self.fleet))
             if let origin { state.openRunGroup(origin) }
         }
+        report(marks)
     }
 
-    func markSeen(_ rows: [FleetThreadRow]) { mutate { $0.markSeen(rows.map(\.ref)) } }
+    func markSeen(_ rows: [FleetThreadRow]) {
+        var marks: [(FleetRef, Double)] = []
+        mutate { marks = $0.markSeen(rows.map(\.ref)) }
+        report(marks)
+    }
+
+    /// Tells each host which of its completions were seen here, so its other devices drop them from Done. A host
+    /// without `completionSeenCapability` is not asked: this device alone remembers, as before.
+    private func report(_ marks: [(FleetRef, Double)]) {
+        for (ref, stamp) in marks {
+            guard let host = hosts.host(ref.host), host.supports(RemoteProtocol.completionSeenCapability),
+                  let client = host.connectedClient else { continue }
+            Task { try? await client.agentAction(agentID: ref.agent, action: .markSeen(upTo: stamp)) }
+        }
+    }
 
     private static func fleet(_ ref: AgentRef) -> FleetRef { FleetRef(host: ref.host, agent: ref.agent) }
 

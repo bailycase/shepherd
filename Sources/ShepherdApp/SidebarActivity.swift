@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
@@ -279,7 +280,7 @@ extension ShepherdViewModel {
     func willOpenSidebarThread(_ row: SidebarRowID) {
         let previous = sidebarReadingThread ?? selectedSidebarRow
         if let previous, previous != row, let completion = sidebarReadingCompletion {
-            sidebarSeenCompletions[previous] = completion
+            markSidebarSeen(previous, completion)
         }
         sidebarReadingThread = row
         sidebarReadingCompletion = sidebarLists.all.first(where: { $0.id == row })?.completion
@@ -287,7 +288,27 @@ extension ShepherdViewModel {
 
     func markAllSidebarDoneSeen() {
         for row in sidebarLists.done {
-            if let completion = row.completion { sidebarSeenCompletions[row.id] = completion }
+            if let completion = row.completion { markSidebarSeen(row.id, completion) }
+        }
+    }
+
+    /// Seen here at once, and told to the thread's host when the completion is the host's own
+    /// (`Agent.completedAt`), so Done clears on every device. An older host refuses; this device
+    /// still remembers.
+    private func markSidebarSeen(_ row: SidebarRowID, _ completion: Int) {
+        sidebarSeenCompletions[row] = completion
+        let ref: RemoteAgentRef?, agent: Agent?
+        switch row {
+        case .local(let id): ref = localRef(id); agent = state.agents.first { $0.id == id }
+        case .remote(let remote):
+            ref = remote
+            agent = remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }
+        case .design, .remoteDesign: return
+        }
+        guard let agent, let stamp = agent.completedAt, Int(stamp) == completion, agent.completionSeen == false else { return }
+        Task {
+            if let ref { try? await remoteHosts.agentAction(ref, action: .markSeen(upTo: stamp)) }
+            else { try? await server.markCompletionSeen(agent.id, upTo: stamp) }
         }
     }
 }

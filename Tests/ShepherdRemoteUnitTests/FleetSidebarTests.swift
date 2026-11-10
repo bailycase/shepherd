@@ -121,6 +121,33 @@ struct FleetSidebarTests {
         #expect(Set(Self.refs(Self.groups(state, Self.hosts(agents)).done)) == ["a", "b"], "a new completion is unseen")
     }
 
+    /// A host that keeps what was seen decides Done for every device: another device's opening clears it here, a later
+    /// completion brings it back, and opening it here reports the host's completion to tell it.
+    @Test func aHostsSeenCompletionDecidesDoneOnEveryDevice() {
+        var agents = [Self.agent("a", .done, active: 1), Self.agent("b", .done, active: 2)]
+        agents[0].completedAt = 1_000
+        agents[1].completedAt = 2_000
+        var state = Self.observed(agents)
+        #expect(Set(Self.refs(Self.groups(state, Self.hosts(agents)).done)) == ["a", "b"])
+
+        agents[0].seenCompletedAt = 1_000
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.session])
+        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).done) == ["b"], "opened on another device")
+        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).recents) == ["a"])
+
+        agents[0].completedAt = 3_000
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.session])
+        #expect(Set(Self.refs(Self.groups(state, Self.hosts(agents)).done)) == ["a", "b"], "a later completion is unseen")
+
+        #expect(state.select(F.ref("b")).isEmpty)
+        let marks = state.select(F.ref("a"))
+        #expect(marks.map(\.0) == [F.ref("b")] && marks.map(\.1) == [2_000], "leaving b tells its host which completion")
+        #expect(state.markSeen([F.ref("a")]).map(\.1) == [3_000])
+        // Negative control: an older host's thread is this device's alone; nothing to tell.
+        var older = Self.observed([Self.agent("old", .done, active: 1)])
+        #expect(older.markSeen([F.ref("old")]).isEmpty)
+    }
+
     @Test func markAllSeenClearsDoneWithoutTouchingOtherGroups() {
         let agents = [Self.agent("a", .done, active: 1), Self.agent("r", .working)]
         var state = Self.observed(agents)

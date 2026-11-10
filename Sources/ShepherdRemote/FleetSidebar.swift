@@ -68,6 +68,10 @@ public struct FleetSidebarState: Equatable, Sendable {
         var finished: Bool
         var generation: Int
         var completedAt: Double?
+        /// The host's name for the completion (`Agent.completedAt`) and whether the host says it
+        /// was opened (`Agent.completionSeen`); nil from an older host.
+        var stamp: Double?
+        var hostSeen: Bool?
     }
 
     public private(set) var pins: [FleetRef]
@@ -134,7 +138,7 @@ public struct FleetSidebarState: Equatable, Sendable {
             seen = seen.filter { $0.key.host != host.id || live.contains($0.key) }
             for agent in host.state.agents {
                 observe(FleetRef(host: host.id, agent: agent.id), finished: agent.status == .done,
-                        activity: agent.lastActiveAt)
+                        activity: agent.lastActiveAt, stamp: agent.completedAt, hostSeen: agent.completionSeen)
             }
         }
         if let reading, reading == selected, let record = records[reading], record.finished {
@@ -142,35 +146,57 @@ public struct FleetSidebarState: Equatable, Sendable {
         }
     }
 
-    private mutating func observe(_ ref: FleetRef, finished: Bool, activity: Double?) {
+    /// A host's `stamp` is the completion's generation, the one every device and the host agree on.
+    private mutating func observe(_ ref: FleetRef, finished: Bool, activity: Double?, stamp: Double?, hostSeen: Bool?) {
         let previous = records[ref]
-        // ponytail: observed edges only. A whole run between observations can be missed;
-        // exact chronology requires a host completion record, not a last-activity heuristic.
+        // ponytail: without a stamp (an older host), observed edges only. A whole run between
+        // observations can be missed.
         let completed = finished && previous?.finished != true
         if completed { generation += 1 }
-        records[ref] = Record(finished: finished, generation: completed ? generation : previous?.generation ?? 0,
-                              completedAt: completed ? activity : previous?.completedAt)
+        let observed = completed ? generation : previous?.generation ?? 0
+        records[ref] = Record(finished: finished, generation: finished ? stamp.map { Int($0) } ?? observed : observed,
+                              completedAt: completed ? activity : previous?.completedAt, stamp: stamp, hostSeen: hostSeen)
+    }
+
+    /// The host's completion `generation` names, when it is the host's own: what to tell it was seen.
+    private func hostMark(_ ref: FleetRef, _ generation: Int) -> (FleetRef, Double)? {
+        guard let record = records[ref], record.hostSeen == false, let stamp = record.stamp, Int(stamp) == generation else { return nil }
+        return (ref, stamp)
     }
 
     /// The thread on screen changed. Opening another thread marks the one read before seen (the completion it showed);
-    /// opening the same one again, or leaving for a page (nil), changes nothing.
-    public mutating func select(_ ref: FleetRef?) {
+    /// opening the same one again, or leaving for a page (nil), changes nothing. Returns the completions to tell their
+    /// hosts were seen (`RemoteAgentAction.markSeen`), so Done clears on every device.
+    @discardableResult
+    public mutating func select(_ ref: FleetRef?) -> [(FleetRef, Double)] {
         selected = ref
-        guard let ref, ref != reading else { return }
-        if let reading, let readingGeneration { seen[reading] = readingGeneration }
+        guard let ref, ref != reading else { return [] }
+        var marks: [(FleetRef, Double)] = []
+        if let reading, let readingGeneration {
+            seen[reading] = readingGeneration
+            if let mark = hostMark(reading, readingGeneration) { marks.append(mark) }
+        }
         reading = ref
         readingGeneration = records[ref].flatMap { $0.finished ? $0.generation : nil }
+        return marks
     }
 
-    /// Mark all seen: these threads' current completions leave Done. A later completion brings one back.
-    public mutating func markSeen(_ refs: [FleetRef]) {
+    /// Mark all seen: these threads' current completions leave Done. A later completion brings one back. Returns the
+    /// completions to tell their hosts, as `select` does.
+    @discardableResult
+    public mutating func markSeen(_ refs: [FleetRef]) -> [(FleetRef, Double)] {
+        var marks: [(FleetRef, Double)] = []
         for ref in refs {
-            if let record = records[ref], record.finished { seen[ref] = record.generation }
+            guard let record = records[ref], record.finished else { continue }
+            seen[ref] = record.generation
+            if let mark = hostMark(ref, record.generation) { marks.append(mark) }
         }
+        return marks
     }
 
+    /// The host's word when it has one (an older host's threads: this device's own).
     private func unseenCompletion(_ ref: FleetRef) -> Bool {
-        guard let record = records[ref], record.finished else { return false }
+        guard let record = records[ref], record.finished, record.hostSeen != true else { return false }
         return seen[ref] != record.generation
     }
 
