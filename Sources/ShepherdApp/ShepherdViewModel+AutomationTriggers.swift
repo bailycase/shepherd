@@ -5,38 +5,10 @@ import ShepherdSessions
 
 /// Triggered automations: the server's `AutomationTriggers` decides when a run starts and
 /// `SessionServer.startTriggeredRun` starts it; this is the app's view of their status and runs,
-/// the Project admission of Project-owned runs, and the Automations page's controls.
+/// and the Automations page's controls. Project-owned runs' admission is the Project runtime's
+/// (`ProjectCoordinatorController.install`).
 @MainActor
 extension ShepherdViewModel {
-    /// Project-owned runs become Project tasks through the Project runtime's own `assign`, which
-    /// reserves the task in the Project's ledger under its threads-at-once, time and pause rules
-    /// and launches its worker; a repeated operation id is the same task, never a second one.
-    func installProjectAutomationAdmission() {
-        server.onProjectAutomationRun = { [weak self] projectID, revision, automationID, title, prompt, completion in
-            Task { @MainActor in
-                guard let self else { return completion(.failure(AgentStartFailure(message: "Owner closed"))) }
-                do {
-                    guard let automation = self.state.automations.first(where: { $0.id == automationID }),
-                          let project = self.state.projects.first(where: { $0.id == projectID }),
-                          let space = self.state.projectRunSpace(project, cwd: automation.cwd) else {
-                        throw LogicalProjectsError("no_such_space", "Link the automation's folder to the Project first.")
-                    }
-                    let operation = UUID()
-                    let updated = try await self.projectCoordinator.perform(
-                        projectID: projectID, expectedRevision: revision,
-                        request: .assign(operationID: operation, spaceID: space, title: title, prompt: prompt,
-                                         model: automation.model, thinking: automation.thinking?.rawValue))
-                    guard let task = updated.tasks.first(where: { $0.operationID == operation }) else {
-                        throw LogicalProjectsError("conflict", "The Project didn't keep the run's task.")
-                    }
-                    completion(.success(task.id))
-                } catch {
-                    completion(.failure(error))
-                }
-            }
-        }
-    }
-
     /// Re-reads every triggered automation's status and runs (the Automations page and sidebar).
     func refreshAutomationTriggers() {
         let triggers = server.automationTriggers

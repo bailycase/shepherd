@@ -17,23 +17,20 @@ extension ShepherdViewModel {
         ProcessInfo.processInfo.environment["SHEPHERD_THIS_MAC_LOCAL"] != "0"
     }
 
-    /// The host's workspace less what designs, automations, Projects and missions own: their pages
-    /// still reach those through the host's connection (`allConnections`), so the app's local views,
-    /// whose actions would go to the idle in-process server, never see them.
+    /// The host's workspace less what designs and automations own: their pages still reach those
+    /// through the host's connection (`allConnections`), so the app's local views, whose actions
+    /// would go to the idle in-process server, never see them. Projects and missions run on the
+    /// host and are the app's own, as in process.
     /// ponytail: a fallback until those features route through `localHost` too.
     nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState {
         let watchers = Set(state.automations.compactMap(\.agentID))
-        let owned = state.projectWorkerIDs.union(state.missionAgentIDs)
-        var copy = state.withoutDesigns.withoutProjectCoordinators
-        let gone = Set(copy.agents.filter { watchers.contains($0.id) || owned.contains($0.id) || $0.automationOrigin != nil }.map(\.id))
+        var copy = state.withoutDesigns
+        let gone = Set(copy.agents.filter { watchers.contains($0.id) || $0.automationOrigin != nil }.map(\.id))
         let tabs = Set(copy.agents.filter { gone.contains($0.id) }.map(\.tabID))
         copy.agents.removeAll { gone.contains($0.id) }
         copy.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(gone.contains) == true }
         copy.spaces.removeAll(where: \.holdsDesigns)
         copy.automations = []
-        copy.projects = []
-        copy.projectExecutions = []
-        copy.missions = []
         return copy
     }
 

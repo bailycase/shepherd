@@ -28,7 +28,6 @@ extension ShepherdViewModel {
         hosting.triggersChanged = { [weak self] in self?.refreshAutomationTriggers() }
         hosting.notify = { [weak self] title, body in self?.postAutomationBanner(title: title, body: body) }
         server.serveAutomations(hosting)
-        installProjectAutomationAdmission()
     }
 
     func startAutomation(_ id: AutomationID) async throws {

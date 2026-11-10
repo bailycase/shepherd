@@ -4304,8 +4304,8 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
-    private func broadcastRemoteState(_ full: ShepherdState) {
-        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated })
+    private func broadcastRemoteState(_ full: ShepherdState, wholeOnly: Bool = false) {
+        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && (!wholeOnly || takesWholeWorkspace($0)) })
     }
 
     /// Each client's view of `full` (`remoteState`), encoded once per view actually sent: with
@@ -4318,9 +4318,11 @@ public final class SessionServer: @unchecked Sendable {
         for client in remotes {
             let designs = seesDesigns(client) && !full.designs.isEmpty
             let legacy = client.knowsLegacyThinkingOnly
-            let view = RemoteStateView(designs: designs, legacy: legacy)
+            let whole = takesWholeWorkspace(client)
+            let view = RemoteStateView(designs: designs, legacy: legacy, whole: whole)
             if payloads[view] == nil {
-                let state = (designs ? full : full.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+                let shown = designs ? full : full.withoutDesigns
+                let state = whole ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
             }
@@ -4366,7 +4368,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The workspace as `client` is sent it (`seesDesigns`).
     private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
-        (seesDesigns(client) ? state : state.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+        let shown = seesDesigns(client) ? state : state.withoutDesigns
+        return takesWholeWorkspace(client) ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+    }
+
+    /// This Mac's app showing the host's threads as its own (`localThreadsCapability`): it draws
+    /// Projects, their coordinators and workers, and missions from the state, as in process.
+    private func takesWholeWorkspace(_ client: ExtensionConnection) -> Bool {
+        client.isLocal && client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
@@ -6239,6 +6248,9 @@ public final class SessionServer: @unchecked Sendable {
         // Private mission progress has its own hints; the fleet would contain identical data.
         if !missionsChanged || before.withoutMissions != state.withoutMissions {
             broadcastRemoteState(state)
+        } else {
+            // This Mac's app draws missions from the state, as in process.
+            broadcastRemoteState(state, wholeOnly: true)
         }
         if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
@@ -9654,6 +9666,7 @@ public final class SessionServer: @unchecked Sendable {
 private struct RemoteStateView: Hashable {
     var designs: Bool
     var legacy: Bool
+    var whole: Bool
 }
 
 /// The id of a remote request the host could not decode, so it can refuse it.

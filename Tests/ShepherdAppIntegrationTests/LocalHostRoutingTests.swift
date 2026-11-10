@@ -106,7 +106,7 @@ struct LocalHostRoutingTests {
         #expect(s.vm.selectedAgentID == ids[0] && s.vm.selectedRemoteAgent == nil)
     }
 
-    /// Designs, automations, Projects and missions still reach the host as This Mac's host section on
+    /// Designs and automations still reach the host as This Mac's host section on
     /// their pages: the app's own workspace never holds them, so nothing acts on them through the
     /// idle server, and a run opens as the host's thread.
     @Test func automationsStayOnThisMacsHostSection() async throws {

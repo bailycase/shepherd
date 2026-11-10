@@ -207,7 +207,7 @@ struct MissionSpecKitEngineTests {
         let fieldEditor = try #require(field.currentEditor() as? (NSTextView & NSTextInputClient))
         fieldEditor.insertText(steer, replacementRange: NSRange(location: NSNotFound, length: 0))
         try await eventuallyOnMain("typed words reach the agent's draft") {
-            controller.vm?.threadStores.store(for: implementing.agentID!).draft == steer
+            controller.hosting.threadStore(implementing.agentID!)?.draft == steer
         }
         try await ready(Labels.threadSend); try window.press(Labels.threadSend)
         try await eventuallyOnMain("steer accepted by the mission", timeout: .seconds(30)) {

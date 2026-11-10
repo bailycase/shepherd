@@ -3,8 +3,8 @@ import Testing
 @testable import ShepherdApp
 
 /// What the app takes as its own of the background host's workspace (`ShepherdViewModel.mirrored`):
-/// the ordinary threads, never what designs, automations, Projects and missions own, which their
-/// pages still reach through the host.
+/// the ordinary threads, Projects and missions with their threads (they run on the host), never what
+/// designs and automations own, which their pages still reach through the host.
 @Suite struct LocalHostMirrorTests {
     @Test func theMirrorKeepsOrdinaryThreadsAndLeavesTheFeaturesTheirs() {
         let space = Space(name: "acme-web", path: "/tmp/acme-web")
@@ -29,10 +29,11 @@ import Testing
                                   designs: [design], projects: [project])
 
         let mirrored = ShepherdViewModel.mirrored(state)
-        #expect(mirrored.agents.map(\.id) == [thread.0.id])
-        #expect(mirrored.tabs.map(\.id) == [thread.1.id])
+        #expect(mirrored.agents.map(\.id) == [thread.0.id, coordinator.0.id, worker.0.id])
+        #expect(mirrored.tabs.map(\.id) == [thread.1.id, coordinator.1.id, worker.1.id])
         #expect(mirrored.spaces == [space])
-        #expect(mirrored.automations.isEmpty && mirrored.designs.isEmpty && mirrored.projects.isEmpty && mirrored.missions.isEmpty)
+        #expect(mirrored.automations.isEmpty && mirrored.designs.isEmpty)
+        #expect(mirrored.projects == [project], "Projects run on the host and draw as the app's own")
         #expect(ShepherdViewModel.mirrored(ShepherdState(spaces: [space], tabs: [thread.1], agents: [thread.0]))
             == ShepherdState(spaces: [space], tabs: [thread.1], agents: [thread.0]), "an ordinary workspace mirrors whole")
     }

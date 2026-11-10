@@ -28,11 +28,13 @@ enum RemoteMissionSamples {
         .applyPatch(patchID: attempt), .rejectPatch(patchID: attempt), .autoApplyPatches(on: true),
         .startTrain(order: [space], rules: MissionTrain.Rules(between: .stagingSoak, staging: [space: "make deploy-staging"], health: [space: "make health"])),
         .changeTrain(order: [space], rules: MissionTrain.Rules()), .pauseTrain, .resumeTrain, .skipSoak,
-        .laneLock(spaceID: space, choice: .stack),
+        .laneLock(spaceID: space, choice: .stack), .saveTemplate(name: "Checkout events", summary: "Add an event", team: space),
+        .saveTemplate(name: "Mine", summary: "", team: nil),
     ]
     static let requests: [RemoteMissionRequest] = [
         .list, .get(missionID: mission.id), .startOptions,
         .create(goal: "Ship", spaceIDs: [space], model: "test/model", branches: [space: "refs/heads/main"]),
+        .create(goal: "Ship", spaceIDs: [space], model: "test/model", branches: [space: "refs/heads/main"], template: "add-an-event"), .templates,
         .review(missionID: mission.id), .reviewFile(missionID: mission.id, spaceID: space, path: "a.txt"), .specKit(missionID: mission.id),
     ] + actions.map { .action(missionID: mission.id, revision: 4, action: $0) }
     static let results: [RemoteMissionResult] = [
@@ -45,6 +47,7 @@ enum RemoteMissionSamples {
         .review([RemoteMissionReview(spaceID: space, name: "checkout", path: "/wt", branch: "mission/a", head: "abc", fingerprint: "fp",
                                      files: [RemoteMissionReviewFile(file)])]),
         .reviewFile(file), .specKit(RemoteMissionSpecKit(settingUp: true)),
+        .templates([MissionTemplate.from(mission, name: "Checkout events", summary: "Add an event", at: 1)]), .templates([]),
     ]
 }
 

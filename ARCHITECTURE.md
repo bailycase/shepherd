@@ -128,7 +128,7 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |
 | MCP | `Extensions/shepherd-mcp-*`, `ShepherdApp/MCP/`, `ShepherdSessions/ProjectMCP*.swift` |
-| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift` |
+| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, built by `RuntimeHosting` in the app or in `Shepherd --host` |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
 | Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |
