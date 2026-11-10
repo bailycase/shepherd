@@ -2,10 +2,10 @@
 
 Shepherd is a native macOS app (SwiftUI, macOS 26+) for running and supervising many `pi` coding
 agents, with an iPhone and iPad client (`App/iOS`). Every agent is `pi --mode rpc` on pipes, owned
-by `SessionServer` and drawn as a native thread. In Shepherd Nightly a background service (the app's
-own executable run by launchd as `Shepherd --host`) owns the sessions and the app is its client, so
-agents outlive Quit; with the service off (Shepherd, Dev, or turned off in Login Items) the app owns
-them in process and they die with it. Terminals are tabs under a thread, never splits.
+by `SessionServer` and drawn as a native thread. `SessionServer` runs in a separate host process (the
+app's own executable as `Shepherd --host`) and the app is always its client over `host.sock`. In
+Shepherd Nightly with the background service on, launchd runs the host and agents outlive Quit;
+otherwise the app starts the host as a supervised child and stops it on Quit. Terminals are tabs under a thread, never splits.
 
 ## Commands
 

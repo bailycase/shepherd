@@ -48,10 +48,11 @@ settings, and each configuration compiles only its own icon.
 
 **The background service** (`Shepherd --host` under launchd, [ARCHITECTURE](../ARCHITECTURE.md))
 registers only for Shepherd Nightly run from a stable, signed bundle (`BackgroundService.mayRegister`).
-Dev and Prod run in process: Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`, so it never
-registers. To try the client path in Dev, start a host on Dev's folder
-(`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`) and run the scheme with
-`SHEPHERD_BACKGROUND_HOST=1` ([environment](environment.md)).
+Dev and Prod never register it: Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`. They
+start the host as the app's own child instead, so agents run in a second `Shepherd --host`
+process. To debug the host, use Xcode's Debug ▸ Attach to Process and pick `Shepherd --host`.
+Every host logs through `ShepherdLog` (subsystem `com.shepherd.app`), whoever started it, so
+`log show --predicate 'subsystem == "com.shepherd.app"'` covers both.
 
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
 Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it

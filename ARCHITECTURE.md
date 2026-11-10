@@ -1,6 +1,7 @@
 # Architecture
 
-Shepherd runs its session server in one of two processes. Whichever holds `<support>/server.lock`
+Shepherd's session server runs in one process, the host: the app's own executable run as
+`Shepherd --host` (`SessionHost`, `ShepherdHost`). Whichever host holds `<support>/server.lock`
 owns:
 
 - the workspace
@@ -10,18 +11,20 @@ owns:
 - the extension socket
 - the remote listeners
 
-**Background service** (Shepherd Nightly, while Login Items allows it): the app's own executable,
-run by launchd as `Shepherd --host` (`SessionHost`, `ShepherdHost`; the LaunchAgent is
-`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`). It owns
-everything above and has no UI. The app is its client over `<support>/host.sock`, through the same
-remote-host paths it uses for a paired Mac, plus `local.v1` for what only this Mac's app gets (the
-Browser and design drawing run in the app's web views). Quitting the app leaves agents running;
-the host drains and restarts on its own when an update replaces the bundle (`HostDrain`).
+The app never runs agents. It is always the host's client over `<support>/host.sock`, through the
+remote-host paths it uses for a paired Mac plus `local.v1` and `local.threads.v1` for what only this
+Mac's app gets: the host's threads, designs and Settings as the app's own, and what needs a window
+(the Browser, design drawing, `review_diff`, Update this Mac) relayed to it. Who starts the host:
 
-**In process** (Shepherd and Dev, the service off in Login Items, or tests): the app owns
-everything above itself. Quitting Shepherd ends every child process, and relaunching restores the
-workspace and respawns each agent in its pi session. `SHEPHERD_BACKGROUND_HOST=1` lets any build be
-a running host's client.
+- **The background service** (Shepherd Nightly, while Login Items allows it): launchd runs it
+  (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
+  Quitting the app leaves agents running; the host drains and restarts on its own when an update
+  replaces the bundle (`HostDrain`).
+- **The app's own child** (Shepherd, Dev, the service off, a failed registration): the app starts
+  the host as a supervised child, restarts it after a crash with backoff, and stops it when the
+  app quits, so agents end with the app as they always have. Quit asks first while agents are
+  mid-turn. A host that finds the workspace owned exits with a distinct status, and the app
+  connects to the owner instead.
 
 Either owner can also serve its agents to other devices over an authenticated TCP listener.
 
@@ -101,9 +104,8 @@ decodes on a concurrent queue while its session holds its later records in order
 - the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
-In process it calls the server directly, with no socket, and adopts its `onStateChanged`
-snapshots; as the background service's client it never starts a server (`BackgroundHostClient`)
-and takes the host's workspace as its own over `host.sock` (`ShepherdViewModel+LocalHost`). A
+It never owns a server: it takes the host's workspace as its own over `host.sock`
+(`ShepherdViewModel+LocalHost`) and sends each change there. A
 persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
 model reconciles itself and `TerminalSessionStore` from `server.state`.
 
