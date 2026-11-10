@@ -304,6 +304,12 @@
     resource file, only while it holds the text the client read) and `installSkills` (copies
     skills from a repository into the space's `.pi/skills` on the host). `save` also takes those
     resource paths. Both clients refuse these before sending to a host without the capability.
+  - `projects.inheritance.resources.v1`: a child space also inherits its parent's slash commands
+    (through `shepherd-mcp-parent.ts`) and extensions (`-e` at launch), and `inheritance` records
+    `prompts` and `extensions` it turns off. The client refuses those lists to an older host.
+  - `projects.parent.v1`: adds `organize`, which sets a registered space's parent space on the
+    same host and its name (`editProject`), and answers the listing's first page. Add space and the
+    space's Settings use it; with an older host the parent picker is disabled and says why.
   - `logicalProjects` (`logicalProjects.v1`): NEW logical `Project` records on the owner,
     separate from `projects` below. `LogicalProjectsRequest`/`LogicalProjectsResult` serve list,
     get, idempotent create with atomic initial owner-local Space links, revision-checked edit,

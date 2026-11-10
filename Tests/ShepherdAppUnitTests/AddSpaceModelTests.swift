@@ -37,7 +37,11 @@ struct AddSpaceModelTests {
         let model = AddSpaceModel(hosts: rows.map(\.host), rows: rows, hostID: "local", parentID: parent) { _ in }
         #expect(model.title == "Add child space" && model.parentName == "shepherd")
         model.hostID = "build"
-        #expect(model.parentID == nil && model.title == "Add space" && model.parents.isEmpty)
+        #expect(model.parentID == nil && model.title == "Add space" && model.parents.map(\.name) == ["daemon"], "a paired Mac's own spaces")
+        var older = rows[1].host
+        older.supportsParent = false
+        let fromOlder = AddSpaceModel(hosts: [older], rows: [ProjectsRow(host: older, project: rows[1].project)], hostID: "build") { _ in }
+        #expect(!fromOlder.offersParents && fromOlder.parents.isEmpty, "an older host adds only a root space")
     }
 
     @Test func onlyAFolderInsideTheParentsInherits() {
