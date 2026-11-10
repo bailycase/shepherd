@@ -152,6 +152,16 @@ extension ShepherdViewModel {
         Task {
             defer { startingDesignAgents.remove(id) }
             do {
+                // As the background host's client the host starts it, as a paired Mac's (`openRemoteDesign`).
+                if let library = localHost?.designs {
+                    guard case .agent(let agentID) = try await Self.remoteDesign(library, .ensureAgent(designID: id)) else {
+                        throw RemoteDesignReply.unexpected
+                    }
+                    // ponytail: polls for the host's push, as `createDesign` does.
+                    for _ in 0..<100 where self.agent(id: agentID) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                    selectAgent(agentID)
+                    return
+                }
                 _ = try await startDesignAgent(design, brief: nil, images: [])
             } catch {
                 remoteActionError = "Couldn't open \(design.name): \(error)"
@@ -203,7 +213,7 @@ extension ShepherdViewModel {
     func createDesign(brief: String, images: [NativeImage], system: String? = nil, model: String? = nil,
                       thinking: ThinkingLevel? = nil) async throws -> DesignID {
         // As the background host's client the host makes it, its agent with these choices.
-        if let host = localHost, Self.routesThisMacLocally {
+        if let host = localHost {
             guard case .created(let designID, let agentID) = try await Self.remoteDesign(host.designs, .create(RemoteDesignCreate(
                 brief: brief, systemNamespace: system, options: .init(model: model, thinking: thinking, images: images)))) else {
                 throw RemoteDesignReply.unexpected

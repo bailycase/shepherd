@@ -37,7 +37,9 @@
   host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
   activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
   it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
-  post) and `automationsChanged` (a run log or trigger changed: read the runs and statuses again).
+  post), `automationsChanged` (a run log or trigger changed: read the runs and statuses again) and
+  `agentStartProblem` (why an agent's pi stopped and it waits, nil once pi starts again; every
+  agent's once when the client connects).
   Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
   run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
@@ -398,7 +400,9 @@
     the app sends these only to the background host on its own Mac). Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
-    `consentFingerprint` the client showed, and the host checks both again. Missions never ride
+    `consentFingerprint` the client showed, and the host checks both again. A host with
+    `missions.train.v1` also serves a published mission's merge train (`MissionRun.train` in the
+    record, `pauseTrain` and `resumeTrain`); the iPhone and iPad show the train only there. Missions never ride
     `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
     its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
     and executions) as the app holds it in process; a capable client gets a pushed

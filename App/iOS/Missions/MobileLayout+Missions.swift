@@ -14,4 +14,6 @@ extension MobileLayout {
     static let missionLiveLines = 8
     /// How much of the screen the patch sheet takes first, the mission still showing above it (MobilePatch).
     static let missionPatchDetent: CGFloat = 0.76
+    /// A merge train car's place, a numbered circle (MXTrain).
+    static let missionTrainNumber: CGFloat = 20
 }

@@ -82,6 +82,7 @@ struct MissionScreen: View {
                         Button("Review patch") { patchShown = true }.buttonStyle(.sh(.secondary)).disabled(busy)
                     }
                 }
+                if mobileHost.supports(RemoteProtocol.missionsTrainCapability), let train = mission.run?.train { trainSection(mission, train) }
                 ForEach(controls.consents) { consent in consentCard(consent) }
                 ForEach(controls.setUps) { setUp in
                     SHBanner(.attention, title: "\(setUp.name) has no Spec Kit project for pi yet.",
@@ -167,6 +168,44 @@ struct MissionScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
         .accessibilityElement(children: .combine)
+    }
+
+    /// The merge train (MXTrain, read-only): each pull request in order, where it is, and why it stopped.
+    private func trainSection(_ mission: Mission, _ train: MissionTrain) -> some View {
+        let cars = RemoteMissionTrainCar.cars(mission)
+        return VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+            SHListHeader("Merge train", attention: train.status == .paused) {
+                Text("\(train.merged) of \(cars.count) merged").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+            }
+            if train.status == .paused, let notice = train.notice {
+                SHBanner(.attention, title: notice) { EmptyView() }
+            }
+            SHListCard {
+                ForEach(cars) { car in
+                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                        Text("\(car.position)").shText(.micro).foregroundStyle(Color.sh.textSecondary)
+                            .frame(width: MobileLayout.missionTrainNumber, height: MobileLayout.missionTrainNumber)
+                            .overlay(Circle().strokeBorder(Color.sh.lineStrong))
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            HStack(spacing: SH.Space.s) {
+                                Text(car.name).font(.sh(.mono, weight: .semibold)).lineLimit(1)
+                                    .foregroundStyle(car.state == .waiting ? Color.sh.textTertiary : Color.sh.textPrimary)
+                                if let pull = car.pull { Text(pull).shText(.mono).foregroundStyle(Color.sh.running) }
+                            }
+                            if let detail = car.detail {
+                                Text(detail).shText(.caption).foregroundStyle(car.state == .blocked ? Color.sh.textSecondary : Color.sh.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: SH.Space.s)
+                        SHStatusPill(AgentState(car.state), label: car.state.label).fixedSize()
+                    }
+                    .padding(SH.Space.l)
+                    .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 
     @ViewBuilder private func map(_ mission: Mission) -> some View {
@@ -257,6 +296,18 @@ struct MissionScreen: View {
                 Button("Pause", systemImage: "pause.fill") { act(mission, .pause) }
                     .buttonStyle(.sh(.secondary)).disabled(busy || !available)
             }
+            if trainServed, let train = mission.run?.train {
+                switch train.status {
+                case .running:
+                    Button("Pause train", systemImage: "pause.fill") { act(mission, .pauseTrain) }
+                        .buttonStyle(.sh(.secondary)).disabled(busy || !available)
+                case .paused:
+                    Button("Resume train", systemImage: "play.fill") { act(mission, .resumeTrain) }
+                        .buttonStyle(.sh(.primary)).disabled(busy || !available)
+                case .done:
+                    EmptyView()
+                }
+            }
             if let primary = controls.primary {
                 Button { act(mission, wire(primary)) } label: { Text(title(primary)).lineLimit(1) }
                     .buttonStyle(.sh(.primary)).disabled(busy || !available)
@@ -284,6 +335,8 @@ struct MissionScreen: View {
         case .accept(let attempt, _): .acceptConvergence(attemptID: attempt)
         }
     }
+
+    private var trainServed: Bool { hosts.hosts.first { $0.id == host }?.supports(RemoteProtocol.missionsTrainCapability) == true }
 
     private var record: Mission? { hosts.hosts.first { $0.id == host }?.missions.record(id) }
 
