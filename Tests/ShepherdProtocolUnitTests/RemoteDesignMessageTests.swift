@@ -71,6 +71,7 @@ enum RemoteDesignSamples {
         .importPrepare(path: "/tmp/acme-checkout.zip"),
         .importConfirm(preview: importPreview, name: "Checkout funnel 2", skippingUnreadable: true),
         .importDiscard(previewID: comment),
+        .mentionCatalog,
         .pinReference(DesignReference(designID: design, board: board, element: DesignElementID(board: board.viewName, tid: 5, path: [1, 1, 0]))!),
         .pinReference(DesignReference(designID: design, revision: 7)!),
         .referenceKept(agentID: AgentID(rawValue: "thread"), payloadID: comment),
@@ -170,6 +171,7 @@ enum RemoteDesignSamples {
         .gitPulled(.needsMerge(gitMerge)),
         .importPrepared(importPreview),
         .importFailed(.notAProject),
+        .mentionCatalog(Data(#"{"designs":[]}"#.utf8)),
         .importFailed(.linksOutside([DesignImportLink(board: "A.dc.html", target: "a link")])),
         .importFailed(.unreadableBoards(importPreview.unreadable, readable: 1)),
         .importFailed(.fileTooLarge(path: "hero.mp4", bytes: 9, limit: 8)),
@@ -200,7 +202,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard, .settleBoardProposal, .threadNotes, .removeThreadNote,
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard, .mentionCatalog, .settleBoardProposal, .threadNotes, .removeThreadNote,
              .gitState, .gitPreview, .gitShare, .gitOpen, .gitCommit, .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge:
             Wire.caseName(request)
         }
@@ -211,14 +213,14 @@ struct RemoteDesignMessageTests {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
              .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced,
              .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok, .threadNotes,
-             .gitState, .gitPreview, .gitOpened, .gitPulled, .importPrepared, .importFailed:
+             .gitState, .gitPreview, .gitOpened, .gitPulled, .importPrepared, .importFailed, .mentionCatalog:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 55)
-        #expect(Set(S.results.map(Self.caseName)).count == 31)
+        #expect(Set(S.requests.map(Self.caseName)).count == 56)
+        #expect(Set(S.results.map(Self.caseName)).count == 32)
     }
 
     @Test(arguments: [
@@ -280,7 +282,7 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
                 #expect(request.designID == S.design)
-            case .referenceKept, .referencePicture, .referenceLookedAt:
+            case .referenceKept, .referencePicture, .referenceLookedAt, .mentionCatalog:
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
                 #expect(request.designID == nil)

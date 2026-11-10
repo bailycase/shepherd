@@ -387,6 +387,9 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// A board a host's thread drew (`DesignReferencePayload.Proposal`): add or apply it to the
     /// design (`accept`), or discard it (`designBoardsCapability`). Answered with `referenceKept`.
     case settleBoardProposal(agentID: AgentID, payloadID: UUID, accept: Bool)
+    /// Every design's rows for the composer's @ picker, to this Mac's app only (it can pass a
+    /// remote frame; `designReferencesCapability`). Answered `mentionCatalog`.
+    case mentionCatalog
     /// The notes threads left on a design, oldest first (`designThreadNotesCapability`).
     case threadNotes(designID: DesignID)
     /// Removes a thread's note (the canvas's Resolve). Answered `ok`.
@@ -416,7 +419,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
              .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel, .gitOpen, .importPrepare, .importConfirm,
              .importDiscard: nil
         case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
-        case .referenceKept, .referencePicture, .referenceLookedAt, .settleBoardProposal: nil
+        case .referenceKept, .referencePicture, .referenceLookedAt, .settleBoardProposal, .mentionCatalog: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
@@ -450,7 +453,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .duplicate, .removeFromRecents: RemoteProtocol.designLifecycleCapability
         case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild:
             RemoteProtocol.designSystemsCapability
-        case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt:
+        case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .mentionCatalog:
             RemoteProtocol.designReferencesCapability
         case .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard:
             RemoteProtocol.designImportCapability
@@ -516,6 +519,8 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case importPrepared(DesignImportPreview)
     /// Why `importPrepare` or `importConfirm` made no design (the app's ImportFailed dialog).
     case importFailed(DesignImportFailure)
+    /// `mentionCatalog`'s answer: ShepherdRemote's `DesignMentionCatalog`, as JSON.
+    case mentionCatalog(Data)
 }
 
 /// Stable codes a host refuses a design request with (beside `DesignStoreError.code`).

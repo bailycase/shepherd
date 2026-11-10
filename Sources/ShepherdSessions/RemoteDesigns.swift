@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Why a remote design request was refused: a stable code and words for the client.
 struct RemoteDesignRefusal: Error, Sendable {
@@ -197,6 +198,8 @@ struct RemoteDesignService: Sendable {
         case .removeThreadNote(let designID, let noteID):
             try await server.removeDesignThreadNote(designID, noteID: noteID)
             return .ok
+        case .mentionCatalog:
+            return .mentionCatalog(try JSONEncoder().encode(await server.designMentionCatalog()))
         case .gitState(let id, let fetch):
             return .gitState(try await server.designGitState(id, fetch: fetch))
         case .gitPreview(let id, let path, let merge):

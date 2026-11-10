@@ -293,7 +293,9 @@ struct LocalClientTests {
         let prepared = try await vm.prepareDesignReference(piece)
         #expect(prepared.reference.host == .local && prepared.reference.revision != nil && prepared.design == design.name)
         let chips = try #require(vm.designReferenceChips(for: thread.agent.id), "a thread's chips as the host's client")
-        _ = chips
+        // The @ picker lists every board of a design never opened here, as in process.
+        let catalog = await chips.io.catalog()
+        #expect(catalog.designs.map(\.title) == [design.name] && catalog.boards[design.id]?.count == 2)
         #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 

@@ -95,7 +95,13 @@ extension ShepherdViewModel {
             io.freshness = remote.freshness
             io.pinnedFreshness = remote.pinnedFreshness
             io.lookedAt = remote.lookedAt
-            io.catalog = remote.catalog
+            // Every design's rows, as in process: the host reads them all (`mentionCatalog`).
+            let library = host.designs
+            io.catalog = {
+                guard case .mentionCatalog(let data)? = try? await Self.remoteDesign(library, .mentionCatalog),
+                      let catalog = try? JSONDecoder().decode(DesignMentionCatalog.self, from: data) else { return await remote.catalog() }
+                return catalog
+            }
             io.settle = remote.settle
             io.wantPictures = { [weak self] scope in
                 self?.wantMentionPictures(scope)

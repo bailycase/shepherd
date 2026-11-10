@@ -706,6 +706,7 @@ extension RemoteDesignTests {
         // A paired device never has the host read its own disk: only this Mac's app imports from a path.
         #expect(try await refusal(raw, 20, .importPrepare(path: NSTemporaryDirectory())) == "local_only")
         #expect(try await refusal(raw, 21, .importDiscard(previewID: UUID())) == "local_only")
+        #expect(try await refusal(raw, 22, .mentionCatalog) == "local_only")
 
         let imported = Locked<[(String, Data)]>([])
         let urls = Locked<[URL]>([])

@@ -3678,6 +3678,9 @@ public final class SessionServer: @unchecked Sendable {
         case .importPrepare, .importConfirm, .importDiscard:
             localDesignImport(id: id, request: request, client: client)
             return
+        case .mentionCatalog where !client.isLocal:
+            send(.error(id: id, code: "local_only", message: "The whole catalog goes only to this Mac's app."), to: client)
+            return
         default:
             break
         }
