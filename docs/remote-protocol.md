@@ -36,7 +36,10 @@
   Settings page (instructions, suggestions, skills, hooks, slash commands) whose data changed on the
   host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
   activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
-  it the same way. The local link ends only when its socket
+  it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
+  post) and `automationsChanged` (a run log or trigger changed: read the runs and statuses again).
+  Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
+  run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
   alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
   workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops
@@ -189,8 +192,8 @@
     the host. With `automationTriggers.v1` a draft also carries `settings` (trigger, destination,
     workspace, author gate, limits, pins; a nil field keeps the host's value, so an older client's
     edit never clears a trigger), runs carry their trigger, PR link, unread dot and failure, and
-    the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead` and
-    `setAllPaused`. The Mac shows a host's
+    the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead`,
+    `setAllPaused` and (local clients only) `setRunPullRequest`. The Mac shows a host's
     automations under its sidebar section; the iOS client in Automations. A host without the
     capability shows them read-only
   - `forge` (`issuesAndPRs.v1`, `RemoteForgeRequest`, answered `forgeResult` or an error whose
@@ -363,9 +366,13 @@
     (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
     "Build one from a repo" in a host's space), references to the host's own designs in its
     threads (`design.references.v1`), adding or discarding the boards those threads drew
-    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), and a
-    pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
-    experiment turns on or off).
+    (`design.boards.v1`), a Claude Design ZIP uploaded to import (`design.import.v1`), the notes
+    threads left on a design (`design.threadNotes.v1`), a design's Git sharing and Open from Git
+    (`design.git.v1`), and a pushed `designChanged` for the designs a client watches
+    (`capabilitiesChanged` when the experiment turns on or off). This Mac's own app alone may
+    import from a path on the shared disk (`importPrepare`, `importConfirm`, `importDiscard`) and
+    read the whole @ picker catalog (`mentionCatalog`); it alone gets `designNotesChanged`,
+    `designGitChanged` and its import's `designImportProgress` pushes.
     Answered by the server itself; boards render on the client
   - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
     drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists

@@ -1335,9 +1335,12 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         // The run log is current by the time a broadcast lands; it is the one thing a broadcast
-        // of an unchanged workspace can carry.
-        let runs = server.openAutomationRuns
-        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // of an unchanged workspace can carry. As the background host's client, the host's run
+        // log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
+        if localHost == nil {
+            let runs = server.openAutomationRuns
+            if runs != openAutomationRuns { openAutomationRuns = runs }
+        }
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
         // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.

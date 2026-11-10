@@ -534,9 +534,7 @@ extension ShepherdViewModel {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
-                let preview = try await server.prepareDesignImport(from: url) { [weak self] step in
-                    Task { @MainActor in self?.designImporting?.apply(step) }
-                }
+                let preview = try await prepareDesignImport(url)
                 if !preview.unreadable.isEmpty {
                     stagedDesignImport = preview.id
                     designImportPrompt = .unreadable(preview)
@@ -558,10 +556,55 @@ extension ShepherdViewModel {
         }
     }
 
+    /// The background host's design library while the app is its client: it imports from the
+    /// same disk (`importPrepare`), with the same choices. Nil: the server imports.
+    private var importingHost: RemoteDesignLibrary? { Self.routesThisMacLocally ? localHost?.designs : nil }
+
+    private func prepareDesignImport(_ url: URL) async throws -> DesignImportPreview {
+        guard let library = importingHost else {
+            return try await server.prepareDesignImport(from: url) { [weak self] step in
+                Task { @MainActor in self?.designImporting?.apply(step) }
+            }
+        }
+        switch try await Self.remoteDesign(library, .importPrepare(path: url.path)) {
+        case .importPrepared(let preview): return preview
+        case .importFailed(let failure): throw failure
+        default: throw RemoteDesignReply.unexpected
+        }
+    }
+
+    private func discardDesignImport(_ id: UUID) async {
+        guard let library = importingHost else { return await server.cancelDesignImport(id) }
+        _ = try? await Self.remoteDesign(library, .importDiscard(previewID: id))
+    }
+
     /// The import's own ending: the design recorded, opened, and its agent started on the brief
     /// that has it read the design and change nothing.
     func finishDesignImport(_ preview: DesignImportPreview, name: String? = nil, skippingUnreadable: Bool = false) async {
         designImporting?.apply(.opening(title: name ?? preview.title))
+        if let library = importingHost {
+            // The host makes it and starts its agent, as a design made on it does (`createDesign`).
+            do {
+                switch try await Self.remoteDesign(library, .importConfirm(preview: preview, name: name, skippingUnreadable: skippingUnreadable)) {
+                case .created(let designID, let agentID):
+                    // ponytail: polls for the host's push, as `createDesign` does.
+                    for _ in 0..<100 where design(designID) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                    designImporting = nil
+                    designsPageSelection = designID
+                    await loadDesignSystems()
+                    if let agentID { selectAgent(agentID) } else { openDesign(designID) }
+                case .importFailed(let failure):
+                    designImporting = nil
+                    designImportPrompt = .failed(file: preview.file, failure)
+                default:
+                    throw RemoteDesignReply.unexpected
+                }
+            } catch {
+                designImporting = nil
+                remoteActionError = "Couldn't open \(preview.title): \(Self.words(error))"
+            }
+            return
+        }
         do {
             let design = try await server.finishDesignImport(preview, name: name, skippingUnreadable: skippingUnreadable)
             designImporting = nil
@@ -571,11 +614,11 @@ extension ShepherdViewModel {
             _ = try await startDesignAgent(design, brief: DesignBrief.imported(file: preview.file), images: [])
         } catch let failure as DesignImportFailure {
             designImporting = nil
-            await server.cancelDesignImport(preview.id)
+            await discardDesignImport(preview.id)
             designImportPrompt = .failed(file: preview.file, failure)
         } catch {
             designImporting = nil
-            await server.cancelDesignImport(preview.id)
+            await discardDesignImport(preview.id)
             remoteActionError = "Couldn't open \(preview.title): \(error)"
         }
     }
@@ -585,7 +628,7 @@ extension ShepherdViewModel {
         guard let staged = stagedDesignImport else { return }
         stagedDesignImport = nil
         designImporting = nil
-        Task { await server.cancelDesignImport(staged) }
+        Task { await discardDesignImport(staged) }
     }
 
     /// Cancel import, OK, or a dialog closed: nothing was imported.
@@ -595,7 +638,7 @@ extension ShepherdViewModel {
         designImporting = nil
         switch prompt {
         case .unreadable(let preview), .again(let preview, _, _):
-            Task { await server.cancelDesignImport(preview.id) }
+            Task { await discardDesignImport(preview.id) }
         case .failed:
             break
         }
@@ -615,7 +658,7 @@ extension ShepherdViewModel {
         case .again(let preview, let existing, let copyName):
             if openExisting {
                 designImporting = nil
-                Task { await server.cancelDesignImport(preview.id) }
+                Task { await discardDesignImport(preview.id) }
                 openDesign(existing.id)
             } else {
                 Task { await finishDesignImport(preview, name: copyName) }

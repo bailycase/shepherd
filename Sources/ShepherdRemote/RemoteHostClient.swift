@@ -85,8 +85,18 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onSettingsChanged: ((RemoteSettingsPage) -> Void)?
     /// A tool call a thread of the background host on this Mac finished (`toolFinished`). Main queue.
     public var onToolFinished: ((AgentID, String) -> Void)?
+    /// A design's thread notes changed on the background host on this Mac (`designNotesChanged`). Main queue.
+    public var onDesignNotesChanged: ((DesignID) -> Void)?
+    /// A design's Git state changed on the background host on this Mac (`designGitChanged`). Main queue.
+    public var onDesignGitChanged: ((DesignID) -> Void)?
+    /// How this Mac's own Import is going on its background host (`designImportProgress`). Main queue.
+    public var onDesignImportProgress: ((DesignImportProgress) -> Void)?
     /// A line the background host on this Mac says in a thread (`threadNotice`). Main queue.
     public var onThreadNotice: ((AgentID, String) -> Void)?
+    /// The background host on this Mac's automations changed (`automationsChanged`). Main queue.
+    public var onAutomationsChanged: (() -> Void)?
+    /// An automation's banner from the background host on this Mac (`automationNotify`). Main queue.
+    public var onAutomationNotify: ((String, String) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -161,7 +171,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         case appRelay(Int, AppRelayJob)
         case settingsChanged(RemoteSettingsPage)
         case toolFinished(AgentID, String)
+        case designNotesChanged(DesignID)
+        case designGitChanged(DesignID)
+        case designImportProgress(DesignImportProgress)
         case threadNotice(AgentID, String)
+        case automationsChanged
+        case automationNotify(String, String)
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -1616,8 +1631,18 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.settingsChanged(page), bytes: line.count)
         case .toolFinished(let agentID, let tool):
             self.push(.toolFinished(agentID, tool), bytes: line.count)
+        case .designNotesChanged(let designID):
+            self.push(.designNotesChanged(designID), bytes: line.count)
+        case .designGitChanged(let designID):
+            self.push(.designGitChanged(designID), bytes: line.count)
+        case .designImportProgress(let step):
+            self.push(.designImportProgress(step), bytes: line.count)
         case .threadNotice(let agentID, let message):
             self.push(.threadNotice(agentID, message), bytes: line.count)
+        case .automationsChanged:
+            self.push(.automationsChanged, bytes: line.count)
+        case .automationNotify(let title, let body):
+            self.push(.automationNotify(title, body), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1736,7 +1761,12 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .appRelay(let token, let job): self.onAppRelay?(token, job)
                 case .settingsChanged(let page): self.onSettingsChanged?(page)
                 case .toolFinished(let agentID, let tool): self.onToolFinished?(agentID, tool)
+                case .designNotesChanged(let designID): self.onDesignNotesChanged?(designID)
+                case .designGitChanged(let designID): self.onDesignGitChanged?(designID)
+                case .designImportProgress(let step): self.onDesignImportProgress?(step)
                 case .threadNotice(let agentID, let message): self.onThreadNotice?(agentID, message)
+                case .automationsChanged: self.onAutomationsChanged?()
+                case .automationNotify(let title, let body): self.onAutomationNotify?(title, body)
                 }
             }
             finish()

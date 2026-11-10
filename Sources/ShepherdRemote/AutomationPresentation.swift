@@ -381,6 +381,7 @@ public struct AutomationsModel: Equatable, Sendable {
         case .runEvent: ("run the event", "the run may have started")
         case .dismissEvent: ("dismiss the event", "the event may have been dismissed")
         case .markRead: ("mark the run read", nil)
+        case .setRunPullRequest: ("record the run's pull request", nil)
         case .setAllPaused(let paused): (paused ? "pause all triggers" : "resume all triggers",
                                          "triggers may have been \(paused ? "paused" : "resumed")")
         }
