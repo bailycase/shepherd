@@ -29,7 +29,6 @@ extension ShepherdViewModel {
         hosting.triggersChanged = { [weak self] in self?.refreshAutomationTriggers() }
         hosting.notify = { [weak self] title, body in self?.postAutomationBanner(title: title, body: body) }
         server.serveAutomations(hosting)
-        installProjectAutomationAdmission()
     }
 
     /// This Mac's automation as the background host's request key, while the host owns the

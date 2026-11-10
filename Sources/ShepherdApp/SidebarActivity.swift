@@ -185,13 +185,23 @@ extension ShepherdViewModel {
         // Hidden with the experiment; the missions and their receipts stay.
         guard settings.missionsEnabled else { return [] }
         let shown = shownDestination == .missions
-        let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? missions.selectedID : nil)
-        // Each connected host's missions (`missions.v1`), in configured order, after This Mac's.
-        return local + remoteHosts.allConnections.flatMap { connection in
+        let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? thisMacMissionsSelection : nil)
+        // Each connected host's missions (`missions.v1`), in configured order, after This Mac's (the background host's among them).
+        return local + remoteHosts.connections.flatMap { connection in
             SidebarMission.rows(connection.missions.records,
                                 selected: shown && missionsHost == connection.id ? remoteMissionDrivers[connection.id]?.selectedID : nil,
                                 host: (connection.id, connection.config.name))
         }
+    }
+
+    /// This Mac's missions behind the Missions page: the background host's, as its client (it runs
+    /// them), else this app's own.
+    var thisMacMissions: any MissionDriving { localHost.flatMap { missionDriver(for: $0.id) } ?? missions }
+
+    /// The mission This Mac's page shows, read without making a driver while a view draws.
+    private var thisMacMissionsSelection: MissionID? {
+        if let host = localHost { return remoteMissionDrivers[host.id]?.selectedID }
+        return missions.selectedID
     }
 
     /// A host's missions behind the Missions page, made on first use; nil for a host that is gone.
@@ -210,7 +220,7 @@ extension ShepherdViewModel {
             guard let driver = missionDriver(for: host) else { return }
             driver.selectedID = id
         } else {
-            missions.selectedID = id
+            thisMacMissions.selectedID = id
         }
         missionsHost = host
         openDestination(.missions)
@@ -219,9 +229,10 @@ extension ShepherdViewModel {
     /// The Missions section's "New mission": the Missions page's start page, on This Mac.
     func openNewMission() {
         guard settings.missionsEnabled else { return }
-        missions.selectedID = nil
+        let page = thisMacMissions
+        page.selectedID = nil
         missionsHost = nil
-        missionStartRequested = true
+        page.startRequested = true
         openDestination(.missions)
     }
 

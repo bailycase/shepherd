@@ -32,10 +32,17 @@ extension ShepherdViewModel {
 
     // MARK: Model
 
+    /// Where a Project's requests go: This Mac's are the background host's while the app is its
+    /// client (the host runs them), and draw as the app's own all the same.
+    func projectOwner(_ home: LogicalProjectHome) -> LogicalProjectHome {
+        if case .local = home, let host = localHost { return .host(host.id) }
+        return home
+    }
+
     /// The hosts the Project's OWNER knows: its own runtime answers for this Mac, and a remote owner answers for itself.
     func projectHostOptions(of home: LogicalProjectHome) async throws -> [ProjectHostOption] {
         var result: ProjectRuntimeResult = .hosts([])
-        switch home {
+        switch projectOwner(home) {
         case .local:
             result = try await projectCoordinator.perform(ProjectRuntimeTransport.hosts)
         case .host(let id):
@@ -54,7 +61,7 @@ extension ShepherdViewModel {
 
     /// One owner request: this Mac's server, or the connected host that owns the Project.
     private func sendLogicalProjects(_ home: LogicalProjectHome, _ request: LogicalProjectsRequest) async throws -> LogicalProjectsResult {
-        switch home {
+        switch projectOwner(home) {
         case .local: return try await server.logicalProjects(request)
         case .host(let id): return try await remoteHosts.logicalProjects(hostID: id, request: request)
         }
@@ -71,7 +78,7 @@ extension ShepherdViewModel {
     /// A Project action at the revision shown, run by the Project's owner: this Mac's runtime, or the owning host's through
     /// `ProjectRuntimeTransport.action`. A host that does not serve it (an older one) says `update_required`, and nothing runs here.
     private func performProjectRuntime(_ ref: LogicalProjectRef, _ revision: UInt64, _ request: ProjectRuntimeRequest) async throws -> Project {
-        switch ref.home {
+        switch projectOwner(ref.home) {
         case .local:
             return try await projectCoordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
         case .host(let id):
@@ -86,7 +93,7 @@ extension ShepherdViewModel {
     /// A worker's question answered through the Project's owner, fenced by the Project revision and the worker's own dialog.
     private func answerProjectQuestion(_ ref: LogicalProjectRef, _ revision: UInt64, _ task: ProjectTaskID,
                                        _ request: NativeThreadRequest) async throws -> NativeThreadResult {
-        switch ref.home {
+        switch projectOwner(ref.home) {
         case .local:
             return try await server.answerProjectQuestion(ref.id, expectedRevision: revision, taskID: task, request: request)
         case .host(let id):
@@ -128,7 +135,8 @@ extension ShepherdViewModel {
     var allLogicalProjects: [(home: LogicalProjectHome, hostName: String?, project: Project)] {
         guard projectsEnabled else { return [] }
         var rows = state.projects.map { (home: LogicalProjectHome.local, hostName: String?.none, project: $0) }
-        for connection in remoteHosts.allConnections where connection.phase == .connected && connection.supportsLogicalProjects {
+        // The background host on this Mac is This Mac (`state.projects`), never a host of its own.
+        for connection in remoteHosts.connections where connection.phase == .connected && connection.supportsLogicalProjects {
             rows += connection.state.projects.map { (home: LogicalProjectHome.host(connection.id), hostName: connection.config.name, project: $0) }
         }
         return rows
@@ -240,7 +248,7 @@ extension ShepherdViewModel {
             guard let self else { throw LogicalProjectsError("unavailable", "Shepherd is closing.") }
             let transport = ProjectRuntimeTransport.worker(projectID: ref.id, taskID: task, request: native)
             let result: ProjectRuntimeResult
-            switch ref.home {
+            switch self.projectOwner(ref.home) {
             case .local: result = try await self.projectCoordinator.perform(transport)
             case .host(let host): result = try await self.remoteHosts.projectRuntime(hostID: host, request: transport)
             }
@@ -366,7 +374,7 @@ extension ShepherdViewModel {
 
     /// The pi model ids the owner can use now: its real catalog, never a list this app carries.
     func ownerModelIDs(of home: LogicalProjectHome) async -> [String] {
-        switch home {
+        switch projectOwner(home) {
         case .local:
             let server = self.server
             return await Task.detached(priority: .userInitiated) { server.modelListing().models }.value

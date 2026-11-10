@@ -358,6 +358,9 @@ final class RPCThreadState {
     /// Longest short reason kept; the sidebar shows far less.
     static let shortReasonLimit = 120
 
+    /// The tools that write a file at a path they are given (pi's `edit` and `write`).
+    private static func writesFiles(_ name: String) -> Bool { name == "edit" || name == "write" }
+
     /// An asking call's `short` argument as one trimmed line, or nil when it gave none.
     static func shortReason(in args: JSONValue?) -> String? {
         guard case .object(let fields) = args, case .string(let text) = fields["short"] else { return nil }
@@ -441,7 +444,18 @@ final class RPCThreadState {
     /// failed as it aborted them, and the error replies pi ended those runs with (by pi's
     /// timestamp).
     private var stoppedCalls: Set<String> = []
+    /// The `edit` and `write` calls the Changes engine was told began, until they end.
+    private var fileCalls: Set<String> = []
     private var stoppedReplies: Set<Double> = []
+    /// The stall watch (`RPCThreadState+Stall.swift`): when pi last said anything, the tool calls
+    /// running now, whether a check is scheduled, and the failure a stalled run ends with.
+    var lastEventAt = ContinuousClock.now
+    var runningTools: Set<String> = []
+    var stallWatching = false
+    var stallMessage: String?
+    var stallBound = RPCThreadState.defaultStallBound
+    /// Replies Shepherd stopped because the run stalled, by pi's timestamp: failed, with this message.
+    var stalledReplies: [Double: String] = [:]
 
     // Queue state (RPCThreadState+Queue.swift).
     /// Server-queue admission fence while an explicitly authorized host update is installing.
@@ -748,6 +762,7 @@ final class RPCThreadState {
     // MARK: - Events (session queue)
 
     func handle(_ event: RPCEvent) {
+        lastEventAt = .now
         switch event {
         case .skillsChanged:
             skillsNeedRefresh = true
@@ -771,6 +786,7 @@ final class RPCThreadState {
             running = true
             runFailed = false
             runError = nil
+            watchForStall()
             // A buffered start can arrive after Stop. Only newly authorized input clears it.
             settleAwaitingSteers = false
             if !items.isEmpty {
@@ -796,6 +812,10 @@ final class RPCThreadState {
             refreshState()
             refreshStats()
         case .agentSettled:
+            // A stalled run pi ended without a failed reply still failed.
+            if let stallMessage, !runFailed { runFailed = true; runError = stallMessage }
+            stallMessage = nil
+            runningTools.removeAll()
             recoveryResumePending = false
             if !runFailed, !stopRequested {
                 recoveryAttempts = 0
@@ -884,8 +904,15 @@ final class RPCThreadState {
             // an idle pi has no turn whose end would refresh it. A hook's row says what just
             // happened to the step the agent is on, so it shows while pi works too.
             if !running || message.customType == "shepherd.hook" { refreshMessages() }
-        case .messageEnd(let message):
-            guard message.role == "assistant" else { break }
+        case .messageEnd(let reply):
+            guard reply.role == "assistant" else { break }
+            var message = reply
+            if let stallMessage, message.stopReason == "aborted" || message.stopReason == "error" {
+                // Shepherd stopped it, not the user: the turn failed, and Retry continues it.
+                message.stopReason = "error"
+                message.errorMessage = stallMessage
+                if let time = message.timestamp { stalledReplies[time] = stallMessage }
+            }
             endDiagnostic("model.response")
             if currentAssistant == nil {
                 sequence += 1
@@ -918,6 +945,7 @@ final class RPCThreadState {
             // The ring moves once per reply, never per token.
             refreshStats()
         case .toolExecutionStart(let id, let name, let args, _):
+            runningTools.insert(id)
             let operation = "tool." + DiagnosticFailureDetails.ToolKind(name: name).rawValue
             beginDiagnostic("tool:" + id, operation: operation)
             if Self.asksUser(name) {
@@ -925,16 +953,23 @@ final class RPCThreadState {
                 askingCalls.append((id, Self.shortReason(in: args)))
             }
             streamingCalls[id] = nil
+            if Self.writesFiles(name), case .object(let fields)? = args, case .string(let path)? = fields["path"], !path.isEmpty {
+                if fileCalls.count >= Self.timingLimit, let any = fileCalls.first { fileCalls.remove(any) }
+                fileCalls.insert(id)
+                onTurnEvent?(.callStarted(id: id, path: path))
+            }
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial, _):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError, _):
+            runningTools.remove(id)
             endDiagnostic("tool:" + id)
             let stopped = isError && stopRequested
             if isError, !stopRequested {
                 diagnosticActivity("tool.failed", details: .init(category: .other, toolKind: .init(name: name)))
             }
             askingCalls.removeAll { $0.id == id }
+            if fileCalls.remove(id) != nil { onTurnEvent?(.callEnded(id: id, ok: !isError)) }
             if stopped {
                 if stoppedCalls.count >= Self.timingLimit, let any = stoppedCalls.first { stoppedCalls.remove(any) }
                 stoppedCalls.insert(id)
@@ -1723,7 +1758,7 @@ final class RPCThreadState {
             // Projecting the whole history (and reading + hashing its images) is O(messages); it runs here, off the thread's
             // queue, from a snapshot of the small tables the projection consults. The queue only swaps in the result.
             let hook = self.beforeHistoryImages
-            let stopped = self.stoppedReplies
+            let stopped = self.stoppedReplies, stalled = self.stalledReplies
             let sentReferences = self.origins.compactMapValues(\.references)
             let adjust = self.historyAdjuster()
             self.enqueueHistoryProjection(sequence: sequence, superseded: { measured(result) }) { [weak self] in
@@ -1735,7 +1770,7 @@ final class RPCThreadState {
                     Self.historySlots.wait()
                     let interval = Self.signposter.beginInterval("History projection", id: Self.signposter.makeSignpostID())
                     // One pass: marking only turns an error into an abort, which the estimate's baseline skips alike.
-                    let ordered = Self.chronological(Self.markingStopped(messages, stopped: stopped))
+                    let ordered = Self.chronological(Self.markingStopped(messages, stopped: stopped, stalled: stalled))
                     var projector = HistoryProjector()
                     let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: projector.shown(ordered)) : [:]
                     let history = projector.append(ordered, sentReferences: sentReferences, images: images, adjust: adjust)
@@ -1901,14 +1936,18 @@ final class RPCThreadState {
     }
 
     /// pi's error replies to a Stop, as the stops they were.
-    private static func markingStopped(_ messages: [RPCMessage], stopped: Set<Double>) -> [RPCMessage] {
-        guard !stopped.isEmpty else { return messages }
+    private static func markingStopped(_ messages: [RPCMessage], stopped: Set<Double>, stalled: [Double: String]) -> [RPCMessage] {
+        guard !stopped.isEmpty || !stalled.isEmpty else { return messages }
         return messages.map { message in
-            guard message.role == "assistant", message.stopReason == "error", let time = message.timestamp,
-                  stopped.contains(time) else { return message }
-            var stopped = message
-            stopped.stopReason = "aborted"
-            return stopped
+            guard message.role == "assistant", let time = message.timestamp else { return message }
+            var marked = message
+            if let failure = stalled[time] {
+                marked.stopReason = "error"
+                marked.errorMessage = failure
+            } else if message.stopReason == "error", stopped.contains(time) {
+                marked.stopReason = "aborted"
+            }
+            return marked
         }
     }
 
@@ -2081,7 +2120,9 @@ final class RPCThreadState {
         requestSeq = nil
         responseMarks.removeAll()
         stoppedCalls.removeAll()
+        fileCalls.removeAll()
         stoppedReplies.removeAll()
+        stalledReplies.removeAll()
         widgets.removeAll()
         goal = nil
         goalsAvailable = false
@@ -3314,4 +3355,8 @@ enum TurnEvent: Equatable {
     case message(timestamp: Double?, text: String)
     /// pi's run settled.
     case settled
+    /// An `edit` or `write` call began on `path`, as pi was given it. Nested calls count.
+    case callStarted(id: String, path: String)
+    /// That call ended; a failed or stopped one is not `ok`.
+    case callEnded(id: String, ok: Bool)
 }

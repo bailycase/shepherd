@@ -1,4 +1,4 @@
-// A scripted OpenAI chat-completions provider for the opt-in real-engine thread tests
+// A scripted OpenAI chat-completions (and Anthropic messages) provider for the opt-in real-engine thread tests
 // (Tests/ShepherdSessionsIntegrationTests/EngineThreadTests.swift): no network, no model.
 // Prints {"port":N} once listening and exits when stdin closes. What it answers depends on the
 // last user message, so one pi can be driven through every turn shape:
@@ -6,6 +6,7 @@
 //   "tool …"    one bash call (`echo hi`); the turn ends with "tool done" once the result is back
 //   "slow …"    sixty words, fifty milliseconds apart, so a Stop or a queued message lands mid-turn
 //   "think …"   a reasoning block (`reasoning_content`) before "thought about it"
+//   "limit …"   Anthropic's usage limit: a 429 `rate_limit_error` asking for a retry hours away
 //   compaction  pi's summarization request (its prompt wraps the conversation in <conversation>)
 //               is answered with a fixed summary
 //   otherwise   "ok"
@@ -25,6 +26,10 @@ const server = http.createServer(async (req, res) => {
     choices: [{ index: 0, delta, finish_reason: finish ?? null }], ...(extra ? { usage: extra } : {}) })}\n\n`;
   let closed = false;
   res.on("close", () => { closed = true; });
+  if (/^limit/.test(text)) {
+    res.writeHead(429, { "content-type": "application/json", "retry-after": "18000" });
+    return res.end(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "This request would exceed your account's rate limit. Please try again later." } }));
+  }
   res.writeHead(200, { "content-type": "text/event-stream" });
   const finish = (reason) => { if (!closed) res.end(chunk({}, reason, usage) + "data: [DONE]\n\n"); };
 

@@ -149,10 +149,18 @@ public final class RemoteMissions {
     }
 
     /// Makes a mission on the host; its planner starts there. Returns its ID.
-    public func create(goal: String, spaces: [SpaceID], model: String, branches: [SpaceID: String]) async throws -> MissionID {
-        guard case .created(let id) = try await send(.create(goal: goal, spaceIDs: spaces, model: model, branches: branches)) else { throw Self.unexpected }
+    public func create(goal: String, spaces: [SpaceID], model: String, branches: [SpaceID: String], template: String? = nil) async throws -> MissionID {
+        guard case .created(let id) = try await send(.create(goal: goal, spaceIDs: spaces, model: model, branches: branches, template: template)) else {
+            throw Self.unexpected
+        }
         await fetch(id)
         return id
+    }
+
+    /// The host's mission templates (MXTemplates).
+    public func templates() async throws -> [MissionTemplate] {
+        guard case .templates(let list) = try await send(.templates) else { throw Self.unexpected }
+        return list
     }
 
     /// One owner action against `revision`, the mission as the caller displayed it. Returns the mission Run again made.
