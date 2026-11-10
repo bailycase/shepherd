@@ -186,6 +186,22 @@ struct EngineThreadTests {
         #expect(try String(contentsOf: trace, encoding: .utf8).contains("finished session_start"))
     }
 
+    /// Anthropic's usage limit (a 429 `rate_limit_error`, with a retry-after hours away) through
+    /// the real engine with pi's retries on and the status extension relaying: pi retries it a
+    /// bounded number of times, then the turn ends failed with the provider's words, and the agent
+    /// says so. Never a turn left at "Waiting for response".
+    @Test(arguments: ["fixture-anthropic/fixture", "fixture/fixture"])
+    func aUsageLimitEndsTheTurnFailedWithinTheBound(model: String) async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), retry: true, model: model, status: true)
+        defer { pi.stop() }
+        _ = try await pi.send("limit now", from: try await pi.ready())
+        let failed = try await pi.snapshot("the limited turn to fail") { !$0.running && $0.messages.last?.status == "error" }
+        #expect(failed.messages.last?.blocks.contains { $0.text.contains("rate_limit_error") } == true)
+        try await eventually("the agent to say its turn failed", timeout: .seconds(10)) {
+            pi.host.server.state.agents.first?.status == .done && pi.host.server.state.agents.first?.lastFailure?.contains("429") == true
+        }
+    }
+
     @Test func skillsAddedEditedAndRemovedAppearInTheExistingThreadWithoutRestarting() async throws {
         let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine))
         defer { pi.stop() }
@@ -430,7 +446,7 @@ final class RealPi: @unchecked Sendable {
         """
 
     /// `history`: session entries (`{"type":"message",...}`) saved after the header, as a resumed thread's.
-    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = []) async throws -> RealPi {
+    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false) async throws -> RealPi {
         let directory = try makeScratchDirectory("real-pi")
         let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
                             userHome: directory.appendingPathComponent("home").path)
@@ -457,12 +473,14 @@ final class RealPi: @unchecked Sendable {
             try home.install()
             let models = """
                 {"providers":{"fixture":{"baseUrl":"http://127.0.0.1:\(port)/v1","api":"openai-completions","apiKey":"fixture-key",\
-                "models":[{"id":"fixture","name":"fixture","reasoning":true,"input":["text"],"contextWindow":64000,"maxTokens":1024}]}}}
+                "models":[{"id":"fixture","name":"fixture","reasoning":true,"input":["text"],"contextWindow":64000,"maxTokens":1024}]},\
+                "fixture-anthropic":{"baseUrl":"http://127.0.0.1:\(port)","api":"anthropic-messages","apiKey":"fixture-key",\
+                "models":[{"id":"fixture","name":"fixture","reasoning":false,"input":["text"],"contextWindow":64000,"maxTokens":1024}]}}}
                 """
             try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
             var settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
             settings["compaction"] = ["enabled": true, "keepRecentTokens": 1, "reserveTokens": 10]
-            settings["retry"] = ["enabled": false]
+            settings["retry"] = ["enabled": retry]
             try JSONSerialization.data(withJSONObject: settings).write(to: home.settings)
             try files.createDirectory(at: home.directory.appendingPathComponent("skills/hello"), withIntermediateDirectories: true)
             try "---\nname: hello\ndescription: Says hello\n---\nSay hello.\n"
@@ -483,16 +501,18 @@ final class RealPi: @unchecked Sendable {
             let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
             try ([header] + history).map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) + Data("\n".utf8) }
                 .reduce(Data(), +).write(to: sessionFile)
-            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: "fixture/fixture", thinking: nil,
-                                          extensions: [fixture.path] + extensions)
+            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
+                                          extensions: [fixture.path] + extensions + (status ? [try StatusExtension.installedPath()] : []))
+            let agentID = AgentID()
+            let statusEnv = status ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
             let session = try await host.server.createSession(params: CreateSessionParams(
                 cwd: project.path, command: line.argv,
-                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"], runtime: .rpc), resuming: sessionID)
+                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(statusEnv) { a, _ in a }, runtime: .rpc), resuming: sessionID)
             let space = Space(name: "rpc", path: project.path)
             try await host.server.addSpace(space)
             let pane = LeafPane(sessionID: session.id, cwd: project.path)
             let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-            let agent = Agent(name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
+            let agent = Agent(id: agentID, name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
             try await host.server.addAgent(agent, withTab: tab)
             return RealPi(host: host, agent: PiAgent(host: host, agent: agent, sessionID: session.id, log: host.dir.appendingPathComponent("unused.log")),
                           sessionFile: sessionFile, sessionID: sessionID, provider: provider, providerInput: input)

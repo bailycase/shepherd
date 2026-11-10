@@ -220,6 +220,20 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The triggered automation that started this thread, nil for every other thread. Such a run
     /// is an ordinary thread that survives relaunch; this only groups it under its automation.
     public var automationOrigin: AutomationOrigin? = nil
+    /// When the agent last finished a turn (ms since 1970, the host's clock): the identity of its
+    /// latest completion, which every device's Done compares with `seenCompletedAt`. Set by the
+    /// host on each move to done; written to state.json along with another change, like
+    /// `lastActiveAt`. Nil from older hosts and state files.
+    public var completedAt: Double? = nil
+    /// The latest `completedAt` a person opened on any device (`RemoteAgentAction.markSeen`).
+    /// Persisted; nil when none was, and from older hosts and state files.
+    public var seenCompletedAt: Double? = nil
+
+    /// What the host says of the latest completion: true once it was opened on some device, false
+    /// while it wasn't, nil when the host doesn't track it (an older host: each device decides).
+    public var completionSeen: Bool? {
+        completedAt.map { $0 <= (seenCompletedAt ?? -.infinity) }
+    }
 
     public init(
         id: AgentID = AgentID(),
@@ -280,7 +294,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure, automationOrigin
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -324,6 +338,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before failures outlived a relaunch.
         lastFailure = try c.decodeIfPresent(String.self, forKey: .lastFailure)
         automationOrigin = try? c.decodeIfPresent(AutomationOrigin.self, forKey: .automationOrigin)
+        // Absent before Done was shared between devices.
+        completedAt = try c.decodeIfPresent(Double.self, forKey: .completedAt)
+        seenCompletedAt = try c.decodeIfPresent(Double.self, forKey: .seenCompletedAt)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -356,6 +373,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(goalState, forKey: .goalState)
         try c.encodeIfPresent(lastFailure, forKey: .lastFailure)
         try c.encodeIfPresent(automationOrigin, forKey: .automationOrigin)
+        try c.encodeIfPresent(completedAt, forKey: .completedAt)
+        try c.encodeIfPresent(seenCompletedAt, forKey: .seenCompletedAt)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)

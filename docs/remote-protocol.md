@@ -158,6 +158,13 @@
     The shared Mac/iOS client checks the capability before sending; older hosts refuse it.
     State broadcasts carry the updated agent space, tab space and thread cwd. This does not
     transfer a thread between hosts. The Mac adds controls; the iOS layout is unchanged.
+  - `agentAction.markSeen(upTo:)`, behind `agent.seen.v1`: the host names each completion
+    (`Agent.completedAt`, set on every move to done and when a done thread's last child settles,
+    always past the one before) and keeps the latest one a person opened (`Agent.seenCompletedAt`,
+    persisted, never lowered). Every client's Done lists a finished thread only while the two
+    differ, and reports the completion it showed when the person leaves it or presses Mark all
+    seen. The Mac as the background host's client sends it over `host.sock`; in process it calls
+    the server. Clients of an older host (no `completedAt`) keep their own per-device Done.
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
@@ -380,11 +387,15 @@
     thread lists), reads one record (at most 256 KiB), New mission's options, create, every owner
     action of the Mac's Missions page (`action(missionID:revision:action:)`, refused `stale_mission`
     when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
-    a review's files and fingerprints and one file's `DiffFile`, and the Spec Kit reads. Answered
+    a review's files and fingerprints and one file's `DiffFile`, the Spec Kit reads, and the host's
+    templates (`templates`; `create` may name one, and `saveTemplate` saves a finished mission's map;
+    the app sends these only to the background host on its own Mac). Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
     `consentFingerprint` the client showed, and the host checks both again. Missions never ride
-    `stateChanged` (still `withoutMissions`); a capable client gets a pushed
+    `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
+    its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
+    and executions) as the app holds it in process; a capable client gets a pushed
     `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
     (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
     each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty

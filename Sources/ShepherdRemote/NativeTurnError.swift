@@ -210,7 +210,7 @@ public struct NativeTurnError: Equatable, Hashable, Sendable {
     /// pi's provider ids as people write them; an id Shepherd doesn't know shows as it is.
     public static func providerName(_ id: String) -> String {
         let names: [String: String] = [
-            "anthropic": "Anthropic", "openai": "OpenAI", "openai-codex": "OpenAI", "azure-openai-responses": "Azure OpenAI",
+            "anthropic": "Anthropic", "openai": "OpenAI", "openai-codex": "OpenAI", "azure": "Azure OpenAI", "azure-openai-responses": "Azure OpenAI",
             "google": "Google", "google-vertex": "Vertex AI", "amazon-bedrock": "Amazon Bedrock", "deepseek": "DeepSeek",
             "openrouter": "OpenRouter", "mistral": "Mistral", "xai": "xAI", "groq": "Groq", "cerebras": "Cerebras",
             "github-copilot": "GitHub Copilot", "fireworks": "Fireworks", "together": "Together", "huggingface": "Hugging Face",

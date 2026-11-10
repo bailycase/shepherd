@@ -272,7 +272,8 @@ export async function startThread(options = {}) {
       }
     },
     // The requests the thread's own model calls made, not the namer's side request.
-    mainRequests() { return fake.requests.filter((r) => (r.body?.tools ?? r.body?.messages) && !isNamer(r)); },
+    // pi 1.5 sends a model that takes additional_tools its whole tool list in `input`, with no top-level `tools`.
+    mainRequests() { return fake.requests.filter((r) => (r.body?.tools ?? r.body?.messages ?? r.body?.input) && !isNamer(r)); },
     tools() { try { return JSON.parse(fs.readFileSync(probeOut, "utf8")); } catch { return { all: [], active: [] }; } },
     sessionFile() {
       const folder = path.join(dir, "sessions");

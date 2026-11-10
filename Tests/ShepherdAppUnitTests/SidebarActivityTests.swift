@@ -91,6 +91,36 @@ struct SidebarActivityTests {
         #expect(completions.records[id]?.completedAt == 2000, "status edges work even within one millisecond")
     }
 
+    /// A host that keeps what was seen decides Done, for this Mac's threads and another host's: a completion opened on
+    /// another device leaves Done here, its generation is the host's own, and a later one comes back.
+    @Test func theHostsSeenCompletionDecidesDoneLocallyAndRemotely() throws {
+        let host = UUID()
+        var agent = Fixture.agent("worker", in: Fixture.space("workspace")).agent
+        agent.status = .done
+        agent.lastActiveAt = 1000
+        agent.completedAt = 1000
+        var source = SidebarSource(local: ShepherdState(agents: [agent]), hosts: [.init(id: host, name: "horizon", state: ShepherdState(agents: [agent]))])
+        let ids: [SidebarRowID] = [.local(agent.id), .remote(.init(hostID: host, agentID: agent.id))]
+        func done() -> [SidebarRowID] {
+            var completions = SidebarCompletions()
+            completions.reconcile(source, endpoints: [:])
+            source.completions = completions.records
+            return SidebarDerivation.lists(source).done.map(\.id)
+        }
+        #expect(Set(done()) == Set(ids))
+        #expect(source.completions[ids[0]]?.generation == 1000, "the host's completion is the generation every device marks")
+        source.local.agents[0].seenCompletedAt = 1000
+        source.hosts[0].state.agents[0].seenCompletedAt = 1000
+        #expect(done().isEmpty, "opened on another device")
+        source.local.agents[0].completedAt = 2000
+        source.hosts[0].state.agents[0].completedAt = 2000
+        #expect(Set(done()) == Set(ids), "a later completion is unseen")
+        // Negative control: an older host sends no completion, and this Mac alone decides.
+        source.local.agents[0].completedAt = nil
+        source.local.agents[0].seenCompletedAt = nil
+        #expect(done().contains(ids[0]))
+    }
+
     @Test func completionAgeIsOnlyAnActivityAccessoryNotAProjectTreeChange() {
         var agent = Fixture.agent("done", in: Fixture.space("workspace")).agent
         agent.status = .done

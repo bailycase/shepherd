@@ -252,6 +252,11 @@ struct RemoteHostClientTests {
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.agentRestartCapability))
     }
 
+    @Test func markingACompletionSeenHasItsOwnCapability() {
+        #expect(RemoteAgentAction.markSeen(upTo: 1).capability == RemoteProtocol.completionSeenCapability)
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.completionSeenCapability))
+    }
+
     /// The Browser's host side (dev servers, Start) and its tunnels come with one capability: a
     /// host without it is never asked, and a page there gets no tunnel.
     @Test func theBrowserNeedsAHostThatCarriesTunnels() async {

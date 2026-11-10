@@ -226,9 +226,9 @@ final class PiAuthStore {
     }
 
     /// An agent's request hit `provider`'s limit: the next saved account takes over when rotation
-    /// is on. Returns the names switched between, or nil.
+    /// is on. Returns the names switched between, or nil. Reads the accounts file, not `accounts`,
+    /// which only Settings ▸ Sign-in loads: a host (or an app) no one opened Sign-in on rotates too.
     func limitHit(_ provider: String) async -> (from: String, to: String)? {
-        guard accounts[provider]?.rotate == true else { return nil }
         let store = accountStore
         let switched = await Task.detached { try? store.rotate(provider) }.value ?? nil
         await refreshAccounts()

@@ -53,6 +53,62 @@ struct ThreadHostingTests {
         #expect(!h.server.state.agents.contains { $0.id == id })
     }
 
+    /// Done is the host's: a finished thread opened on the iPhone (over TCP) leaves the Mac's Done (its app over
+    /// host.sock), and the host keeps what was seen. A later completion is unseen everywhere again.
+    @Test func openingAFinishedThreadOnOneDeviceClearsDoneOnTheOther() async throws {
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        let agents = ["finished", "other"].map { name in
+            let pane = LeafPane(cwd: h.dir.path, agentID: AgentID())
+            let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            return (Agent(id: pane.agentID!, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id), tab)
+        }
+        try await h.server.putState(ShepherdState(spaces: [space], tabs: agents.map(\.1), agents: agents.map(\.0)))
+        let finished = agents[0].0.id, other = agents[1].0.id
+        let mac = try await connect(path, token)
+        defer { mac.disconnect() }
+        let port = try h.server.startRemoteListener(port: 0, tokenURL: h.dir.appendingPathComponent("remote-token"))
+        let phone = RemoteHostClient()
+        _ = try await phone.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+        defer { phone.disconnect() }
+        #expect(phone.capabilities.contains(RemoteProtocol.completionSeenCapability))
+        let macState = Locked(ShepherdState()), phoneState = Locked(ShepherdState())
+        mac.onStateChanged = { state in macState.withValue { $0 = state } }
+        phone.onStateChanged = { state in phoneState.withValue { $0 = state } }
+        let hostID = UUID()
+        func done(_ sidebar: inout FleetSidebarState, _ state: ShepherdState) -> [AgentID] {
+            let hosts = [FleetHost(id: hostID, name: "studio", address: "", port: 0, phase: .connected, state: state)]
+            sidebar.reconcile(hosts, sessions: [:])
+            return sidebar.groups(FleetModel(hosts: hosts, digests: [:])).done.map(\.ref.agent)
+        }
+
+        let reporter = try ExtensionClient(path: h.socketPath)
+        defer { reporter.closeConnection() }
+        try reporter.send(.setAgentStatus(agentID: finished, status: .working))
+        try reporter.send(.setAgentStatus(agentID: finished, status: .done))
+        var macSidebar = FleetSidebarState(), phoneSidebar = FleetSidebarState()
+        try await eventuallyOnMain("both devices to list it in Done") {
+            done(&macSidebar, macState.current) == [finished] && done(&phoneSidebar, phoneState.current) == [finished]
+        }
+
+        // The phone opens it, then another thread: the completion it read is seen.
+        phoneSidebar.select(FleetRef(host: hostID, agent: finished))
+        let marks = phoneSidebar.select(FleetRef(host: hostID, agent: other))
+        #expect(marks.count == 1)
+        for (ref, stamp) in marks { try await phone.agentAction(agentID: ref.agent, action: .markSeen(upTo: stamp)) }
+        try await eventuallyOnMain("the Mac's Done to drop it") { done(&macSidebar, macState.current).isEmpty }
+        let seen = try #require(h.server.state.agents.first { $0.id == finished })
+        #expect(seen.completionSeen == true && seen.seenCompletedAt == seen.completedAt)
+        // Negative control: a stale mark never lowers what was seen, and a later completion is unseen everywhere.
+        try await phone.agentAction(agentID: finished, action: .markSeen(upTo: 1))
+        #expect(h.server.state.agents.first { $0.id == finished }?.seenCompletedAt == seen.seenCompletedAt)
+        try reporter.send(.setAgentStatus(agentID: finished, status: .working))
+        try await eventuallyOnMain("the next turn") { h.server.state.agents.first { $0.id == finished }?.status == .working }
+        try reporter.send(.setAgentStatus(agentID: finished, status: .done))
+        try await eventuallyOnMain("the next completion in the Mac's Done") { done(&macSidebar, macState.current) == [finished] }
+    }
+
     /// An agent's agent_* tools on the background host: list its peers, spawn one, delete one.
     /// Before the host served peers they all answered `agent peers unavailable (unsupported)`.
     @Test func anAgentListsSpawnsAndDeletesPeersOnTheHost() async throws {

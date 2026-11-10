@@ -305,6 +305,9 @@ extension ShepherdHost {
 /// (`BackgroundService`).
 public enum ShepherdHost {
     public static let argument = "--host"
+    /// Missions and the Project runtime, served for the life of the host.
+    @MainActor private static var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
+                                            execution: ProjectExecutionController)?
 
     /// Agents respawn, and automation runs start, with the app's settings and its MCP servers
     /// (their Keychain secrets read here, as the app reads them). Merged threads close per
@@ -339,8 +342,12 @@ public enum ShepherdHost {
                                     remoteSignIns: RemoteSignIns())
             stores.serve(on: server)
             stores.serveTurnErrors(on: server)
-            server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
-                                                      deleteAgent: { id, _ in try await server.deleteAgent(id) }))
+            let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
+                                                                     deleteAgent: { id, _ in try await server.deleteAgent(id) }))
+            // Missions and Projects run here, where their agents run: they keep acting with the app quit.
+            runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) {
+                notifications.post(AgentBanners.automation(title: $0, body: $1))
+            }.serve()
         }, threads: { server in
             ThreadHosting(defaults: {
                 ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,

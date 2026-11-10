@@ -44,7 +44,7 @@ extension MissionController {
     /// planning thread for its own repository only. Else a refusal that says what to do instead. The same checks
     /// as the Missions page's controls.
     func threadMessage(agent: AgentID, text: String, operation: UUID, delivery: NativeThreadDelivery = .steer) async throws {
-        guard vm?.settings.missionsEnabled == true else { throw MissionError("missions_off", RemoteMissionRefusal.off) }
+        guard hosting.settings.missionsEnabled else { throw MissionError("missions_off", RemoteMissionRefusal.off) }
         guard let mission = records.first(where: { $0.run.map { MissionRun.owns($0, agent: agent) } == true }), let run = mission.run else {
             throw MissionError("mission_missing", "This thread's mission no longer exists.")
         }
@@ -126,23 +126,32 @@ extension MissionController {
     }
 
     private func serveRemoteWhileEnabled() {
-        let on = withObservationTracking { vm?.settings.missionsEnabled == true } onChange: {
+        let on = withObservationTracking { hosting.settings.missionsEnabled } onChange: {
             Task { @MainActor [weak self] in self?.serveRemoteWhileEnabled() }
         }
         server.setMissionsServed(on)
     }
 
     func remote(_ request: RemoteMissionRequest) async throws -> RemoteMissionResult {
-        guard vm?.settings.missionsEnabled == true else { throw MissionError("missions_off", RemoteMissionRefusal.off) }
+        guard hosting.settings.missionsEnabled else { throw MissionError("missions_off", RemoteMissionRefusal.off) }
         switch request {
         case .list: return .list(records.map(RemoteMissionSummary.init))
         case .get(let id): return .mission(try record(id))
         case .startOptions:
             await refreshModels()
             return .startOptions(startOptions)
-        case .create(let goal, let spaces, let model, let branches):
-            // What the host's page would offer now; a device never names a repository or model it doesn't list.
+        case .create(let goal, let spaces, let model, let branches, let template):
+            // What the host's page would offer now; a device never names a repository, model or template it doesn't list.
             await refreshModels()
+            if let template {
+                await loadTemplates()
+                guard let chosen = templates.first(where: { $0.id == template }) else {
+                    throw MissionError("mission_template", "That template is no longer on this Mac or in the repositories' default branches.")
+                }
+                startTemplate = chosen
+            }
+            // A refused create leaves no template behind for the next one.
+            defer { if template != nil { startTemplate = nil } }
             return .created(missionID: try await keepingSelection { try await self.create(goal: goal, spaces: spaces, model: model, branches: branches) })
         case .action(let id, let revision, let action):
             if let made = try await remoteAction(id: id, revision: revision, action: action) { return .created(missionID: made) }
@@ -159,6 +168,10 @@ extension MissionController {
                 throw MissionError("mission_review_file", "That file is not in the current review. Refresh the review.")
             }
             return .reviewFile(file)
+        case .templates:
+            await refreshModels()
+            await loadTemplates()
+            return .templates(templates)
         case .specKit(let id):
             let reports = try await specKitPreflight(id: id)
             return .specKit(RemoteMissionSpecKit(reports: reports, phases: specKitPhases[id] ?? [:], settingUp: specKitSettingUp.contains(id)))
@@ -219,6 +232,7 @@ extension MissionController {
         case .resumeTrain: try await resumeTrain(id: id, revision: current)
         case .skipSoak: try await skipSoak(id: id, revision: mission.revision)
         case .laneLock(let lane, let choice): try await chooseLock(id: id, lane: lane, choice: choice)
+        case .saveTemplate(let name, let summary, let team): try await saveTemplate(id: id, name: name, summary: summary, team: team)
         }
         return nil
     }
