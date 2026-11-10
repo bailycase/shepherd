@@ -218,12 +218,12 @@ struct RenderCostReport {
     }
 
     /// Launching into a workspace of forty agents: the first populated frame (its wall time,
-    /// main-thread CPU, and bodies), then, while the other layouts mount, the longest stretch
-    /// the main thread went without waiting.
+    /// main-thread CPU, and bodies), then the first show of an agent nobody has opened, which
+    /// mounts its layout, and a flip back to the first, which mounts nothing.
     @Test func launchIntoFortyAgents() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, agents) = try await MountedWorkspace.start(40, in: app)
+        let (vm, agents) = try await MountedWorkspace.start(40, in: app, mounting: .launch)
         try await Task.sleep(for: Self.atRest)
         var window: OffscreenWindow!
         SHRenderProbe.start()
@@ -233,22 +233,35 @@ struct RenderCostReport {
             ListPerf.settle(window)
         }
         let firstWall = ListPerf.milliseconds(ContinuousClock.now - start)
-        let first = SHRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body"].contains($0.key) }
+        let keys = ["layout.agentLayout", "thread.view", "composer.body", "deck.mount"]
+        let first = SHRenderProbe.stop().filter { keys.contains($0.key) }
         defer { window.close() }
-        let monitor = MainTurnMonitor()
-        monitor.start()
-        let drainStart = ContinuousClock.now
-        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        let visible = vm.threadStores.store(for: agents[0].agent.id)
+        try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
         ListPerf.settle(window)
-        let drained = ListPerf.milliseconds(ContinuousClock.now - drainStart)
-        try await Task.sleep(for: .milliseconds(300))
-        monitor.stop()
-        report.add("workspace launch (40 agents)", "first frame: wall / main-thread CPU", String(format: "%.1f ms / %.1f ms", firstWall, firstCPU))
-        report.add("workspace launch (40 agents)", "first frame: bodies", counts: first)
-        report.add("workspace launch (40 agents)", "the rest mounted after", String(format: "%.0f ms", drained))
-        report.add("workspace launch (40 agents)", "longest main-thread turns while they mount",
-                   monitor.durations.sorted(by: >).prefix(5).map { String(format: "%.1f", $0 * 1000) }.joined(separator: ", ")
-                       + String(format: " ms (%d turns)", monitor.turns))
+        try await Task.sleep(for: Self.atRest)
+
+        func switchTo(_ index: Int) async -> (wall: Double, cpu: Double, counts: [String: Int]) {
+            SHRenderProbe.start()
+            let begin = ContinuousClock.now
+            let cpu = await MainThreadCPU.milliseconds {
+                vm.selectAgent(agents[index].agent.id)
+                ListPerf.settle(window)
+            }
+            let wall = ListPerf.milliseconds(ContinuousClock.now - begin)
+            return (wall, cpu, SHRenderProbe.stop().filter { keys.contains($0.key) })
+        }
+        let firstShow = await switchTo(20)
+        try await Task.sleep(for: Self.atRest)
+        let flip = await switchTo(0)
+
+        let section = "workspace launch (40 agents)"
+        report.add(section, "first frame: wall / main-thread CPU", String(format: "%.1f ms / %.1f ms", firstWall, firstCPU))
+        report.add(section, "first frame: bodies and mounts", counts: first)
+        report.add(section, "first show of an agent nobody opened: wall / main-thread CPU", String(format: "%.1f ms / %.1f ms", firstShow.wall, firstShow.cpu))
+        report.add(section, "first show: bodies and mounts", counts: firstShow.counts)
+        report.add(section, "flip back: wall / main-thread CPU", String(format: "%.1f ms / %.1f ms", flip.wall, flip.cpu))
+        report.add(section, "flip back: bodies and mounts", counts: flip.counts)
     }
 
     /// A one-shot motion (the review pane sliding in beside the visible thread) with 5 and 40
