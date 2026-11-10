@@ -642,6 +642,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// which keeps serving and exits once no agent is busy, so launchd starts the new build.
     /// Answered `ok`.
     case drain(id: Int)
+    /// Local clients only: this Mac's app asks its background host about an update it installs
+    /// (`HostUpdateGateStep`). Answered `ok` or an error carrying the reason.
+    case hostUpdateGate(id: Int, step: HostUpdateGateStep)
     /// Create a space from a directory that exists on the host.
     case addSpace(id: Int, path: String)
     /// Local clients only (`localCapability`): this Mac's own app changes one of its background
@@ -741,7 +744,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
-        case thread
+        case thread, step
     }
 
     private enum Kind: String, Codable {
@@ -749,7 +752,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -911,6 +914,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .listModels(id: try c.decode(Int.self, forKey: .id))
         case .drain:
             self = .drain(id: try c.decode(Int.self, forKey: .id))
+        case .hostUpdateGate:
+            self = .hostUpdateGate(id: try c.decode(Int.self, forKey: .id), step: try c.decode(HostUpdateGateStep.self, forKey: .step))
         case .addSpace:
             self = .addSpace(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1147,6 +1152,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .drain(let id):
             try c.encode(Kind.drain, forKey: .type)
             try c.encode(id, forKey: .id)
+        case .hostUpdateGate(let id, let step):
+            try c.encode(Kind.hostUpdateGate, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(step, forKey: .step)
         case .addSpace(let id, let path):
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)

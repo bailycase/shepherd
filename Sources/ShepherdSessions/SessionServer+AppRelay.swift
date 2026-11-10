@@ -23,11 +23,24 @@ extension SessionServer {
                 switch result {
                 case .done(let text)?: respond(.submitted(text: text))
                 case .failed(let code, let message)?: respond(.failed(code: code, message: message))
+                case .hostUpdate?: respond(.failed(code: "protocol", message: "unexpected answer"))
                 case nil:
                     guard self.state.agents.contains(where: { $0.id == agentID }) else {
                         return respond(.failed(code: "no_such_agent", message: "unknown agent \(agentID)"))
                     }
                     respond(.submitted(text: Self.reviewWindowClosed))
+                }
+            }
+        }
+        // A paired device's Update this Mac: Sparkle runs in this Mac's app, which asks the host
+        // before it reserves or restarts (`hostUpdateGate`). With no app, nothing can install.
+        onRemoteHostUpdate = { [weak self] request, authorized, completion in
+            guard let self else { return }
+            Task {
+                guard await authorized() else { return }
+                self.relayToApp(.hostUpdate(request: request)) { result in
+                    guard case .hostUpdate(let status)? = result else { return completion(self.hostUpdateWithoutApp) }
+                    completion(status)
                 }
             }
         }
@@ -41,6 +54,7 @@ extension SessionServer {
                     switch result {
                     case .done?: respond(.success((space, false)))
                     case .failed(let code, let message)?: respond(.failure(ProjectFileError(code, message)))
+                    case .hostUpdate?: respond(.failure(ProjectFileError("protocol", "unexpected answer")))
                     case nil: respond(.failure(ProjectFileError("unavailable", Self.spaceDeleteWindowClosed)))
                     }
                 }
@@ -68,4 +82,15 @@ extension SessionServer {
             }
         }
     }
+
+    /// What a paired device's Update this Mac reads while no app is connected to install it.
+    var hostUpdateWithoutApp: HostUpdateStatus {
+        let info = Bundle.main.infoDictionary
+        var status = HostUpdateStatus(version: info?["CFBundleShortVersionString"] as? String ?? "", build: hostBuild ?? "",
+                                      channel: "", phase: .unsupported)
+        status.error = Self.hostUpdateWindowClosed
+        return status
+    }
+
+    static let hostUpdateWindowClosed = "Open Shepherd on this Mac to update it."
 }

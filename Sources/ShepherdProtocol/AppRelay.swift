@@ -10,10 +10,14 @@ public enum AppRelayJob: Codable, Hashable, Sendable {
     case review(agentID: AgentID, cwd: String?, reference: String?)
     /// `project_delete`: the Remove space confirmation.
     case confirmSpaceDelete(spaceID: SpaceID)
+    /// A paired device's Update this Mac (`RemoteRequest.hostUpdate`): Sparkle runs in the app.
+    case hostUpdate(request: RemoteHostUpdateRequest)
 }
 
 /// The app's answer to an `AppRelayJob`: the text the agent is told, or why not.
 public enum AppRelayResult: Codable, Hashable, Sendable {
     case done(text: String)
     case failed(code: String, message: String)
+    /// The app's update status, for `AppRelayJob.hostUpdate`.
+    case hostUpdate(status: HostUpdateStatus)
 }

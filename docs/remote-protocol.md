@@ -431,6 +431,9 @@
     Check is non-destructive; installation requires explicit confirmation of the current offer
     (expires after five minutes), then downloads, verifies with Sparkle's existing signed feed,
     installs and restarts as one operation. There is no remote channel switch or force install.
+    A background host has no updater: it relays the request to this Mac's app (`appRelay`'s
+    `hostUpdate` job; with no app connected, status says to open Shepherd), whose Sparkle asks the
+    host before it reserves, restarts or quits (`hostUpdateGate`, local clients only).
     Status exposes version/build/channel/phase/offer/error/canInstall and is explicitly polled,
     including after reconnect; installation is never automatically retried after disconnect.
     The host saves ordinary active turns and native queues using the existing bounded recovery

@@ -430,6 +430,17 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Asks the background host on this Mac about an update this app installs; nil is yes (or,
+    /// for `blockReason`, nothing in the way), else the host's reason.
+    public func hostUpdateGate(_ step: HostUpdateGateStep) async throws -> String? {
+        switch try await request({ id in .hostUpdateGate(id: id, step: step) }) {
+        case .ok: return nil
+        case .error(_, "refused", let message): return message
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected hostUpdateGate reply")
+        }
+    }
+
     /// The thread this Mac's own app shows (`focusThread`), so its phone pushes stay quiet.
     public func focusThread(_ agentID: AgentID?) async throws {
         let reply = try await request { id in .focusThread(id: id, agentID: agentID) }

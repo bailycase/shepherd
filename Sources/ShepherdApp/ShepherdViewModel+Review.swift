@@ -45,6 +45,9 @@ extension ShepherdViewModel {
                 self.spaceDeleteRequested = true
                 self.spaceDeleteTarget = id
                 answer(.done(text: "confirmation_required"))
+            case .hostUpdate(let request):
+                // The host checked the device before relaying; its gate fences the install.
+                Task { answer(.hostUpdate(status: await AppUpdater.shared.remoteUpdate(request, authorized: { true }))) }
             }
         }
     }
