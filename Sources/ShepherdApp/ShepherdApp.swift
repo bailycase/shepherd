@@ -76,6 +76,14 @@ public struct ShepherdMacApp: App {
                     bundleIdentifier: bundle.bundleIdentifier, bundlePath: bundle.bundlePath,
                     environment: ProcessInfo.processInfo.environment, adHoc: BackgroundService.isAdHoc()))
                 BackgroundHostClient.serviceStatus = status
+                if HostSupervisor.isEnabled() {
+                    // Every launch a client: of launchd's host when the service runs one, else of the app's own child.
+                    let supervisor = HostSupervisor(.app(preferOwner: { status != nil && service.status() == .enabled }))
+                    HostSupervisor.shared = supervisor
+                    try supervisor.start()
+                    BackgroundHostClient.owner = .host
+                    return
+                }
                 guard BackgroundHostClient.requested() || status == .enabled else { return try SessionServer.shared.start() }
                 let socket = BackgroundHostClient.socketPath()
                 BackgroundHostClient.owner = try BackgroundHostClient.choose(
@@ -93,8 +101,16 @@ public struct ShepherdMacApp: App {
                     vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                     vm.backgroundService = service
                     vm.backgroundServiceStatus = status
-                    let socket = BackgroundHostClient.socketPath()
-                    vm.remoteHosts.onLocalHostLost = { BackgroundHostClient.hostLost(service: service, socket: socket) }
+                    if let supervisor = HostSupervisor.shared {
+                        // The supervisor starts the host again; the store reconnects on its own.
+                        HostSupervisor.agents = { [weak vm] in vm?.remoteHosts.localHost?.state.agents ?? [] }
+                        supervisor.onFailure = { failure in
+                            if HostSupervisor.StartFailed.show(failure, canRetry: true) { supervisor.retry() } else { NSApp.terminate(nil) }
+                        }
+                    } else {
+                        let socket = BackgroundHostClient.socketPath()
+                        vm.remoteHosts.onLocalHostLost = { BackgroundHostClient.hostLost(service: service, socket: socket) }
+                    }
                     // A paired device's Update this Mac: the host relays it here, where Sparkle runs.
                     AppUpdater.shared.connectRemoteUpdates(gate: .host { [weak vm] in (try? vm?.remoteHosts.thisMacHost()) ?? nil })
                     return vm
@@ -122,6 +138,7 @@ public struct ShepherdMacApp: App {
                 NSLog("Shepherd: failed to start session server: \(error)")
                 if SessionServerError.isWorkspaceInUse(error) { WorkspaceInUseAlert.show() }
                 if error is BackgroundHostClient.HostStarting { WorkspaceInUseAlert.show(.hostStarting) }
+                if let failure = error as? HostSupervisor.StartFailed { _ = HostSupervisor.StartFailed.show(failure, canRetry: false) }
                 exit(EXIT_FAILURE)
             })
         launch.begin()
@@ -223,16 +240,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// In process, quitting kills every agent process (sessions die with the app), so a quit while
     /// agents are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
+    /// The app's own child host runs them the same way: the same question, then `stop`.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // The background host keeps every agent running.
-        if BackgroundHostClient.owner == .host { return .terminateNow }
+        if BackgroundHostClient.owner == .host, HostSupervisor.shared?.ownsAgents != true { return .terminateNow }
         if let reply = AppUpdater.shared.remoteTerminationReply { return reply }
-        return QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
+        return QuitConfirmation.shared.shouldTerminate(agents: HostSupervisor.shared != nil ? HostSupervisor.agents() : SessionServer.shared.state.agents)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         BoundedCommand.stopForAppTermination()
         if BackgroundHostClient.owner == .app { SessionServer.shared.stop() }
+        HostSupervisor.shared?.stop()
     }
 
 }
@@ -305,6 +324,8 @@ extension ShepherdHost {
 /// (`BackgroundService`).
 public enum ShepherdHost {
     public static let argument = "--host"
+    /// With `argument`: the app's own child (`HostSupervisor`), not launchd's service.
+    static let supervisedArgument = "--supervised"
 
     /// Agents respawn, and automation runs start, with the app's settings and its MCP servers
     /// (their Keychain secrets read here, as the app reads them). Merged threads close per
@@ -324,7 +345,7 @@ public enum ShepherdHost {
                                                           text: response.text, recovery: response.recovery) }
             }
         }
-        SessionHost.run(respawn: {
+        SessionHost.run(supervised: CommandLine.arguments.contains(supervisedArgument), respawn: {
             var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
             spawn.mcp = mcp
             return spawn

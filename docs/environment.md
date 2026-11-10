@@ -18,6 +18,10 @@
   (`BackgroundService`) and is its client while Login Items allows it. Any other build, or any
   launch with `SHEPHERD_SUPPORT_DIR` set, never registers; unset there, the app never looks for
   the host.
+- **`SHEPHERD_SUPERVISED_HOST=1`** (off by default until the in-process start is deleted) makes
+  every launch a client: of the host that owns `<support>/server.lock` (launchd's), else of the
+  app's own `Shepherd --host --supervised` child, which `HostSupervisor` restarts on a crash and
+  stops at Quit, after the same mid-turn question as in process.
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.

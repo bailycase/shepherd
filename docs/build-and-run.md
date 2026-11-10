@@ -53,6 +53,12 @@ registers. To try the client path in Dev, start a host on Dev's folder
 (`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`) and run the scheme with
 `SHEPHERD_BACKGROUND_HOST=1` ([environment](environment.md)).
 
+With `SHEPHERD_SUPERVISED_HOST=1` in the scheme, Dev runs its agents in its own child,
+`Shepherd --host --supervised`. To debug that process, run the scheme, then Debug ▸ Attach to
+Process and pick the second `Shepherd` (or attach by its pid, which `log show --predicate
+'subsystem == "com.shepherd.app"'` prints in "host child started"). Its stderr shows in the
+app's console. Stopping the app in Xcode closes the child's stdin, so the child stops too.
+
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
 Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it
 once, and again whenever the pin changes, before any Mac build: every configuration's "Embed pi
