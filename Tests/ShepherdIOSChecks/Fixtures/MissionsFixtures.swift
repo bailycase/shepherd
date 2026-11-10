@@ -66,6 +66,7 @@ struct FixtureMissions: Sendable {
             guard let file = files[path] else { return .failure(MissionError("mission_review_file", "That file is not in the current review.")) }
             return .success(.reviewFile(file))
         case .specKit(let id): return .success(.specKit(specKit[id] ?? RemoteMissionSpecKit()))
+        case .templates: return .success(.templates([]))
         case .create, .action: return .failure(MissionError("fixture", "The fixture host changes nothing."))
         }
     }

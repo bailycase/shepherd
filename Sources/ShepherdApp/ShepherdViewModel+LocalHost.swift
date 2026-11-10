@@ -17,23 +17,10 @@ extension ShepherdViewModel {
         ProcessInfo.processInfo.environment["SHEPHERD_THIS_MAC_LOCAL"] != "0"
     }
 
-    /// The host's workspace less what Projects and missions own: their pages
-    /// still reach those through the host's connection (`allConnections`), so the app's local views,
-    /// whose actions would go to the idle in-process server, never see them.
-    /// ponytail: a fallback until those features route through `localHost` too.
-    nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState {
-        let owned = state.projectWorkerIDs.union(state.missionAgentIDs)
-        // Designs and their agents (slice 2) and automations and their runs (slice 3) are the app's own.
-        var copy = state.withoutProjectCoordinators
-        let gone = Set(copy.agents.filter { owned.contains($0.id) }.map(\.id))
-        let tabs = Set(copy.agents.filter { gone.contains($0.id) }.map(\.tabID))
-        copy.agents.removeAll { gone.contains($0.id) }
-        copy.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(gone.contains) == true }
-        copy.projects = []
-        copy.projectExecutions = []
-        copy.missions = []
-        return copy
-    }
+    /// The host's workspace as the app takes it: whole. Designs (slice 2), automations (slice 3),
+    /// Projects and missions (slice 4) all route through the host and draw as This Mac's own.
+    /// ponytail: an identity left for slice 5, which deletes it and its callers.
+    nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState { state }
 
     /// The background host on this Mac, while its workspace is the app's own; nil in process.
     var localHost: RemoteHostStore.Connection? {

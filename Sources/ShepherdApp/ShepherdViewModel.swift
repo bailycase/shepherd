@@ -18,7 +18,11 @@ typealias Tab = ShepherdCore.Tab
 @Observable
 final class ShepherdViewModel {
     var state: ShepherdState
-    @ObservationIgnored lazy var missions = MissionController(vm: self)
+    /// Missions and the Project runtime this app runs on its own server, while it owns the workspace
+    /// (`RuntimeHosting`); as the background host's client the host runs them.
+    @ObservationIgnored lazy var runtime = runtimeHosting.serve()
+    var missions: MissionController { runtime.missions }
+    var projectCoordinator: ProjectCoordinatorController { runtime.coordinator }
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
@@ -42,7 +46,6 @@ final class ShepherdViewModel {
     /// The host whose missions the Missions page shows; nil is This Mac.
     var missionsHost: UUID?
     @ObservationIgnored var remoteMissionDrivers: [UUID: RemoteMissionDriver] = [:]
-    @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
@@ -974,7 +977,7 @@ final class ShepherdViewModel {
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
         installRemoteInspection()
         installHostSettings()
-        missions.installRemote()
+        _ = runtime
         installHostConfiguration()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
@@ -1120,7 +1123,6 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installPullRequestPoll()
         installProjectRuntime()
-        installProjectExecution()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
         self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }

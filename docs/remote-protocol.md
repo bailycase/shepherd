@@ -380,11 +380,15 @@
     thread lists), reads one record (at most 256 KiB), New mission's options, create, every owner
     action of the Mac's Missions page (`action(missionID:revision:action:)`, refused `stale_mission`
     when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
-    a review's files and fingerprints and one file's `DiffFile`, and the Spec Kit reads. Answered
+    a review's files and fingerprints and one file's `DiffFile`, the Spec Kit reads, and the host's
+    templates (`templates`; `create` may name one, and `saveTemplate` saves a finished mission's map;
+    the app sends these only to the background host on its own Mac). Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
     `consentFingerprint` the client showed, and the host checks both again. Missions never ride
-    `stateChanged` (still `withoutMissions`); a capable client gets a pushed
+    `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
+    its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
+    and executions) as the app holds it in process; a capable client gets a pushed
     `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
     (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
     each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
