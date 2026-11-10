@@ -58,6 +58,7 @@ NODE = "Helpers/node"
 ENGINE = "Resources/pi-engine"
 ENTRY = "dist/cli.js"
 STAMP = "pin.json"
+LOCK = "pi-engine-lock/package-lock.json"
 INPUTS = "inputs.xcfilelist"
 OUTPUTS = "outputs.xcfilelist"
 STAGED_IN_XCODE = "$(SRCROOT)/.build/pi-engine"
@@ -81,13 +82,12 @@ PI_KEEP = (
 )
 
 # Detached extension runners import the modular SDK outside Pi's bundle loader. Keep its
-# locked dependency tree, including nested versions. Chord's root/context exports need no
-# esbuild; its optional bundler API is not supported. No native compiler or platform packages
+# locked dependency tree, including nested versions. No native compiler or platform packages
 # ship. QuickJS's side modules are unused WebAssembly named like native libraries.
 REQUIRED_MODULES = {
     "jiti", "@silvia-odwyer/photon-node", "quickjs-wasi", "typebox",
     "@earendil-works/pi-agent-core", "@earendil-works/pi-ai",
-    "@earendil-works/pi-tui", "@earendil-works/chord",
+    "@earendil-works/pi-tui",
 }
 MODULE_KEEP = {
     "quickjs-wasi": ("package.json", "quickjs.wasm", "dist/**"),
@@ -191,6 +191,9 @@ def pin_problems(pin: dict) -> list[str]:
     if spec := pin.get("patch"):
         if not isinstance(spec, dict) or spec.get("file") != "pi-engine-patches/skills.json" or not re.fullmatch(r"[0-9a-f]{64}", str(spec.get("sha256", ""))):
             problems.append("patch must name pi-engine-patches/skills.json and its SHA-256")
+    if spec := pin.get("lock"):
+        if not isinstance(spec, dict) or spec.get("file") != LOCK or not re.fullmatch(r"[0-9a-f]{64}", str(spec.get("sha256", ""))):
+            problems.append(f"lock must name {LOCK} and its SHA-256")
     pi = pin.get("pi", {})
     problems += _package_problems("pi", pi.get("name", ""), pi)
     modules = pin.get("modules", {})
@@ -406,7 +409,7 @@ def notices(pin: dict, shrinkwrap: dict, module_licences: dict[str, tuple[str, s
         f"Third-party notices for pi {pin['pi']['version']} as shipped in Shepherd",
         "",
         "pi's bundle (Resources/pi-engine/dist/bundle) compiles in the packages below, resolved by",
-        "pi's npm-shrinkwrap.json. esbuild and its platform packages are not shipped.",
+        "pi's npm-shrinkwrap.json or pi.dev's release lockfile. esbuild and its platform packages are not shipped.",
         "",
     ]
     for key, package in sorted(shrinkwrap.get("packages", {}).items()):
@@ -429,6 +432,26 @@ def _author(package: dict) -> str:
     if not isinstance(author, str) or not author.strip():
         raise EngineError(f"{package.get('name')} names no author for its MIT notice")
     return author.strip()
+
+
+def release_lock(pin: dict) -> dict | None:
+    """pi.dev's installer lockfile for the pinned pi (pi stopped publishing npm-shrinkwrap.json
+    after 1.0.0), re-rooted at pi's package like a shrinkwrap: pi's own entry becomes the root."""
+    spec = pin.get("lock")
+    if spec is None:
+        return None
+    path = os.path.join(ROOT, "scripts", spec["file"])
+    if sha256_of(path) != spec["sha256"]:
+        raise EngineError("the release lockfile differs from the pin; update its hash and restage")
+    with open(path, encoding="utf-8") as f:
+        packages = dict(json.load(f).get("packages", {}))
+    packages.pop("", None)
+    root = packages.pop(f"node_modules/{pin['pi']['name']}", {})
+    if root.get("version") != pin["pi"]["version"]:
+        raise EngineError(f"the release lockfile is for pi {root.get('version')}, not the pinned one")
+    if any(key.startswith(f"node_modules/{pin['pi']['name']}/") for key in packages):
+        raise EngineError("the release lockfile nests modules under pi, which the engine layout cannot hold")
+    return {"packages": {"": {"name": pin["pi"]["name"]}, **packages}}
 
 
 def engine_patch(pin: dict) -> dict | None:
@@ -512,6 +535,7 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     if ENTRY not in pi:
         raise EngineError(f"pi's tarball has no {ENTRY}")
     shrinkwrap = json.loads(pi.pop("npm-shrinkwrap.json", b"{}"))
+    shrinkwrap = release_lock(pin) or shrinkwrap
     expected = {
         key.removeprefix("node_modules/") for key, value in shrinkwrap.get("packages", {}).items()
         if key and not value.get("dev") and not value.get("optional") and key != "node_modules/esbuild"
