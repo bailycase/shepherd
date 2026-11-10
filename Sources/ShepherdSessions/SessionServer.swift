@@ -2473,6 +2473,7 @@ public final class SessionServer: @unchecked Sendable {
                 capabilities: offeredCapabilities(to: client),
                 hostBuild: hostBuild
             ), to: client)
+            sendStartProblems(to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
         }
@@ -2928,6 +2929,14 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard !request.requiresInheritance || offeredCapabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills."), to: client)
+                return
+            }
+            guard !request.requiresParent || offeredCapabilities.contains(RemoteProtocol.projectParentCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to choose a parent space."), to: client)
+                return
+            }
+            if case .organize(let spaceID, let name, let parentID) = request {
+                remoteOrganizeSpace(id: id, spaceID: spaceID, name: name, parentID: parentID, client: client)
                 return
             }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
@@ -3935,6 +3944,30 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         send(.spaceAdded(id: id, spaceID: space.id), to: client)
+    }
+
+    /// Server queue: a paired device sets a space's parent and name (`RemoteProjectsRequest.organize`),
+    /// as Add space and the space's Settings do on this Mac (`editProject`), then gets the listing's
+    /// first page back.
+    private func remoteOrganizeSpace(id: Int, spaceID: SpaceID, name: String?, parentID: SpaceID?, client: ExtensionConnection) {
+        let connection = ChangesUnchecked(value: client)
+        Task { [weak self] in
+            guard let self else { return }
+            let result: Result<RemoteProjectsResult, Error>
+            do {
+                _ = try await self.editProject(spaceID, edit: ProjectEdit(name: name, parentProjectID: parentID?.rawValue ?? ""))
+                result = .success(try await self.projects.request(.list(offset: 0), state: self.state))
+            } catch { result = .failure(error) }
+            self.queue.async {
+                let client = connection.value
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let value): self.send(.projects(id: id, result: value), to: client)
+                case .failure(let error):
+                    self.send(.error(id: id, code: (error as? ProjectFileError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                }
+            }
+        }
     }
 
     /// Server queue: a remote New design, made by the app (like `remoteCreateAgent`) once the
@@ -6507,9 +6540,11 @@ public final class SessionServer: @unchecked Sendable {
             let previous = before.tabs.first(where: { $0.id == tabID })?.layout.leaf(withID: paneID)?.sessionID
             // A pi started again in place of one that stopped takes over the
             // opening prompt that one never read.
-            if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous),
-               let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
-                thread.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.id)
+            if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous) {
+                self.startProblemCleared(kept, sessionID: sessionID ?? previous)
+                if let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
+                    thread.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.id)
+                }
             }
             // Revisions pi reached before its pane was bound had no agent to reach.
             if let sessionID, self.sessions[sessionID]?.thread != nil {
@@ -8388,7 +8423,11 @@ public final class SessionServer: @unchecked Sendable {
     /// (Retry): its thread says it is starting until the new pi is bound to the pane
     /// (`updatePaneSession`), which takes the opening prompt the stopped pi never read.
     public func retryStart(sessionID: SessionID) async {
-        await enqueueValue { self.keptStarts[sessionID]?.retrying = true }
+        await enqueueValue {
+            guard let kept = self.keptStarts[sessionID], !kept.retrying else { return }
+            self.keptStarts[sessionID]?.retrying = true
+            self.startProblemCleared(kept, sessionID: sessionID)
+        }
     }
 
     /// Held across process shutdown, conversation copy and the atomic workspace update.
@@ -9232,7 +9271,10 @@ public final class SessionServer: @unchecked Sendable {
             } else {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
-            if let problem, let agent { recordAgentFailure(agentID: agent, problem.title) }
+            if let problem, let agent {
+                recordAgentFailure(agentID: agent, problem.title)
+                sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
+            }
             // A thread on screen pulls the problem now, not at its next poll.
             threadRevised(sessionID: sessionID)
             notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code, keepsAgent: true, startProblem: problem))
@@ -9373,6 +9415,27 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: the agent whose own pane runs this session. Streaming asks on every
     /// revision, so the lookup is rebuilt once per committed state rather than scanned.
+    /// Server queue: this Mac's app hears that the agent whose pane holds `sessionID` no longer
+    /// waits on `kept`'s start problem (`RemoteReply.agentStartProblem`).
+    private func startProblemCleared(_ kept: KeptStart, sessionID: SessionID) {
+        guard kept.problem != nil, !kept.retrying, let agent = agentID(forSession: sessionID) else { return }
+        sendToLocalApps(.agentStartProblem(agentID: agent, problem: nil))
+    }
+
+    /// Server queue: every agent's start problem, nil for the agents not waiting on one, for this
+    /// Mac's app that just connected: what it knew from a host that restarted goes.
+    private func sendStartProblems(to client: ExtensionConnection) {
+        guard client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) else { return }
+        let waiting = Dictionary(keptStarts.compactMap { sessionID, kept -> (AgentID, NativeStartProblem)? in
+            guard !kept.retrying, sessions[sessionID]?.isAlive != true, let problem = kept.problem,
+                  let agent = agentID(forSession: sessionID) else { return nil }
+            return (agent, problem)
+        }, uniquingKeysWith: { first, _ in first })
+        for agent in store.state.agents {
+            send(.agentStartProblem(agentID: agent.id, problem: waiting[agent.id]), to: client)
+        }
+    }
+
     /// Server queue: the agent's bound pi stopped and its thread waits for Retry (not yet starting again).
     private func agentWaitsForRetry(_ agentID: AgentID) -> Bool {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,

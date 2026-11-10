@@ -37,7 +37,9 @@
   host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
   activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
   it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
-  post) and `automationsChanged` (a run log or trigger changed: read the runs and statuses again).
+  post), `automationsChanged` (a run log or trigger changed: read the runs and statuses again) and
+  `agentStartProblem` (why an agent's pi stopped and it waits, nil once pi starts again; every
+  agent's once when the client connects).
   Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
   run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
@@ -306,6 +308,12 @@
     resource file, only while it holds the text the client read) and `installSkills` (copies
     skills from a repository into the space's `.pi/skills` on the host). `save` also takes those
     resource paths. Both clients refuse these before sending to a host without the capability.
+  - `projects.inheritance.resources.v1`: a child space also inherits its parent's slash commands
+    (through `shepherd-mcp-parent.ts`) and extensions (`-e` at launch), and `inheritance` records
+    `prompts` and `extensions` it turns off. The client refuses those lists to an older host.
+  - `projects.parent.v1`: adds `organize`, which sets a registered space's parent space on the
+    same host and its name (`editProject`), and answers the listing's first page. Add space and the
+    space's Settings use it; with an older host the parent picker is disabled and says why.
   - `logicalProjects` (`logicalProjects.v1`): NEW logical `Project` records on the owner,
     separate from `projects` below. `LogicalProjectsRequest`/`LogicalProjectsResult` serve list,
     get, idempotent create with atomic initial owner-local Space links, revision-checked edit,
@@ -400,7 +408,9 @@
     showed, and a lane that moved since is refused `stale_mission`. Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
-    `consentFingerprint` the client showed, and the host checks both again. Missions never ride
+    `consentFingerprint` the client showed, and the host checks both again. A host with
+    `missions.train.v1` also serves a published mission's merge train (`MissionRun.train` in the
+    record, `pauseTrain` and `resumeTrain`); the iPhone and iPad show the train only there. Missions never ride
     `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
     its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
     and executions) as the app holds it in process; a capable client gets a pushed

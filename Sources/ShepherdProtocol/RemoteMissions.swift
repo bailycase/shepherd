@@ -14,6 +14,9 @@ extension RemoteProtocol {
     public static let missionsCapability = "missions.v1"
     /// The host takes `RemoteMissionAction.retryLane` (a blocked push's Retry with hint).
     public static let missionsRetryLaneCapability = "missions.retryLane.v1"
+    /// The host serves a published mission's merge train to a client: `MissionRun.train` in the record,
+    /// `pauseTrain` and `resumeTrain`. A client shows the train only on a host offering this.
+    public static let missionsTrainCapability = "missions.train.v1"
 }
 
 /// A mission as a list knows it. `agentIDs` are every agent its receipts name (planner turns,

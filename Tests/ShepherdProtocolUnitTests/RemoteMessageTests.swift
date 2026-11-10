@@ -675,11 +675,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 56
+    static let caseCount = 57
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -759,6 +759,8 @@ struct RemoteReplyTests {
         .designGitChanged(designID: DesignID(rawValue: "d1")),
         .designImportProgress(.boards(done: 2, of: 5, title: "Checkout funnel", system: nil)),
         .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
+        .agentStartProblem(agentID: AgentID(rawValue: "a"), problem: NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: ["No models available"])),
+        .agentStartProblem(agentID: AgentID(rawValue: "a"), problem: nil),
         .automationsChanged,
         .automationNotify(title: "Watch CI", body: "The run couldn't start: acme-web is missing."),
     ]
@@ -1148,7 +1150,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
@@ -1171,7 +1173,7 @@ struct RemoteProtocolConstantTests {
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.
-            RemoteProtocol.missionsCapability,
+            RemoteProtocol.missionsCapability, RemoteProtocol.missionsTrainCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -1191,6 +1193,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
         #expect(RemoteProtocol.projectResourcesCapability == "projects.resources.v1")
         #expect(RemoteProtocol.projectInheritanceCapability == "projects.inheritance.v1")
+        #expect(RemoteProtocol.projectInheritedResourcesCapability == "projects.inheritance.resources.v1")
+        #expect(RemoteProtocol.projectParentCapability == "projects.parent.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")

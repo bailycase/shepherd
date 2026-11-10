@@ -137,10 +137,11 @@ extension SessionServer {
                                       specKit: spawn.specKit ? state.specKitLaunch(for: agent.id, cwd: cwd) : nil,
                                       inherited: inherited,
                                       mcp: {
-                                          // Parent skills come through the same extension, so a child space gets them with MCP off too.
+                                          // Parent skills and commands come through the same extension, so a child space gets them with MCP off too.
                                           let launch = try spawn.mcp(parent, agent, cwd, state, verifiedWorktree)
                                               ?? (parent == nil ? nil : MCPLaunch(extensions: spawn.settings.deferTools ? ["builtin:tool-search"] : [], environment: [:]).sharingParent(parent))
                                           return launch?.excluding(inheritance?.excluded ?? SpaceInheritanceExclusions())
+                                              .loadingParentExtensions(inheritance?.extensions ?? [])
                                       })
         // A forked transcript resumes: pi not finding it is a start problem, never a new session.
         let resuming = spawn.checksResume && !fresh ? agent.effectivePiSessionID : nil

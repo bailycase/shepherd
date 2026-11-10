@@ -91,8 +91,7 @@ extension ShepherdViewModel {
     /// else the server. `id` nil is Open from Git, which makes a design.
     private func designGitCall<T>(_ id: DesignID?, _ request: RemoteDesignRequest, local: (SessionServer) async throws -> T,
                                   remote: (RemoteDesignResult) -> T?) async throws -> T {
-        let onHost = id.map { hostDesign($0) != nil } ?? Self.routesThisMacLocally
-        guard onHost, let library = localHost?.designs else { return try await local(server) }
+        guard let library = localHost?.designs else { return try await local(server) }
         guard let value = remote(try await Self.remoteDesign(library, request)) else { throw RemoteDesignReply.unexpected }
         return value
     }
