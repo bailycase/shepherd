@@ -27,7 +27,6 @@ const peers = [
   '@earendil-works/pi-tui', '@earendil-works/pi-ai/compat',
   '@earendil-works/pi-ai/oauth', '@earendil-works/pi-ai/providers/all',
   'typebox', 'typebox/compile', 'typebox/value',
-  '@earendil-works/chord', '@earendil-works/chord/context',
 ];
 for (const peer of peers) await import(peer);
 const pi = await import('@earendil-works/pi-coding-agent');
