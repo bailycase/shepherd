@@ -31,8 +31,8 @@ final class AddSpaceModel: Identifiable {
     }
 
     var host: ProjectsHost? { hosts.first { $0.id == hostID } }
-    /// Only this Mac records a parent: no remote request sets one yet.
-    var offersParents: Bool { hostID == "local" }
+    /// This Mac, and another host with `projectParentCapability`, record a parent and a name.
+    var offersParents: Bool { hostID == "local" || host?.supportsParent == true }
     var parents: [Parent] {
         guard offersParents else { return [] }
         return rows.filter { $0.host.id == hostID }.compactMap { row in row.project.projectID.map { Parent(id: $0, name: row.project.name) } }
@@ -118,7 +118,7 @@ struct AddSpaceSheet: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(.top, SH.Space.m)
                 hint(model.offersParents ? "Choose None to create a root space. Parent and child space use the same host."
-                                         : "\(model.host?.name ?? "This host") adds a root space named after its folder.")
+                                         : "Update Shepherd on \(model.host?.name ?? "this host") to choose a parent. Until then it adds a root space named after its folder.")
                 label("Space folder").padding(.top, SH.Space.m)
                 TextField("Space folder", text: $model.path, prompt: Text("~/code/shepherd-landing"))
                     .shField(focused: focused == .path, mono: true).focused($focused, equals: .path).accessibilityLabel("Space folder")
@@ -132,7 +132,7 @@ struct AddSpaceSheet: View {
                         if model.inheritsFromParent == false {
                             hint("Nothing: this folder isn’t inside \(parent)’s. The space is listed under \(parent) only. This does not move files.")
                         } else {
-                            hint("Shared MCP servers and the startup model and thinking. Child overrides stay separate.")
+                            hint("Shared MCP servers, skills, slash commands and extensions, and the startup model and thinking. Child overrides stay separate.")
                             hint("A folder inside \(parent)’s inherits; one elsewhere on \(model.host?.name ?? "this host") is only listed under it. This does not move files.")
                         }
                     }.padding(.top, SH.Space.m)

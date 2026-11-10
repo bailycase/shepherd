@@ -9,9 +9,11 @@
 // its `.pi` is the user's own pi. It runs no server, speaks no MCP and writes nothing. For an owned worktree, the host
 // names SHEPHERD_MCP_OWNING_SPACE and binds it to the exact SHEPHERD_MCP_WORKTREE_CWD.
 //
-// A subproject also loads the parent's skills (its `.shepherd`, `.pi` and `.agents` skill folders) through resources_discover,
-// after its own, so the subproject's own skill of the same name wins. SHEPHERD_PARENT_EXCLUDE, JSON `{"mcp":[…],"skills":[…]}`,
-// names the parent servers and skills the subproject turned off for itself (Settings ▸ Spaces); they are never registered.
+// A subproject also loads the parent's skills (its `.shepherd`, `.pi` and `.agents` skill folders) and prompt templates (its
+// `.shepherd` and `.pi` prompt folders) through resources_discover, after its own, so the subproject's own of the same name wins.
+// SHEPHERD_PARENT_EXCLUDE, JSON `{"mcp":[…],"skills":[…],"prompts":[…]}`, names the parent servers, skills and templates the
+// subproject turned off for itself (Settings ▸ Spaces); they are never registered. The parent's extensions can't load this
+// late: Shepherd passes them to pi with `-e` at launch (`ProjectSettingsStore.inheritance`).
 //
 // Inert unless SHEPHERD_PARENT_PROJECT is set. Nothing throws into pi.
 import * as fs from "node:fs";
@@ -76,14 +78,36 @@ export function parentSkills(parent: string | undefined, cwd: string, excluded: 
   return found;
 }
 
+/** The parent's prompt templates (slash commands), `<name>.md` directly in its `.shepherd` and `.pi` prompt folders, minus `excluded` names. */
+export function parentPrompts(parent: string | undefined, cwd: string, excluded: string[] = []): string[] {
+  const root = parentRoot(parent, cwd);
+  if (!root) return [];
+  const found: string[] = [];
+  for (const base of [".shepherd", ".pi"]) {
+    const folder = path.join(root, base, "prompts");
+    let names: string[] = [];
+    try {
+      if (fs.lstatSync(folder).isSymbolicLink()) continue;
+      names = fs.readdirSync(folder).sort();
+    } catch { continue; }
+    for (const name of names) {
+      if (name.startsWith(".") || !name.endsWith(".md") || excluded.includes(name.slice(0, -3))) continue;
+      try {
+        if (fs.lstatSync(path.join(folder, name)).isFile()) found.push(path.join(folder, name));
+      } catch { /* Gone since the listing. */ }
+    }
+  }
+  return found;
+}
+
 /** The names SHEPHERD_PARENT_EXCLUDE turns off; anything malformed turns nothing off. */
-export function exclusions(value: string | undefined): { mcp: string[]; skills: string[] } {
+export function exclusions(value: string | undefined): { mcp: string[]; skills: string[]; prompts: string[] } {
   try {
     const parsed = JSON.parse(value ?? "{}");
     const names = (list: unknown) => (Array.isArray(list) ? list.filter((name) => typeof name === "string") : []);
-    return { mcp: names(parsed?.mcp), skills: names(parsed?.skills) };
+    return { mcp: names(parsed?.mcp), skills: names(parsed?.skills), prompts: names(parsed?.prompts) };
   } catch {
-    return { mcp: [], skills: [] };
+    return { mcp: [], skills: [], prompts: [] };
   }
 }
 
@@ -111,8 +135,9 @@ export default function shepherdMcpParent(pi: ExtensionAPI) {
     pi.on("resources_discover", (event) => {
       try {
         const skillPaths = parentSkills(parent, event.cwd, excluded.skills);
-        if (skillPaths.length === 0 || !trusted(parent, event.cwd)) return;
-        return { skillPaths };
+        const promptPaths = parentPrompts(parent, event.cwd, excluded.prompts);
+        if ((skillPaths.length === 0 && promptPaths.length === 0) || !trusted(parent, event.cwd)) return;
+        return { skillPaths, promptPaths };
       } catch {
         return;
       }

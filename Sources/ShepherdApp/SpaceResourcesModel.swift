@@ -20,8 +20,8 @@ final class SpaceResourcesModel {
         var detail: String
         var enabled: Bool
         var canToggle: Bool
-        /// The parent space a skill is inherited from (ProjectChildSkills), and for a space skill, the
-        /// parent whose skill of the same name it overrides.
+        /// The parent space a skill, slash command or extension is inherited from (ProjectChildSkills),
+        /// and for a space one, the parent whose one of the same name it overrides.
         var inheritedFrom: String? = nil
         var overrides: String? = nil
         var local: Bool { !resource.global && inheritedFrom == nil }
@@ -95,13 +95,16 @@ final class SpaceResourcesModel {
     @ObservationIgnored private(set) var saved: [String: String?] = [:]
     /// The draft: a file's new text, or nil to remove it, by path.
     private(set) var writes: [String: String?] = [:]
-    /// The parent space whose skills this child inherits, its skills, and the ones this space turned
-    /// off (`ProjectsModel.setInherited`, saved at once, not with the draft).
+    /// The parent space this child inherits from, its skills, slash commands and extensions, and the
+    /// ones this space turned off (`ProjectsModel.setInherited`, saved at once, not with the draft).
     private(set) var parent: (name: String, directory: String)?
-    private(set) var parentSkills: [ProjectResource] = []
-    var excludedSkills: [String] = [] { didSet { if excludedSkills != oldValue { derive() } } }
+    private(set) var parentResources: [ProjectResource] = []
+    /// What inherits: skills from every host that shares them, slash commands and extensions only
+    /// from one with `projectInheritedResourcesCapability`.
+    var inheritedKinds: Set<Kind> = [.skill] { didSet { if inheritedKinds != oldValue { derive() } } }
+    var excluded = SpaceInheritanceExclusions() { didSet { if excluded != oldValue { derive() } } }
     var canExcludeInherited = false { didSet { if canExcludeInherited != oldValue { derive() } } }
-    @ObservationIgnored var setInherited: @MainActor (_ skill: String, _ on: Bool) async -> Void = { _, _ in }
+    @ObservationIgnored var setInherited: @MainActor (_ kind: Kind, _ name: String, _ on: Bool) async -> Void = { _, _, _ in }
     private(set) var settingsPath = ".shepherd/settings.json"
     private(set) var settingsSaved: String?
     private(set) var settingsDraft = ""
@@ -128,10 +131,10 @@ final class SpaceResourcesModel {
                 throw ProjectFileError("protocol", "Unexpected space resources reply.")
             }
             loaded = list
-            // Only skills inherit; a parent that can't be read shares nothing here.
+            // Subagents never inherit; a parent that can't be read shares nothing here.
             if let parent, case .resources(let inherited)? = try? await send(.resources(directory: parent.directory)) {
-                parentSkills = inherited.filter { !$0.global && $0.kind == .skill }
-            } else { parentSkills = [] }
+                parentResources = inherited.filter { !$0.global && $0.kind != .agent }
+            } else { parentResources = [] }
             if !keep || settingsDraft == (settingsSaved ?? "") { settingsDraft = settings.text ?? "" }
             settingsSaved = settings.text
             loadedOnce = true
@@ -177,30 +180,62 @@ final class SpaceResourcesModel {
     /// A skill's folder name, which pi and `shepherd-mcp-parent.ts` know it by.
     static func skillFolder(_ path: String) -> String { ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent }
 
+    /// The name a child turns an inherited resource off by, and overrides it by: a skill's folder,
+    /// a template's command, an extension's file name (`SpaceInheritanceExclusions`).
+    static func inheritanceName(_ resource: ProjectResource) -> String {
+        switch resource.kind {
+        case .skill: skillFolder(resource.path)
+        case .prompt: ((resource.path as NSString).lastPathComponent as NSString).deletingPathExtension
+        case .agent, .extension: (resource.path as NSString).lastPathComponent
+        }
+    }
+
+    /// Where Override here puts a copy of an inherited resource in this space.
+    static func overridePath(_ resource: ProjectResource) -> String {
+        switch resource.kind {
+        case .skill: ".pi/skills/\(inheritanceName(resource))/SKILL.md"
+        case .prompt: ".pi/prompts/\(inheritanceName(resource)).md"
+        case .agent: ".pi/agents/\(inheritanceName(resource))"
+        case .extension: ".pi/extensions/\(inheritanceName(resource))"
+        }
+    }
+
+    func isExcluded(_ resource: ProjectResource) -> Bool {
+        let name = Self.inheritanceName(resource)
+        switch resource.kind {
+        case .skill: return excluded.skills.contains(name)
+        case .prompt: return excluded.prompts.contains(name)
+        case .extension: return excluded.extensions.contains(name)
+        case .agent: return false
+        }
+    }
+
     func derive() {
         let own = items.filter { $0.kind == kind }
-        // The parent's skills a space skill of the same folder name doesn't override, after the space's own.
-        let spaceSkills = Set(own.filter { !$0.global && $0.kind == .skill }.map { Self.skillFolder($0.path) })
-        let parentNames = Set(parentSkills.map { Self.skillFolder($0.path) })
-        let inherited = kind == .skill ? parentSkills.filter { !spaceSkills.contains(Self.skillFolder($0.path)) } : []
+        // The parent's ones a space one of the same name doesn't override, after the space's own.
+        let spaceNames = Set(own.filter { !$0.global }.map(Self.inheritanceName))
+        let parentItems = inheritedKinds.contains(kind) ? parentResources.filter { $0.kind == kind } : []
+        let parentNames = Set(parentItems.map(Self.inheritanceName))
+        let inherited = parentItems.filter { !spaceNames.contains(Self.inheritanceName($0)) }
         let all = own.filter { !$0.global } + inherited + own.filter(\.global)
         let fromParent = Set(inherited.map(\.path))
         spaceCount = own.filter { !$0.global }.count
         inheritedCount = all.count - spaceCount
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let next = all.compactMap { item -> Row? in
-            let isParent = !item.global && fromParent.contains(item.path) && !spaceSkills.contains(Self.skillFolder(item.path))
+            let isParent = !item.global && fromParent.contains(item.path) && !spaceNames.contains(Self.inheritanceName(item))
             guard scope == .all || (scope == .space) == (!item.global && !isParent),
                   query.isEmpty || "\(item.name) \(item.description) \(item.displayPath)".localizedCaseInsensitiveContains(query) else { return nil }
+            let displayName = item.kind == .prompt ? "/" + item.name : item.name
             if isParent {
-                let folder = Self.skillFolder(item.path)
-                return Row(id: "parent:" + item.path, resource: item, displayName: item.name, detail: item.displayPath,
-                           enabled: !excludedSkills.contains(folder), canToggle: canExcludeInherited, inheritedFrom: parent?.name)
+                return Row(id: "parent:" + item.path, resource: item, displayName: displayName,
+                           detail: item.kind == .prompt ? "Prompt template" : item.displayPath,
+                           enabled: !isExcluded(item), canToggle: canExcludeInherited, inheritedFrom: parent?.name)
             }
-            return Row(id: item.id, resource: item, displayName: item.kind == .prompt ? "/" + item.name : item.name,
+            return Row(id: item.id, resource: item, displayName: displayName,
                        detail: item.kind == .agent ? item.detail : item.kind == .prompt ? "Prompt template" : item.displayPath,
                        enabled: enabled(item), canToggle: !(item.global && item.kind == .agent),
-                       overrides: !item.global && item.kind == .skill && parentNames.contains(Self.skillFolder(item.path)) ? parent?.name : nil)
+                       overrides: !item.global && parentNames.contains(Self.inheritanceName(item)) ? parent?.name : nil)
         }
         if next != rows { rows = next }
     }
@@ -238,7 +273,7 @@ final class SpaceResourcesModel {
 
     func toggle(_ row: Row, on: Bool) async {
         guard row.canToggle else { return }
-        if row.inheritedFrom != nil { await setInherited(Self.skillFolder(row.resource.path), on); return }
+        if row.inheritedFrom != nil { await setInherited(row.resource.kind, Self.inheritanceName(row.resource), on); return }
         let item = row.resource
         if let key = item.kind.settingsKey {
             var object = settingsObject
@@ -262,11 +297,11 @@ final class SpaceResourcesModel {
         }
     }
 
-    /// Override here: the parent's skill, copied into this space's `.pi/skills` as a draft, where it
-    /// wins by name. Reset to inherited removes that copy.
+    /// Override here: the parent's skill, slash command or extension, copied into this space's `.pi`
+    /// as a draft, where it wins by name. Reset to inherited removes that copy.
     func overrideInherited(_ row: Row) async {
         guard let parent, row.inheritedFrom != nil, let send else { return }
-        let path = ".pi/skills/\(Self.skillFolder(row.resource.path))/SKILL.md"
+        let path = Self.overridePath(row.resource)
         do {
             guard case .text(let value) = try await send(.read(directory: parent.directory, file: row.resource.path)), let text = value.text else {
                 throw ProjectFileError("missing", "\(row.resource.name) is no longer in \(parent.name).")
