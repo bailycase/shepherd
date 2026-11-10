@@ -208,9 +208,12 @@ final class PushNotifications: @unchecked Sendable {
             detail: detail == PushDetail() ? nil : detail)
         // Each shape this relay may take, newest first, without repeats; a detail that would
         // overflow the relay's 2048-byte body is left out rather than cut.
+        // Sorted keys: JSONEncoder's key order can differ between two encodes, and the byte compare dedupes.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
         var bodies: [(Relay, Data)] = []
         for level in Relay.allCases where level >= relay {
-            guard let body = try? JSONEncoder().encode(event.shaped(for: level)) else { return }
+            guard let body = try? encoder.encode(event.shaped(for: level)) else { return }
             if bodies.last?.1 != body, level != .detail || body.count <= 2048 { bodies.append((level, body)) }
         }
         guard !bodies.isEmpty else { return skip("no body fits the relay") }
