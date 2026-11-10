@@ -13,8 +13,12 @@ owns:
 
 The app never runs agents. It is always the host's client over `<support>/host.sock`, through the
 remote-host paths it uses for a paired Mac plus `local.v1` and `local.threads.v1` for what only this
-Mac's app gets: the host's threads, designs and Settings as the app's own, and what needs a window
-(the Browser, design drawing, `review_diff`, Update this Mac) relayed to it. Who starts the host:
+Mac's app gets: the host's whole workspace (threads, designs, automations, Projects, missions,
+Settings) as the app's own, why a thread's pi can't start (`agentStartProblem`, opened or not), and
+what needs a window (the Browser, design drawing, `review_diff`, Update this Mac) relayed to it.
+The host on this Mac is transport only: no host list, picker or page shows it, and no view asks
+whether a connection is this Mac's (`RemoteHostStore.connections` is the paired hosts). Who starts
+the host:
 
 - **The background service** (Shepherd Nightly, while Login Items allows it): launchd runs it
   (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
