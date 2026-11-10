@@ -2310,6 +2310,8 @@ public final class SessionServer: @unchecked Sendable {
         try queue.sync {
             try requireStarted()
             guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+            // This Mac's app reads the run log again after each change (`automationsChanged`).
+            runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
             var addr = try Self.socketAddress(for: path)
             localToken = try Self.loadOrCreateRemoteToken(at: tokenURL)
             // Only the workspace's owner binds here, and this server holds the ownership lock: any
@@ -3387,7 +3389,7 @@ public final class SessionServer: @unchecked Sendable {
         } else if !exists {
             return fail("no_such_automation", "The automation no longer exists on the host.")
         }
-        let reads: Bool = switch request { case .runs, .status, .markRead: true; default: false }
+        let reads: Bool = switch request { case .runs, .status, .markRead, .setRunPullRequest: true; default: false }
         if !reads, store.state.automations.contains(where: { $0.id == automationID && $0.projectID != nil }) {
             return fail(Self.projectAutomationScopeError.code, Self.projectAutomationScopeError.description)
         }
@@ -3414,6 +3416,13 @@ public final class SessionServer: @unchecked Sendable {
             return
         case .markRead(let runID):
             runLog.markRead(runID: runID)
+            send(.automationResult(id: id, result: .ok), to: client)
+            return
+        case .setRunPullRequest(let agentID, let url):
+            // This Mac's app reads it with its gh, as in process; no paired device sets one.
+            guard client.isLocal else { return fail("unsupported", "Only Shepherd on this Mac records a run's pull request.") }
+            guard url.hasPrefix("https://") else { return fail("invalid_url", "A pull request's address starts with https://.") }
+            runLog.setPullRequest(agentID: agentID, url: url)
             send(.automationResult(id: id, result: .ok), to: client)
             return
         case .status:
@@ -4443,6 +4452,12 @@ public final class SessionServer: @unchecked Sendable {
             disconnect(client, reason: "read failed: errno \(errno)")
             return
         }
+    }
+
+    /// Tells this Mac's app showing the host's threads as its own that automations' triggers
+    /// changed (`AutomationHosting.triggersChanged`). Any thread.
+    func pushAutomationsChanged() {
+        queue.async { [self] in sendToLocalApps(.automationsChanged) }
     }
 
     /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
@@ -7586,6 +7601,15 @@ public final class SessionServer: @unchecked Sendable {
     public func relayNotifyToLocalApp(agentID: AgentID, title: String, body: String) -> Bool {
         guard localAppConnected else { return false }
         queue.async { [self] in sendToLocalApps(.agentNotify(agentID: agentID, title: title, body: body)) }
+        return true
+    }
+
+    /// Hands an automation's banner to this Mac's app showing the host's threads as its own;
+    /// false (nothing sent) when no such app is connected. Main actor.
+    @MainActor
+    public func relayAutomationNotifyToLocalApp(title: String, body: String) -> Bool {
+        guard localAppConnected else { return false }
+        queue.async { [self] in sendToLocalApps(.automationNotify(title: title, body: body)) }
         return true
     }
 

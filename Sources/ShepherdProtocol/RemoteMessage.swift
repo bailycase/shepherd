@@ -1313,6 +1313,13 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A line the background host says in one of its threads (its account rotation), pushed only
     /// to this Mac's app that shows its threads as its own; never persisted.
     case threadNotice(agentID: AgentID, message: String)
+    /// The background host's automations changed: a run's log, or a trigger's status. Pushed only
+    /// to this Mac's app that shows its threads as its own, which reads them again. A hint; it
+    /// carries nothing.
+    case automationsChanged
+    /// An automation's banner on the background host (`AutomationHosting.notify`), pushed only to
+    /// this Mac's app that shows its threads as its own, which posts it; the host doesn't.
+    case automationNotify(title: String, body: String)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1339,7 +1346,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, automationsChanged, automationNotify
     }
 
     public init(from decoder: Decoder) throws {
@@ -1370,6 +1377,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .toolFinished(agentID: try c.decode(AgentID.self, forKey: .agentID), tool: try c.decode(String.self, forKey: .tool))
         case .threadNotice:
             self = .threadNotice(agentID: try c.decode(AgentID.self, forKey: .agentID), message: try c.decode(String.self, forKey: .message))
+        case .automationsChanged:
+            self = .automationsChanged
+        case .automationNotify:
+            self = .automationNotify(title: try c.decode(String.self, forKey: .title), body: try c.decode(String.self, forKey: .body))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1669,6 +1680,12 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.threadNotice, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(message, forKey: .message)
+        case .automationsChanged:
+            try c.encode(Kind.automationsChanged, forKey: .type)
+        case .automationNotify(let title, let body):
+            try c.encode(Kind.automationNotify, forKey: .type)
+            try c.encode(title, forKey: .title)
+            try c.encode(body, forKey: .body)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

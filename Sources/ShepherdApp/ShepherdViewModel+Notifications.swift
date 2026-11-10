@@ -81,7 +81,7 @@ extension ShepherdViewModel {
         var live = Set<RemoteAgentRef>()
         var hosts = Set<UUID>()
         // The background host's threads the app shows as its own post as in process; the rest of
-        // its threads (automation runs, Projects' workers) post here, as a host's.
+        // its threads (Projects' and missions' workers) post here, as a host's.
         let own = localHost.map { host in (host.id, Set(state.agents.map(\.id))) }
         for connection in remoteHosts.allConnections {
             hosts.insert(connection.id)

@@ -106,10 +106,10 @@ struct LocalHostRoutingTests {
         #expect(s.vm.selectedAgentID == ids[0] && s.vm.selectedRemoteAgent == nil)
     }
 
-    /// Designs, automations, Projects and missions still reach the host as This Mac's host section on
-    /// their pages: the app's own workspace never holds them, so nothing acts on them through the
-    /// idle server, and a run opens as the host's thread.
-    @Test func automationsStayOnThisMacsHostSection() async throws {
+    /// The host's automations and their runs are This Mac's own: the app's workspace holds them,
+    /// the Automations page lists them under This Mac with no host section, and a run opens as a
+    /// local thread (`LocalClientTests` drives their actions).
+    @Test func automationsAreThisMacsOwn() async throws {
         let s = try await Self.setUp(agents: ["Fix the login redirect"])
         defer { s.stop() }
         var state = s.host.server.state
@@ -127,12 +127,15 @@ struct LocalHostRoutingTests {
             thisMac.state.automations.map(\.id) == [automation.id] && thisMac.state.agents.contains { $0.id == run.id }
         }
 
-        #expect(s.vm.state.automations.isEmpty && !s.vm.state.agents.contains { $0.id == run.id })
-        #expect(s.vm.state.agents.count == 1, "the ordinary thread stays the app's own")
-        #expect(s.vm.automationHosts.contains { $0.id == thisMac.id && $0.state.automations.map(\.id) == [automation.id] })
+        try await eventuallyOnMain("the automation and its run as the app's own") {
+            s.vm.state.automations.map(\.id) == [automation.id] && s.vm.state.agents.contains { $0.id == run.id }
+        }
+        #expect(s.vm.automationHosts.map(\.id) == [PageHost.localID])
+        #expect(s.vm.automationHosts.first?.state.automations.map(\.id) == [automation.id])
         #expect(s.hosts.connections.isEmpty, "no other surface lists This Mac")
-        s.vm.selectRemoteAgent(hostID: thisMac.id, agentID: run.id)
-        #expect(s.vm.selectedRemoteAgent == RemoteAgentRef(hostID: thisMac.id, agentID: run.id))
+        #expect(s.vm.sidebarLists.all.contains { $0.id == .local(run.id) })
+        s.vm.selectAgent(run.id)
+        #expect(s.vm.selectedAgentID == run.id && s.vm.selectedRemoteAgent == nil)
     }
 
     @Test func renameAndDeleteReachTheHost() async throws {
