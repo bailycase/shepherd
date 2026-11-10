@@ -95,6 +95,8 @@ public struct ShepherdMacApp: App {
                     vm.backgroundServiceStatus = status
                     let socket = BackgroundHostClient.socketPath()
                     vm.remoteHosts.onLocalHostLost = { BackgroundHostClient.hostLost(service: service, socket: socket) }
+                    // A paired device's Update this Mac: the host relays it here, where Sparkle runs.
+                    AppUpdater.shared.connectRemoteUpdates(gate: .host { [weak vm] in (try? vm?.remoteHosts.thisMacHost()) ?? nil })
                     return vm
                 }
                 AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)

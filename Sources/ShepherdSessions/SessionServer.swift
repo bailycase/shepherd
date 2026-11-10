@@ -3076,6 +3076,28 @@ public final class SessionServer: @unchecked Sendable {
             }
             send(.ok(id: id), to: client)
             hopToMain { handler() }
+        case .hostUpdateGate(let id, let step):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's app installs this host's updates."), to: client)
+                return
+            }
+            Task { [weak self, weak client] in
+                guard let self else { return }
+                let refusal: String? = switch step {
+                case .reserve: await reserveHostUpdate() ? nil
+                    : await hostUpdateBlockReason() ?? "Could not reserve the host or save agent recovery checkpoints."
+                case .release: { releaseHostUpdate(); return nil }()
+                case .canRestart: await hostUpdateCanRestart() ? nil : "The host isn't ready to restart."
+                case .blockReason: await hostUpdateBlockReason()
+                case .canTerminate: await withCheckedContinuation { done in
+                    checkHostUpdateTermination { done.resume(returning: $0 ? nil : "The host isn't ready to restart.") }
+                }
+                }
+                queue.async {
+                    guard let client, self.clients[client.fd] === client else { return }
+                    self.send(refusal.map { .error(id: id, code: "refused", message: $0) } ?? .ok(id: id), to: client)
+                }
+            }
         case .listModels(let id):
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.

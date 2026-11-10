@@ -65,6 +65,44 @@ struct HostWindowRelayTests {
         #expect(vm.subagentInspector.news[.local(id)]?.contains(.changes) == true, "the Changes tab wears its dot")
     }
 
+    /// A paired device's Update this Mac reaches the app, where Sparkle runs; with no app the host
+    /// says to open Shepherd. The app's update asks the host before it reserves or restarts (A21).
+    @Test func aPairedDevicesUpdateGoesToTheAppWhichAsksTheHost() async throws {
+        let h = try await host()
+        defer { h.scratch.stop() }
+        let phone = RemoteHostClient(localSocket: h.socket)
+        // A paired iPhone draws no window: it never lists the app relay.
+        _ = try await phone.connect(host: "", port: 0, token: h.token, clientName: "iPhone",
+                                    capabilities: RemoteProtocol.clientCapabilities.filter { $0 != RemoteProtocol.appRelayCapability })
+        defer { phone.disconnect() }
+        #expect(phone.capabilities.contains(RemoteProtocol.hostUpdateCapability))
+        #expect(try await phone.hostUpdate(.status).error == SessionServer.hostUpdateWindowClosed)
+
+        let (vm, hosts, _, _, clientDir, _) = try await LocalClientTests.app(socket: h.socket, token: h.token, host: h.scratch)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        let relayed = try await phone.hostUpdate(.status)
+        #expect(relayed.error != SessionServer.hostUpdateWindowClosed, "answered by the app's updater")
+        let own = await AppUpdater.shared.remoteUpdate(.status, authorized: { @Sendable in true })
+        #expect(relayed == own)
+
+        // The gate: one reservation at a time, released by the app.
+        let gate = HostUpdateGate.host { [weak vm] in (try? vm?.remoteHosts.thisMacHost()) ?? nil }
+        #expect(await gate.blockReason() == nil)
+        #expect(await gate.reserve())
+        #expect(await gate.reserve() == false)
+        gate.release()
+        var again = false
+        for _ in 0..<500 where !again {
+            again = await gate.reserve()
+            if !again { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        #expect(again, "the host released the reservation")
+        gate.release()
+    }
+
     @Test func projectToolsChangeTheHostAndRemoveSpaceAsksTheAppsWindow() async throws {
         let h = try await host()
         defer { h.scratch.stop() }

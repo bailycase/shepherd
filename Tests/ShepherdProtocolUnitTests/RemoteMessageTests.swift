@@ -392,13 +392,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 51
+    static let caseCount = 52
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -428,6 +428,8 @@ struct RemoteRequestTests {
         .listDir(id: 8, path: ""),
         .listModels(id: 10),
         .drain(id: 10),
+        .hostUpdateGate(id: 11, step: .reserve),
+        .hostUpdateGate(id: 12, step: .canTerminate),
         .addSpace(id: 5, path: "/Users/demo/Developer/project"),
         .spaceAction(id: 5, spaceID: S.space, action: .rename(name: "acme-web")),
         .spaceAction(id: 5, spaceID: S.space, action: .setWorktreeBase(base: nil)),
@@ -485,6 +487,7 @@ struct RemoteRequestTests {
         .designRelayAnswer(requestToken: 6, result: .failed(code: "render_failed", message: "Two.dc.html couldn't be drawn.")),
         .appRelayAnswer(requestToken: 7, result: .done(text: "Review ready in the side pane's Changes tab.")),
         .appRelayAnswer(requestToken: 8, result: .failed(code: "no_such_agent", message: "unknown agent a")),
+        .appRelayAnswer(requestToken: 9, result: .hostUpdate(status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .idle))),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -746,6 +749,7 @@ struct RemoteReplyTests {
         .agentNotify(agentID: AgentID(rawValue: "a"), title: "CI passed", body: "PR #42 is green"),
         .appRelay(token: 6, job: .review(agentID: AgentID(rawValue: "a"), cwd: "/tmp/acme-web", reference: "pr")),
         .appRelay(token: 7, job: .confirmSpaceDelete(spaceID: SpaceID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c34"))),
+        .appRelay(token: 8, job: .hostUpdate(request: .install(offerID: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!, authorized: true))),
         .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
         .settingsChanged(page: .instructions),
         .settingsChanged(page: .slashCommands),
