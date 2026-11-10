@@ -151,18 +151,23 @@ persisted, with no sidebar rows; a subagent's question goes to its parent, never
 
 ## Switching is a visibility flip, never a remount
 
-`WorkspaceSelection.mountedTabs` keeps every mounted layout in the view tree; selection changes
-which one is visible. Each layout has its own hosting view (`AgentLayoutDeck`), keyed by tab. What
-silently brings back full-repaint lag:
+A layout mounts the first time its agent is shown; from then on, selection only changes which
+mounted layout is visible. `WorkspaceSelection.mountedTabs` keeps every layout shown this session
+in the view tree, apart from the deliberate unmounts below. Each layout has its own hosting view
+(`AgentLayoutDeck`), keyed by tab. What silently brings back full-repaint lag:
 
 - putting the layouts back in one view graph, or giving the deck an input that changes on every update
 - reordering or rekeying the deck's hosts, or removing and re-adding a hidden one
 - a layout view reading the view model's state instead of its `AgentLayoutModel`
 - the shell reading the raw window width or building an object per update
 
-During a live resize hidden layouts keep their frozen size. At launch only the visible layout mounts
-in the first frame; the rest mount two per run-loop turn. The one deliberate unmount is cold parking,
-and only for a layout holding a terminal (`WorkspaceSelection.coldParkCandidates`).
+At launch only the visible layout mounts, and nothing but showing an agent mounts one. An agent
+nobody has opened has no mounted layout, so nothing may wait for its layout to draw: its pi, its
+terminals (a terminal a tool or another device opens starts its own shell), its browser page, its
+status and notifications, and remote clients all work without one. During a live resize hidden
+layouts keep their frozen size. The deliberate unmounts are cold parking, only for a layout holding
+a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
+page draws: its coordinator never mounts here, and a worker only while it is the one open.
 
 ## Only these paths mutate repositories
 
