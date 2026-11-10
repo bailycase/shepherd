@@ -39,6 +39,7 @@ struct SpaceSettingsFormView: View {
                                 .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil)
                         }.frame(maxWidth: .infinity).padding(.vertical, SH.Space.xxxl)
                     }
+                    parentCard
                     ForEach(model.formGroups) { group in card(group) }
                     if model.formSettings != nil { codemodeCard }
                     if !model.formGroups.isEmpty {
@@ -118,19 +119,9 @@ struct SpaceSettingsFormView: View {
     @ViewBuilder private func control(_ row: SpaceSettingsForm.Row) -> some View {
         switch row.control {
         case .dropdown(let options):
-            Menu {
+            dropdown(row.label, value: options.first { $0.value == row.value }?.label ?? row.value) {
                 ForEach(options, id: \.self) { option in Button(option.label) { model.setForm(row, option.value) } }
-            } label: {
-                HStack(spacing: SH.Space.m) {
-                    Text(options.first { $0.value == row.value }?.label ?? row.value).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                    Spacer(minLength: 0)
-                    SHGlyph.popupChevrons.image.font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-                }.padding(.horizontal, SH.Space.l).frame(width: AppLayout.spaceFormControlWidth, height: SHSettingsControlMetrics.controlHeight)
-                    .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SHSettingsControlMetrics.radius))
-                    .shBorder(Color.sh.lineStrong, radius: SHSettingsControlMetrics.radius)
-                    .contentShape(Rectangle())
-            }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                .accessibilityLabel(row.label).accessibilityValue(options.first { $0.value == row.value }?.label ?? row.value)
+            }
         case .segments(let options):
             SHSegmentedPicker(row.label, selection: Binding(get: { row.value }, set: { model.setForm(row, $0) }),
                               options: options.map { ($0.value, $0.label) })
@@ -143,6 +134,51 @@ struct SpaceSettingsFormView: View {
             SHStepper(row.label, value: Binding(get: { row.effective }, set: { model.setForm(row, String($0)) }), in: 0...AppLayout.spaceFormStepperMax)
                 .shControlScale(.settings)
         }
+    }
+
+    private func dropdown(_ label: String, value: String, @ViewBuilder items: () -> some View) -> some View {
+        Menu(content: items) {
+            HStack(spacing: SH.Space.m) {
+                Text(value).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Spacer(minLength: 0)
+                SHGlyph.popupChevrons.image.font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+            }.padding(.horizontal, SH.Space.l).frame(width: AppLayout.spaceFormControlWidth, height: SHSettingsControlMetrics.controlHeight)
+                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SHSettingsControlMetrics.radius))
+                .shBorder(Color.sh.lineStrong, radius: SHSettingsControlMetrics.radius)
+                .contentShape(Rectangle())
+        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .accessibilityLabel(label).accessibilityValue(value)
+    }
+
+    /// The space's parent space, as Add space sets it. It saves at once: it is Shepherd's record,
+    /// not a line of the settings file this form drafts.
+    private var parentCard: some View {
+        let problem = model.parentProblem
+        let note = model.parentError ?? problem
+            ?? "Lists this space under another on \(project.host.name). A folder inside the parent’s also inherits its settings and resources. No files move."
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text("Organization").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
+                Text("Where this space sits in the Spaces list.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.xl).background(Color.sh.bgSunken)
+            SHHairline(color: Color.sh.lineSubtle)
+            HStack(spacing: SH.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    Text("Parent space").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                    Text(note).font(.sh(.caption)).foregroundStyle(model.parentError == nil ? Color.sh.textSecondary : Color.sh.failed)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                dropdown("Parent space", value: model.parentSpaceName ?? "None · root space") {
+                    Button("None · root space") { Task { await model.setParent(nil) } }
+                    ForEach(model.parentChoices) { parent in Button(parent.name) { Task { await model.setParent(parent.id) } } }
+                }.disabled(problem != nil || model.settingParent || model.saving)
+                Color.clear.frame(width: AppLayout.spaceFormResetWidth, height: 0)
+            }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
+        }.background(Color.sh.bgRaised)
+            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+            .accessibilityElement(children: .contain).accessibilityLabel("Organization")
     }
 
     private var tools: some View {

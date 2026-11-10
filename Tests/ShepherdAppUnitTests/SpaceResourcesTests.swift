@@ -99,7 +99,7 @@ struct SpaceResourcesTests {
         var turnedOff: [(String, Bool)] = []
         let model = SpaceResourcesModel()
         model.canExcludeInherited = true
-        model.setInherited = { skill, on in turnedOff.append((skill, on)) }
+        model.setInherited = { _, skill, on in turnedOff.append((skill, on)) }
         await model.load(directory: "/code/payments/web", settingsPath: ".pi/settings.json", parent: ("payments", "/code/payments")) { request in
             switch request {
             case .resources("/code/payments"):
@@ -115,13 +115,13 @@ struct SpaceResourcesTests {
             default: throw ProjectFileError("unexpected", "Not in this test.")
             }
         }
-        #expect(model.rows.map(\.displayName) == ["web-copy", "ledger-review", "useful-tests"], "only skills inherit")
+        #expect(model.rows.map(\.displayName) == ["web-copy", "ledger-review", "useful-tests"], "an older host shares only skills")
         #expect(model.spaceCount == 1 && model.inheritedCount == 2)
         let inherited = try #require(model.rows.first { $0.inheritedFrom == "payments" })
         #expect(!inherited.local && inherited.canToggle)
         await model.toggle(inherited, on: false)
         #expect(turnedOff.map(\.0) == ["ledger-review"] && turnedOff.map(\.1) == [false] && !model.dirty)
-        model.excludedSkills = ["ledger-review"]
+        model.excluded = SpaceInheritanceExclusions(skills: ["ledger-review"])
         #expect(model.rows.first { $0.inheritedFrom != nil }?.enabled == false)
 
         await model.overrideInherited(inherited)
@@ -130,5 +130,51 @@ struct SpaceResourcesTests {
         #expect(override.local && !model.rows.contains { $0.inheritedFrom != nil })
         await model.resetToInherited(override)
         #expect(!model.dirty && model.rows.contains { $0.inheritedFrom == "payments" })
+    }
+
+    /// A child lists its parent's slash commands and extensions too on a host that shares them:
+    /// each turns off by its command or file name, and Override here copies it into `.pi`.
+    @Test func aChildListsItsParentsCommandsAndExtensionsAndOverridesOne() async throws {
+        var turnedOff: [(ProjectResource.Kind, String, Bool)] = []
+        let model = SpaceResourcesModel()
+        model.canExcludeInherited = true
+        model.inheritedKinds = [.skill, .prompt, .extension]
+        model.setInherited = { kind, name, on in turnedOff.append((kind, name, on)) }
+        await model.load(directory: "/code/payments/web", settingsPath: ".pi/settings.json", parent: ("payments", "/code/payments")) { request in
+            switch request {
+            case .resources("/code/payments"):
+                return .resources([ProjectResource(kind: .prompt, path: ".pi/prompts/ship.md", text: "Ship it.\n"),
+                                   ProjectResource(kind: .prompt, path: ".shepherd/prompts/triage.md", text: "Triage.\n"),
+                                   ProjectResource(kind: .extension, path: ".pi/extensions/ledger-guard.ts", text: "// Guards ledgers.\n"),
+                                   ProjectResource(kind: .agent, path: ".pi/agents/reviewer.md", text: "---\nname: reviewer\ndescription: Reviews.\n---\nReview.\n")])
+            case .resources:
+                return .resources([ProjectResource(kind: .prompt, path: ".pi/prompts/triage.md", text: "Web triage.\n")])
+            case .read("/code/payments", ".pi/extensions/ledger-guard.ts"):
+                return .text(ProjectFileText(file: ProjectFile(path: ".pi/extensions/ledger-guard.ts", category: .extensions, exists: true), text: "// Guards ledgers.\n"))
+            case .read(_, let file):
+                return .text(ProjectFileText(file: ProjectFile(path: file, category: .skills, exists: false), text: nil))
+            default: throw ProjectFileError("unexpected", "Not in this test.")
+            }
+        }
+        model.kind = .prompt
+        #expect(model.rows.map(\.displayName) == ["/triage", "/ship"], "the space's own /triage overrides the parent's")
+        #expect(model.rows.first?.overrides == "payments" && model.rows.last?.inheritedFrom == "payments")
+        let ship = try #require(model.rows.last)
+        await model.toggle(ship, on: false)
+        #expect(turnedOff.count == 1 && turnedOff[0].0 == .prompt && turnedOff[0].1 == "ship" && !turnedOff[0].2)
+        model.excluded = SpaceInheritanceExclusions(prompts: ["ship"])
+        #expect(model.rows.last?.enabled == false)
+
+        model.kind = .agent
+        #expect(model.rows.isEmpty, "subagents never inherit")
+        model.kind = .extension
+        let guardRow = try #require(model.rows.first)
+        #expect(guardRow.inheritedFrom == "payments" && guardRow.displayName == "ledger-guard.ts")
+        await model.overrideInherited(guardRow)
+        #expect(model.writes[".pi/extensions/ledger-guard.ts"] == .some("// Guards ledgers.\n"))
+        let override = try #require(model.rows.first)
+        #expect(override.local && override.overrides == "payments")
+        await model.resetToInherited(override)
+        #expect(!model.dirty && model.rows.first?.inheritedFrom == "payments")
     }
 }

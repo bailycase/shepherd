@@ -13,6 +13,10 @@ struct ProjectsHost: Equatable, Identifiable {
     var supportsMCP = true
     var supportsResources = true
     var supportsInheritance = true
+    /// Child spaces inherit slash commands and extensions too (`projectInheritedResourcesCapability`).
+    var supportsInheritedResources = true
+    /// Add space and the space's Settings can set its parent space (`projectParentCapability`).
+    var supportsParent = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -189,10 +193,13 @@ final class ProjectsModel {
     }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
+    /// The Settings tab's Parent space change in flight, and why the last one failed.
+    var settingParent = false
+    var parentError: String?
     var context = ProjectContext() {
         didSet {
             if context.globalSettings != oldValue.globalSettings || context.parentSettings != oldValue.parentSettings { deriveForm() }
-            resources.excludedSkills = context.excluded?.skills ?? []
+            resources.excluded = context.excluded ?? SpaceInheritanceExclusions()
             resources.canExcludeInherited = canExcludeInherited
         }
     }
@@ -323,7 +330,7 @@ final class ProjectsModel {
         showingBrowser = false; showingHooks = false; showingSettingsJSON = false; resources.reset()
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
-        context = ProjectContext(); readRows = []; peers = []; parentMCP = nil
+        context = ProjectContext(); readRows = []; peers = []; parentMCP = nil; parentError = nil
         do {
             guard case .files(let files) = try await request(row.host, .files(directory: row.project.directory)) else { throw ProjectFileError("protocol", "Unexpected space files reply.") }
             guard token == generation, selected?.id == row.id else { return }
@@ -349,7 +356,8 @@ final class ProjectsModel {
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
             return try await self.lookUpSkills(host, repo)
         }
-        resources.setInherited = { [weak self] skill, on in await self?.setInherited(skill: skill, on: on) }
+        resources.setInherited = { [weak self] kind, name, on in await self?.setInherited(kind, name, on: on) }
+        resources.inheritedKinds = host.supportsInheritedResources ? [.skill, .prompt, .extension] : [.skill]
         let parent = context.inheritsFrom.map { (name: inheritanceParentName ?? $0, directory: $0) }
         await resources.load(directory: selected.project.directory, settingsPath: settings?.path ?? ".shepherd/settings.json", parent: parent, keep: keep) { [weak self] request in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
@@ -513,7 +521,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit space settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its spaces."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsResources: connection.supportsProjectResources, supportsInheritance: connection.supportsProjectInheritance, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsResources: connection.supportsProjectResources, supportsInheritance: connection.supportsProjectInheritance, supportsInheritedResources: connection.supportsProjectInheritedResources, supportsParent: connection.supportsProjectParent, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 
@@ -524,6 +532,10 @@ extension ShepherdViewModel {
             // This Mac's spaces are the background host's while the app is its client.
             if host.id == "local", let owner = self.localHost {
                 return try await self.remoteHosts.projects(hostID: owner.id, endpointID: owner.endpointID, request: request)
+            }
+            if host.id == "local", case .organize(let id, let name, let parent) = request {
+                _ = try await self.handleProjectRequest(.edit(projectID: id, request: ProjectEdit(name: name, parentProjectID: parent?.rawValue ?? "")))
+                return try await self.server.projects.request(.list(offset: 0), state: self.server.state)
             }
             if host.id == "local" { return try await self.server.projects.request(request, state: self.server.state) }
             guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown space host.") }
@@ -616,26 +628,39 @@ extension ShepherdViewModel {
         AddSpaceModel(hosts: projects.hosts, rows: projects.rows, hostID: host.id, parentID: parentID) { [weak self] model in
             guard let self, let host = model.host else { return }
             let typed = model.path.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Another host's home isn't this Mac's: its "~" is left for that host to expand.
-            guard host.id == "local" else { try await self.addSettingsProject(path: typed, host: host); return }
+            let name = model.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Another host's home isn't this Mac's: its "~" is left for that host to expand. One
+            // without `projectParentCapability` adds a root space named after its folder.
+            guard host.id == "local" else {
+                let id = try await self.addSettingsProject(path: typed, host: host, reload: !host.supportsParent)
+                if host.supportsParent, let id {
+                    _ = try await self.projects.request(host, .organize(spaceID: id, name: name, parentID: model.parentID))
+                    await self.projects.load(self.projectsSources, force: true)
+                }
+                return
+            }
             let path = (typed as NSString).expandingTildeInPath
-            let added = try await self.handleProjectRequest(.register(path: path, name: model.name.trimmingCharacters(in: .whitespacesAndNewlines)))
+            let added = try await self.handleProjectRequest(.register(path: path, name: name))
             if let parent = model.parentID, let space = added.space {
                 _ = try await self.handleProjectRequest(.edit(projectID: space.id, request: ProjectEdit(parentProjectID: parent.rawValue)))
             }
         }
     }
 
-    func addSettingsProject(path: String, host: ProjectsHost) async throws {
+    /// Adds the folder as a space and returns another host's new space's ID.
+    @discardableResult
+    func addSettingsProject(path: String, host: ProjectsHost, reload: Bool = true) async throws -> SpaceID? {
+        var added: SpaceID?
         if host.id == "local" {
             _ = try await handleProjectRequest(.register(path: path, name: URL(fileURLWithPath: path).lastPathComponent))
-            return
+            return nil
         } else if let hostID = UUID(uuidString: host.id) {
             guard remoteHosts.allConnections.first(where: { $0.id == hostID })?.endpointID == host.endpointID else {
                 throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")
             }
-            _ = try await remoteHosts.addSpace(hostID: hostID, path: path)
+            added = try await remoteHosts.addSpace(hostID: hostID, path: path)
         }
-        await projects.load(projectsSources, force: true)
+        if reload { await projects.load(projectsSources, force: true) }
+        return added
     }
 }

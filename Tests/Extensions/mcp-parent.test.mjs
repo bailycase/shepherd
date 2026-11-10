@@ -349,3 +349,30 @@ test("a parent shares its skills with no saved trust decision", { timeout: 60000
     assert.equal(commands.some((c) => c.name === "skill:ledger-review"), true);
   });
 });
+
+const prompt = (folder, name, description) => {
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, `${name}.md`), `---\ndescription: ${description}\n---\n${description}\n`);
+};
+
+test("a subproject loads its parent's slash commands, its own of the same name winning, and nothing it turned off", { timeout: 60000 }, async (t) => {
+  const options = subproject();
+  const project = options.project;
+  const native = () => JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
+  options.project = (dir, work) => {
+    project(dir, work);
+    prompt(path.join(work, ".pi/prompts"), "ship", "PARENT_SHIP");
+    prompt(path.join(work, ".shepherd/prompts"), "triage", "PARENT_TRIAGE");
+    prompt(path.join(work, ".pi/prompts"), "deploy", "PARENT_DEPLOY");
+    prompt(path.join(web(work), native(), "prompts"), "deploy", "CHILD_DEPLOY");
+  };
+  const env = options.env;
+  options.env = (dir, work) => ({ ...env(dir, work), SHEPHERD_PARENT_EXCLUDE: JSON.stringify({ prompts: ["triage"] }) });
+  await withPi(t, options, async (pi) => {
+    const commands = await pi.commands();
+    const described = (name) => commands.find((c) => c.name === name)?.description;
+    assert.equal(described("ship"), "PARENT_SHIP");
+    assert.equal(described("deploy"), "CHILD_DEPLOY", "the subproject's own command wins");
+    assert.equal(described("triage"), undefined, "a turned-off command never loads");
+  });
+});

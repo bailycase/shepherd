@@ -2932,6 +2932,14 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills."), to: client)
                 return
             }
+            guard !request.requiresParent || offeredCapabilities.contains(RemoteProtocol.projectParentCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to choose a parent space."), to: client)
+                return
+            }
+            if case .organize(let spaceID, let name, let parentID) = request {
+                remoteOrganizeSpace(id: id, spaceID: spaceID, name: name, parentID: parentID, client: client)
+                return
+            }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
                 send(.error(id: id, code: "update_required", message: "Project approval is unavailable on this host."), to: client)
                 return
@@ -3944,6 +3952,30 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         send(.spaceAdded(id: id, spaceID: space.id), to: client)
+    }
+
+    /// Server queue: a paired device sets a space's parent and name (`RemoteProjectsRequest.organize`),
+    /// as Add space and the space's Settings do on this Mac (`editProject`), then gets the listing's
+    /// first page back.
+    private func remoteOrganizeSpace(id: Int, spaceID: SpaceID, name: String?, parentID: SpaceID?, client: ExtensionConnection) {
+        let connection = ChangesUnchecked(value: client)
+        Task { [weak self] in
+            guard let self else { return }
+            let result: Result<RemoteProjectsResult, Error>
+            do {
+                _ = try await self.editProject(spaceID, edit: ProjectEdit(name: name, parentProjectID: parentID?.rawValue ?? ""))
+                result = .success(try await self.projects.request(.list(offset: 0), state: self.state))
+            } catch { result = .failure(error) }
+            self.queue.async {
+                let client = connection.value
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let value): self.send(.projects(id: id, result: value), to: client)
+                case .failure(let error):
+                    self.send(.error(id: id, code: (error as? ProjectFileError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                }
+            }
+        }
     }
 
     /// Server queue: a remote New design, made by the app (like `remoteCreateAgent`) once the

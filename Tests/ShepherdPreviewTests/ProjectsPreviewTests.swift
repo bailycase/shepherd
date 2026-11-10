@@ -274,7 +274,8 @@ final class ProjectsPreviewWorld {
     let vm: ShepherdViewModel
 
     /// `supportPi` puts Shepherd's pi home where the app keeps it, under the home's Application Support.
-    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false, supportPi: Bool = false) async throws {
+    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false, supportPi: Bool = false,
+         remoteCapabilities: [String]? = nil) async throws {
         let dir = try makeScratchDirectory("prv-projects")
         let home = dir.appendingPathComponent("home")
         let pi = PiSetup(engine: PiSetup.app.engine, home: supportPi ? home.appendingPathComponent("Library/Application Support/Shepherd/pi") : dir.appendingPathComponent("pi"),
@@ -336,6 +337,7 @@ final class ProjectsPreviewWorld {
         }
         let tokenURL = remote.dir.appendingPathComponent("token")
         if legacy { remote.server.advertisedCapabilities = [] }
+        if let remoteCapabilities { remote.server.advertisedCapabilities = remoteCapabilities }
         let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         hosts.addHost(name: detail ? "Build-01" : "build-01", host: "127.0.0.1", port: port, token: token)

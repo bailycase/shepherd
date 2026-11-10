@@ -187,6 +187,8 @@ final class RemoteHostStore {
         var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
         var supportsProjectResources: Bool { client?.capabilities.contains(RemoteProtocol.projectResourcesCapability) == true }
         var supportsProjectInheritance: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritanceCapability) == true }
+        var supportsProjectInheritedResources: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritedResourcesCapability) == true }
+        var supportsProjectParent: Bool { client?.capabilities.contains(RemoteProtocol.projectParentCapability) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// What Settings' host picker reads and changes the host's settings through, while it's connected.
@@ -275,9 +277,6 @@ final class RemoteHostStore {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
-    /// The background host on this Mac dropped its connection, or a reconnect to it failed (it
-    /// stopped, drained, or was turned off in Login Items). The store reconnects either way.
-    @ObservationIgnored var onLocalHostLost: (() -> Void)?
     /// This app's build, compared with the background host's (`BackgroundHostClient.asksToDrain`).
     @ObservationIgnored var appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     @ObservationIgnored var onProjectExecutorConnected: ((ProjectHostReference) -> Void)?
@@ -518,7 +517,6 @@ final class RemoteHostStore {
                 let failure = RemoteHostFailure(error)
                 connection.phase = .failed(failure)
                 if failure.retries { self.scheduleReconnect(connection) }
-                if connection.isLocalHost { self.onLocalHostLost?() }
             }
         }
     }
@@ -652,7 +650,6 @@ final class RemoteHostStore {
             }
             if self.allConnections.contains(where: { $0 === connection }) {
                 self.scheduleReconnect(connection)
-                if connection.isLocalHost { self.onLocalHostLost?() }
             }
         }
     }
