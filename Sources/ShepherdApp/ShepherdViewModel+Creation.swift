@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
@@ -14,7 +15,7 @@ extension ShepherdViewModel {
     func addSpaceFromPanel() {
         // Under the background host this Mac's spaces are the host's: the in-process server is idle,
         // and a space added to it never reaches the sidebar or the space menu.
-        if !ownsWorkspace, let host = remoteHosts.connections.first(where: \.isThisMac) {
+        if !ownsWorkspace, localHost == nil, let host = remoteHosts.localHost {
             spacePickerTarget = .host(host.id)
             return
         }
@@ -96,6 +97,18 @@ extension ShepherdViewModel {
         let reservation = UUID()
         startingCheckoutUsers[reservation] = path
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }
+        if let host = localHost {
+            // The background host adds it (on top of its tree, as below), and it shows as its push lands.
+            do {
+                let id = try await remoteHosts.addSpace(hostID: host.id, path: path)
+                for _ in 0..<100 where !state.spaces.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+                if select { selectSpace(id) }
+                return id
+            } catch {
+                fail("Couldn’t add the space", error)
+                return nil
+            }
+        }
         let space = Space(name: url.lastPathComponent, path: path)
         do {
             // New projects go on top of the sidebar's project tree.
@@ -219,6 +232,9 @@ extension ShepherdViewModel {
     /// from the key window already.
     @discardableResult
     func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true, focusWindow: Bool = true) async throws -> AgentID {
+        if let host = localHost {
+            return try await startHostedAgent(config, host: host, selectAfter: selectAfter, focusWindow: focusWindow)
+        }
         guard let space = state.spaces.first(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
         }
@@ -294,6 +310,37 @@ extension ShepherdViewModel {
             reconcileSidebarOpeningTurn(agentID)
         }
         return agentID
+    }
+
+    /// `startAgent` as the background host's client: the host makes the thread (its worktree, when
+    /// `config` names a branch without a checkout; its own folder, for a standalone thread whose
+    /// space doesn't exist yet), and it shows and selects here as the host's push lands.
+    private func startHostedAgent(_ config: NewAgentConfig, host: RemoteHostStore.Connection,
+                                  selectAfter: Bool, focusWindow: Bool) async throws -> AgentID {
+        let space = state.spaces.first { $0.id == config.spaceID }
+        guard config.designID == nil, config.coordinatorFor == nil, space != nil || config.reservedAgentID != nil else {
+            throw AgentStartFailure(message: space == nil ? "space no longer exists" : "Shepherd's background service can't start this kind of thread yet.")
+        }
+        let id = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
+            spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
+            serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
+            name: config.initialName, piSessionID: config.piSessionID, agentID: config.reservedAgentID,
+            worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
+        // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
+        let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: server.pi.home),
+                                           thinking: config.thinking.rawValue)
+        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id)
+        threadStores.store(for: id).preview(opening.map { $0.preview(empty) } ?? empty)
+        // ponytail: polls for the host's push (it usually lands before the reply); a push waiter if this shows.
+        for _ in 0..<100 where !state.agents.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+        if selectAfter {
+            selectAgent(id)
+            if focusWindow {
+                NSApp?.activate(ignoringOtherApps: false)
+                window?.makeKeyAndOrderFront(nil)
+            }
+        }
+        return id
     }
 
     /// The app's main window, for focus handling.

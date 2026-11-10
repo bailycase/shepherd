@@ -84,7 +84,7 @@ extension ShepherdViewModel {
         rendering.thumbnails.landed = { [weak self] in self?.referencePicturesLanded() }
         let server = server
         Task { [weak self] in
-            if let snapshot = try? await server.designSnapshot(id) { rendering.boardPictures.request(id, snapshot: snapshot) }
+            if let snapshot = try? await ownerDesignSnapshot(id) { rendering.boardPictures.request(id, snapshot: snapshot) }
             await self?.loadDesignThumbnails()
         }
     }

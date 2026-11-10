@@ -96,8 +96,8 @@ extension ShepherdViewModel {
         let state: ShepherdState?
         switch (reference, home) {
         case (.local, .local): state = self.state
-        case (.local, .host(let id)): state = remoteHosts.connections.first { $0.id == id && $0.phase == .connected }?.state
-        case (.remote(let id, _), _): state = remoteHosts.connections.first { $0.id == id && $0.phase == .connected }?.state
+        case (.local, .host(let id)): state = remoteHosts.allConnections.first { $0.id == id && $0.phase == .connected }?.state
+        case (.remote(let id, _), _): state = remoteHosts.allConnections.first { $0.id == id && $0.phase == .connected }?.state
         }
         guard let state else { return nil }
         let hidden = Set(state.spaces.filter { !$0.showsThreads }.map(\.id))

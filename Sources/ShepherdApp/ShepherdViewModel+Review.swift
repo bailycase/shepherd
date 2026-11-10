@@ -21,6 +21,35 @@ extension ShepherdViewModel {
                 self.beginReview(agentID: agentID, cwd: cwd, reference: reference, respond: respond)
             }
         }
+        // The background host on this Mac has no window: what its agents ask of one is answered
+        // here, as this app answers its own server's agents.
+        remoteHosts.onAppRelay = { [weak self] client, token, job in
+            let answer = { (result: AppRelayResult) in client.appRelayAnswer(token: token, result: result) }
+            guard let self else { return answer(.failed(code: "unavailable", message: "The workspace is gone.")) }
+            switch job {
+            case .review(let agentID, let cwd, let reference):
+                self.beginReview(agentID: agentID, cwd: cwd, reference: reference) { outcome in
+                    switch outcome {
+                    case .submitted(let text): answer(.done(text: text))
+                    case .failed(let code, let message): answer(.failed(code: code, message: message))
+                    }
+                }
+            case .confirmSpaceDelete(let id):
+                // As `handleProjectRequest(.delete)`: the dialog shows; the user confirms or not.
+                guard self.state.spaces.contains(where: { $0.id == id && !$0.hidden }) else {
+                    return answer(.failed(code: "no_such_project", message: "No registered local space has that ID."))
+                }
+                guard self.spaceDeleteTarget == nil || self.spaceDeleteTarget == id else {
+                    return answer(.failed(code: "confirmation_busy", message: "Another space removal is awaiting confirmation."))
+                }
+                self.spaceDeleteRequested = true
+                self.spaceDeleteTarget = id
+                answer(.done(text: "confirmation_required"))
+            case .hostUpdate(let request):
+                // The host checked the device before relaying; its gate fences the install.
+                Task { answer(.hostUpdate(status: await AppUpdater.shared.remoteUpdate(request, authorized: { true }))) }
+            }
+        }
     }
 
     /// Show the agent's Changes tab scrolled to `path`, in front of an inspected subagent: the
@@ -217,11 +246,11 @@ extension ShepherdViewModel {
     /// Queue `text` as the agent's next user turn: delivered now when idle, as a follow-up
     /// when the agent is mid-turn.
     func sendUserMessage(_ text: String, to agentID: AgentID) async throws {
-        guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: agentID, request: .snapshot()),
+        guard case .snapshot(let snapshot) = try await nativeThread(agentID, request: .snapshot()),
               !snapshot.piSessionID.isEmpty else {
             throw AgentStartFailure(message: "The agent is not ready yet. Try again in a moment.")
         }
-        let result = try await server.nativeThread(agentID: agentID, request: .send(
+        let result = try await nativeThread(agentID, request: .send(
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
             operationID: UUID(), text: text, delivery: .followUp))
         if case .failure(_, let message) = result { throw AgentStartFailure(message: message) }
@@ -478,6 +507,8 @@ extension ShepherdViewModel {
 
     /// This Mac's engine for an agent's review (`cwd`: the directory under review).
     func localChangesEngine(agentID: AgentID, cwd: String) -> ChangesEngine {
+        // The background host's Changes engine follows its agents' turns.
+        if let ref = localRef(agentID) { return remoteChangesEngine(ref) }
         let changes = server.changes
         return ChangesEngine(
             overview: { try await changes.overview(agentID: agentID, cwd: cwd) },
@@ -569,6 +600,10 @@ extension ShepherdViewModel {
         do {
             switch owner {
             case .local(let agentID):
+                if let ref = localRef(agentID) {
+                    _ = try await remoteHosts.agentQuery(ref, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
+                    return nil
+                }
                 _ = redo ? try await server.changes.redoTurn(agentID: agentID, turnID: turnID)
                     : try await server.changes.undoTurn(agentID: agentID, turnID: turnID)
             case .remote(let target):

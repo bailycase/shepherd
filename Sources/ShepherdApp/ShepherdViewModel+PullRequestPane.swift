@@ -20,7 +20,9 @@ extension ShepherdViewModel {
             if let existing = branchPullRequests[agentID] {
                 store = existing
             } else {
-                store = ForgeStore(transport: { [server] in await server.forge($0) })
+                store = ForgeStore(transport: { [weak self] in
+                    await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
+                })
                 branchPullRequests[agentID] = store
             }
             if store.selection == ref { await store.loadDetail() } else { await store.open(ref) }

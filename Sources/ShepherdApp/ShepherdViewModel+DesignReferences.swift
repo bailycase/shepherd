@@ -39,7 +39,7 @@ extension ShepherdViewModel {
     func prepareDesignReference(_ reference: DesignReference) async throws -> PreparedDesignReference {
         if case .remote(let hostID) = reference.host {
             // A connected host's design: pinned by that host, from its own design.
-            guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
+            guard let connection = remoteHosts.allConnections.first(where: { $0.id == hostID }),
                   connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability),
                   let named = reference.onHost(hostID) else {
                 throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal)
@@ -115,7 +115,7 @@ extension ShepherdViewModel {
     /// works it waits in the host's queue, as any follow-up does.
     private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage] = [], to agentID: AgentID) async throws {
         let server = server
-        try await sendDirectly(references, text: text, images: images) { try await server.nativeThread(agentID: agentID, request: $0) }
+        try await sendDirectly(references, text: text, images: images) { try await nativeThread(agentID, request: $0) }
     }
 
     /// `sendDirectly` through whatever serves the thread: this Mac's server, or a host.
@@ -136,7 +136,7 @@ extension ShepherdViewModel {
         guard references.count <= DesignReferenceRecord.maxPerMessage else {
             throw DesignReferenceFailure("A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
         }
-        guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
               connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) else {
             throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal)
         }

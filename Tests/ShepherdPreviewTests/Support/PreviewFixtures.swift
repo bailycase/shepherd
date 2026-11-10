@@ -72,7 +72,7 @@ final class PreviewWorkspace {
     }
 
     func stop() {
-        for connection in vm.remoteHosts.connections { vm.remoteHosts.removeHost(id: connection.id) }
+        for connection in vm.remoteHosts.allConnections { vm.remoteHosts.removeHost(id: connection.id) }
         scratch.stop()
     }
 }

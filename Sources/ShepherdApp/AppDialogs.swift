@@ -216,7 +216,7 @@ struct AppDialogs: ViewModifier {
                 cancel: { vm.spacePickerTarget = nil }
             )
         case .host(let hostID):
-            if let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID }) {
+            if let connection = vm.remoteHosts.allConnections.first(where: { $0.id == hostID }) {
                 RemoteDirectoryPicker(
                     hostName: connection.config.name,
                     list: { path in try await vm.remoteHosts.listDir(hostID: hostID, path: path) },
@@ -263,21 +263,31 @@ struct WorktreeDeleteDialog: View {
         _remember = State(initialValue: settings.worktreeDeleteAction != .ask)
     }
 
-    /// An agent of this Mac's own workspace: git probes its checkout here.
+    /// An agent of this Mac's own workspace: git probes its checkout here, or the background
+    /// host that runs it reports it (`hostWorktreeInfo`).
     init(vm: ShepherdViewModel, agent: Agent) {
         let path = vm.worktreeCheckoutPath(agent), branch = agent.worktreeBranch ?? ""
+        let ref = vm.localRef(agent.id)
         self.init(agent: agent, path: path, settings: vm.settings, probe: {
+            if let ref {
+                let info = if let known = vm.hostWorktreeInfo { known } else { try await vm.thisMacWorktreeInfo(ref) }
+                vm.hostWorktreeInfo = info
+                return info.warning
+            }
             // No checkout to probe (its space is gone): `git -C ""` would probe the app's own
             // working directory instead.
             guard !path.isEmpty else { return nil }
             return await Task.detached(priority: .userInitiated) {
                 GitWorktree.unreconciledWork(worktree: path, branch: branch)
             }.value
-        }, cancel: { vm.worktreeDeleteTarget = nil }) { removeWorktree in
+        }, cancel: { vm.worktreeDeleteTarget = nil; vm.hostWorktreeInfo = nil }) { removeWorktree in
             // Same dismissal choreography as Remove Space: deleting tears down a mounted layout,
             // so the sheet finishes dismissing first (`onDismiss`).
             let id = agent.id
-            vm.afterDialogDismiss = { vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree) }
+            vm.afterDialogDismiss = {
+                vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree)
+                vm.hostWorktreeInfo = nil
+            }
             vm.worktreeDeleteTarget = nil
         }
     }

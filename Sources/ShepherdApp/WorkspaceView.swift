@@ -542,6 +542,8 @@ struct PaneLeafView: View, Equatable {
 
     var body: some View {
         let pane = model.pane
+        // As the background host's client, the host runs every session: none starts here.
+        let host = vm.localHost
         Group {
             if pane.isReview == true {
                 PanePlaceholder(text: "review unavailable")
@@ -551,12 +553,12 @@ struct PaneLeafView: View, Equatable {
                 // (`AgentLayoutView`).
                 let inspecting = model.inspectingRunID
                 AgentThreadPane(
-                    session: vm.sessions.session(for: pane, in: tab),
+                    session: host == nil ? vm.sessions.session(for: pane, in: tab) : nil,
                     store: vm.threadStores.store(for: agentID),
                     input: vm.threadStores.input(for: agentID),
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
-                    request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
+                    request: { [vm] in try await vm.nativeThread(agentID, request: $0) },
                     preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot) },
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
@@ -584,6 +586,10 @@ struct PaneLeafView: View, Equatable {
                 // The branch card's column at the thread's right; the transcript keeps its identity.
                 .modifier(BranchCardDock(store: model.branch.map { _ in vm.branchCardStore(for: agentID) }, branch: model.branch,
                                          active: model.isVisible))
+            } else if let host, let agentID = model.threadAgentID ?? vm.state.agents.first(where: { $0.tabID == tab.id })?.id {
+                HostTerminalLeaf(vm: vm, connection: host, ref: RemoteAgentRef(hostID: host.id, agentID: agentID), pane: pane,
+                                 isFocused: model.isFocused, isVisible: model.isVisible,
+                                 addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } })
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
@@ -609,7 +615,8 @@ struct PaneLeafView: View, Equatable {
 /// An agent's only surface. Observes the pane session for exit/failure so a dead pi shows
 /// the same placeholder a shell pane would.
 struct AgentThreadPane: View {
-    var session: TerminalSessionStore.PaneSession
+    /// Nil where the background host runs the agent: its thread says when pi stops.
+    var session: TerminalSessionStore.PaneSession?
     var store: NativeThreadStore
     var input: ThreadInput? = nil
     let active: Bool
@@ -637,7 +644,7 @@ struct AgentThreadPane: View {
         // The placeholder cross-fades in when pi dies; connecting → live changes nothing here, nor
         // does a pi that stopped: its thread says why.
         ZStack {
-            switch session.phase {
+            switch session?.phase ?? .live {
             case .connecting, .live, .stopped:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
@@ -652,7 +659,7 @@ struct AgentThreadPane: View {
                     .shTransition(.content)
             }
         }
-        .shAnimation(.content, value: session.phase.isRunning)
+        .shAnimation(.content, value: session?.phase.isRunning ?? true)
     }
 }
 
@@ -843,11 +850,13 @@ extension RemoteLayoutModel {
         let phase = host.phase.kind
         let visible = screen.isVisible
         if visible {
-            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen), let lastSeen = host.lastSeen {
+            if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen, thisMac: host.isThisMac), let lastSeen = host.lastSeen {
                 return .away(host: host.name, hostID: host.connection.id, lastSeen: lastSeen, phase: phase)
             }
             switch host.phase {
             case .connected: break
+            // This Mac's host back within its grace (`HostAway.thisMacGrace`): its last state stands.
+            case _ where host.isThisMac && host.lastSeen.map { Date().timeIntervalSince($0) < HostAway.thisMacGrace } == true: break
             case .connecting: return .placeholder("connecting to \(host.name)…", phase: phase)
             case .failed(let failure): return .placeholder(failure.message(host: host.name), phase: phase)
             case .disconnected: return .placeholder("\(host.name) disconnected", phase: phase)
@@ -901,7 +910,7 @@ extension RemoteLayoutModel {
 
         init(vm: ShepherdViewModel) {
             self.vm = vm
-            connections = vm.remoteHosts.connections
+            connections = vm.remoteHosts.allConnections
             inspecting = vm.remoteInspectingAgent
             inspectorTabs = vm.remoteInspectorTabs
             panes = vm.subagentInspector
@@ -970,7 +979,7 @@ private struct RemoteAgentPaneContent: View, Equatable {
             // One banner through every try (connecting, then waiting out the backoff), so it
             // never flickers between them.
             case .away(let host, let hostID, let lastSeen, _):
-                HostAwayBanner(name: host, lastSeen: lastSeen) {
+                HostAwayBanner(name: host, lastSeen: lastSeen, thisMac: hostID == vm.remoteHosts.localHost?.id) {
                     vm.remoteHosts.reconnect(id: hostID)
                 }
                 .shTransition(.content)
@@ -1260,7 +1269,7 @@ struct RemoteAgentThreadPane: View {
                 redo: { await vm.redoTurn(.remote(ref), turnID: $0) }) : nil,
             listModels: {
                 guard let listing = try? await vm.remoteHosts.listModels(hostID: ref.hostID) else { return .empty }
-                let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
+                let allLevels = vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
                 return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
             },
             designChat: designChat, hookDirectory: cwd, retainedInput: vm.remoteThreadStores.input(for: ref)
@@ -1272,12 +1281,15 @@ struct RemoteAgentThreadPane: View {
     }
 }
 
-private struct RemoteTerminalPane: View {
+struct RemoteTerminalPane: View {
     var pane: RemotePaneSession
     let isFocused: Bool
+    var isRendering = true
     var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil in a host's utility terminal.
     var addToMessage: ((String) -> Void)? = nil
+    /// The background host's terminal in the app's own layout: `LiveTerminalPane`'s words.
+    var local = false
 
     var body: some View {
         // As `LiveTerminalPane`: placeholders fade, the surface never moves.
@@ -1285,9 +1297,9 @@ private struct RemoteTerminalPane: View {
             switch pane.phase {
             case .connecting, .live:
                 ZStack(alignment: .topLeading) {
-                    AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: true)
+                    AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: isRendering)
                     if case .connecting = pane.phase {
-                        PanePlaceholder(text: "attaching…").allowsHitTesting(false)
+                        PanePlaceholder(text: local ? "starting session…" : "attaching…").allowsHitTesting(false)
                             .shTransition(.content)
                     }
                     if let addToMessage {
@@ -1296,10 +1308,11 @@ private struct RemoteTerminalPane: View {
                 }
                 .background(Color.sh.bgWindow)
             case .failed(let reason):
-                PanePlaceholder(text: "remote session unavailable · \(reason)")
+                PanePlaceholder(text: "\(local ? "" : "remote ")session unavailable · \(reason)")
                     .shTransition(.content)
             case .exited(let code):
-                PanePlaceholder(text: code.map { "remote session exited (\($0))" } ?? "remote session exited")
+                let session = local ? "session" : "remote session"
+                PanePlaceholder(text: code.map { "\(session) exited (\($0))" } ?? "\(session) exited")
                     .shTransition(.content)
             }
         }
@@ -1312,9 +1325,13 @@ private struct RemoteTerminalPane: View {
 /// Whether a remote agent's pane says its host is reconnecting (SHStatus): the host was
 /// connected earlier this launch and Shepherd is trying it again. A host that never connected, or
 /// a failure that won't retry (a refused token, another protocol), keeps its own placeholder.
+/// The host on this Mac (`thisMac`) is the app's own background service: a drop it comes back from
+/// within `thisMacGrace` (an update's restart) shows nothing.
 enum HostAway {
-    static func reconnecting(_ phase: RemoteHostStore.Phase, lastSeen: Date?) -> Bool {
-        guard lastSeen != nil else { return false }
+    static let thisMacGrace: TimeInterval = 5
+
+    static func reconnecting(_ phase: RemoteHostStore.Phase, lastSeen: Date?, thisMac: Bool = false, now: Date = Date()) -> Bool {
+        guard let lastSeen, !thisMac || now.timeIntervalSince(lastSeen) >= thisMacGrace else { return false }
         switch phase {
         case .connecting: return true
         case .failed(let failure): return failure.retries
@@ -1323,8 +1340,15 @@ enum HostAway {
     }
 
     /// "Last seen 3h ago. Remote agents resume when it's back."
-    static func message(lastSeen: Date, now: Date = Date()) -> String {
-        "Last seen \(InstructionsPresentation.age(lastSeen.timeIntervalSince1970, now: now)). Remote agents resume when it’s back."
+    static func message(lastSeen: Date, now: Date = Date(), thisMac: Bool = false) -> String {
+        let age = InstructionsPresentation.age(lastSeen.timeIntervalSince1970, now: now)
+        return thisMac ? "Last answered \(age). Your agents show here again when it’s back."
+            : "Last seen \(age). Remote agents resume when it’s back."
+    }
+
+    /// The banner's title: a paired host by name, this Mac by what it is.
+    static func title(name: String, thisMac: Bool) -> String {
+        thisMac ? "Shepherd’s background service isn’t answering" : "\(name) reconnecting"
     }
 }
 
@@ -1333,12 +1357,14 @@ enum HostAway {
 struct HostAwayBanner: View {
     let name: String
     let lastSeen: Date
+    var thisMac = false
     let retry: () -> Void
 
     var body: some View {
         // The age moves on by itself ("just now", then "1m ago").
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            SHBanner(.running, title: "\(name) reconnecting", message: HostAway.message(lastSeen: lastSeen, now: context.date),
+            SHBanner(.running, title: HostAway.title(name: name, thisMac: thisMac),
+                     message: HostAway.message(lastSeen: lastSeen, now: context.date, thisMac: thisMac),
                      systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
                 Button("Retry now", action: retry)
                     .buttonStyle(.sh(.secondary, size: .s))

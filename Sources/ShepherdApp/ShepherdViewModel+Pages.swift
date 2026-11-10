@@ -14,7 +14,7 @@ extension ShepherdViewModel {
     /// This Mac, then every configured host, as the shared automations presentation reads them.
     var automationHosts: [AutomationHost] {
         [AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state, triggers: true)]
-            + remoteHosts.connections.map { connection in
+            + remoteHosts.allConnections.map { connection in
                 AutomationHost(id: connection.id, name: connection.config.name, connected: connection.phase == .connected,
                                manageable: connection.supportsAutomations, state: connection.state,
                                triggers: connection.supportsAutomationTriggers)
@@ -76,7 +76,7 @@ extension ShepherdViewModel {
     /// the host.
     func loadAutomationPageRuns() async {
         await loadLocalAutomationRuns()
-        for connection in remoteHosts.connections where connection.phase == .connected {
+        for connection in remoteHosts.allConnections where connection.phase == .connected {
             for automation in connection.state.automations {
                 await loadRemoteAutomationRuns(AutomationKey(host: connection.id, automation: automation.id))
             }
@@ -169,7 +169,7 @@ extension ShepherdViewModel {
     /// Hosts a new automation can be saved on: this Mac, and each connected host that serves
     /// automations.
     var automationEditorHosts: [(id: UUID, name: String)] {
-        [(PageHost.localID, PageHost.localName)] + remoteHosts.connections
+        [(PageHost.localID, PageHost.localName)] + remoteHosts.allConnections
             .filter { $0.phase == .connected && $0.supportsAutomations }
             .map { ($0.id, $0.config.name) }
     }

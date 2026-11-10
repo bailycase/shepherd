@@ -174,7 +174,7 @@ struct NewAgentSheet: View {
     }
 
     private var remoteConnection: RemoteHostStore.Connection? {
-        targetHostID.flatMap { id in vm.remoteHosts.connections.first { $0.id == id } }
+        targetHostID.flatMap { id in vm.remoteHosts.allConnections.first { $0.id == id } }
     }
 
     /// Spaces on whichever machine is targeted: never a host's reserved automations or designs

@@ -23,7 +23,25 @@
   which an app with a higher build number sends once connected (`BackgroundHostClient.asksToDrain`):
   it keeps serving and exits once no agent is working, blocked or starting, or after two hours
   (`HostDrain`). It drains on its own when its bundle's `CFBundleVersion` on disk changes or the
-  bundle is gone (`BundleVersionWatch`). With no app, the host
+  bundle is gone (`BundleVersionWatch`). Local clients alone may send `spaceAction` (rename,
+  base, hide, reorder or remove a space) and `startThread` (a thread with a fork's session, an
+  existing checkout, its own folder, a name or an id); TCP clients are refused. An app that lists
+  `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
+  banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
+  worktree's loss by the in-process rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
+  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
+  `focusThread` (the thread it shows, so phone pushes for it stay quiet; cleared when it
+  disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
+  `agentNotify` push instead of posting on the host, and a `settingsChanged` push names the
+  Settings page (instructions, suggestions, skills, hooks, slash commands) whose data changed on the
+  host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
+  activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
+  it the same way. The local link ends only when its socket
+  closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
+  alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
+  workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops
+  being read while it has 4 MiB unwritten, as a slow terminal emulator slows its program. Both
+  sides log every drop with its reason (`ShepherdLog.connection`, category `Connection`). With no app, the host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves
@@ -38,10 +56,12 @@
   app over `host.sock` (a `browserDrive` request to the local client that lists the drive
   capability), which runs it on its own page with no tunnel; with no app connected the call is
   refused as `unavailable`, saying Shepherd's window is closed.
-  It has no web view either, so `board_render`, `design_export` and a reference's copy go to the
-  same app as `designRelay` (`DesignRelayJob`, only to a local client that lists `designRelay.v1`),
-  answered `designRelayAnswer` with the token (`SessionServer.relayDesignDrawingToApp`); with no
-  app connected they fail as `render_unavailable` or `export_unavailable`.
+  It has no web view either, so `board_render`, `board_interact`, `design_export` and a reference's
+  copy go to the same app as `designRelay` (only to a local client that lists `designRelay.v2`),
+  answered `designRelayAnswer` with the token (`SessionServer.relayDesignDrawingToApp`). The
+  `DesignRelayJob` travels as a JSON file under `design-relay/` in the support directory, named
+  by `jobFile`, since a design's files outgrow a frame; the host removes it once answered. With no
+  app connected after a few seconds' wait they fail as `render_unavailable` or `export_unavailable`.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
   `RemoteProtocol.version`, listing what the client understands
@@ -411,6 +431,9 @@
     Check is non-destructive; installation requires explicit confirmation of the current offer
     (expires after five minutes), then downloads, verifies with Sparkle's existing signed feed,
     installs and restarts as one operation. There is no remote channel switch or force install.
+    A background host has no updater: it relays the request to this Mac's app (`appRelay`'s
+    `hostUpdate` job; with no app connected, status says to open Shepherd), whose Sparkle asks the
+    host before it reserves, restarts or quits (`hostUpdateGate`, local clients only).
     Status exposes version/build/channel/phase/offer/error/canInstall and is explicitly polled,
     including after reconnect; installation is never automatically retried after disconnect.
     The host saves ordinary active turns and native queues using the existing bounded recovery
@@ -440,7 +463,7 @@
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
   or action from another version's client) with `unsupported` and keeps the connection; a frame
-  with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
+  with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap (16 MiB from the host to a local client).
 - **Sizing:** viewports are smallest-viewer-wins. Each attached remote viewer reports its grid,
   and the PTY takes the minimum; with no remote viewers, the local viewport rules. Resize reports
   from unattached clients are ignored.

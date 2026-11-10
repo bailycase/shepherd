@@ -70,7 +70,7 @@ struct HostsDestination: View {
             },
             addHost: { vm.showAddHost() }), chrome: chrome)
             .sheet(item: Binding(get: { removing.map(SheetItem.init) }, set: { removing = $0?.value })) { item in
-                let name = vm.remoteHosts.connections.first { $0.id == item.value }?.config.name ?? "this host"
+                let name = vm.remoteHosts.allConnections.first { $0.id == item.value }?.config.name ?? "this host"
                 DialogSheet(title: "Remove \(name)?",
                             subtitle: "Its threads keep running there; they leave Recents on this Mac. Add it again with its token to bring them back.",
                             actions: [

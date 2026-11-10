@@ -24,7 +24,7 @@ extension ShepherdViewModel {
 
     /// Reads the runs the host kept. A host that cannot say keeps what was read before.
     func loadRemoteAutomationRuns(_ key: AutomationKey) async {
-        guard remoteHosts.connections.first(where: { $0.id == key.host })?.supportsAutomations == true else { return }
+        guard remoteHosts.allConnections.first(where: { $0.id == key.host })?.supportsAutomations == true else { return }
         guard case .runs(let runs)? = try? await remoteHosts.automation(key, request: .runs) else { return }
         if remoteAutomationRuns[key] != runs { remoteAutomationRuns[key] = runs }
     }
@@ -56,7 +56,7 @@ extension ShepherdViewModel {
 
     /// Connected hosts that serve triggers.
     private var triggerConnections: [RemoteHostStore.Connection] {
-        remoteHosts.connections.filter { $0.phase == .connected && $0.supportsAutomationTriggers }
+        remoteHosts.allConnections.filter { $0.phase == .connected && $0.supportsAutomationTriggers }
     }
 
     /// This Mac, or a connected host that serves triggers: the editor sends its settings there.
@@ -142,7 +142,7 @@ extension ShepherdViewModel {
 
     /// Threads a run can message: the host's own threads, not runs, designs or hidden spaces'.
     func automationDestinationThreads(_ host: UUID) -> [(id: AgentID, name: String)] {
-        let state = host == PageHost.localID ? state : remoteHosts.connections.first { $0.id == host }?.state
+        let state = host == PageHost.localID ? state : remoteHosts.allConnections.first { $0.id == host }?.state
         guard let state else { return [] }
         let hidden = Set(state.spaces.filter(\.hidden).map(\.id))
         return state.agents.filter { $0.automationOrigin == nil && $0.designID == nil && !hidden.contains($0.spaceID) }

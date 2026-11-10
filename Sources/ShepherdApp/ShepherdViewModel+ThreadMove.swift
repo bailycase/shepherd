@@ -31,6 +31,12 @@ struct ThreadMoveDrag: Codable, Equatable {
 
 @MainActor extension ShepherdViewModel {
     func moveThread(_ agentID: AgentID, to spaceID: SpaceID) async throws {
+        // The background host stops and starts the thread's pi itself.
+        if let ref = localRef(agentID) {
+            try await remoteHosts.agentAction(ref, action: .move(spaceID: spaceID))
+            openProjectHoldingSelection()
+            return
+        }
         try await restartingAfterMove(agentID) { try await self.server.moveThread(agentID, to: spaceID) }
         openProjectHoldingSelection()
     }
@@ -38,6 +44,10 @@ struct ThreadMoveDrag: Codable, Equatable {
     /// The Switch branch picker's "move here": the thread's pi starts again in `path`, another
     /// checkout already on `branch` (`SessionServer.moveThreadToCheckout`).
     func moveThreadToCheckout(_ agentID: AgentID, path: String, branch: String) async throws {
+        if let ref = localRef(agentID) {
+            _ = try await remoteHosts.agentQuery(ref, query: .moveToCheckout(path: path, branch: branch))
+            return
+        }
         try await restartingAfterMove(agentID) { try await self.server.moveThreadToCheckout(agentID, path: path, branch: branch) }
     }
 
@@ -70,7 +80,7 @@ struct ThreadMoveDrag: Codable, Equatable {
     func threadMoveSpaces(_ row: SidebarRowID) -> [Space] {
         switch row {
         case .local: state.spaces.filter { !$0.hidden }
-        case .remote(let ref): remoteHosts.connections.first { $0.id == ref.hostID }?.state.spaces.filter { !$0.hidden } ?? []
+        case .remote(let ref): remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.spaces.filter { !$0.hidden } ?? []
         case .design, .remoteDesign: []
         }
     }

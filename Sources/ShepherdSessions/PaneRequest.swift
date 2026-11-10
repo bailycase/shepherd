@@ -15,6 +15,13 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var worktreeBase: String?
     public var worktreeFetchFirst: Bool?
     public var worktreeBranch: String?
+    /// This Mac's own app's thread only (`RemoteRequest.startThread`): its name, the pi session it
+    /// resumes, its id, an existing checkout of `worktreeBranch`, and a folder of its own.
+    public var name: String?
+    public var piSessionID: String?
+    public var agentID: AgentID?
+    public var worktreePath: String?
+    public var standalone = false
 
     public init(
         spaceID: SpaceID,
@@ -167,13 +174,13 @@ public enum AutomationOutcome: Hashable, Sendable {
 public enum AgentPeerRequest: Hashable, Sendable {
     case list(agentID: AgentID)
     case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
-    case spawn(agentID: AgentID, cwd: String, prompt: String)
+    case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil)
     case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
     case move(agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
+        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
             return agentID
         }
     }

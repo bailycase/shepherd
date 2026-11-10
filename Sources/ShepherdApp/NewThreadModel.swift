@@ -172,9 +172,10 @@ final class NewThreadState {
     @ObservationIgnored private var defaultsHost: UUID??
 
     /// Every host a thread can start on: This Mac, and each connected host. In client mode the
-    /// background host is This Mac, and the app's own empty workspace isn't offered.
+    /// background host is This Mac: its workspace is the app's own (`localHost`), or it is
+    /// listed as a host and the app's own empty workspace isn't offered.
     static func hosts(_ vm: ShepherdViewModel) -> [NewThreadPlaces.Host] {
-        (vm.ownsWorkspace ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
+        (vm.ownsWorkspace || vm.localHost != nil ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
             + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
                 NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden })
             }
@@ -253,7 +254,7 @@ final class NewThreadState {
     /// The chosen project's default base (`Space.worktreeBase`), on this Mac or its host.
     func projectBase(_ vm: ShepherdViewModel) -> String? {
         guard let place, let id = place.space else { return nil }
-        let spaces = place.host.map { host in vm.remoteHosts.connections.first { $0.id == host }?.state.spaces ?? [] } ?? vm.state.spaces
+        let spaces = place.host.map { host in vm.remoteHosts.allConnections.first { $0.id == host }?.state.spaces ?? [] } ?? vm.state.spaces
         return spaces.first { $0.id == id }?.worktreeBase
     }
 
@@ -283,7 +284,7 @@ final class NewThreadState {
     /// Why the attached images cannot go where the thread would start, or nil.
     func imagesRefusal(_ vm: ShepherdViewModel) -> String? {
         let host: (name: String, takesImages: Bool)? = place?.host.flatMap { id in
-            vm.remoteHosts.connections.first { $0.id == id }.map { ($0.config.name, $0.supportsCreateAgentImages) }
+            vm.remoteHosts.allConnections.first { $0.id == id }.map { ($0.config.name, $0.supportsCreateAgentImages) }
         }
         return NewThreadPlaces.imagesRefusal(attachments.images, host: host)
     }
@@ -311,13 +312,13 @@ final class NewThreadState {
 
     func serviceTiers(_ vm: ShepherdViewModel) -> [ServiceTier] {
         if let host = place?.host,
-           vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsCreateAgentServiceTier != true { return [] }
+           vm.remoteHosts.allConnections.first(where: { $0.id == host })?.supportsCreateAgentServiceTier != true { return [] }
         return listing?.offeredServiceTiers(model) ?? []
     }
 
     /// The levels the chosen model takes before its pi starts; empty when it takes none.
     func thinkingLevels(_ vm: ShepherdViewModel) -> [ThinkingLevel] {
-        let all = place?.host.flatMap { id in vm.remoteHosts.connections.first { $0.id == id }?.supportsAllThinkingLevels } ?? true
+        let all = place?.host.flatMap { id in vm.remoteHosts.allConnections.first { $0.id == id }?.supportsAllThinkingLevels } ?? true
         return ThinkingLevel.offered(model: model, listing: listing, hostTakesAllLevels: all)
     }
 
@@ -327,7 +328,7 @@ final class NewThreadState {
         let knowsModel = listing?.models.contains(id.isEmpty ? listing?.defaultModel ?? "" : id) == true
         if knowsModel, listing?.takesThinking(id) == false { return .off }
         let takesAllLevels = place?.host.flatMap { host in
-            vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsAllThinkingLevels
+            vm.remoteHosts.allConnections.first(where: { $0.id == host })?.supportsAllThinkingLevels
         } ?? true
         return knowsModel || !takesAllLevels ? thinking.clamped(to: thinkingLevels(vm)) : thinking
     }
@@ -337,7 +338,7 @@ final class NewThreadState {
     func offersWorktree(_ vm: ShepherdViewModel) -> Bool {
         guard let place else { return false }
         if let host = place.host {
-            return vm.remoteHosts.connections.first { $0.id == host }?.supportsWorktreeCreation == true
+            return vm.remoteHosts.allConnections.first { $0.id == host }?.supportsWorktreeCreation == true
         }
         return vm.state.spaces.first { $0.id == place.space }.map(vm.spaceIsRepo) ?? false
     }
@@ -357,9 +358,8 @@ final class NewThreadState {
             if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
             if !edited.speed { serviceTier = vm.settings.defaultServiceTier }
-            let server = vm.server
             Task {
-                let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
+                let listing = await vm.modelListing()
                 let catalog = await ModelCatalog.derive(listing, hostTakesAllLevels: true)
                 guard defaultsRequest == request else { return }
                 self.listing = listing
@@ -380,7 +380,7 @@ final class NewThreadState {
                 if !edited.thinking { thinking = options.thinking }
                 if !edited.speed { serviceTier = options.serviceTier ?? .standard }
                 if let listing = try? await vm.remoteHosts.listModels(hostID: host), defaultsRequest == request {
-                    let all = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
+                    let all = vm.remoteHosts.allConnections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
                     self.listing = listing
                     let catalog = await ModelCatalog.derive(listing, hostTakesAllLevels: all)
                     guard defaultsRequest == request else { return }
@@ -404,11 +404,10 @@ final class NewThreadState {
         if let host = place?.host {
             guard let remote = try? await vm.remoteHosts.listModels(hostID: host) else { return }
             listing = remote
-            let all = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
+            let all = vm.remoteHosts.allConnections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
             loaded = await ModelCatalog.derive(listing, hostTakesAllLevels: all)
         } else {
-            let server = vm.server
-            listing = await Task.detached(priority: .utility) { server.modelListing() }.value
+            listing = await vm.modelListing()
             loaded = await ModelCatalog.derive(listing, hostTakesAllLevels: true)
         }
         guard self.place == place else { return }
@@ -421,7 +420,7 @@ final class NewThreadState {
         if starting { return "Starting…" }
         guard let place else { return "Choose where to start the thread." }
         if let host = place.host {
-            guard let connection = vm.remoteHosts.connections.first(where: { $0.id == host }), connection.phase == .connected else {
+            guard let connection = vm.remoteHosts.allConnections.first(where: { $0.id == host }), connection.phase == .connected else {
                 return "That host is offline."
             }
             if loadingDefaults { return "Loading \(connection.config.name)'s defaults…" }
@@ -452,7 +451,7 @@ final class NewThreadState {
         let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinkingLevel(vm)
-        let tier = place.host == nil || vm.remoteHosts.connections.first(where: { $0.id == place.host })?.supportsCreateAgentServiceTier == true
+        let tier = place.host == nil || vm.remoteHosts.allConnections.first(where: { $0.id == place.host })?.supportsCreateAgentServiceTier == true
             ? serviceTier : nil
         let useWorktree = worktree && offersWorktree(vm)
         let images = attachments.images
@@ -462,7 +461,7 @@ final class NewThreadState {
             defer { starting = false }
             do {
                 if let host = place.host {
-                    guard let space = vm.remoteHosts.connections.first(where: { $0.id == host })?.state.spaces
+                    guard let space = vm.remoteHosts.allConnections.first(where: { $0.id == host })?.state.spaces
                         .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That space is gone.") }
                     var base: RemoteCreationOptions?
                     if useWorktree {
@@ -478,7 +477,10 @@ final class NewThreadState {
                     let spaceID: SpaceID
                     let directory: String
                     var projectBase: String?
-                    if let standaloneID {
+                    if standaloneID != nil, vm.localHost != nil {
+                        // The background host makes the thread's folder as it starts it.
+                        (spaceID, directory) = (SpaceID(rawValue: ""), "")
+                    } else if let standaloneID {
                         (spaceID, directory) = try await vm.server.standaloneThreadFolder(for: standaloneID)
                         vm.adopt(vm.server.state)
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {

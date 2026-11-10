@@ -99,7 +99,7 @@ struct SidePaneView: View {
                     .id(model.rootPath)
                     .task { vm.ensureFileTree(owner) }
             } else {
-                FilesUnavailableView(host: vm.remoteHosts.connections.first { $0.id == ref.hostID }?.config.name)
+                FilesUnavailableView(host: vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.config.name)
                     .task { vm.ensureFileTree(owner) }
             }
         }

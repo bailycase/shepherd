@@ -598,16 +598,20 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, usage, details, nestedCalls
     }
 
+    /// The custom message types whose `details` the thread shows; any other type's are left out.
+    public static let customTypesWithDetails: Set<String> = ["shepherd.goal.check", "shepherd-peer-report", "shepherd.hook"]
+
+    /// `content` as pi writes it: blocks, or a string that is one text block.
+    static func decodeContent<Key: CodingKey>(_ c: KeyedDecodingContainer<Key>, forKey key: Key) -> [RPCContentBlock] {
+        if let blocks = try? c.decode([RPCContentBlock].self, forKey: key) { return blocks }
+        if let text = try? c.decode(String.self, forKey: key) { return [.text(text)] }
+        return []
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
-        if let blocks = try? c.decode([RPCContentBlock].self, forKey: .content) {
-            content = blocks
-        } else if let text = try? c.decode(String.self, forKey: .content) {
-            content = [.text(text)]
-        } else {
-            content = []
-        }
+        content = Self.decodeContent(c, forKey: .content)
         toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
         toolCallId = try c.decodeIfPresent(String.self, forKey: .toolCallId)
         isError = try c.decodeIfPresent(Bool.self, forKey: .isError)
@@ -616,7 +620,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
         customType = try c.decodeIfPresent(String.self, forKey: .customType)
         display = try c.decodeIfPresent(Bool.self, forKey: .display)
-        if role == "custom", customType == "shepherd.goal.check" || customType == "shepherd-peer-report" || customType == "shepherd.hook" {
+        if role == "custom", let customType, Self.customTypesWithDetails.contains(customType) {
             details = try? c.decodeIfPresent(JSONValue.self, forKey: .details)
         }
         // Only the roles that carry them: a long history's decode stays as it was.
@@ -647,6 +651,60 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         default:
             break
         }
+    }
+}
+
+/// An entry pi appended to its session outside a message's own events (`entry_appended`). Only a
+/// `custom_message` is something its transcript lists, as `message`: role custom, the content,
+/// display and kept details, and the time pi saved it. Every field decodes leniently; `message` is
+/// nil for any other type, and for a custom message whose time does not parse.
+public struct RPCSessionEntry: Decodable, Hashable, Sendable {
+    public var type: String
+    public var id: String?
+    public var parentID: String?
+    public var message: RPCMessage?
+
+    public init(type: String, id: String? = nil, parentID: String? = nil, message: RPCMessage? = nil) {
+        self.type = type
+        self.id = id
+        self.parentID = parentID
+        self.message = message
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, id, parentId, timestamp, customType, content, display, details
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = (try? c.decodeIfPresent(String.self, forKey: .type)) ?? ""
+        id = try? c.decodeIfPresent(String.self, forKey: .id)
+        parentID = try? c.decodeIfPresent(String.self, forKey: .parentId)
+        guard type == "custom_message", let iso = try? c.decodeIfPresent(String.self, forKey: .timestamp),
+              let timestamp = Self.milliseconds(iso) else { return }
+        let customType = try? c.decodeIfPresent(String.self, forKey: .customType)
+        var details: JSONValue?
+        if let customType, RPCMessage.customTypesWithDetails.contains(customType) {
+            details = try? c.decodeIfPresent(JSONValue.self, forKey: .details)
+        }
+        message = RPCMessage(
+            role: "custom", content: RPCMessage.decodeContent(c, forKey: .content), timestamp: timestamp, customType: customType,
+            display: try? c.decodeIfPresent(Bool.self, forKey: .display), details: details
+        )
+    }
+
+    // Configured once and only parsed with: `date(from:)` is safe from any thread.
+    nonisolated(unsafe) private static let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
+
+    /// pi's ISO time in milliseconds, as `new Date(iso).getTime()` gives it.
+    static func milliseconds(_ text: String) -> Double? {
+        guard let date = isoFractional.date(from: text) ?? iso.date(from: text) else { return nil }
+        return (date.timeIntervalSince1970 * 1000).rounded()
     }
 }
 
@@ -792,13 +850,15 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     case autoRetryStart(attempt: Int, maxAttempts: Int, delayMs: Double, errorMessage: String?)
     /// The retries are over: one worked, or they ran out (or were stopped).
     case autoRetryEnd(success: Bool)
+    /// An entry pi saved outside a message's events: a cache warm, extension state, a custom message.
+    case entryAppended(entry: RPCSessionEntry)
     case unknown(type: String)
 
     enum CodingKeys: String, CodingKey {
         case type, messages, willRetry, message, toolResults, assistantMessageEvent
         case toolCallId, parentToolCallId, toolName, args, partialResult, result, isError, steering, followUp
         case extensionPath, event, error, reason, aborted, errorMessage
-        case attempt, maxAttempts, delayMs, success
+        case attempt, maxAttempts, delayMs, success, entry
     }
 
     /// A nested call's parent id. A value that is not a non-empty string is no parent: a malformed
@@ -897,6 +957,8 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
             )
         case "auto_retry_end":
             self = .autoRetryEnd(success: (try? c.decodeIfPresent(Bool.self, forKey: .success)) ?? false)
+        case "entry_appended":
+            self = .entryAppended(entry: (try? c.decodeIfPresent(RPCSessionEntry.self, forKey: .entry)) ?? RPCSessionEntry(type: ""))
         default:
             self = .unknown(type: type)
         }

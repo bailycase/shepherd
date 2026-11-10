@@ -115,7 +115,7 @@ extension ShepherdViewModel {
     var remoteDeleteItem: RemoteDeleteItem? {
         get {
             guard let target = remoteDeleteTarget,
-                  let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }),
+                  let connection = remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
                   let agent = connection.state.agents.first(where: { $0.id == target.agentID }) else { return nil }
             return RemoteDeleteItem(target: target, agent: agent, hostName: RemoteDeleteItem.hostName(connection.config))
         }

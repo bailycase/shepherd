@@ -15,6 +15,9 @@ public final class ThreadBanners {
         public var isWatching: @MainActor (BannerTarget) -> Bool
         /// Settings ▸ Agents ▸ Notify when a turn finishes: the one banner that can be muted.
         public var notifyOnTurnFinished: @MainActor () -> Bool
+        /// Someone else posts the turns and questions for now (the background host's own app,
+        /// connected): only the notify tool's banners post here.
+        public var quiet: @MainActor () -> Bool = { false }
 
         public init(post: @escaping @MainActor (AgentBanner) -> Void, remove: @escaping @MainActor ([String]) -> Void,
                     isWatching: @escaping @MainActor (BannerTarget) -> Bool,
@@ -28,6 +31,8 @@ public final class ThreadBanners {
 
     private let server: SessionServer
     private let state: @MainActor () -> ShepherdState
+    /// The threads' requests: the server's, or the background host's for its app.
+    private let request: @MainActor (AgentID, NativeThreadRequest) async throws -> NativeThreadResult
     private let sink: Sink
     /// The question each thread asks, so it posts once and goes when answered.
     public private(set) var asks = ThreadAsks<AgentID>()
@@ -36,10 +41,12 @@ public final class ThreadBanners {
     var waitingDelay: Duration = .seconds(2)
 
     /// `state` is the workspace as its host last adopted it (the app's copy, or the server's).
-    public init(server: SessionServer, state: @escaping @MainActor () -> ShepherdState, sink: Sink) {
+    public init(server: SessionServer, state: @escaping @MainActor () -> ShepherdState, sink: Sink,
+                request: (@MainActor (AgentID, NativeThreadRequest) async throws -> NativeThreadResult)? = nil) {
         self.server = server
         self.state = state
         self.sink = sink
+        self.request = request ?? { [server] in try await server.nativeThread(agentID: $0, request: $1) }
     }
 
     /// Whether an agent's turns and questions post as a thread's. A design's agent never does:
@@ -52,7 +59,7 @@ public final class ThreadBanners {
     /// A status report: a turn that finished (with its closing line) or failed, and an asking
     /// tool that never opened a question.
     public func status(_ agent: Agent, from old: AgentStatus, failure: TurnFailure?) {
-        guard Self.notifiesAsThread(agent.id, in: state()) else { return }
+        guard !sink.quiet(), Self.notifiesAsThread(agent.id, in: state()) else { return }
         let target = BannerTarget.agent(agent.id)
         let report = UUID()
         statusReports[agent.id] = report
@@ -103,6 +110,7 @@ public final class ThreadBanners {
     /// The questions threads ask, from each adopted state: a new one posts, an answered one
     /// comes down, and a deleted agent's go with it.
     public func questions() {
+        guard !sink.quiet() else { return }
         let state = state()
         for agent in state.agents where Self.notifiesAsThread(agent.id, in: state) {
             let target = BannerTarget.agent(agent.id)
@@ -169,14 +177,14 @@ public final class ThreadBanners {
         case .open, .review, .reconnect:
             return
         }
-        if case .failure(let code, _)? = try? await server.nativeThread(agentID: id, request: request) {
+        if case .failure(let code, _)? = try? await self.request(id, request) {
             ShepherdLog.info("banner action on \(id) refused: \(code)")
         }
     }
 
     /// The thread's newest page, as its view would pull it.
     private func snapshot(_ id: AgentID) async -> NativeThreadSnapshot? {
-        guard case .snapshot(let value)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return nil }
+        guard case .snapshot(let value)? = try? await request(id, .snapshot()) else { return nil }
         return value
     }
 }
@@ -210,6 +218,8 @@ extension ThreadBanners {
             onNotify?(id, title, body)
             MainActor.assumeIsolated {
                 guard let self, let agent = self.server.state.agents.first(where: { $0.id == id }) else { return }
+                // The app showing these threads as its own posts it, and its click opens the thread there.
+                if self.sink.quiet(), self.server.relayNotifyToLocalApp(agentID: id, title: title, body: body) { return }
                 self.sink.post(AgentBanners.agentNotify(agent, title: title, body: body))
             }
         }

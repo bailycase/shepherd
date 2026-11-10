@@ -32,7 +32,7 @@ extension ShepherdViewModel {
     var unreconciledTerminalTarget: TerminalTarget? {
         if let remote = selectedRemoteAgent {
             guard remoteInspectingAgent != remote,
-                  let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+                  let connection = remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                   let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
                   let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
             return TerminalTarget(key: TerminalPanelKey(host: remote.hostID, tab: tab.id), layout: tab.layout,
@@ -143,6 +143,14 @@ extension ShepherdViewModel {
         }
         guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), let leaf = tab.layout.leaf(withID: anchor) else {
             NSSound.beep()
+            return
+        }
+        if let agent = state.agents.first(where: { $0.tabID == tab.id }), let ref = localRef(agent.id) {
+            // The background host opens it, in the thread's folder, as a new tab.
+            Task {
+                do { focusedPaneID = try await remoteHosts.openPane(hostID: ref.hostID, agentID: ref.agentID, relativeTo: anchor, axis: axis) }
+                catch { fail("Couldn’t open a terminal", error) }
+            }
             return
         }
         do { try verifyCheckoutAvailable(leaf.cwd) }
