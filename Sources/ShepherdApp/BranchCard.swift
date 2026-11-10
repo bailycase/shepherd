@@ -258,7 +258,8 @@ extension ShepherdViewModel {
         case .showInFinder:
             guard let directory = checkoutDirectory(of: id) else { return }
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: (directory as NSString).expandingTildeInPath)])
-        case .openPull(let ref): openForgeItem(ref)
+        // The thread's own pull request opens beside it, in the side pane's Pull request tab.
+        case .openPull(let ref): showBranchPullRequest(ref, for: id)
         case .select(let other):
             if let remote = thisMacAgent(other) { selectRemoteAgent(hostID: remote.ref.hostID, agentID: other) } else { selectAgent(other) }
         case .pickBranch, .pickBase: break

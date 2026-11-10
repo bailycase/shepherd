@@ -64,17 +64,25 @@ extension ShepherdViewModel {
     /// host no longer configured. Nothing is forgotten before the workspace has been adopted, or
     /// of a host that has sent its threads.
     func pruneSidebarPins() {
+        // As a client, nothing is pruned until the host has sent its workspace.
+        if !ownsWorkspace, localHost?.phase != .connected { return }
         if didAdopt {
             var spaces = spacePins
             if spaces.prune(keeping: Set(state.spaces.filter { !$0.hidden }.map(\.id))) { spacePins = spaces }
         }
         guard didAdopt, !sidebarPins.isEmpty else { return }
+        // As a client, This Mac's threads are the host's: never prune them against the app's
+        // filtered copy, nor before the host has sent its workspace.
+        var localAgents = Set(state.agents.map(\.id))
+        if let host = localHost {
+            localAgents.formUnion(host.state.agents.map(\.id))
+        }
         var hostAgents: [UUID: Set<AgentID>] = [:]
         for connection in remoteHosts.connections where connection.phase == .connected {
             hostAgents[connection.id] = Set(connection.state.agents.map(\.id))
         }
         var next = sidebarPins
-        if next.prune(localAgents: Set(state.agents.map(\.id)), configuredHosts: Set(remoteHosts.connections.map(\.id)),
+        if next.prune(localAgents: localAgents, configuredHosts: Set(remoteHosts.connections.map(\.id)),
                       hostAgents: hostAgents) {
             sidebarPins = next
         }

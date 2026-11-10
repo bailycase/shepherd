@@ -29,6 +29,23 @@ extension ShepherdViewModel {
         }
     }
 
+    /// The branch card's pull request: open it beside the thread, in the side pane's Pull request
+    /// tab. The card already knows the pull request, so the tab is offered before the pane's own
+    /// lookup has caught up.
+    func showBranchPullRequest(_ ref: ForgeItemRef, for agentID: AgentID) {
+        let store: ForgeStore
+        if let existing = branchPullRequests[agentID] {
+            store = existing
+        } else {
+            store = ForgeStore(transport: { [weak self] in
+                await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
+            })
+            branchPullRequests[agentID] = store
+        }
+        if store.selection != ref { Task { await store.open(ref) } }
+        showSidePane(.local(agentID), tab: .pullRequest)
+    }
+
     /// Send feedback to agent: what reviewers asked, to this thread.
     func sendPullRequestFeedback(_ store: ForgeStore, to agentID: AgentID) {
         guard var detail = store.pullRequest else { return }

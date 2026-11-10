@@ -96,7 +96,10 @@ struct BranchPickerMenu: View {
         SHChangesMenu(width: SHChangesMenuMetrics.baseWidth) {
             SHChangesMenuSearch(text: $query, prompt: "Search branches", isFocused: $searching,
                                 onSubmit: { if let row = rows.first(where: { $0.pick != .none }) { pick(row) } }, onEscape: close)
-            if let title { SHChangesMenuTitle(title) }
+            if let title {
+                SHChangesMenuTitle(title)
+                SHChangesMenuRow("Back", systemImage: "chevron.left", action: close)
+            }
             if let first, query.isEmpty {
                 SHChangesMenuRow(first, systemImage: nil, titleIsMono: true, checked: selected == nil) { choose(nil) }
             }
@@ -132,7 +135,7 @@ struct BranchPickerMenu: View {
                 }
             }
         }
-        .task { await reload() }
+        .task { searching = true; await reload() }
     }
 
     private func pick(_ row: BranchPickerList.Row) {
