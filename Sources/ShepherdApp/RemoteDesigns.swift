@@ -274,7 +274,9 @@ extension ShepherdViewModel {
     var remoteDesignSections: [DesignsPageModel.HostSection] {
         let now = Date()
         return remoteHosts.allConnections.filter(\.supportsDesigns).compactMap { connection in
-            guard let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
+            // The background host's designs and systems are the page's own (slice 2).
+            guard !(connection.id == localHost?.id && Self.routesThisMacLocally),
+                  let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
             let thumbnails = remoteDesignRenderings[connection.id]?.thumbnails
             let query = designsPageFilter.trimmingCharacters(in: .whitespacesAndNewlines)
             let cards = listing.designs.compactMap { summary -> DesignsPageModel.Card? in

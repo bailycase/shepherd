@@ -15,6 +15,7 @@ extension ShepherdViewModel {
     /// Export (the design header's, or Export… in a design's menu): the sheet, with the boards the
     /// canvas has selected ticked (every board when none is, or when the canvas hasn't been shown).
     func openDesignExport(_ id: DesignID) {
+        if let ref = hostDesign(id) { return openRemoteDesignExport(ref) }
         guard let design = design(id) else { return }
         let screen = designScreens[id]
         var selected = Set(screen?.picks.map(\.board) ?? [])
@@ -27,7 +28,7 @@ extension ShepherdViewModel {
         }
         Task {
             do {
-                let snapshot = try await server.designSnapshot(id)
+                let snapshot = try await ownerDesignSnapshot(id)
                 designExport = DesignExportModel(designID: id, designName: design.name,
                                                  selection: DesignExportSelection(index: snapshot.index, selected: []),
                                                  threads: designAttachTargets)
@@ -42,7 +43,8 @@ extension ShepherdViewModel {
     func openRemoteDesignExport(_ ref: RemoteDesignRef) {
         guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
               let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
-        let screen = remoteDesignScreens[ref]
+        // The background host's designs draw on this app's own canvases (`localHostDesignScreen`).
+        let screen = remoteDesignScreens[ref] ?? (hostDesign(ref.designID) == ref ? designScreens[ref.designID] : nil)
         var selected = Set(screen?.picks.map(\.board) ?? [])
         if let presented = screen?.presented { selected.insert(presented) }
         let source = connection.designs.source(ref.designID)

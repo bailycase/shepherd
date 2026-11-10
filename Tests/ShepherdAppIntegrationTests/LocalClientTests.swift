@@ -198,6 +198,54 @@ struct LocalClientTests {
         #expect(vm.server.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
+    /// New design, Rename, Duplicate, Delete and its Undo on one of the host's designs, from the
+    /// app as its own: each happens on the host, never on the idle in-process server (slice 2).
+    @Test func theAppsDesignActionsChangeTheHost() async throws {
+        _ = NSApplication.shared
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        host.server.setDesignsServed(true)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+        vm.settings.designToolEnabled = true
+        vm.settings.skip(.deleteDesign, with: "delete")
+
+        // New design with a model chosen: the host makes it and starts its agent on that model.
+        let id = try await vm.createDesign(brief: "A checkout funnel dashboard", images: [], model: "stub/model-b", thinking: .high)
+        #expect(host.server.state.designs.map(\.id) == [id])
+        let agent = try #require(host.server.state.agents.first { $0.designID == id })
+        #expect(agent.model == "stub/model-b" && agent.thinkingLevel == .high)
+        try await eventuallyOnMain("the design and its thread as the app's own") {
+            vm.state.designs.map(\.id) == [id] && vm.state.agents.contains { $0.id == agent.id }
+        }
+
+        vm.performDesignMenu(.rename, on: .local(id))
+        let rename = try #require(vm.designRename)
+        vm.commitDesignRename(rename, to: "Checkout funnel")
+        try await eventuallyOnMain("the host to rename it") { host.server.state.designs.first?.name == "Checkout funnel" }
+
+        vm.performDesignMenu(.duplicate, on: .local(id))
+        try await eventuallyOnMain("the host to duplicate it") { host.server.state.designs.count == 2 }
+
+        vm.performDesignMenu(.delete, on: .local(id))
+        try await eventuallyOnMain("the host to delete it") { !host.server.state.designs.contains { $0.id == id } }
+        let toast = try #require(vm.designToast)
+        vm.performDesignToast(toast)
+        try await eventuallyOnMain("Undo to bring it back on the host") { host.server.state.designs.contains { $0.id == id } }
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
+    }
+
     /// Add Space opens This Mac's own picker; what it adds goes to the host (`LocalHostRoutingTests`).
     @Test func addSpaceAddsToTheHost() async throws {
         let host = try ScratchServer()

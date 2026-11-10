@@ -265,7 +265,7 @@ extension PreviewTests {
     }
 }
 
-/// Designs, automations and Projects keep the background host's section on their pages while the
+/// Automations and Projects keep the background host's section on their pages while the
 /// app takes the rest of its workspace as its own (`ShepherdViewModel.mirrored`): the same pages as
 /// with This Mac shown as a host (`SHEPHERD_THIS_MAC_LOCAL=0`), from the same host.
 extension PreviewTests {
@@ -324,7 +324,10 @@ extension PreviewTests {
                     && connection.state.automations.count == 1 && connection.state.projects.count == 1
             }
             if mode == "local" {
-                try await eventuallyOnMain("the ordinary thread as the app's own") { vm.state.agents.map(\.id) == [thread.0.id] }
+                // Designs route through the host (slice 2): the design agent is the app's own too.
+                try await eventuallyOnMain("the ordinary thread and the design agent as the app's own") {
+                    Set(vm.state.agents.map(\.id)) == [thread.0.id, drawer.0.id]
+                }
                 #expect(vm.remoteHosts.connections.isEmpty)
             }
 
@@ -332,18 +335,12 @@ extension PreviewTests {
             vm.automationsPageSelection = AutomationKey(host: connection.id, automation: automation.id)
             try await Preview.render("this-mac-automations-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
 
-            await vm.loadRemoteDesigns()
-            try await Preview.render("this-mac-designs-\(mode)", size: pageSize, ready: {
-                vm.remoteDesignRenderings[connection.id]?.thumbnails.image(design.id) != nil
-            }) { DesignsDestination(vm: vm) }
-
             vm.openLogicalProject(LogicalProjectRef(home: .host(connection.id), id: project.id))
             #expect(vm.shownDestination == .project)
             try await Preview.render("this-mac-project-\(mode)", size: pageSize) { LogicalProjectDestination(vm: vm) }
             for connection in vm.remoteHosts.allConnections { vm.remoteHosts.removeHost(id: connection.id) }
         }
         try expectSameRenders("this-mac-automations-host", "this-mac-automations-local")
-        try expectSameRenders("this-mac-designs-host", "this-mac-designs-local")
         try expectSameRenders("this-mac-project-host", "this-mac-project-local")
     }
 }

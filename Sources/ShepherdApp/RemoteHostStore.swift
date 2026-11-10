@@ -256,6 +256,8 @@ final class RemoteHostStore {
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
     @ObservationIgnored var onLocalSettingsChanged: ((RemoteSettingsPage) -> Void)?
+    /// The background host on this Mac's design systems changed.
+    @ObservationIgnored var onLocalDesignSystemsChanged: (() -> Void)?
     /// A tool call, or a line said, in a thread of the background host on this Mac.
     @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
     @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
@@ -563,9 +565,10 @@ final class RemoteHostStore {
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.changed(design, revision: revision, commentsRevision: comments)
         }
-        client.onDesignSystemsChanged = { [weak connection] in
+        client.onDesignSystemsChanged = { [weak self, weak connection] in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.systemsChanged()
+            if connection.isThisMac { self?.onLocalDesignSystemsChanged?() }
         }
         client.onMissionChanged = { [weak connection] mission, revision in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }

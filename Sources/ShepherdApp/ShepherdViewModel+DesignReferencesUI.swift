@@ -158,7 +158,7 @@ extension ShepherdViewModel {
         }
         guard visible else { return }
         Task {
-            guard let snapshot = try? await server.designSnapshot(id), design(id) != nil else { return }
+            guard let snapshot = try? await ownerDesignSnapshot(id), design(id) != nil else { return }
             if item.reference.board != nil { rendering.boardPictures.request(id, snapshot: snapshot) }
             else { rendering.thumbnails.update(id, snapshot: snapshot) }
         }
@@ -180,7 +180,7 @@ extension ShepherdViewModel {
         }
         let server = server
         Task {
-            guard let snapshot = try? await server.designSnapshot(id) else { return }
+            guard let snapshot = try? await ownerDesignSnapshot(id) else { return }
             rendering.boardPictures.request(id, snapshot: snapshot)
             rendering.thumbnails.update(id, snapshot: snapshot)
         }

@@ -5,12 +5,13 @@ import ShepherdProtocol
 /// How a design's agent starts for another device's design request (`serveDesigns`): the app's
 /// view model starts it as its own Open does, the host with no app as a client's new thread.
 public struct DesignHosting {
-    /// Starts `design`'s agent with `brief` as its first message, with nothing selected.
-    public var startAgent: @MainActor (Design, String?) async throws -> AgentID
+    /// Starts `design`'s agent with `brief` as its first message, on New design's choices, with
+    /// nothing selected.
+    public var startAgent: @MainActor (Design, String?, RemoteDesignCreate.Options) async throws -> AgentID
     /// A design was made or imported here, before its agent starts.
     public var changed: @MainActor () async -> Void
 
-    public init(startAgent: @escaping @MainActor (Design, String?) async throws -> AgentID,
+    public init(startAgent: @escaping @MainActor (Design, String?, RemoteDesignCreate.Options) async throws -> AgentID,
                 changed: @escaping @MainActor () async -> Void = {}) {
         self.startAgent = startAgent
         self.changed = changed
@@ -70,7 +71,8 @@ extension SessionServer {
     /// A design's agent started by the host with no app: in the reserved designs space, working
     /// in the design's own folder (a system build: in the project it reads), on the host's defaults.
     @MainActor
-    public func startDesignAgent(_ design: Design, brief: String?, hosting: ThreadHosting) async throws -> AgentID {
+    public func startDesignAgent(_ design: Design, brief: String?, options: RemoteDesignCreate.Options = .init(),
+                                 hosting: ThreadHosting) async throws -> AgentID {
         let folder: String
         if design.buildsSystem {
             guard let space = design.sourceSpaceID.flatMap({ id in state.spaces.first { $0.id == id } }) else {
@@ -82,8 +84,9 @@ extension SessionServer {
             folder = own.path
         }
         let defaults = hosting.defaults()
-        var config = NewAgentConfig(spaceID: try await designsSpaceID(), workingDirectory: folder, model: defaults.model,
-                                    thinking: defaults.thinking, initialPrompt: brief)
+        var config = NewAgentConfig(spaceID: try await designsSpaceID(), workingDirectory: folder, model: options.model ?? defaults.model,
+                                    thinking: options.thinking ?? defaults.thinking, initialPrompt: brief)
+        config.initialImages = options.images
         config.initialName = design.name
         config.designID = design.id
         let agentID = try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: defaults.serviceTier, mcp: hosting.mcp)
@@ -100,7 +103,7 @@ extension SessionServer {
         _ = try await createDesign(design)
         if let system = request.systemNamespace { _ = try await installDesignSystem(design.id, namespace: system) }
         await hosting.changed()
-        let agent = try? await hosting.startAgent(design, request.brief)
+        let agent = try? await hosting.startAgent(design, request.brief, request.options ?? .init())
         return RemoteDesignCreated(designID: design.id, agentID: agent)
     }
 
@@ -114,7 +117,7 @@ extension SessionServer {
         }
         guard startingDesignAgents.insert(id).inserted else { throw AgentStartFailure(message: "Its agent is starting. Try again in a moment.") }
         defer { startingDesignAgents.remove(id) }
-        return try await hosting.startAgent(design, nil)
+        return try await hosting.startAgent(design, nil, .init())
     }
 
     /// An uploaded ZIP (`RemoteDesignRequest.importFinish`), imported as Import does. Without
@@ -139,7 +142,7 @@ extension SessionServer {
             let name = again ? DesignNaming.importName(preview.title, taken: state.designs.map(\.name)) : nil
             let design = try await finishDesignImport(preview, name: name)
             await hosting.changed()
-            let agent = try? await hosting.startAgent(design, DesignBrief.imported(file: preview.file))
+            let agent = try? await hosting.startAgent(design, DesignBrief.imported(file: preview.file), .init())
             return RemoteDesignCreated(designID: design.id, agentID: agent)
         } catch {
             await cancelDesignImport(preview.id)
@@ -158,14 +161,14 @@ extension SessionServer {
         if let existing = state.designs.first(where: { $0.buildsSystem && $0.sourceSpaceID == spaceID }) {
             let agent = state.agents.first { $0.id == existing.agentID } ?? state.agents.first { $0.designID == existing.id }
             if let agent { return RemoteDesignCreated(designID: existing.id, agentID: agent.id) }
-            return RemoteDesignCreated(designID: existing.id, agentID: try? await hosting.startAgent(existing, nil))
+            return RemoteDesignCreated(designID: existing.id, agentID: try? await hosting.startAgent(existing, nil, .init()))
         }
         guard startingSystemBuilds.insert(spaceID).inserted else { throw AgentStartFailure(message: "Its build is starting. Try again in a moment.") }
         defer { startingSystemBuilds.remove(spaceID) }
         let design = Design(name: space.name, createdAt: Self.nowMilliseconds(), buildsSystem: true, sourceSpaceID: space.id)
         _ = try await createDesign(design)
         await hosting.changed()
-        let agent = try? await hosting.startAgent(design, DesignBrief.systemBuild)
+        let agent = try? await hosting.startAgent(design, DesignBrief.systemBuild, .init())
         return RemoteDesignCreated(designID: design.id, agentID: agent)
     }
 }
