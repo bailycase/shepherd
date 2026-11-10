@@ -41,16 +41,14 @@
   alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
   workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops
   being read while it has 4 MiB unwritten, as a slow terminal emulator slows its program. Both
-  sides log every drop with its reason (`ShepherdLog.connection`, category `Connection`). With no app, the host
+  sides log every drop with its reason (`ShepherdLog.connection`, category `Connection`). The host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
-  design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves
-  too, starting the agent its own way). It answers host settings
+  design, Open, Import and Build from a repo (`SessionServer.serveDesigns`). It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
   `hostInventory` and `hostConfig` through the same `HostStores` the app serves. It answers
-  worktree info and delete, commit from review (the same `WorktreeQueries` the app
-  serves in process), subagents, transcript search and the working tree's review
+  worktree info and delete, commit from review (`WorktreeQueries`), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
   With no page of its own, the host hands an agent's browser call that no viewer claimed to the
   app over `host.sock` (a `browserDrive` request to the local client that lists the drive

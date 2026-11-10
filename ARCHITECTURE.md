@@ -20,11 +20,17 @@ Mac's app gets: the host's threads, designs and Settings as the app's own, and w
   (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
   Quitting the app leaves agents running; the host drains and restarts on its own when an update
   replaces the bundle (`HostDrain`).
-- **The app's own child** (Shepherd, Dev, the service off, a failed registration): the app starts
-  the host as a supervised child, restarts it after a crash with backoff, and stops it when the
-  app quits, so agents end with the app as they always have. Quit asks first while agents are
-  mid-turn. A host that finds the workspace owned exits with a distinct status, and the app
-  connects to the owner instead.
+- **The app's own child** (Shepherd, Dev, the service off, a failed registration): `HostSupervisor`
+  runs `Shepherd --host --supervised`, restarts it after a crash with backoff (shown after three
+  failed starts in a row, with Try Again or Quit), and stops it when the app quits (SIGTERM, then
+  SIGKILL), so agents end with the app as they always have. The child also stops when its stdin
+  pipe from the app closes, so an app crash takes it down. Quit asks first while agents are
+  mid-turn. The child has no bundle watch and no drain. A host that finds the workspace owned
+  exits with `SessionHost.ownedExitStatus`, and the app follows the owner until it lets go.
+
+Both hosts are the same executable and log the same way: `ShepherdLog.connection` lines (the
+supervisor's lifecycle among them) reach unified logging under `com.shepherd.app`; the other
+`ShepherdLog` lines go to stderr, which is the app's console for its child.
 
 Either owner can also serve its agents to other devices over an authenticated TCP listener.
 
