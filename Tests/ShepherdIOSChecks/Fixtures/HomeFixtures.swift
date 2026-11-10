@@ -58,6 +58,9 @@ extension FixtureCatalog {
             // confirms nothing reached a host (the fixture host refuses and prints any mutation).
             FixtureScreen(name: "sidebar-groups", hosts: fleet, routes: [.thread(FixtureData.ref(FixtureData.preview))],
                           prepare: { app in await settle(app); await SidebarGroupsCheck.run(app) }),
+            // home-fleet after another device opened Studio's finished thread: its host says so, and it leaves Done here
+            // (on an iPad with --sidebar, the sidebar's Done too).
+            FixtureScreen(name: "home-done-seen", hosts: HomeFixtureData.seenElsewhere(), prepare: settle),
         ]
     }
 }
@@ -127,6 +130,18 @@ enum HomeFixtureData {
     static let merge = AgentID(rawValue: "agent-merge")
     static let migrations = AgentID(rawValue: "agent-migrations")
     static let hiddenSpace = Space(id: SpaceID(rawValue: "space-automations"), name: "Automations", path: "/Users/dev", hidden: true)
+
+    /// `fleet`, with both finished threads' completions named by their hosts and Studio's opened on another device.
+    static func seenElsewhere() -> [FixtureHostData] {
+        var hosts = fleet()
+        for host in hosts.indices {
+            for agent in hosts[host].state.agents.indices where hosts[host].state.agents[agent].status == .done {
+                hosts[host].state.agents[agent].completedAt = 1_700
+                if hosts[host].state.agents[agent].id == FixtureData.deletion { hosts[host].state.agents[agent].seenCompletedAt = 1_700 }
+            }
+        }
+        return hosts
+    }
 
     static func fleet() -> [FixtureHostData] {
         let started = Date().timeIntervalSince1970 * 1000

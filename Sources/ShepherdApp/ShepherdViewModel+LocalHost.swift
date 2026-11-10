@@ -17,25 +17,10 @@ extension ShepherdViewModel {
         ProcessInfo.processInfo.environment["SHEPHERD_THIS_MAC_LOCAL"] != "0"
     }
 
-    /// The host's workspace less what automations, Projects and missions own: their pages
-    /// still reach those through the host's connection (`allConnections`), so the app's local views,
-    /// whose actions would go to the idle in-process server, never see them.
-    /// ponytail: a fallback until those features route through `localHost` too.
-    nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState {
-        let watchers = Set(state.automations.compactMap(\.agentID))
-        let owned = state.projectWorkerIDs.union(state.missionAgentIDs)
-        // Designs and their agents are the app's own (slice 2): they route through the host.
-        var copy = state.withoutProjectCoordinators
-        let gone = Set(copy.agents.filter { watchers.contains($0.id) || owned.contains($0.id) || $0.automationOrigin != nil }.map(\.id))
-        let tabs = Set(copy.agents.filter { gone.contains($0.id) }.map(\.tabID))
-        copy.agents.removeAll { gone.contains($0.id) }
-        copy.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(gone.contains) == true }
-        copy.automations = []
-        copy.projects = []
-        copy.projectExecutions = []
-        copy.missions = []
-        return copy
-    }
+    /// The host's workspace as the app takes it: whole. Designs (slice 2), automations (slice 3),
+    /// Projects and missions (slice 4) all route through the host and draw as This Mac's own.
+    /// ponytail: an identity left for slice 5, which deletes it and its callers.
+    nonisolated static func mirrored(_ state: ShepherdState) -> ShepherdState { state }
 
     /// The background host on this Mac, while its workspace is the app's own; nil in process.
     var localHost: RemoteHostStore.Connection? {
@@ -71,7 +56,19 @@ extension ShepherdViewModel {
         settings.followOtherProcesses()
         // Its design systems are the Designs page's own (slice 2), as the server's `onDesignSystemsChanged`.
         remoteHosts.onLocalDesignSystemsChanged = { [weak self] in self?.designSystemsChanged() }
-        remoteHosts.onLocalHostState = { [weak self] state in self?.adopt(Self.mirrored(state)) }
+        remoteHosts.onLocalDesignNotesChanged = { [weak self] in self?.designThreadNotesChanged($0) }
+        remoteHosts.onLocalDesignImportProgress = { [weak self] in self?.designImporting?.apply($0) }
+        remoteHosts.onLocalDesignGitChanged = { [weak self] id in
+            if self?.designGitStates[id] != nil { self?.refreshDesignGit(id) }
+        }
+        remoteHosts.onLocalHostState = { [weak self] state in
+            guard let self else { return }
+            let automations = self.state.automations.map(\.id)
+            self.adopt(Self.mirrored(state))
+            // The host's `automationsChanged` arrives before the state that moved it: an automation
+            // that came or went reads the runs again against the state that has it.
+            if self.state.automations.map(\.id) != automations { self.refreshAutomationTriggers() }
+        }
         // As the in-process session's notify (`sessions.onNotify`): a click opens the thread here.
         remoteHosts.onLocalAgentNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
@@ -82,6 +79,9 @@ extension ShepherdViewModel {
         remoteHosts.onLocalThreadNotice = { [weak self] agentID, message in
             self?.threadStores.store(for: agentID).reportActionNotice(message)
         }
+        // As the in-process server's `AutomationHosting.triggersChanged` and `notify`.
+        remoteHosts.onLocalAutomationsChanged = { [weak self] in self?.refreshAutomationTriggers() }
+        remoteHosts.onLocalAutomationNotify = { [weak self] title, body in self?.postAutomationBanner(title: title, body: body) }
         // Settings pages that read the host's stores follow its changes, and catch up on each connect.
         remoteHosts.onLocalSettingsChanged = { [weak self] page in Task { await self?.localHostSettingsChanged(page) } }
         let connected = remoteHosts.onHostConnected
@@ -89,6 +89,7 @@ extension ShepherdViewModel {
             connected?(hostID)
             guard let self, hostID == self.localHost?.id else { return }
             Task { for page in RemoteSettingsPage.allCases { await self.localHostSettingsChanged(page) } }
+            self.refreshAutomationTriggers()
         }
         // The thread says when the host's pi stopped and why: its can't-start and sign-in cards.
         let configure = threadStores.configure

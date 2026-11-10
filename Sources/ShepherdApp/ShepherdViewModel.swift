@@ -18,7 +18,11 @@ typealias Tab = ShepherdCore.Tab
 @Observable
 final class ShepherdViewModel {
     var state: ShepherdState
-    @ObservationIgnored lazy var missions = MissionController(vm: self)
+    /// Missions and the Project runtime this app runs on its own server, while it owns the workspace
+    /// (`RuntimeHosting`); as the background host's client the host runs them.
+    @ObservationIgnored lazy var runtime = runtimeHosting.serve()
+    var missions: MissionController { runtime.missions }
+    var projectCoordinator: ProjectCoordinatorController { runtime.coordinator }
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
@@ -42,7 +46,6 @@ final class ShepherdViewModel {
     /// The host whose missions the Missions page shows; nil is This Mac.
     var missionsHost: UUID?
     @ObservationIgnored var remoteMissionDrivers: [UUID: RemoteMissionDriver] = [:]
-    @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
@@ -925,13 +928,12 @@ final class ShepherdViewModel {
             if CheckoutMonitor.touchesFiles(tool: tool) { checkouts?.refresh(agentID, after: .seconds(1)) }
         }
         // A limit on a provider with saved accounts and rotation on: the next account takes over,
-        // and pi's own retry (or the next turn) uses it. The thread says so.
-        server.onAgentProviderError = { [weak self] agentID, provider, message in
-            guard let self, PiAuthText.isLimit(message) else { return }
-            Task {
-                guard let switched = await self.piAuth.limitHit(provider) else { return }
-                self.threadStores.store(for: agentID).reportActionNotice(PiAuthText.switched(provider, switched))
-            }
+        // the thread says so, and the turn goes on with it.
+        let rotation = LimitRotation(server: server, piAuth: self.piAuth) { [weak self] agentID, line in
+            self?.threadStores.store(for: agentID).reportActionNotice(line)
+        }
+        server.onAgentProviderError = { agentID, provider, message in
+            MainActor.assumeIsolated { rotation.providerError(agentID, provider: provider, message: message) }
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
@@ -975,7 +977,7 @@ final class ShepherdViewModel {
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
         installRemoteInspection()
         installHostSettings()
-        missions.installRemote()
+        _ = runtime
         installHostConfiguration()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
@@ -997,6 +999,7 @@ final class ShepherdViewModel {
                     case .restartPi(let newConversation, let model):
                         if let model { self.sessions.modelOverrides[agentID] = model }
                         self.retryAgentStart(agentID, newConversation: newConversation)
+                    case .markSeen(let upTo): try await self.server.markCompletionSeen(agentID, upTo: upTo)
                     }
                     completion(.success(()))
                 } catch {
@@ -1121,7 +1124,6 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installPullRequestPoll()
         installProjectRuntime()
-        installProjectExecution()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
         self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
@@ -1336,9 +1338,12 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         // The run log is current by the time a broadcast lands; it is the one thing a broadcast
-        // of an unchanged workspace can carry.
-        let runs = server.openAutomationRuns
-        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // of an unchanged workspace can carry. As the background host's client, the host's run
+        // log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
+        if localHost == nil {
+            let runs = server.openAutomationRuns
+            if runs != openAutomationRuns { openAutomationRuns = runs }
+        }
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
         // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.

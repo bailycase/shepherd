@@ -581,6 +581,41 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// A usage limit with no other account to switch to, and a run pi stopped answering: each
+    /// ends the turn failed, with the provider's words (or Shepherd's) and Retry.
+    @Test(arguments: ["usage-limit", "stalled"])
+    func threadTurnDeadEnd(_ kind: String) async throws {
+        var snapshot = ActivityThreads.providerError
+        snapshot.messages.removeLast()
+        let text = kind == "stalled" ? RPCThreadState.stallText(RPCThreadState.defaultStallBound)
+            : #"429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account's rate limit. Please try again later."}}"#
+        var failed = ActivityThreads.failure("f2", text, at: ActivityThreads.now - 18_000)
+        failed.provider = "anthropic"
+        failed.model = "claude-opus-4-5"
+        snapshot.messages.append(failed)
+        snapshot.supportedActions.append("retry")
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        try await Preview.render("thread-dead-end-\(kind)", size: CGSize(width: 1180, height: 760),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Payments metrics and dashboards")
+        }
+    }
+
+    /// The limit switched accounts: the thread says so, and the turn goes on on the new one.
+    @Test func threadAccountSwitched() async throws {
+        var snapshot = ActivityThreads.providerError
+        snapshot.messages.removeLast()
+        snapshot.running = true
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        fixture.store.reportActionNotice(PiAuthText.switched("anthropic", (from: "Work", to: "Personal")))
+        try await Preview.render("thread-account-switched", size: CGSize(width: 1180, height: 760),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Payments metrics and dashboards")
+        }
+    }
+
     @Test(arguments: ["waiting", "retrying", "exhausted"])
     func threadEmptyResponseRecovery(_ phase: String) async throws {
         var snapshot = ActivityThreads.providerError

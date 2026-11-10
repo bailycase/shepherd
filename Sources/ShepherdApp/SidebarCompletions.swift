@@ -31,7 +31,7 @@ struct SidebarCompletions: Equatable {
         for agent in source.local.agents where source.local.isSidebarThread(agent, workers: workers) {
             let settled = runs[agent.id]?.settledAt
             observe(.local(agent.id), finished: agent.status == .done || (agent.status == .idle && settled != nil),
-                    activity: agent.lastActiveAt, completedAt: agent.lastActiveAt ?? settled.map { $0 * 1000 }
+                    activity: agent.lastActiveAt, stamp: agent.completedAt, completedAt: agent.lastActiveAt ?? settled.map { $0 * 1000 }
                         ?? source.statusSince[agent.id].map { $0.timeIntervalSince1970 * 1000 })
         }
         for host in source.hosts where !host.offline {
@@ -43,21 +43,26 @@ struct SidebarCompletions: Equatable {
             let hostWorkers = host.state.projectWorkerIDs
             for agent in host.state.agents where host.state.isSidebarThread(agent, workers: hostWorkers) {
                 observe(.remote(.init(hostID: host.id, agentID: agent.id)), finished: agent.status == .done,
-                        activity: agent.lastActiveAt, completedAt: agent.lastActiveAt)
+                        activity: agent.lastActiveAt, stamp: agent.completedAt, completedAt: agent.lastActiveAt)
             }
         }
         endpoints = nextEndpoints
     }
 
-    private mutating func observe(_ id: SidebarRowID, finished: Bool, activity: Double?, completedAt: Double?) {
+    /// `stamp` is the host's own name for the completion (`Agent.completedAt`), which then is its
+    /// generation: the one every device and the host's `seenCompletedAt` agree on.
+    private mutating func observe(_ id: SidebarRowID, finished: Bool, activity: Double?, stamp: Double?, completedAt: Double?) {
         let previous = records[id]
-        // ponytail: observed status edges only. A whole run missed while a host was disconnected
-        // keeps its old generation (a seen thread stays seen); a host completion token would fix that.
+        // ponytail: without a stamp (an older host), observed status edges only. A whole run missed
+        // while a host was disconnected keeps its old generation (a seen thread stays seen).
         let newCompletion = finished && previous?.finished != true
         if newCompletion { generation += 1 }
+        let observed = newCompletion ? generation : previous?.generation ?? 0
+        // A completion keeps its edge's time; one seen before its time was known (a run's settle,
+        // read from the background host's run log after its state) takes it once known.
         records[id] = Record(finished: finished, activity: activity,
-                             generation: newCompletion ? generation : previous?.generation ?? 0,
-                             completedAt: newCompletion ? completedAt : previous?.completedAt)
+                             generation: finished ? stamp.map { Int($0) } ?? observed : observed,
+                             completedAt: newCompletion ? completedAt : previous?.completedAt ?? (finished ? completedAt : nil))
     }
 }
 

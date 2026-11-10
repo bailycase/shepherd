@@ -43,6 +43,9 @@ extension ChangesService {
                                files: changed)
         }
         let root = URL(fileURLWithPath: repository.root, isDirectory: true)
+        // Another turn that began while this file is written must not take it for its own.
+        let span = beginWrite(repository, paths: paths)
+        defer { endWrite(span) }
         let inHead = { (file: String) -> Bool in self.exists("\(revision.old):\(file)", in: repository) }
         if let oldPath {
             guard inHead(oldPath) else { throw ChangesError(ChangesError.invalid, "\(oldPath) is not in HEAD.") }

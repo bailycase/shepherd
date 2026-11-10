@@ -275,7 +275,7 @@ extension RemoteAutomationRequest {
         switch self {
         case .status, .pause, .resume, .runEvent, .dismissEvent, .markRead, .setAllPaused: true
         case .create(let draft), .update(let draft): draft.settings != nil
-        case .setEnabled, .run, .stop, .runs, .delete: false
+        case .setEnabled, .run, .stop, .runs, .delete, .setRunPullRequest: false
         }
     }
 }

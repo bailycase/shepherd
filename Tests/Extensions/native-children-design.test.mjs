@@ -171,7 +171,10 @@ test("a design agent's helpers read and edit its boards through it, with no iden
     // The parent's own facts read came first, on the connection the parent's design extension opened.
     const own = host.frames.find((frame) => frame.type === "designRead" && !frame.path);
     assert(own, "the parent's own design extension asked for the design");
-    const design = host.frames.filter((frame) => ["designRead", "designEditBoard"].includes(frame.type) && frame !== own);
+    // pi 1.2+ also runs before_agent_start for each child-result continuation, so the parent
+    // refreshes its facts (path-less reads) again; the helpers' reads all name a board.
+    const design = host.frames.filter((frame) => ["designRead", "designEditBoard"].includes(frame.type)
+      && !(frame.type === "designRead" && !frame.path));
     assert.deepEqual(design.filter((frame) => frame.type === "designRead").map((frame) => frame.path).sort(), ["A.dc.html", "B.dc.html"], "each helper read its board");
     const edits = design.filter((frame) => frame.type === "designEditBoard");
     assert.deepEqual(edits.map((frame) => frame.path).sort(), ["A.dc.html", "B.dc.html"], "and edited it: parallel writes to different boards");

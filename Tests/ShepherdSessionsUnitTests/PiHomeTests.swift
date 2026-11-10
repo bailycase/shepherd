@@ -59,6 +59,13 @@ struct PiHomeTests {
         #expect(PiHome.disablingBuiltIns(result).compactMap { $0 as? String } == expected, "a second pass changes nothing")
     }
 
+    /// pi 1.5 warms idle prompt caches by default; Shepherd's pi writes 1.0's "streaming" and never
+    /// replaces a value someone set.
+    @Test(arguments: [(nil, "streaming"), ("streaming", "streaming"), ("idle", "idle"), ("off", "off")] as [(String?, String)])
+    func cacheWarmingDefaultsToStreamingAndKeepsAChosenValue(_ value: String?, _ expected: String) {
+        #expect(PiHome.cacheWarming(value) as? String == expected)
+    }
+
     /// A list entry that isn't a string is kept where it is.
     @Test func anEntryThatIsNotAStringStaysInPlace() {
         let result = PiHome.disablingBuiltIns(["/h/a.ts", 3, ["x": 1]] as [Any])

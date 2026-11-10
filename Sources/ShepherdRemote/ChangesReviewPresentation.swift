@@ -10,7 +10,7 @@ import ShepherdProtocol
 /// The "Edited N files" card that ends a turn (ChangesStates › ChangesCard; MobileThread,
 /// iPadReview): the title and stat, Undo or Redo, Review, the first three files with their
 /// folder dimmed, then "N more". Built from the turn the host recorded, or, from a host that
-/// records none, from the turn's own edit calls (no Undo then).
+/// records none (or while its turn runs), from the turn's own edit calls (no Undo then).
 public struct NativeChangesCard: Equatable, Sendable {
     public struct Row: Equatable, Sendable, Identifiable {
         public var id: String { path }
@@ -46,8 +46,9 @@ public struct NativeChangesCard: Equatable, Sendable {
     public var canUndo: Bool
     public var canRedo: Bool
 
-    /// The card for a recorded turn; nil for one that changed nothing, one still running, or
-    /// one the host could not record (the card from its edit calls stands in).
+    /// The card for a recorded turn; nil for one that changed nothing of its own, one still
+    /// running, or one the host could not record (`nativeChangesCard` decides which of those
+    /// the card from its edit calls stands in for).
     public init?(turn: ChangesTurn) {
         guard turn.fileCount > 0, turn.state == .ready || turn.state == .undone else { return nil }
         turnID = turn.id
@@ -83,10 +84,12 @@ public struct NativeChangesCard: Equatable, Sendable {
     public var moreText: String? { more > 0 ? "\(more) more" : nil }
 }
 
-/// The card that ends a finished reply: the host's record of its turn when it has one, else the
-/// turn's own edits.
+/// The card that ends a finished reply: the host's record of its turn when it has ended one,
+/// else the turn's own edits. A recorded turn is the host's word, so one with no files of its own
+/// (other threads' edits were left out of it) has no card, whatever the edit calls say; a turn
+/// still running, one the host could not record, or none at all falls back to the edit calls.
 public func nativeChangesCard(turn: ChangesTurn?, changes: NativeTurnChanges?) -> NativeChangesCard? {
-    if let turn, let card = NativeChangesCard(turn: turn) { return card }
+    if let turn, turn.state == .ready || turn.state == .undone { return NativeChangesCard(turn: turn) }
     return changes.map(NativeChangesCard.init(changes:))
 }
 

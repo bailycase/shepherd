@@ -101,7 +101,8 @@ async function request(stream, { key = oauth, context = transcript(), requestMod
   return { wire, result, emitted };
 }
 const normalized = value => JSON.parse(JSON.stringify(value).replace(/cc_prompt_id=[0-9a-f-]{36}/g, "cc_prompt_id=UUID"));
-const stableResult = ({ timestamp, ...message }) => message;
+// pi 1.5 stamps wall-clock durationMs on every assistant result.
+const stableResult = ({ timestamp, durationMs, ...message }) => message;
 async function parity(stream, options) {
   const expected = await request(oracle.streamAnthropicOAuth, options);
   const actual = await request(stream, options);

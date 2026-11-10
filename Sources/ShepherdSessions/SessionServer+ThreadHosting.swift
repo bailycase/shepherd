@@ -291,6 +291,7 @@ extension SessionServer {
                 await retryStart(sessionID: session)
             }
             await startThreadPi(agentID, hosting: hosting, checksResume: !newConversation, model: model)
+        case .markSeen(let upTo): try await markCompletionSeen(agentID, upTo: upTo)
         }
     }
 

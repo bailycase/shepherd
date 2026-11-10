@@ -68,6 +68,10 @@ enum RemoteDesignSamples {
         .importChunk(uploadID: comment, offset: 262_144, data: Data([0x50, 0x4B, 0x03, 0x04])),
         .importFinish(uploadID: comment),
         .importCancel(uploadID: comment),
+        .importPrepare(path: "/tmp/acme-checkout.zip"),
+        .importConfirm(preview: importPreview, name: "Checkout funnel 2", skippingUnreadable: true),
+        .importDiscard(previewID: comment),
+        .mentionCatalog,
         .pinReference(DesignReference(designID: design, board: board, element: DesignElementID(board: board.viewName, tid: 5, path: [1, 1, 0]))!),
         .pinReference(DesignReference(designID: design, revision: 7)!),
         .referenceKept(agentID: AgentID(rawValue: "thread"), payloadID: comment),
@@ -75,7 +79,28 @@ enum RemoteDesignSamples {
         .referenceFreshness(DesignReference(designID: design, board: board, revision: 7)!),
         .referenceLookedAt(agentID: AgentID(rawValue: "thread"), ref: "shepherd-design-ref://local/design-1/A@7", aspects: [.summary]),
         .settleBoardProposal(agentID: AgentID(rawValue: "thread"), payloadID: comment, accept: true),
+        .threadNotes(designID: design),
+        .removeThreadNote(designID: design, noteID: comment),
+        .gitState(designID: design, fetch: true),
+        .gitPreview(designID: design, path: "project/A.dc.html", merge: false),
+        .gitShare(designID: design, url: "git@example.com:acme/web-designs.git", message: "Add checkout design"),
+        .gitOpen(url: "https://example.com/acme/web-designs.git"),
+        .gitCommit(designID: design, message: "Tighten the header", push: true, merge: false),
+        .gitPush(designID: design),
+        .gitPull(designID: design),
+        .gitDropMerge(designID: design),
+        .gitResolveMerge(designID: design),
+        .gitStopMerge(designID: design),
     ]
+
+    static let importPreview = DesignImportPreview(
+        id: comment, file: "acme-checkout.zip", title: "Checkout funnel", boards: 1, pages: 0,
+        systems: [.init(namespace: "checkout-ds", title: "Checkout DS", existing: "checkout-ds")],
+        unreadable: [DesignImportUnreadable(path: "Empty.dc.html", title: "Empty", reason: "is empty")],
+        origin: DesignImportOrigin(file: "acme-checkout.zip", title: "Checkout funnel", stamp: "{\"at\":\"2026\"}", importedAt: 1))
+    static let gitCommit = DesignGitStatus.Commit(hash: "abc1234", subject: "Tighten the header", author: "Ada", files: ["project/A.dc.html"])
+    static let gitMerge = DesignGitMerge(phase: .ready, ours: gitCommit, theirs: gitCommit, oursHash: "abc1234", theirsHash: "def5678",
+                                         reviewedTree: "0123abc")
 
     static let keptPayload = DesignReferencePayload(agentID: AgentID(rawValue: "thread"), reference: DesignReference(designID: design, board: board, revision: 7)!,
                                                     design: "Checkout funnel", revision: 7, capturedAt: 1_700_000_000_000)
@@ -134,6 +159,22 @@ enum RemoteDesignSamples {
                                                   boardTitle: "A · Funnel first", pageTitle: nil, elementLabel: nil, elementName: nil,
                                                   width: 1280, height: 800, outline: DesignReferenceOutline(kind: .board, styles: 12, tokens: 4))),
         .ok,
+        .threadNotes([]),
+        .gitState(nil),
+        .gitState(DesignGitState(status: DesignGitStatus(branch: "main", remoteURL: "git@example.com:acme/web-designs.git",
+                                                         upstream: "origin/main", ahead: 1, files: [.init(path: "project/A.dc.html", letter: "M")],
+                                                         fetchedAt: 1_700_000_000_000, incoming: gitCommit),
+                                 merge: gitMerge, mergeFiles: [.init(path: "project/B.dc.html", letter: "A")])),
+        .gitPreview(before: "<x-dc>old</x-dc>", after: nil),
+        .gitOpened(record),
+        .gitPulled(.upToDate),
+        .gitPulled(.needsMerge(gitMerge)),
+        .importPrepared(importPreview),
+        .importFailed(.notAProject),
+        .mentionCatalog(Data(#"{"designs":[]}"#.utf8)),
+        .importFailed(.linksOutside([DesignImportLink(board: "A.dc.html", target: "a link")])),
+        .importFailed(.unreadableBoards(importPreview.unreadable, readable: 1)),
+        .importFailed(.fileTooLarge(path: "hero.mp4", bytes: 9, limit: 8)),
     ]
 }
 
@@ -161,7 +202,8 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal:
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard, .mentionCatalog, .settleBoardProposal, .threadNotes, .removeThreadNote,
+             .gitState, .gitPreview, .gitShare, .gitOpen, .gitCommit, .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge:
             Wire.caseName(request)
         }
     }
@@ -170,14 +212,15 @@ struct RemoteDesignMessageTests {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
              .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced,
-             .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok:
+             .referencePinned, .importStarted, .referenceKept, .referenceFreshness, .referenceLookedAt, .ok, .threadNotes,
+             .gitState, .gitPreview, .gitOpened, .gitPulled, .importPrepared, .importFailed, .mentionCatalog:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 40)
-        #expect(Set(S.results.map(Self.caseName)).count == 24)
+        #expect(Set(S.requests.map(Self.caseName)).count == 56)
+        #expect(Set(S.results.map(Self.caseName)).count == 32)
     }
 
     @Test(arguments: [
@@ -231,7 +274,7 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
                 #expect(!request.writes)
                 #expect(request.designID == nil)
-            case .importBegin, .importChunk, .importFinish, .importCancel:
+            case .importBegin, .importChunk, .importFinish, .importCancel, .importPrepare, .importConfirm, .importDiscard:
                 #expect(request.capability == RemoteProtocol.designImportCapability)
                 #expect(request.writes)
                 #expect(request.designID == nil)
@@ -239,7 +282,7 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
                 #expect(request.designID == S.design)
-            case .referenceKept, .referencePicture, .referenceLookedAt:
+            case .referenceKept, .referencePicture, .referenceLookedAt, .mentionCatalog:
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
                 #expect(request.designID == nil)
@@ -247,6 +290,14 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designBoardsCapability && RemoteProtocol.designBoardsCapability == "design.boards.v1")
                 #expect(request.writes)
                 #expect(request.designID == nil)
+            case .threadNotes, .removeThreadNote:
+                #expect(request.capability == RemoteProtocol.designThreadNotesCapability)
+                #expect(request.writes == (Self.caseName(request) == "removeThreadNote"))
+                #expect(request.designID == S.design)
+            case .gitState, .gitPreview, .gitShare, .gitOpen, .gitCommit, .gitPush, .gitPull, .gitDropMerge, .gitResolveMerge, .gitStopMerge:
+                #expect(request.capability == RemoteProtocol.designGitCapability && RemoteProtocol.designGitCapability == "design.git.v1")
+                #expect(request.writes == !["gitState", "gitPreview"].contains(Self.caseName(request)))
+                #expect(request.designID == (Self.caseName(request) == "gitOpen" ? nil : S.design))
             case .deleteSystemBuild:
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
                 #expect(request.writes)

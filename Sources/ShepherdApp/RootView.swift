@@ -278,6 +278,9 @@ private struct DestinationLayer: View {
                 MissionsDestination(controller: driver, chrome: chrome)
                     .environment(\.missionHostName, vm.remoteHosts.allConnections.first { $0.id == host }?.config.name ?? "Host")
                     .id(host)
+            } else if let local = vm.localHost, let driver = vm.missionDriver(for: local.id) {
+                // The background host runs This Mac's missions; its page is This Mac's own.
+                MissionsDestination(controller: driver, chrome: chrome).id(local.id)
             } else {
                 MissionsDestination(controller: vm.missions, chrome: chrome)
             }

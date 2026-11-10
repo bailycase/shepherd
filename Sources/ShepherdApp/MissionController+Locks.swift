@@ -41,7 +41,7 @@ extension MissionController {
             _ = try await server.updateMissionRun(id: id, runID: runID) { $0.held = held.isEmpty ? nil : held }
         }
         for name in freed {
-            vm?.notifications.post(AgentBanners.automation(title: mission.draft.title, body: "\(name) is free. Its stations start now."))
+            hosting.notify(mission.draft.title, "\(name) is free. Its stations start now.")
         }
         return Set(held.filter(\.value.blocks).keys)
     }

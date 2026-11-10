@@ -27,7 +27,7 @@ enum ModelCatalogFixture {
         for model in google { add("google", model, "1M") }
         for model in google { add("google-vertex", model, "1M") }
         for model in anthropic.suffix(8) { add("google-vertex-anthropic", model, "200K") }
-        for model in openai.prefix(18) { add("azure-openai-responses", model, "400K") }
+        for model in openai.prefix(18) { add("azure", model, "400K") }
         for model in ["claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "claude-sonnet-4.5", "gemini-2.5-pro", "gemini-3-pro-preview",
                       "gpt-4.1", "gpt-4o", "gpt-5", "gpt-5-mini", "gpt-5.1", "gpt-5.1-codex", "grok-code-fast-1", "o3", "o4-mini"] {
             add("github-copilot", model, "128K")

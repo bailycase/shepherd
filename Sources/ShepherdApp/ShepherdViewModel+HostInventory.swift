@@ -47,17 +47,15 @@ struct HostStores {
     }
 
     /// The host with no app: what the app's view model does with a turn's error in process. A
-    /// limit on a provider with rotation on switches accounts, and a failed refresh reads Expired
-    /// in Sign-in.
+    /// limit on a provider with rotation on switches accounts and continues the turn
+    /// (`LimitRotation`), and a failed refresh reads Expired in Sign-in.
     func serveTurnErrors(on server: SessionServer) {
         let piAuth = piAuth
-        server.onAgentProviderError = { [weak server] agentID, provider, message in
-            guard PiAuthText.isLimit(message) else { return }
-            Task { @MainActor in
-                guard let switched = await piAuth.limitHit(provider) else { return }
-                ShepherdLog.info("switched \(provider) to \(switched.to): \(switched.from) hit its limit")
-                server?.noticeToLocalApps(agentID: agentID, message: PiAuthText.switched(provider, switched))
-            }
+        let rotation = LimitRotation(server: server, piAuth: piAuth) { [weak server] agentID, line in
+            server?.noticeToLocalApps(agentID: agentID, message: line)
+        }
+        server.onAgentProviderError = { agentID, provider, message in
+            MainActor.assumeIsolated { rotation.providerError(agentID, provider: provider, message: message) }
         }
         let status = server.onAgentStatus
         server.onAgentStatus = { [weak server] id, agentStatus, failure in

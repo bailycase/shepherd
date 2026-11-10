@@ -403,6 +403,9 @@ struct FixtureDesigns: Sendable {
              .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
              .importBegin, .importChunk, .importFinish, .importCancel, .settleBoardProposal:
             return .failure(Refusal(code: "fixture", message: "The fixture host changes nothing."))
+        default:
+            // Requests added since (git, imports, notes): the fixture serves none of them.
+            return .failure(Refusal(code: "fixture", message: "The fixture host changes nothing."))
         }
     }
 

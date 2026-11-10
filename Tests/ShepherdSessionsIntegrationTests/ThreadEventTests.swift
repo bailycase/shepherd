@@ -958,6 +958,27 @@ struct ThreadEventTests {
         #expect(history?.messages.last?.thinkingSeconds == answered)
     }
 
+    /// The Changes engine hears the path of every edit and write that ran, and whether it
+    /// succeeded; a bash, or a call that names no path, tells it nothing.
+    @Test func aSucceededEditOrWriteNamesItsPathToTheEngine() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let heard = Locked<[TurnEvent]>([])
+        t.queue.sync { t.state.onTurnEvent = { event in heard.withValue { $0.append(event) } } }
+        try await t.feed(
+            #"{"type":"tool_execution_start","toolCallId":"e1","toolName":"edit","args":{"path":"src/a.swift","edits":[]}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"e1","toolName":"edit","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}"#,
+            #"{"type":"tool_execution_start","toolCallId":"w1","toolName":"write","args":{"path":"notes/b.md","content":"x"}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"w1","toolName":"write","result":{"content":[{"type":"text","text":"denied"}]},"isError":true}"#,
+            #"{"type":"tool_execution_start","toolCallId":"b1","toolName":"bash","args":{"command":"touch c.txt"}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"b1","toolName":"bash","result":{"content":[{"type":"text","text":""}]},"isError":false}"#,
+            #"{"type":"tool_execution_start","toolCallId":"w2","toolName":"write","args":{}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"w2","toolName":"write","result":{"content":[{"type":"text","text":"no path"}]},"isError":true}"#)
+        #expect(heard.current == [.callStarted(id: "e1", path: "src/a.swift"), .callEnded(id: "e1", ok: true),
+                                  .callStarted(id: "w1", path: "notes/b.md"), .callEnded(id: "w1", ok: false)])
+    }
+
     @Test func toolExecutionsKeepTheirArgumentsAndStartTime() async throws {
         let t = try Thread()
         defer { t.stop() }

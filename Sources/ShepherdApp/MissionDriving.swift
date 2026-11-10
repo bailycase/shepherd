@@ -3,6 +3,7 @@ import Observation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// What the Missions page reads and asks: This Mac's `MissionController`, or a connected host's
 /// missions (`RemoteMissionDriver`, docs/missions.md › Remote). Both run the owner's methods on the
@@ -41,8 +42,8 @@ protocol MissionDriving: AnyObject, Observable {
 
 extension MissionController: MissionDriving {
     var startRequested: Bool {
-        get { vm?.missionStartRequested ?? false }
-        set { vm?.missionStartRequested = newValue }
+        get { hosting.missionStartRequested.get() }
+        set { hosting.missionStartRequested.set(newValue) }
     }
 
     func create(goal: String, spaces: [SpaceID], model: String, branches: [SpaceID: String]) async throws -> MissionID {
@@ -51,7 +52,7 @@ extension MissionController: MissionDriving {
 
     func opened(_ id: MissionID) async {}
 
-    func isLive(_ agent: AgentID) -> Bool { vm?.state.agents.contains { $0.id == agent } == true }
+    func isLive(_ agent: AgentID) -> Bool { hosting.state().agents.contains { $0.id == agent } }
 
     func perform(_ action: MissionUIAction, id: MissionID, revision: UInt64) async throws {
         switch action {
@@ -115,17 +116,23 @@ final class RemoteMissionDriver: MissionDriving {
     var branchChoices: [SpaceID: [String]] { missions.startOptions?.branchChoices ?? [:] }
     var defaultBranches: [SpaceID: String] { missions.startOptions?.defaultBranches ?? [:] }
     var specKitReports: [MissionID: [SpaceID: SpecKitPreflight]] { missions.specKit.mapValues(\.reports) }
-    /// A host's templates stay on that host; its page lists none here.
-    var templates: [MissionTemplate] { [] }
+    /// Templates are This Mac's: the background host's, which runs its missions. A paired host's
+    /// stay on that host; its page lists none here.
+    private(set) var templates: [MissionTemplate] = []
     var startTemplate: MissionTemplate?
-    func loadTemplates() async {}
+    func loadTemplates() async {
+        guard isThisMac, let list = try? await missions.templates(), list != templates else { return }
+        templates = list
+    }
 
     func refreshModels() async {
         do { try await missions.loadStartOptions() } catch { self.error = RemoteMissions.describe(error) }
     }
 
     func create(goal: String, spaces: [SpaceID], model: String, branches: [SpaceID: String]) async throws -> MissionID {
-        try await remote { try await self.missions.create(goal: goal, spaces: spaces, model: model, branches: branches) }
+        let template = startTemplate?.id
+        startTemplate = nil
+        return try await remote { try await self.missions.create(goal: goal, spaces: spaces, model: model, branches: branches, template: template) }
     }
 
     func opened(_ id: MissionID) async {
@@ -135,7 +142,12 @@ final class RemoteMissionDriver: MissionDriving {
 
     func isLive(_ agent: AgentID) -> Bool { connection?.state.agents.contains { $0.id == agent } == true }
 
-    func openThread(_ id: AgentID) { vm?.selectRemoteAgent(hostID: hostID, agentID: id) }
+    /// The background host on this Mac, whose threads are the app's own (`localHost`).
+    private var isThisMac: Bool { vm?.localHost?.id == hostID }
+
+    func openThread(_ id: AgentID) {
+        if isThisMac { vm?.selectAgent(id) } else { vm?.selectRemoteAgent(hostID: hostID, agentID: id) }
+    }
 
     func thread(for attemptID: UUID) -> MissionThreadSource? {
         guard let vm, let (mission, attempt) = missions.records.lazy.compactMap({ mission in
@@ -156,7 +168,14 @@ final class RemoteMissionDriver: MissionDriving {
             }
         }
         let steerable = attempt.status == .running && mission.run?.phase.active == true
-        return MissionThreadSource(agentID: agentID, store: vm.remoteThreadStores.store(for: ref), request: request, preview: nil,
+        let store = isThisMac ? vm.threadStores.store(for: agentID) : vm.remoteThreadStores.store(for: ref)
+        // This Mac's session files are the app's to read, as in process: a finished step shows its history.
+        var preview: NativeThreadStore.Preview?
+        if isThisMac, let agent = connection?.state.agents.first(where: { $0.id == agentID }),
+           let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path {
+            preview = PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: cwd, sessionsRoot: vm.server.pi.sessionsRoot)
+        }
+        return MissionThreadSource(agentID: agentID, store: store, request: request, preview: preview,
                                    send: steerable ? { [weak self] text in
                                        guard let self, let current = self.missions.record(missionID) else { return }
                                        try await self.remote { _ = try await self.missions.perform(missionID, revision: current.revision, .steer(attemptID: attemptID, text: text)) }
@@ -191,10 +210,13 @@ final class RemoteMissionDriver: MissionDriving {
         case .resumeTrain: wire = .resumeTrain
         case .skipSoak: wire = .skipSoak
         case .laneLock(let lane, let choice): wire = .laneLock(spaceID: lane, choice: choice)
-        case .saveTemplate: throw MissionError("mission_template", "Save templates on the Mac that ran the mission.")
+        case .saveTemplate(let name, let summary, let team):
+            guard isThisMac else { throw MissionError("mission_template", "Save templates on the Mac that ran the mission.") }
+            wire = .saveTemplate(name: name, summary: summary, team: team)
         }
         let made = try await remote { try await self.missions.perform(id, revision: shown, wire) }
         if let made { selectedID = made }
+        if case .saveTemplate = wire { await loadTemplates() }
         if missions.record(id)?.run?.specKit != nil { try? await missions.loadSpecKit(id) }
     }
 
