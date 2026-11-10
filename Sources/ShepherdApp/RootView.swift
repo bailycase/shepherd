@@ -278,6 +278,9 @@ private struct DestinationLayer: View {
                 MissionsDestination(controller: driver, chrome: chrome)
                     .environment(\.missionHostName, vm.remoteHosts.allConnections.first { $0.id == host }?.config.name ?? "Host")
                     .id(host)
+            } else if let local = vm.localHost, let driver = vm.missionDriver(for: local.id) {
+                // The background host runs This Mac's missions; its page is This Mac's own.
+                MissionsDestination(controller: driver, chrome: chrome).id(local.id)
             } else {
                 MissionsDestination(controller: vm.missions, chrome: chrome)
             }
@@ -333,8 +336,7 @@ struct WorkspaceHeaderView: View {
                     let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),
                                  project: space ?? connection.config.name, title: agent.name,
-                                 // This Mac's threads draw the branch card beside the transcript instead.
-                                 branch: connection.isThisMac ? nil : AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
+                                 branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
                                  pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil)
                         .id(remote)

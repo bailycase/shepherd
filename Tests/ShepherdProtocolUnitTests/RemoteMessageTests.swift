@@ -173,6 +173,7 @@ enum RemoteSamples {
             settings: AutomationSettings(limits: AutomationLimits(maxConcurrent: 2, maxPerDay: 0)))),
         .status, .pause, .resume, .runEvent(eventID: "acme/app#1:opened"), .dismissEvent(eventID: "schedule:5"),
         .markRead(runID: op), .setAllPaused(paused: true),
+        .setRunPullRequest(agentID: agent, url: "https://github.com/acme/app/pull/12"),
     ]
     static let runs: [AutomationRun] = [
         AutomationRun(id: op, startedAt: 1_700_000_000, settledAt: 1_700_000_043, endedAt: 1_700_000_100, result: .finished),
@@ -539,7 +540,7 @@ struct RemoteRequestTests {
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
                       .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x")])
+                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123)])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -674,11 +675,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 51
+    static let caseCount = 57
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -754,7 +755,14 @@ struct RemoteReplyTests {
         .settingsChanged(page: .instructions),
         .settingsChanged(page: .slashCommands),
         .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
+        .designNotesChanged(designID: DesignID(rawValue: "d1")),
+        .designGitChanged(designID: DesignID(rawValue: "d1")),
+        .designImportProgress(.boards(done: 2, of: 5, title: "Checkout funnel", system: nil)),
         .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
+        .agentStartProblem(agentID: AgentID(rawValue: "a"), problem: NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: ["No models available"])),
+        .agentStartProblem(agentID: AgentID(rawValue: "a"), problem: nil),
+        .automationsChanged,
+        .automationNotify(title: "Watch CI", body: "The run couldn't start: acme-web is missing."),
     ]
 
     static let relayDesign = DesignID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c33")
@@ -1154,12 +1162,13 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.agentRestartCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
-            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability, RemoteProtocol.designBoardsCapability,
+            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability, RemoteProtocol.designBoardsCapability, RemoteProtocol.designThreadNotesCapability,
+            RemoteProtocol.designGitCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.

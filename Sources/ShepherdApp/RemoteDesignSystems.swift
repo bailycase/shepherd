@@ -13,6 +13,8 @@ import ShepherdUI
 extension ShepherdViewModel {
     /// The Design systems page for a host's system; its files are read from the host.
     func openRemoteDesignSystem(_ ref: RemoteSystemRef) {
+        // The background host's systems open as the app's own.
+        if ref.hostID == localHost?.id { return openDesignSystem(ref.namespace) }
         guard designToolEnabled else { return }
         if shownRemoteSystem != ref {
             shownRemoteSystem = ref

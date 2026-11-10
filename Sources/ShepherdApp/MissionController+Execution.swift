@@ -186,7 +186,7 @@ extension MissionController {
     func runAgent(_ id: MissionID, runID: UUID, station: MissionStation?, checkout: MissionCheckout,
                   prompt: String, title: String) async throws -> (attemptID: UUID, text: String) {
         let mission = try record(id, runID: runID)
-        guard let vm, let run = mission.run else { throw MissionError("mission_closed", "The app workspace closed.") }
+        guard let run = mission.run else { throw MissionError("mission_closed", "The app workspace closed.") }
         let agentID = AgentID()
         let attempt = { var value = MissionAttempt(stationID: station?.id, agentID: agentID, planRevision: mission.approvedPlanRevision); value.startedAt = Self.now; return value }()
         _ = try await server.updateMissionRun(id: id, runID: runID) { $0.attempts.append(attempt) }
@@ -195,7 +195,7 @@ extension MissionController {
             let config = NewAgentConfig(spaceID: checkout.spaceID, workingDirectory: checkout.path, reservedAgentID: agentID,
                                         model: station?.model ?? run.model, thinking: .off, initialPrompt: nil, initialName: title,
                                         worktreeBranch: checkout.branch, worktreeBase: checkout.base, worktreePath: checkout.path)
-            _ = try await vm.startAgent(config, selectAfter: false, focusWindow: false)
+            _ = try await hosting.startAgent(config)
             let started = Self.now
             var submitted = false
             while true {

@@ -9,142 +9,6 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// The app as the background host's client (`SHEPHERD_BACKGROUND_HOST=1`): its own workspace is
-/// empty, and the host on this Mac reads as This Mac, through its local socket.
-extension PreviewTests {
-    @Test func localClientWorkspace() async throws {
-        let workspace = try PreviewWorkspace(ownsWorkspace: false)
-        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
-        defer { workspace.stop(); host.stop() }
-        host.server.serveThreads(ThreadHosting(defaults: {
-            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
-                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
-        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
-        let space = Space(name: "acme-web", path: host.dir.path)
-        let names = ["Fix the checkout total rounding", "Upgrade the payments SDK", "Write release notes for 2.4"]
-        let records = names.enumerated().map { index, name -> (Agent, ShepherdCore.Tab) in
-            let id = AgentID()
-            let pane = LeafPane(cwd: host.dir.path, agentID: id)
-            let tab = ShepherdCore.Tab(spaceID: space.id, order: index, layout: .leaf(pane))
-            return (Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id,
-                          status: index == 0 ? .working : .done, nameIsFinal: true), tab)
-        }
-        try await host.server.putState(ShepherdState(spaces: [space], tabs: records.map(\.1), agents: records.map(\.0)))
-        let socket = host.dir.appendingPathComponent("h.sock").path
-        let tokenURL = host.dir.appendingPathComponent("remote-token")
-        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
-        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let vm = workspace.vm
-        let connection = vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
-        try await eventuallyOnMain("the host on this Mac to connect", timeout: .seconds(30)) {
-            connection.phase == .connected && connection.state == host.server.state
-        }
-        vm.openNewThread()
-        try await Preview.render("local-client-workspace", size: CGSize(width: 1280, height: 760)) {
-            RootView(vm: vm)
-        }
-    }
-
-    /// A thread of the host on this Mac draws the branch card beside its transcript, as the app's
-    /// own threads do, and no branch chip in the toolbar.
-    @Test func localClientThreadBranchCard() async throws {
-        let workspace = try PreviewWorkspace(ownsWorkspace: false)
-        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
-        defer { workspace.stop(); host.stop() }
-        host.server.serveThreads(ThreadHosting(defaults: {
-            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
-                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
-        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
-        let repo = host.dir.appendingPathComponent("payments").path
-        func git(_ arguments: [String]) throws {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = ["-c", "user.name=Preview", "-c", "user.email=preview@example.com", "-C", repo] + arguments
-            try process.run(); process.waitUntilExit()
-        }
-        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
-        try git(["init", "-q", "-b", "main"])
-        try (1...8).map { "line \($0)" }.joined(separator: "\n").write(toFile: repo + "/outbox.go", atomically: true, encoding: .utf8)
-        try git(["add", "."]); try git(["commit", "-q", "-m", "start"])
-        try git(["switch", "-q", "-c", "agent/refund-events"])
-        // The branch's work: 71 lines in, 8 out, committed.
-        try (1...71).map { "refund \($0)" }.joined(separator: "\n").write(toFile: repo + "/outbox.go", atomically: true, encoding: .utf8)
-        try git(["commit", "-qam", "Emit refund events"])
-        // main moves on by three.
-        try git(["switch", "-q", "main"])
-        for n in 1...3 { try "\(n)".write(toFile: repo + "/main-\(n).txt", atomically: true, encoding: .utf8); try git(["add", "."]); try git(["commit", "-q", "-m", "main \(n)"]) }
-        try git(["switch", "-q", "agent/refund-events"])
-        let space = Space(name: "payments", path: repo)
-        let id = AgentID(), other = AgentID()
-        let pane = LeafPane(cwd: repo, agentID: id), otherPane = LeafPane(cwd: repo, agentID: other)
-        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let otherTab = ShepherdCore.Tab(spaceID: space.id, order: 1, layout: .leaf(otherPane))
-        var agent = Agent(id: id, name: "Add refund events", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .done, nameIsFinal: true)
-        agent.worktreeBranch = "agent/refund-events"
-        agent.worktreePath = repo
-        agent.worktreeBase = "main"
-        var peer = Agent(id: other, name: "Webhook retries", spaceID: space.id, tabID: otherTab.id, paneID: otherPane.id, status: .blocked, nameIsFinal: true)
-        peer.worktreeBranch = "agent/webhook-retries"
-        try await host.server.putState(ShepherdState(spaces: [space], tabs: [tab, otherTab], agents: [agent, peer]))
-        let socket = host.dir.appendingPathComponent("h.sock").path
-        let tokenURL = host.dir.appendingPathComponent("remote-token")
-        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
-        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let vm = workspace.vm
-        let connection = vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
-        try await eventuallyOnMain("the host on this Mac to connect", timeout: .seconds(30)) {
-            connection.phase == .connected && connection.state == host.server.state
-        }
-        vm.selectRemoteAgent(hostID: connection.id, agentID: id)
-        // The card reads itself once it shows.
-        let store = vm.branchCardStore(for: id)
-        for width in [1280.0, 1440.0] {
-            try await Preview.render("local-client-branch-card-\(Int(width))", size: CGSize(width: width, height: 760), ready: { store.status != nil }) {
-                RootView(vm: vm)
-            }
-        }
-        #expect(store.card?.branch == "agent/refund-events")
-        #expect(store.card?.others.map(\.branch) == ["agent/webhook-retries"])
-    }
-    /// Delete Worktree Agent on a thread of the host on this Mac: This Mac's own dialog, with the
-    /// checkout and loss warning the host reports.
-    @Test func localClientDeleteWorktreeDialog() async throws {
-        let workspace = try PreviewWorkspace(ownsWorkspace: false)
-        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
-        let repo = try makeScratchRepo()
-        defer { workspace.stop(); host.stop(); try? FileManager.default.removeItem(at: repo) }
-        _ = host.server.serveAgentQueries(WorktreeHosting(defaults: { .init(generateDescription: false) },
-                                                          deleteAgent: { id, _ in try await host.server.deleteAgent(id) }))
-        let space = Space(name: "acme-web", path: repo.path)
-        try await host.server.addSpace(space)
-        let checkout = try GitWorktree.add(repo: repo.path, branch: "agent/fix-login")
-        try "draft\n".write(to: URL(fileURLWithPath: checkout).appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
-        let pane = LeafPane(cwd: checkout)
-        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let agent = Agent(name: "Fix the login redirect", spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true,
-                          worktreeBranch: "agent/fix-login", worktreeBase: "main", worktreePath: checkout)
-        try await host.server.addAgent(agent, withTab: tab)
-        let socket = host.dir.appendingPathComponent("h.sock").path
-        let tokenURL = host.dir.appendingPathComponent("remote-token")
-        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
-        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let vm = workspace.vm
-        let connection = vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
-        try await eventuallyOnMain("the host on this Mac to connect", timeout: .seconds(30)) {
-            connection.phase == .connected && connection.state.agents.contains { $0.id == agent.id }
-        }
-        let target = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
-        vm.requestRemoteDelete(target)
-        let item = try #require(vm.thisMacWorktreeDelete)
-        try await Preview.render("sheet-delete-worktree-this-mac", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
-                                 untilGone: "Checking", showing: "Unreconciled work") {
-            // The host's warning; a made-up path in place of this machine's scratch folder.
-            WorktreeDeleteDialog(agent: item.agent, path: "~/Developer/acme-web-worktrees/agent-fix-login", settings: vm.settings,
-                                 probe: { try await vm.thisMacWorktreeInfo(target).warning }, cancel: {}, delete: { _ in })
-        }
-    }
-}
-
 /// The background host's workspace as the app's own (`adoptLocalHost`): the same fixture, in
 /// process and as the host's client, renders the same window.
 extension PreviewTests {
@@ -265,85 +129,175 @@ extension PreviewTests {
     }
 }
 
-/// Designs, automations and Projects keep the background host's section on their pages while the
-/// app takes the rest of its workspace as its own (`ShepherdViewModel.mirrored`): the same pages as
-/// with This Mac shown as a host (`SHEPHERD_THIS_MAC_LOCAL=0`), from the same host.
+/// Automations as This Mac's own (always-host 3): the same fixture, in process and as the
+/// background host's client, renders the same Automations page, run log and sidebar.
 extension PreviewTests {
-    @Test func localHostFeaturePagesMatchThisMacAsAHost() async throws {
+    @Test func localHostAutomationsMatchInProcess() async throws {
         let pageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
-        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
-        defer { host.stop() }
-        host.server.serveThreads(ThreadHosting(defaults: {
-            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
-                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
-        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
-        let space = Space(name: "acme-web", path: host.dir.path)
+        let folder = try makeScratchDirectory("acme-web")
+        let space = Space(name: "acme-web", path: folder.path)
         let runs = Space(name: "Automations", path: "~", hidden: true)
-        func agent(_ name: String, in space: Space, order: Int, status: AgentStatus = .idle) -> (Agent, ShepherdCore.Tab) {
+        // Each thread last active two hours ago, so both renders read the same ages.
+        let active = (Date().timeIntervalSince1970 - 7_200) * 1000
+        func agent(_ name: String, in space: Space, order: Int, status: AgentStatus) -> (Agent, ShepherdCore.Tab) {
             let id = AgentID()
             let pane = LeafPane(cwd: space.path, agentID: id)
             let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
-            return (Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, status: status, nameIsFinal: true), tab)
+            var agent = Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, status: status, nameIsFinal: true)
+            agent.lastActiveAt = active
+            return (agent, tab)
         }
-        let thread = agent("Fix the checkout total rounding", in: space, order: 0)
+        let thread = agent("Fix the checkout total rounding", in: space, order: 0, status: .done)
+        let triage = agent("Triage new issues", in: runs, order: 0, status: .blocked)
+        let bumps = agent("Weekly dependency bumps", in: runs, order: 1, status: .working)
+        // A made-up folder in place of this machine's scratch one.
+        let shown = "~/Developer/acme-web"
+        let cleanup = Automation(name: "Stale branch cleanup", prompt: "List branches merged a month ago.", cwd: shown, enabled: false)
+        var past = agent("Clean up merged branches", in: space, order: 1, status: .done)
+        past.0.automationOrigin = AutomationOrigin(automationID: cleanup.id)
+        // Off, so neither owner starts a run of its own.
+        let automations = [
+            Automation(name: "Triage new issues", prompt: "Look at what came in overnight and say what needs a person.",
+                       cwd: shown, enabled: false, agentID: triage.0.id),
+            Automation(name: "Weekly dependency bumps", prompt: "Bump the dependencies and open a pull request.",
+                       cwd: shown, enabled: false, agentID: bumps.0.id),
+            cleanup,
+        ]
+        let records = [thread, triage, bumps, past]
+        let fixture = ShepherdState(spaces: [space, runs], tabs: records.map(\.1), agents: records.map(\.0), automations: automations)
+        // The page's clocks tick from when each owner logged its runs, so the page's fixture has
+        // none: both watchers ask, and the off automation never ran.
+        var asking = bumps
+        asking.0.status = .blocked
+        let page = ShepherdState(spaces: [space, runs], tabs: [thread.1, triage.1, asking.1], agents: [thread.0, triage.0, asking.0],
+                                 automations: [automations[0], automations[1],
+                                               Automation(name: "Stale branch cleanup", prompt: "List branches merged a month ago.",
+                                                          cwd: shown, enabled: false)])
+        // A run's start reads to the minute: not across one between the two renders.
+        let second = Calendar.current.component(.second, from: Date())
+        if second >= 50 { try await Task.sleep(for: .seconds(61 - second)) }
+
+        for mode in ["in-process", "client"] {
+            let workspace = try PreviewWorkspace(ownsWorkspace: mode == "in-process")
+            var host: ScratchServer?
+            defer { workspace.stop(); host?.stop() }
+            if mode == "in-process" { try await workspace.seed(fixture) } else { host = try await adoptHost(fixture, into: workspace) }
+            let vm = workspace.vm
+            await vm.loadAutomationPageRuns()
+            // The two watchers' runs and the past run's thread, each open.
+            try await eventuallyOnMain("the run log of each live run") {
+                vm.openAutomationRuns.count == 3 && vm.localAutomationRuns.values.joined().count == 3
+            }
+            #expect(vm.automationHosts.map(\.id) == [PageHost.localID])
+            #expect(vm.blockedCount == 1, "the watcher asking counts in Needs you")
+            try await Preview.render("this-mac-automations-sidebar-\(mode)", size: CGSize(width: 260, height: 520)) {
+                SidebarView(vm: vm).frame(width: 260).background(Color.sh.bgBase)
+            }
+
+            if let host { try await host.server.putState(page) } else { try await workspace.server.putState(page) }
+            try await eventuallyOnMain("the page's fixture and its runs") {
+                vm.state.automations.map(\.id) == page.automations.map(\.id) && vm.state.agents.map(\.status) == page.agents.map(\.status)
+                    && vm.openAutomationRuns.values.map(\.result) == [.needsYou, .needsYou]
+            }
+            await vm.loadAutomationPageRuns()
+            try await Preview.render("this-mac-automations-page-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
+            vm.automationsPageSelection = AutomationKey(host: PageHost.localID, automation: automations[0].id)
+            try await Preview.render("this-mac-automation-runs-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
+        }
+        try expectSameRenders("this-mac-automations-page-in-process", "this-mac-automations-page-client")
+        try expectSameRenders("this-mac-automation-runs-in-process", "this-mac-automation-runs-client")
+        try expectSameRenders("this-mac-automations-sidebar-in-process", "this-mac-automations-sidebar-client")
+    }
+}
+
+/// The whole sidebar as This Mac's own (always-host 5): every thread kind, one that can't start
+/// for want of a sign-in (its pi stopped before anything here opened it) and the Needs you count,
+/// the same in process and as the background host's client.
+extension PreviewTests {
+    @Test func localHostSidebarMatchesInProcess() async throws {
+        try StubPi.installAsEngine()
+        let folder = try makeScratchDirectory("acme-web")
+        let space = Space(name: "acme-web", path: folder.path)
+        let runs = Space(name: "Automations", path: "~", hidden: true)
+        let designs = Space.designs()
+        // Each thread last active two hours ago, so both renders read the same ages.
+        let active = (Date().timeIntervalSince1970 - 7_200) * 1000
+        func agent(_ name: String, in space: Space, order: Int, status: AgentStatus,
+                   edit: (inout Agent) -> Void = { _ in }) -> (Agent, ShepherdCore.Tab) {
+            let id = AgentID()
+            let pane = LeafPane(cwd: space.path, agentID: id)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
+            var agent = Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, status: status, nameIsFinal: true)
+            agent.lastActiveAt = active
+            edit(&agent)
+            return (agent, tab)
+        }
+        let done = agent("Fix the checkout total rounding", in: space, order: 0, status: .done)
+        let asks = agent("Pick the receipt date format", in: space, order: 1, status: .blocked) {
+            $0.waitingOn = "Which date format should receipts use?"
+            $0.waitingReason = "date format"
+        }
+        let worktree = agent("Add refund events", in: space, order: 2, status: .done) {
+            $0.worktreeBranch = "agent/refund-events"
+            $0.worktreeBase = "main"
+        }
+        let signIn = agent("Write release notes for 2.4", in: space, order: 3, status: .idle)
         let watcher = agent("Triage new issues", in: runs, order: 0, status: .blocked)
-        var drawer = agent("Checkout funnel dashboard", in: space, order: 1)
+        var drawer = agent("Checkout funnel dashboard", in: designs, order: 0, status: .done)
         let design = Design(name: "Checkout funnel dashboard", agentID: drawer.0.id, createdAt: 1_000)
         drawer.0.designID = design.id
         let automation = Automation(name: "Triage new issues", prompt: "Look at what came in overnight and say what needs a person.",
                                     cwd: "~/Developer/acme-web", enabled: false, agentID: watcher.0.id)
-        let records = [thread, watcher, drawer]
-        try await host.server.putState(ShepherdState(spaces: [space, runs], tabs: records.map(\.1), agents: records.map(\.0),
-                                                     automations: [automation]))
-        host.server.setProjectsEnabled(true)
-        guard case .project(let project) = try await host.server.logicalProjects(
-            .create(projectID: ProjectID(), name: "Release 2.4", goal: "Ship the 2.4 release notes and changelog.")) else {
-            Issue.record("no Project"); return
-        }
-        _ = try await host.server.createDesign(design)
-        try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: host.server, perRow: 3)
-        host.server.designSystems.register(ShepherdDesignSystem.builtIn())
-        host.server.setDesignsServed(true)
-        let socket = host.dir.appendingPathComponent("h.sock").path
-        let tokenURL = host.dir.appendingPathComponent("remote-token")
-        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
-        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let records = [done, asks, worktree, signIn, watcher, drawer]
+        let fixture = ShepherdState(spaces: [space, runs, designs], tabs: records.map(\.1), agents: records.map(\.0),
+                                    automations: [automation])
+        // pi can't reach a model in the folder: the thread that starts there waits for a sign-in.
+        try JSONSerialization.data(withJSONObject: ["exit": "1", "stderr": "No models available. Use /login to log into a provider."])
+            .write(to: folder.appendingPathComponent("stub-pi-startup.json"))
 
-        for mode in ["host", "local"] {
-            let workspace = try PreviewWorkspace(ownsWorkspace: false)
-            defer { workspace.stop() }
+        for mode in ["in-process", "client"] {
+            let workspace = try PreviewWorkspace(ownsWorkspace: mode == "in-process")
+            var host: ScratchServer?
+            defer { workspace.stop(); host?.stop() }
             workspace.settings.designToolEnabled = true
-            workspace.settings.projectsEnabled = true
             let vm = workspace.vm
-            vm.designNetwork = .none
-            vm.designLiveCap = 0
-            let connection = mode == "local" ? vm.connectLocalHost(socket: socket, token: token)
-                : vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
-            try await eventuallyOnMain("This Mac's host with its designs, automation and Project", timeout: .seconds(30)) {
-                connection.phase == .connected && connection.supportsDesigns && connection.supportsLogicalProjects
-                    && connection.state.automations.count == 1 && connection.state.projects.count == 1
+            let owner: SessionServer
+            if mode == "in-process" {
+                try await workspace.seed(fixture)
+                _ = try await workspace.server.createDesign(design)
+                owner = workspace.server
+            } else {
+                let made = try ScratchServer(dir: try makeScratchDirectory("host"))
+                host = made
+                made.server.serveThreads(ThreadHosting(defaults: {
+                    ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                           worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+                }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+                try await made.server.putState(fixture)
+                _ = try await made.server.createDesign(design)
+                made.server.setDesignsServed(true)
+                let socket = made.dir.appendingPathComponent("h.sock").path
+                let tokenURL = made.dir.appendingPathComponent("remote-token")
+                try made.server.startLocalListener(path: socket, tokenURL: tokenURL)
+                let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+                vm.connectLocalHost(socket: socket, token: token)
+                owner = made.server
             }
-            if mode == "local" {
-                try await eventuallyOnMain("the ordinary thread as the app's own") { vm.state.agents.map(\.id) == [thread.0.id] }
-                #expect(vm.remoteHosts.connections.isEmpty)
+            try await eventuallyOnMain("the workspace as the app's own", timeout: .seconds(30)) {
+                Set(vm.state.agents.map(\.id)) == Set(records.map(\.0.id)) && vm.state.designs.map(\.id) == [design.id]
             }
-
-            await vm.loadAutomationPageRuns()
-            vm.automationsPageSelection = AutomationKey(host: connection.id, automation: automation.id)
-            try await Preview.render("this-mac-automations-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
-
-            await vm.loadRemoteDesigns()
-            try await Preview.render("this-mac-designs-\(mode)", size: pageSize, ready: {
-                vm.remoteDesignRenderings[connection.id]?.thumbnails.image(design.id) != nil
-            }) { DesignsDestination(vm: vm) }
-
-            vm.openLogicalProject(LogicalProjectRef(home: .host(connection.id), id: project.id))
-            #expect(vm.shownDestination == .project)
-            try await Preview.render("this-mac-project-\(mode)", size: pageSize) { LogicalProjectDestination(vm: vm) }
-            for connection in vm.remoteHosts.allConnections { vm.remoteHosts.removeHost(id: connection.id) }
+            // Something other than this window opens the thread: its pi starts and stops.
+            Task { _ = try? await owner.nativeThread(agentID: signIn.0.id, request: .snapshot()) }
+            try await eventuallyOnMain("the thread to wait for a sign-in", timeout: .seconds(30)) {
+                vm.notSignedIn[signIn.0.id] != nil && vm.cannotStart.contains(signIn.0.id)
+            }
+            #expect(vm.threadStores.existing(for: signIn.0.id) == nil || mode == "in-process")
+            #expect(Set(vm.sidebarLists.needsYou.map(\.id)) == [.local(asks.0.id), .local(signIn.0.id), .local(watcher.0.id)])
+            #expect(vm.blockedCount == 2, "the badge counts the question and the watcher, as in process")
+            try await Preview.render("this-mac-sidebar-\(mode)", size: CGSize(width: 260, height: 620)) {
+                SidebarView(vm: vm).frame(width: 260).background(Color.sh.bgBase)
+            }
         }
-        try expectSameRenders("this-mac-automations-host", "this-mac-automations-local")
-        try expectSameRenders("this-mac-designs-host", "this-mac-designs-local")
-        try expectSameRenders("this-mac-project-host", "this-mac-project-local")
+        try expectSameRenders("this-mac-sidebar-in-process", "this-mac-sidebar-client")
     }
 }

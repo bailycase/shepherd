@@ -116,11 +116,12 @@ extension MissionController {
         guard try reviewFingerprint(mission, reviews: collected) == fingerprint else {
             throw MissionError("mission_stale_review", "Files or the validation contract changed after review. Revalidate before publishing; nothing was pushed.")
         }
-        guard let vm, let run = mission.run else { throw CancellationError() }
+        guard let run = mission.run else { throw CancellationError() }
+        let worktrees = hosting.worktrees
         let paths = Set(run.checkouts.map { PiHome.canonical($0.path) })
-        guard paths.isDisjoint(with: vm.hostBusyWorktrees) else { throw MissionError("mission_busy", "A checkout operation is already running.") }
-        vm.hostBusyWorktrees.formUnion(paths)
-        defer { vm.hostBusyWorktrees.subtract(paths) }
+        guard paths.isDisjoint(with: worktrees.busy) else { throw MissionError("mission_busy", "A checkout operation is already running.") }
+        worktrees.busy.formUnion(paths)
+        defer { worktrees.busy.subtract(paths) }
         for checkout in run.checkouts {
             guard let info = reviewInfo[id]?[checkout.spaceID], info.pushRemote == "origin",
                   info.upstream == nil || info.upstream == "origin/" + checkout.branch, checkout.originFingerprint != nil else {

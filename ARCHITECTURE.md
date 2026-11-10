@@ -17,8 +17,10 @@ Mac's app gets: the host's whole workspace (threads, designs, automations, Proje
 Settings) as the app's own, why a thread's pi can't start (`agentStartProblem`, opened or not), and
 what needs a window (the Browser, design drawing, `review_diff`, Update this Mac) relayed to it.
 The host on this Mac is transport only: no host list, picker or page shows it, and no view asks
-whether a connection is this Mac's (`RemoteHostStore.connections` is the paired hosts). Who starts
-the host:
+whether a connection is this Mac's (`RemoteHostStore.connections` is the paired hosts). Only the
+app holds connections to paired Macs, so a Project the host owns places work on one through the
+app (`projectExecutors`, `AppRelayJob.projectPlacement`) while it runs, and says to open it
+otherwise. Who starts the host:
 
 - **The background service** (Shepherd Nightly, while Login Items allows it): launchd runs it
   (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
@@ -140,7 +142,7 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |
 | MCP | `Extensions/shepherd-mcp-*`, `ShepherdApp/MCP/`, `ShepherdSessions/ProjectMCP*.swift` |
-| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift` |
+| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, built by `RuntimeHosting` in the app or in `Shepherd --host` |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
 | Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |

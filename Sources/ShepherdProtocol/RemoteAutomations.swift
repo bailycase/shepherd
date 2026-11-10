@@ -241,6 +241,9 @@ public enum RemoteAutomationRequest: Codable, Hashable, Sendable {
     case markRead(runID: UUID)
     /// Pause or resume every trigger on the host (the automation named is incidental).
     case setAllPaused(paused: Bool)
+    /// The pull request a run's thread opened, as this Mac's app read it through `gh`. Served only
+    /// to a local client (the background host's own app).
+    case setRunPullRequest(agentID: AgentID, url: String)
 }
 
 public enum RemoteAutomationResult: Codable, Hashable, Sendable {

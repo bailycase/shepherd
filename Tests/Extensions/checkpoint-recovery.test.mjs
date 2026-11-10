@@ -98,7 +98,8 @@ test("steering and attachment identities remain unchanged across recovery", { ti
     : index === 1 ? { status: 400, text: "FAKE failure after steering" } : {} }, async pi => {
     const original = pi.prompt("original");
     await until("the held FAKE request", () => pi.provider.requests.length === 1);
-    const image = { type: "image", data: "AA==", mimeType: "image/png" };
+    // pi 1.5 resizes steering images and omits undecodable ones, so this is a real 1x1 PNG.
+    const image = { type: "image", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=", mimeType: "image/png" };
     assert.equal((await pi.request({ type: "steer", message: "FAKE steer identity", images: [image] })).success, true);
     release({ tool: { name: "write", arguments: { path: "completed.txt", content: "done" } } });
     await original;
@@ -112,7 +113,7 @@ test("steering and attachment identities remain unchanged across recovery", { ti
     assert.equal(pi.events.filter(e => e.type === "tool_execution_start").length, 1);
     assert.equal(pi.provider.requests.length, 3);
     assert(JSON.stringify(pi.provider.requests[2].body).includes("FAKE steer identity"));
-    assert(JSON.stringify(pi.provider.requests[2].body).includes("data:image/png;base64,AA=="));
+    assert(JSON.stringify(pi.provider.requests[2].body).includes(`data:image/png;base64,${image.data}`));
   });
 });
 

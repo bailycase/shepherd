@@ -38,6 +38,9 @@ public final class ChangesService: @unchecked Sendable {
     let trash: Trash
     /// Installed by the server: an agent's directory and branch base, from the committed state.
     var agentContext: @Sendable (AgentID) -> AgentContext? = { _ in nil }
+    /// Installed by the server: an agent's name (its thread's title), for the message that says
+    /// whose edit kept a file out of an Undo. Nil for an agent that is gone.
+    var agentName: @Sendable (AgentID) -> String? = { _ in nil }
     /// Installed by the server: an agent's turns changed (a capture finished, an Undo). Called on
     /// an engine queue.
     var onTurnsChanged: (@Sendable (AgentID, [ChangesTurn]) -> Void)?
@@ -65,6 +68,10 @@ public final class ChangesService: @unchecked Sendable {
     let turnStore: TurnStore
     let captureQueues = ChangesLocked<[AgentID: DispatchQueue]>([:])
     let preparedTurns = ChangesLocked<[AgentID: (cwd: String, tree: Result<String, Error>)]>([:])
+    /// Who wrote in which working tree and when, in memory (ChangesWriters.swift).
+    let writers = ChangesLocked(WriterLog())
+    /// Agents with a re-cut of their settled turn already queued.
+    let reclassifying = ChangesLocked<Set<AgentID>>([])
 
     /// How long a pull request lookup (gh, over the network) is reused.
     static let pullRequestTTL: TimeInterval = 60

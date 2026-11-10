@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
@@ -115,6 +116,24 @@ struct BranchCardActionTests {
     }
 
     /// The inline card's store reads the checkout and the space, and a turn ending asks it to read again.
+    /// The card's pull request opens beside the thread, in the side pane's Pull request tab,
+    /// never as the Issues & PRs page.
+    @Test func thePullRequestRowOpensTheSidePanesPullRequestTab() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("payments", path: "/tmp/acme-payments")
+        let mine = Fixture.agent("refunds", in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [mine]))
+        let id = mine.agent.id
+        let page = vm.destination
+
+        vm.performBranchCard(.openPull(ForgeItemRef(kind: .pullRequest, repo: "acme/payments", number: 34)), on: id)
+
+        #expect(vm.subagentInspector.open.contains(.local(id)))
+        #expect(vm.subagentInspector.tab(for: .local(id)) == .pullRequest)
+        #expect(vm.destination == page, "the Issues & PRs page doesn't open")
+    }
+
     @Test func theCardReadsOnItsOwnAndAgainWhenATurnEnds() async throws {
         let app = try AppHarness()
         defer { app.stop() }

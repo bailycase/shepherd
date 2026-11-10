@@ -97,8 +97,6 @@ class Fixture:
                  shrinkwrap_jiti="2.7.0"):
         shrinkwrap = {"packages": {
             "": {"name": "@earendil-works/pi-coding-agent"},
-            # Compiled into dist/bundle (and so listed in the notices), not loaded from node_modules.
-            "node_modules/@earendil-works/chord": {"version": "1.0.0", "license": "MIT"},
             "node_modules/jiti": {"version": shrinkwrap_jiti, "license": "MIT"},
             "node_modules/@silvia-odwyer/photon-node": {"version": "0.3.4", "license": "Apache-2.0"},
             "node_modules/quickjs-wasi": {"version": "3.6.2", "license": "MIT"},
@@ -286,11 +284,11 @@ class PinTests(unittest.TestCase):
     def test_the_checked_in_pin_is_usable(self):
         self.assertEqual(pi_engine.pin_problems(pi_engine.load_pin()), [])
 
-    def test_it_pins_node_24_lts_for_arm64_only_and_pi_1_0_0(self):
+    def test_it_pins_node_24_lts_for_arm64_only_and_pi_1_5_1(self):
         pin = pi_engine.load_pin()
         self.assertEqual(pin["node"]["version"].split(".")[0], "24")
         self.assertEqual(list(pin["node"]["archives"]), ["arm64"])
-        self.assertEqual((pin["pi"]["name"], pin["pi"]["version"]), ("@earendil-works/pi-coding-agent", "1.0.0"))
+        self.assertEqual((pin["pi"]["name"], pin["pi"]["version"]), ("@earendil-works/pi-coding-agent", "1.5.1"))
         self.assertTrue(pi_engine.REQUIRED_MODULES <= set(pin["modules"]))
         self.assertIn("@earendil-works/pi-ai/node_modules/openai", pin["modules"])
         self.assertNotIn("esbuild", pin["modules"])
@@ -536,7 +534,7 @@ class StageTests(unittest.TestCase):
             self.assertIn("Copyright (c) jiti", notices)
             self.assertIn("Apache License", notices)
             self.assertIn("Copyright (c) quickjs-wasi", notices)
-            self.assertIn("@earendil-works/chord 1.0.0  MIT", notices, "what the bundle compiles in is listed too")
+            self.assertIn("@earendil-works/pi-tui 1.0.0  MIT", notices, "what the bundle compiles in is listed too")
 
     def test_the_sandbox_lists_only_node_and_the_stamp_not_thousands_of_sdk_paths(self):
         fixture = Fixture()
@@ -794,8 +792,9 @@ class LayoutContractTests(unittest.TestCase):
         project = read("Shepherd.xcodeproj", "project.pbxproj")
         target = re.search(r"/\* Shepherd \*/ = \{\n\t\t\tisa = PBXNativeTarget;.*?buildPhases = \((.*?)\);", project, re.S)
         phases = re.findall(r"/\* (.*?) \*/", target.group(1))
-        self.assertEqual(phases[-1], "Embed pi engine")
+        # The engine embeds after Resources; the background host's LaunchAgent plist may follow it.
         self.assertLess(phases.index("Resources"), phases.index("Embed pi engine"))
+        self.assertEqual(phases[phases.index("Embed pi engine") + 1:], ["Background host LaunchAgent"][:len(phases) - phases.index("Embed pi engine") - 1])
         # A target's phases run in every configuration; only a deployment-postprocessing phase
         # would skip Debug.
         self.assertIn("runOnlyForDeploymentPostprocessing = 0;", self.phase())

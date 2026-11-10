@@ -143,6 +143,27 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarLists.done.isEmpty, "a previously seen remote turn stays seen")
     }
 
+    /// Leaving a finished thread tells its host which completion was seen (here the in-process server), so every other
+    /// device drops it from Done; a thread still being read is not marked.
+    @Test func leavingAFinishedThreadTellsTheHostItWasSeen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("workspace", path: app.dir.path)
+        let finished = try await app.liveAgent("finished", in: space)
+        let other = Fixture.agent("other", in: space, order: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [finished, other]))
+        _ = try await app.readyThread(finished.agent.id)
+        let publisher = try ExtensionClient(path: app.scratch.socketPath)
+        try publisher.send(.setAgentStatus(agentID: finished.agent.id, status: .done))
+        try await eventuallyOnMain("the completed turn") { vm.sidebarLists.done.map(\.id) == [.local(finished.agent.id)] }
+        let host = { app.server.state.agents.first { $0.id == finished.agent.id } }
+        vm.selectAgent(finished.agent.id)
+        #expect(host()?.completionSeen == false, "reading it marks nothing yet")
+        vm.selectAgent(other.agent.id)
+        try await eventuallyOnMain("the host to keep it seen") { host()?.completionSeen == true }
+        #expect(vm.sidebarLists.done.isEmpty)
+    }
+
     @Test func publishedChildrenKeepADoneParentWorkingUntilTheLastChildSettlesWithoutChangingItsTurnStatus() async throws {
         let app = try AppHarness()
         defer { app.stop() }

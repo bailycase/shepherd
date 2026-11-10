@@ -187,8 +187,7 @@ extension ShepherdViewModel {
     func branchPickerList(cwd: String, for agent: Agent? = nil) async throws -> BranchPickerList {
         let directory = (cwd as NSString).expandingTildeInPath
         let read = try await server.changes.branches(agentID: nil, cwd: directory)
-        let agents = state.agents + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents ?? [])
-        let threads = Dictionary(agents.compactMap { agent in agent.worktreePath.map { (Self.standard($0), agent.name) } },
+        let threads = Dictionary(state.agents.compactMap { agent in agent.worktreePath.map { (Self.standard($0), agent.name) } },
                                  uniquingKeysWith: { first, _ in first })
         // git names worktrees by their real path (/private/var, not /var).
         let main = await Task.detached { (try? GitWorktree.primaryCheckout(at: directory)).map { Self.standard(PiSessionFolder.realPath($0)) } }.value
@@ -201,23 +200,14 @@ extension ShepherdViewModel {
         return agent.status == .working ? "running" : nil
     }
 
-    /// A thread of This Mac's background host: its checkout is on this machine, so its branch card
-    /// reads and changes git here, and asks the host only to record a worktree's branch or base.
-    func thisMacAgent(_ id: AgentID) -> (agent: Agent, connection: RemoteHostStore.Connection, ref: RemoteAgentRef)? {
-        guard let connection = remoteHosts.connections.first(where: \.isThisMac),
-              let agent = connection.state.agents.first(where: { $0.id == id }) else { return nil }
-        return (agent, connection, RemoteAgentRef(hostID: connection.id, agentID: id))
-    }
-
-    /// The agent the card is for, wherever it runs, and the workspace it is listed in.
+    /// The agent the card is for, and the workspace it is listed in.
     func cardAgent(_ id: AgentID) -> (agent: Agent, state: ShepherdState)? {
-        if let agent = state.agents.first(where: { $0.id == id }) { return (agent, state) }
-        return thisMacAgent(id).map { ($0.agent, $0.connection.state) }
+        state.agents.first(where: { $0.id == id }).map { ($0, state) }
     }
 
     /// Record a worktree thread's branch or base where it runs: this app's server, or This Mac's host.
     func recordWorktree(_ id: AgentID, branch: String? = nil, base: String? = nil) async throws {
-        if let ref = localRef(id) ?? thisMacAgent(id)?.ref {
+        if let ref = localRef(id) {
             _ = try await remoteHosts.agentQuery(ref, query: .setWorktree(branch: branch, base: base))
         } else {
             try await server.setAgentWorktree(id, branch: branch, base: base)
@@ -249,7 +239,7 @@ extension ShepherdViewModel {
     func performBranchCard(_ action: BranchCardAction, on id: AgentID) {
         switch action {
         case .showChanges:
-            if let remote = thisMacAgent(id) { openRemoteReview(remote.ref, path: nil) } else { openReview(agentID: id, path: nil) }
+            openReview(agentID: id, path: nil)
         case .commit: branchSheet = .commit(id)
         case .copyBranch:
             guard let branch = branchCard(id)?.branch else { return }
@@ -258,9 +248,10 @@ extension ShepherdViewModel {
         case .showInFinder:
             guard let directory = checkoutDirectory(of: id) else { return }
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: (directory as NSString).expandingTildeInPath)])
-        case .openPull(let ref): openForgeItem(ref)
+        // The thread's own pull request opens beside it, in the side pane's Pull request tab.
+        case .openPull(let ref): showBranchPullRequest(ref, for: id)
         case .select(let other):
-            if let remote = thisMacAgent(other) { selectRemoteAgent(hostID: remote.ref.hostID, agentID: other) } else { selectAgent(other) }
+            selectAgent(other)
         case .pickBranch, .pickBase: break
         case .update: branchSheet = .update(id)
         case .newBranch: branchSheet = .newBranch(id)
@@ -274,11 +265,7 @@ extension ShepherdViewModel {
         case .moveToCheckout(let branch, let path):
             Task {
                 do {
-                    if let remote = thisMacAgent(id) {
-                        _ = try await remoteHosts.agentQuery(remote.ref, query: .moveToCheckout(path: path, branch: branch))
-                    } else {
-                        try await moveThreadToCheckout(id, path: path, branch: branch)
-                    }
+                    try await moveThreadToCheckout(id, path: path, branch: branch)
                 } catch {
                     actionError = ActionError(title: "Couldn’t move to \(branch)", message: ActionError.describe(error))
                 }

@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
@@ -184,13 +185,23 @@ extension ShepherdViewModel {
         // Hidden with the experiment; the missions and their receipts stay.
         guard settings.missionsEnabled else { return [] }
         let shown = shownDestination == .missions
-        let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? missions.selectedID : nil)
-        // Each connected host's missions (`missions.v1`), in configured order, after This Mac's.
-        return local + remoteHosts.allConnections.flatMap { connection in
+        let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? thisMacMissionsSelection : nil)
+        // Each connected host's missions (`missions.v1`), in configured order, after This Mac's (the background host's among them).
+        return local + remoteHosts.connections.flatMap { connection in
             SidebarMission.rows(connection.missions.records,
                                 selected: shown && missionsHost == connection.id ? remoteMissionDrivers[connection.id]?.selectedID : nil,
                                 host: (connection.id, connection.config.name))
         }
+    }
+
+    /// This Mac's missions behind the Missions page: the background host's, as its client (it runs
+    /// them), else this app's own.
+    var thisMacMissions: any MissionDriving { localHost.flatMap { missionDriver(for: $0.id) } ?? missions }
+
+    /// The mission This Mac's page shows, read without making a driver while a view draws.
+    private var thisMacMissionsSelection: MissionID? {
+        if let host = localHost { return remoteMissionDrivers[host.id]?.selectedID }
+        return missions.selectedID
     }
 
     /// A host's missions behind the Missions page, made on first use; nil for a host that is gone.
@@ -209,7 +220,7 @@ extension ShepherdViewModel {
             guard let driver = missionDriver(for: host) else { return }
             driver.selectedID = id
         } else {
-            missions.selectedID = id
+            thisMacMissions.selectedID = id
         }
         missionsHost = host
         openDestination(.missions)
@@ -218,9 +229,10 @@ extension ShepherdViewModel {
     /// The Missions section's "New mission": the Missions page's start page, on This Mac.
     func openNewMission() {
         guard settings.missionsEnabled else { return }
-        missions.selectedID = nil
+        let page = thisMacMissions
+        page.selectedID = nil
         missionsHost = nil
-        missionStartRequested = true
+        page.startRequested = true
         openDestination(.missions)
     }
 
@@ -268,7 +280,7 @@ extension ShepherdViewModel {
     func willOpenSidebarThread(_ row: SidebarRowID) {
         let previous = sidebarReadingThread ?? selectedSidebarRow
         if let previous, previous != row, let completion = sidebarReadingCompletion {
-            sidebarSeenCompletions[previous] = completion
+            markSidebarSeen(previous, completion)
         }
         sidebarReadingThread = row
         sidebarReadingCompletion = sidebarLists.all.first(where: { $0.id == row })?.completion
@@ -276,7 +288,27 @@ extension ShepherdViewModel {
 
     func markAllSidebarDoneSeen() {
         for row in sidebarLists.done {
-            if let completion = row.completion { sidebarSeenCompletions[row.id] = completion }
+            if let completion = row.completion { markSidebarSeen(row.id, completion) }
+        }
+    }
+
+    /// Seen here at once, and told to the thread's host when the completion is the host's own
+    /// (`Agent.completedAt`), so Done clears on every device. An older host refuses; this device
+    /// still remembers.
+    private func markSidebarSeen(_ row: SidebarRowID, _ completion: Int) {
+        sidebarSeenCompletions[row] = completion
+        let ref: RemoteAgentRef?, agent: Agent?
+        switch row {
+        case .local(let id): ref = localRef(id); agent = state.agents.first { $0.id == id }
+        case .remote(let remote):
+            ref = remote
+            agent = remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }
+        case .design, .remoteDesign: return
+        }
+        guard let agent, let stamp = agent.completedAt, Int(stamp) == completion, agent.completionSeen == false else { return }
+        Task {
+            if let ref { try? await remoteHosts.agentAction(ref, action: .markSeen(upTo: stamp)) }
+            else { try? await server.markCompletionSeen(agent.id, upTo: stamp) }
         }
     }
 }
