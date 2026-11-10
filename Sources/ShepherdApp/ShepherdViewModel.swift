@@ -291,6 +291,8 @@ final class ShepherdViewModel {
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
     var hostWorktreeInfo: RemoteWorktreeInfo?
+    /// What this app last told its background host of the paired Macs it reaches, on which connection.
+    @ObservationIgnored var sentProjectHosts: (ObjectIdentifier, [ProjectHostOption])?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// This Mac's worktree operations and commits from review, as a host; the headless host has

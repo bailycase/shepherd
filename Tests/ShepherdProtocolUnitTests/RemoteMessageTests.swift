@@ -393,13 +393,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 52
+    static let caseCount = 53
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -442,6 +442,19 @@ struct RemoteRequestTests {
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: nil, agentID: S.agent)),
         .focusThread(id: 7, agentID: S.agent),
         .focusThread(id: 7, agentID: nil),
+        .projectExecutors(id: 7, update: .hosts([
+            ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!,
+                                                 bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),
+                              name: "build-01", spaces: [Space(name: "acme-web", path: "/srv/acme-web")]),
+            ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!,
+                                                 bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B4")!), name: "old-mac"),
+        ])),
+        .projectExecutors(id: 8, update: .changed(host: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!,
+                                                                bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),
+                                                  key: ProjectExecutionKey(ownerID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!,
+                                                                           projectID: ProjectID(rawValue: "acme-release"),
+                                                                           operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!))),
+        .projectExecutors(id: 9, update: .changed(host: .local, key: nil)),
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: S.space, cwd: "/tmp/acme-web-worktrees/fix", model: "anthropic/claude-4", thinking: .high,
                                                       serviceTier: .fast, initialPrompt: "fix it", name: "Fix it (fork)", piSessionID: "sess-1",
                                                       agentID: S.agent, worktreeBranch: "agent/fix", worktreeBase: "main",
@@ -489,6 +502,10 @@ struct RemoteRequestTests {
         .appRelayAnswer(requestToken: 7, result: .done(text: "Review ready in the side pane's Changes tab.")),
         .appRelayAnswer(requestToken: 8, result: .failed(code: "no_such_agent", message: "unknown agent a")),
         .appRelayAnswer(requestToken: 9, result: .hostUpdate(status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .idle))),
+        .appRelayAnswer(requestToken: 10, result: .nativeThread(result: .failure(code: "starting", message: "The agent is starting."))),
+        .appRelayAnswer(requestToken: 11, result: .projectExecution(result: ProjectExecutionResult(receipt: ProjectExecutionReceipt(
+            key: ProjectExecutionKey(ownerID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!, projectID: ProjectID(rawValue: "acme-release"),
+                                     operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!), phase: .settled)))),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -751,6 +768,14 @@ struct RemoteReplyTests {
         .appRelay(token: 6, job: .review(agentID: AgentID(rawValue: "a"), cwd: "/tmp/acme-web", reference: "pr")),
         .appRelay(token: 7, job: .confirmSpaceDelete(spaceID: SpaceID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c34"))),
         .appRelay(token: 8, job: .hostUpdate(request: .install(offerID: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!, authorized: true))),
+        .appRelay(token: 9, job: .projectPlacement(
+            host: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!, bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),
+            request: .pause(key: ProjectExecutionKey(ownerID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!,
+                                                     projectID: ProjectID(rawValue: "acme-release"),
+                                                     operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!)))),
+        .appRelay(token: 10, job: .projectWorkerThread(
+            host: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!, bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),
+            agentID: AgentID(rawValue: "a"), request: .snapshot())),
         .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
         .settingsChanged(page: .instructions),
         .settingsChanged(page: .slashCommands),

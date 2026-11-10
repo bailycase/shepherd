@@ -674,6 +674,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Local clients only (`localCapability`): the thread this Mac's own app shows with Shepherd
     /// in front (nil: none), so the host's phone pushes for it stay quiet. Answered `ok`.
     case focusThread(id: Int, agentID: AgentID?)
+    /// Local clients only (`appRelayCapability`): the paired Macs this Mac's own app is connected
+    /// to, for the Projects its background host owns (`ProjectExecutorsUpdate`). Answered `ok`.
+    case projectExecutors(id: Int, update: ProjectExecutorsUpdate)
     /// Create an agent on the host: the host GUI runs its normal creation
     /// flow (spawn pi, seed the session file, bind the pane) and the new
     /// agent arrives at every client via the state push.
@@ -762,7 +765,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
-        case thread, step
+        case thread, step, update
     }
 
     private enum Kind: String, Codable {
@@ -770,7 +773,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, startThread, focusThread, projectExecutors, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -941,6 +944,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             )
         case .focusThread:
             self = .focusThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decodeIfPresent(AgentID.self, forKey: .agentID))
+        case .projectExecutors:
+            self = .projectExecutors(id: try c.decode(Int.self, forKey: .id), update: try c.decode(ProjectExecutorsUpdate.self, forKey: .update))
         case .startThread:
             self = .startThread(id: try c.decode(Int.self, forKey: .id), thread: try c.decode(RemoteThreadStart.self, forKey: .thread))
         case .spaceAction:
@@ -1182,6 +1187,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.focusThread, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encodeIfPresent(agentID, forKey: .agentID)
+        case .projectExecutors(let id, let update):
+            try c.encode(Kind.projectExecutors, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(update, forKey: .update)
         case .startThread(let id, let thread):
             try c.encode(Kind.startThread, forKey: .type)
             try c.encode(id, forKey: .id)

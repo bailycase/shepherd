@@ -8,15 +8,11 @@
   extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
   (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
-- **`SHEPHERD_BACKGROUND_HOST=1`** makes the app a client of the background host
-  (`Shepherd --host`) when its `<support>/host.sock` answers: the host owns the workspace and the
-  app takes its workspace as its own: its threads, designs, automations, Projects and missions are
-  This Mac's local ones, and This Mac is no host in the UI. With no answer the app owns the
-  workspace as before.
-  Shepherd Nightly needs no variable: it registers the host with launchd at launch
-  (`BackgroundService`) and is its client while Login Items allows it. Any other build, or any
-  launch with `SHEPHERD_SUPPORT_DIR` set, never registers; unset there, the app never looks for
-  the host.
+- No variable picks the host: every launch is a client of the host that owns
+  `<support>/server.lock` (launchd's background service), else of the app's own
+  `Shepherd --host --supervised` child, which `HostSupervisor` restarts on a crash and stops at
+  Quit. Only Shepherd Nightly registers the service (`BackgroundService`); any other build, or any
+  launch with `SHEPHERD_SUPPORT_DIR` set, never registers and always runs its own child.
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.

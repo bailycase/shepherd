@@ -22,6 +22,7 @@ extension SessionServer {
     }
 
     func validateProjectDestination(_ host: ProjectHostReference, spaceID: SpaceID) throws {
+        if host != .local, projectPlacementThroughApp, !appRelayConnected { throw LogicalProjectsError("app_closed", Self.appClosedForPlacement) }
         let spaces = host == .local ? store.state.spaces : projectExecutionSpaces[host] ?? []
         guard Project.validID(spaceID.rawValue), spaces.contains(where: { $0.id == spaceID && !$0.hidden }) else {
             throw LogicalProjectsError(host == .local ? "no_such_space" : "project_destination", "Space or exact host binding is unavailable, offline or does not support Project execution. No local fallback is allowed.")
