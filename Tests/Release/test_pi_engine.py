@@ -792,8 +792,9 @@ class LayoutContractTests(unittest.TestCase):
         project = read("Shepherd.xcodeproj", "project.pbxproj")
         target = re.search(r"/\* Shepherd \*/ = \{\n\t\t\tisa = PBXNativeTarget;.*?buildPhases = \((.*?)\);", project, re.S)
         phases = re.findall(r"/\* (.*?) \*/", target.group(1))
-        self.assertEqual(phases[-1], "Embed pi engine")
+        # The engine embeds after Resources; the background host's LaunchAgent plist may follow it.
         self.assertLess(phases.index("Resources"), phases.index("Embed pi engine"))
+        self.assertEqual(phases[phases.index("Embed pi engine") + 1:], ["Background host LaunchAgent"][:len(phases) - phases.index("Embed pi engine") - 1])
         # A target's phases run in every configuration; only a deployment-postprocessing phase
         # would skip Debug.
         self.assertIn("runOnlyForDeploymentPostprocessing = 0;", self.phase())
