@@ -164,6 +164,7 @@ struct ResponseTimingTests {
         await mark(t, .sent, seq: 1, at: 1_000)
         for record in [Self.replyStart] + Self.thinking + [Self.words, Self.replyEnd] { try await t.feed(record) }
         try await t.feed(#"{"type":"agent_end","messages":[]}"#)
+        try await t.historySettled()
         try await eventually("history projected again with the timing") {
             (try? await t.snapshot().messages.last?.timing?.sentAt) == 1_000
         }
@@ -193,6 +194,8 @@ struct ResponseTimingTests {
         try await eventually("history to replace the provisional reply") {
             try await t.snapshot().provisional.isEmpty
         }
+        // The reply was fed after the stub saved it: the fold's copy goes when the count check's read lands.
+        try await t.historySettled()
         let before = try await t.snapshot()
         if !alreadyLinked {
             await mark(t, .sent, seq: 1, at: 1_000)
@@ -234,6 +237,7 @@ struct ResponseTimingTests {
             let snapshot = try await t.snapshot()
             return !snapshot.running && snapshot.provisional.isEmpty
         }
+        try await t.historySettled()
         let old = try #require(try await t.snapshot().messages.last?.timing)
         #expect(old.sentAt == 1_000 && old.headersAt == 1_100)
 
@@ -259,6 +263,7 @@ struct ResponseTimingTests {
         try await eventually("the next end's history refresh to complete") {
             try await t.snapshot().provisional.isEmpty
         }
+        try await t.historySettled()
         #expect(try await t.snapshot().messages.last?.timing == timing, "a later refresh keeps the corrected old request")
 
         // Correlation storage stays bounded. Even after eviction, partial late marks cannot
