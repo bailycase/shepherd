@@ -48,9 +48,13 @@ public enum RemoteProtocol {
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
     /// And it browses a thread's folder (`filesCapability`), which a host offers only to a client that lists it.
     /// And it draws a background host's designs off screen when the host asks
-    /// (`designRelayCapability`), which a host asks only of a local client that lists it.
-    public static let designRelayCapability = "designRelay.v1"
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability]
+    /// (`designRelayCapability`), which a host asks only of a local client that lists it. v2: the
+    /// job travels as a file, since a design's files outgrow a frame.
+    public static let designRelayCapability = "designRelay.v2"
+    /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
+    /// which a host asks only of a local client that lists it.
+    public static let appRelayCapability = "appRelay.v1"
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -638,6 +642,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// which keeps serving and exits once no agent is busy, so launchd starts the new build.
     /// Answered `ok`.
     case drain(id: Int)
+    /// Local clients only: this Mac's app asks its background host about an update it installs
+    /// (`HostUpdateGateStep`). Answered `ok` or an error carrying the reason.
+    case hostUpdateGate(id: Int, step: HostUpdateGateStep)
     /// Create a space from a directory that exists on the host.
     case addSpace(id: Int, path: String)
     /// Local clients only (`localCapability`): this Mac's own app changes one of its background
@@ -724,6 +731,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// The app's answer to a `RemoteReply.designRelay` carrying `requestToken`. Nothing answers
     /// it; one from anyone but the client the job went to, or for a job that is over, is ignored.
     case designRelayAnswer(requestToken: Int, result: DesignRelayResult)
+    /// The app's answer to a `RemoteReply.appRelay` carrying `requestToken`. Nothing answers it;
+    /// one from anyone but the client the job went to, or for a job that is over, is ignored.
+    case appRelayAnswer(requestToken: Int, result: AppRelayResult)
 
     private enum CodingKeys: String, CodingKey {
         case registration, registrationID, agentIDs, session, revision
@@ -734,7 +744,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
-        case thread
+        case thread, step
     }
 
     private enum Kind: String, Codable {
@@ -742,7 +752,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -750,7 +760,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case design, mission
         case tunnel
         case browserClaim, browserRelease, browserAnswer
-        case designRelayAnswer
+        case designRelayAnswer, appRelayAnswer
     }
 
     public init(from decoder: Decoder) throws {
@@ -776,6 +786,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .browserAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), outcome: try c.decode(BrowserOutcome.self, forKey: .outcome))
         case .designRelayAnswer:
             self = .designRelayAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), result: try c.decode(DesignRelayResult.self, forKey: .result))
+        case .appRelayAnswer:
+            self = .appRelayAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), result: try c.decode(AppRelayResult.self, forKey: .result))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
         case .mission:
@@ -902,6 +914,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .listModels(id: try c.decode(Int.self, forKey: .id))
         case .drain:
             self = .drain(id: try c.decode(Int.self, forKey: .id))
+        case .hostUpdateGate:
+            self = .hostUpdateGate(id: try c.decode(Int.self, forKey: .id), step: try c.decode(HostUpdateGateStep.self, forKey: .step))
         case .addSpace:
             self = .addSpace(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1078,6 +1092,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.designRelayAnswer, forKey: .type)
             try c.encode(requestToken, forKey: .requestToken)
             try c.encode(result, forKey: .result)
+        case .appRelayAnswer(let requestToken, let result):
+            try c.encode(Kind.appRelayAnswer, forKey: .type)
+            try c.encode(requestToken, forKey: .requestToken)
+            try c.encode(result, forKey: .result)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1134,6 +1152,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .drain(let id):
             try c.encode(Kind.drain, forKey: .type)
             try c.encode(id, forKey: .id)
+        case .hostUpdateGate(let id, let step):
+            try c.encode(Kind.hostUpdateGate, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(step, forKey: .step)
         case .addSpace(let id, let path):
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1166,6 +1188,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encodeIfPresent(serviceTier, forKey: .serviceTier)
         }
     }
+}
+
+/// The Settings pages of this Mac's app that read the background host's own stores
+/// (`RemoteReply.settingsChanged`).
+public enum RemoteSettingsPage: String, Codable, Hashable, Sendable, CaseIterable {
+    case instructions, suggestions, skills, hooks, slashCommands
 }
 
 /// Host → client. Replies correlate by request `id`; `stateChanged` is an
@@ -1260,14 +1288,31 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A viewer's part in an agent's browser (`BrowserDrivePush`), pushed only to a client that lists
     /// `RemoteProtocol.browserDriveCapability`.
     case browserDrive(BrowserDrivePush)
-    /// A design to draw off screen for the background host (`DesignRelayJob`), pushed only to a
-    /// local client that lists `RemoteProtocol.designRelayCapability`; answered
-    /// `RemoteRequest.designRelayAnswer` with the same token.
-    case designRelay(token: Int, job: DesignRelayJob)
+    /// A design to draw off screen for the background host, pushed only to a local client that
+    /// lists `RemoteProtocol.designRelayCapability`; answered `RemoteRequest.designRelayAnswer`
+    /// with the same token. `jobFile` is the path of a `DesignRelayJob`'s JSON on this Mac, which
+    /// the app reads (a design's files outgrow `NDJSON.maxPayloadBytes`); the host removes it.
+    case designRelay(token: Int, jobFile: String)
     /// An agent's notify tool (or its goal) on the background host, pushed only to this Mac's
     /// app that shows its threads as its own (`RemoteProtocol.localThreadsCapability`), which
     /// posts the banner; the host doesn't.
     case agentNotify(agentID: AgentID, title: String, body: String)
+    /// What a background host's agent asks of Shepherd's window (`AppRelayJob`), pushed only to
+    /// a local client that lists `RemoteProtocol.appRelayCapability`; answered
+    /// `RemoteRequest.appRelayAnswer` with the same token.
+    case appRelay(token: Int, job: AppRelayJob)
+    /// What a Settings page shows changed on the background host (a client's change, an agent's
+    /// suggestion, a newly listed slash command), pushed only to this Mac's app that shows the
+    /// host's threads as its own (`RemoteProtocol.localThreadsCapability`), whose pages read it
+    /// again. A hint; it carries nothing.
+    case settingsChanged(page: RemoteSettingsPage)
+    /// A tool call one of the background host's threads finished, pushed only to this Mac's app
+    /// that shows its threads as its own (`RemoteProtocol.localThreadsCapability`): its sidebar
+    /// activity follows it.
+    case toolFinished(agentID: AgentID, tool: String)
+    /// A line the background host says in one of its threads (its account rotation), pushed only
+    /// to this Mac's app that shows its threads as its own; never persisted.
+    case threadNotice(agentID: AgentID, message: String)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1278,8 +1323,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case snapshot, settings, status
         case designID, revision, commentsRevision
         case url, push, missionID, live
-        case token, job
+        case token, jobFile, job
         case title, body
+        case page, tool
     }
 
     private enum Kind: String, Codable {
@@ -1293,7 +1339,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice
     }
 
     public init(from decoder: Decoder) throws {
@@ -1312,10 +1358,18 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .browserDrive:
             self = .browserDrive(try c.decode(BrowserDrivePush.self, forKey: .push))
         case .designRelay:
-            self = .designRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(DesignRelayJob.self, forKey: .job))
+            self = .designRelay(token: try c.decode(Int.self, forKey: .token), jobFile: try c.decode(String.self, forKey: .jobFile))
+        case .appRelay:
+            self = .appRelay(token: try c.decode(Int.self, forKey: .token), job: try c.decode(AppRelayJob.self, forKey: .job))
         case .agentNotify:
             self = .agentNotify(agentID: try c.decode(AgentID.self, forKey: .agentID), title: try c.decode(String.self, forKey: .title),
                                 body: try c.decode(String.self, forKey: .body))
+        case .settingsChanged:
+            self = .settingsChanged(page: try c.decode(RemoteSettingsPage.self, forKey: .page))
+        case .toolFinished:
+            self = .toolFinished(agentID: try c.decode(AgentID.self, forKey: .agentID), tool: try c.decode(String.self, forKey: .tool))
+        case .threadNotice:
+            self = .threadNotice(agentID: try c.decode(AgentID.self, forKey: .agentID), message: try c.decode(String.self, forKey: .message))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1591,8 +1645,12 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .browserDrive(let push):
             try c.encode(Kind.browserDrive, forKey: .type)
             try c.encode(push, forKey: .push)
-        case .designRelay(let token, let job):
+        case .designRelay(let token, let jobFile):
             try c.encode(Kind.designRelay, forKey: .type)
+            try c.encode(token, forKey: .token)
+            try c.encode(jobFile, forKey: .jobFile)
+        case .appRelay(let token, let job):
+            try c.encode(Kind.appRelay, forKey: .type)
             try c.encode(token, forKey: .token)
             try c.encode(job, forKey: .job)
         case .agentNotify(let agentID, let title, let body):
@@ -1600,6 +1658,17 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(title, forKey: .title)
             try c.encode(body, forKey: .body)
+        case .settingsChanged(let page):
+            try c.encode(Kind.settingsChanged, forKey: .type)
+            try c.encode(page, forKey: .page)
+        case .toolFinished(let agentID, let tool):
+            try c.encode(Kind.toolFinished, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(tool, forKey: .tool)
+        case .threadNotice(let agentID, let message):
+            try c.encode(Kind.threadNotice, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(message, forKey: .message)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

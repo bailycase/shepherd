@@ -73,6 +73,7 @@ struct ExtensionMessageTests {
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green", delivery: .report),
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),
+        .spawnAgent(id: 19, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", model: "claude-fable-5-1", thinking: "low"),
         .moveAgent(id: 118, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), spaceID: SpaceID(rawValue: "s2")),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),

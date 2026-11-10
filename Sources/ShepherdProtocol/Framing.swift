@@ -5,6 +5,9 @@ import Foundation
 public enum NDJSON {
     /// Maximum encoded UTF-8 payload size, excluding the terminating LF.
     public static let maxPayloadBytes = 1_048_576
+    /// The cap from the host on this Mac to its app over the local socket (`host.sock`): one
+    /// user's machine, no network, so a large workspace's state is one frame, never a dropped link.
+    public static let localMaxPayloadBytes = 16 * 1_048_576
 
     public static func encode<M: Encodable>(_ message: M) throws -> Data {
         let encoder = JSONEncoder()
@@ -33,11 +36,14 @@ public enum LineBufferError: Error, Equatable, CustomStringConvertible, Sendable
 /// Accumulates a byte stream and yields complete lines as they arrive.
 public struct LineBuffer: Sendable {
     private var buffer = Data()
+    public let maxPayloadBytes: Int
 
-    public init() {}
+    public init(maxPayloadBytes: Int = NDJSON.maxPayloadBytes) {
+        self.maxPayloadBytes = maxPayloadBytes
+    }
 
     /// Appends bytes and returns complete payloads. A payload is limited by
-    /// `NDJSON.maxPayloadBytes`; an overflow clears the partial frame before
+    /// `maxPayloadBytes`; an overflow clears the partial frame before
     /// throwing so callers cannot accidentally reuse unsafe buffered data.
     public mutating func append(_ chunk: Data) throws -> [Data] {
         guard !chunk.isEmpty else { return [] }
@@ -50,7 +56,7 @@ public struct LineBuffer: Sendable {
         let base = buffer.startIndex
         while let lf = Self.newline(in: buffer, from: searchFrom) {
             let payloadBytes = lf - consumed
-            guard payloadBytes <= NDJSON.maxPayloadBytes else {
+            guard payloadBytes <= maxPayloadBytes else {
                 buffer.removeAll(keepingCapacity: false)
                 throw LineBufferError.payloadTooLarge(bytes: payloadBytes, terminated: true)
             }
@@ -59,7 +65,7 @@ public struct LineBuffer: Sendable {
             searchFrom = consumed
         }
         if consumed > 0 { buffer.removeSubrange(base..<(base + consumed)) }
-        guard buffer.count <= NDJSON.maxPayloadBytes else {
+        guard buffer.count <= maxPayloadBytes else {
             let payloadBytes = buffer.count
             buffer.removeAll(keepingCapacity: false)
             throw LineBufferError.payloadTooLarge(bytes: payloadBytes, terminated: false)

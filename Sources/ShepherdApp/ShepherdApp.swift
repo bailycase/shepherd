@@ -90,13 +90,13 @@ public struct ShepherdMacApp: App {
                 if BackgroundHostClient.owner == .host {
                     let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
                                                restoresAgentsAtLaunch: false, browserData: .persistent)
-                    if ShepherdViewModel.routesThisMacLocally { vm.adoptLocalHost() }
-                    vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac,
-                                                socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
+                    vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                     vm.backgroundService = service
                     vm.backgroundServiceStatus = status
                     let socket = BackgroundHostClient.socketPath()
                     vm.remoteHosts.onLocalHostLost = { BackgroundHostClient.hostLost(service: service, socket: socket) }
+                    // A paired device's Update this Mac: the host relays it here, where Sparkle runs.
+                    AppUpdater.shared.connectRemoteUpdates(gate: .host { [weak vm] in (try? vm?.remoteHosts.thisMacHost()) ?? nil })
                     return vm
                 }
                 AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
@@ -266,11 +266,13 @@ enum WorkspaceInUseAlert {
 
 extension ShepherdHost {
     /// What the app's view model applies to its server from Settings, applied to the host's: at
-    /// start and on each change a client makes (`HostSettingsMapping`). Serve this Mac opens the
+    /// start, on each change a client makes (`HostSettingsMapping`), and on each the app's own
+    /// Settings pages write to the shared preferences (`followOtherProcesses`). Serve this Mac opens the
     /// TCP listener as the app would; a change to it takes effect when the host next starts. The
     /// listener's port, when it opened.
     @discardableResult
     @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer) -> UInt16? {
+        settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
         server.setDefaultQueueMode(settings.queueDelivery)
@@ -333,8 +335,10 @@ public enum ShepherdHost {
             serveSettings(settings, on: server)
             // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
             let subagents = SubagentDefinitionsModel(pi: server.pi)
-            HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
-                       remoteSignIns: RemoteSignIns()).serve(on: server)
+            let stores = HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
+                                    remoteSignIns: RemoteSignIns())
+            stores.serve(on: server)
+            stores.serveTurnErrors(on: server)
             server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                       deleteAgent: { id, _ in try await server.deleteAgent(id) }))
         }, threads: { server in

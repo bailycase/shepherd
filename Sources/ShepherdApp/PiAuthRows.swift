@@ -137,6 +137,11 @@ struct PiSignInPage: Equatable {
 /// What pi's words say about sign-ins: the provider a refresh failed for, and the provider a pi
 /// that can't start needs.
 enum PiAuthText {
+    /// What the thread says when a limit rotated `provider`'s account.
+    static func switched(_ provider: String, _ switched: (from: String, to: String)) -> String {
+        "Switched \(PiSignInCatalog.name(provider)) to \(switched.to): \(switched.from) hit its limit."
+    }
+
     /// The model a start refused as unknown (`Error: Model "cpa/gpt-6-astra" not found. Use --list-models`).
     static func modelNotFound(in lines: [String]) -> String? {
         for line in lines {

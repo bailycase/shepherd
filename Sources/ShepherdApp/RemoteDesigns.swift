@@ -22,7 +22,7 @@ extension ShepherdViewModel {
 
     /// The design a remote agent draws, while its host serves designs.
     func remoteDesign(drawnBy ref: RemoteAgentRef) -> (connection: RemoteHostStore.Connection, design: Design)? {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }), connection.supportsDesigns,
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }), connection.supportsDesigns,
               let agent = connection.state.agents.first(where: { $0.id == ref.agentID }), let id = agent.designID,
               let design = connection.state.designs.first(where: { $0.id == id }), !design.buildsSystem else { return nil }
         return (connection, design)
@@ -31,7 +31,7 @@ extension ShepherdViewModel {
     /// A host's design renderers, sharing this Mac's rasterizer.
     func remoteDesignRendering(_ hostID: UUID) -> DesignRendering? {
         if let rendering = remoteDesignRenderings[hostID] { return rendering }
-        guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }) else { return nil }
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == hostID }) else { return nil }
         let library = connection.designs
         let rendering = DesignRendering(remote: { [weak library] id in
             MainActor.assumeIsolated { library?.source(id) }
@@ -46,7 +46,7 @@ extension ShepherdViewModel {
     /// A design whose agent is gone there gets a fresh one from its host (`design.agent.v1`); an
     /// older host says so.
     func openRemoteDesign(_ ref: RemoteDesignRef) {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
               let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
         let agent = connection.state.agents.first { $0.id == design.agentID } ?? connection.state.agents.first { $0.designID == ref.designID }
         if let agent {
@@ -76,13 +76,33 @@ extension ShepherdViewModel {
     /// host by hash, its writes and comments sent to the host.
     func remoteDesignScreen(_ ref: RemoteDesignRef) -> DesignScreenModel? {
         if let screen = remoteDesignScreens[ref] { return screen }
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
               let rendering = remoteDesignRendering(ref.hostID) else { return nil }
         let library = connection.designs
         let source = library.source(ref.designID)
         let id = ref.designID
         let snapshot: DesignScreenModel.Snapshot = { _ in try await source.sync().snapshot }
-        let tweak = DesignTweakIO(
+        let tweak = Self.remoteDesignTweak(library, id)
+        let agentRef = connection.state.designs.first { $0.id == id }?.agentID.map { RemoteAgentRef(hostID: ref.hostID, agentID: $0) }
+        let screen = DesignScreenModel(designID: id, host: rendering.host(for: id), snapshot: snapshot,
+                                       source: { _, path in try await source.source(path) },
+                                       comments: remoteDesignCommentActions(library), tweak: tweak,
+                                       actions: remoteDesignCanvasActions(library, agent: agentRef))
+        if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
+            screen.tweak?.systemName = system
+        }
+        // Implement and Copy reference hand its pieces to the host's own threads, where it takes them.
+        if connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) {
+            screen.referenceActions = remoteDesignReferenceCanvasActions(ref.hostID)
+        }
+        remoteDesignScreens[ref] = screen
+        return screen
+    }
+
+    /// A design's Tweak tab through the host.
+    static func remoteDesignTweak(_ library: RemoteDesignLibrary, _ id: DesignID) -> DesignTweakIO {
+        let source = library.source(id)
+        return DesignTweakIO(
             snapshot: { try await source.sync().snapshot },
             board: { path in
                 let text = try await source.source(path)
@@ -111,25 +131,12 @@ extension ShepherdViewModel {
             projectTokens: { await source.projectTokens() },
             // A stale revision reads as the local store's (`remoteDesign`).
             isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
-        let agentRef = connection.state.designs.first { $0.id == id }?.agentID.map { RemoteAgentRef(hostID: ref.hostID, agentID: $0) }
-        let screen = DesignScreenModel(designID: id, host: rendering.host(for: id), snapshot: snapshot,
-                                       source: { _, path in try await source.source(path) },
-                                       comments: remoteDesignCommentActions(library), tweak: tweak,
-                                       actions: remoteDesignCanvasActions(library, agent: agentRef))
-        if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
-            screen.tweak?.systemName = system
-        }
-        // Implement and Copy reference hand its pieces to the host's own threads, where it takes them.
-        if connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) {
-            screen.referenceActions = remoteDesignReferenceCanvasActions(ref.hostID)
-        }
-        remoteDesignScreens[ref] = screen
-        return screen
     }
 
     /// Duplicate and moves through the host, and messages to its design agent over the native
     /// thread, the view record riding the send where the host takes one.
-    private func remoteDesignCanvasActions(_ library: RemoteDesignLibrary, agent: RemoteAgentRef?) -> DesignCanvasActions {
+    func remoteDesignCanvasActions(_ library: RemoteDesignLibrary, agent: RemoteAgentRef?,
+                                   ask local: ((AgentID, String, DesignViewRecord) async -> Bool)? = nil) -> DesignCanvasActions {
         DesignCanvasActions(
             snapshot: { id in try await library.source(id).sync().snapshot },
             duplicate: { id, path, base in
@@ -141,7 +148,8 @@ extension ShepherdViewModel {
             },
             updateIndex: { id, patch, base in try await Self.remoteIndexUpdate(library, id, patch, base) },
             ask: { [weak self] _, text, record in
-                guard let self, let agent, self.remoteHosts.connections.first(where: { $0.id == agent.hostID })?
+                if let local, let agent { return await local(agent.agentID, text, record) }
+                guard let self, let agent, self.remoteHosts.allConnections.first(where: { $0.id == agent.hostID })?
                     .state.agents.contains(where: { $0.id == agent.agentID }) == true else { return false }
                 await self.remoteThreadStores.store(for: agent).send(text: text, designContext: record)
                 return true
@@ -151,7 +159,7 @@ extension ShepherdViewModel {
 
     /// Comments through the host: pinned, answered and resolved there, handed to its design agent
     /// fenced as data. A change based on comments that moved on is read again and goes once more.
-    private func remoteDesignCommentActions(_ library: RemoteDesignLibrary) -> DesignCommentActions {
+    func remoteDesignCommentActions(_ library: RemoteDesignLibrary) -> DesignCommentActions {
         func list(_ id: DesignID) async throws -> DesignComments {
             guard case .comments(let comments) = try await Self.remoteDesign(library, .comments(designID: id)) else { throw RemoteDesignReply.unexpected }
             return comments
@@ -201,13 +209,15 @@ extension ShepherdViewModel {
     func remoteDesignVisibility(_ ref: RemoteDesignRef, visible: Bool) {
         remoteDesignScreen(ref)?.setActive(visible)
         let changed = visible ? visibleRemoteDesigns.insert(ref).inserted : visibleRemoteDesigns.remove(ref) != nil
-        guard changed, let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }) else { return }
+        guard changed, let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }) else { return }
         connection.designs.watch(Set(visibleRemoteDesigns.filter { $0.hostID == ref.hostID }.map(\.designID)))
     }
 
     /// A host pushed a change to a design on screen: its canvas pulls what changed.
     func remoteDesignChanged(_ ref: RemoteDesignRef, revision: UInt64?, comments: UInt64?) {
-        guard let screen = remoteDesignScreens[ref] else { return }
+        // The background host's designs are this app's own (`localHostDesignScreen`).
+        let own = ref.hostID == localHost?.id && Self.routesThisMacLocally
+        guard let screen = own ? designScreens[ref.designID] : remoteDesignScreens[ref] else { return }
         Task {
             if revision == nil, comments != nil { await screen.refreshComments() } else { await screen.refresh() }
         }
@@ -215,14 +225,14 @@ extension ShepherdViewModel {
 
     /// Designs gone from their hosts (or hosts removed) give up their canvases and renderers.
     func pruneRemoteDesigns() {
-        let live = Set(remoteHosts.connections.flatMap { connection in
+        let live = Set(remoteHosts.allConnections.flatMap { connection in
             connection.state.designs.map { RemoteDesignRef(hostID: connection.id, designID: $0.id) }
         })
         for ref in Set(remoteDesignScreens.keys).subtracting(live) {
             remoteDesignScreens.removeValue(forKey: ref)?.setActive(false)
             visibleRemoteDesigns.remove(ref)
         }
-        let hosts = Set(remoteHosts.connections.map(\.id))
+        let hosts = Set(remoteHosts.allConnections.map(\.id))
         for host in Set(remoteDesignRenderings.keys) {
             guard hosts.contains(host) else {
                 remoteDesignRenderings.removeValue(forKey: host)?.prune(keeping: [])
@@ -236,7 +246,7 @@ extension ShepherdViewModel {
 
     /// Changes whenever a host's designs may have: the page lists them again then.
     var remoteDesignsSignature: [String] {
-        remoteHosts.connections.filter(\.supportsDesigns).map { connection in
+        remoteHosts.allConnections.filter(\.supportsDesigns).map { connection in
             connection.id.uuidString + ":" + connection.state.designs.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)" }
                 .joined(separator: ",")
         }
@@ -244,7 +254,7 @@ extension ShepherdViewModel {
 
     /// Lists each host's designs again and reads their first boards for the cards.
     func loadRemoteDesigns() async {
-        for connection in remoteHosts.connections where connection.supportsDesigns {
+        for connection in remoteHosts.allConnections where connection.supportsDesigns {
             await connection.designs.refresh()
             remoteReferencesDesignsChanged(connection.id)
             guard let listing = connection.designs.listing, let rendering = remoteDesignRendering(connection.id) else { continue }
@@ -263,8 +273,10 @@ extension ShepherdViewModel {
     /// Each host that serves designs, as the Designs page lists it under its name.
     var remoteDesignSections: [DesignsPageModel.HostSection] {
         let now = Date()
-        return remoteHosts.connections.filter(\.supportsDesigns).compactMap { connection in
-            guard let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
+        return remoteHosts.allConnections.filter(\.supportsDesigns).compactMap { connection in
+            // The background host's designs and systems are the page's own (slice 2).
+            guard !(connection.id == localHost?.id && Self.routesThisMacLocally),
+                  let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
             let thumbnails = remoteDesignRenderings[connection.id]?.thumbnails
             let query = designsPageFilter.trimmingCharacters(in: .whitespacesAndNewlines)
             let cards = listing.designs.compactMap { summary -> DesignsPageModel.Card? in
@@ -333,7 +345,7 @@ struct RemoteDesignLayoutView: View {
         HStack(spacing: 0) {
             if let screen = vm.remoteDesignScreen(ref) {
                 DesignCanvasPane(screen: screen, vm: vm,
-                                 designName: vm.remoteHosts.connections.first { $0.id == ref.hostID }?.state.designs
+                                 designName: vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.designs
                                      .first { $0.id == ref.designID }?.name ?? "")
                 RemoteDesignChatPane(vm: vm, screen: screen, agent: agent, agentName: agentName, threadPaneID: threadPaneID)
                     .frame(width: AppLayout.designChatWidth)
@@ -371,7 +383,7 @@ struct RemoteDesignChatPane: View {
                 RemoteAgentThreadPane(vm: vm, ref: agent, agentName: agentName,
                                       isFocused: chat && vm.remoteFocusedPaneID == threadPaneID, designChat: true,
                                       inspectingRunID: vm.subagentInspector.remoteRuns[agent],
-                                      supportsChanges: vm.remoteHosts.connections.first { $0.id == agent.hostID }?.supportsChanges == true)
+                                      supportsChanges: vm.remoteHosts.allConnections.first { $0.id == agent.hostID }?.supportsChanges == true)
                     .environment(\.designCommentCards, screen.commentCards)
                     .shComposerSize(.compact)
                     .opacity(chat ? 1 : 0)

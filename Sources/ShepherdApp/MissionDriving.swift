@@ -105,7 +105,7 @@ final class RemoteMissionDriver: MissionDriving {
         self.vm = vm
     }
 
-    private var connection: RemoteHostStore.Connection? { vm?.remoteHosts.connections.first { $0.id == hostID } }
+    private var connection: RemoteHostStore.Connection? { vm?.remoteHosts.allConnections.first { $0.id == hostID } }
     var records: [Mission] { missions.records }
     var liveOutput: [MissionID: String] { missions.live.mapValues(\.output) }
     var attemptOutput: [UUID: String] { missions.live.values.reduce(into: [:]) { $0.merge($1.attempts) { first, _ in first } } }

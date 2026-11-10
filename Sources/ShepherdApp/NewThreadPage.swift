@@ -39,11 +39,12 @@ struct NewThreadPage: View {
     /// What a click outside closes: a chip's menu, the slash menu, or the @ picker.
     private enum OpenMenu: Equatable { case none, chip, slash, mention }
 
-    /// `settingsOpen` starts with the model-settings popover open, for the preview renders.
-    init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false) {
+    /// `settingsOpen` and `placeOpen` start with the model settings or the place menu open, for the
+    /// preview renders.
+    init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false, placeOpen: Bool = false) {
         self.vm = vm
         self.chrome = chrome
-        _menu = State(initialValue: settingsOpen ? .settings : nil)
+        _menu = State(initialValue: settingsOpen ? .settings : placeOpen ? .place : nil)
     }
 
     private var draft: NewThreadState { vm.newThread }

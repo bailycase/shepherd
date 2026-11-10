@@ -106,6 +106,7 @@ final class InstructionsModel {
         self.request = request ?? { machine, request in
             switch machine {
             case .local:
+                if let host = try await remoteHosts.thisMacHost() { return try await host.instructions(request) }
                 return try await Task.detached(priority: .userInitiated) {
                     switch request {
                     case .fetch: return store.snapshot()
@@ -166,9 +167,14 @@ final class InstructionsModel {
         if sameEverywhere { Task { await pushToAll() } }
     }
 
+    /// This Mac's files changed where they are kept (the background host's, as its client).
+    func localFilesChanged() async {
+        if let snapshot = try? await request(.local, .fetch) { localChanged(snapshot) }
+    }
+
     /// What a host's files are, as far as the page knows now.
     func files(of hostID: UUID) -> InstructionsHostFiles {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected else { return .offline }
         guard connection.supportsInstructions else { return .unsupported }
         return remote[hostID] ?? .checking
@@ -227,7 +233,7 @@ final class InstructionsModel {
     func name(of machine: Machine) -> String {
         switch machine {
         case .local: "This Mac"
-        case .remote(let hostID): remoteHosts.connections.first { $0.id == hostID }?.config.name ?? "host"
+        case .remote(let hostID): remoteHosts.allConnections.first { $0.id == hostID }?.config.name ?? "host"
         }
     }
 
@@ -298,7 +304,7 @@ final class InstructionsModel {
             return InstructionsPresentation.hostRow(
                 files(of: hostID), lastKnown: remote[hostID]?.snapshot, local: local, file: file,
                 keptDifferent: isKeptDifferent(hostID, file: file),
-                lastConnected: remoteHosts.connections.first { $0.id == hostID }?.lastSeen, now: now
+                lastConnected: remoteHosts.allConnections.first { $0.id == hostID }?.lastSeen, now: now
             )
         }
     }
@@ -479,7 +485,7 @@ final class InstructionsModel {
     }
 
     private func fetch(_ hostID: UUID) async {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected, connection.supportsInstructions else { return }
         if remote[hostID] == nil { remote[hostID] = .checking }
         do {

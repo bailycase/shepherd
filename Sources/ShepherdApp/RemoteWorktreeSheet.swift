@@ -16,7 +16,7 @@ struct RemoteWorktreeSheet: View {
 
     init(vm: ShepherdViewModel, target: RemoteAgentRef, staged: RemoteWorktreeInfo? = nil) {
         self.vm = vm; self.target = target; self.staged = staged
-        let connection = vm.remoteHosts.connections.first { $0.id == target.hostID }
+        let connection = vm.remoteHosts.allConnections.first { $0.id == target.hostID }
         _endpointID = State(initialValue: vm.remoteWorktreeOperationEndpoints[target] ?? connection?.endpointID)
         _transportID = State(initialValue: connection?.transportID)
         _remember = State(initialValue: vm.settings.worktreeDeleteAction != .ask)
@@ -38,7 +38,7 @@ struct RemoteWorktreeSheet: View {
     @State private var remember: Bool
 
     private var hostName: String {
-        vm.remoteHosts.connections.first { $0.id == target.hostID }?.config.name ?? "removed"
+        vm.remoteHosts.allConnections.first { $0.id == target.hostID }?.config.name ?? "removed"
     }
 
     private var operationPending: Bool { vm.remoteWorktreeOperationIDs[target] != nil }

@@ -763,9 +763,12 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     parameters: Type.Object({
       cwd: Type.String({ description: "Absolute working directory for the new thread" }),
       prompt: Type.String({ description: "Opening prompt: the task and the context it needs. Don't tell it to message you back unless the user asked for that." }),
+      model: Type.Optional(Type.String({ description: "Pin the new thread's model (a pi model id such as claude-fable-5-1); omit for Shepherd's default" })),
+      thinking: Type.Optional(Type.String({ description: "Pin its reasoning level: off, minimal, low, medium, high, xhigh or max; omit for the default" })),
     }),
     async execute(_toolCallId, params, signal) {
-      const reply = await request({ type: "spawnAgent", cwd: params.cwd, prompt: params.prompt },
+      const reply = await request({ type: "spawnAgent", cwd: params.cwd, prompt: params.prompt,
+        ...(params.model ? { model: params.model } : {}), ...(params.thinking ? { thinking: params.thinking } : {}) },
         signal, PEER_TIMEOUT_MS);
       const spawned = reply.agents?.[0];
       if (!spawned) return text("spawned agent thread");

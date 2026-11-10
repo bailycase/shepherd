@@ -179,8 +179,7 @@ extension PreviewTests {
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let vm = workspace.vm
-        vm.adoptLocalHost()
-        vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) { vm.state.agents == host.server.state.agents }
         vm.selectAgent(records[1].0.id)
         try await Preview.render("this-mac-client", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
@@ -196,7 +195,7 @@ extension PreviewTests {
 /// as the app's own: the New thread page and Delete worktree agent, from the same fixture.
 extension PreviewTests {
     /// A host serving `state` on its local socket, and `workspace`'s app taking it as its own.
-    private func adoptHost(_ state: ShepherdState, into workspace: PreviewWorkspace) async throws -> ScratchServer {
+    func adoptHost(_ state: ShepherdState, into workspace: PreviewWorkspace) async throws -> ScratchServer {
         let host = try ScratchServer(dir: try makeScratchDirectory("host"))
         host.server.serveThreads(ThreadHosting(defaults: {
             ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
@@ -210,13 +209,12 @@ extension PreviewTests {
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let vm = workspace.vm
-        vm.adoptLocalHost()
-        vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        vm.connectLocalHost(socket: socket, token: token)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) { vm.state.agents == host.server.state.agents }
         return host
     }
 
-    private func expectSameRenders(_ a: String, _ b: String) throws {
+    func expectSameRenders(_ a: String, _ b: String) throws {
         let directory = try #require(Preview.directory)
         for mode in ["light", "dark"] {
             #expect(try Data(contentsOf: directory.appendingPathComponent("\(a)-\(mode).png"))
@@ -248,6 +246,12 @@ extension PreviewTests {
             vm.openNewThread(in: space.id)
             try await eventuallyOnMain("the New thread page's defaults") { !vm.newThread.loadingDefaults }
             try await Preview.render("this-mac-new-thread-\(mode)", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
+            // The place menu open: This Mac's "No space" first, then its space.
+            #expect(NewThreadPlaces.sections(NewThreadState.hosts(vm), chosen: vm.newThread.place).flatMap(\.options).map(\.title)
+                == ["No space", "acme-web"])
+            try await Preview.render("this-mac-new-thread-places-\(mode)", size: CGSize(width: 1000, height: 700)) {
+                NewThreadPage(vm: vm, chrome: PageHeaderChrome(), placeOpen: true)
+            }
 
             let dialog = WorktreeDeleteDialog(vm: vm, agent: agent)
             try await Preview.render("this-mac-delete-worktree-\(mode)", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
@@ -256,6 +260,87 @@ extension PreviewTests {
             }
         }
         try expectSameRenders("this-mac-new-thread-in-process", "this-mac-new-thread-client")
+        try expectSameRenders("this-mac-new-thread-places-in-process", "this-mac-new-thread-places-client")
         try expectSameRenders("this-mac-delete-worktree-in-process", "this-mac-delete-worktree-client")
+    }
+}
+
+/// Automations and Projects keep the background host's section on their pages while the
+/// app takes the rest of its workspace as its own (`ShepherdViewModel.mirrored`): the same pages as
+/// with This Mac shown as a host (`SHEPHERD_THIS_MAC_LOCAL=0`), from the same host.
+extension PreviewTests {
+    @Test func localHostFeaturePagesMatchThisMacAsAHost() async throws {
+        let pageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
+        let host = try ScratchServer(dir: try makeScratchDirectory("host"))
+        defer { host.stop() }
+        host.server.serveThreads(ThreadHosting(defaults: {
+            ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+        }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
+        let space = Space(name: "acme-web", path: host.dir.path)
+        let runs = Space(name: "Automations", path: "~", hidden: true)
+        func agent(_ name: String, in space: Space, order: Int, status: AgentStatus = .idle) -> (Agent, ShepherdCore.Tab) {
+            let id = AgentID()
+            let pane = LeafPane(cwd: space.path, agentID: id)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
+            return (Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, status: status, nameIsFinal: true), tab)
+        }
+        let thread = agent("Fix the checkout total rounding", in: space, order: 0)
+        let watcher = agent("Triage new issues", in: runs, order: 0, status: .blocked)
+        var drawer = agent("Checkout funnel dashboard", in: space, order: 1)
+        let design = Design(name: "Checkout funnel dashboard", agentID: drawer.0.id, createdAt: 1_000)
+        drawer.0.designID = design.id
+        let automation = Automation(name: "Triage new issues", prompt: "Look at what came in overnight and say what needs a person.",
+                                    cwd: "~/Developer/acme-web", enabled: false, agentID: watcher.0.id)
+        let records = [thread, watcher, drawer]
+        try await host.server.putState(ShepherdState(spaces: [space, runs], tabs: records.map(\.1), agents: records.map(\.0),
+                                                     automations: [automation]))
+        host.server.setProjectsEnabled(true)
+        guard case .project(let project) = try await host.server.logicalProjects(
+            .create(projectID: ProjectID(), name: "Release 2.4", goal: "Ship the 2.4 release notes and changelog.")) else {
+            Issue.record("no Project"); return
+        }
+        _ = try await host.server.createDesign(design)
+        try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: host.server, perRow: 3)
+        host.server.designSystems.register(ShepherdDesignSystem.builtIn())
+        host.server.setDesignsServed(true)
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for mode in ["host", "local"] {
+            let workspace = try PreviewWorkspace(ownsWorkspace: false)
+            defer { workspace.stop() }
+            workspace.settings.designToolEnabled = true
+            workspace.settings.projectsEnabled = true
+            let vm = workspace.vm
+            vm.designNetwork = .none
+            vm.designLiveCap = 0
+            let connection = mode == "local" ? vm.connectLocalHost(socket: socket, token: token)
+                : vm.remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+            try await eventuallyOnMain("This Mac's host with its designs, automation and Project", timeout: .seconds(30)) {
+                connection.phase == .connected && connection.supportsDesigns && connection.supportsLogicalProjects
+                    && connection.state.automations.count == 1 && connection.state.projects.count == 1
+            }
+            if mode == "local" {
+                // Designs route through the host (slice 2): the design agent is the app's own too.
+                try await eventuallyOnMain("the ordinary thread and the design agent as the app's own") {
+                    Set(vm.state.agents.map(\.id)) == [thread.0.id, drawer.0.id]
+                }
+                #expect(vm.remoteHosts.connections.isEmpty)
+            }
+
+            await vm.loadAutomationPageRuns()
+            vm.automationsPageSelection = AutomationKey(host: connection.id, automation: automation.id)
+            try await Preview.render("this-mac-automations-\(mode)", size: pageSize) { AutomationsDestination(vm: vm) }
+
+            vm.openLogicalProject(LogicalProjectRef(home: .host(connection.id), id: project.id))
+            #expect(vm.shownDestination == .project)
+            try await Preview.render("this-mac-project-\(mode)", size: pageSize) { LogicalProjectDestination(vm: vm) }
+            for connection in vm.remoteHosts.allConnections { vm.remoteHosts.removeHost(id: connection.id) }
+        }
+        try expectSameRenders("this-mac-automations-host", "this-mac-automations-local")
+        try expectSameRenders("this-mac-project-host", "this-mac-project-local")
     }
 }

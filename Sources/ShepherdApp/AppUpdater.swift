@@ -5,6 +5,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 /// The update channel an app rides; each maps to a feed on gh-pages. Feed names are a contract
 /// with the release workflow (`scripts/release.py`).
@@ -171,7 +172,8 @@ final class AppUpdater {
 
     private let updater: SPUUpdater
     private let remoteDriver: RemoteUpdateDriver
-    private weak var server: SessionServer?
+    /// Who owns the agents an update restarts, while remote updates are connected.
+    private var gate: HostUpdateGate?
     private var handlingRemoteRequest = false
     private var started = false
     private var terminationCheckID: UUID?
@@ -242,28 +244,31 @@ final class AppUpdater {
         updater.checkForUpdates()
     }
 
-    /// Installed once by the app lifecycle, never by a view or a headless server.
+    /// Installed once by the app lifecycle, never by a view or a headless server: in process, a
+    /// paired device's requests reach the server's handler; as the background host's client the
+    /// host relays them (`ShepherdViewModel.installReviewHandler`).
     func connectRemoteUpdates(to server: SessionServer) {
-        self.server = server
-        guard available, started else { return }
-        remoteDriver.onEnd = { [weak server] in server?.releaseHostUpdate() }
-        ChannelDelegate.shared.didDownload = { [weak remoteDriver] in remoteDriver?.preflightBeforeExtraction() }
-        ChannelDelegate.shared.didFinish = { [weak remoteDriver] in remoteDriver?.updateCycleFinished() }
-        remoteDriver.beforeRestart = { [weak server] in
-            guard let server else { return false }
-            return await server.hostUpdateCanRestart()
-        }
+        connectRemoteUpdates(gate: .server(server))
         server.onRemoteHostUpdate = { [weak self] request, authorized, completion in
             guard let self else { return }
             Task { completion(await self.remoteUpdate(request, authorized: authorized)) }
         }
     }
 
-    private func remoteUpdate(_ request: RemoteHostUpdateRequest, authorized: @escaping () async -> Bool) async -> HostUpdateStatus {
-        guard available, started, await authorized(), let server else { return remoteDriver.status }
+    func connectRemoteUpdates(gate: HostUpdateGate) {
+        self.gate = gate
+        guard available, started else { return }
+        remoteDriver.onEnd = { gate.release() }
+        ChannelDelegate.shared.didDownload = { [weak remoteDriver] in remoteDriver?.preflightBeforeExtraction() }
+        ChannelDelegate.shared.didFinish = { [weak remoteDriver] in remoteDriver?.updateCycleFinished() }
+        remoteDriver.beforeRestart = { await gate.canRestart() }
+    }
+
+    func remoteUpdate(_ request: RemoteHostUpdateRequest, authorized: @escaping () async -> Bool) async -> HostUpdateStatus {
+        guard available, started, await authorized(), let server = gate else { return remoteDriver.status }
         if request == .status {
             var status = remoteDriver.status
-            let reason = await server.hostUpdateBlockReason()
+            let reason = await server.blockReason()
             if status.phase == .available, let reason {
                 status.canInstall = false
                 status.error = reason
@@ -291,18 +296,18 @@ final class AppUpdater {
                 status.error = "Confirm the current update before installing and restarting."
                 return status
             }
-            guard await server.reserveHostUpdate() else {
+            guard await server.reserve() else {
                 var status = remoteDriver.status
                 status.canInstall = false
-                status.error = await server.hostUpdateBlockReason()
+                status.error = await server.blockReason()
                     ?? "Could not reserve the host or save agent recovery checkpoints. Reconnect and try again; no update was started."
                 return status
             }
             guard await authorized() else {
-                server.releaseHostUpdate()
+                server.release()
                 return remoteDriver.status
             }
-            if !remoteDriver.install(offerID: offerID) { server.releaseHostUpdate() }
+            if !remoteDriver.install(offerID: offerID) { server.release() }
         }
         return remoteDriver.status
     }
@@ -310,7 +315,7 @@ final class AppUpdater {
     /// Remote updates never open QuitConfirmation. A busy host cancels termination instead.
     var remoteTerminationReply: NSApplication.TerminateReply? {
         guard remoteDriver.remote, remoteDriver.restartAuthorized else { return nil }
-        guard let server else { return .terminateCancel }
+        guard let gate else { return .terminateCancel }
         guard terminationCheckID == nil else { return .terminateCancel }
         let checkID = UUID()
         terminationCheckID = checkID
@@ -330,7 +335,7 @@ final class AppUpdater {
         }
         terminationDeadline = timer
         RunLoop.main.add(timer, forMode: .common)
-        server.checkHostUpdateTermination { safe in
+        gate.canTerminate { safe in
             Self.performDuringTermination { finish(safe) }
         }
         return .terminateLater
@@ -354,6 +359,46 @@ final class AppUpdater {
                 updater.automaticallyChecksForUpdates = newValue
             }
         }
+    }
+}
+
+/// What an update installed for a paired device asks of whoever owns the agents it restarts:
+/// the in-process server, or the background host over `host.sock` (`hostUpdateGate`).
+struct HostUpdateGate: Sendable {
+    var reserve: @Sendable () async -> Bool
+    var release: @Sendable () -> Void
+    var canRestart: @Sendable () async -> Bool
+    var blockReason: @Sendable () async -> String?
+    /// Answers off the main queue: AppKit's termination modal loop doesn't drain it.
+    var canTerminate: @Sendable (@escaping @Sendable (Bool) -> Void) -> Void
+
+    static func server(_ server: SessionServer) -> HostUpdateGate {
+        HostUpdateGate(reserve: { [weak server] in await server?.reserveHostUpdate() ?? false },
+                       release: { [weak server] in server?.releaseHostUpdate() },
+                       canRestart: { [weak server] in await server?.hostUpdateCanRestart() ?? false },
+                       blockReason: { [weak server] in await server?.hostUpdateBlockReason() },
+                       canTerminate: { [weak server] done in
+                           guard let server else { return done(false) }
+                           server.checkHostUpdateTermination(done)
+                       })
+    }
+
+    /// The background host on this Mac, through whatever connection `client` reads now. A host
+    /// out of reach refuses everything.
+    static func host(_ client: @escaping @MainActor @Sendable () -> RemoteHostClient?) -> HostUpdateGate {
+        let ask = { @Sendable (step: HostUpdateGateStep) async -> String?? in
+            guard let host = await client() else { return nil }
+            return try? await host.hostUpdateGate(step)
+        }
+        let unreachable = "Shepherd's background service isn't connected. Reconnect and try again."
+        return HostUpdateGate(reserve: { await ask(.reserve) == .some(nil) },
+                              release: { Task.detached { _ = await ask(.release) } },
+                              canRestart: { await ask(.canRestart) == .some(nil) },
+                              blockReason: { await ask(.blockReason) ?? unreachable },
+                              canTerminate: { done in
+                                  let host = MainActor.assumeIsolated { client() }
+                                  Task.detached { done((try? await host?.hostUpdateGate(.canTerminate)) == .some(nil)) }
+                              })
     }
 }
 

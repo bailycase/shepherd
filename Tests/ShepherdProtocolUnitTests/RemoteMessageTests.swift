@@ -392,13 +392,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .startThread, .focusThread, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .hostConfig, .apps:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 50
+    static let caseCount = 52
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -428,6 +428,8 @@ struct RemoteRequestTests {
         .listDir(id: 8, path: ""),
         .listModels(id: 10),
         .drain(id: 10),
+        .hostUpdateGate(id: 11, step: .reserve),
+        .hostUpdateGate(id: 12, step: .canTerminate),
         .addSpace(id: 5, path: "/Users/demo/Developer/project"),
         .spaceAction(id: 5, spaceID: S.space, action: .rename(name: "acme-web")),
         .spaceAction(id: 5, spaceID: S.space, action: .setWorktreeBase(base: nil)),
@@ -483,10 +485,29 @@ struct RemoteRequestTests {
             boards: [.init(picture: .init(name: "board.png", bytes: 1_024, pixelWidth: 800, pixelHeight: 600), html: nil)],
             computedStyles: ["color": "#111111"]))),
         .designRelayAnswer(requestToken: 6, result: .failed(code: "render_failed", message: "Two.dc.html couldn't be drawn.")),
+        .appRelayAnswer(requestToken: 7, result: .done(text: "Review ready in the side pane's Changes tab.")),
+        .appRelayAnswer(requestToken: 8, result: .failed(code: "no_such_agent", message: "unknown agent a")),
+        .appRelayAnswer(requestToken: 9, result: .hostUpdate(status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .idle))),
     ]
 
     @Test func samplesCoverEveryCase() {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
+    }
+
+    /// What the host writes to a relay's job file.
+    @Test(arguments: [DesignRelayJob]([
+        .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
+                                request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
+                                deadline: Date(timeIntervalSince1970: 1_000))),
+        .export(DesignExportJob(designID: RemoteReplyTests.relayDesign, request: DesignExportRequest(format: .png),
+                                files: RemoteReplyTests.files, destination: URL(fileURLWithPath: "/tmp/acme/exports/Two.png"))),
+        .capture(DesignReferenceCaptureRequest(
+            reference: DesignReference(designID: RemoteReplyTests.relayDesign, board: DesignPath("Two.dc.html"))!,
+            boards: [.init(path: DesignPath("Two.dc.html")!, source: "<x-dc></x-dc>", isCurrent: true, picture: "board.png", html: "board.html")],
+            folder: URL(fileURLWithPath: "/tmp/acme/refs"), files: RemoteReplyTests.files)),
+    ]))
+    func relayJobsRoundTrip(_ job: DesignRelayJob) throws {
+        #expect(try NDJSON.decode(DesignRelayJob.self, from: NDJSON.encode(job)) == job)
     }
 
     @Test(arguments: samples)
@@ -653,11 +674,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .hostConfig, .apps:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 47
+    static let caseCount = 51
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -726,15 +747,14 @@ struct RemoteReplyTests {
         .browserDrive(.request(token: 12, agentID: S.agent, request: .click(ref: "e4", double: false, note: "paying"))),
         .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
         .agentNotify(agentID: AgentID(rawValue: "a"), title: "CI passed", body: "PR #42 is green"),
-        .designRelay(token: 3, job: .render(DesignRenderJob(designID: RemoteReplyTests.relayDesign, path: DesignPath("Two.dc.html")!,
-                                                            request: DesignRenderRequest(path: "Two.dc.html"), files: RemoteReplyTests.files,
-                                                            deadline: Date(timeIntervalSince1970: 1_000)))),
-        .designRelay(token: 4, job: .export(DesignExportJob(designID: RemoteReplyTests.relayDesign, request: DesignExportRequest(format: .png),
-                                                            files: RemoteReplyTests.files, destination: URL(fileURLWithPath: "/tmp/acme/exports/Two.png")))),
-        .designRelay(token: 5, job: .capture(DesignReferenceCaptureRequest(
-            reference: DesignReference(designID: RemoteReplyTests.relayDesign, board: DesignPath("Two.dc.html"))!,
-            boards: [.init(path: DesignPath("Two.dc.html")!, source: "<x-dc></x-dc>", isCurrent: true, picture: "board.png", html: "board.html")],
-            folder: URL(fileURLWithPath: "/tmp/acme/refs"), files: RemoteReplyTests.files))),
+        .appRelay(token: 6, job: .review(agentID: AgentID(rawValue: "a"), cwd: "/tmp/acme-web", reference: "pr")),
+        .appRelay(token: 7, job: .confirmSpaceDelete(spaceID: SpaceID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c34"))),
+        .appRelay(token: 8, job: .hostUpdate(request: .install(offerID: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!, authorized: true))),
+        .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
+        .settingsChanged(page: .instructions),
+        .settingsChanged(page: .slashCommands),
+        .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
+        .threadNotice(agentID: AgentID(rawValue: "a"), message: "Switched Anthropic to work: personal hit its limit."),
     ]
 
     static let relayDesign = DesignID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c33")

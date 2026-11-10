@@ -380,7 +380,7 @@ final class FixtureHost: @unchecked Sendable {
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
             return []
-        case .designRelayAnswer:
+        case .designRelayAnswer, .appRelayAnswer:
             // Only the Mac app answers a background host's drawing; a phone never sends it.
             return []
         case .drain(let id):

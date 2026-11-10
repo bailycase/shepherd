@@ -13,6 +13,8 @@ import ShepherdUI
 extension ShepherdViewModel {
     /// The Design systems page for a host's system; its files are read from the host.
     func openRemoteDesignSystem(_ ref: RemoteSystemRef) {
+        // The background host's systems open as the app's own (slice 2).
+        if ref.hostID == localHost?.id, Self.routesThisMacLocally { return openDesignSystem(ref.namespace) }
         guard designToolEnabled else { return }
         if shownRemoteSystem != ref {
             shownRemoteSystem = ref
@@ -24,7 +26,7 @@ extension ShepherdViewModel {
     /// Reads the shown host system (again after its host said its systems changed) and draws its
     /// specimens from its files where the host serves them.
     func loadRemoteDesignSystem(_ ref: RemoteSystemRef) async {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }) else { return }
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }) else { return }
         let library = connection.designs
         do {
             let read = try await library.system(ref.namespace)
@@ -45,7 +47,7 @@ extension ShepherdViewModel {
 
     /// The page of a host's system, from its read and the host's designs drawn in it.
     func remoteDesignSystemPage(_ ref: RemoteSystemRef) -> DesignSystemPageModel {
-        let connection = remoteHosts.connections.first { $0.id == ref.hostID }
+        let connection = remoteHosts.allConnections.first { $0.id == ref.hostID }
         let read = shownRemoteSystem == ref ? shownRemoteSystemRead : nil
         let summary = read?.summary ?? connection?.designs.listing?.systems.first { $0.namespace == ref.namespace }
         guard let summary else { return DesignSystemPageModel() }
@@ -56,7 +58,7 @@ extension ShepherdViewModel {
 
     /// A host system's menu: what its host does for other devices, else Open alone.
     func remoteDesignSystemMenu(_ ref: RemoteSystemRef) -> DesignMenu {
-        let connection = remoteHosts.connections.first { $0.id == ref.hostID }
+        let connection = remoteHosts.allConnections.first { $0.id == ref.hostID }
         let summary = connection?.designs.listing?.systems.first { $0.namespace == ref.namespace }
         guard let connection, connection.supportsDesignCapability(RemoteProtocol.designSystemsCapability) else {
             return DesignMenu(sections: [[DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")]])
@@ -71,7 +73,7 @@ extension ShepherdViewModel {
         switch action {
         case .open: openRemoteDesignSystem(ref)
         case .rename:
-            let title = remoteHosts.connections.first { $0.id == ref.hostID }?.designs.listing?.systems
+            let title = remoteHosts.allConnections.first { $0.id == ref.hostID }?.designs.listing?.systems
                 .first { $0.namespace == ref.namespace }?.info.title ?? ref.namespace
             designRename = DesignRenameRequest(subject: .remoteSystem(ref), name: title)
         case .resync, .duplicateSystem:
@@ -93,7 +95,7 @@ extension ShepherdViewModel {
     /// A host's "Build one from a repo" in one of its spaces (`buildSystem`): the host starts the
     /// build, and its agent's thread there opens here as it reads the space.
     func buildRemoteSystem(host hostID: UUID, in spaceID: SpaceID) {
-        guard let library = remoteHosts.connections.first(where: { $0.id == hostID })?.designs else { return }
+        guard let library = remoteHosts.allConnections.first(where: { $0.id == hostID })?.designs else { return }
         Task {
             do {
                 guard case .created(let build, let agent) = try await Self.remoteDesign(library, .buildSystem(spaceID: spaceID)) else {
@@ -108,7 +110,7 @@ extension ShepherdViewModel {
 
     /// A host's build still reading its space: its agent's thread on the host.
     func openRemoteSystemBuild(_ ref: RemoteDesignRef) {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
               let build = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
         let agent = connection.state.agents.first { $0.id == build.agentID } ?? connection.state.agents.first { $0.designID == build.id }
         guard let agent else {
@@ -122,7 +124,7 @@ extension ShepherdViewModel {
     /// system it left (a copy, a rename), if one.
     @discardableResult
     func changeRemoteSystem(_ ref: RemoteSystemRef, _ request: RemoteDesignRequest) async throws -> DesignSystemSummary? {
-        guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else {
+        guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else {
             throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
         }
         let result = try await Self.remoteDesign(library, request)
@@ -145,7 +147,7 @@ struct RemoteDesignSystemDestination: View {
 
     var body: some View {
         let model = vm.remoteDesignSystemPage(ref)
-        let revision = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.designs.systemsRevision ?? 0
+        let revision = vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.designs.systemsRevision ?? 0
         let target = DesignSystemTarget.remote(ref)
         VStack(spacing: 0) {
             DesignSystemHeader(model: model, toolbar: false, leadingInset: chrome.leadingInset, showSidebar: chrome.showSidebar,

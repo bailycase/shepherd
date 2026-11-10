@@ -197,11 +197,18 @@ final class ShepherdViewModel {
     /// first shown.
     var designRendering: DesignRendering {
         if let made = madeDesignRendering { return made }
-        let made = DesignRendering(folder: { [server] in server.designs.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
+        let store = designStore
+        let made = DesignRendering(folder: { store.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
         madeDesignRendering = made
         return made
     }
     @ObservationIgnored private(set) var madeDesignRendering: DesignRendering?
+    /// The background host's designs on this Mac, read-only, while the app is its client
+    /// (`connectLocalHost`): the host writes them; the app draws them from where they are.
+    @ObservationIgnored var localHostDesigns: DesignStore?
+
+    /// Where the designs' files are on this Mac: the background host's folder as its client, else the server's.
+    var designStore: DesignStore { localHostDesigns ?? server.designs }
     /// Tests turn Google Fonts off so boards never reach the network, and previews take no live
     /// views; both are set before the first design draws.
     @ObservationIgnored var designNetwork: DesignRenderingNetwork = .googleFonts
@@ -313,7 +320,7 @@ final class ShepherdViewModel {
         set { worktrees.starting = newValue }
     }
     var remoteChildren: [RemoteAgentRef: [ChildRun]] {
-        Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
+        Dictionary(uniqueKeysWithValues: remoteHosts.allConnections.flatMap { connection in
             connection.children.map { (RemoteAgentRef(hostID: connection.id, agentID: $0.key), $0.value) }
         })
     }
@@ -733,11 +740,11 @@ final class ShepherdViewModel {
         // Remote threads on screen (in any window) ask their host for revision hints; a hint wakes only a store already polling.
         remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
         hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
-        remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
+        remoteThreadStores.hostName = { [weak hosts] ref in hosts?.allConnections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
         instructions.piHome = server.pi.home
         self.instructions = instructions
-        self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
+        self.suggestions = SuggestionsModel(store: server.suggestions, instructions: instructions, remoteHosts: hosts)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
         self.hooks = hooks ?? HooksModel(catalog: server.hooks)
@@ -853,8 +860,9 @@ final class ShepherdViewModel {
         notifications.onResponse = { [weak self] response in
             self?.respond(to: response)
         }
-        // Banners from a previous app run point at dead sessions; drop them.
-        notifications.removeAll()
+        // Banners from a previous app run point at dead sessions; drop them. The background
+        // host's sessions outlive the app, and its banners (questions, merged PRs) stay.
+        if ownsWorkspace { notifications.removeAll() }
         sessions.reserveCheckoutForLaunch = { [weak self] cwd in
             guard let self else { throw AgentStartFailure(message: "Workspace closed") }
             try self.verifyCheckoutAvailable(cwd)
@@ -872,7 +880,7 @@ final class ShepherdViewModel {
             self.syncLocalHostChildren()
             self.reconcileSidebarCompletions()
             self.notifyRemote()
-            let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
+            let liveRemote = Set(self.remoteHosts.allConnections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             })
             self.remoteThreadStores.prune(live: liveRemote)
@@ -881,7 +889,7 @@ final class ShepherdViewModel {
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
-                guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),
+                guard let connection = self.remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,
                       !connection.state.tabs.contains(where: { $0.layout.contains(review.paneID) }) else { continue }
                 let oldPaneID = review.paneID
@@ -922,8 +930,7 @@ final class ShepherdViewModel {
             guard let self, PiAuthText.isLimit(message) else { return }
             Task {
                 guard let switched = await self.piAuth.limitHit(provider) else { return }
-                self.threadStores.store(for: agentID).reportActionNotice(
-                    "Switched \(PiSignInCatalog.name(provider)) to \(switched.to): \(switched.from) hit its limit.")
+                self.threadStores.store(for: agentID).reportActionNotice(PiAuthText.switched(provider, switched))
             }
         }
         // Agents drive their own panes through the server's extension socket.
@@ -1059,9 +1066,10 @@ final class ShepherdViewModel {
             }
         }
         // Another device's New design, Open, Import and Build, made here as this Mac's own are.
-        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief in
+        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief, options in
             guard let self else { throw RemoteCreateAgentError("host is shutting down") }
-            return try await self.startDesignAgent(design, brief: brief, images: [], select: false)
+            return try await self.startDesignAgent(design, brief: brief, images: options.images, select: false,
+                                                   model: options.model, thinking: options.thinking)
         }, changed: { [weak self] in
             guard let self else { return }
             self.adopt(self.server.state)

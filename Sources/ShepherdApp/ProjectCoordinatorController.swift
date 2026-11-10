@@ -39,7 +39,7 @@ final class ProjectCoordinatorController {
         switch request {
         case .hosts:
             return .hosts([.init(reference: .local, name: Host.current().localizedName ?? "This Mac", spaces: vm.server.state.spaces.filter { !$0.hidden })]
-                + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
+                + vm.remoteHosts.allConnections.filter { $0.phase == .connected }.map {
                     let capable = $0.browserClient?.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) == true
                     return .init(reference: .remote(hostID: $0.config.id, bindingID: $0.config.bindingID), name: $0.config.name,
                                  spaces: capable ? $0.state.spaces.filter { !$0.hidden } : nil)
@@ -104,7 +104,7 @@ final class ProjectCoordinatorController {
             try await vm.server.validateProjectWorkerRead(projectID, grant: grant, task: task)
             return result
         case .remote(let hostID, let bindingID):
-            guard let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
+            guard let connection = vm.remoteHosts.allConnections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
                   connection.phase == .connected, let client = connection.browserClient,
                   client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
                 throw LogicalProjectsError("executor_unavailable", "The thread's exact executor binding is unavailable. No fallback host was selected.")
@@ -122,7 +122,7 @@ final class ProjectCoordinatorController {
 
     func place(host: ProjectHostReference, request: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
         guard let vm, case .remote(let hostID, let bindingID) = host,
-              let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
+              let connection = vm.remoteHosts.allConnections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
               let client = connection.browserClient,
               client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
             throw AgentStartFailure(message: "The exact executor binding is unavailable. No fallback host was selected.")
@@ -179,12 +179,12 @@ final class ProjectCoordinatorController {
 
 extension ShepherdViewModel {
     func refreshProjectHosts() {
-        let hosts: [ProjectHostReference] = [.local] + remoteHosts.connections.filter { $0.phase == .connected }.map {
+        let hosts: [ProjectHostReference] = [.local] + remoteHosts.allConnections.filter { $0.phase == .connected }.map {
             .remote(hostID: $0.config.id, bindingID: $0.config.bindingID)
         }
         server.setProjectEligibleHosts(hosts)
         var spaces: [ProjectHostReference: [Space]] = [:]
-        for connection in remoteHosts.connections where connection.phase == .connected {
+        for connection in remoteHosts.allConnections where connection.phase == .connected {
             guard connection.browserClient?.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) == true else { continue }
             spaces[.remote(hostID: connection.config.id, bindingID: connection.config.bindingID)] = connection.state.spaces
         }

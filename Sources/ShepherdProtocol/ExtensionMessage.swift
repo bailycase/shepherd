@@ -97,7 +97,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Send framed context only (`report`) or start/queue work (`task`, the legacy default).
     case sendToAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
     /// Spawn a new top-level agent thread with an opening prompt.
-    case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String)
+    /// `model` and `thinking` pin the new thread's model and reasoning level; nil takes Shepherd's defaults.
+    case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: String? = nil)
     /// Move an inactive ordinary thread to a registered space on this host.
     case moveAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
     /// Receipt of a tokenized peer task; the host transfers it into its tracked native queue.
@@ -236,6 +237,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
         case prompt, enabled, start, deleteAfterRun, settings, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
+        case model, thinking
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
@@ -431,7 +433,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 cwd: try c.decode(String.self, forKey: .cwd),
-                prompt: try c.decode(String.self, forKey: .prompt)
+                prompt: try c.decode(String.self, forKey: .prompt),
+                model: try c.decodeIfPresent(String.self, forKey: .model),
+                thinking: try c.decodeIfPresent(String.self, forKey: .thinking)
             )
         case .coordinateAgent:
             self = .coordinateAgent(
@@ -805,12 +809,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(targetAgentID, forKey: .targetAgentID)
             try c.encode(spaceID, forKey: .spaceID)
-        case .spawnAgent(let id, let agentID, let cwd, let prompt):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
             try c.encode(Kind.spawnAgent, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(cwd, forKey: .cwd)
             try c.encode(prompt, forKey: .prompt)
+            try c.encodeIfPresent(model, forKey: .model)
+            try c.encodeIfPresent(thinking, forKey: .thinking)
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
             try c.encode(Kind.coordinateAgent, forKey: .type)
             try c.encode(id, forKey: .id)

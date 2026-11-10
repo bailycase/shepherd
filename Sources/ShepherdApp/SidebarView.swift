@@ -363,7 +363,7 @@ private struct RemoteRowMenu: View {
     var body: some View {
         Button("Rename…") { vm.remoteRenameTarget = ref }
         PinMenuItem(vm: vm, row: row)
-        if !row.worktree, vm.remoteHosts.connections.first(where: { $0.id == ref.hostID })?.supportsThreadMove == true {
+        if !row.worktree, vm.remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.supportsThreadMove == true {
             ThreadMoveMenu(vm: vm, row: row.id)
         }
         Divider()

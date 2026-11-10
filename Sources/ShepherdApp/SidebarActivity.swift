@@ -186,7 +186,7 @@ extension ShepherdViewModel {
         let shown = shownDestination == .missions
         let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? missions.selectedID : nil)
         // Each connected host's missions (`missions.v1`), in configured order, after This Mac's.
-        return local + remoteHosts.connections.flatMap { connection in
+        return local + remoteHosts.allConnections.flatMap { connection in
             SidebarMission.rows(connection.missions.records,
                                 selected: shown && missionsHost == connection.id ? remoteMissionDrivers[connection.id]?.selectedID : nil,
                                 host: (connection.id, connection.config.name))
@@ -196,7 +196,7 @@ extension ShepherdViewModel {
     /// A host's missions behind the Missions page, made on first use; nil for a host that is gone.
     func missionDriver(for host: UUID) -> RemoteMissionDriver? {
         if let driver = remoteMissionDrivers[host] { return driver }
-        guard let connection = remoteHosts.connections.first(where: { $0.id == host }) else { return nil }
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == host }) else { return nil }
         let driver = RemoteMissionDriver(connection: connection, vm: self)
         remoteMissionDrivers[host] = driver
         return driver

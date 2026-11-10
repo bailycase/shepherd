@@ -61,7 +61,7 @@ extension ShepherdViewModel {
             model = ImplementSheetModel(selection: selection, threads: remoteImplementThreads(host), projects: [], project: nil,
                                         opensThread: settings.implementOpensThread, picture: implementPicture(selection, host: host))
             model.hostID = host
-            model.hostName = remoteHosts.connections.first { $0.id == host }?.config.name ?? "The host"
+            model.hostName = remoteHosts.allConnections.first { $0.id == host }?.config.name ?? "The host"
         } else {
             model = ImplementSheetModel(selection: selection, threads: implementThreads(), projects: implementProjects(),
                                         project: defaultImplementProject(selection.designID), opensThread: settings.implementOpensThread,
@@ -205,7 +205,7 @@ extension ShepherdViewModel {
     /// A host's threads the sheet lists: its ordinary threads (never a design's agent, a
     /// Project's coordinator or worker), most recently active first.
     func remoteImplementThreads(_ host: UUID, now: Date = Date()) -> [ImplementSheetModel.Thread] {
-        guard let state = remoteHosts.connections.first(where: { $0.id == host })?.state else { return [] }
+        guard let state = remoteHosts.allConnections.first(where: { $0.id == host })?.state else { return [] }
         let names = Dictionary(state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         let workers = state.projectWorkerIDs
         return state.agents

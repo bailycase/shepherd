@@ -84,6 +84,13 @@ public struct AttachmentSnapshot: Sendable {
 /// directly.
 public final class SessionServer: @unchecked Sendable {
     private static let maxQueuedReplyBytes = 2 * 1024 * 1024
+    /// This Mac's own app reads behind its main thread, which a busy Mac can hold for seconds: it
+    /// gets room for several whole-state frames (`NDJSON.localMaxPayloadBytes`) before it is
+    /// dropped, and its terminals' PTYs wait for it (`localOutputHighWaterMark`) instead.
+    static let maxQueuedLocalReplyBytes = 64 * 1024 * 1024
+    /// A terminal stops being read while this Mac's app has this much unwritten (in-process, the
+    /// app's renderer pauses it the same way, `outputHighWaterMark`); it reads again below a quarter.
+    static let localOutputHighWaterMark = 4 * 1024 * 1024
     /// Bounds bytes retained between the PTY and the renderer. The in-flight
     /// delivery is counted with the pending bytes, so the renderer cannot keep
     /// an unbounded backlog alive by stalling the main queue.
@@ -176,6 +183,8 @@ public final class SessionServer: @unchecked Sendable {
 
         /// Connected through the local socket (`host.sock`): the app itself, offered `local.v1`.
         var isLocal = false
+        /// Terminals whose PTY is not read until this local app catches up (`localOutputHighWaterMark`).
+        var heldOutput: Set<SessionID> = []
 
         init(fd: Int32, isRemote: Bool = false, peerPID: pid_t? = nil) {
             self.fd = fd
@@ -870,10 +879,15 @@ public final class SessionServer: @unchecked Sendable {
     /// entry, so a request is answered at most once.
     private var driveRequests: [Int: DriveRequest] = [:]
     private var nextDriveToken = 0
-    /// Designs handed to the app to draw (`relayDesign`), by token: the connection it went to and
-    /// who waits for the answer. Server queue.
-    var designRelays: [Int: (fd: Int32, answer: (DesignRelayResult?) -> Void)] = [:]
+    /// Designs handed to the app to draw (`relayDesign`), by token: the connection it went to, the
+    /// job's file, the code a failure carries and who waits for the answer. Server queue.
+    var designRelays: [Int: (fd: Int32, file: URL, code: String, answer: (DesignRelayResult) -> Void)] = [:]
     var nextDesignRelayToken = 0
+    /// Jobs handed to the app's window (`relayToApp`), by token.
+    private var appRelays: [Int: (fd: Int32, answer: (AppRelayResult?) -> Void)] = [:]
+    private var nextAppRelayToken = 0
+    /// How long a relay waits for the app to connect (or reconnect) before it fails.
+    var designRelayReconnectWait: TimeInterval = 5
 
     private struct DriveRequest {
         let asker: ExtensionConnection
@@ -996,6 +1010,15 @@ public final class SessionServer: @unchecked Sendable {
     private let tunnelHost = BrowserTunnelHost()
     /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
     private var tunnelsServed = true
+    /// Tests only: this Mac's app's unwritten bytes and the terminals waiting on it, the most of any.
+    var localAppBacklog: (bytes: Int, heldTerminals: Int) {
+        queue.sync {
+            let local = clients.values.filter(\.isLocal)
+            return (local.map(\.queuedReplyBytes).max() ?? 0, local.map(\.heldOutput.count).max() ?? 0)
+        }
+    }
+    /// Tests only: the remote clients connected now, the local app's included.
+    var remoteClientCount: Int { queue.sync { clients.values.filter(\.isRemote).count } }
     /// Tests only: the tunnel limits (per client and per host, idle and connect times, the backlog
     /// that pauses reads). Set before a client connects.
     var browserTunnelLimits: BrowserTunnelHost.Limits {
@@ -1200,7 +1223,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Merges a thread's listing into the catalog (server queue).
-    private func mergeSlashCommands(_ listed: [NativeCommand]) {
+    func mergeSlashCommands(_ listed: [NativeCommand]) {
         let next: [NativeCommand]? = slashCatalogLock.withLock {
             var byName = Dictionary(slashCatalog.map { ($0.name, $0) }, uniquingKeysWith: { _, new in new })
             for command in listed { byName[command.name] = command }
@@ -1210,6 +1233,7 @@ public final class SessionServer: @unchecked Sendable {
             return merged
         }
         guard let next else { return }
+        pushSettingsChanged(.slashCommands)
         DispatchQueue.main.async { [weak self] in self?.onSlashCommandCatalogChanged?(next) }
     }
 
@@ -1717,7 +1741,7 @@ public final class SessionServer: @unchecked Sendable {
         attachedSessions.removeAll()
         outputStates.removeAll()
         for client in Array(clients.values) {
-            disconnect(client)
+            disconnect(client, reason: "server stopped")
         }
         for token in Array(agentRequests.keys) {
             finishAgentRequest(token, result: .init(text: "server stopped", code: "disconnected"))
@@ -2247,7 +2271,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func stopRemoteListenerOnQueue() {
         for client in Array(clients.values) where client.isRemote && !client.isLocal {
-            disconnect(client)
+            disconnect(client, reason: "remote listener stopped")
         }
         remoteAcceptSource?.cancel()
         remoteAcceptSource = nil
@@ -2314,8 +2338,14 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Drops the app's connections over `host.sock` and keeps listening, as a broken link does
+    /// (tests).
+    func dropLocalClients() {
+        queue.sync { for client in Array(clients.values) where client.isLocal { disconnect(client, reason: "dropped") } }
+    }
+
     private func stopLocalListenerOnQueue() {
-        for client in Array(clients.values) where client.isLocal { disconnect(client) }
+        for client in Array(clients.values) where client.isLocal { disconnect(client, reason: "local listener stopped") }
         localAcceptSource?.cancel()
         localAcceptSource = nil
         if let localSocketPath { unlink(localSocketPath) }
@@ -2392,7 +2422,7 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
                 return
             }
-            disconnect(client)
+            disconnect(client, reason: "undecodable request before hello")
             return
         }
 
@@ -2510,7 +2540,7 @@ public final class SessionServer: @unchecked Sendable {
             if store.state.isProjectCoordinator(agentID), !client.clientCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) {
                 send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
             }
-            guard !line.contains(13) else { disconnect(client); return }
+            guard !line.contains(13) else { disconnect(client, reason: "CR in a native thread request"); return }
             // Design references: a client's are refused rather
             // than dropped, unless this host serves references to its own designs
             // (`design.references.v1`); then the host resolves and fences each one itself, as for
@@ -2637,7 +2667,10 @@ public final class SessionServer: @unchecked Sendable {
             remoteBrowserAnswer(token: token, outcome: outcome, client: client)
         case .designRelayAnswer(let token, let result):
             guard designRelays[token]?.fd == client.fd else { return }
-            designRelays.removeValue(forKey: token)?.answer(result)
+            endDesignRelay(token, result)
+        case .appRelayAnswer(let token, let result):
+            guard appRelays[token]?.fd == client.fd else { return }
+            appRelays.removeValue(forKey: token)?.answer(result)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
         case .agentQuery(let id, let agentID, .setWorktree(let branch, let base)):
@@ -3043,6 +3076,28 @@ public final class SessionServer: @unchecked Sendable {
             }
             send(.ok(id: id), to: client)
             hopToMain { handler() }
+        case .hostUpdateGate(let id, let step):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's app installs this host's updates."), to: client)
+                return
+            }
+            Task { [weak self, weak client] in
+                guard let self else { return }
+                let refusal: String? = switch step {
+                case .reserve: await reserveHostUpdate() ? nil
+                    : await hostUpdateBlockReason() ?? "Could not reserve the host or save agent recovery checkpoints."
+                case .release: { releaseHostUpdate(); return nil }()
+                case .canRestart: await hostUpdateCanRestart() ? nil : "The host isn't ready to restart."
+                case .blockReason: await hostUpdateBlockReason()
+                case .canTerminate: await withCheckedContinuation { done in
+                    checkHostUpdateTermination { done.resume(returning: $0 ? nil : "The host isn't ready to restart.") }
+                }
+                }
+                queue.async {
+                    guard let client, self.clients[client.fd] === client else { return }
+                    self.send(refusal.map { .error(id: id, code: "refused", message: $0) } ?? .ok(id: id), to: client)
+                }
+            }
         case .listModels(let id):
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.
@@ -3433,10 +3488,11 @@ public final class SessionServer: @unchecked Sendable {
             case .fetch:
                 snapshot = instructions.snapshot()
             case .save(let file, let content, let origin, let sync):
-                snapshot = try instructions.save(file, content: content, origin: origin, sync: sync)
+                // An empty origin is this Mac's own app, as the store's nil.
+                snapshot = try instructions.save(file, content: content, origin: origin.isEmpty ? nil : origin, sync: sync)
                 announceInstructions(snapshot)
             case .restore(let revisionID, let origin):
-                snapshot = try instructions.restore(revisionID: revisionID, origin: origin)
+                snapshot = try instructions.restore(revisionID: revisionID, origin: origin.isEmpty ? nil : origin)
                 announceInstructions(snapshot)
             }
             send(.instructions(id: id, snapshot: snapshot), to: client)
@@ -3448,6 +3504,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func announceInstructions(_ snapshot: InstructionsSnapshot) {
+        pushSettingsChanged(.instructions)
         guard let handler = onInstructionsChanged else { return }
         hopToMain { handler(snapshot) }
     }
@@ -3572,6 +3629,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func announceSuggestions(_ snapshot: SuggestionsSnapshot) {
+        pushSettingsChanged(.suggestions)
         guard let handler = onSuggestionsChanged else { return }
         hopToMain { handler(snapshot) }
     }
@@ -3758,8 +3816,9 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard let self else { return }
             self.queue.async {
-                if request.changesSkills, case .success(.skills(let snapshot)) = result, let handler = self.onSkillsChanged {
-                    self.hopToMain { handler(snapshot) }
+                if request.changesSkills, case .success(.skills(let snapshot)) = result {
+                    self.pushSettingsChanged(.skills)
+                    if let handler = self.onSkillsChanged { self.hopToMain { handler(snapshot) } }
                 }
                 guard self.clients[client.fd] === client else { return }
                 switch result {
@@ -3790,8 +3849,9 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard let self else { return }
             self.queue.async {
-                if request.changesHooks, case .success = result, let handler = self.onHooksChanged {
-                    self.hopToMain { handler() }
+                if request.changesHooks, case .success = result {
+                    self.pushSettingsChanged(.hooks)
+                    if let handler = self.onHooksChanged { self.hopToMain { handler() } }
                 }
                 guard self.clients[client.fd] === client else { return }
                 switch result {
@@ -4183,16 +4243,34 @@ public final class SessionServer: @unchecked Sendable {
             } catch {
                 ShepherdLog.error("could not encode remote output: \(error)")
                 for fd in fds {
-                    if let client = clients[fd] { disconnect(client) }
+                    if let client = clients[fd] { disconnect(client, reason: "remote output unencodable") }
                 }
                 return
             }
             // Share immutable encoded bytes, not queue accounting or write offsets. A stalled
             // viewer still overruns its own bounded queue without disrupting the others.
             for fd in fds {
-                if let client = clients[fd] { enqueuePayload(payload, to: client) }
+                guard let client = clients[fd] else { continue }
+                enqueuePayload(payload, to: client)
+                // This Mac's own app is the terminal's screen: like a terminal emulator, a slow one
+                // slows the program writing to it rather than losing the connection.
+                if client.isLocal, client.queuedReplyBytes >= Self.localOutputHighWaterMark,
+                   client.heldOutput.insert(sessionID).inserted {
+                    sessions[sessionID]?.pty?.suspendOutputReading()
+                }
             }
             offset = end
+        }
+    }
+
+    /// Reads the terminals `client` held again once it has caught up, or is gone.
+    private func releaseHeldOutput(of client: ExtensionConnection) {
+        for sessionID in client.heldOutput {
+            client.heldOutput.remove(sessionID)
+            // Another local app still behind, or the in-process renderer, keeps it paused.
+            let held = clients.values.contains { $0 !== client && $0.heldOutput.contains(sessionID) }
+            guard !held, outputStates[sessionID]?.readSuspended != true else { continue }
+            sessions[sessionID]?.pty?.resumeOutputReading()
         }
     }
 
@@ -4203,17 +4281,16 @@ public final class SessionServer: @unchecked Sendable {
             payload = try NDJSON.encode(reply)
         } catch {
             ShepherdLog.error("could not encode remote reply: \(error)")
-            disconnect(client)
+            disconnect(client, reason: "reply unencodable")
             return
         }
-        guard payload.count - 1 <= NDJSON.maxPayloadBytes else {
+        guard payload.count - 1 <= maxPayloadBytes(for: client) else {
             if case .nativeThread(let id, _) = reply {
                 send(.nativeThread(id: id, result: .failure(code: "too_large",
                     message: "The thread exceeds the remote transport capacity. View it on the host Mac.")), to: client)
                 return
             }
-            ShepherdLog.error("remote reply exceeds the payload limit on fd \(client.fd)")
-            disconnect(client)
+            disconnect(client, reason: "reply over the \(maxPayloadBytes(for: client))-byte frame cap (\(payload.count - 1) B)")
             return
         }
         enqueuePayload(payload, to: client)
@@ -4237,6 +4314,7 @@ public final class SessionServer: @unchecked Sendable {
     private func broadcastRemoteState(_ full: ShepherdState, to remotes: [ExtensionConnection]) {
         guard !remotes.isEmpty else { return }
         var payloads: [RemoteStateView: Data?] = [:]
+        var skipped = false
         for client in remotes {
             let designs = seesDesigns(client) && !full.designs.isEmpty
             let legacy = client.knowsLegacyThinkingOnly
@@ -4246,11 +4324,20 @@ public final class SessionServer: @unchecked Sendable {
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
             }
-            if let data = payloads[view] ?? nil {
+            // Over a paired client's frame cap, its last state stands; the local app's cap holds it.
+            if let data = payloads[view] ?? nil, data.count - 1 <= maxPayloadBytes(for: client) {
                 dropUnsentStateFrames(for: client)
                 enqueuePayload(data, to: client, state: true)
+            } else if !skipped {
+                skipped = true
+                ShepherdLog.error("state broadcast of \((payloads[view] ?? nil)?.count ?? 0) B exceeds a client's frame cap; skipped for it")
             }
         }
+    }
+
+    /// The largest frame `client` reads: the local app's, or a remote client's.
+    private func maxPayloadBytes(for client: ExtensionConnection) -> Int {
+        client.isLocal ? NDJSON.localMaxPayloadBytes : NDJSON.maxPayloadBytes
     }
 
     /// A burst of live changes queues one whole-state frame each; only the newest matters, so
@@ -4283,12 +4370,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
-        guard let payload = try? NDJSON.encode(RemoteReply.stateChanged(state: state)),
-              payload.count - 1 <= NDJSON.maxPayloadBytes else {
-            ShepherdLog.error("state broadcast exceeds the payload limit; skipped")
-            return nil
-        }
-        return payload
+        try? NDJSON.encode(RemoteReply.stateChanged(state: state))
     }
 
     // MARK: - Extension socket (server queue)
@@ -4337,7 +4419,7 @@ public final class SessionServer: @unchecked Sendable {
                     lines = try client.lineBuffer.append(Data(bytes: buf, count: n))
                 } catch {
                     ShepherdLog.warning("extension framing violation on fd \(fd): \(error)")
-                    disconnect(client)
+                    disconnect(client, reason: "framing violation: \(error)")
                     return
                 }
                 for line in lines {
@@ -4353,14 +4435,32 @@ public final class SessionServer: @unchecked Sendable {
                 continue
             }
             if n == 0 {
-                disconnect(client)
+                disconnect(client, reason: "peer closed")
                 return
             }
             if errno == EINTR { continue }
             if errno == EAGAIN || errno == EWOULDBLOCK { return }
-            disconnect(client)
+            disconnect(client, reason: "read failed: errno \(errno)")
             return
         }
+    }
+
+    /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
+    /// page's data changed here; in process there is none, and the GUI's own `on…Changed` follow.
+    func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
+
+    /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
+    func sendToLocalApps(_ reply: RemoteReply) {
+        for app in clients.values where app.isLocal && app.authenticated
+            && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            send(reply, to: app)
+        }
+    }
+
+    /// Says `message` in `agentID`'s thread in this Mac's app showing the host's threads as its
+    /// own (the host has no window to say it in). Any thread.
+    public func noticeToLocalApps(agentID: AgentID, message: String) {
+        queue.async { [self] in sendToLocalApps(.threadNotice(agentID: agentID, message: message)) }
     }
 
     /// Server queue: tells the main actor whether this Mac's own app is connected now.
@@ -4371,8 +4471,12 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in MainActor.assumeIsolated { self?.localAppConnected = connected } }
     }
 
-    private func disconnect(_ client: ExtensionConnection) {
+    private func disconnect(_ client: ExtensionConnection, reason: String) {
         guard clients[client.fd] === client else { return }
+        if client.isRemote {
+            ShepherdLog.connection("\(client.isLocal ? "local app" : "remote client") on fd \(client.fd) disconnected: \(reason) "
+                + "(\(client.queuedReplyBytes) B unwritten)")
+        }
         hostUpdateRequests[client.fd] = nil
         clients.removeValue(forKey: client.fd)
         for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
@@ -4392,7 +4496,10 @@ public final class SessionServer: @unchecked Sendable {
             // A closed window shows nothing: every thread's phone pushes go out again.
             pushNotifications.focused = nil
         }
-        for (token, relay) in designRelays where relay.fd == client.fd { designRelays.removeValue(forKey: token)?.answer(nil) }
+        for (token, relay) in designRelays where relay.fd == client.fd {
+            endDesignRelay(token, .failed(code: relay.code, message: Self.appLeftWhileDrawing))
+        }
+        for (token, relay) in appRelays where relay.fd == client.fd { appRelays.removeValue(forKey: token)?.answer(nil) }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -4420,7 +4527,8 @@ public final class SessionServer: @unchecked Sendable {
         client.pendingReplies.removeAll(keepingCapacity: false)
         client.pendingReplyOffset = 0
         client.queuedReplyBytes = 0
-        ShepherdLog.info("\(client.isRemote ? "remote client" : "status extension") disconnected (fd \(client.fd))")
+        releaseHeldOutput(of: client)
+        if !client.isRemote { ShepherdLog.info("status extension disconnected (fd \(client.fd)): \(reason)") }
     }
 
     private func handleLine(_ line: Data, from client: ExtensionConnection) {
@@ -4581,7 +4689,7 @@ public final class SessionServer: @unchecked Sendable {
         case .helloChildren(let agentID, let projectScopes):
             guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
-                disconnect(previous)
+                disconnect(previous, reason: "replaced by a newer children connection")
             }
             client.childrenAgentID = agentID
             client.projectChildScopes = projectScopes == true
@@ -4602,7 +4710,7 @@ public final class SessionServer: @unchecked Sendable {
             guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.designID == nil,
                   client.agentID == nil, client.childrenAgentID == nil, client.browserAgentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.browserAgentID == agentID {
-                disconnect(previous)
+                disconnect(previous, reason: "replaced by a newer browser connection")
             }
             client.browserAgentID = agentID
         case .browser(let id, let agentID, let request):
@@ -4672,15 +4780,24 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .spawnAgent(let id, let agentID, let cwd, let prompt):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
             }
+            var level: ThinkingLevel?
+            if let thinking, !thinking.isEmpty {
+                guard let parsed = ThinkingLevel(rawValue: thinking) else {
+                    reply(.error(id: id, code: "invalid", message: "thinking must be one of " + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ")), to: client)
+                    return
+                }
+                level = parsed
+            }
+            let pinnedModel = model.flatMap { $0.isEmpty ? nil : $0 }
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
-            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level), requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5716,13 +5833,13 @@ public final class SessionServer: @unchecked Sendable {
             }
         } catch {
             ShepherdLog.error("could not encode extension reply: \(error)")
-            disconnect(client)
+            disconnect(client, reason: "extension reply unencodable")
             return
         }
 
         guard payload.count - 1 <= limit else {
             ShepherdLog.error("reply_too_large fallback exceeded the payload limit")
-            disconnect(client)
+            disconnect(client, reason: "extension reply fallback over the frame cap")
             return
         }
         enqueuePayload(payload, to: client, limit: max(Self.maxQueuedReplyBytes, limit + 1), revocation: revocation)
@@ -5731,12 +5848,12 @@ public final class SessionServer: @unchecked Sendable {
     /// Queue an encoded NDJSON payload on a connection's write queue, bounded
     /// by `maxQueuedReplyBytes`. Shared by extension replies and remote
     /// replies/broadcasts.
-    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int = SessionServer.maxQueuedReplyBytes,
+    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int? = nil,
                                 revocation: (() -> ExtensionReply?)? = nil, state: Bool = false) {
         guard clients[client.fd] === client else { return }
+        let limit = limit ?? (client.isLocal ? Self.maxQueuedLocalReplyBytes : Self.maxQueuedReplyBytes)
         guard client.queuedReplyBytes + payload.count <= limit else {
-            ShepherdLog.warning("reply queue overflow on fd \(client.fd)")
-            disconnect(client)
+            disconnect(client, reason: "reply queue overflow (\(client.queuedReplyBytes) B queued, \(payload.count) B more, limit \(limit) B)")
             return
         }
         client.pendingReplies.append(.init(payload: payload, revocation: revocation, state: state))
@@ -5798,7 +5915,7 @@ public final class SessionServer: @unchecked Sendable {
                     // Never splice a refusal into a partially written NDJSON frame or finish
                     // disclosing private bytes after revocation. Close that stream instead.
                     guard client.pendingReplyOffset == 0, let encoded = try? NDJSON.encode(refusal) else {
-                        disconnect(client); return
+                        disconnect(client, reason: "reply revoked mid-frame"); return
                     }
                     client.queuedReplyBytes += encoded.count - client.pendingReplies[0].payload.count
                     client.pendingReplies[0] = .init(payload: encoded)
@@ -5819,6 +5936,9 @@ public final class SessionServer: @unchecked Sendable {
             if result > 0 {
                 client.pendingReplyOffset += result
                 client.queuedReplyBytes -= result
+                if !client.heldOutput.isEmpty, client.queuedReplyBytes < Self.localOutputHighWaterMark / 4 {
+                    releaseHeldOutput(of: client)
+                }
                 if client.pendingReplyOffset == payload.count {
                     client.pendingReplies.removeFirst()
                     client.pendingReplyOffset = 0
@@ -5834,7 +5954,7 @@ public final class SessionServer: @unchecked Sendable {
             }
 
             ShepherdLog.warning("extension reply write failed on fd \(client.fd): errno \(errno)")
-            disconnect(client)
+            disconnect(client, reason: "write failed: errno \(errno)")
             return
         }
 
@@ -5842,7 +5962,7 @@ public final class SessionServer: @unchecked Sendable {
         client.writeSource = nil
         if client.tunnels?.isPaused == true { client.tunnels?.backlogDidDrain() }
         if client.closeAfterFlush {
-            disconnect(client)
+            disconnect(client, reason: "closed after its final reply")
         }
     }
 
@@ -7465,27 +7585,73 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor
     public func relayNotifyToLocalApp(agentID: AgentID, title: String, body: String) -> Bool {
         guard localAppConnected else { return false }
-        queue.async { [self] in
-            for app in clients.values where app.isLocal && app.authenticated
-                && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(.agentNotify(agentID: agentID, title: title, body: body), to: app)
-            }
-        }
+        queue.async { [self] in sendToLocalApps(.agentNotify(agentID: agentID, title: title, body: body)) }
         return true
     }
 
     /// Hands `job` to the app connected over `host.sock` to draw, for a host with no web view of
-    /// its own. `answer` gets the app's result, or nil when no app that draws is connected or it
-    /// went away first. Any thread; `answer` is called on the server queue.
-    func relayDesign(_ job: DesignRelayJob, answer: @escaping (DesignRelayResult?) -> Void) {
+    /// its own. The job goes as a file in `design-relay/` (a design's files outgrow a frame), which
+    /// is removed once answered. With no app that draws, it waits `designRelayReconnectWait` for
+    /// one. `answer` gets the app's result, or a failure with `code`. Any thread; `answer` is
+    /// called on the server queue.
+    func relayDesign(_ job: DesignRelayJob, code: String, answer: @escaping (DesignRelayResult) -> Void) {
+        let until = Date().addingTimeInterval(designRelayReconnectWait)
+        let file = designRelayFolder.appendingPathComponent(UUID().uuidString + ".json")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                try FileManager.default.createDirectory(at: designRelayFolder, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+                try JSONEncoder().encode(job).write(to: file, options: .atomic)
+            } catch {
+                return queue.async { answer(.failed(code: code, message: "Shepherd couldn't hand the design to its app: \(error.localizedDescription)")) }
+            }
+            queue.async { self.handOffDesign(file, code: code, until: until, answer: answer) }
+        }
+    }
+
+    /// Hands `job` to the app connected over `host.sock`, for a host with no window of its own.
+    /// `answer` gets the app's result, or nil when no such app is connected or it went away
+    /// first. Any thread; `answer` is called on the server queue.
+    func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
         queue.async { [self] in
             guard let app = clients.values.first(where: {
-                $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.designRelayCapability)
+                $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability)
             }) else { return answer(nil) }
-            nextDesignRelayToken += 1
-            designRelays[nextDesignRelayToken] = (app.fd, answer)
-            send(.designRelay(token: nextDesignRelayToken, job: job), to: app)
+            nextAppRelayToken += 1
+            appRelays[nextAppRelayToken] = (app.fd, answer)
+            send(.appRelay(token: nextAppRelayToken, job: job), to: app)
         }
+    }
+
+    var designRelayFolder: URL { supportDirectory.appendingPathComponent("design-relay", isDirectory: true) }
+
+    private func handOffDesign(_ file: URL, code: String, until: Date, answer: @escaping (DesignRelayResult) -> Void) {
+        let apps = clients.values.filter { $0.isLocal && $0.authenticated }
+        guard let app = apps.first(where: { $0.clientCapabilities.contains(RemoteProtocol.designRelayCapability) }) else {
+            guard Date() >= until else {
+                queue.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.handOffDesign(file, code: code, until: until, answer: answer) }
+                return
+            }
+            try? FileManager.default.removeItem(at: file)
+            return answer(.failed(code: code, message: apps.isEmpty ? Self.appNotOpen : Self.appTooOld))
+        }
+        nextDesignRelayToken += 1
+        let token = nextDesignRelayToken
+        designRelays[token] = (app.fd, file, code, answer)
+        send(.designRelay(token: token, jobFile: file.path), to: app)
+        // An app that never answers doesn't keep the file: well past any drawing's own deadline.
+        queue.asyncAfter(deadline: .now() + 5 * designRenderDeadline) { [weak self] in
+            guard let self, designRelays[token] != nil else { return }
+            endDesignRelay(token, .failed(code: code, message: "Shepherd's app didn't draw the design."))
+        }
+    }
+
+    /// Answers relay `token` and removes its job file. Server queue.
+    private func endDesignRelay(_ token: Int, _ result: DesignRelayResult) {
+        guard let relay = designRelays.removeValue(forKey: token) else { return }
+        try? FileManager.default.removeItem(at: relay.file)
+        relay.answer(result)
     }
 
     /// One answer to a render, whichever of the app and the deadline comes first.
@@ -8395,6 +8561,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.sendToLocalApps(.toolFinished(agentID: agentID, tool: name))
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread, weak serverWeak] event in
