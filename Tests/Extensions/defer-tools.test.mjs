@@ -149,7 +149,8 @@ test("a search for something an MCP server offers loads the weaker matches it al
     const loaded = names(requests[1]).filter((name) => !names(requests[0]).includes(name));
     assert.ok(loaded.some((name) => /^mcp__\w+__create_issue$/.test(name)), `the servers' tools load: ${loaded}`);
     // Whatever else the search loads by a word they share (pi loads every match up to its limit), a family never comes with it.
-    assert.ok(AUTOMATIONS.filter((name) => loaded.includes(name)).length <= 1, `no automation family: ${loaded}`);
+    // pi 1.5's ranking lets automation_create and automation_update match "create"; never the whole family.
+    assert.ok(AUTOMATIONS.some((name) => !loaded.includes(name)), `no automation family: ${loaded}`);
     assert.ok(!BROWSER.some((name) => loaded.includes(name)) && !PEERS.some((name) => loaded.includes(name)), `no other family: ${loaded}`);
   } finally { await thread.stop(); }
 });
@@ -181,9 +182,14 @@ test("loading changes the request from its head on a model that cannot take a to
     // Plain: the tool list sent is longer, so a cached prefix of the request ends at the first difference, in the tools.
     assert.equal(names(plain.requests[0]).length + BROWSER.length, names(plain.requests[1]).length);
     assert.ok(!tail(plain.requests[1]).includes("additional_tools"));
-    // Anchored: the same tools at the top, the new ones where they were loaded, and everything before them as it was.
-    assert.deepEqual(names(placed.requests[1]), names(placed.requests[0]));
-    assert.ok(tail(placed.requests[1]).includes("additional_tools"));
+    // Anchored: since pi 1.5 the first tool list is itself an additional_tools item at the head, the new ones a second where
+    // they were loaded, and everything before them as it was.
+    const lists = (request) => request.body.input.filter((item) => item.type === "additional_tools").map((item) => item.tools.map((tool) => tool.name));
+    assert.equal(placed.requests[0].body.tools, undefined);
+    assert.equal(lists(placed.requests[0]).length, 1);
+    const [head, loaded] = lists(placed.requests[1]);
+    assert.deepEqual(head, lists(placed.requests[0])[0]);
+    for (const name of BROWSER) assert.ok(loaded.includes(name) && !head.includes(name), `${name} arrives where it was loaded`);
     const before = JSON.stringify(placed.requests[0].body.input), after = JSON.stringify(placed.requests[1].body.input);
     assert.ok(after.startsWith(before.slice(0, -1)), "the earlier request is a prefix of the later one");
   } finally { await plain.thread.stop(); await placed.thread.stop(); }
@@ -227,7 +233,8 @@ test("a restart keeps what a search loaded, and a thread from before deferral re
     for (const name of [...PEERS, ...AUTOMATIONS, "review_diff"]) assert.ok(!names(request).includes(name), `${name} was never loaded`);
     await resumed.stop();
 
-    // A session that began with every tool direct has nothing a search loaded: it resumes with the deferral on.
+    // A session that began with every tool direct keeps them: pi 1.3+ restores a resumed session's active tools, so the
+    // deferral applies to new threads (pi 1.0 resumed it deferred).
     fs.rmSync(folder, { recursive: true, force: true });
     fs.mkdirSync(folder);
     const old = await startThread({ dir: folder, keepDir: true, needsName: false, defer: false });
@@ -237,7 +244,7 @@ test("a restart keeps what a search loaded, and a thread from before deferral re
     const next = await startThread({ dir: folder, keepDir: true, needsName: false });
     await next.turn("hello again");
     assert.ok(next.mainRequests()[0].body.input.length > 2, "the session was resumed, not started over");
-    assert.ok(!names(next.mainRequests()[0]).includes("browser_open"), "the first set is the launch's own, not a load");
+    assert.ok(names(next.mainRequests()[0]).includes("browser_open"), "the session's own active tools come back");
     await next.stop();
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });

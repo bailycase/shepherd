@@ -202,8 +202,6 @@ struct SidebarSource: Equatable {
         var offline = false
         /// The agents its missions started (`missions.v1`): a host sends no missions in its state.
         var missionAgents: Set<AgentID> = []
-        /// The background host on this Mac: its threads are this Mac's, so they wear no host tag.
-        var thisMac = false
     }
 
     var local: ShepherdState
@@ -427,7 +425,7 @@ enum SidebarDerivation {
                         ?? .remoteDesign(RemoteDesignRef(hostID: host.id, designID: design.id))
                     var row = designRow(design)
                     row = SidebarListRow(id: id, title: row.title, leading: row.leading,
-                                         accessory: host.thisMac ? row.accessory : .tag(host.name), section: .designs, help: row.help,
+                                         accessory: .tag(host.name), section: .designs, help: row.help,
                                          accessibilityLabel: row.accessibilityLabel + ", on \(host.name)", worktree: false,
                                          automation: nil, automationLive: false)
                     row.offline = host.offline
@@ -554,7 +552,9 @@ enum SidebarDerivation {
             accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none : .none
             word = AgentRow.statusWord(agent.status, turnFailed: failed)
         }
-        let finished = !needsYou && !cannotStart && !waiting && (agent.status == .done || failed || (automation != nil && !live && run?.settledAt != nil))
+        // A completion the host says was opened, here or on another device, is no longer Done.
+        let finished = !needsYou && !cannotStart && !waiting && agent.completionSeen != true
+            && (agent.status == .done || failed || (automation != nil && !live && run?.settledAt != nil))
         let section: SidebarActivitySection = needsYou ? .needsYou : waiting || cannotStart ? .recents
             : automation != nil ? .automations : live || agent.status == .working ? .working : finished ? .done : .recents
         return SidebarListRow(
@@ -625,7 +625,7 @@ enum SidebarDerivation {
             word = "needs you"
         } else {
             leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))
-            accessory = host.thisMac ? .none : .tag(host.name)
+            accessory = .tag(host.name)
             word = AgentRow.statusWord(agent.status)
         }
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
@@ -633,8 +633,8 @@ enum SidebarDerivation {
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
             accessory: accessory, hasGoal: agent.goalState != nil,
             section: needsYou ? .needsYou : folded ?? automation ? .automations : host.offline ? .recents : agent.status == .working ? .working
-                : agent.status == .done ? .done : .recents,
-            completion: agent.status == .done ? 1 : nil,
+                : agent.status == .done && agent.completionSeen != true ? .done : .recents,
+            completion: agent.status == .done && agent.completionSeen != true ? 1 : nil,
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),

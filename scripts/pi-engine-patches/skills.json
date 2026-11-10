@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0",
+  "version": "1.5.1",
   "files": [
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
-      "before": "a0644ab05cf7ee3e4d566f21113d5b6c2361588237c999a45fa0d7935b68af10",
-      "after": "ba237fb9d948bf14ce09fdd250e652c234d4a10ff7a1dea1c15eb4b73cd55fc3",
+      "before": "f5bc66423ea13d733d5aa8e6985bcfad0beed93503ad8082de5a145d7b733574",
+      "after": "e80e7cf6321f5f985b2bd1e9736065d26928259fa7e4c1a14cb700d971c38ec6",
       "edits": [
         {
           "old": "import Anthropic, {} from \"@anthropic-ai/sdk\";",
@@ -21,9 +21,9 @@
       ]
     },
     {
-      "path": "dist/bundle/chunks/anthropic-messages-UID2PALB.js",
-      "before": "86370b5d60a634d40def4b9d58a0025ca64a61fb74103a8de793ed91a398a230",
-      "after": "eb3f8c3ab2d9fa890076d9776a52ffa1569e07701d1d4b5df8385e6c148c982c",
+      "path": "dist/bundle/chunks/anthropic-messages-MGNURJ72.js",
+      "before": "204c2314f6656792df8b633aab12a43ebda7bb0ca0e5368f81ad6597734b29cc",
+      "after": "0ce6697f1d6e46ab30875ef2a7019437f090e9f9daa82e3605f7fd92e58c6fcb",
       "edits": [
         {
           "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",
@@ -41,8 +41,8 @@
     },
     {
       "path": "dist/utils/shell.js",
-      "before": "c8378f2b0566e35f90dfbb622a2214acf5cf45d15107c44b260cad897b539f72",
-      "after": "58555cb340755090fa990753b41d55e19dcbb1d69be2b9cce170168dc5f8114e",
+      "before": "57dd12450505faaf713b7cfeddff43ce8bd6238b3cfb755f87bdc83ee6134fc2",
+      "after": "a868c82159e0afbe0558d4a1262c36317be868b44b0a74b511cfd9084c18cc04",
       "edits": [
         {
           "old": "    const hasBinDir = pathEntries.includes(binDir);\n    const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);",
@@ -51,9 +51,9 @@
       ]
     },
     {
-      "path": "dist/bundle/chunks/chunk-PRD6WYBT.js",
-      "before": "583f63dfc899c8e5dc93e71dc4ce3febef31467df77108c95ded51b5c3adbc07",
-      "after": "0de6aa502eddc83e245d837ff1a99153967b955fd8798dd0c971bbee366112d5",
+      "path": "dist/bundle/chunks/chunk-Y55SJART.js",
+      "before": "a89fabee8d170ff09ed3e3c0354eb56e72384a1e142fa08e5686975cbbdbf3e1",
+      "after": "8adfa954f7798467abf015f05ecd5469953c383c7cef3231fd3c0ce8a2fde659",
       "edits": [
         {
           "old": "updatedPath=currentPath.split(delimiter).filter(Boolean).includes(binDir)?currentPath:[binDir,currentPath].filter(Boolean).join(delimiter)",
@@ -63,8 +63,8 @@
     },
     {
       "path": "dist/modes/interactive/components/config-selector.js",
-      "before": "f2322efaa4c2cee047a8254473a3569e92b35e1b71827c9ad6447083aed53a18",
-      "after": "0cbb07f758fee428deca464a13a35533f8983569ef9f1882ce5464ea1bbeec30",
+      "before": "ae98e9a863f3b15cab98391d826dfad3ec98a6715506bbfbcfdfef476e25e099",
+      "after": "97c851a6ea08cc00b3877b1c9def5a684c5d2783723e2ef4678265eeb3716fe0",
       "edits": [
         {
           "old": "import { CONFIG_DIR_NAME } from \"../../../config.js\";",
@@ -77,40 +77,36 @@
       ]
     },
     {
-      "path": "dist/bundle/chunks/chunk-33XOIQ5N.js",
-      "before": "1fbf59b1126d78129049710d1c825afaf3a905333a62a680fdb2174fdb6d3aca",
-      "after": "f597156e1a70da83e6036cd38fb7451d98a802fce28d1d204684826b7dd793f6",
+      "path": "dist/bundle/chunks/chunk-ZKNSXGL5.js",
+      "before": "e02bd440900e422cab0848686902be6d777dc2222ebe4803d98b272173bc083c",
+      "after": "62ac71b2c47eb6e04e62e0fec8fd06d5db945226d147b4882c836ecb582ec94b",
       "edits": [
         {
-          "old": "import{ProjectTrustStore,addMcpServerConfig,",
-          "new": "import{getProjectConfigDirs,getProjectConfigPath}from\"../../config.js\";import{ProjectTrustStore,addMcpServerConfig,"
-        },
-        {
-          "old": "projectBaseDir=join4(this.cwd,CONFIG_DIR_NAME)",
+          "old": "projectBaseDir=join3(this.cwd,CONFIG_DIR_NAME)",
           "new": "projectBaseDir=dirname3(getProjectConfigPath(this.cwd,\"settings.json\"))"
         },
         {
-          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"npm\")",
+          "old": "join3(this.cwd,CONFIG_DIR_NAME,\"npm\")",
           "new": "getProjectConfigPath(this.cwd,\"npm\")"
         },
         {
-          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"npm\",\"node_modules\",source.name)",
+          "old": "join3(this.cwd,CONFIG_DIR_NAME,\"npm\",\"node_modules\",source.name)",
           "new": "getProjectConfigPath(this.cwd,\"npm\",\"node_modules\",source.name)"
         },
         {
-          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"git\")",
+          "old": "join3(this.cwd,CONFIG_DIR_NAME,\"git\")",
           "new": "getProjectConfigPath(this.cwd,\"git\")"
         },
         {
-          "old": "join4(this.cwd,CONFIG_DIR_NAME)",
+          "old": "join3(this.cwd,CONFIG_DIR_NAME)",
           "new": "dirname3(getProjectConfigPath(this.cwd,\"settings.json\"))"
         },
         {
-          "old": "this.projectSettingsPath=join5(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
+          "old": "this.projectSettingsPath=join(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
           "new": "this.projectSettingsPath=getProjectConfigPath(resolvedCwd,\"settings.json\")"
         },
         {
-          "old": "project:join5(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
+          "old": "project:join(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
           "new": "project:getProjectConfigPath(resolvedCwd,\"settings.json\")"
         },
         {
@@ -118,32 +114,32 @@
           "new": "let installed=this.resolveManagedPath(installRoot,source.host,source.path);return scope===\"project\"?getProjectConfigPath(this.cwd,\"git\",relative(installRoot,installed)):installed"
         },
         {
-          "old": "join17(this.cwd,CONFIG_DIR_NAME,\"SYSTEM.md\")",
+          "old": "join13(this.cwd,CONFIG_DIR_NAME,\"SYSTEM.md\")",
           "new": "getProjectConfigPath(this.cwd,\"SYSTEM.md\")"
         },
         {
-          "old": "join17(this.cwd,CONFIG_DIR_NAME,\"APPEND_SYSTEM.md\")",
+          "old": "join13(this.cwd,CONFIG_DIR_NAME,\"APPEND_SYSTEM.md\")",
           "new": "getProjectConfigPath(this.cwd,\"APPEND_SYSTEM.md\")"
         },
         {
-          "old": "projectRoots=[join17(this.cwd,CONFIG_DIR_NAME,\"skills\"),join17(this.cwd,CONFIG_DIR_NAME,\"prompts\"),join17(this.cwd,CONFIG_DIR_NAME,\"themes\"),join17(this.cwd,CONFIG_DIR_NAME,\"extensions\")]",
-          "new": "projectRoots=getProjectConfigDirs(this.cwd).flatMap(base=>[\"skills\",\"prompts\",\"themes\",\"extensions\"].map(kind=>join17(base,kind)))"
+          "old": "projectRoots=[join13(this.cwd,CONFIG_DIR_NAME,\"skills\"),join13(this.cwd,CONFIG_DIR_NAME,\"prompts\"),join13(this.cwd,CONFIG_DIR_NAME,\"themes\"),join13(this.cwd,CONFIG_DIR_NAME,\"extensions\")]",
+          "new": "projectRoots=getProjectConfigDirs(this.cwd).flatMap(base=>[\"skills\",\"prompts\",\"themes\",\"extensions\"].map(kind=>join13(base,kind)))"
         },
         {
-          "old": "[join17(this.agentDir,\"themes\"),join17(this.cwd,CONFIG_DIR_NAME,\"themes\")]",
-          "new": "[join17(this.agentDir,\"themes\"),...getProjectConfigDirs(this.cwd).map(base=>join17(base,\"themes\"))]"
+          "old": "[join13(this.agentDir,\"themes\"),join13(this.cwd,CONFIG_DIR_NAME,\"themes\")]",
+          "new": "[join13(this.agentDir,\"themes\"),...getProjectConfigDirs(this.cwd).map(base=>join13(base,\"themes\"))]"
         },
         {
-          "old": "scope===\"project\"?join31(this.cwd,CONFIG_DIR_NAME):this.agentDir",
-          "new": "scope===\"project\"?dirname17(getProjectConfigPath(this.cwd,\"settings.json\")):this.agentDir"
+          "old": "scope===\"project\"?join27(this.cwd,CONFIG_DIR_NAME):this.agentDir",
+          "new": "scope===\"project\"?dirname16(getProjectConfigPath(this.cwd,\"settings.json\")):this.agentDir"
         },
         {
-          "old": ",projectDirs={extensions:join4(projectBaseDir,\"extensions\"),skills:join4(projectBaseDir,\"skills\"),prompts:join4(projectBaseDir,\"prompts\"),themes:join4(projectBaseDir,\"themes\")}",
+          "old": ",projectDirs={extensions:join3(projectBaseDir,\"extensions\"),skills:join3(projectBaseDir,\"skills\"),prompts:join3(projectBaseDir,\"prompts\"),themes:join3(projectBaseDir,\"themes\")}",
           "new": ""
         },
         {
           "old": "projectTrusted&&(addResources(\"extensions\",collectAutoExtensionEntries(projectDirs.extensions),projectMetadata,projectOverrides.extensions,projectBaseDir),addResources(\"skills\",collectAutoSkillEntries(projectDirs.skills,\"pi\"),projectMetadata,projectOverrides.skills,projectBaseDir));",
-          "new": "if(projectTrusted)for(let baseDir of getProjectConfigDirs(this.cwd)){let metadata={...projectMetadata,baseDir},extensions=collectAutoExtensionEntries(join4(baseDir,\"extensions\")).filter(file=>getProjectConfigPath(this.cwd,relative(baseDir,file))===file);addResources(\"extensions\",extensions,metadata,projectOverrides.extensions,projectBaseDir);addResources(\"skills\",collectAutoSkillEntries(join4(baseDir,\"skills\"),\"pi\"),metadata,projectOverrides.skills,projectBaseDir);addResources(\"prompts\",collectAutoPromptEntries(join4(baseDir,\"prompts\")),metadata,projectOverrides.prompts,projectBaseDir);addResources(\"themes\",collectAutoThemeEntries(join4(baseDir,\"themes\")),metadata,projectOverrides.themes,projectBaseDir);}"
+          "new": "if(projectTrusted)for(let baseDir of getProjectConfigDirs(this.cwd)){let metadata={...projectMetadata,baseDir},extensions=collectAutoExtensionEntries(join3(baseDir,\"extensions\")).filter(file=>getProjectConfigPath(this.cwd,relative(baseDir,file))===file);addResources(\"extensions\",extensions,metadata,projectOverrides.extensions,projectBaseDir);addResources(\"skills\",collectAutoSkillEntries(join3(baseDir,\"skills\"),\"pi\"),metadata,projectOverrides.skills,projectBaseDir);addResources(\"prompts\",collectAutoPromptEntries(join3(baseDir,\"prompts\")),metadata,projectOverrides.prompts,projectBaseDir);addResources(\"themes\",collectAutoThemeEntries(join3(baseDir,\"themes\")),metadata,projectOverrides.themes,projectBaseDir);}"
         },
         {
           "old": "projectTrusted&&(addResources(\"prompts\",collectAutoPromptEntries(projectDirs.prompts),projectMetadata,projectOverrides.prompts,projectBaseDir),addResources(\"themes\",collectAutoThemeEntries(projectDirs.themes),projectMetadata,projectOverrides.themes,projectBaseDir)),addResources",
@@ -158,8 +154,8 @@
           "new": "projectSkillsDirs=getProjectConfigDirs(resolvedCwd).map(base=>resolve2(base,\"skills\"))"
         },
         {
-          "old": "if(isUnderPath(resolvedPath,projectSkillsDir))",
-          "new": "if(projectSkillsDirs.some(dir=>isUnderPath(resolvedPath,dir)))"
+          "old": "if(isPathWithin(projectSkillsDir,resolvedPath))",
+          "new": "if(projectSkillsDirs.some(dir=>isPathWithin(dir,resolvedPath)))"
         },
         {
           "old": ",localExtDir=path3.join(resolvedCwd,CONFIG_DIR_NAME,\"extensions\");addPaths(discoverExtensionsInDir(localExtDir));",
@@ -179,7 +175,7 @@
         },
         {
           "old": "import { createRequire as __piCreateRequire } from \"node:module\";",
-          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession, normalizeEmptyCompletion, isEmptyCompletionError } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession, normalizeEmptyCompletion, isEmptyCompletionError } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport{getProjectConfigDirs,getProjectConfigPath}from\"../../config.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
         },
         {
           "old": "_handleAgentEvent=async event=>{",
@@ -190,8 +186,12 @@
           "new": "_isRetryableError(message){return isContextOverflow(message,(this._modelForMessage(message)??this.model)?.contextWindow??0)?!1:isEmptyCompletionError(message)||isRetryableAssistantError(message)}"
         },
         {
-          "old": "async _runAgentPrompt(messages){this._agentRunAbortRequested=!1,this._failedResponse=void 0,",
-          "new": "    getRestartRecoveryState() { return restartRecoveryState(this, this._cwd); }\n    resumeSession(token, operationID) { return resumeSession(this, token, operationID, this._cwd); }\n    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\nasync _runAgentPrompt(messages,recoveredFailure){const recoverySessionID=this.sessionId;this._agentRunAbortRequested=!1,this._failedResponse=recoveredFailure,"
+          "old": "async _startRun(trigger,onStarted){this._isAgentRunActive=!0,this._agentRunAbortRequested=!1;let messages;try{messages=await this._prepareRun(trigger)}",
+          "new": "    getRestartRecoveryState() { return restartRecoveryState(this, this._cwd); }\n    resumeSession(token, operationID) { return resumeSession(this, token, operationID, this._cwd); }\n    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runSystemPromptOptions = accepted.promptOptions;\n        this._startRun(undefined, undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\nasync _startRun(trigger,onStarted,recoveredFailure){const recoverySessionID=this.sessionId;this._isAgentRunActive=!0,this._agentRunAbortRequested=!1;let messages;try{trigger!==void 0&&(messages=await this._prepareRun(trigger))}"
+        },
+        {
+          "old": "onStarted?.(),this._failedResponse=void 0,",
+          "new": "onStarted?.(),this._failedResponse=recoveredFailure,"
         },
         {
           "old": "for(await this.agent.prompt(messages);!this._agentRunAbortRequested;)",
@@ -218,8 +218,8 @@
           "new": "case\"get_messages\":return success(id,\"get_messages\",{messages:command.history===!0?session.getRecoveryTranscript():session.messages});"
         },
         {
-          "old": "this._refreshFinalizedContext(),this._restoreToolsFromTranscript(),await this._extensionRunner.emit({type:\"session_tree\"",
-          "new": "invalidateRecoveryGeneration(this),this._refreshFinalizedContext(),this._restoreToolsFromTranscript(),await this._extensionRunner.emit({type:\"session_tree\""
+          "old": "this._refreshFinalizedContext(),this._restoreToolsFromTranscript(),this._branchSummaryAbortController=void 0,await this._extensionRunner.emit({type:\"session_tree\"",
+          "new": "invalidateRecoveryGeneration(this),this._refreshFinalizedContext(),this._restoreToolsFromTranscript(),this._branchSummaryAbortController=void 0,await this._extensionRunner.emit({type:\"session_tree\""
         },
         {
           "old": "dispose(){try{this.abortRetry()",
@@ -232,36 +232,32 @@
         {
           "old": "setThinkingLevel(level,options={}){let availableLevels=",
           "new": "setThinkingLevel(level,options={}){invalidateRecoveryGeneration(this);let availableLevels="
-        },
-        {
-          "old": "        this._runAgentPrompt(undefined, failed).then(() => {",
-          "new": "        this._runSystemPromptOptions = accepted.promptOptions;\n        this._runAgentPrompt(undefined, failed).then(() => {"
         }
       ]
     },
     {
-      "path": "dist/bundle/chunks/chunk-KDN6RCEQ.js",
-      "before": "5c1bcab1a910f10a6d2f3d11fd28939358fee5bd9539e5501cad937c66a1dbfa",
-      "after": "6892f507e5874ec008d3d169bc58f6e073356690dcf22a58f6af697cfd64e391",
+      "path": "dist/bundle/chunks/chunk-MABPTPMF.js",
+      "before": "5b54c438fd51cc7d0a21aabee083529d629baa636859ed07b4039ee05cfef656",
+      "after": "80c187451f45dd5cd5f283aabd748b2413e78f3d093873b700be4b11719d8132",
       "edits": [
         {
-          "old": "import{CONFIG_DIR_NAME,canonicalizePath,resolvePath,stripBom}from\"./chunk-2KTBZM5G.js\";",
-          "new": "import{CONFIG_DIR_NAME,canonicalizePath,resolvePath,stripBom}from\"./chunk-2KTBZM5G.js\";import{getProjectConfigDirs}from\"../../config.js\";"
+          "old": "import{CONFIG_DIR_NAME,VERSION,canonicalizePath,getAgentDir,getFileRevision,normalizePath,pathsEqual,resolvePath,stripBom}from\"./chunk-36QC74V4.js\";",
+          "new": "import{CONFIG_DIR_NAME,VERSION,canonicalizePath,getAgentDir,getFileRevision,normalizePath,pathsEqual,resolvePath,stripBom}from\"./chunk-36QC74V4.js\";import{getProjectConfigDirs,getProjectConfigPath}from\"../../config.js\";"
         },
         {
-          "old": "currentDir=canonicalizePath(resolvePath(cwd)),configDir=join(currentDir,CONFIG_DIR_NAME);if(TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync(join(configDir,entry))))",
-          "new": "currentDir=canonicalizePath(resolvePath(cwd));if(getProjectConfigDirs(currentDir).some(configDir=>TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync(join(configDir,entry)))))"
+          "old": "currentDir=canonicalizePath(resolvePath(cwd)),configDir=join4(currentDir,CONFIG_DIR_NAME);if(TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync2(join4(configDir,entry))))",
+          "new": "currentDir=canonicalizePath(resolvePath(cwd));if(getProjectConfigDirs(currentDir).some(configDir=>TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync2(join4(configDir,entry)))))"
         },
         {
-          "old": "options.projectTrusted&&readConfigFile(join2(options.cwd,CONFIG_DIR_NAME,\"mcp.json\"),\"project\",state)",
-          "new": "options.projectTrusted&&getProjectConfigDirs(options.cwd).reverse().forEach(base=>readConfigFile(join2(base,\"mcp.json\"),\"project\",state))"
+          "old": "let projectConfig=options.projectTrusted?join3(options.cwd,CONFIG_DIR_NAME,\"mcp.json\"):void 0;return projectConfig&&readConfigFile(projectConfig,\"project\",state2),",
+          "new": "let projectConfig=options.projectTrusted?getProjectConfigPath(options.cwd,\"mcp.json\"):void 0;return projectConfig&&getProjectConfigDirs(options.cwd).reverse().forEach(base=>readConfigFile(join3(base,\"mcp.json\"),\"project\",state2)),"
         }
       ]
     },
     {
       "path": "dist/config.js",
-      "before": "65fb18914aed61cb62d6ef932131a9b66a4e37e482d2aa09136301267929dbed",
-      "after": "93fa25754324b383d61cd75909ff3c30499c469be5988884251ff7a91f563b6b",
+      "before": "8d84a58d53f1bd4360188f787b56b16444c20e00452d075cdc77056054387926",
+      "after": "f228a811878c490d05faac5da84bc025413311ee2e7653b554475ba11b468279",
       "edits": [
         {
           "old": "export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || \".pi\";",
@@ -271,8 +267,8 @@
     },
     {
       "path": "dist/core/settings-manager.js",
-      "before": "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391",
-      "after": "ce2dfa91b3a244b92b10373a134790acd736562070d5cde0d174646c6df2b162",
+      "before": "66edb495ff9767e7f2ce0d2f4e2d102532e4b396ad7bc7c3c648c7c12c0fe71d",
+      "after": "c6306a2df644d1e6430300ad889c75deee580bf8fb96c15bd23ca69533f4ab12",
       "edits": [
         {
           "old": "import { CONFIG_DIR_NAME, getAgentDir }",
@@ -290,23 +286,23 @@
     },
     {
       "path": "dist/extensions/mcp/config.js",
-      "before": "e6167bf9b062134aadb2dc85f10a57f801be6bfc2e2b4a6b8a9b01d4a345d7b1",
-      "after": "3801569dc8997458ad33086df5d4edde017e653fc181c872b0a5fa1c9e776443",
+      "before": "e87e326ffbe035c46f6707e2c65e2535c2892b2190c602d435f7114fdd1fb4cb",
+      "after": "d5ad9a3145e24ba16190fe8b00b7b54ecdb123b5c90cbf7d988b391e77fcfa37",
       "edits": [
         {
-          "old": "import { CONFIG_DIR_NAME }",
-          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+          "old": "import { CONFIG_DIR_NAME } from \"../../config.js\";",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath } from \"../../config.js\";"
         },
         {
-          "old": "    if (options.projectTrusted)\n        readConfigFile(join(options.cwd, CONFIG_DIR_NAME, \"mcp.json\"), \"project\", state);",
-          "new": "    if (options.projectTrusted) {\n        for (const base of getProjectConfigDirs(options.cwd).reverse()) {\n            readConfigFile(join(base, \"mcp.json\"), \"project\", state);\n        }\n    }"
+          "old": "    const projectConfig = options.projectTrusted ? join(options.cwd, CONFIG_DIR_NAME, \"mcp.json\") : undefined;\n    if (projectConfig)\n        readConfigFile(projectConfig, \"project\", state);\n",
+          "new": "    const projectConfig = options.projectTrusted ? getProjectConfigPath(options.cwd, \"mcp.json\") : undefined;\n    if (projectConfig) {\n        for (const base of getProjectConfigDirs(options.cwd).reverse()) {\n            readConfigFile(join(base, \"mcp.json\"), \"project\", state);\n        }\n    }\n"
         }
       ]
     },
     {
       "path": "dist/extensions/mcp/cli.js",
-      "before": "abcbf73233214aeae393a7cb0c8d59f2d8921c316301f141bc61c67749302eb2",
-      "after": "f7c8e072dd4800c5bf19eb29edb7c17beb85d944da7769b262d8f00974340fbd",
+      "before": "2e7121b30d2d53c47c9ecf6c0b00d00d0d1d0141d3607769b4a3cc03eae15be7",
+      "after": "fa65f9cc1d5ff42e81532ff9909baff25d3841b613c27bfe74dcc38074a34200",
       "edits": [
         {
           "old": "import { APP_NAME, CONFIG_DIR_NAME }",
@@ -320,8 +316,8 @@
     },
     {
       "path": "dist/core/prompt-templates.js",
-      "before": "f378bb43f6a5ee8e7a2e1b53fe8d91a6e0504d96d3a724a97a58c3bd9b647555",
-      "after": "c2f1893f4f8d563408dc4ee248c2a200e11408d6119933250f86539b0d4391fd",
+      "before": "b99a3882ebdefd5b61b7d91a1a77b1a110baf60a8ed204e008e267e604a18b2d",
+      "after": "b93b69f733e18f9793bb79add3a3357878c6d10791e48fd81cf390fafc91068e",
       "edits": [
         {
           "old": "import { CONFIG_DIR_NAME }",
@@ -343,8 +339,8 @@
     },
     {
       "path": "dist/core/skills.js",
-      "before": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c",
-      "after": "c2a17a27cbe6b3a9c3117f66ba65e086cff67a7b3c2e0e0c796964c8a9ebd741",
+      "before": "806fe63a39cdb5ab6ff4dbbc917e24a3019ead482ede621518ffffc134de2b15",
+      "after": "71f25c2a59a0444a072a7a94b25df439ae9ebd98b3825a5956f12552cc2e82c9",
       "edits": [
         {
           "old": "import { CONFIG_DIR_NAME, getAgentDir }",
@@ -359,15 +355,15 @@
           "new": "    const projectSkillsDirs = getProjectConfigDirs(resolvedCwd).map(base => resolve(base, \"skills\"));"
         },
         {
-          "old": "if (isUnderPath(resolvedPath, projectSkillsDir))",
-          "new": "if (projectSkillsDirs.some(dir => isUnderPath(resolvedPath, dir)))"
+          "old": "if (isPathWithin(projectSkillsDir, resolvedPath))",
+          "new": "if (projectSkillsDirs.some(dir => isPathWithin(dir, resolvedPath)))"
         }
       ]
     },
     {
       "path": "dist/core/extensions/loader.js",
-      "before": "440c37c201d3c9ea78b5188482ea6aaf19e654266ccb8d6760d00ef360dcae3c",
-      "after": "732ad76e055515de1d98a8e37037237ec83962659db47a46a4a734fc8794140e",
+      "before": "55e794b969dd4692a553b21767fe876537fe06083586816f62848e76c553ef7c",
+      "after": "0d7c58444be0ea8aa932ee854df1b45303038722f95523e911cdbeef231755d6",
       "edits": [
         {
           "old": "import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode }",
@@ -381,8 +377,8 @@
     },
     {
       "path": "dist/core/resource-loader.js",
-      "before": "710e367e37c40df9f8f0239ebee6955e0a971a028d20467024bf4ea9ff55a42a",
-      "after": "71f7d33395bca8637fa8692a5faf3359d663393e2ec5cd6f265f74d65b917e09",
+      "before": "57ece4ebd0ef6429bf45e1a22a7c581813251a988afa67bf2d3158eb752cdecc",
+      "after": "64b11d2cdc32080637b6b8bbee0ee401819340b10e5005f05da1eeab43f8a267",
       "edits": [
         {
           "old": "    async loadProjectTrustExtensions() {",
@@ -393,8 +389,8 @@
           "new": "    getSkillWatchPaths() {\n        return [...(this.noSkills ? [] : this.packageManager.getSkillWatchPaths()),\n            ...this.lastSkillPaths, ...this.additionalSkillPaths, ...this.extensionSkillSourceInfos.keys(),\n            ...this.getPromptWatchPaths()]\n            .map(path => this.resolveResourcePath(path));\n    }\n    getPromptWatchPaths() {\n        if (this.noPromptTemplates) return [...this.additionalPromptTemplatePaths];\n        const paths = [join(this.agentDir, \"prompts\")];\n        if (this.settingsManager.isProjectTrusted()) paths.push(...getProjectConfigDirs(this.cwd).map(base => join(base, \"prompts\")));\n        const projectBase = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));\n        for (const [entries, base] of [[this.settingsManager.getGlobalSettings().prompts, this.agentDir],\n            [this.settingsManager.getProjectSettings().prompts, projectBase]]) {\n            for (const entry of entries ?? []) {\n                if (!/^[!+-]|[*?]/.test(entry)) paths.push(this.packageManager.resolvePathFromBase(entry, base));\n            }\n        }\n        return [...paths, ...this.lastPromptPaths, ...this.additionalPromptTemplatePaths, ...this.extensionPromptSourceInfos.keys()];\n    }\n    // Shepherd: reparse skills without reloading executable extensions or settings."
         },
         {
-          "old": "import { CONFIG_DIR_NAME }",
-          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath }"
+          "old": "import { APP_NAME, CONFIG_DIR_NAME }",
+          "new": "import { APP_NAME, CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath }"
         },
         {
           "old": "const projectBase = join(this.cwd, CONFIG_DIR_NAME);",
@@ -420,8 +416,8 @@
     },
     {
       "path": "dist/core/agent-session.js",
-      "before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
-      "after": "48509c11fea895a25aa2e30ca3d738cddb21d334c54c5fc227a1f151c6dc1cd8",
+      "before": "ee756f6f74afe9f8930ebf216c95334605d913a275a0eec2c9702f101baef3c3",
+      "after": "7764b92209afa41fb714a13c2d57079d41a02ed7471cdb9715ecdc1aa4a56d18",
       "edits": [
         {
           "old": "    async reload(options) {",
@@ -440,8 +436,8 @@
           "new": "        return isEmptyCompletionError(message) || isRetryableAssistantError(message);"
         },
         {
-          "old": "    async _runAgentPrompt(messages) {",
-          "new": "    async _runAgentPrompt(messages, recoveredFailure) {"
+          "old": "    async _startRun(trigger, onStarted) {\n        this._isAgentRunActive = true;\n        this._agentRunAbortRequested = false;\n        let messages;\n        try {\n            messages = await this._prepareRun(trigger);\n",
+          "new": "    getRestartRecoveryState() { return restartRecoveryState(this, this._cwd); }\n    resumeSession(token, operationID) { return resumeSession(this, token, operationID, this._cwd); }\n    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runSystemPromptOptions = accepted.promptOptions;\n        this._startRun(undefined, undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\n    async _startRun(trigger, onStarted, recoveredFailure) {\n        const recoverySessionID = this.sessionId;\n        this._isAgentRunActive = true;\n        this._agentRunAbortRequested = false;\n        let messages;\n        try {\n            // Checkpoint recovery continues the saved context without a starting message.\n            if (trigger !== undefined)\n                messages = await this._prepareRun(trigger);\n"
         },
         {
           "old": "        this._failedResponse = undefined;\n        this._recordSelection();",
@@ -454,14 +450,6 @@
         {
           "old": "    async prompt(text, options) {",
           "new": "    _recoveryPrompts = 0;\n    async prompt(text, options) {\n        this._recoveryPrompts++;\n        try { return await this._prompt(text, options); }\n        finally { this._recoveryPrompts--; }\n    }\n    async _prompt(text, options) {"
-        },
-        {
-          "old": "    async _runAgentPrompt(messages, recoveredFailure) {",
-          "new": "    getRestartRecoveryState() { return restartRecoveryState(this, this._cwd); }\n    resumeSession(token, operationID) { return resumeSession(this, token, operationID, this._cwd); }\n    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\n    async _runAgentPrompt(messages, recoveredFailure) {"
-        },
-        {
-          "old": "    async _runAgentPrompt(messages, recoveredFailure) {\n        this._agentRunAbortRequested = false;",
-          "new": "    async _runAgentPrompt(messages, recoveredFailure) {\n        const recoverySessionID = this.sessionId;\n        this._agentRunAbortRequested = false;"
         },
         {
           "old": "            this._failedResponse = undefined;\n            this._runSystemPromptOptions = undefined;",
@@ -482,17 +470,13 @@
         {
           "old": "    setThinkingLevel(level, options = {}) {\n",
           "new": "    setThinkingLevel(level, options = {}) {\n        invalidateRecoveryGeneration(this);\n"
-        },
-        {
-          "old": "        this._runAgentPrompt(undefined, failed).then(() => {",
-          "new": "        this._runSystemPromptOptions = accepted.promptOptions;\n        this._runAgentPrompt(undefined, failed).then(() => {"
         }
       ]
     },
     {
       "path": "dist/modes/rpc/rpc-mode.js",
-      "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
-      "after": "5d74b26bfa9c1b517882cd4c20f6d05330740fa7154feda59278a4cf730e4528",
+      "before": "505297dba2df1de3003c0399b3312fd581359a4e27a5e9262b274b6cb5cb4ef3",
+      "after": "386d010e2cb958d7a761c5ff5952fd9b7af0cc4d49a53d8d5f8d337ff7ebe3fe",
       "edits": [
         {
           "old": "    // Handle a single command",
@@ -535,12 +519,12 @@
           "new": "    // Startup dialogs need stdin before session_start completes. Other commands stay gated.\n    const startup = rebindSession();\n    registerSignalHandlers();\n    const handleInputLine = async (line) => {"
         },
         {
-          "old": "        try {\n            const response = await handleCommand(command);",
-          "new": "        try {\n            await startup;\n            const response = await handleCommand(command);"
+          "old": "            try {\n                response = await handleCommand(command);",
+          "new": "            try {\n                await startup;\n                response = await handleCommand(command);"
         },
         {
-          "old": "    // Keep process alive forever",
-          "new": "    await startup;\n    // Keep process alive forever"
+          "old": "    inputReady = true;\n",
+          "new": "    await startup;\n    inputReady = true;\n"
         },
         {
           "old": "        switch (command.type) {",
@@ -566,7 +550,8 @@
     },
     {
       "path": "dist/core/package-manager.js",
-      "before": "cfd718348caadc3b74df206e9af417afb9f409cdd7b508891eb7608c21fade80",
+      "before": "4f80709eed43d5b0eaaa99ff690d3695445e506d76247444e61569fe7eb3cd4a",
+      "after": "ce03a7e756e01d8f24720201b32724cf6c60290be76b1dafd75275317367c078",
       "edits": [
         {
           "old": "    async resolve(onMissing) {",
@@ -628,13 +613,12 @@
           "old": "return join(this.cwd, CONFIG_DIR_NAME);",
           "new": "return dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
         }
-      ],
-      "after": "9af7ec14c496a0d02c5e0763a69ea28e39e19e078cd16ef173082e02b4074375"
+      ]
     },
     {
       "path": "dist/core/trust-manager.js",
-      "before": "ce8644574983b5f8a04059545305b63463557cdf8d09049c35590cb937a70c76",
-      "after": "f537a1aeb59ff35f87986ecf0d1d05329ee2df14295eb74ee65c90dd46c27f30",
+      "before": "c06b3eeaf4f613962d2ce36d03abf952e64a0bf706de67054a0340f4477937d4",
+      "after": "59e1983fc558375aedb1b08870edf289b112ca6a68b2039df3e0e56a7bcd8d63",
       "edits": [
         {
           "old": "    const configDir = join(currentDir, CONFIG_DIR_NAME);",
@@ -692,9 +676,9 @@
       ]
     },
     {
-      "path": "dist/bundle/chunks/chunk-IBCPYVFK.js",
-      "before": "36657698101aaff1634e513874455f7580874febab92616637e71754d9874361",
-      "after": "29e85b7554e7fb8e70cca6dd9f4be54450f9ff686f7a3fa1205c1c6e5544ffdf",
+      "path": "dist/bundle/chunks/chunk-4KSTFUIK.js",
+      "before": "474ef4df04023a4b1cd177f1f7a9722a9c78929bbdd8fb98aa26d2ccc286d697",
+      "after": "0058b1569efb67dd6cae6361c4e014c5ee66daa6a0e3544a86774adb6066a87a",
       "edits": [
         {
           "old": "import{execSync,spawnSync}from\"child_process\";var commandResultCache=new Map,",
@@ -724,65 +708,19 @@
     },
     {
       "path": "node_modules/@earendil-works/pi-mcp/dist/transports/stdio.js",
-      "before": "c90e0c20bf1052a70fcac794b4b223b477a627f30cbab683203497b5cf769bba",
+      "before": "25186bb2a9d6142928b03cd79ae4f8c881ab7af755e1e4d1425f3aa27d936c42",
+      "after": "a026e3b726560c541a3df3c25475103217c4fda3d79e7c64266b7799a2dd9720",
       "edits": [
         {
           "old": "                // Children of the server that ignored stdin closing would otherwise outlive it.\n                killProcessTree(child, \"SIGTERM\");",
           "new": "                // The leader is gone: finish its owned group now, including TERM-resistant children.\n                killProcessTree(child, \"SIGKILL\");"
         }
-      ],
-      "after": "758027728da50ece5ee4f93325d710599519279405feef5b61cb727d8807ac13"
-    },
-    {
-      "path": "dist/extensions/mcp/runtime.js",
-      "before": "46788ee4d3d6c5e93686920701e070692691cd6505e3bf9768eafac82c45157d",
-      "after": "09de4daf1b6bae1bfc69fc9066f10557c015cbb740b73dab4dad78e46b1d79f7",
-      "edits": [
-        {
-          "old": "    client;\n    opening;",
-          "new": "    client;\n    connectingClient;\n    opening;"
-        },
-        {
-          "old": "            await client.connect(transport);",
-          "new": "            // Own the client before initialize/list requests can yield to session shutdown.\n            this.connectingClient = client;\n            await client.connect(transport);"
-        },
-        {
-          "old": "            throw error;\n        }\n    }\n    connectFailed(error)",
-          "new": "            throw error;\n        }\n        finally {\n            this.connectingClient = undefined;\n        }\n    }\n    connectFailed(error)"
-        },
-        {
-          "old": "        const client = this.client;\n        this.client = undefined;",
-          "new": "        const client = this.client ?? this.connectingClient;\n        this.client = undefined;"
-        }
-      ]
-    },
-    {
-      "path": "dist/bundle/chunks/chunk-7FH3BDRG.js",
-      "before": "ce163e72b4d319f7129762dc4989c25e28b59b4cce0910af64858535794bfb1a",
-      "after": "c475898689d11bbdad6d1122016106cce4135b89851911af21ede1334a47b741",
-      "edits": [
-        {
-          "old": "client;opening;closed=!1;",
-          "new": "client;connectingClient;opening;closed=!1;"
-        },
-        {
-          "old": "transport=this.createTransport(this.entry,this.cwd,this.authProvider),await client.connect(transport)",
-          "new": "transport=this.createTransport(this.entry,this.cwd,this.authProvider),this.connectingClient=client,await client.connect(transport)"
-        },
-        {
-          "old": "||void 0),error}}connectFailed(error)",
-          "new": "||void 0),error}finally{this.connectingClient=void 0}}connectFailed(error)"
-        },
-        {
-          "old": "let client=this.client;this.client=void 0,await client?.close()",
-          "new": "let client=this.client??this.connectingClient;this.client=void 0,await client?.close()"
-        }
       ]
     },
     {
       "path": "dist/core/agent-session.d.ts",
-      "before": "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7",
-      "after": "0509501bf8170a011a380df8c503a71e27c41bbded7d48da65234106a24f43ab",
+      "before": "56d24887a400d77a77b428deb1cce25576cac27e18089e722f536d600fa32c3a",
+      "after": "0586c98427707a1df1471a1fbf80c1da0ae44f218b8e4f678046b94b33a3e21a",
       "edits": [
         {
           "old": "    get messages(): AgentMessage[];",
@@ -793,7 +731,7 @@
     {
       "path": "dist/core/shepherd-checkpoint-recovery.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "a6b4c8cefa779c0fa429fefd1bd070e19d1972a6eb3ccb8ec041b1eb71a5d2be",
+      "after": "246e432eec409dbaef6815ddd72c966255e60787064281dd292be0daa9462cf2",
       "source": "checkpoint-recovery.js"
     },
     {
@@ -827,8 +765,8 @@
     },
     {
       "path": "dist/extensions/mcp/index.js",
-      "before": "1c4ee9b558a158ad88ebab5e1f6b267e53a09f4a49547481a6371d38502f47ad",
-      "after": "d6bb44605cdc80f705910ae337dd349c14c92193a50af275a2d8eeb0060c7734",
+      "before": "4c497e8fa0de6b52116c2196ab6cf933780b1fdf441865c82c70a0b93eedb2ab",
+      "after": "c7d24ba987f605adcc6b70f0e01ff6fda82fccdee1f6e52528f08df5c48d3879",
       "edits": [
         {
           "old": "import { getAgentDir } from \"../../config.js\";",
@@ -839,15 +777,15 @@
           "new": "            sessionCwd = ctx.cwd;\n            watchConfig(ctx);\n"
         },
         {
-          "old": "        pi.on(\"session_shutdown\", async () => {\n            sessionActive = false;\n",
-          "new": "        // Shepherd: `mcp.json` edits (Settings, a sign-in's setup, a git pull) apply to the running session.\n        // Changed or removed servers close and withdraw their tools; new ones connect; unchanged ones keep\n        // their connection. Native file events only, never polling; trust is the session's own decision.\n        let stopConfigWatch;\n        const serverKey = (server) => JSON.stringify([server.entry.name, server.entry.scope, server.entry.source, server.entry.config, server.registeredConfig ?? null]);\n        const reloadConfig = async (ctx) => {\n            if (!sessionActive)\n                return;\n            const current = generation;\n            const loaded = defaultLoadConfig(ctx);\n            configErrors = loaded.errors;\n            autoEnableCodemode = loaded.autoEnableCodemode ?? true;\n            configuredEntries = loaded.servers;\n            const registered = registeredServers();\n            overridden = registered.overridden;\n            const kept = new Map(servers.map((server) => [serverKey(server), server]));\n            const next = [...loaded.servers.map((entry) => ({ entry })), ...registered.servers]\n                .map((server) => kept.get(serverKey(server)) ?? server);\n            const removed = servers.filter((server) => !next.includes(server));\n            const added = next.filter((server) => !servers.includes(server));\n            if (removed.length === 0 && added.length === 0)\n                return;\n            servers = next;\n            for (const server of removed)\n                hideTools(server.entry.name);\n            emitChange();\n            ensureDiscoveryActive(ctx);\n            await Promise.all(removed.map((server) => server.connection?.close().catch(() => undefined)));\n            const connecting = added.filter(isEnabled);\n            if (current !== generation || connecting.length === 0)\n                return;\n            await Promise.all(connecting.map((server) => startConnection(server, () => current === generation)));\n            if (current !== generation) {\n                await Promise.all(connecting.map((server) => server.connection?.close()));\n                return;\n            }\n            ensureDiscoveryActive(ctx);\n            reportProblems(ctx, connecting);\n        };\n        const watchConfig = (ctx) => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            if (options.loadConfig)\n                return;\n            const paths = [join(getAgentDir(), \"mcp.json\"),\n                ...(ctx.isProjectTrusted() ? getProjectConfigDirs(ctx.cwd).map((base) => join(base, \"mcp.json\")) : [])];\n            let reloading = Promise.resolve();\n            const changed = () => {\n                reloading = reloading.then(() => reloadConfig(ctx)).catch((error) => {\n                    try {\n                        ctx.ui.notify(`MCP failed to reload: ${errorMessage(error)}`, \"error\");\n                    }\n                    catch { }\n                });\n            };\n            try {\n                stopConfigWatch = watchSkillPaths(paths, changed, () => undefined);\n            }\n            catch { }\n        };\n        pi.on(\"session_shutdown\", async () => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            sessionActive = false;\n"
+          "old": "        pi.on(\"session_shutdown\", async () => {\n            session.abort();\n",
+          "new": "        // Shepherd: `mcp.json` edits (Settings, a sign-in's setup, a git pull) apply to the running session.\n        // Changed or removed servers close and withdraw their tools; new ones connect; unchanged ones keep\n        // their connection. Native file events only, never polling; trust is the session's own decision.\n        let stopConfigWatch;\n        const serverKey = (server) => JSON.stringify([server.entry.name, server.entry.scope, server.entry.source, server.entry.override ?? null, server.entry.config, server.registeredConfig ?? null]);\n        const reloadConfig = async (ctx) => {\n            const { signal } = session;\n            if (signal.aborted)\n                return;\n            const loaded = defaultLoadConfig(ctx);\n            configErrors = loaded.errors;\n            projectConfig = loaded.projectConfig;\n            autoEnableCodemode = loaded.autoEnableCodemode ?? true;\n            configuredEntries = loaded.servers;\n            const registered = registeredServers();\n            overridden = registered.overridden;\n            const kept = new Map(servers.map((server) => [serverKey(server), server]));\n            const next = [...loaded.servers.map((entry) => ({ entry })), ...registered.servers]\n                .map((server) => kept.get(serverKey(server)) ?? server);\n            const removed = servers.filter((server) => !next.includes(server));\n            const added = next.filter((server) => !servers.includes(server));\n            if (removed.length === 0 && added.length === 0)\n                return;\n            servers = next;\n            for (const server of removed)\n                hideTools(server.entry.name);\n            emitChange();\n            ensureDiscoveryActive(ctx);\n            await Promise.all(removed.map((server) => server.connection?.close().catch(() => undefined)));\n            const connecting = added.filter(isEnabled);\n            if (signal.aborted || connecting.length === 0)\n                return;\n            await Promise.all(connecting.map((server) => startConnection(server)));\n            if (signal.aborted) {\n                await Promise.all(connecting.map((server) => server.connection?.close()));\n                return;\n            }\n            ensureDiscoveryActive(ctx);\n            reportProblems(ctx, connecting);\n        };\n        const watchConfig = (ctx) => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            if (options.loadConfig)\n                return;\n            const paths = [join(getAgentDir(), \"mcp.json\"),\n                ...(ctx.isProjectTrusted() ? getProjectConfigDirs(ctx.cwd).map((base) => join(base, \"mcp.json\")) : [])];\n            let reloading = Promise.resolve();\n            const changed = () => {\n                reloading = reloading.then(() => reloadConfig(ctx)).catch((error) => {\n                    try {\n                        ctx.ui.notify(`MCP failed to reload: ${errorMessage(error)}`, \"error\");\n                    }\n                    catch { }\n                });\n            };\n            try {\n                stopConfigWatch = watchSkillPaths(paths, changed, () => undefined);\n            }\n            catch { }\n        };\n        pi.on(\"session_shutdown\", async () => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            session.abort();\n"
         }
       ]
     },
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/auth/oauth/anthropic.js",
-      "before": "80fc4412ce09d42d678f5094932f3e58eecec53df40c4530fc4f55651a57d0a4",
-      "after": "3f2f5dda5201cfd6a9e7419851ab4f51824fd9d61489c6300ae0db454d019d1c",
+      "before": "835268caed5dab6a0c7f157c551ed59a00635c76305e6e0c41b579c41aa07bc5",
+      "after": "09915a32ea28d703f4fe9cd74b6a9e9179908b3b46272b2de6252a647178ab37",
       "edits": [
         {
           "old": "export const anthropicOAuth = {",
@@ -857,8 +795,8 @@
     },
     {
       "path": "dist/bundle/chunks/anthropic.js",
-      "before": "ef7155d2bf92a2cb82f51cd26a1a93fb25e5660cae20082e8c55e293c7de45b8",
-      "after": "ae5467705b576b0bd1004949c2a7e368df7337aefef061940744982d235d692b",
+      "before": "f76fb47980e8fd82a13fc356e420a9a2f554bba0fefd4eb3f5d97812583309a8",
+      "after": "e3c342f33f63d8844710aa115c29c10d4a6ddec1671b54fcaaf2dfa0afec02f8",
       "edits": [
         {
           "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",

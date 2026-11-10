@@ -49,6 +49,13 @@ extension ShepherdViewModel {
             }
             return PreparedDesignReference(pin: pin, host: hostID)
         }
+        // The background host's design, as this app's own: the host pins it, named as it sees it (`local`).
+        if let library = localHost?.designs {
+            guard case .referencePinned(let pin) = try await Self.remoteDesign(library, .pinReference(reference)) else {
+                throw RemoteDesignReply.unexpected
+            }
+            return PreparedDesignReference(pin: pin, host: nil)
+        }
         do {
             return try await server.pinDesignReference(reference)
         } catch let error as DesignReferenceError {

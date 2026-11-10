@@ -271,7 +271,7 @@ export function resumeSession(session, token, operationID, cwd) {
     const failed = last?.role === "assistant" && ["error", "aborted"].includes(last.stopReason) ? last : undefined;
     try {
         if (failed) session._omitRecoveryAttempt(failed);
-        session._runAgentPrompt(undefined, failed).then(() => finishRecovery(session, receipt, "settled"),
+        session._startRun(undefined, undefined, failed).then(() => finishRecovery(session, receipt, "settled"),
             error => finishRecovery(session, receipt, "unknown", String(error)));
     } catch (error) {
         finishRecovery(session, receipt, "unknown", String(error));

@@ -6,7 +6,8 @@ import ShepherdSessions
 
 // The Automations and Hosts pages' models, derived from the workspace and each host's
 // connection, and what their buttons do. This Mac is a host among the others here
-// (`PageHost.localID`); a key on it acts on this Mac's server, any other on its host.
+// (`PageHost.localID`); a key on it acts on this Mac's workspace (through its background host,
+// as its client), any other on its host.
 
 extension ShepherdViewModel {
     // MARK: Automations
@@ -14,7 +15,7 @@ extension ShepherdViewModel {
     /// This Mac, then every configured host, as the shared automations presentation reads them.
     var automationHosts: [AutomationHost] {
         [AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state, triggers: true)]
-            + remoteHosts.allConnections.map { connection in
+            + remoteHosts.connections.map { connection in
                 AutomationHost(id: connection.id, name: connection.config.name, connected: connection.phase == .connected,
                                manageable: connection.supportsAutomations, state: connection.state,
                                triggers: connection.supportsAutomationTriggers)
@@ -76,7 +77,7 @@ extension ShepherdViewModel {
     /// the host.
     func loadAutomationPageRuns() async {
         await loadLocalAutomationRuns()
-        for connection in remoteHosts.allConnections where connection.phase == .connected {
+        for connection in remoteHosts.connections where connection.phase == .connected {
             for automation in connection.state.automations {
                 await loadRemoteAutomationRuns(AutomationKey(host: connection.id, automation: automation.id))
             }
@@ -169,7 +170,7 @@ extension ShepherdViewModel {
     /// Hosts a new automation can be saved on: this Mac, and each connected host that serves
     /// automations.
     var automationEditorHosts: [(id: UUID, name: String)] {
-        [(PageHost.localID, PageHost.localName)] + remoteHosts.allConnections
+        [(PageHost.localID, PageHost.localName)] + remoteHosts.connections
             .filter { $0.phase == .connected && $0.supportsAutomations }
             .map { ($0.id, $0.config.name) }
     }
@@ -196,21 +197,18 @@ extension ShepherdViewModel {
 
     /// This Mac and every configured host, as the Hosts page shows them.
     func hostsPageModel(agentVersion: String?) -> HostsPageModel {
-        HostsPageModel.make(local: hostsPageLocal, agentVersion: agentVersion, remotes: hostsPageRemotes, columns: AppLayout.hostColumns)
+        HostsPageModel.make(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes, columns: AppLayout.hostColumns)
     }
 
     /// The page as its view draws it, derived again only when what it reads changed.
     func hostsPage(agentVersion: String?) -> HostsPageModel {
-        let inputs = HostsPageInputs(local: hostsPageLocal, agentVersion: agentVersion, remotes: hostsPageRemotes)
+        let inputs = HostsPageInputs(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes)
         if let cached = hostsPageCache, cached.inputs == inputs { return cached.model }
         let model = HostsPageModel.make(local: inputs.local, agentVersion: agentVersion, remotes: inputs.remotes,
                                         columns: AppLayout.hostColumns)
         hostsPageCache = (inputs, model)
         return model
     }
-
-    /// This Mac's card: the background host's state in client mode, else the app's own.
-    private var hostsPageLocal: ShepherdState { remoteHosts.connections.first(where: \.isThisMac)?.state ?? state }
 
     private var hostsPageRemotes: [HostsPageRemote] {
         remoteHosts.pairedConnections.map { connection in

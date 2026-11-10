@@ -18,7 +18,11 @@ typealias Tab = ShepherdCore.Tab
 @Observable
 final class ShepherdViewModel {
     var state: ShepherdState
-    @ObservationIgnored lazy var missions = MissionController(vm: self)
+    /// Missions and the Project runtime this app runs on its own server, while it owns the workspace
+    /// (`RuntimeHosting`); as the background host's client the host runs them.
+    @ObservationIgnored lazy var runtime = runtimeHosting.serve()
+    var missions: MissionController { runtime.missions }
+    var projectCoordinator: ProjectCoordinatorController { runtime.coordinator }
     /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
@@ -42,7 +46,6 @@ final class ShepherdViewModel {
     /// The host whose missions the Missions page shows; nil is This Mac.
     var missionsHost: UUID?
     @ObservationIgnored var remoteMissionDrivers: [UUID: RemoteMissionDriver] = [:]
-    @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
@@ -197,11 +200,18 @@ final class ShepherdViewModel {
     /// first shown.
     var designRendering: DesignRendering {
         if let made = madeDesignRendering { return made }
-        let made = DesignRendering(folder: { [server] in server.designs.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
+        let store = designStore
+        let made = DesignRendering(folder: { store.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
         madeDesignRendering = made
         return made
     }
     @ObservationIgnored private(set) var madeDesignRendering: DesignRendering?
+    /// The background host's designs on this Mac, read-only, while the app is its client
+    /// (`connectLocalHost`): the host writes them; the app draws them from where they are.
+    @ObservationIgnored var localHostDesigns: DesignStore?
+
+    /// Where the designs' files are on this Mac: the background host's folder as its client, else the server's.
+    var designStore: DesignStore { localHostDesigns ?? server.designs }
     /// Tests turn Google Fonts off so boards never reach the network, and previews take no live
     /// views; both are set before the first design draws.
     @ObservationIgnored var designNetwork: DesignRenderingNetwork = .googleFonts
@@ -278,9 +288,6 @@ final class ShepherdViewModel {
     var selectedRemoteAgent: RemoteAgentRef?
     var remoteFocusedPaneID: PaneID?
     var remoteWorktreeSheet: RemoteAgentRef?
-    /// A worktree agent of the background host on this Mac waiting in This Mac's own Delete
-    /// worktree agent dialog (`requestRemoteDelete`), with the host's checkout once probed.
-    var thisMacWorktreeDelete: ThisMacWorktreeDelete?
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
     var hostWorktreeInfo: RemoteWorktreeInfo?
@@ -918,13 +925,12 @@ final class ShepherdViewModel {
             if CheckoutMonitor.touchesFiles(tool: tool) { checkouts?.refresh(agentID, after: .seconds(1)) }
         }
         // A limit on a provider with saved accounts and rotation on: the next account takes over,
-        // and pi's own retry (or the next turn) uses it. The thread says so.
-        server.onAgentProviderError = { [weak self] agentID, provider, message in
-            guard let self, PiAuthText.isLimit(message) else { return }
-            Task {
-                guard let switched = await self.piAuth.limitHit(provider) else { return }
-                self.threadStores.store(for: agentID).reportActionNotice(PiAuthText.switched(provider, switched))
-            }
+        // the thread says so, and the turn goes on with it.
+        let rotation = LimitRotation(server: server, piAuth: self.piAuth) { [weak self] agentID, line in
+            self?.threadStores.store(for: agentID).reportActionNotice(line)
+        }
+        server.onAgentProviderError = { agentID, provider, message in
+            MainActor.assumeIsolated { rotation.providerError(agentID, provider: provider, message: message) }
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
@@ -968,7 +974,7 @@ final class ShepherdViewModel {
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
         installRemoteInspection()
         installHostSettings()
-        missions.installRemote()
+        _ = runtime
         installHostConfiguration()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
@@ -990,6 +996,7 @@ final class ShepherdViewModel {
                     case .restartPi(let newConversation, let model):
                         if let model { self.sessions.modelOverrides[agentID] = model }
                         self.retryAgentStart(agentID, newConversation: newConversation)
+                    case .markSeen(let upTo): try await self.server.markCompletionSeen(agentID, upTo: upTo)
                     }
                     completion(.success(()))
                 } catch {
@@ -1059,9 +1066,10 @@ final class ShepherdViewModel {
             }
         }
         // Another device's New design, Open, Import and Build, made here as this Mac's own are.
-        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief in
+        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief, options in
             guard let self else { throw RemoteCreateAgentError("host is shutting down") }
-            return try await self.startDesignAgent(design, brief: brief, images: [], select: false)
+            return try await self.startDesignAgent(design, brief: brief, images: options.images, select: false,
+                                                   model: options.model, thinking: options.thinking)
         }, changed: { [weak self] in
             guard let self else { return }
             self.adopt(self.server.state)
@@ -1113,7 +1121,6 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installPullRequestPoll()
         installProjectRuntime()
-        installProjectExecution()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
         self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
@@ -1328,9 +1335,12 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         // The run log is current by the time a broadcast lands; it is the one thing a broadcast
-        // of an unchanged workspace can carry.
-        let runs = server.openAutomationRuns
-        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // of an unchanged workspace can carry. As the background host's client, the host's run
+        // log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
+        if localHost == nil {
+            let runs = server.openAutomationRuns
+            if runs != openAutomationRuns { openAutomationRuns = runs }
+        }
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
         // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
@@ -1458,7 +1468,7 @@ final class ShepherdViewModel {
         pruneDesigns()
         pruneFileTrees()
         pruneSidebarPins()
-        let live = Set(state.agents.map(\.id) + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents.map(\.id) ?? []))
+        let live = Set(state.agents.map(\.id))
         branchCardStores = branchCardStores.filter { live.contains($0.key) }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
     }

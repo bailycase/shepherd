@@ -203,7 +203,11 @@ test("MCP aliases merge server names with Shepherd precedence and the same trust
   write(path.join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: { global: { command: "global-fixture" } } }));
   write(path.join(cwd, ".pi/mcp.json"), JSON.stringify({ mcpServers: { pi: { command: "pi-fixture" }, shared: { command: "pi-shared" }, forbidden: { url: "https://fixture.invalid/mcp", auth: { provider: "fixture" } } } }));
   write(path.join(cwd, ".shepherd/mcp.json"), JSON.stringify({ mcpServers: { shepherd: { command: "shepherd-fixture" }, shared: { command: "shepherd-shared" } } }));
-  for (const entrypoint of ["dist/extensions/mcp/config.js", "dist/bundle/chunks/chunk-KDN6RCEQ.js"]) {
+  // The bundle's chunk names are content hashes; find the one that defines the loader.
+  const chunks = path.join(pkg, "dist/bundle/chunks");
+  const chunk = fs.readdirSync(chunks).filter(f => f.endsWith(".js")).find(f => fs.readFileSync(path.join(chunks, f), "utf8").includes("function loadMcpConfig("));
+  assert.ok(chunk, "the bundle defines loadMcpConfig");
+  for (const entrypoint of ["dist/extensions/mcp/config.js", `dist/bundle/chunks/${chunk}`]) {
     const { loadMcpConfig } = await import(pathToFileURL(path.join(pkg, entrypoint)));
     const trusted = loadMcpConfig({ cwd, agentDir, projectTrusted: true });
     assert.deepEqual(trusted.servers.map(s => s.name).sort(), ["global", "pi", "shared", "shepherd"]);

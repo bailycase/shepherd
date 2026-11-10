@@ -5,7 +5,7 @@ import ShepherdProtocol
 /// Where a design the @ picker lists lives (MentionPicker, DesignRefStates). Only `.local` is
 /// listed yet; the others are the picker's host tags and dimmed rows, drawn by ShepherdUI's
 /// states until remote references come.
-public enum DesignMentionHost: Hashable, Sendable {
+public enum DesignMentionHost: Hashable, Sendable, Codable {
     case local
     /// A host this Mac connects to: its name, and whether it is offline (when it was last seen,
     /// ms since 1970).
@@ -14,8 +14,8 @@ public enum DesignMentionHost: Hashable, Sendable {
 
 /// One row the composer's @ picker can pick: a design, a page, a board, or an element of a
 /// board, with its breadcrumb.
-public struct DesignMentionItem: Identifiable, Hashable, Sendable {
-    public enum Kind: String, Hashable, Sendable {
+public struct DesignMentionItem: Identifiable, Hashable, Sendable, Codable {
+    public enum Kind: String, Hashable, Sendable, Codable {
         case design, page, board, element
     }
 
@@ -147,7 +147,7 @@ public typealias DesignMentionEntries = (design: DesignMentionItem, pages: [Desi
 /// design's boards in canvas order, and each board's elements. Derived off the main thread and
 /// off the server's queue (`SessionServer.designMentionCatalog`); the picker reads it and
 /// `search` narrows it, both pure.
-public struct DesignMentionCatalog: Hashable, Sendable {
+public struct DesignMentionCatalog: Hashable, Sendable, Codable {
     public var designs: [DesignMentionItem]
     public var pages: [DesignID: [DesignMentionItem]]
     public var boards: [DesignID: [DesignMentionItem]]

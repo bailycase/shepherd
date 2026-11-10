@@ -559,6 +559,58 @@ struct PushNotificationsTests {
         #expect(payloads.current[1]["preview"] == "Reply to tools:0 second")
     }
 
+    /// The background host with this Mac's app as its local client: the app's sends reach the
+    /// host's threads over `host.sock`, each settled turn posts once to the relay, and the thread the
+    /// app says it shows (`focusThread`) posts nothing until the app clears it.
+    @Test func theBackgroundHostPushesTheAppsThreadsExceptTheWatchedOne() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let socket = host.dir.appendingPathComponent("h.sock").path, tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let registration = registration()
+        let posts = Locked<[URLRequest]>([])
+        try host.server.queue.sync {
+            try host.server.pushNotifications.register(registration)
+            host.server.pushNotifications.transport = { request, finished in
+                posts.withValue { $0.append(request) }
+                finished(202)
+                return {}
+            }
+        }
+        let pi = try await PiAgent.launch(on: host)
+        try await host.server.renameAgent(pi.agent.id, to: "Fix the login redirect")
+        let app = RemoteHostClient(localSocket: socket)
+        _ = try await app.connect(host: "", port: 0, token: try String(contentsOf: tokenURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), clientName: "Shepherd")
+        defer { app.disconnect() }
+        func turn(_ text: String) async throws {
+            let ready = try await pi.ready()
+            _ = try await app.nativeThread(agentID: pi.agent.id, request: .send(
+                expectedSessionID: ready.piSessionID, generation: ready.generation, operationID: UUID(), text: text, delivery: .followUp))
+            _ = try await pi.snapshot("\(text) settled") { s in !s.running && s.messages.contains { $0.blocks.contains { $0.text == "Reply to \(text)" } } }
+        }
+
+        try await turn("tools:0 first")
+        try await eventually("the finished turn's push") { posts.current.count == 1 }
+        let post = try #require(posts.current.first)
+        #expect(post.url?.absoluteString == "https://api.useshepherd.app/api/push/registrations/\(registration.id)/events")
+        #expect(post.httpMethod == "POST" && post.value(forHTTPHeaderField: "Authorization") == "Bearer \(registration.sendToken)")
+        let body = try #require(JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: Any])
+        #expect(body["agentID"] as? String == pi.agent.id.rawValue && body["kind"] as? String == "done")
+        #expect(body["title"] as? String == "Fix the login redirect" && body["subtitle"] as? String == "Turn finished")
+        #expect(body["preview"] as? String == "Reply to tools:0 first" && body["group"] as? String == "thread:\(pi.agent.id.rawValue)")
+
+        try await app.focusThread(pi.agent.id)
+        try await turn("tools:0 watched")
+        try await app.focusThread(nil)
+        try await turn("tools:0 third")
+        try await eventually("the push after the watch cleared") { posts.current.count == 2 }
+        try host.server.queue.sync {}
+        #expect(posts.current.count == 2, "the watched thread's turn posted nothing")
+        let last = try #require(posts.current.last?.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        #expect(last["preview"] as? String == "Reply to tools:0 third")
+    }
+
     @Test func retryInsideATurnDoesNotNotifyUntilFinalSettlement() async throws {
         let host = try ScratchServer.fresh()
         defer { host.stop() }

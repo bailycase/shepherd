@@ -78,7 +78,8 @@ extension PreviewTests {
 
     /// SHNavigation revision 420: all groups, independently folded groups, no Done, reading
     /// Done, empty and long titles, through the same state, pin and completion paths as the app.
-    @Test(arguments: ["full", "collapsed", "allCollapsed", "doneCollapsed", "nodone", "selectedDone", "afterReadingDone", "empty", "long"])
+    /// `seenElsewhere`: the host says another device opened one Done thread's completion, so it leaves Done here.
+    @Test(arguments: ["full", "collapsed", "allCollapsed", "doneCollapsed", "nodone", "selectedDone", "afterReadingDone", "seenElsewhere", "empty", "long"])
     func sidebarActivity(state sample: String) async throws {
         let (workspace, agents) = try await populatedWorkspace()
         defer { workspace.stop() }
@@ -92,7 +93,14 @@ extension PreviewTests {
             state.designs[0].name = "Checkout funnel dashboard with unusually long board and project names"
         }
         if sample == "empty" { state = ShepherdState() }
+        if sample == "seenElsewhere" {
+            for index in [4, 6] { state.agents[index].completedAt = state.agents[index].lastActiveAt }
+        }
         try await workspace.seed(state)
+        if sample == "seenElsewhere" {
+            try await workspace.server.markCompletionSeen(agents[4].id, upTo: try #require(state.agents[4].completedAt))
+            try await eventuallyOnMain("the host's seen completion") { !vm.sidebarLists.done.contains { $0.id == .local(agents[4].id) } }
+        }
         // Projects sit under Designs and above every thread group; two Projects, one a long name.
         vm.settings.projectsEnabled = true
         for name in ["Sample App", sample == "long" ? "A project whose name is far longer than the sidebar is wide" : "Latency budget"] {

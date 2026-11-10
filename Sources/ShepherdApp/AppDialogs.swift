@@ -107,20 +107,6 @@ struct AppDialogs: ViewModifier {
                 WorktreeDeleteDialog(vm: vm, agent: agent)
                     .dialogSheetFrame()
             }
-            // The background host's worktree agent: This Mac's dialog, the host's checkout and warning.
-            .sheet(item: $vm.thisMacWorktreeDelete, onDismiss: vm.runAfterDialogDismiss) { item in
-                WorktreeDeleteDialog(agent: item.agent, path: item.info?.path ?? item.agent.worktreePath ?? "", settings: vm.settings, probe: {
-                    if let info = item.info { return info.warning }
-                    let info = try await vm.thisMacWorktreeInfo(item.target)
-                    vm.thisMacWorktreeDelete?.info = info
-                    return info.warning
-                }, cancel: { vm.thisMacWorktreeDelete = nil }) { removeWorktree in
-                    let (target, info) = (item.target, vm.thisMacWorktreeDelete?.info)
-                    vm.afterDialogDismiss = { vm.deleteThisMacWorktreeAgent(target, removing: removeWorktree ? info : nil) }
-                    vm.thisMacWorktreeDelete = nil
-                }
-                .dialogSheetFrame()
-            }
             .sheet(item: $vm.agentDeleteAgent, onDismiss: vm.runAfterDialogDismiss) { agent in
                 AgentDeleteDialog(agent: agent, settings: vm.settings, cancel: { vm.agentDeleteTarget = nil }) {
                     let id = agent.id
@@ -270,7 +256,7 @@ struct WorktreeDeleteDialog: View {
         let ref = vm.localRef(agent.id)
         self.init(agent: agent, path: path, settings: vm.settings, probe: {
             if let ref {
-                let info = if let known = vm.hostWorktreeInfo { known } else { try await vm.thisMacWorktreeInfo(ref) }
+                let info = if let known = vm.hostWorktreeInfo { known } else { try await vm.localHostWorktreeInfo(ref) }
                 vm.hostWorktreeInfo = info
                 return info.warning
             }

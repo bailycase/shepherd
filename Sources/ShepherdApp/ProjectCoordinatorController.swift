@@ -8,12 +8,12 @@ import ShepherdSessions
 /// Project selection alone never creates or resumes a conversation.
 @MainActor
 final class ProjectCoordinatorController {
-    private weak var vm: ShepherdViewModel?
-    init(vm: ShepherdViewModel) { self.vm = vm }
+    private let hosting: RuntimeHosting
+    private var server: SessionServer { hosting.server }
+    init(hosting: RuntimeHosting) { self.hosting = hosting }
 
     func ensureProjectConversation(projectID: ProjectID, expectedRevision: UInt64) async throws -> AgentID {
-        guard let vm else { throw AgentStartFailure(message: "Owner closed") }
-        let project = try await vm.server.projectRuntime(projectID, expectedRevision: expectedRevision, request: .conversation)
+        let project = try await server.projectRuntime(projectID, expectedRevision: expectedRevision, request: .conversation)
         guard let id = project.coordinatorAgentID else {
             throw AgentStartFailure(message: "Send the first Project message to create its conversation.")
         }
@@ -22,43 +22,40 @@ final class ProjectCoordinatorController {
 
     @discardableResult
     func sendProjectMessage(projectID: ProjectID, expectedRevision: UInt64, operationID: UUID, text: String) async throws -> Project {
-        guard let vm else { throw AgentStartFailure(message: "Owner closed") }
-        return try await vm.server.projectRuntime(projectID, expectedRevision: expectedRevision,
+        return try await server.projectRuntime(projectID, expectedRevision: expectedRevision,
                                                   request: .message(operationID: operationID, text: text))
     }
 
     @discardableResult
     func perform(projectID: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest) async throws -> Project {
-        guard let vm else { throw AgentStartFailure(message: "Owner closed") }
-        return try await vm.server.projectRuntime(projectID, expectedRevision: expectedRevision, request: request)
+        return try await server.projectRuntime(projectID, expectedRevision: expectedRevision, request: request)
     }
 
     func perform(_ request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
-        guard let vm else { throw AgentStartFailure(message: "Owner closed") }
-        guard vm.settings.projectsEnabled else { throw LogicalProjectsError("unsupported", "Enable Projects in Settings > Experiments.") }
+        guard hosting.settings.projectsEnabled else { throw LogicalProjectsError("unsupported", "Enable Projects in Settings > Experiments.") }
         switch request {
         case .hosts:
-            return .hosts([.init(reference: .local, name: Host.current().localizedName ?? "This Mac", spaces: vm.server.state.spaces.filter { !$0.hidden })]
-                + vm.remoteHosts.allConnections.filter { $0.phase == .connected }.map {
+            return .hosts([.init(reference: .local, name: Host.current().localizedName ?? "This Mac", spaces: server.state.spaces.filter { !$0.hidden })]
+                + hosting.connections().filter { $0.phase == .connected }.map {
                     let capable = $0.browserClient?.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) == true
                     return .init(reference: .remote(hostID: $0.config.id, bindingID: $0.config.bindingID), name: $0.config.name,
                                  spaces: capable ? $0.state.spaces.filter { !$0.hidden } : nil)
                 })
         case .action(let id, let revision, let action): return .project(try await perform(projectID: id, expectedRevision: revision, request: action))
-        case .conversation(let id, let request): return .native(try await vm.server.projectConversation(id, request: request))
+        case .conversation(let id, let request): return .native(try await server.projectConversation(id, request: request))
         case .worker(let id, let task, let request): return .native(try await worker(projectID: id, taskID: task, request: request))
-        case .answer(let id, let revision, let task, let request): return .native(try await vm.server.answerProjectQuestion(id, expectedRevision: revision, taskID: task, request: request))
+        case .answer(let id, let revision, let task, let request): return .native(try await server.answerProjectQuestion(id, expectedRevision: revision, taskID: task, request: request))
         }
     }
 
     /// A viewer addresses the owning Project, never a viewer-local host or caller-supplied worker ID.
     /// The ordinary native store keeps its existing bounded snapshot polling and mutation fences.
     func worker(projectID: ProjectID, taskID: ProjectTaskID, request: NativeThreadRequest) async throws -> NativeThreadResult {
-        guard let vm, let project = vm.server.state.projects.first(where: { $0.id == projectID }) else {
+        guard let project = server.state.projects.first(where: { $0.id == projectID }) else {
             throw LogicalProjectsError("not_found", "The Project or its thread is no longer available.")
         }
-        let grant = try await vm.server.projectWorkerReadGrant(projectID)
-        let routed = try await vm.server.projectRuntime(projectID, expectedRevision: project.revision, request: .worker(taskID: taskID))
+        let grant = try await server.projectWorkerReadGrant(projectID)
+        let routed = try await server.projectRuntime(projectID, expectedRevision: project.revision, request: .worker(taskID: taskID))
         guard let task = routed.tasks.first(where: { $0.id == taskID }) else { throw LogicalProjectsError("not_found", "Worker route is unavailable.") }
         let archived = !project.tasks.contains(where: { $0.id == taskID })
         var request = request
@@ -77,7 +74,7 @@ final class ProjectCoordinatorController {
             var takenOver = false
             switch task.destination {
             case .local:
-                takenOver = (try? await vm.server.projectWorkerWasTakenOver(projectID, taskID: taskID,
+                takenOver = (try? await server.projectWorkerWasTakenOver(projectID, taskID: taskID,
                     sessionID: session, generation: generation)) == true
             case .remote:
                 if let assignment = task.executionAssignment,
@@ -90,7 +87,7 @@ final class ProjectCoordinatorController {
                 }
             }
             if !takenOver {
-                return try await vm.server.answerProjectQuestion(projectID, expectedRevision: project.revision, taskID: taskID, request: request)
+                return try await server.answerProjectQuestion(projectID, expectedRevision: project.revision, taskID: taskID, request: request)
             }
         }
         guard task.workerSessionID != nil else {
@@ -99,20 +96,20 @@ final class ProjectCoordinatorController {
         }
         switch task.destination {
         case .local:
-            let result = try await vm.nativeThread(task.workerAgentID, request: request)
-            _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
-            try await vm.server.validateProjectWorkerRead(projectID, grant: grant, task: task)
+            let result = try await hosting.nativeThread(task.workerAgentID, request)
+            _ = try await server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
+            try await server.validateProjectWorkerRead(projectID, grant: grant, task: task)
             return result
         case .remote(let hostID, let bindingID):
-            guard let connection = vm.remoteHosts.allConnections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
+            guard let connection = hosting.connections().first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
                   connection.phase == .connected, let client = connection.browserClient,
                   client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
                 throw LogicalProjectsError("executor_unavailable", "The thread's exact executor binding is unavailable. No fallback host was selected.")
             }
             do {
                 let result = try await client.nativeThread(agentID: task.workerAgentID, request: request)
-                _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
-                try await vm.server.validateProjectWorkerRead(projectID, grant: grant, task: task)
+                _ = try await server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
+                try await server.validateProjectWorkerRead(projectID, grant: grant, task: task)
                 return result
             }
             catch RemoteHostClientError.outcomeUnknown(let message) { throw LogicalProjectsError("outcome_unknown", message) }
@@ -121,21 +118,21 @@ final class ProjectCoordinatorController {
     }
 
     func place(host: ProjectHostReference, request: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
-        guard let vm, case .remote(let hostID, let bindingID) = host,
-              let connection = vm.remoteHosts.allConnections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
+        guard case .remote(let hostID, let bindingID) = host,
+              let connection = hosting.connections().first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
               let client = connection.browserClient,
               client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
             throw AgentStartFailure(message: "The exact executor binding is unavailable. No fallback host was selected.")
         }
         switch request {
         case .resume, .answer:
-            guard vm.server.state.projects.contains(where: { $0.id == request.key.projectID && $0.ownerID == request.key.ownerID && !$0.paused }) else {
+            guard server.state.projects.contains(where: { $0.id == request.key.projectID && $0.ownerID == request.key.ownerID && !$0.paused }) else {
                 throw LogicalProjectsError("project_paused", "Project paused before the executor control was sent.")
             }
         default: break
         }
         if case .execute(let assignment) = request {
-            guard let project = vm.server.state.projects.first(where: { $0.id == request.key.projectID && $0.ownerID == request.key.ownerID }),
+            guard let project = server.state.projects.first(where: { $0.id == request.key.projectID && $0.ownerID == request.key.ownerID }),
                   !project.paused, project.tasks.contains(where: { $0.executionAssignment == assignment && $0.destination == host }),
                   project.settings.hostPolicy == .anyConnected || project.settings.allowedHosts.contains(host),
                   project.linkedSpaces.contains(where: { $0.destination == host && $0.spaceID == assignment.executorSpaceID }),
@@ -143,37 +140,96 @@ final class ProjectCoordinatorController {
                 throw AgentStartFailure(message: "Project placement was revoked or its executor Space is unavailable.")
             }
         }
-        try await vm.server.validateProjectPlacementRequest(request)
+        try await server.validateProjectPlacementRequest(request)
         return try await client.projectExecution(request)
     }
 
-    func conversationStore(agentID: AgentID) -> NativeThreadStore? { vm?.threadStores.store(for: agentID) }
+    func conversationStore(agentID: AgentID) -> NativeThreadStore? { hosting.threadStore(agentID) }
 
     func launch(_ request: ProjectRuntimeLaunch) async throws -> AgentID {
-        guard let vm else { throw AgentStartFailure(message: "Owner closed") }
-        guard vm.settings.projectsEnabled else { throw LogicalProjectsError("unsupported", "Enable Projects in Settings > Experiments.") }
-        guard let project = vm.server.state.projects.first(where: { $0.id == request.projectID }), !project.paused else {
+        guard hosting.settings.projectsEnabled else { throw LogicalProjectsError("unsupported", "Enable Projects in Settings > Experiments.") }
+        guard let project = server.state.projects.first(where: { $0.id == request.projectID }), !project.paused else {
             throw AgentStartFailure(message: "Project paused or deleted before launch")
         }
-        if let model = request.model, !vm.server.modelListing().models.contains(model) {
+        if let model = request.model, !server.modelListing().models.contains(model) {
             throw AgentStartFailure(message: "Selected model is not available on this owner: \(model)")
         }
-        vm.sessions.stateDidChange(vm.server.state)
-        vm.state = vm.server.state
-        if let existing = vm.state.agents.first(where: { $0.id == request.agentID }),
-           let tab = vm.state.tabs.first(where: { $0.id == existing.tabID }), let pane = tab.layout.leaves.first {
+        let state = server.state
+        if let existing = state.agents.first(where: { $0.id == request.agentID }),
+           let tab = state.tabs.first(where: { $0.id == existing.tabID }), let pane = tab.layout.leaves.first {
             // Explicit restoration is idle: the server owns any queued delivery and its identity.
-            try await vm.sessions.createAgentSession(pane: pane, tab: tab, agent: existing, openingPrompt: nil)
+            try await hosting.restartAgent(existing, tab, pane, nil)
             return existing.id
         }
-        return try await vm.startAgent(NewAgentConfig(spaceID: request.spaceID, workingDirectory: request.cwd,
+        return try await hosting.startAgent(NewAgentConfig(spaceID: request.spaceID, workingDirectory: request.cwd,
                                                      reservedAgentID: request.agentID,
                                                      coordinatorFor: request.coordinator ? request.projectID : nil,
                                                      // The coordinator's own choice for a task, else the owner's default level.
                                                      model: request.model,
-                                                     thinking: request.thinking.flatMap(ThinkingLevel.init(rawValue:)) ?? vm.settings.agentDefaults.thinking,
+                                                     thinking: request.thinking.flatMap(ThinkingLevel.init(rawValue:)) ?? hosting.settings.agentDefaults.thinking,
                                                      initialPrompt: nil,
-                                                     initialName: request.name), selectAfter: false, focusWindow: false)
+                                                     initialName: request.name))
+    }
+}
+
+extension ProjectCoordinatorController {
+    /// Serves the owner's Project runtime on its server: requests, launches, placements, the default
+    /// model, and Project-owned automation runs.
+    func install() {
+        let server = server, settings = hosting.settings, state = hosting.state
+        server.onProjectDefaultModel = {
+            let values = await MainActor.run { (settings.agentDefaults.model, server.pi.home) }
+            if let model = values.0 { return model }
+            return await Task.detached { PiConfig.defaultModel(in: values.1) }.value
+        }
+        server.onProjectPlacement = { [weak self] host, request, completion in
+            Task { @MainActor in
+                guard let self else { completion(.failure(AgentStartFailure(message: "Owner closed"))); return }
+                do { completion(.success(try await self.place(host: host, request: request))) }
+                catch { completion(.failure(error)) }
+            }
+        }
+        server.onProjectRuntimeRequest = { [weak self] request, completion in
+            Task { @MainActor in
+                guard let self else { completion(.failure(AgentStartFailure(message: "Owner closed"))); return }
+                do { completion(.success(try await self.perform(request))) }
+                catch { completion(.failure(error)) }
+            }
+        }
+        server.onProjectRuntimeLaunch = { [weak self] request, completion in
+            Task { @MainActor in
+                guard let self else { completion(.failure(AgentStartFailure(message: "Owner closed"))); return }
+                do { completion(.success(try await self.launch(request))) }
+                catch { completion(.failure(error)) }
+            }
+        }
+        // Project-owned runs become Project tasks through the Project runtime's own `assign`, which
+        // reserves the task in the Project's ledger under its threads-at-once, time and pause rules
+        // and launches its worker; a repeated operation id is the same task, never a second one.
+        server.onProjectAutomationRun = { [weak self] projectID, revision, automationID, title, prompt, completion in
+            Task { @MainActor in
+                guard let self else { return completion(.failure(AgentStartFailure(message: "Owner closed"))) }
+                do {
+                    let state = state()
+                    guard let automation = state.automations.first(where: { $0.id == automationID }),
+                          let project = state.projects.first(where: { $0.id == projectID }),
+                          let space = state.projectRunSpace(project, cwd: automation.cwd) else {
+                        throw LogicalProjectsError("no_such_space", "Link the automation's folder to the Project first.")
+                    }
+                    let operation = UUID()
+                    let updated = try await self.perform(
+                        projectID: projectID, expectedRevision: revision,
+                        request: .assign(operationID: operation, spaceID: space, title: title, prompt: prompt,
+                                         model: automation.model, thinking: automation.thinking?.rawValue))
+                    guard let task = updated.tasks.first(where: { $0.operationID == operation }) else {
+                        throw LogicalProjectsError("conflict", "The Project didn't keep the run's task.")
+                    }
+                    completion(.success(task.id))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }
     }
 }
 
@@ -199,32 +255,6 @@ extension ShepherdViewModel {
         remoteHosts.onProjectExecutorConnected = { [weak self] host in
             self?.refreshProjectHosts()
             self?.server.reconcileProjectExecutions(host: host)
-        }
-        server.onProjectDefaultModel = { [weak self] in
-            guard let values = await MainActor.run(body: { self.map { ($0.settings.agentDefaults.model, $0.server.pi.home) } }) else { return nil }
-            if let model = values.0 { return model }
-            return await Task.detached { PiConfig.defaultModel(in: values.1) }.value
-        }
-        server.onProjectPlacement = { [weak self] host, request, completion in
-            Task { @MainActor in
-                guard let self else { completion(.failure(AgentStartFailure(message: "Owner closed"))); return }
-                do { completion(.success(try await self.projectCoordinator.place(host: host, request: request))) }
-                catch { completion(.failure(error)) }
-            }
-        }
-        server.onProjectRuntimeRequest = { [weak self] request, completion in
-            Task { @MainActor in
-                guard let self else { completion(.failure(AgentStartFailure(message: "Owner closed"))); return }
-                do { completion(.success(try await self.projectCoordinator.perform(request))) }
-                catch { completion(.failure(error)) }
-            }
-        }
-        server.onProjectRuntimeLaunch = { [weak self] request, completion in
-            Task { @MainActor in
-                guard let self else { completion(.failure(AgentStartFailure(message: "Owner closed"))); return }
-                do { completion(.success(try await self.projectCoordinator.launch(request))) }
-                catch { completion(.failure(error)) }
-            }
         }
     }
 }
