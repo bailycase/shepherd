@@ -342,7 +342,7 @@ if _history_bytes > 0:
 
 # STUB_PI_STRESS="rows,rounds,deltas,ms" seeds `rows` realistic history turns (prose, a tool call
 # and its result, a code block) and, once serving, streams `rounds` markdown replies of `deltas`
-# chunks at `ms` intervals on its own, a second apart, for a profiling run (docs/audit).
+# chunks at `ms` intervals on its own, a second apart, for a profiling run.
 _stress = os.environ.get("STUB_PI_STRESS")
 if _stress:
     _rows, _rounds, _deltas, _ms = (int(x) for x in _stress.split(","))
