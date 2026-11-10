@@ -73,6 +73,10 @@
   "flaky"  a turn like pi's (stamped user message_start/_end, persisted at its end) whose reply
            fails ("529 overloaded") the first time and answers "Recovered: <text>" after that;
            "flaky-hold" also waits for the file `flaky-go` before replying
+  "limit"  a "flaky" turn whose failure is Anthropic's usage limit (a 429 rate_limit_error from
+           provider "anthropic"), which pi doesn't retry here
+  "stall"  a turn that sends its request and hears nothing back until `abort`, which ends it
+           with an aborted reply, as pi ends a request it stopped
   "/shepherd-retry <ms>" Shepherd's Retry, as the status extension runs it in pi: pi answers
            the prompt, then, idle and with a user message stamped <ms> on the branch, drops that
            message and everything after it from the history and sends it again (a "flaky" turn);
@@ -813,6 +817,9 @@ def flaky_turn(message):
         FLAKY["failed"] = True
         final = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": "529 overloaded",
                  "timestamp": now_ms()}
+        if text.startswith("limit"):
+            final.update(provider="anthropic", errorMessage='429 {"type":"error","error":{"type":"rate_limit_error",'
+                         '"message":"This request would exceed your account\'s rate limit. Please try again later."}}')
     else:
         final = {"role": "assistant", "content": [{"type": "text", "text": f"Recovered: {text}"}], "stopReason": "stop",
                  "timestamp": now_ms()}
@@ -1082,6 +1089,25 @@ def agent_run(first):
         with open(messages_file, "w") as f:
             json.dump(MESSAGES, f)
     emit({"type": "agent_end", "messages": new[persisted:], "willRetry": False})
+    RUN["active"] = False
+    emit({"type": "agent_settled"})
+
+
+def stall_turn(prompt):
+    """A request nothing answers: no model event until `abort` stops it (see "stall" above)."""
+    user = user_message(prompt, [], now_ms())
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": user})
+    message_end(user)
+    RUN["abort"].wait()
+    stopped = {"role": "assistant", "content": [], "stopReason": "aborted", "errorMessage": "Request was aborted",
+               "timestamp": now_ms()}
+    emit({"type": "message_start", "message": dict(stopped, content=[])})
+    message_end(stopped)
+    emit({"type": "turn_end", "message": stopped, "toolResults": []})
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": [user, stopped], "willRetry": False})
     RUN["active"] = False
     emit({"type": "agent_settled"})
 
@@ -1865,10 +1891,10 @@ for raw in sys.stdin.buffer:
             RUN["thread"] = threading.Thread(target=agent_run, args=((message, cmd.get("images") or [], now_ms()),), daemon=True)
             RUN["thread"].start()
             continue
-        if message == "toolcall":
+        if message in ("toolcall", "stall"):
             RUN["active"] = True
             respond(cmd, t)
-            RUN["thread"] = threading.Thread(target=toolcall_turn, args=(message,), daemon=True)
+            RUN["thread"] = threading.Thread(target=toolcall_turn if message == "toolcall" else stall_turn, args=(message,), daemon=True)
             RUN["thread"].start()
             continue
         respond(cmd, t)
@@ -1935,7 +1961,7 @@ for raw in sys.stdin.buffer:
         elif message == "stream":
             turn_thread = threading.Thread(target=paced_turn, args=(message,), daemon=True)
             turn_thread.start()
-        elif message.startswith("flaky"):
+        elif message.startswith("flaky") or message.startswith("limit"):
             turn_aborted = False
             turn_thread = threading.Thread(target=flaky_turn, args=(user_message(message, cmd.get("images") or [], now_ms()),),
                                            daemon=True)

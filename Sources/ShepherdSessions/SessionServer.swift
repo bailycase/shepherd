@@ -893,6 +893,10 @@ public final class SessionServer: @unchecked Sendable {
     private var nextAppRelayToken = 0
     /// How long a relay waits for the app to connect (or reconnect) before it fails.
     var designRelayReconnectWait: TimeInterval = 5
+    /// How long a run may hear nothing from pi while it waits on the model (`RPCThreadState+Stall`).
+    var threadStallBound = RPCThreadState.defaultStallBound
+    /// Agents whose account switched while their turn ran (`continueAfterAccountSwitch`).
+    var continueOnSwitchedAccount: Set<AgentID> = []
 
     private struct DriveRequest {
         let asker: ExtensionConnection
@@ -6286,6 +6290,8 @@ public final class SessionServer: @unchecked Sendable {
         if state.agents.count < before.agents.count {
             let live = Set(state.agents.map(\.id))
             peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }
+            // A deleted agent's turns end, but what it wrote stays on record for the turns it overlapped.
+            for gone in before.agents where !live.contains(gone.id) { changes.agentEnded(gone.id) }
         }
         if !retiredRPCSessions.isEmpty {
             let bound = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
@@ -8574,6 +8580,7 @@ public final class SessionServer: @unchecked Sendable {
             let sid = session.id
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
+            thread.stallBound = threadStallBound
             thread.workAdmission = { [weak self] in self?.hostUpdateReserved == false }
             if let id = session.launchAgentID {
                 do { thread.recoveryAtLaunch = try agentRecovery.checkpoint(for: id) }
@@ -8754,6 +8761,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.discardPreparedTurn = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.changes.promptDiscarded(agentID: agentID)
                 server.changes.captureQueue(agentID).async {
                     _ = server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
                 }
@@ -8778,6 +8786,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.executionSettled(agentID: agentID, thread: thread)
                 server.scheduleAutomationCleanup(agentID: agentID)
                 server.pushIfSettled(agentID: agentID, thread: thread)
+                if server.continueOnSwitchedAccount.remove(agentID) != nil { server.continueSwitchedTurn(agentID, thread: thread) }
             }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
@@ -8788,6 +8797,8 @@ public final class SessionServer: @unchecked Sendable {
                 case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
                 case .settled:
                     server.changes.turnSettled(agentID: agentID)
+                case .callStarted(let id, let path): server.changes.callStarted(agentID: agentID, callID: id, path: path)
+                case .callEnded(let id, let ok): server.changes.callEnded(agentID: agentID, callID: id, ok: ok)
                 }
             }
             sessions[sid] = .rpc(session, thread)
@@ -9151,6 +9162,7 @@ public final class SessionServer: @unchecked Sendable {
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
             designMergeAgentExited(agentID: agent)
+            changes.agentEnded(agent)
         }
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
@@ -9583,6 +9595,34 @@ public final class SessionServer: @unchecked Sendable {
         checkpointAgentRecovery(sessionID: sessionID, thread: thread)
     }
 
+    /// An agent's provider account switched after a limit (the app's or the host's rotation): a
+    /// turn that fails anyway (a limit pi doesn't retry, or its retries spent) continues once, from
+    /// its failure checkpoint, as Retry does, on the new account. One pi's own retry carried on
+    /// the new account settles without a failure and is left alone. Bounded: one continuation per
+    /// switch, and switches are bounded by `PiAccounts.rotate`.
+    public func continueAfterAccountSwitch(_ agentID: AgentID) {
+        queue.async { [self] in
+            guard let thread = rpcThread(forAgent: agentID) else { return }
+            if !thread.running, thread.settleCapture == nil {
+                continueSwitchedTurn(agentID, thread: thread)
+            } else {
+                continueOnSwitchedAccount.insert(agentID)
+            }
+        }
+    }
+
+    /// Server queue: the settled turn's Continue, when it failed.
+    func continueSwitchedTurn(_ agentID: AgentID, thread: RPCThreadState) {
+        guard thread.turnFailure != nil else { return }
+        Task { [self] in
+            guard case .snapshot(let snapshot)? = try? await nativeThread(agentID: agentID, request: .snapshot()),
+                  let recovery = AgentBanners.recovery(in: snapshot) else { return }
+            if case .failure(let code, _)? = try? await nativeThread(agentID: agentID, request: recovery) {
+                ShepherdLog.info("continuing \(agentID) on its switched account refused: \(code)")
+            }
+        }
+    }
+
     private func pushIfSettled(agentID: AgentID, thread: RPCThreadState) {
         guard thread.pushRunArmed else { return }
         if thread.stopRequested { thread.pushRunArmed = false; return }
@@ -9797,6 +9837,9 @@ extension SessionServer {
         changes.agentContext = { [weak self] agentID in
             guard let self else { return nil }
             return Self.changesContext(self.state, agentID)
+        }
+        changes.agentName = { [weak self] agentID in
+            self?.state.agents.first { $0.id == agentID }?.name
         }
         changes.onTurnsChanged = { [weak self] agentID, turns in
             self?.queue.async { self?.setTurnChanges(turns, for: agentID) }
