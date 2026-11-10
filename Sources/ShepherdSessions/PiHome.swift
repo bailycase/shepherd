@@ -141,8 +141,12 @@ public struct PiHome: Equatable, Sendable {
         script += """
             case ${1-} in
               (\(Self.refusedSubcommands.joined(separator: "|")))
-                print -r -u2 -- "pi $1: Shepherd's pi changes only through Shepherd (Settings ▸ Pi). The pi in your terminal is unaffected."
-                exit 2 ;;
+                # `update --models` alone refreshes pi.dev's catalog overlay into this home's
+                # models-store.json (PiModelCatalog.refresh); it installs and changes nothing else.
+                if [[ $1 != update || $# -ne 2 || $2 != --models ]]; then
+                  print -r -u2 -- "pi $1: Shepherd's pi changes only through Shepherd (Settings ▸ Pi). The pi in your terminal is unaffected."
+                  exit 2
+                fi ;;
               (mcp)
                 case ${2-} in
                   (\(Self.refusedMCPSubcommands.joined(separator: "|")))

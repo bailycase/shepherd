@@ -11,7 +11,8 @@ import Foundation
 /// What to compare.
 public enum ChangesScope: Codable, Hashable, Sendable {
     /// What the agent changed in its last turn: the working tree when the turn started against
-    /// the working tree when it ended (or now, while it runs).
+    /// the working tree when it ended (or now, while it runs). Once it ended, only its own
+    /// files: what other threads or Shepherd's own writes changed in the folder meanwhile is out.
     case lastTurn
     /// One recorded turn (`ChangesTurn.id`): a changes card's Review.
     case turn(id: UUID)
@@ -225,7 +226,9 @@ public enum ChangesLimits {
 // MARK: Turns
 
 /// A turn the host recorded: the working tree when it started and when it ended, the files it
-/// changed (the "Edited N files" card), and whether Undo or Redo applies.
+/// changed (the "Edited N files" card), and whether Undo or Redo applies. The files are the
+/// turn's own: while another thread wrote in the same folder, only those its own edit and write
+/// calls named and no other thread's call named.
 public struct ChangesTurn: Codable, Hashable, Sendable, Identifiable {
     public enum State: String, Codable, Hashable, Sendable {
         /// The turn runs: its changes are the working tree now against the baseline.
@@ -248,7 +251,7 @@ public struct ChangesTurn: Codable, Hashable, Sendable, Identifiable {
     public var endedAt: Double?
     public var state: State
     public var reason: String?
-    /// The first `ChangesLimits.turnFiles` files the turn changed; `fileCount` counts them all.
+    /// The first `ChangesLimits.turnFiles` of the turn's own files; `fileCount` counts them all.
     public var files: [ChangesFile]
     public var fileCount: Int
     public var added: Int

@@ -41,8 +41,8 @@ final class MissionController {
     var attemptOutput: [UUID: String] = [:]
     /// What `create` makes. Spec Kit for new Missions; tests of the map runner opt out explicitly.
     var newMissionBackend: MissionBackend = .specKit
-    @ObservationIgnored weak var vm: ShepherdViewModel?
-    @ObservationIgnored let server: SessionServer
+    @ObservationIgnored let hosting: RuntimeHosting
+    @ObservationIgnored var server: SessionServer { hosting.server }
     @ObservationIgnored var jobs: [MissionID: Task<Void, Never>] = [:]
     @ObservationIgnored var jobRuns: [MissionID: UUID] = [:]
     @ObservationIgnored var reviewInfo: [MissionID: [SpaceID: RemoteCommitInfo]] = [:]
@@ -57,16 +57,16 @@ final class MissionController {
     /// The template New mission starts from, until it creates the mission.
     var startTemplate: MissionTemplate?
 
-    init(vm: ShepherdViewModel) { self.vm = vm; server = vm.server }
-    var records: [Mission] { vm?.state.missions ?? [] }
+    init(hosting: RuntimeHosting) { self.hosting = hosting }
+    var records: [Mission] { hosting.state().missions }
 
     func refreshModels() async {
         let server = server
         let listing = await Task.detached { server.modelListing() }.value
         availableModels = listing.models
-        let preferred = vm?.settings.agentDefaults.model ?? listing.defaultModel
+        let preferred = hosting.settings.agentDefaults.model ?? listing.defaultModel
         defaultModel = preferred.flatMap { availableModels.contains($0) ? $0 : nil } ?? availableModels.first
-        let spaces = (vm?.state.spaces ?? []).filter { !$0.hidden && !$0.holdsProjects && !$0.holdsDesigns }
+        let spaces = hosting.state().spaces.filter { !$0.hidden && !$0.holdsProjects && !$0.holdsDesigns }
         var repositories: [Space] = []
         for space in spaces {
             let refs = await Self.command("git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/origin/", cwd: space.path)
@@ -199,7 +199,7 @@ final class MissionController {
         try await launch(id: id, revision: saved.revision)
     }
 
-    func openThread(_ id: AgentID) { vm?.selectAgent(id) }
+    func openThread(_ id: AgentID) { hosting.selectAgent(id) }
 
     func record(_ id: MissionID, runID: UUID? = nil) throws -> Mission {
         guard let mission = server.state.missions.first(where: { $0.id == id }) else { throw MissionError("mission_missing", "Mission no longer exists.") }

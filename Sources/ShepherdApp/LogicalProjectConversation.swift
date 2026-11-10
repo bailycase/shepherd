@@ -100,7 +100,7 @@ struct ConversationThread: View {
 
     private var workingDirectory: String? {
         // Like preview, read the owner's snapshot without observing agent removal and re-picking the thread's store.
-        let owner = vm.server.state
+        let owner = vm.localHost?.state ?? vm.server.state
         guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }),
               let paneID = record.paneID else { return nil }
         return owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID)?.cwd
@@ -110,7 +110,8 @@ struct ConversationThread: View {
     /// is not launched until a message is sent), as an ordinary thread does. A remote owner serves its own.
     private var preview: NativeThreadStore.Preview? {
         // The owner's own snapshot, not the view model's observed state: the page must not re-pick its store when the agent changes.
-        let owner = vm.server.state
+        // The background host's, as its client (observed, but the store is picked by the agent's ID alone).
+        let owner = vm.localHost?.state ?? vm.server.state
         guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }), let paneID = record.paneID,
               let pane = owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID) else { return nil }
         return PiSessionFile.previewLoader(sessionID: record.effectivePiSessionID, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot)

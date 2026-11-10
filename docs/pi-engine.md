@@ -201,6 +201,17 @@ native-event delivery for missing/replaced roots and symlink targets, and watche
 thread's menu follows additions, edits and removals. Existing smoke tests also cover modular
 launch, TypeScript extensions, MCP, catalogs, launcher inheritance and hardened signing.
 
+## The model catalog overlay
+
+Pi overlays newer catalog data from pi.dev (`models-store.json` in its home) on its bundled
+catalog, but only `pi update --models` and interactive mode fetch it; RPC mode and the launcher's
+`PI_OFFLINE=1` never do. The app's `SessionServer` runs `PiLaunch.refreshModels` (the launcher
+passes exactly `update --models` and refuses every other update) at start and daily
+(`PiModelCatalog.refreshDaily`); the store's change invalidates the cached catalog, so the
+pickers and new agents see the new models. Running agents keep the catalog they started with.
+`EngineSmokeTests.aRefreshOverlaysPiDevsCatalogOnTheHostsCatalog` proves it against a local
+stand-in for pi.dev (`Tests/Extensions/fixtures/catalog-stub.mjs`), never the network.
+
 ## The Xcode phase
 
 Xcode's Resources phase copies `.build/pi-engine/Resources/pi-engine` as a native folder resource.

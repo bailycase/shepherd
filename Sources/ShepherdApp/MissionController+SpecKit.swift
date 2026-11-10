@@ -201,11 +201,12 @@ extension MissionController {
     func thread(for attemptID: UUID) -> MissionThreadSource? {
         // Nil until the reserved agent is in the app's own state: a store made before then is orphaned
         // (pruned with no agent) and never polls. The Run inspector re-reads when the agent appears.
-        guard let vm, let (mission, attempt) = server.state.missions.lazy.compactMap({ mission in
+        guard let (mission, attempt) = server.state.missions.lazy.compactMap({ mission in
             mission.run?.attempts.first { $0.id == attemptID }.map { (mission, $0) }
-        }).first, let agentID = attempt.agentID, let agent = vm.state.agents.first(where: { $0.id == agentID }) else { return nil }
+        }).first, let agentID = attempt.agentID, let agent = hosting.state().agents.first(where: { $0.id == agentID }),
+              let store = hosting.threadStore(agentID) else { return nil }
         let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path
-        let preview = cwd.map { PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: $0, sessionsRoot: vm.server.pi.sessionsRoot) }
+        let preview = cwd.map { PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: $0, sessionsRoot: server.pi.sessionsRoot) }
         let server = server, missionID = mission.id
         let request: NativeThreadStore.Request = { value in
             switch value {
@@ -222,7 +223,7 @@ extension MissionController {
             }
         }
         let steerable = attempt.status == .running && mission.run?.phase.active == true
-        return MissionThreadSource(agentID: agentID, store: vm.threadStores.store(for: agentID), request: request, preview: preview,
+        return MissionThreadSource(agentID: agentID, store: store, request: request, preview: preview,
                                    send: steerable ? { [weak self] text in
                                        guard let self else { return }
                                        try await self.steer(id: mission.id, revision: try self.record(mission.id).revision, attemptID: attemptID, text: text)
@@ -872,7 +873,7 @@ extension MissionController {
                      reuse: AgentID?, keepAlive: Bool, tasksBefore: Data? = nil, replyCommand: SpecKitCommand? = nil,
                      task: String? = nil) async throws -> (attemptID: UUID, agentID: AgentID, text: String) {
         let mission = try record(id, runID: runID)
-        guard let vm, let run = mission.run, let lane = run.specKit?[space],
+        guard let run = mission.run, let lane = run.specKit?[space],
               let checkout = run.checkouts.first(where: { $0.spaceID == space }) else { throw MissionError("mission_worktree", "The repository's worktree is missing.") }
         try await verifyConsent(lane, checkout: checkout)
         let feature = lane.featureDirectory
@@ -900,7 +901,7 @@ extension MissionController {
                                             model: run.model, thinking: .off, initialPrompt: nil,
                                             initialName: "Spec Kit: \(task ?? command.map { "/speckit.\($0.rawValue)" } ?? "reply")",
                                             worktreeBranch: checkout.branch, worktreeBase: checkout.base, worktreePath: checkout.path)
-                _ = try await vm.startAgent(config, selectAfter: false, focusWindow: false)
+                _ = try await hosting.startAgent(config)
             }
             let started = Self.now
             var submitted = false, baseline: (Int, Double)?

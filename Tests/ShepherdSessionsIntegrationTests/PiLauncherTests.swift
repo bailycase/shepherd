@@ -188,6 +188,22 @@ struct PiLauncherTests {
         #expect(result.err.contains("Settings ▸ Pi"))
     }
 
+    /// `update --models` alone refreshes the catalog overlay (`PiLaunch.refreshModels`); every
+    /// other update is refused above.
+    @Test func theLauncherPassesOnlyAModelCatalogUpdate() throws {
+        let dir = try makeScratchDirectory("models")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        let result = try Self.run(home.launcher.path, ["update", "--models"], environment: ["PATH": "/usr/bin:/bin"])
+        #expect(result.status == 0, "\(result.err)")
+        #expect(result.out.prefix(2) == ["arg=update", "arg=--models"])
+        #expect(result.out.contains("PI_OFFLINE=1"), "the pins still apply")
+        for arguments in [["update"], ["update", "--models", "--self"], ["update", "--self"], ["update", "npm:@x/y", "--models"]] {
+            let refused = try Self.run(home.launcher.path, arguments, environment: ["PATH": "/usr/bin:/bin"])
+            #expect(refused.status == 2 && refused.out.isEmpty, "\(arguments)")
+        }
+    }
+
     /// `mcp` is a subcommand of pi's only as its first argument, so the launcher's own `-e` goes
     /// before every other launch and never before this one; adding or removing a server through
     /// pi would write the file Shepherd derives, so those two are refused.

@@ -231,7 +231,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, agentRestartCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, agentRestartCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -1310,9 +1310,25 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// that shows its threads as its own (`RemoteProtocol.localThreadsCapability`): its sidebar
     /// activity follows it.
     case toolFinished(agentID: AgentID, tool: String)
+    /// A design's thread notes changed on the background host, pushed only to this Mac's app that
+    /// shows its threads as its own: its canvas reads them again (`RemoteDesignRequest.threadNotes`).
+    case designNotesChanged(designID: DesignID)
+    /// A design's Git state changed on the background host, pushed only to this Mac's app that
+    /// shows its threads as its own: its Git chip reads it again (`RemoteDesignRequest.gitState`).
+    case designGitChanged(designID: DesignID)
+    /// How this Mac's own Import is going on the background host (`RemoteDesignRequest.importPrepare`),
+    /// pushed only to the app that asked: Designs' card fills as its boards land.
+    case designImportProgress(DesignImportProgress)
     /// A line the background host says in one of its threads (its account rotation), pushed only
     /// to this Mac's app that shows its threads as its own; never persisted.
     case threadNotice(agentID: AgentID, message: String)
+    /// The background host's automations changed: a run's log, or a trigger's status. Pushed only
+    /// to this Mac's app that shows its threads as its own, which reads them again. A hint; it
+    /// carries nothing.
+    case automationsChanged
+    /// An automation's banner on the background host (`AutomationHosting.notify`), pushed only to
+    /// this Mac's app that shows its threads as its own, which posts it; the host doesn't.
+    case automationNotify(title: String, body: String)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1339,7 +1355,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress
     }
 
     public init(from decoder: Decoder) throws {
@@ -1366,10 +1382,20 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                                 body: try c.decode(String.self, forKey: .body))
         case .settingsChanged:
             self = .settingsChanged(page: try c.decode(RemoteSettingsPage.self, forKey: .page))
+        case .designNotesChanged:
+            self = .designNotesChanged(designID: try c.decode(DesignID.self, forKey: .designID))
+        case .designGitChanged:
+            self = .designGitChanged(designID: try c.decode(DesignID.self, forKey: .designID))
+        case .designImportProgress:
+            self = .designImportProgress(try c.decode(DesignImportProgress.self, forKey: .status))
         case .toolFinished:
             self = .toolFinished(agentID: try c.decode(AgentID.self, forKey: .agentID), tool: try c.decode(String.self, forKey: .tool))
         case .threadNotice:
             self = .threadNotice(agentID: try c.decode(AgentID.self, forKey: .agentID), message: try c.decode(String.self, forKey: .message))
+        case .automationsChanged:
+            self = .automationsChanged
+        case .automationNotify:
+            self = .automationNotify(title: try c.decode(String.self, forKey: .title), body: try c.decode(String.self, forKey: .body))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1661,6 +1687,15 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .settingsChanged(let page):
             try c.encode(Kind.settingsChanged, forKey: .type)
             try c.encode(page, forKey: .page)
+        case .designNotesChanged(let designID):
+            try c.encode(Kind.designNotesChanged, forKey: .type)
+            try c.encode(designID, forKey: .designID)
+        case .designGitChanged(let designID):
+            try c.encode(Kind.designGitChanged, forKey: .type)
+            try c.encode(designID, forKey: .designID)
+        case .designImportProgress(let step):
+            try c.encode(Kind.designImportProgress, forKey: .type)
+            try c.encode(step, forKey: .status)
         case .toolFinished(let agentID, let tool):
             try c.encode(Kind.toolFinished, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
@@ -1669,6 +1704,12 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.threadNotice, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(message, forKey: .message)
+        case .automationsChanged:
+            try c.encode(Kind.automationsChanged, forKey: .type)
+        case .automationNotify(let title, let body):
+            try c.encode(Kind.automationNotify, forKey: .type)
+            try c.encode(title, forKey: .title)
+            try c.encode(body, forKey: .body)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

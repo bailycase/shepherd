@@ -83,13 +83,19 @@ public enum RemoteMissionAction: Codable, Hashable, Sendable {
     case pauseTrain, resumeTrain, skipSoak
     /// What a repository another mission holds does: wait, stack on the holder's branch, or run anyway.
     case laneLock(spaceID: SpaceID, choice: MissionLaneLock.Choice)
+    /// Saves the finished mission's map as a template: on the host's Mac, or (with `team`) through a
+    /// pull request in that repository (MXTemplateSave).
+    case saveTemplate(name: String, summary: String, team: SpaceID?)
 }
 
 public enum RemoteMissionRequest: Codable, Hashable, Sendable {
     case list
     case get(missionID: MissionID)
     case startOptions
-    case create(goal: String, spaceIDs: [SpaceID], model: String, branches: [SpaceID: String])
+    /// `template`: the `MissionTemplate.id` it starts from, one `templates` listed.
+    case create(goal: String, spaceIDs: [SpaceID], model: String, branches: [SpaceID: String], template: String? = nil)
+    /// The host's mission templates: its Mac's own, then each repository's team templates (MXTemplates).
+    case templates
     /// `revision`: the mission as the client displayed it. A changed mission is refused (`stale_mission`).
     case action(missionID: MissionID, revision: UInt64, action: RemoteMissionAction)
     /// Reads every repository's actual changes again: files and fingerprints, no hunks.
@@ -190,4 +196,5 @@ public enum RemoteMissionResult: Codable, Hashable, Sendable {
     case review([RemoteMissionReview])
     case reviewFile(DiffFile)
     case specKit(RemoteMissionSpecKit)
+    case templates([MissionTemplate])
 }

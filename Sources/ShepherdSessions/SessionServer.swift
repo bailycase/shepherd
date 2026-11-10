@@ -260,7 +260,8 @@ public final class SessionServer: @unchecked Sendable {
     /// paths.
     public static let shared = SessionServer(
         socketPath: ShepherdPaths.socketURL().path,
-        stateURL: ShepherdPaths.stateURL()
+        stateURL: ShepherdPaths.stateURL(),
+        refreshesModelCatalog: true
     )
 
     /// PTY output for an attached session. Delivered on the main actor.
@@ -617,6 +618,9 @@ public final class SessionServer: @unchecked Sendable {
     /// imports it as its own Import does (a project already in Designs as a copy, unreadable boards
     /// refused), starts its agent, and answers the design. Main actor; the file goes after.
     public var onRemoteImportDesign: ((URL, @escaping (Result<RemoteDesignCreated, RemoteDesignImportFailure>) -> Void) -> Void)?
+    /// This Mac's own Import, confirmed in its app (`RemoteDesignRequest.importConfirm`): the staged
+    /// project becomes a design and its agent starts on the import's brief. Main actor.
+    var onLocalFinishImport: ((DesignImportPreview, String?, Bool, @escaping (Result<RemoteDesignCreated, Error>) -> Void) -> Void)?
     /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
     /// before they delete.
     public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
@@ -764,6 +768,7 @@ public final class SessionServer: @unchecked Sendable {
     var projectFolderOperation = false
     private var projectDirectoryRequests = 0
     private let modelCatalog: ModelCatalog
+    private let refreshesModelCatalog: Bool
     /// Which pi this server's agents run, and its home (`PiSetup`).
     public let pi: PiSetup
     /// Where each delivered message came from, per pi session (support directory).
@@ -888,6 +893,10 @@ public final class SessionServer: @unchecked Sendable {
     private var nextAppRelayToken = 0
     /// How long a relay waits for the app to connect (or reconnect) before it fails.
     var designRelayReconnectWait: TimeInterval = 5
+    /// How long a run may hear nothing from pi while it waits on the model (`RPCThreadState+Stall`).
+    var threadStallBound = RPCThreadState.defaultStallBound
+    /// Agents whose account switched while their turn ran (`continueAfterAccountSwitch`).
+    var continueOnSwitchedAccount: Set<AgentID> = []
 
     private struct DriveRequest {
         let asker: ExtensionConnection
@@ -1122,7 +1131,10 @@ public final class SessionServer: @unchecked Sendable {
     /// skills live: the `skills/` of `pi`'s home, the only folder its pi reads skills from, unless
     /// a test passes its own; `piSkills` stands in for an older host's outside skills.
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
+    /// `refreshesModelCatalog` refreshes `pi`'s pi.dev catalog overlay from `start()` and daily
+    /// (`PiModelCatalog.refreshDaily`); only the app's own server, so no test reaches the network.
     public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
+                refreshesModelCatalog: Bool = false,
                 skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash,
                 triggerSource: AutomationTriggers.Source? = nil, forgeRunner: ForgeService.Runner? = nil) {
@@ -1135,6 +1147,7 @@ public final class SessionServer: @unchecked Sendable {
                                              systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
                                              globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } }, pi: pi)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
+        self.refreshesModelCatalog = refreshesModelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.agentRecovery = AgentRecoveryStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("agent-recovery", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
@@ -1286,6 +1299,7 @@ public final class SessionServer: @unchecked Sendable {
                 acceptOnQueue()
                 recoverCommittedProjectPublications()
             }
+            if refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2310,6 +2324,8 @@ public final class SessionServer: @unchecked Sendable {
         try queue.sync {
             try requireStarted()
             guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+            // This Mac's app reads the run log again after each change (`automationsChanged`).
+            runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
             var addr = try Self.socketAddress(for: path)
             localToken = try Self.loadOrCreateRemoteToken(at: tokenURL)
             // Only the workspace's owner binds here, and this server holds the ownership lock: any
@@ -3387,7 +3403,7 @@ public final class SessionServer: @unchecked Sendable {
         } else if !exists {
             return fail("no_such_automation", "The automation no longer exists on the host.")
         }
-        let reads: Bool = switch request { case .runs, .status, .markRead: true; default: false }
+        let reads: Bool = switch request { case .runs, .status, .markRead, .setRunPullRequest: true; default: false }
         if !reads, store.state.automations.contains(where: { $0.id == automationID && $0.projectID != nil }) {
             return fail(Self.projectAutomationScopeError.code, Self.projectAutomationScopeError.description)
         }
@@ -3414,6 +3430,13 @@ public final class SessionServer: @unchecked Sendable {
             return
         case .markRead(let runID):
             runLog.markRead(runID: runID)
+            send(.automationResult(id: id, result: .ok), to: client)
+            return
+        case .setRunPullRequest(let agentID, let url):
+            // This Mac's app reads it with its gh, as in process; no paired device sets one.
+            guard client.isLocal else { return fail("unsupported", "Only Shepherd on this Mac records a run's pull request.") }
+            guard url.hasPrefix("https://") else { return fail("invalid_url", "A pull request's address starts with https://.") }
+            runLog.setPullRequest(agentID: agentID, url: url)
             send(.automationResult(id: id, result: .ok), to: client)
             return
         case .status:
@@ -3672,12 +3695,19 @@ public final class SessionServer: @unchecked Sendable {
         case .importBegin, .importChunk, .importFinish, .importCancel:
             remoteDesignImport(id: id, request: request, client: client)
             return
+        case .importPrepare, .importConfirm, .importDiscard:
+            localDesignImport(id: id, request: request, client: client)
+            return
+        case .mentionCatalog where !client.isLocal:
+            send(.error(id: id, code: "local_only", message: "The whole catalog goes only to this Mac's app."), to: client)
+            return
         default:
             break
         }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
+        let limit = maxPayloadBytes(for: client)
         Task.detached { [weak self] in
             let answer: RemoteReply
             do {
@@ -3688,7 +3718,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             // Encoded here, not on the server queue: a reply carries up to a chunk of file bytes.
             let payload: Data
-            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= NDJSON.maxPayloadBytes {
+            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= limit {
                 payload = encoded
             } else if let refusal = try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large",
                                                                           message: "The answer exceeds the remote payload limit.")) {
@@ -4078,6 +4108,60 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: this Mac's own Import, from its app (the host reads the same disk), with the
+    /// choices the in-process Import offers: unreadable boards and a project already in Designs ask.
+    private func localDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
+        guard client.isLocal else {
+            send(.error(id: id, code: "local_only", message: "Only this Mac's app imports from its disk."), to: client)
+            return
+        }
+        let reply = { [weak self] (result: Result<RemoteDesignResult, Error>) in
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.design(id: id, result: answer), to: client)
+                case .failure(let failure as DesignImportFailure): self.send(.design(id: id, result: .importFailed(failure)), to: client)
+                case .failure(let error):
+                    let refusal = RemoteDesignRefusal(error)
+                    self.send(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+                }
+            }
+        }
+        switch request {
+        case .importPrepare(let path):
+            Task {
+                do {
+                    let preview = try await self.prepareDesignImport(from: URL(fileURLWithPath: path)) { [weak self] step in
+                        self?.queue.async {
+                            guard let self, self.clients[client.fd] === client else { return }
+                            self.send(.designImportProgress(step), to: client)
+                        }
+                    }
+                    reply(.success(.importPrepared(preview)))
+                } catch {
+                    reply(.failure(error))
+                }
+            }
+        case .importConfirm(let preview, let name, let skipping):
+            guard let handler = onLocalFinishImport else {
+                send(.error(id: id, code: "unsupported", message: "host cannot import designs"), to: client)
+                return
+            }
+            hopToMain {
+                handler(preview, name, skipping) { result in
+                    reply(result.map { .created(designID: $0.designID, agentID: $0.agentID) })
+                }
+            }
+        case .importDiscard(let previewID):
+            Task {
+                await self.cancelDesignImport(previewID)
+                reply(.success(.ok))
+            }
+        default:
+            break
+        }
+    }
+
     /// The design systems changed: the app lists them again, and so does each remote client
     /// that reads the push (`designSystemsCapability`). Any thread.
     private func designSystemsDidChange() {
@@ -4304,8 +4388,8 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
-    private func broadcastRemoteState(_ full: ShepherdState) {
-        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated })
+    private func broadcastRemoteState(_ full: ShepherdState, wholeOnly: Bool = false) {
+        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && (!wholeOnly || takesWholeWorkspace($0)) })
     }
 
     /// Each client's view of `full` (`remoteState`), encoded once per view actually sent: with
@@ -4318,9 +4402,11 @@ public final class SessionServer: @unchecked Sendable {
         for client in remotes {
             let designs = seesDesigns(client) && !full.designs.isEmpty
             let legacy = client.knowsLegacyThinkingOnly
-            let view = RemoteStateView(designs: designs, legacy: legacy)
+            let whole = takesWholeWorkspace(client)
+            let view = RemoteStateView(designs: designs, legacy: legacy, whole: whole)
             if payloads[view] == nil {
-                let state = (designs ? full : full.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+                let shown = designs ? full : full.withoutDesigns
+                let state = whole ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
             }
@@ -4366,7 +4452,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The workspace as `client` is sent it (`seesDesigns`).
     private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
-        (seesDesigns(client) ? state : state.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+        let shown = seesDesigns(client) ? state : state.withoutDesigns
+        return takesWholeWorkspace(client) ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+    }
+
+    /// This Mac's app showing the host's threads as its own (`localThreadsCapability`): it draws
+    /// Projects, their coordinators and workers, and missions from the state, as in process.
+    private func takesWholeWorkspace(_ client: ExtensionConnection) -> Bool {
+        client.isLocal && client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
@@ -4443,6 +4536,12 @@ public final class SessionServer: @unchecked Sendable {
             disconnect(client, reason: "read failed: errno \(errno)")
             return
         }
+    }
+
+    /// Tells this Mac's app showing the host's threads as its own that automations' triggers
+    /// changed (`AutomationHosting.triggersChanged`). Any thread.
+    func pushAutomationsChanged() {
+        queue.async { [self] in sendToLocalApps(.automationsChanged) }
     }
 
     /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
@@ -5021,7 +5120,7 @@ public final class SessionServer: @unchecked Sendable {
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
             let kept = try await server.designs.addThreadNote(designID, note)
-            server.hopToMain { [weak server] in server?.onDesignThreadNotesChanged?(designID) }
+            server.designNotesChanged(designID)
             return .designNote(id: id, note: kept)
         }
     }
@@ -5194,7 +5293,14 @@ public final class SessionServer: @unchecked Sendable {
         guard try await designs.removeThreadNote(designID, noteID: noteID) else {
             throw DesignReferenceError("no_such_note", "That note is no longer on the design.")
         }
+        designNotesChanged(designID)
+    }
+
+    /// A design's thread notes changed: the app's canvas reads them again, in process or as the
+    /// background host's client (`designNotesChanged`). Any thread.
+    func designNotesChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
+        queue.async { [self] in sendToLocalApps(.designNotesChanged(designID: designID)) }
     }
 
     private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {
@@ -6184,6 +6290,8 @@ public final class SessionServer: @unchecked Sendable {
         if state.agents.count < before.agents.count {
             let live = Set(state.agents.map(\.id))
             peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }
+            // A deleted agent's turns end, but what it wrote stays on record for the turns it overlapped.
+            for gone in before.agents where !live.contains(gone.id) { changes.agentEnded(gone.id) }
         }
         if !retiredRPCSessions.isEmpty {
             let bound = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
@@ -6239,6 +6347,9 @@ public final class SessionServer: @unchecked Sendable {
         // Private mission progress has its own hints; the fleet would contain identical data.
         if !missionsChanged || before.withoutMissions != state.withoutMissions {
             broadcastRemoteState(state)
+        } else {
+            // This Mac's app draws missions from the state, as in process.
+            broadcastRemoteState(state, wholeOnly: true)
         }
         if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
@@ -7589,6 +7700,15 @@ public final class SessionServer: @unchecked Sendable {
         return true
     }
 
+    /// Hands an automation's banner to this Mac's app showing the host's threads as its own;
+    /// false (nothing sent) when no such app is connected. Main actor.
+    @MainActor
+    public func relayAutomationNotifyToLocalApp(title: String, body: String) -> Bool {
+        guard localAppConnected else { return false }
+        queue.async { [self] in sendToLocalApps(.automationNotify(title: title, body: body)) }
+        return true
+    }
+
     /// Hands `job` to the app connected over `host.sock` to draw, for a host with no web view of
     /// its own. The job goes as a file in `design-relay/` (a design's files outgrow a frame), which
     /// is removed once answered. With no app that draws, it waits `designRelayReconnectWait` for
@@ -8460,6 +8580,7 @@ public final class SessionServer: @unchecked Sendable {
             let sid = session.id
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
+            thread.stallBound = threadStallBound
             thread.workAdmission = { [weak self] in self?.hostUpdateReserved == false }
             if let id = session.launchAgentID {
                 do { thread.recoveryAtLaunch = try agentRecovery.checkpoint(for: id) }
@@ -8640,6 +8761,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.discardPreparedTurn = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.changes.promptDiscarded(agentID: agentID)
                 server.changes.captureQueue(agentID).async {
                     _ = server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
                 }
@@ -8664,6 +8786,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.executionSettled(agentID: agentID, thread: thread)
                 server.scheduleAutomationCleanup(agentID: agentID)
                 server.pushIfSettled(agentID: agentID, thread: thread)
+                if server.continueOnSwitchedAccount.remove(agentID) != nil { server.continueSwitchedTurn(agentID, thread: thread) }
             }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
@@ -8674,6 +8797,8 @@ public final class SessionServer: @unchecked Sendable {
                 case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
                 case .settled:
                     server.changes.turnSettled(agentID: agentID)
+                case .callStarted(let id, let path): server.changes.callStarted(agentID: agentID, callID: id, path: path)
+                case .callEnded(let id, let ok): server.changes.callEnded(agentID: agentID, callID: id, ok: ok)
                 }
             }
             sessions[sid] = .rpc(session, thread)
@@ -9037,6 +9162,7 @@ public final class SessionServer: @unchecked Sendable {
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
             designMergeAgentExited(agentID: agent)
+            changes.agentEnded(agent)
         }
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
@@ -9469,6 +9595,34 @@ public final class SessionServer: @unchecked Sendable {
         checkpointAgentRecovery(sessionID: sessionID, thread: thread)
     }
 
+    /// An agent's provider account switched after a limit (the app's or the host's rotation): a
+    /// turn that fails anyway (a limit pi doesn't retry, or its retries spent) continues once, from
+    /// its failure checkpoint, as Retry does, on the new account. One pi's own retry carried on
+    /// the new account settles without a failure and is left alone. Bounded: one continuation per
+    /// switch, and switches are bounded by `PiAccounts.rotate`.
+    public func continueAfterAccountSwitch(_ agentID: AgentID) {
+        queue.async { [self] in
+            guard let thread = rpcThread(forAgent: agentID) else { return }
+            if !thread.running, thread.settleCapture == nil {
+                continueSwitchedTurn(agentID, thread: thread)
+            } else {
+                continueOnSwitchedAccount.insert(agentID)
+            }
+        }
+    }
+
+    /// Server queue: the settled turn's Continue, when it failed.
+    func continueSwitchedTurn(_ agentID: AgentID, thread: RPCThreadState) {
+        guard thread.turnFailure != nil else { return }
+        Task { [self] in
+            guard case .snapshot(let snapshot)? = try? await nativeThread(agentID: agentID, request: .snapshot()),
+                  let recovery = AgentBanners.recovery(in: snapshot) else { return }
+            if case .failure(let code, _)? = try? await nativeThread(agentID: agentID, request: recovery) {
+                ShepherdLog.info("continuing \(agentID) on its switched account refused: \(code)")
+            }
+        }
+    }
+
     private func pushIfSettled(agentID: AgentID, thread: RPCThreadState) {
         guard thread.pushRunArmed else { return }
         if thread.stopRequested { thread.pushRunArmed = false; return }
@@ -9654,6 +9808,7 @@ public final class SessionServer: @unchecked Sendable {
 private struct RemoteStateView: Hashable {
     var designs: Bool
     var legacy: Bool
+    var whole: Bool
 }
 
 /// The id of a remote request the host could not decode, so it can refuse it.
@@ -9682,6 +9837,9 @@ extension SessionServer {
         changes.agentContext = { [weak self] agentID in
             guard let self else { return nil }
             return Self.changesContext(self.state, agentID)
+        }
+        changes.agentName = { [weak self] agentID in
+            self?.state.agents.first { $0.id == agentID }?.name
         }
         changes.onTurnsChanged = { [weak self] agentID, turns in
             self?.queue.async { self?.setTurnChanges(turns, for: agentID) }

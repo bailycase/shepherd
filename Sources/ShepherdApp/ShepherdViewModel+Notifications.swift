@@ -80,8 +80,8 @@ extension ShepherdViewModel {
         guard notifications.available else { return }
         var live = Set<RemoteAgentRef>()
         var hosts = Set<UUID>()
-        // The background host's threads the app shows as its own post as in process; the rest of
-        // its threads (automation runs, Projects' workers) post here, as a host's.
+        // The background host's threads are the app's own and post as in process; any the app's
+        // copy doesn't hold yet post here, as a host's.
         let own = localHost.map { host in (host.id, Set(state.agents.map(\.id))) }
         for connection in remoteHosts.allConnections {
             hosts.insert(connection.id)

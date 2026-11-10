@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
@@ -302,7 +303,7 @@ extension PreviewTests {
 
 /// Core mission records in every phase, over real Git repositories (the start page lists their
 /// branches) and real diffs; not a screenshot-only presentation model.
-private struct MissionPreviewFixture {
+struct MissionPreviewFixture {
     let spaces: [Space]
     let state: ShepherdState
     let goal, planning, pausedPlanning, draft, running, review, done, patched, merging, held, refunds, templated: Mission
@@ -519,13 +520,18 @@ private struct MissionPreviewFixture {
 
     /// Through the revision-checked mission service, as the app writes them.
     @MainActor func seed(_ workspace: PreviewWorkspace) async throws {
-        try await workspace.server.putState(state)
-        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched, merging, held, refunds, templated] {
-            var saved = try await workspace.server.createMission(id: mission.id, draft: mission.draft)
-            if mission.approvedPlanRevision != nil { saved = try await workspace.server.approveMissionPlan(id: mission.id, expectedRevision: saved.revision) }
-            if let run = mission.run { _ = try await workspace.server.setMissionRun(id: mission.id, expectedRevision: saved.revision, run: run) }
-        }
+        try await seed(server: workspace.server)
         let vm = workspace.vm
         try await eventuallyOnMain("missions to load") { vm.state.missions.count == 12 }
+    }
+
+    /// The same records on any workspace owner's server (the background host's, in `LocalHostRuntimePreviews`).
+    @MainActor func seed(server: SessionServer) async throws {
+        try await server.putState(state)
+        for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched, merging, held, refunds, templated] {
+            var saved = try await server.createMission(id: mission.id, draft: mission.draft)
+            if mission.approvedPlanRevision != nil { saved = try await server.approveMissionPlan(id: mission.id, expectedRevision: saved.revision) }
+            if let run = mission.run { _ = try await server.setMissionRun(id: mission.id, expectedRevision: saved.revision, run: run) }
+        }
     }
 }

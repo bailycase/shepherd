@@ -251,7 +251,7 @@ extension PreviewTests {
         }
     }
 
-    private static let noAutomationActions = AutomationsPageActions(
+    static let noAutomationActions = AutomationsPageActions(
         setFilter: { _ in }, select: { _ in }, setEnabled: { _, _ in }, run: { _ in }, stop: { _ in }, openThread: { _ in },
         delete: { _ in }, edit: { _ in }, create: {})
 }
