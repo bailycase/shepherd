@@ -61,7 +61,12 @@ enum RemoteSamples {
                                                               confirmedWhileWorking: true)),
         .commit(operationID: op, options: RemoteCommitOptions(head: "", files: [commitFile], title: "t", body: "", push: .none)),
         .commit(operationID: op, options: RemoteCommitOptions(head: "abc", files: [commitFile], title: "t", body: "", push: .upstream)),
-        .changesOverview,
+        .changesOverview(),
+        .changesOverview(cwd: "/tmp/acme-web"),
+        .changesList(scope: .uncommitted, options: ChangesOptions(), cwd: "/tmp/acme-web"),
+        .changesFile(revision: revision, path: "a.go", oldPath: nil, options: ChangesOptions(), cwd: "/tmp/acme-web"),
+        .changesBranches(cwd: "/tmp/acme-web"),
+        .changesPatch(revision: revision, options: ChangesOptions(), cwd: "/tmp/acme-web"),
         .changesList(scope: .lastTurn, options: ChangesOptions()),
         .changesList(scope: .turn(id: op), options: ChangesOptions(ignoreWhitespace: true)),
         .changesList(scope: .uncommitted, options: ChangesOptions(fullFiles: true)),
@@ -75,7 +80,7 @@ enum RemoteSamples {
         .changesFile(revision: revision, path: "new name.go", oldPath: "old.go", options: ChangesOptions()),
         .changesRevertFile(revision: revision, path: "ledger/outbox.go", oldPath: nil),
         .changesRevertFile(revision: revision, path: "new name.go", oldPath: "old.go"),
-        .changesBranches,
+        .changesBranches(),
         .changesPatch(revision: revision, options: ChangesOptions()),
         .changesUndoTurn(turnID: op),
         .changesRedoTurn(turnID: op),
@@ -578,6 +583,15 @@ struct RemoteRequestTests {
         let json = #"{"name":"pdf","summary":"PDFs.","isOn":true,"invocation":"automatic","updatedAt":1,"files":[]}"#
         let skill = try JSONDecoder().decode(InstalledSkill.self, from: Data(json.utf8))
         #expect(skill.copiedFrom == nil && skill.source == nil)
+    }
+
+    /// An older client's `changes*` reads name no folder: the agent's own.
+    @Test func anOlderClientsChangesReadsNameNoFolder() throws {
+        for json in [#"{"changesOverview":{}}"#, #"{"changesBranches":{}}"#] {
+            let query = try JSONDecoder().decode(RemoteAgentQuery.self, from: Data(json.utf8))
+            #expect(query.isChanges && query.changesCwd == nil)
+        }
+        #expect(String(decoding: try JSONEncoder().encode(RemoteAgentQuery.changesOverview()), as: UTF8.self) == #"{"changesOverview":{}}"#)
     }
 
     @Test func anOlderClientsRunInTerminalIsNoLongerAnAction() {
@@ -1186,7 +1200,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
-            RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
+            RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability,
@@ -1237,6 +1251,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
         #expect(RemoteProtocol.changesRevertCapability == "changes.revert.v1")
+        #expect(RemoteProtocol.changesCwdCapability == "changes.cwd.v1")
         #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")

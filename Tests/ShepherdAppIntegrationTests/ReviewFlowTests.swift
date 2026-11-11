@@ -122,6 +122,28 @@ struct ReviewFlowTests {
         #expect(session.comments.map(\.text) == ["same target"])
     }
 
+    /// The host reads only a folder the agent's `review_diff` asked for, or its own, never any path.
+    @Test func theHostRefusesAChangesReadOfAFolderTheAgentNeverAskedFor() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let own = try dirtyRepo()
+        let other = try makeScratchRepo(files: ["other.txt": "before\n"])
+        defer { for repo in [own, other] { try? FileManager.default.removeItem(at: repo) } }
+        let space = Fixture.space(path: own.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let ref = try #require(vm.localRef(agent.agent.id))
+
+        await #expect(throws: RemoteHostClientError.self) {
+            try await vm.remoteHosts.agentQuery(ref, query: .changesOverview(cwd: other.path))
+        }
+        _ = try await app.extensionRequest(.requestReview(id: 1, agentID: agent.agent.id, cwd: other.path, reference: nil))
+        guard case .changesOverview(let overview) = try await vm.remoteHosts.agentQuery(ref, query: .changesOverview(cwd: other.path)) else {
+            Issue.record("expected an overview"); return
+        }
+        #expect(overview.repository?.hasSuffix(other.lastPathComponent) == true)
+    }
+
     /// A diff still loading from the old target never lands in the retargeted review, whether
     /// it finishes last or fails.
     @Test(arguments: [false, true])

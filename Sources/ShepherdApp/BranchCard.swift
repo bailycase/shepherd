@@ -207,7 +207,7 @@ extension ShepherdViewModel {
         guard let host = localHost else { throw BackgroundHostClient.HostStarting() }
         if let agent {
             guard case .changesBranches(let branches) = try await remoteHosts.agentQuery(RemoteAgentRef(hostID: host.id, agentID: agent),
-                                                                                          query: .changesBranches) else {
+                                                                                          query: .changesBranches()) else {
                 throw ChangesError(ChangesError.unavailable, "Couldn’t read the branches.")
             }
             return branches

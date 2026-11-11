@@ -516,13 +516,18 @@ extension ShepherdViewModel {
     /// This Mac's engine for an agent's review (`cwd`: the directory under review).
     func localChangesEngine(agentID: AgentID, cwd: String) -> ChangesEngine {
         // The background host's Changes engine follows its agents' turns (a host not connected
-        // yet answers nothing).
-        remoteChangesEngine(localRef(agentID) ?? RemoteAgentRef(hostID: UUID(), agentID: agentID))
+        // yet answers nothing). Another folder than the agent's own is named (`changes.cwd.v1`).
+        let own = state.agents.first { $0.id == agentID }.flatMap { agent in
+            state.tabs.first { $0.id == agent.tabID }.flatMap { tab in
+                (tab.layout.leaves.first { $0.agentID == agentID } ?? tab.layout.leaves.first).map { ($0.cwd as NSString).expandingTildeInPath }
+            }
+        }
+        return remoteChangesEngine(localRef(agentID) ?? RemoteAgentRef(hostID: UUID(), agentID: agentID), cwd: cwd == own ? nil : cwd)
     }
 
     /// A remote host's engine (`changes.v1`): each file's hunks is its own request, a few at a
     /// time, each kept under the frame cap.
-    func remoteChangesEngine(_ target: RemoteAgentRef) -> ChangesEngine {
+    func remoteChangesEngine(_ target: RemoteAgentRef, cwd: String? = nil) -> ChangesEngine {
         let query: @MainActor (RemoteAgentQuery) async throws -> RemoteAgentResult = { [weak self] query in
             guard let self else { throw ChangesError(ChangesError.unavailable, "Shepherd is closing.") }
             return try await self.remoteHosts.agentQuery(target, query: query)
@@ -530,11 +535,11 @@ extension ShepherdViewModel {
         func unexpected() -> ChangesError { ChangesError(ChangesError.invalid, "The host answered with something else.") }
         return ChangesEngine(
             overview: {
-                guard case .changesOverview(let overview) = try await query(.changesOverview) else { throw unexpected() }
+                guard case .changesOverview(let overview) = try await query(.changesOverview(cwd: cwd)) else { throw unexpected() }
                 return overview
             },
             list: { scope, options in
-                guard case .changesList(let list) = try await query(.changesList(scope: scope, options: options)) else { throw unexpected() }
+                guard case .changesList(let list) = try await query(.changesList(scope: scope, options: options, cwd: cwd)) else { throw unexpected() }
                 return list
             },
             diffs: { list, options in
@@ -547,7 +552,7 @@ extension ShepherdViewModel {
                         group.addTaskUnlessCancelled { @MainActor in
                             try Task.checkCancellation()
                             guard case .changesFile(let diff) = try await query(.changesFile(revision: list.revision, path: file.path,
-                                                                                               oldPath: file.oldPath, options: options))
+                                                                                               oldPath: file.oldPath, options: options, cwd: cwd))
                             else { throw unexpected() }
                             return diff
                         }
@@ -564,15 +569,15 @@ extension ShepherdViewModel {
             },
             file: { revision, file, options in
                 guard case .changesFile(let diff) = try await query(.changesFile(revision: revision, path: file.path, oldPath: file.oldPath,
-                                                                                 options: options)) else { throw unexpected() }
+                                                                                 options: options, cwd: cwd)) else { throw unexpected() }
                 return diff
             },
             branches: {
-                guard case .changesBranches(let branches) = try await query(.changesBranches) else { throw unexpected() }
+                guard case .changesBranches(let branches) = try await query(.changesBranches(cwd: cwd)) else { throw unexpected() }
                 return branches
             },
             patch: { revision, options in
-                guard case .changesPatch(let text, let truncated) = try await query(.changesPatch(revision: revision, options: options))
+                guard case .changesPatch(let text, let truncated) = try await query(.changesPatch(revision: revision, options: options, cwd: cwd))
                 else { throw unexpected() }
                 return (text, truncated)
             })

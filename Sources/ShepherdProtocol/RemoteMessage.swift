@@ -142,6 +142,9 @@ public enum RemoteProtocol {
     /// The host reverts one file of a working-tree review (`RemoteAgentQuery.changesRevertFile`),
     /// fenced to the version the client displayed (`ChangesRevision`).
     public static let changesRevertCapability = "changes.revert.v1"
+    /// The host reads a `changes*` query's `cwd`: the repository an agent's `review_diff` asked to
+    /// review. Older hosts ignore it and answer for the agent's own folder.
+    public static let changesCwdCapability = "changes.cwd.v1"
     /// Older hosts' project inventory uses native .pi configuration paths.
     public static let projectsCapability = "projects.v1"
     /// Host-owned project files use .shepherd; clients must acknowledge this format before access.
@@ -247,7 +250,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -554,16 +557,17 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Commit (then push, or open a pull request), as an operation polled with `worktreeStatus`.
     case commit(operationID: UUID, options: RemoteCommitOptions)
     /// The scope menu: every scope's diffstat, the branch's commits, the pull request
-    /// (`changesCapability`, like every `changes*` query).
-    case changesOverview
+    /// (`changesCapability`, like every `changes*` query). A read's `cwd` is the repository the
+    /// agent's `review_diff` asked for (`changesCwdCapability`); nil, the agent's own folder.
+    case changesOverview(cwd: String? = nil)
     /// A scope's files and counts, and the revision to fetch their hunks from.
-    case changesList(scope: ChangesScope, options: ChangesOptions)
+    case changesList(scope: ChangesScope, options: ChangesOptions, cwd: String? = nil)
     /// One file's hunks from a list's revision; `oldPath` for a rename.
-    case changesFile(revision: ChangesRevision, path: String, oldPath: String?, options: ChangesOptions)
+    case changesFile(revision: ChangesRevision, path: String, oldPath: String?, options: ChangesOptions, cwd: String? = nil)
     /// The base picker's branches.
-    case changesBranches
+    case changesBranches(cwd: String? = nil)
     /// A revision's diff as a patch (Copy as patch).
-    case changesPatch(revision: ChangesRevision, options: ChangesOptions)
+    case changesPatch(revision: ChangesRevision, options: ChangesOptions, cwd: String? = nil)
     /// Undo a turn's edits in the agent's working tree; Redo puts them back.
     case changesUndoTurn(turnID: UUID)
     case changesRedoTurn(turnID: UUID)
@@ -590,6 +594,15 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
         switch self {
         case .files, .fileRead, .fileWrite: true
         default: false
+        }
+    }
+
+    /// The repository a `changes*` read reviews instead of the agent's own folder.
+    public var changesCwd: String? {
+        switch self {
+        case .changesOverview(let cwd), .changesBranches(let cwd), .changesList(_, _, let cwd), .changesFile(_, _, _, _, let cwd),
+             .changesPatch(_, _, let cwd): cwd
+        default: nil
         }
     }
 

@@ -901,6 +901,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Jobs handed to the app's window (`relayToApp`), by token.
     private var appRelays: [Int: (fd: Int32, answer: (AppRelayResult?) -> Void)] = [:]
     private var nextAppRelayToken = 0
+    /// The repository each agent's latest `review_diff` asked to review (`cwd`), the one folder
+    /// besides its own a `changes*` read may name. Server queue.
+    // ponytail: in memory, last request only; a review retargeted before a host restart reads its own folder's error.
+    private var reviewTargets: [AgentID: String] = [:]
     /// How long a relay waits for the app to connect (or reconnect) before it fails.
     var designRelayReconnectWait: TimeInterval = 5
     /// How long a run may hear nothing from pi while it waits on the model (`RPCThreadState+Stall`).
@@ -2727,6 +2731,12 @@ public final class SessionServer: @unchecked Sendable {
             // The server owns the engine: answered here, without the GUI, off the queue.
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
                 send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            // A named folder is the agent's own or the one its `review_diff` asked for, never any path.
+            if let cwd = query.changesCwd.map(Self.reviewPath), cwd != reviewTargets[agentID],
+               cwd != Self.changesContext(store.state, agentID).map({ Self.reviewPath($0.cwd) }) {
+                send(.error(id: id, code: ChangesError.invalid, message: "The agent didn't ask to review that folder."), to: client)
                 return
             }
             let changes = changes
@@ -5999,6 +6009,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
+        if case .start(let agentID, let cwd?, _) = request { reviewTargets[agentID] = Self.reviewPath(cwd) }
         guard let handler = onReviewRequest else {
             reply(.error(id: requestID, code: "unsupported", message: "no review handler"), to: client)
             return
@@ -10017,6 +10028,10 @@ private struct ChangesUnchecked<Value>: @unchecked Sendable {
 
 extension SessionServer {
     /// Server queue, from the committed state: the agent's thread pane directory and branch base.
+    static func reviewPath(_ cwd: String) -> String {
+        URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path
+    }
+
     fileprivate static func changesContext(_ state: ShepherdState, _ agentID: AgentID) -> ChangesService.AgentContext? {
         guard let agent = state.agents.first(where: { $0.id == agentID }),
               let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }

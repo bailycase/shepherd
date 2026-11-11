@@ -185,7 +185,9 @@
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
     answered by the server itself; thread snapshots carry `turnChanges`; `changesRevertFile`
     behind `changes.revert.v1` reverts one file of an uncommitted list to HEAD, refused when the
-    file changed since the list's revision, the working tree only, as Undo). Older hosts review the
+    file changed since the list's revision, the working tree only, as Undo; a read's `cwd`, behind
+    `changes.cwd.v1`, reviews the repository the agent's `review_diff` asked for, refused for any
+    other folder than that and the agent's own). Older hosts review the
     working tree only (`review`). The terminal panel's own actions on an agent's terminals
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older

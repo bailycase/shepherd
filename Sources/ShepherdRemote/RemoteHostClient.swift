@@ -794,7 +794,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .fileWrite: RemoteProtocol.filesWriteCapability
-        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch:
+            query.changesCwd == nil ? RemoteProtocol.changesCapability : RemoteProtocol.changesCwdCapability
+        case .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         case .changesRevertFile: RemoteProtocol.changesRevertCapability
         default: RemoteProtocol.agentInspectionCapability
