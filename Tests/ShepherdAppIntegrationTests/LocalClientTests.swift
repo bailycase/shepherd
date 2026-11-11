@@ -25,7 +25,7 @@ struct LocalClientTests {
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
         let vm = ShepherdViewModel(pi: idle.pi, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         let connection = vm.connectLocalHost(socket: socket, token: token)

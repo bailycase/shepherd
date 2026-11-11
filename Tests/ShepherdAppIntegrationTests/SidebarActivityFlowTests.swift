@@ -88,8 +88,7 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarWalkRows.isEmpty)
         #expect(vm.sidebarShortcutRows.isEmpty)
         let relaunched = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
-            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in },
-            looksUpPullRequests: false)
+            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in })
         #expect(relaunched.collapsedActivitySections == Set(SidebarActivitySection.allCases))
         vm.selectAgent(done.agent.id)
         #expect(!vm.collapsedActivitySections.contains(.done))

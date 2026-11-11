@@ -306,6 +306,7 @@ extension ShepherdViewModel {
             } catch {
                 actionError = ActionError(title: failure, message: ActionError.describe(error))
             }
+            readCheckoutOnHost(id)
             branchCardStores[id]?.requestRefresh()
         }
     }

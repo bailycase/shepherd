@@ -5,13 +5,13 @@
 - **Listener:** `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on **all
   interfaces** (default 7433, or 7434 in Shepherd Nightly so both apps can serve; port 0 picks
   an ephemeral port, and the bound port is returned).
-  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there. Under the
-  background service the host opens it (`ShepherdHost.serveSettings`), so it stays reachable
-  while the app is quit, with the same token.
+  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there. The host opens it
+  (`ShepherdHost.serveSettings`), so under the background service it stays reachable while the
+  app is quit, with the same token.
 - **Local socket:** `SessionServer.startLocalListener(path:tokenURL:)` binds `<support>/host.sock`
-  (mode 0600; the path must fit a unix socket's 104 bytes) for the app as a background host's
-  client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`) starts
-  it. At accept, before any frame is read, `LocalPeer` checks that the peer is this user's
+  (mode 0600; the path must fit a unix socket's 104 bytes) for the app, always its
+  host's client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`,
+  launchd's or the app's child) starts it. At accept, before any frame is read, `LocalPeer` checks that the peer is this user's
   (`getpeereid`) and that its code satisfies the host's own designated requirement (its audit
   token through `SecCodeCopyGuestWithAttributes`, then `SecCodeCheckValidity`; an ad-hoc build's
   requirement is its cdhash). pi and its agents run as the same user and can read the token, but
@@ -40,7 +40,8 @@
   it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
   post), `automationsChanged` (a run log or trigger changed: read the runs and statuses again) and
   `agentStartProblem` (why an agent's pi stopped and it waits, nil once pi starts again; every
-  agent's once when the client connects).
+  agent's once when the client connects), and `pullRequestLinks` (every thread's pull request link
+  and why a merged one was kept open, the sidebar's badges; as they change and when it connects).
   A local client with `appRelay.v1` also sends `projectExecutors` (the paired Macs it is connected
   to, and their execution hints), and answers the host's `projectPlacement` and
   `projectWorkerThread` relays through its connection to exactly that host and binding: a Project
@@ -195,15 +196,18 @@
     Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
     polls never demand processes; clients of older hosts keep the existing attach-only path.
     `readCheckout`, behind `checkout.read.v1`, has the host read the thread's branch and changed
-    files again after a change no state carries (a file saved in the app's Files tab); this
-    Mac's `focusThread` does the same for the thread it shows.
+    files again after a change no state carries (a file saved in the app's Files tab, a branch
+    card git action); this Mac's `focusThread` does the same for the thread it shows, as do the
+    host's own review loads and commits from review. The `pullRequest` agent query, behind
+    `pullrequest.link.v1`, has the host look the thread's branch's pull request up again and
+    answers it (the side pane's Pull request tab).
   - **Terminal compatibility** (no wire or capability change): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
     A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or
     the request's `cwd`), answering `paneOpened`; there is no split request anywhere. So an older
     client's Split right or down opens a tab and it then sees the flattened layout; its
     `resizePaneSplit` is answered `unsupported` ("Terminals are tabs and have no splits to
-    resize.") without reaching the GUI handler, and the connection stays; `closePane` of the
+    resize.") without reaching the pane handler, and the connection stays; `closePane` of the
     thread still answers `not_closable`. A current client never offers Split: against an older
     host its `openPane` naming the thread splits the thread there, which is a new tab, and it
     draws that host's split tabs as one tab per terminal (`TerminalPanel.tabs`); a host without
@@ -271,14 +275,14 @@
     when their pull request merges (missing from an older host: off).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
-    `providers`), answered by the GUI. A sign-in column in words that name no machine ("Not
+    `providers`), answered by the host through `HostStores`. A sign-in column in words that name no machine ("Not
     signed in", "Expired"; an older host's "Sign in on the Mac" reads as the state alone),
     a key's variable name but never its mask, account counts (with `hostConfig.v1`, each saved
     account's opaque id and name), never a credential; nothing here changes the host. With
     `hostConfig.v1` it adds each server's exposure, tool names, allowed tools and OAuth state, and
     each profile's fingerprint.
   - `hostConfig` (`hostConfig.v1`, `RemoteHostConfigRequest`): changes what `hostInventory`
-    reads, answered by the GUI through the stores its own Settings uses. MCP: read one entry's
+    reads, answered by the host through the stores Settings uses (`HostStores`). MCP: read one entry's
     JSON (references such as `${keychain:…}` and `${VAR}` stay as written; any other env or header
     value is masked as `••••••••`, and a save that carries the mask back keeps the host's value),
     save (add, or edit with `replacing`;
@@ -414,7 +418,7 @@
     when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
     a review's files and fingerprints and one file's `DiffFile`, the Spec Kit reads, and the host's
     templates (`templates`; `create` may name one, and `saveTemplate` saves a finished mission's map;
-    the app sends these only to the background host on its own Mac). `retryLane(attempts:hint:)`,
+    the app sends these only to its own host on this Mac). `retryLane(attempts:hint:)`,
     behind `missions.retryLane.v1`, is a blocked push's Retry with hint: the stuck lane
     (`Mission.stuck`, as the push's `detail.stuck` shows it) gets one attempt past its retry limit
     with the hint in its prompts, and the mission resumes; `attempts` is the stuck count the push
@@ -480,7 +484,7 @@
     Check is non-destructive; installation requires explicit confirmation of the current offer
     (expires after five minutes), then downloads, verifies with Sparkle's existing signed feed,
     installs and restarts as one operation. There is no remote channel switch or force install.
-    A background host has no updater: it relays the request to this Mac's app (`appRelay`'s
+    A host has no updater: it relays the request to this Mac's app (`appRelay`'s
     `hostUpdate` job; with no app connected, status says to open Shepherd), whose Sparkle asks the
     host before it reserves, restarts or quits (`hostUpdateGate`, local clients only).
     Status exposes version/build/channel/phase/offer/error/canInstall and is explicitly polled,
@@ -520,8 +524,8 @@
   replay watermark happen in one turn.
 - **Host-side handlers:** remote terminal and agent-creation requests go through
   `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests,
-  and host settings through `onRemoteHostSettings` (the GUI owns `AppSettings`). A server without
-  those handlers rejects them. Detaching a remote terminal never kills the host session.
+  and host settings through `onRemoteHostSettings` (the host's own `AppSettings`, installed by
+  `HostSettingsMapping.serve`). A server without those handlers rejects them. Detaching a remote terminal never kills the host session.
 - **Client:** `RemoteHostStore` persists host configs, **including tokens**, in UserDefaults
   (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, with exponential backoff
   capped at 30 s. A refused token or another protocol version is not retried: the host shows

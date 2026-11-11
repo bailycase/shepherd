@@ -61,6 +61,8 @@ extension ShepherdViewModel {
         // The host's automation triggers and banners.
         remoteHosts.onLocalAutomationsChanged = { [weak self] in self?.refreshAutomationTriggers() }
         remoteHosts.onLocalAutomationNotify = { [weak self] title, body in self?.postAutomationBanner(title: title, body: body) }
+        // The sidebar's pull request badges: the host looks them up.
+        remoteHosts.onLocalPullRequestLinks = { [weak self] links, notes in self?.applyPullRequestLinks(links, notes: notes) }
         // Settings pages that read the host's stores follow its changes, and catch up on each connect.
         remoteHosts.onLocalSettingsChanged = { [weak self] page in Task { await self?.localHostSettingsChanged(page) } }
         let connected = remoteHosts.onHostConnected

@@ -8,7 +8,7 @@ import Testing
 
 /// Close threads when their pull request merges (Settings ▸ Worktrees): a worktree thread's link
 /// to its branch's pull request, and the close a merge seen happening drives, on real scratch
-/// repositories. gh is stood in for: the lookup by `branchPullRequestLookup`, GitHub's branch
+/// repositories. gh is stood in for: the host's lookup by `pullRequestLookup`, GitHub's branch
 /// deletion by the forge runner.
 @Suite("Pull request auto-close", .mainActorExclusive)
 @MainActor
@@ -51,13 +51,11 @@ struct PullRequestAutoCloseTests {
             self.agent = agent
             vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
             app.settings.worktreeCloseOnMerge = true
-            // The app looks links up for its badges; the host, which closes merged threads, for itself.
-            let lookup: @MainActor (String) async -> ThreadPullRequest? = { [unowned self] _ in
+            // The host looks links up, closes merged threads and pushes the app its badges.
+            app.host?.pullRequestLookup = { [unowned self] _ in
                 ThreadPullRequest(ref: PullRequestAutoCloseTests.ref, state: pullState,
                                   headRefName: PullRequestAutoCloseTests.branch, headRefOid: headRefOid)
             }
-            vm.branchPullRequestLookup = lookup
-            app.host?.pullRequestLookup = lookup
             let app = app
             try await eventuallyOnMain("the host to follow the switch") { app.hostSettings?.worktreeCloseOnMerge == true }
             // The host starts every thread idle: the agent reports how it is.
@@ -95,10 +93,10 @@ struct PullRequestAutoCloseTests {
         defer { setup.stop() }
         let vm = setup.vm
 
-        let link = await vm.refreshPullRequestLink(setup.id)
+        let link = await setup.app.server.pullRequestLinks?.refresh(setup.id)
 
         #expect(link?.ref == Self.ref && link?.state == .open)
-        #expect(vm.pullRequestLinks[setup.id] == link)
+        try await eventuallyOnMain("the host's link pushed to the app") { vm.pullRequestLinks[setup.id] == link }
         let row = try #require(vm.sidebarLists.all.first { $0.id == .local(setup.id) })
         #expect(row.pullRequest?.text == "#31")
         #expect(row.help.contains("Pull request #31 open"))
@@ -171,6 +169,11 @@ struct PullRequestAutoCloseTests {
         case .dirty: #expect(note == "1 uncommitted change")
         case .unpushed: #expect(note == "1 unpushed commit")
         case .closedUnmerged, .settingOff, .mergedBeforeSeenOpen: #expect(note == nil)
+        }
+        // The sidebar's badge says why, from the host's push.
+        if let note {
+            let vm = setup.vm, id = setup.id
+            try await eventuallyOnMain("the note pushed to the app") { vm.pullRequestCloseNotes[id] == note }
         }
     }
 }

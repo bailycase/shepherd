@@ -1,6 +1,7 @@
 # Architecture
 
-Shepherd runs its session server in one of two processes. Whichever holds `<support>/server.lock`
+Shepherd's session server runs in one process, the host: the app's own executable run as
+`Shepherd --host` (`SessionHost`, `ShepherdHost`). Whichever host holds `<support>/server.lock`
 owns:
 
 - the workspace
@@ -10,22 +11,38 @@ owns:
 - the extension socket
 - the remote listeners
 
-**Background service** (Shepherd Nightly, while Login Items allows it): the app's own executable,
-run by launchd as `Shepherd --host` (`SessionHost`, `ShepherdHost`; the LaunchAgent is
-`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`). It owns
-everything above and has no UI. The app is its client over `<support>/host.sock`, through the same
-remote-host paths it uses for a paired Mac, plus `local.v1` for what only this Mac's app gets (the
-Browser and design drawing run in the app's web views). Quitting the app leaves agents running;
-the host drains and restarts on its own when an update replaces the bundle (`HostDrain`).
+The app never runs agents. It is always the host's client over `<support>/host.sock`, through the
+remote-host paths it uses for a paired Mac plus `local.v1` and `local.threads.v1` for what only this
+Mac's app gets: the host's whole workspace (threads, designs, automations, Projects, missions,
+Settings) as the app's own, why a thread's pi can't start (`agentStartProblem`, opened or not), and
+what needs a window (the Browser, design drawing, `review_diff`, Update this Mac) relayed to it.
+The host on this Mac is transport only: no host list, picker or page shows it, and no view asks
+whether a connection is this Mac's (`RemoteHostStore.connections` is the paired hosts). Only the
+app holds connections to paired Macs, so a Project the host owns places work on one through the
+app (`projectExecutors`, `AppRelayJob.projectPlacement`) while it runs, and says to open it
+otherwise. Who starts the host:
 
-**Supervised child** (Shepherd and Dev, or the service off in Login Items): the app runs the same
-`Shepherd --host --supervised` as its child (`HostSupervisor`) and is its client the same way. The
-supervisor restarts it with backoff after a crash and stops it at Quit (after the mid-turn
-question); an app crash closes its stdin, which stops it too. Relaunching restores the workspace
-and respawns each agent in its pi session. The app never runs a `SessionServer`; tests serve one
-over a scratch `host.sock`.
+- **The background service** (Shepherd Nightly, while Login Items allows it): launchd runs it
+  (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
+  Quitting the app leaves agents running; the host drains and restarts on its own when an update
+  replaces the bundle (`HostDrain`).
+- **The app's own child** (Shepherd, Dev, the service off, a failed registration): `HostSupervisor`
+  runs `Shepherd --host --supervised`, restarts it after a crash with backoff (shown after three
+  failed starts in a row, with Try Again or Quit), and stops it when the app quits (SIGTERM, then
+  SIGKILL), so agents end with the app as they always have. The child also stops when its stdin
+  pipe from the app closes, so an app crash takes it down. Quit asks first while agents are
+  mid-turn. The child has no bundle watch and no drain. A host that finds the workspace owned
+  exits with `SessionHost.ownedExitStatus`, and the app follows the owner until it lets go.
+  Relaunching restores the workspace and respawns each agent in its pi session.
 
-Either owner can also serve its agents to other devices over an authenticated TCP listener.
+The app never runs a `SessionServer`. App tests serve one in process over a scratch `host.sock`
+and connect the app to it the way it connects to a real host.
+
+Both hosts are the same executable and log the same way: `ShepherdLog.connection` lines (the
+supervisor's lifecycle among them) reach unified logging under `com.shepherd.app`; the other
+`ShepherdLog` lines go to stderr, which is the app's console for its child.
+
+Either host can also serve its agents to other devices over an authenticated TCP listener.
 
 [DESIGN.md](DESIGN.md) holds the UI rules. This document covers module boundaries, ownership,
 and where each feature lives. The code and its tests are the detail. [AGENTS.md](AGENTS.md) is

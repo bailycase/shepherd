@@ -101,6 +101,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onAutomationsChanged: (() -> Void)?
     /// An automation's banner from the background host on this Mac (`automationNotify`). Main queue.
     public var onAutomationNotify: ((String, String) -> Void)?
+    /// The background host on this Mac's threads' pull request links and kept-open notes (`pullRequestLinks`). Main queue.
+    public var onPullRequestLinks: (([AgentID: ThreadPullRequest], [AgentID: String]) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -183,6 +185,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case agentStartProblem(AgentID, NativeStartProblem?)
         case automationsChanged
         case automationNotify(String, String)
+        case pullRequestLinks([AgentID: ThreadPullRequest], [AgentID: String])
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -792,6 +795,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .moveToCheckout: RemoteProtocol.worktreeMoveCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
+        case .pullRequest: RemoteProtocol.pullRequestLinkCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .fileWrite: RemoteProtocol.filesWriteCapability
@@ -1686,6 +1690,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.automationsChanged, bytes: line.count)
         case .automationNotify(let title, let body):
             self.push(.automationNotify(title, body), bytes: line.count)
+        case .pullRequestLinks(let links, let notes):
+            self.push(.pullRequestLinks(links, notes), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1812,6 +1818,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .agentStartProblem(let agentID, let problem): self.onAgentStartProblem?(agentID, problem)
                 case .automationsChanged: self.onAutomationsChanged?()
                 case .automationNotify(let title, let body): self.onAutomationNotify?(title, body)
+                case .pullRequestLinks(let links, let notes): self.onPullRequestLinks?(links, notes)
                 }
             }
             finish()
