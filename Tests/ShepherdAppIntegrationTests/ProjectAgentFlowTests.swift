@@ -16,7 +16,7 @@ struct ProjectAgentFlowTests {
     }
 
     @Test func registrationUpdatesLiveSidebarAndSettingsWithoutSelectingOrStartingThreads() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let own = getpid()
         app.server.extensionPeerCheck = { _, peer in peer == own }
@@ -79,7 +79,7 @@ struct ProjectAgentFlowTests {
     }
 
     @Test func refreshKeepsHistorySeparateAndSettingsAddUsesTheSameRegistration() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [parent], agents: []))

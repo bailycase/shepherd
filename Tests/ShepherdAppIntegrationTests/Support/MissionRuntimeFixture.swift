@@ -41,7 +41,7 @@ final class MissionRuntimeFixture {
             heads.append(try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines))
         }
         repos = sources; remotes = destinations; spaces = selected; initialHeads = heads
-        app = try AppHarness(modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) }, inProcess: true)
+        app = try AppHarness(modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) })
         try installExecutables()
     }
 
@@ -52,7 +52,7 @@ final class MissionRuntimeFixture {
         // Missions is an opt-in experiment (off by default); these journeys turn it on as a person would.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        controller = vm.missions
+        controller = app.missions
         // These scenarios cover the map runner; Spec Kit missions have their own fixture.
         controller.newMissionBackend = .legacyMap
         await controller.refreshModels()

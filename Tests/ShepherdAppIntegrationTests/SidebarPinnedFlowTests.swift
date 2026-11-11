@@ -92,7 +92,7 @@ struct SidebarPinnedFlowTests {
 
     /// A deleted thread's pin goes with it, and nothing is forgotten before the workspace loads.
     @Test func aDeletedThreadsPinIsForgotten() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (state, agents) = fleet(app)
         let vm = try await app.start(with: state)
@@ -109,7 +109,7 @@ struct SidebarPinnedFlowTests {
 
     /// Pins load with the view model, before the workspace does: nothing is known to be gone yet.
     @Test func aPinIsNotForgottenBeforeTheWorkspaceIsAdopted() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (state, agents) = fleet(app, count: 2)
         try await app.start(with: state).pinThread(.local(agents[0].agent.id))

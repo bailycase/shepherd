@@ -51,7 +51,7 @@ struct ProjectBrowserControlTests {
     private static func checkLayout() async throws {
         try StubPi.installAsEngine()
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let directory = app.dir.appendingPathComponent("payments")
@@ -183,7 +183,7 @@ struct ProjectBrowserControlTests {
     private static func pressControls() async throws {
         try StubPi.installAsEngine()
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let project = Space(name: "payments", path: app.dir.appendingPathComponent("payments").path)

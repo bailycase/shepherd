@@ -13,7 +13,7 @@ import ShepherdTestSupport
 @MainActor
 struct ChildProjectTests {
     @Test func childToolsCreateAndRegisterWithoutStartingThreadsOrReplacingExistingFolders() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let own = getpid()
         app.server.extensionPeerCheck = { _, peer in peer == own }
@@ -43,7 +43,7 @@ struct ChildProjectTests {
     /// Add space with a parent (ProjectAdd): the folder lies outside the parent's, and the parent is
     /// recorded as Shepherd's explicit organization, persisted, with nothing moved.
     @Test func addSpaceRecordsAnExplicitParentForAFolderElsewhere() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parentFolder = app.dir.appendingPathComponent("shepherd"), childFolder = app.dir.appendingPathComponent("elsewhere/landing")
         try FileManager.default.createDirectory(at: parentFolder, withIntermediateDirectories: true)
@@ -63,7 +63,7 @@ struct ChildProjectTests {
     }
 
     @Test func childPathsCannotEscapeOrCreateIntermediateFolders() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = app.dir.appendingPathComponent("parent")
         let outside = app.dir.appendingPathComponent("outside")
@@ -85,7 +85,7 @@ struct ChildProjectTests {
     }
 
     @Test func aRegistrationFailureLeavesTheNewFolderAndReportsHowToRetry() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = Fixture.space("Parent", path: app.dir.path)
         _ = try await app.start(with: Fixture.state(spaces: [parent], agents: []))
@@ -152,7 +152,7 @@ struct ChildProjectTests {
 
     private static func pressEntryPoints() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let directory = app.dir.appendingPathComponent("parent")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -196,7 +196,7 @@ struct ChildProjectTests {
 
     private static func pressControls() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = Fixture.space("Parent", path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [parent], agents: []))

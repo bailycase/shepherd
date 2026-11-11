@@ -52,7 +52,7 @@ struct NewThreadDesignTests {
     /// The Design tool on, a project, and Hero drawn in a design of its own.
     static func workspace() async throws -> Workspace {
         try StubPi.installAsEngine()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         app.settings.designToolEnabled = true
         let space = Fixture.space(path: app.dir.path)
         var drawer = Fixture.agent("Checkout", in: space, order: 1)
@@ -268,7 +268,7 @@ struct NewThreadDesignTests {
 
     @Test func aProjectOnAnotherHostTakesNoDesignAndSaysSo() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         local.settings.designToolEnabled = true
         let hostSpace = Fixture.space("remote", path: remote.host.dir.path)

@@ -37,13 +37,13 @@ struct DesignLifecycleFlowTests {
 
     @Test func deletingAnOpenDesignGoesBackToDesignsAndUndoBringsItAllBack() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
         let design = try await openDesign(app, vm)
         let agent = try #require(vm.selectedAgent)
-        try await eventuallyOnMain("the agent's pi to run") { vm.hostTerminalSession(agent.paneID!) != nil }
-        let session = try #require(vm.hostTerminalSession(agent.paneID!))
+        try await eventuallyOnMain("the agent's pi to run") { vm.state.session(boundTo: agent.paneID!) != nil }
+        let session = try #require(vm.state.session(boundTo: agent.paneID!))
 
         vm.requestDesignDelete(.local(design.id))
         try await eventuallyOnMain("the dialog") { vm.designDeleteRequest != nil }
@@ -73,7 +73,7 @@ struct DesignLifecycleFlowTests {
         vm.openDesign(design.id)
         try await eventuallyOnMain("its agent on screen again") { vm.shownDesign?.id == design.id && vm.selectedAgentID == agent.id }
         let restored = try #require(vm.state.agents.first { $0.id == agent.id })
-        try await eventuallyOnMain("a fresh pi for it") { vm.hostTerminalSession(restored.paneID!) != nil }
+        try await eventuallyOnMain("a fresh pi for it") { vm.state.session(boundTo: restored.paneID!) != nil }
 
         // After its "Don't ask again", Delete acts at once, Undo toast and all.
         vm.designToast = nil
@@ -186,7 +186,7 @@ struct DesignLifecycleFlowTests {
     }
 
     @Test func deletingASystemSaysWhoUsesItAndTheyKeepTheirCopy() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
         let design = Design(name: "Events explorer", createdAt: 1_000)

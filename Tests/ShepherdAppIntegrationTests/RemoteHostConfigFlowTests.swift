@@ -99,7 +99,7 @@ struct RemoteHostConfigFlowTests {
     }
 
     @Test func aProfileChangedSinceTheClientReadItIsRefused() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         vm.madeSubagentDefinitions = SubagentDefinitionsModel(store: try SubagentFixtures.store(in: app.dir))

@@ -11,7 +11,7 @@ import Testing
 @MainActor
 struct SidebarActivityFlowTests {
     @Test func readingDoneKeepsItUntilAnotherThreadAndMarkAllSeenClearsEvenSelectedDone() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let first = Fixture.agent("first", in: space, status: .done)
@@ -55,7 +55,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func actualStatusCallbackAndAdoptionCountOneCompletionAndRefusedSendDoesNotResurrectIt() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let live = try await app.liveAgent("worker", in: space)
@@ -78,7 +78,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func disclosureStateSurvivesViewModelRelaunchAndSelectionRevealsItsGroup() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let idle = Fixture.agent("idle", in: space)
@@ -98,7 +98,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func deletingASpaceBehindAPageKeepsThePageAndDoesNotReadTheFallbackThread() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let firstSpace = Fixture.space("first", path: app.dir.appendingPathComponent("first").path)
         let secondSpace = Fixture.space("second", path: app.dir.appendingPathComponent("second").path)
@@ -119,7 +119,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteDoneKeepsItsPlaceAcrossPagesThenMovesWhenALocalThreadOpens() async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let localSpace = Fixture.space("local", path: app.dir.path)
         let local = Fixture.agent("local", in: localSpace)
@@ -145,7 +145,7 @@ struct SidebarActivityFlowTests {
     /// Leaving a finished thread tells its host which completion was seen (here the in-process server), so every other
     /// device drops it from Done; a thread still being read is not marked.
     @Test func leavingAFinishedThreadTellsTheHostItWasSeen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let finished = try await app.liveAgent("finished", in: space)
@@ -164,7 +164,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func publishedChildrenKeepADoneParentWorkingUntilTheLastChildSettlesWithoutChangingItsTurnStatus() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let parent = try await app.liveAgent("parent", in: space)
@@ -204,7 +204,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteChildRefreshKeepsADoneParentWorkingAndThenCreatesAnUnseenCompletion() async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
@@ -236,7 +236,7 @@ struct SidebarActivityFlowTests {
 
     @Test(arguments: [(false, "running"), (true, "running"), (true, "complete"), (true, "removed"), (true, "deleted")])
     func disconnectingOrReconnectingDuringRemoteChildWorkDoesNotInventACompletion(disconnect: Bool, childState: String) async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
@@ -303,7 +303,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func toolActivityIsMeasuredAndBoundedToTenSamples() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let id = AgentID()
@@ -321,7 +321,7 @@ struct SidebarActivityFlowTests {
 
     private static func pressControls(density: SHDensity) async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let fixtures = [Fixture.agent("pinned", in: space), Fixture.agent("asking", in: space, order: 1, status: .blocked),

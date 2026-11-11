@@ -20,8 +20,8 @@ struct ProjectPlacementFlowTests {
         var projectID = ProjectID()
         var project: Project { owner.server.state.projects.first { $0.id == projectID }! }
         init() throws {
-            owner = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }, inProcess: true)
-            executor = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }, inProcess: true)
+            owner = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") })
+            executor = try AppHarness(modelCatalog: { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") })
             // Each host opts in on its own; the owner is also the viewer of the executor.
             owner.settings.projectsEnabled = true; executor.settings.projectsEnabled = true
             spaceA = Space(name: "Owner sources", path: owner.dir.path)
@@ -49,7 +49,7 @@ struct ProjectPlacementFlowTests {
         func perform(_ request: ProjectRuntimeRequest) async throws {
             try await eventuallyAsync("revision-fenced owner action") {
                 do {
-                    _ = try await self.owner.vm.projectCoordinator.perform(projectID: self.projectID, expectedRevision: self.project.revision, request: request)
+                    _ = try await self.owner.coordinator.perform(projectID: self.projectID, expectedRevision: self.project.revision, request: request)
                     return true
                 } catch let error as LogicalProjectsError where ["stale_project", "project_busy"].contains(error.code) { return false }
             }
@@ -626,7 +626,7 @@ struct ProjectPlacementFlowTests {
         #expect(r.project.tasks.first?.phase.occupiesSlot == true)
         #expect(r.project.tasks.first?.executionAssignment == task.executionAssignment)
         await #expect(throws: (any Error).self) {
-            try await r.owner.vm.projectCoordinator.place(host: r.host, request: .execute(try #require(task.executionAssignment)))
+            try await r.owner.coordinator.place(host: r.host, request: .execute(try #require(task.executionAssignment)))
         }
         await #expect(throws: (any Error).self) { try await r.assign("must not fall back") }
         #expect(r.owner.server.state.agents.isEmpty)

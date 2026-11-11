@@ -12,7 +12,7 @@ import ShepherdSessions
 struct ProjectExecutionFlowTests {
     @Test func explicitFollowupRestoresRealPriorHistoryWithoutCreatingAnAgentOrSeedingMissingHistory() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness(inProcess: true); defer { app.stop() }
+        let app = try AppHarness(); defer { app.stop() }
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment; set before start so the view model's binding applies it
         let messages = app.dir.appendingPathComponent("retained-stub-messages.json")
         try JSONSerialization.data(withJSONObject: ["messagesFile": messages.path]).write(to: app.dir.appendingPathComponent("stub-pi-startup.json"))

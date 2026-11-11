@@ -28,8 +28,8 @@ struct ProjectWorkerOpenThreadTests {
         init() throws {
             AccessibilityNode.enable()
             let catalog: SessionServer.ModelCatalog = { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }
-            owner = try AppHarness(modelCatalog: catalog, inProcess: true)
-            executor = try AppHarness(modelCatalog: catalog, inProcess: true)
+            owner = try AppHarness(modelCatalog: catalog)
+            executor = try AppHarness(modelCatalog: catalog)
             owner.settings.projectsEnabled = true; executor.settings.projectsEnabled = true
             local = Space(name: "Owner", path: owner.dir.path)
             remote = Space(name: "Executor", path: executor.dir.path)
@@ -57,12 +57,12 @@ struct ProjectWorkerOpenThreadTests {
         /// A real worker, settled then resolved by the owner.
         func resolvedTask(remote placed: Bool) async throws -> ProjectTask {
             let before = Set(project.tasks.map(\.id))
-            _ = try await owner.vm.projectCoordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .assign(
+            _ = try await owner.coordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .assign(
                 operationID: UUID(), spaceID: placed ? remote.id : local.id, title: placed ? "Remote work" : "Local work", prompt: "tools:0",
                 host: placed ? binding : nil))
             let id = try #require(project.tasks.first { !before.contains($0.id) }?.id)
             try await eventuallyOnMain("the worker settles") { self.project.tasks.first { $0.id == id }?.phase == .settled }
-            _ = try await owner.vm.projectCoordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .resolve(taskID: id))
+            _ = try await owner.coordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .resolve(taskID: id))
             return try #require(project.tasks.first { $0.id == id && $0.phase == .resolved })
         }
 
@@ -170,7 +170,7 @@ struct ProjectWorkerOpenThreadTests {
         let ownerWorker = try await r.resolvedTask(remote: false)
         let placed = try await r.resolvedTask(remote: true)
 
-        let viewer = try AppHarness(inProcess: true); defer { viewer.stop() }
+        let viewer = try AppHarness(); defer { viewer.stop() }
         viewer.settings.projectsEnabled = true
         _ = try await viewer.start()
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")

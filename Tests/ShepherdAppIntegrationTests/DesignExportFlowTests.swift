@@ -67,7 +67,7 @@ struct DesignExportFlowTests {
     /// The Design tool on, a plain thread, and the checkout design (A, B, C, A · phone) plus Hero,
     /// which uses an upload and imports the unlisted Badge.
     private func workspace() async throws -> Workspace {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         app.settings.designToolEnabled = true
         let space = Fixture.space(path: app.dir.path)
         let thread = Fixture.agent("Fix the login redirect", in: space)

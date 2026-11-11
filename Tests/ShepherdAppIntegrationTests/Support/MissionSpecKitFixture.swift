@@ -29,7 +29,7 @@ final class MissionSpecKitFixture {
             selected.append(Space(name: "Repository \(index + 1)", path: repo.path))
         }
         repos = sources; spaces = selected
-        app = try AppHarness(modelCatalog: { .init(models: [Self.model], defaultModel: Self.model) }, inProcess: true)
+        app = try AppHarness(modelCatalog: { .init(models: [Self.model], defaultModel: Self.model) })
         try StubPi.installAsEngine()
         let config = root.appendingPathComponent("fixture.json")
         try JSONSerialization.data(withJSONObject: ["root": root.path, "stub": StubPi.path]).write(to: config)
@@ -64,7 +64,7 @@ final class MissionSpecKitFixture {
         // Missions is an opt-in experiment (off by default); these journeys turn it on as a person would.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        controller = vm.missions
+        controller = app.missions
         await controller.refreshModels()
     }
 

@@ -10,7 +10,7 @@ import ShepherdTestSupport
 @MainActor
 struct ProjectAutomationAppTests {
     @Test func sidebarStopUsesCanonicalOwnershipAndPreservesAScopedLiveWatcher() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         app.settings.projectsEnabled = true; app.server.setProjectsEnabled(true)  // the server is used before start, so the host opts in directly too
         let project = ProjectID(), automation = AutomationID()
@@ -56,7 +56,7 @@ struct ProjectAutomationAppTests {
     }
 
     @Test func runtimePauseImmediatelyRemovesPublishedScopedWatcherAndStopsOnlyItsProcess() async throws {
-        let app = try AppHarness(inProcess: true); defer { app.stop() }
+        let app = try AppHarness(); defer { app.stop() }
         app.settings.projectsEnabled = true; app.server.setProjectsEnabled(true)  // the server is used before start, so the host opts in directly too
         let vm = try await app.start()
         let project = ProjectID(), automation = AutomationID()
@@ -80,7 +80,7 @@ struct ProjectAutomationAppTests {
         let artifact = app.dir.appendingPathComponent("ordinary-worker-artifact")
         try Data("keep".utf8).write(to: artifact)
         let revision = try #require(server.state.projects.first?.revision)
-        _ = try await vm.projectCoordinator.perform(projectID: project, expectedRevision: revision, request: .pause)
+        _ = try await app.coordinator.perform(projectID: project, expectedRevision: revision, request: .pause)
         #expect(server.state.agents == [worker.agent])
         #expect(server.state.tabs == [worker.tab])
         #expect(server.state.automations.first?.agentID == nil)
@@ -93,7 +93,7 @@ struct ProjectAutomationAppTests {
 
     @Test func startupSkipsProjectOwnedAutomationsAndLegacyRunCannotBypassAdmission() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         app.settings.projectsEnabled = true; app.server.setProjectsEnabled(true)  // the server is used before start, so the host opts in directly too
         let id = ProjectID(), automation = AutomationID()
