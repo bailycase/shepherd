@@ -667,10 +667,10 @@ struct MissionRuntimeTests {
         let before = try fixture.controller.record(id)
         let calls = try Data(contentsOf: fixture.calls)
         fixture.app.scratch.stop(keepFiles: true)
-        let restarted = try AppHarness(directory: fixture.app.dir, modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) }, inProcess: true)
+        let restarted = try AppHarness(directory: fixture.app.dir, modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) })
         defer { restarted.stop() }
-        let vm = try await restarted.start(restoringAgents: true)
-        let controller = vm.missions
+        try await restarted.start(restoringAgents: true)
+        let controller = restarted.missions
         let retained = try controller.record(id)
         #expect(retained.run?.phase == .paused)
         #expect(retained.run?.checkouts == before.run?.checkouts)

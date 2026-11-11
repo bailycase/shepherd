@@ -131,10 +131,10 @@ struct RemoteBrowserDriveTests {
                           grace: TimeInterval? = nil, policy: BrowserViewerPolicy? = nil, capabilities: [String]? = nil,
                           diagnostic: (@Sendable (String) -> Void)? = nil) async throws -> Setup {
         diagnostic?("setup.local-fixture.before")
-        let local = try AppHarness(inProcess: true)
+        let local = try AppHarness()
         diagnostic?("setup.local-fixture.after")
         diagnostic?("setup.remote-fixture.before")
-        let remote = try RemoteHostHarness(inProcess: true)
+        let remote = try RemoteHostHarness()
         diagnostic?("setup.remote-fixture.after")
         if let capabilities { remote.host.server.advertisedCapabilities = capabilities }
         let space = Fixture.space(path: local.dir.path)
@@ -369,7 +369,7 @@ struct RemoteBrowserDriveTests {
     @Test func theMostRecentViewerToClaimDrivesAndTheOtherIsToldAndCanTakeItBack() async throws {
         let s = try await setup()
         defer { s.stop() }
-        let second = try AppHarness(inProcess: true)
+        let second = try AppHarness()
         defer { second.stop() }
         let vm2 = try await second.start(with: Fixture.state(spaces: [Fixture.space(path: second.dir.path)], agents: []))
         let connection2 = try await s.remote.connect(second.remoteHosts, name: "build-01")
@@ -498,10 +498,11 @@ struct RemoteBrowserDriveTests {
         try await Task.sleep(for: .milliseconds(300))
         #expect(session.remote?.claimant.phase == .idle && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == nil, "nothing was claimed")
 
-        // The agent drives the host's own page, and no dot reaches the viewer.
+        // The agent's page stays the host's own, and no dot reaches the viewer. (With its capability taken
+        // away this host's own app can't run that page either, so the open itself isn't checked here.)
         let agent = try s.extensionConnection()
         let hostPage = s.web.url("/terms").absoluteString.replacingOccurrences(of: "127.0.0.1", with: "localhost")
-        #expect(try await agent.text(.open(url: hostPage, note: nil)).contains("Page: Terms"))
+        _ = try await agent.ask(.open(url: hostPage, note: nil))
         try await Task.sleep(for: .milliseconds(300))
         #expect(!session.hasPage && session.openedByAgent == nil)
     }

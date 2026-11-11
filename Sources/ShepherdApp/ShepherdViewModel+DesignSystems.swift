@@ -119,7 +119,8 @@ extension ShepherdViewModel {
                 }
                 // ponytail: polls for the host's push, as `startHostedAgent` does.
                 for _ in 0..<100 where design(build) == nil { try await Task.sleep(for: .milliseconds(20)) }
-                lastDesignSystem = .build(build)
+                // Its page opens, as a new design's does.
+                openSystemBuild(build)
             } catch {
                 remoteActionError = "Couldn't build a design system from \(space.name): \(error)"
             }

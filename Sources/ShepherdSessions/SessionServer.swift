@@ -917,6 +917,9 @@ public final class SessionServer: @unchecked Sendable {
         let requestID: Int
         let agentID: AgentID
         let ownerFD: Int32
+        /// The address the app's own page opens for a host with none (no viewer owns it): its
+        /// viewers hear of it once it loads, as they did when the app ran the host.
+        var opened: String? = nil
     }
 
     /// One child process per session, on a PTY (terminal panes) or on
@@ -2855,6 +2858,8 @@ public final class SessionServer: @unchecked Sendable {
                     guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let value): self.send(.logicalProjectRuntime(id: id, result: value), to: client)
+                    // A thread's own refusal (its pi `native_starting`) keeps its code, as the thread's own request does.
+                    case .failure(RemoteHostClientError.rejected(let code, let message)): self.send(.error(id: id, code: code, message: message), to: client)
                     case .failure(let error): self.send(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }
                 }
@@ -5885,6 +5890,7 @@ public final class SessionServer: @unchecked Sendable {
         guard let pending = driveRequests[token], pending.ownerFD == client.fd else { return }
         driveRequests.removeValue(forKey: token)
         reply(outcome.fromViewer.reply(id: pending.requestID), to: pending.asker)
+        if let url = pending.opened, case .result = outcome { announceBrowserPageOpened(agentID: pending.agentID, url: url) }
     }
 
     /// Hands a request to the viewer that owns the agent's browser. False when none does, and the
@@ -5904,7 +5910,17 @@ public final class SessionServer: @unchecked Sendable {
         }
         nextDriveToken += 1
         let token = nextDriveToken
-        driveRequests[token] = DriveRequest(asker: client, requestID: requestID, agentID: agentID, ownerFD: ownerFD)
+        func address(_ request: BrowserRequest) -> String? {
+            switch request {
+            case .open(let url, _): url
+            case .newTab(let url, _): url
+            case .tab(_, let request): address(request)
+            default: nil
+            }
+        }
+        let ownPage = browserOwners.owner(of: agentID) == nil
+        driveRequests[token] = DriveRequest(asker: client, requestID: requestID, agentID: agentID, ownerFD: ownerFD,
+                                            opened: ownPage ? address(request) : nil)
         queue.asyncAfter(deadline: .now() + browserDeadline) { [weak self] in
             guard let self, let pending = self.driveRequests.removeValue(forKey: token) else { return }
             self.reply(.error(id: pending.requestID, code: "timeout", message: "The viewer showing the page did not answer in time."),

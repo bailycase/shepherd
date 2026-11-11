@@ -37,22 +37,22 @@ struct DesignLifecycleFlowTests {
 
     @Test func deletingAnOpenDesignGoesBackToDesignsAndUndoBringsItAllBack() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
         let design = try await openDesign(app, vm)
         let agent = try #require(vm.selectedAgent)
-        try await eventuallyOnMain("the agent's pi to run") { vm.hostTerminalSession(agent.paneID!) != nil }
-        let session = try #require(vm.hostTerminalSession(agent.paneID!))
+        try await eventuallyOnMain("the agent's pi to run") { vm.state.session(boundTo: agent.paneID!) != nil }
+        let session = try #require(vm.state.session(boundTo: agent.paneID!))
 
-        vm.requestDesignDelete(.local(design.id))
+        vm.performDesignMenu(.delete, on: .local(design.id))
         try await eventuallyOnMain("the dialog") { vm.designDeleteRequest != nil }
         let request = try #require(vm.designDeleteRequest)
         #expect(request.words.title == "Delete “Checkout funnel dashboard”?")
         #expect(request.words.lines.first?.lead == "1 board")
         vm.confirmDesignDelete(request)
 
-        try await eventuallyOnMain("the toast") { vm.designToast != nil }
+        try await eventuallyOnMain("the toast, with the design gone") { vm.designToast != nil && !vm.state.designs.contains { $0.id == design.id } }
         #expect(vm.shownDestination == .designs, "the window goes back to Designs")
         #expect(!vm.state.designs.contains { $0.id == design.id })
         #expect(!vm.state.agents.contains { $0.id == agent.id })
@@ -73,12 +73,14 @@ struct DesignLifecycleFlowTests {
         vm.openDesign(design.id)
         try await eventuallyOnMain("its agent on screen again") { vm.shownDesign?.id == design.id && vm.selectedAgentID == agent.id }
         let restored = try #require(vm.state.agents.first { $0.id == agent.id })
-        try await eventuallyOnMain("a fresh pi for it") { vm.hostTerminalSession(restored.paneID!) != nil }
+        // Its thread on screen asks the host for it, which starts its pi.
+        _ = try? await vm.nativeThread(restored.id, request: .snapshot())
+        try await eventuallyOnMain("a fresh pi for it") { vm.state.session(boundTo: restored.paneID!) != nil }
 
         // After its "Don't ask again", Delete acts at once, Undo toast and all.
         vm.designToast = nil
         vm.settings.skip(.deleteDesign, with: "Delete")
-        vm.requestDesignDelete(.local(design.id))
+        vm.performDesignMenu(.delete, on: .local(design.id))
         try await eventuallyOnMain("deleted without the dialog") { !vm.state.designs.contains { $0.id == design.id } && vm.designToast != nil }
         #expect(vm.designDeleteRequest == nil)
     }
@@ -186,7 +188,7 @@ struct DesignLifecycleFlowTests {
     }
 
     @Test func deletingASystemSaysWhoUsesItAndTheyKeepTheirCopy() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
         let design = Design(name: "Events explorer", createdAt: 1_000)
@@ -197,7 +199,11 @@ struct DesignLifecycleFlowTests {
         await vm.loadDesignSystems()
         try await eventuallyOnMain("the design drawn in it") { vm.state.designs.first?.systemNamespace == "acme-web" }
 
-        vm.requestDesignSystemDelete(.system("acme-web"))
+        // The system's menu deletes it on the host, as a paired Mac's.
+        try await eventuallyOnMain("the delete dialog") {
+            vm.performDesignSystemMenu(.deleteSystem, on: .system("acme-web"))
+            return vm.designSystemDeleteRequest != nil
+        }
         let request = try #require(vm.designSystemDeleteRequest)
         #expect(request.words.lines.first?.lead == "Used by 1 design; they keep their copy.")
         vm.confirmDesignSystemDelete(request)

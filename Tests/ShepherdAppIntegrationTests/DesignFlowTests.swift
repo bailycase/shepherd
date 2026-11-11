@@ -297,7 +297,7 @@ struct DesignFlowTests {
     /// One write to a board is one revision pushed and one board reloaded in place (the live one,
     /// with no new view); the others are untouched. New boards appear and removed ones leave.
     @Test func aBoardTheAgentRewritesReloadsInPlaceAlone() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, design, _, _) = try await openCanvas(app)
         defer { window.close() }
@@ -309,10 +309,11 @@ struct DesignFlowTests {
         let view = host.liveView(a)
         let server = app.server
         var pushes = 0
-        let forward = server.onDesignRevision
-        server.onDesignRevision = { id in
-            pushes += 1
-            forward?(id)
+        // What the host pushes this Mac's app for the design.
+        let forward = app.remoteHosts.onDesignChanged
+        app.remoteHosts.onDesignChanged = { hostID, id, revision, comments in
+            if id == design.id { pushes += 1 }
+            forward?(hostID, id, revision, comments)
         }
         let before = (reloads: host.reloads, snapshots: host.snapshotsTaken, pulls: screen.pulls, tokenB: host.tokens[b])
 

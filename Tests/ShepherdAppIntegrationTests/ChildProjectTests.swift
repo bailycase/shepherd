@@ -13,7 +13,7 @@ import ShepherdTestSupport
 @MainActor
 struct ChildProjectTests {
     @Test func childToolsCreateAndRegisterWithoutStartingThreadsOrReplacingExistingFolders() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let own = getpid()
         app.server.extensionPeerCheck = { _, peer in peer == own }
@@ -26,9 +26,12 @@ struct ChildProjectTests {
         let reply = try await Task.detached { try client.readReply() }.value
         guard case .projectResult(1, let child?, true) = reply else { Issue.record("Unexpected result: \(reply)"); return }
         #expect(FileManager.default.fileExists(atPath: path))
-        #expect(vm.state.spaces.contains(child))
-        #expect(vm.sidebarTree.projects.contains { $0.name == "Child" })
-        #expect(vm.projects.visible.first { $0.project.name == "Child" }?.parentName == "Parent")
+        // Settings ▸ Projects reads again when the spaces it knows change (its `.task(id: projectsSources)`).
+        try await eventuallyAsync("the child in the sidebar and Settings, as the host says") {
+            _ = await vm.projects.load(vm.projectsSources)
+            return vm.state.spaces.contains(child) && vm.sidebarTree.projects.contains { $0.name == "Child" }
+                && vm.projects.visible.first { $0.project.name == "Child" }?.parentName == "Parent"
+        }
         #expect(app.server.state.agents.count == 1)
         let keep = URL(fileURLWithPath: path).appendingPathComponent("keep.txt")
         try Data("untouched".utf8).write(to: keep)
@@ -43,7 +46,7 @@ struct ChildProjectTests {
     /// Add space with a parent (ProjectAdd): the folder lies outside the parent's, and the parent is
     /// recorded as Shepherd's explicit organization, persisted, with nothing moved.
     @Test func addSpaceRecordsAnExplicitParentForAFolderElsewhere() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parentFolder = app.dir.appendingPathComponent("shepherd"), childFolder = app.dir.appendingPathComponent("elsewhere/landing")
         try FileManager.default.createDirectory(at: parentFolder, withIntermediateDirectories: true)
@@ -63,7 +66,7 @@ struct ChildProjectTests {
     }
 
     @Test func childPathsCannotEscapeOrCreateIntermediateFolders() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = app.dir.appendingPathComponent("parent")
         let outside = app.dir.appendingPathComponent("outside")
@@ -85,7 +88,7 @@ struct ChildProjectTests {
     }
 
     @Test func aRegistrationFailureLeavesTheNewFolderAndReportsHowToRetry() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = Fixture.space("Parent", path: app.dir.path)
         _ = try await app.start(with: Fixture.state(spaces: [parent], agents: []))
@@ -152,7 +155,7 @@ struct ChildProjectTests {
 
     private static func pressEntryPoints() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let directory = app.dir.appendingPathComponent("parent")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -196,7 +199,7 @@ struct ChildProjectTests {
 
     private static func pressControls() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = Fixture.space("Parent", path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [parent], agents: []))

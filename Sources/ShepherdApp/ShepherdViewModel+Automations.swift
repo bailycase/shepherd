@@ -30,7 +30,12 @@ extension ShepherdViewModel {
         // The run on screen gives way to its replacement.
         let old = state.automations.first { $0.id == id }?.agentID
         let onScreen = old != nil && selectedAgentID == old
+        if onScreen { replacingRun = old }
+        defer { if onScreen { replacingRun = nil } }
         try await remoteHosts.automation(key, request: .run)
+        // ponytail: polls for the host's push of the new run, as `startHostedAgent` does.
+        func replacement() -> AgentID? { state.automations.first(where: { $0.id == id })?.agentID.flatMap { $0 != old ? $0 : nil } }
+        for _ in 0..<100 where onScreen && replacement() == nil { try await Task.sleep(for: .milliseconds(20)) }
         if onScreen, let new = state.automations.first(where: { $0.id == id })?.agentID, new != old,
            state.agents.contains(where: { $0.id == new }) {
             selectAgent(new)

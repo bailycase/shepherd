@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
@@ -228,17 +229,17 @@ struct LogicalProjectConversationTests {
     private static func summaryDisclosure() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Finished research", prompt: "tools:0 finish"))
         try await eventuallyOnMain("the first task settles") { r.vm.state.projects.first?.tasks.first?.phase == .settled }
         let current = try #require(r.vm.state.projects.first)
         let finished = try #require(current.tasks.first)
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: current.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: current.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Ongoing implementation", prompt: "slow"))
         try await eventuallyOnMain("the second task runs") { r.vm.state.projects.first?.tasks.last?.phase == .running }
         guard case .project(let other) = try await r.app.server.logicalProjects(
             .create(projectID: ProjectID(), name: "Other project", goal: "", linkedSpaceIDs: [r.space.id])) else { throw RigError("no other project") }
-        _ = try await r.vm.projectCoordinator.perform(projectID: other.id, expectedRevision: other.revision,
+        _ = try await r.app.coordinator.perform(projectID: other.id, expectedRevision: other.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Other work", prompt: "slow"))
         try await eventuallyOnMain("the other project has its task") { r.vm.state.projects.first { $0.id == other.id }?.tasks.last?.phase == .running }
         r.vm.openLogicalProject(r.ref)
@@ -274,7 +275,7 @@ struct LogicalProjectConversationTests {
 
         // The open list follows the owner without closing; resolving moves a stopped task to resolved, never to "done".
         let latest = try #require(r.app.server.state.projects.first { $0.id == r.project.id })
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: latest.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: latest.revision,
             request: .resolve(taskID: finished.id, operationID: UUID()))
         try await eventuallyOnMain("the resolved task reaches the open list") {
             r.vm.state.projects.first { $0.id == r.project.id }?.tasks.first?.phase == .resolved
@@ -321,7 +322,7 @@ struct LogicalProjectConversationTests {
     private static func rig() async throws -> Rig {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         let folder = app.dir.appendingPathComponent("sample-app-api")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -378,13 +379,12 @@ struct LogicalProjectConversationTests {
             r.vm.state.agents.contains { $0.id == coordinator && $0.coordinatorFor == r.project.id }
         }
         #expect(!r.vm.state.isOrdinaryThread(try #require(r.vm.state.agents.first { $0.id == coordinator })))
-        #expect(r.vm.projectCoordinator.conversationStore(agentID: coordinator) === r.vm.threadStores.store(for: coordinator))
 
         // The runtime stops the Project (no person-facing Pause): the page draws no banner or Resume, and the person's next message
         // starts it again and is delivered.
         try await eventuallyOnMain("the first message is delivered") { r.app.server.state.projects.first?.messages.first?.phase == .delivered }
         let running = try #require(r.app.server.state.projects.first)
-        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        _ = try await r.app.coordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
         // The runtime call bypasses the model, so wait for its copy to reach the owner's revision before acting on it.
         try await eventuallyOnMain("the page sees the owner's revision") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
@@ -428,7 +428,7 @@ struct LogicalProjectConversationTests {
         let r = try await rig()
         defer { r.app.stop() }
         // Real workers through the real runtime: one asks (the stub's "ask"), one settles.
-        let coordinator = r.vm.projectCoordinator
+        let coordinator = r.app.coordinator
         _ = try await coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                           request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading list research", prompt: "slow"))
         // The owner records the first worker running asynchronously: the second assign waits for that published record, so it
@@ -681,7 +681,7 @@ struct LogicalProjectConversationTests {
     private static func paneHeader() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        let coordinator = r.vm.projectCoordinator
+        let coordinator = r.app.coordinator
         // Each assign carries the revision the owner last published: the second waits for the first worker's own running record
         // (the owner persists it asynchronously), so the fixture is stable without a sleep or a retry of a refused action.
         var revision = r.project.revision
@@ -798,11 +798,11 @@ struct LogicalProjectConversationTests {
         // held after the owner committed it, until the scenario lets it through.
         var heldReply: CheckedContinuation<Void, Never>?
         if holdingFirstReply {
-            let vm = r.vm
+            let vm = r.vm, app = r.app
             vm.madeLogicalProjects = LogicalProjectsModel(
-                send: { _, request in try await vm.server.logicalProjects(request) }, pushed: { _ in vm.state.projects },
+                send: { _, request in try await app.server.logicalProjects(request) }, pushed: { _ in vm.state.projects },
                 runtime: { ref, revision, request in
-                    let project = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
+                    let project = try await app.coordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
                     if case .decideSpace(_, _, true) = request { await withCheckedContinuation { heldReply = $0 } }
                     return project
                 })
@@ -814,7 +814,7 @@ struct LogicalProjectConversationTests {
         for folder in [web, docs] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
         func propose(_ folder: URL) async throws {
             let shown = try #require(r.app.server.state.projects.first)
-            _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: shown.revision,
+            _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: shown.revision,
                 request: .proposeSpace(operationID: UUID(), path: folder.path, spaceID: nil, originTaskID: nil))
         }
         try await propose(web)
@@ -886,7 +886,7 @@ struct LogicalProjectConversationTests {
         let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.systemOrange.setFill(); rect.fill(); return true }
         let tiff = try #require(image.tiffRepresentation)
         try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])).write(to: png)
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         let input = r.vm.threadStores.input(for: coordinator)
         func messages() -> [ProjectMessage] { r.app.server.state.projects.first?.messages ?? [] }
         let before = messages().count
@@ -920,7 +920,7 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("the failing image is on the card") { input.attachments.items.count == 1 }
         let shown = try #require(r.app.server.state.projects.first)
         _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
-        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the owner has no project, as this Mac sees it") { r.app.server.state.projects.isEmpty && r.vm.state.projects.isEmpty }
         let attempts = r.vm.logicalProjects.failure
         _ = attempts
         _ = await r.vm.logicalProjects.sendMessage(r.ref, text: "this one fails", images: input.attachments.images)
@@ -934,7 +934,7 @@ struct LogicalProjectConversationTests {
     private static func inlineCards() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        let assigned = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        let assigned = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading list research", prompt: "slow"))
         let task = try #require(assigned.tasks.first)
         try await eventuallyOnMain("the task is running on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
@@ -957,11 +957,11 @@ struct LogicalProjectConversationTests {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         // The stub's turn holds until `continue-1` appears in its cwd (the coordinator's own folder). The page's thread polls its store
         // once it is mounted; the first pull is what starts the turn's events arriving.
         FileManager.default.createFile(atPath: folder.appendingPathComponent("continue-1").path, contents: nil)
-        let server = r.vm.server
+        let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the typed result is in the transcript") {
             window.layout()
@@ -988,7 +988,7 @@ private static func chipsAndLinks() async throws {
                                                                   ["wait": "hold-workers", "timeout": 120]],
                                                   "plain": [["wait": "hold-workers", "timeout": 120]]], "socket": socket]
         try JSONSerialization.data(withJSONObject: worker).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
-        let coordinator = r.vm.projectCoordinator
+        let coordinator = r.app.coordinator
         let first = try await coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                   request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "publish-one"))
         try await eventuallyOnMain("the first task is running and has published") {
@@ -1024,8 +1024,8 @@ private static func chipsAndLinks() async throws {
                 "\(r.vm.logicalProjects.failure?.message ?? "no refusal")")
         let agent = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == agent } }
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: agent))
-        let server = r.vm.server
+        let store = r.vm.threadStores.store(for: agent)
+        let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: agent, request: $0) }) }
         r.vm.openLogicalProject(r.ref)
         r.vm.logicalProjectPaneOpen = true
@@ -1107,7 +1107,7 @@ private static func chipsAndLinks() async throws {
         let socket = r.app.scratch.socketPath
         let hold: [String: Any] = ["prompts": ["slow": [["wait": "hold-workers", "timeout": 120]], "long": [["wait": "hold-workers", "timeout": 120]]], "socket": socket]
         try JSONSerialization.data(withJSONObject: hold).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
-        let coordinator = r.vm.projectCoordinator
+        let coordinator = r.app.coordinator
         let first = try await coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                   request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "slow"))
         try await eventuallyOnMain("the first task is running") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
@@ -1129,8 +1129,8 @@ private static func chipsAndLinks() async throws {
         #expect(sent, "refused: \(r.vm.logicalProjects.failure?.message ?? "no message")")
         let agent = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == agent } }
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: agent))
-        let server = r.vm.server
+        let store = r.vm.threadStores.store(for: agent)
+        let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: agent, request: $0) }) }
         r.vm.openLogicalProject(r.ref)
         r.vm.logicalProjectPaneOpen = false   // a narrow column would wrap even the short ones: the wide conversation wraps only the long title
@@ -1162,8 +1162,8 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: coordinator))
-        let server = r.vm.server
+        let store = r.vm.threadStores.store(for: coordinator)
+        let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the first message reached the transcript") {
             window.layout(); return r.app.server.state.projects.first?.messages.first?.phase == .delivered
@@ -1187,7 +1187,7 @@ private static func chipsAndLinks() async throws {
         }
         // The runtime stops the Project (no person-facing Pause); then the person sends through the real composer, which restarts it.
         let running = try #require(r.app.server.state.projects.first)
-        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        _ = try await r.app.coordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
         // The runtime call bypasses the model, so wait for its copy to reach the owner's revision before acting on it.
         try await eventuallyOnMain("the page sees the owner's revision") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
@@ -1253,7 +1253,7 @@ private static func chipsAndLinks() async throws {
         var state = Fixture.state(spaces: [space], agents: [fixture])
         state.projects = [project]
         try JSONEncoder().encode(state).write(to: stateURL)
-        let app = try AppHarness(directory: directory, inProcess: true)
+        let app = try AppHarness(directory: directory)
         defer { app.stop() }
         app.settings.projectsEnabled = true
         let vm = try await app.start()
@@ -1308,7 +1308,7 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the restored coordinator is held off") { store.offline && !store.starting && store.loadError == nil }
         // The runtime's resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
         let pausedProject = try #require(app.server.state.projects.first)
-        _ = try await vm.projectCoordinator.perform(projectID: pausedProject.id, expectedRevision: pausedProject.revision, request: .resume)
+        _ = try await app.coordinator.perform(projectID: pausedProject.id, expectedRevision: pausedProject.revision, request: .resume)
         try await eventuallyOnMain("Resume owns the held coordinator launch") { heldLaunch.current != nil }
         do {
             _ = try await app.server.projectConversation(project.id, request: .snapshot())
@@ -1400,7 +1400,7 @@ private static func chipsAndLinks() async throws {
     private static func workerThroughOwner() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        let assigned = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        let assigned = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading list research", prompt: "slow"))
         let task = try #require(assigned.tasks.first)
         try await eventuallyOnMain("the task has an opened worker session on the owner") {
@@ -1414,7 +1414,7 @@ private static func chipsAndLinks() async throws {
         // A task the owner does not know is refused by the owner, not routed anywhere else.
         let unknown = r.vm.projectWorkerRequest(r.ref, task: ProjectTaskID())
         do { _ = try await unknown(.snapshot()); throw RigError("an unknown task was served") }
-        catch let error as LogicalProjectsError { #expect(error.code == "not_found") }
+        catch RemoteHostClientError.rejected(let code, _) { #expect(code == "not_found", "the owner, this Mac's host, refuses it") }
         // A remote home addresses its owner through the same transport, and no executor is configured on this viewer.
         #expect(r.vm.remoteHosts.connections.isEmpty, "this viewer has no executor or any other host connection")
     }
@@ -1431,7 +1431,7 @@ private static func chipsAndLinks() async throws {
         result["toolName"] = "project_plan"
         // Every worker runs in the linked Space's folder; the stub reads its next tool result from there.
         try JSONSerialization.data(withJSONObject: result).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-plan-result.json"))
-        let assigned = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        let assigned = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading widget mockup", prompt: "project-plan"))
         let task = try #require(assigned.tasks.first)
         try await eventuallyOnMain("the worker is running on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
@@ -1498,7 +1498,7 @@ private static func chipsAndLinks() async throws {
         let socket = r.app.scratch.socketPath
         try JSONSerialization.data(withJSONObject: ["prompts": ["Build the reading widget": [["wait": "hold-workers", "timeout": 120]]], "socket": socket])
             .write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
-        let assigned = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        let assigned = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading widget mockup", prompt: "Build the reading widget"))
         let task = try #require(assigned.tasks.first)
         try await eventuallyOnMain("the worker is running on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
@@ -1555,7 +1555,7 @@ private static func chipsAndLinks() async throws {
     private static func projectComposerWhileRunning() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        let assigned = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        let assigned = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading list research", prompt: "slow"))
         let task = try #require(assigned.tasks.first)
         try await eventuallyOnMain("the task is running on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
@@ -1578,8 +1578,8 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: coordinator))
-        let server = r.vm.server
+        let store = r.vm.threadStores.store(for: coordinator)
+        let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the coordinator's turn is running") { window.layout(); return store.running }
         #expect(store.draft.isEmpty, "the field is empty")
@@ -1600,7 +1600,7 @@ private static func chipsAndLinks() async throws {
         defer { r.app.stop() }
         try JSONSerialization.data(withJSONObject: ["prompts": ["Build the reading widget": [["wait": "hold-workers", "timeout": 120]]], "socket": r.app.scratch.socketPath])
             .write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
-        let assigned = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        let assigned = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
             request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Reading widget mockup", prompt: "Build the reading widget"))
         let task = try #require(assigned.tasks.first)
         try await eventuallyOnMain("the worker is running on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
@@ -1639,8 +1639,8 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: coordinator))
-        let input = r.vm.threadStores.input(for: coordinator)
+        var store = r.vm.threadStores.store(for: coordinator)
+        var input = r.vm.threadStores.input(for: coordinator)
         let png = r.app.dir.appendingPathComponent("keep.png")
         let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.systemPurple.setFill(); rect.fill(); return true }
         let tiff = try #require(image.tiffRepresentation)
@@ -1653,7 +1653,12 @@ private static func chipsAndLinks() async throws {
         }
         let shown = try #require(r.app.server.state.projects.first)
         _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
-        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the owner has no project, as this Mac sees it") { r.app.server.state.projects.isEmpty && r.vm.state.projects.isEmpty }
+        // The deleted coordinator's thread went with it: the page's composer is a fresh one, given the same words and image.
+        store = r.vm.threadStores.store(for: coordinator)
+        input = r.vm.threadStores.input(for: coordinator)
+        input.add(urls: [png], store: store, localFiles: true, imagesSupported: true)
+        store.draft = "this one is refused"
         try await eventuallyOnMain("Send is still offered") { window.layout(); return window.controls().contains { $0.label == "Send" && $0.isEnabled } }
 
         // The Send button: the owner refuses, so the draft and the image stay, and the reason is shown.
@@ -1678,6 +1683,7 @@ private static func chipsAndLinks() async throws {
         // Changing the words is a different message: another operation.
         store.draft = "now with other words"
         r.vm.logicalProjects.failure = nil
+        window.layout()
         try window.press("Send")
         try await eventuallyOnMain("the changed words are another operation, refused too") {
             r.vm.logicalProjects.failure != nil && r.vm.logicalProjects.operations[r.ref]?.id != kept
@@ -1741,9 +1747,10 @@ private static func chipsAndLinks() async throws {
         let coordinator = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         let agent = try #require(r.vm.state.agents.first { $0.id == coordinator })
         let pane = try #require(agent.paneID)
-        let oldSession = try #require(r.vm.hostTerminalSession(pane))
+        let oldSession = try #require(r.vm.state.session(boundTo: pane))
         await r.app.server.stopKeepingAgent(sessionID: oldSession)
-        try await eventuallyOnMain("coordinator exits") { r.vm.hostTerminalSession(pane) == nil }
+        let server = r.app.server
+        try await eventuallyAsync("coordinator exits") { await server.sessionInfo(sessionID: oldSession)?.isAlive != true }
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "second message"))
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "third message"))
         try await eventuallyOnMain("queued messages delivered after coordinator relaunch", timeout: .seconds(40)) {
@@ -1752,7 +1759,7 @@ private static func chipsAndLinks() async throws {
         }
         let store = r.vm.threadStores.store(for: coordinator)
         try await eventuallyOnMain("the same conversation leaves starting") { window.layout(); return store.ready && !store.awaitingPi }
-        #expect(r.vm.hostTerminalSession(pane) != oldSession)
+        #expect(r.vm.state.session(boundTo: pane) != oldSession)
     }
 
     // MARK: Cold launch of a saved conversation
@@ -1776,7 +1783,7 @@ private static func chipsAndLinks() async throws {
         var state = Fixture.state(spaces: [held], agents: [fixture])
         state.projects = [project]
         try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
-        let app = try AppHarness(directory: directory, inProcess: true)
+        let app = try AppHarness(directory: directory)
         defer { app.stop() }
         app.settings.projectsEnabled = true
         let sessionsDirectory = PiSessionFile.projectDirectory(forCwd: folder.path, sessionsRoot: app.server.pi.sessionsRoot)
@@ -1876,7 +1883,7 @@ private static func chipsAndLinks() async throws {
         var state = Fixture.state(spaces: [held], agents: [fixture])
         state.projects = [project]
         try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
-        let app = try AppHarness(directory: directory, inProcess: true)
+        let app = try AppHarness(directory: directory)
         defer { app.stop() }
         app.settings.projectsEnabled = true
         let vm = try await app.start()
@@ -1957,7 +1964,7 @@ private static func chipsAndLinks() async throws {
     private static func resolvedHasNoComposer() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
         try await eventuallyOnMain("the worker's turn ends") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
         let task = try #require(r.app.server.state.projects.first?.tasks.first)
@@ -2014,7 +2021,7 @@ private static func chipsAndLinks() async throws {
     private static func settledMenuResolves() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
         try await eventuallyOnMain("the worker's turn ends") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
         let task = try #require(r.app.server.state.projects.first?.tasks.first)
@@ -2049,7 +2056,7 @@ private static func chipsAndLinks() async throws {
         // A native select with named options, as `project_question` leaves: the worker's turn stays open until it is answered.
         let script: [String: Any] = ["prompts": ["ask-word": [["ask": ["title": "Pick the test word", "options": ["ALPHA", "BETA"]]]]], "socket": r.app.scratch.socketPath]
         try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-word"))
         try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
         let task = try #require(r.vm.state.projects.first?.tasks.first)
@@ -2065,7 +2072,7 @@ private static func chipsAndLinks() async throws {
 
         // Paused by the runtime: the footer's wording does not change (there is no Resume to wait for).
         let running = try #require(r.app.server.state.projects.first)
-        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        _ = try await r.app.coordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused and acknowledged, and the page sees the owner's revision") {
             r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true
                 && r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision
@@ -2108,7 +2115,7 @@ private static func chipsAndLinks() async throws {
         let script: [String: Any] = ["prompts": ["ask-store": [["ask": ["method": "input", "title": "Which store should the API use?\n\nOptions:\n" + hints, "placeholder": "Say anything"]]]],
                                      "socket": r.app.scratch.socketPath]
         try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-store"))
         try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
         let task = try #require(r.vm.state.projects.first?.tasks.first)
@@ -2233,7 +2240,7 @@ private static func chipsAndLinks() async throws {
     private static func footerGeometry() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+        _ = try await r.app.coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
         try await eventuallyOnMain("the worker settles") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
         let task = try #require(r.app.server.state.projects.first?.tasks.first)
@@ -2312,7 +2319,7 @@ private static func chipsAndLinks() async throws {
         let launch = ProjectRuntimeLaunch(projectID: r.project.id, agentID: AgentID(), spaceID: r.space.id, cwd: r.space.path,
                                           name: r.project.name, model: "nowhere/not-a-model", coordinator: true)
         do {
-            _ = try await r.vm.projectCoordinator.launch(launch)
+            _ = try await r.app.coordinator.launch(launch)
             Issue.record("a model the owner does not list launched")
         } catch {
             #expect(String(describing: error).contains("not available"), "the refusal says why: \(error)")
@@ -2347,7 +2354,7 @@ private static func chipsAndLinks() async throws {
         #expect(await r.vm.logicalProjects.saveSettings(r.ref) { $0.maxConcurrentWorkers = 2 })
         let shown = try #require(r.app.server.state.projects.first)
         _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
-        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the owner has no project, as this Mac sees it") { r.app.server.state.projects.isEmpty && r.vm.state.projects.isEmpty }
         try await eventuallyOnMain("the chip is still offered") { window.layout(); return window.controls().contains { $0.label == "Model settings: Default model" && $0.isEnabled } }
         try window.press("Model settings: Default model")
         try await eventuallyOnMain("the popover") { window.layout(); return window.element("All models…") != nil }
@@ -2507,10 +2514,10 @@ private static func chipsAndLinks() async throws {
         // Release the real launch: the agent is created and the page's thread becomes ready on it.
         let (request, done) = try #require(held.current)
         r.app.server.onProjectRuntimeLaunch = launch
-        Task { do { done(.success(try await r.vm.projectCoordinator.launch(request))) } catch { done(.failure(error)) } }
+        Task { do { done(.success(try await r.app.coordinator.launch(request))) } catch { done(.failure(error)) } }
         try await eventuallyOnMain("the coordinator is created") { r.vm.state.agents.contains { $0.id == reserved } }
         // This rig's window re-mounts the page's thread as the agent appears, so the store is run on the same owner path, as the other scenarios do.
-        let server = r.vm.server, projectID = r.project.id
+        let server = r.app.server, projectID = r.project.id
         Task { await store.run(request: { try await server.projectConversation(projectID, request: $0) }) }
         try await eventuallyOnMain("the page's thread is ready on it", timeout: .seconds(40)) {
             window.layout(); return store.ready && store.loadError == nil

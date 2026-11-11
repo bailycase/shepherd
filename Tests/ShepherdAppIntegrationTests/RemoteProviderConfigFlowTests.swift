@@ -35,7 +35,7 @@ struct RemoteProviderConfigFlowTests {
         })
         auth.openURL = { _ in }
         auth.copy = { _ in }
-        let app = try AppHarness(pi: pi, inProcess: true)
+        let app = try AppHarness(pi: pi)
         defer { app.stop() }
         try await app.start(piAuth: auth)
         let tokenURL = app.dir.appendingPathComponent("remote-token")

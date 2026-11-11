@@ -29,7 +29,7 @@ struct LocalAutomationTests {
     }
 
     @Test func aStartingRunReadsLiveARefusedRunNowSaysSoAndStopLeavesTheHiddenSpace() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let runs = Space(name: "Automations", path: "~", hidden: true)
@@ -68,9 +68,7 @@ struct LocalAutomationTests {
         #expect(vm.selectedSpaceID == runs.id)
         vm.stopAutomation(automation.id)
         try await eventuallyOnMain("the run to stop") { vm.state.agents.isEmpty }
-        await app.settle()
-        #expect(vm.selectedAgentID == nil)
-        #expect(vm.selectedSpaceID == space.id)
+        try await eventuallyOnMain("the workspace on a visible space") { vm.selectedAgentID == nil && vm.selectedSpaceID == space.id }
     }
 
     /// Run Now on the settled run on screen: the workspace goes straight to the new run's

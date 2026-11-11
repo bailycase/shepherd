@@ -166,17 +166,15 @@ struct RemoteHostTests {
         _ = vm
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func selectedVisibleRemoteTerminalDemandsOnlyItsOwnProcess() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 2)
         let original = Fixture.state(spaces: [space], agents: [agent])
         let vm = try await local.start()
         let hostVM = try await remote.host.start(with: original)
-        hostVM.sessions.restoreAgents([agent.agent.id], first: [], in: original)
         let connection = try await remote.connect(local.remoteHosts)
         vm.selectRemoteAgent(hostID: connection.id, agentID: agent.agent.id)
         let ref = try #require(vm.selectedRemoteAgent)
@@ -194,24 +192,22 @@ struct RemoteHostTests {
         vm.selectTerminalTab(target.tabs[0], target: target)
         vm.terminalPanels.update(target.key) { $0.shown = true }
         try await eventuallyOnMain("the selected visible remote terminal to start") {
-            hostVM.hostTerminalSession(target.tabs[0].id) != nil
+            remote.host.server.state.session(boundTo: target.tabs[0].id) != nil
         }
-        #expect(hostVM.hostTerminalSession(target.tabs[1].id) == nil,
+        #expect(remote.host.server.state.session(boundTo: target.tabs[1].id) == nil,
                 "the hidden sibling must stay dormant")
         #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == [target.tabs[0].id])
 
         vm.selectTerminalTab(target.tabs[1], target: target)
         try await eventuallyOnMain("selecting the sibling to demand its process") {
-            hostVM.hostTerminalSession(target.tabs[1].id) != nil
+            remote.host.server.state.session(boundTo: target.tabs[1].id) != nil
         }
         #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == Set(target.tabs.map(\.id)))
     }
-#endif
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test(arguments: [false, true], [false, true])
     func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool, olderHost: Bool) async throws {
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         var agent = Fixture.agent(in: space, auxiliary: 4)
@@ -227,8 +223,6 @@ struct RemoteHostTests {
         let original = Fixture.state(spaces: [space], agents: [agent, foreign])
         try await local.start()
         let hostVM = try await remote.host.start(with: original)
-        // Use the same restoration classification, with no local selection demand.
-        hostVM.sessions.restoreAgents(original.agents.map(\.id), first: [], in: original)
         let selected = hostVM.selectedAgentID
         let focused = hostVM.focusedPaneID
         if olderHost {
@@ -255,15 +249,17 @@ struct RemoteHostTests {
         #expect(await remote.host.server.listSessions().isEmpty)
         try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
         try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
-        try await eventuallyOnMain("only the requested shell to start") {
-            hostVM.hostTerminalSession(shell) != nil
+        let hostServer = remote.host.server
+        try await eventuallyAsync("only the requested shell to start") {
+            let alive = await hostServer.listSessions().filter(\.isAlive).map(\.id)
+            return !alive.isEmpty && hostServer.state.session(boundTo: shell).map { alive.contains($0) } == true
         }
-        let sessionID = try #require(hostVM.hostTerminalSession(shell))
+        let sessionID = try #require(remote.host.server.state.session(boundTo: shell))
         try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
-        #expect(hostVM.hostTerminalSession(shell) == sessionID)
+        #expect(remote.host.server.state.session(boundTo: shell) == sessionID)
         #expect(await remote.host.server.listSessions().filter(\.isAlive).map(\.id) == [sessionID])
-        #expect(hostVM.hostTerminalSession(agent.piPane.id) == nil)
-        #expect(hostVM.hostTerminalSession(agent.auxiliary[1].id) == nil)
+        #expect(remote.host.server.state.session(boundTo: agent.piPane.id) == nil)
+        #expect(remote.host.server.state.session(boundTo: agent.auxiliary[1].id) == nil)
         #expect(hostVM.selectedAgentID == selected && hostVM.focusedPaneID == focused)
         try await eventuallyOnMain("the fresh binding to reach the client") {
             connection.state.tabs.first { $0.id == agent.tab.id }?.layout.leaf(withID: shell)?.sessionID == sessionID
@@ -272,7 +268,6 @@ struct RemoteHostTests {
         pane.noteGrid(cols: 80, rows: 24)
         try await eventuallyOnMain("the demanded terminal to attach") { pane.phase == .live }
     }
-#endif
 
     @Test(arguments: ["available", "hostRemoved", "agentGone"])
     func agentCommandsWhileARemoteAgentIsSelectedLeaveTheLocalWorkspaceAlone(remoteState: String) async throws {
@@ -332,7 +327,7 @@ struct RemoteHostTests {
     }
 
     @Test func remoteSubagentsFollowTheHostAndClearWhenTheAgentOrHostGoes() async throws {
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent("parent", in: space)
@@ -341,11 +336,11 @@ struct RemoteHostTests {
         let connection = try await remote.connect(local.remoteHosts)
         let target = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
 
-        hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "running")])
+        remote.host.publishChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "running")])
         try await eventuallyOnMain("the child to reach the client") { vm.remoteChildren[target]?.first?.state == "running" }
         #expect(vm.paletteItems.contains { $0.title == "hidden child" }, "a host's children are searchable")
 
-        hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "blocked", needsAttention: true)])
+        remote.host.publishChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "blocked", needsAttention: true)])
         try await eventuallyOnMain("the child's question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
         #expect(vm.blockedCount == 0, "a child's question is its parent's, not a thread waiting on the user")
 
@@ -359,7 +354,7 @@ struct RemoteHostTests {
     /// A subagent asks its parent, never the user. A live child keeps its idle parent working
     /// locally and remotely, without putting it in Needs you; the tray shows the child's question.
     @Test func aSubagentThatAskedItsParentNeverPutsItsAgentInNeedsYouOnTheHostOrItsClients() async throws {
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let fixture = Fixture.agent("parent", in: space)
@@ -371,8 +366,8 @@ struct RemoteHostTests {
         #expect(agent.status == .idle)
         let asking = ChildRun(runID: "run", label: "reviewer", state: "running", needsAttention: true)
 
-        hostVM.applyAgentChildren(agent.id, [asking])
-        #expect(hostVM.childRuns.children(of: agent.id).first?.needsAttention == true, "the question is there to read")
+        remote.host.publishChildren(agent.id, [asking])
+        try await eventuallyOnMain("the question on the host's own app, there to read") { hostVM.childRuns.children(of: agent.id).first?.needsAttention == true }
         #expect(hostVM.sidebarLists.needsYou.isEmpty)
         #expect(hostVM.sidebarLists.working.first?.id == .local(agent.id))
         #expect(hostVM.sidebarLists.working.first?.leading == .dot(.running))

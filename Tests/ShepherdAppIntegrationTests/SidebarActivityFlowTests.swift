@@ -11,7 +11,7 @@ import Testing
 @MainActor
 struct SidebarActivityFlowTests {
     @Test func readingDoneKeepsItUntilAnotherThreadAndMarkAllSeenClearsEvenSelectedDone() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let first = Fixture.agent("first", in: space, status: .done)
@@ -55,7 +55,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func actualStatusCallbackAndAdoptionCountOneCompletionAndRefusedSendDoesNotResurrectIt() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let live = try await app.liveAgent("worker", in: space)
@@ -78,7 +78,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func disclosureStateSurvivesViewModelRelaunchAndSelectionRevealsItsGroup() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let idle = Fixture.agent("idle", in: space)
@@ -98,7 +98,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func deletingASpaceBehindAPageKeepsThePageAndDoesNotReadTheFallbackThread() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let firstSpace = Fixture.space("first", path: app.dir.appendingPathComponent("first").path)
         let secondSpace = Fixture.space("second", path: app.dir.appendingPathComponent("second").path)
@@ -119,7 +119,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteDoneKeepsItsPlaceAcrossPagesThenMovesWhenALocalThreadOpens() async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let localSpace = Fixture.space("local", path: app.dir.path)
         let local = Fixture.agent("local", in: localSpace)
@@ -145,7 +145,7 @@ struct SidebarActivityFlowTests {
     /// Leaving a finished thread tells its host which completion was seen (here the in-process server), so every other
     /// device drops it from Done; a thread still being read is not marked.
     @Test func leavingAFinishedThreadTellsTheHostItWasSeen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let finished = try await app.liveAgent("finished", in: space)
@@ -164,7 +164,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func publishedChildrenKeepADoneParentWorkingUntilTheLastChildSettlesWithoutChangingItsTurnStatus() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let parent = try await app.liveAgent("parent", in: space)
@@ -204,13 +204,13 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteChildRefreshKeepsADoneParentWorkingAndThenCreatesAnUnseenCompletion() async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
         let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [parent]))
         let child = ChildRun(runID: "child", label: "worker", state: "running")
-        hostVM.applyAgentChildren(parent.agent.id, [child])
+        remote.host.publishChildren(parent.agent.id, [child])
         let vm = try await app.start()
         let connection = try await remote.connect(app.remoteHosts)
         let id = SidebarRowID.remote(.init(hostID: connection.id, agentID: parent.agent.id))
@@ -219,13 +219,13 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarLists.working.first?.accessory == .tag(connection.config.name))
         #expect(vm.sidebarTree.projects.first?.rollup == .running)
         #expect(connection.state.agents.first?.status == .done && hostVM.state.agents.first?.status == .done)
-        hostVM.applyAgentChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
+        remote.host.publishChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
         try await eventuallyOnMain("remote child completion") { vm.sidebarLists.done.map(\.id) == [id] }
         let first = try #require(vm.sidebarLists.done.first?.completion)
         vm.markAllSidebarDoneSeen()
-        hostVM.applyAgentChildren(parent.agent.id, [child])
+        remote.host.publishChildren(parent.agent.id, [child])
         try await eventuallyOnMain("remote child work to resume") { vm.sidebarLists.working.map(\.id) == [id] }
-        hostVM.applyAgentChildren(parent.agent.id, [])
+        remote.host.publishChildren(parent.agent.id, [])
         try await eventuallyOnMain("remote removal to create another unseen completion") { vm.sidebarLists.done.map(\.id) == [id] }
         #expect(vm.sidebarLists.done.first?.completion != first)
         remote.host.server.stopRemoteListener()
@@ -236,7 +236,7 @@ struct SidebarActivityFlowTests {
 
     @Test(arguments: [(false, "running"), (true, "running"), (true, "complete"), (true, "removed"), (true, "deleted")])
     func disconnectingOrReconnectingDuringRemoteChildWorkDoesNotInventACompletion(disconnect: Bool, childState: String) async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
@@ -247,7 +247,7 @@ struct SidebarActivityFlowTests {
         try await eventuallyOnMain("the parent's initial completion") { vm.sidebarLists.done.map(\.id) == [id] }
         vm.markAllSidebarDoneSeen()
         let child = ChildRun(runID: "child", label: "worker", state: "running")
-        hostVM.applyAgentChildren(parent.agent.id, [child])
+        remote.host.publishChildren(parent.agent.id, [child])
         try await eventuallyOnMain("live remote child work") { vm.sidebarLists.working.map(\.id) == [id] }
         let before = try #require(vm.sidebarCompletions.records[id])
         #expect(!before.finished)
@@ -266,7 +266,7 @@ struct SidebarActivityFlowTests {
         if childState == "deleted" {
             try await remote.host.server.putState(ShepherdState(spaces: [space]))
         } else if childState != "running" {
-            hostVM.applyAgentChildren(parent.agent.id, childState == "removed" ? [] :
+            remote.host.publishChildren(parent.agent.id, childState == "removed" ? [] :
                 [ChildRun(runID: "child", label: "worker", state: childState)])
         }
         if disconnect {
@@ -285,7 +285,7 @@ struct SidebarActivityFlowTests {
                     connection.phase == .connected && vm.sidebarLists.working.map(\.id) == [id]
                 }
                 #expect(vm.sidebarCompletions.records[id] == before, "reconnecting to the same live child is not another completion")
-                hostVM.applyAgentChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
+                remote.host.publishChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
             }
             try await eventuallyOnMain("the fresh child's actual completion") { vm.sidebarLists.done.map(\.id) == [id] }
             #expect(connection.children[parent.agent.id] == (childState == "removed" ? [] :
@@ -303,7 +303,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func toolActivityIsMeasuredAndBoundedToTenSamples() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let id = AgentID()
@@ -321,7 +321,7 @@ struct SidebarActivityFlowTests {
 
     private static func pressControls(density: SHDensity) async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let fixtures = [Fixture.agent("pinned", in: space), Fixture.agent("asking", in: space, order: 1, status: .blocked),
@@ -331,8 +331,9 @@ struct SidebarActivityFlowTests {
         var state = Fixture.state(spaces: [space], agents: fixtures)
         state.automations = [Automation(name: "nightly", prompt: "p", cwd: app.dir.path, agentID: fixtures[5].agent.id)]
         state.designs = [Design(name: "Dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4)]
+        // The design is drawn: with the tool off this Mac would not show it, and the harness waits for the whole workspace.
+        app.settings.designToolEnabled = true
         let vm = try await app.start(with: state)
-        vm.settings.designToolEnabled = true
         vm.pinThread(.local(fixtures[0].agent.id))
         var completed = vm.state
         completed.agents[2].status = .done
