@@ -61,8 +61,11 @@ extension PreviewTests {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         try await workspace.seed(ShepherdState(spaces: [space], tabs: records.map(\.1), agents: records.map(\.0)))
-        workspace.vm.selectAgent(records[1].0.id)
-        try await Preview.render("this-mac", size: CGSize(width: 1280, height: 760)) { RootView(vm: workspace.vm) }
+        let vm = workspace.vm, shown = records[1].0.id
+        vm.selectAgent(shown)
+        // The host's pi answered: the thread's transcript is here.
+        try await Preview.render("this-mac", size: CGSize(width: 1280, height: 760),
+                                 ready: { vm.threadStores.existing(for: shown)?.rows.isEmpty == false }) { RootView(vm: vm) }
         try expectBaseline("this-mac")
     }
 }

@@ -29,7 +29,9 @@ extension PreviewTests {
                                      ready: { !page.availableModels.isEmpty && page.records.count == 12 }) { RootView(vm: vm) }
         }
         try await Preview.render("this-mac-missions-sidebar", size: CGSize(width: 232, height: 900)) { SidebarView(vm: vm) }
-        for surface in ["list", "map", "sidebar"] { try expectBaseline("this-mac-missions-\(surface)") }
+        // The list's last row is one of two missions written in the same instant, which tie in its order.
+        try expectBaseline("this-mac-missions-list", masking: [CGRect(x: 233, y: 860, width: 1207, height: 40)])
+        for surface in ["map", "sidebar"] { try expectBaseline("this-mac-missions-\(surface)") }
     }
 
     /// The Projects page and the sidebar with a Project's working threads, its workers started by the

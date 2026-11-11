@@ -40,7 +40,8 @@ extension PreviewTests {
         workspace.server.noticeToLocalApps(agentID: id, message: notice)
         try await eventuallyOnMain("the host's notice") { vm.threadStores.existing(for: id)?.notice == notice }
         vm.selectAgent(id)
-        try await Preview.render("this-mac-rotation-notice", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
+        try await Preview.render("this-mac-rotation-notice", size: CGSize(width: 1280, height: 760),
+                                 ready: { vm.threadStores.existing(for: id)?.rows.isEmpty == false }) { RootView(vm: vm) }
 
         await vm.instructions.refresh()
         vm.settingsSection = .instructions

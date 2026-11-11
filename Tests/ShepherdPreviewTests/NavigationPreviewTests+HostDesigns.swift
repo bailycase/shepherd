@@ -58,7 +58,8 @@ extension PreviewTests {
 
         // The sidebar: the design's thread in Recents beside the ordinary one.
         vm.selectAgent(thread.0.id)
-        try await Preview.render("this-mac-design-sidebar", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
+        try await Preview.render("this-mac-design-sidebar", size: CGSize(width: 1280, height: 760),
+                                 ready: { vm.threadStores.existing(for: thread.0.id)?.rows.isEmpty == false }) { RootView(vm: vm) }
 
         // The Designs page, its card drawn from the owner's folder.
         vm.openDestination(.designs)
@@ -87,7 +88,8 @@ extension PreviewTests {
         // A thread's composer with the step card's chip (RefPasted).
         vm.selectAgent(thread.0.id)
         _ = try await vm.attachDesignReference(try #require(DesignReference(designID: design.id, board: a, element: card)), to: thread.0.id)
-        try await Preview.render("this-mac-design-ref-chip", size: CGSize(width: 1280, height: 760)) { RootView(vm: vm) }
+        try await Preview.render("this-mac-design-ref-chip", size: CGSize(width: 1280, height: 760),
+                                 ready: { vm.threadStores.existing(for: thread.0.id)?.rows.isEmpty == false }) { RootView(vm: vm) }
 
         // The Git panel: shared, A changed, its preview open (GitDesignChanges).
         try? FileManager.default.removeItem(at: remote)
