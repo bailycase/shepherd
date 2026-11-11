@@ -83,7 +83,7 @@ struct PaneControlTests {
 
     /// The list is the agent's terminals, oldest first; its own thread is never among them.
     @Test func listingTheTerminalsNeverIncludesTheThread() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 2)
@@ -97,11 +97,12 @@ struct PaneControlTests {
         #expect(!terminals.contains { $0.id == agent.piPane.id || $0.isAgentPane })
         #expect(Set(terminals.map(\.id)) == Set(agent.auxiliary.map(\.id)))
         #expect(terminals.map(\.id) == TerminalPanel.tabs(in: agent.tab.layout, thread: agent.piPane.id).map(\.id), "oldest first, as the tabs are")
-        #expect(terminals.first { $0.id == agent.auxiliary[0].id }?.isFocused == true)
+        // The host owns the list and has no keyboard: no terminal is focused there.
+        #expect(!terminals.contains { $0.isFocused })
     }
 
     @Test func aLayoutsOnlyTerminalCannotBeClosed() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         // An agent from before its pi leaf was marked: its only leaf is an ordinary one.
@@ -112,7 +113,9 @@ struct PaneControlTests {
 
         let reply = try await app.extensionRequest(.closePane(id: 4, agentID: agent.id, paneID: only.id))
 
-        #expect(reply == .error(id: 4, code: "not_closable", message: "the layout's only terminal cannot be closed"))
+        // The host takes a layout's only leaf for the agent's thread, which is never closed.
+        guard case .error(4, "not_closable", _) = reply else { Issue.record("unexpected reply \(reply)"); return }
+        #expect(app.server.state.tabs.first?.layout == tab.layout)
     }
 
     @Test func closingATerminalStopsItsProcessAndCollapsesTheLayout() async throws {
@@ -135,11 +138,10 @@ struct PaneControlTests {
         try await eventuallyAsync("the terminal's process to stop") { await server.sessionInfo(sessionID: shell.id)?.isAlive != true }
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// The agent's terminal opens as a tab under its thread without moving the user, gets a live
-    /// shell without any view drawing it, and runs the command the agent asked for.
+    /// shell on the host without any view drawing it, and runs the command the agent asked for.
     @Test func anAgentOpenedTerminalRunsItsCommandWithoutMovingTheUser() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let background = Fixture.agent("background", in: space, order: 0)
@@ -166,10 +168,7 @@ struct PaneControlTests {
         #expect(info.id == terminal.id && info.isAlive && !info.isAgentPane)
         #expect(vm.selectedAgentID == visible.agent.id && vm.focusedPaneID == visible.piPane.id)
         #expect(TerminalPanel.tabs(in: tab.layout, thread: background.piPane.id).map(\.id) == [terminal.id])
-        let started = await app.server.listSessions().filter(\.isAlive).count
-        // What the terminal's view does when it draws: it takes the session the open started.
-        let drawn = vm.sessions.session(for: terminal, in: tab)
-        #expect(drawn.sessionID != nil && drawn.sessionID == vm.hostTerminalSession(terminal.id))
+        #expect(vm.hostTerminalSession(terminal.id) != nil)
         var lastRead = "no reply"
         do {
             try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
@@ -187,20 +186,10 @@ struct PaneControlTests {
                 return lines.contains { $0.contains("terminal-ready") }
             }
         } catch let error as TimedOut {
-            let phase: String
-            switch drawn.phase {
-            case .connecting: phase = "connecting"
-            case .live: phase = "live"
-            case .failed: phase = "failed"
-            case .exited: phase = "exited"
-            case .stopped: phase = "stopped"
-            }
-            print("Agent-opened terminal: phase=\(phase), bound=\(drawn.sessionID != nil), reported grid=\(drawn.lastCols)x\(drawn.lastRows), last read=\(lastRead)")
+            print("Agent-opened terminal: last read=\(lastRead)")
             throw error
         }
-        #expect(await app.server.listSessions().filter(\.isAlive).count == started, "drawing the terminal started no second shell")
     }
-#endif
 
     /// The panel of the thread on screen opens on the terminal the agent opened, and the keyboard
     /// stays where it was.
@@ -294,7 +283,7 @@ struct PaneControlTests {
     /// The host has no window here, so no view draws anything: a terminal another device opens (a
     /// remote open, the Browser's Start) still gets its shell and runs its command.
     @Test func aTerminalAnotherDeviceOpensStartsWithNoViewDrawingIt() async throws {
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space)
@@ -317,38 +306,7 @@ struct PaneControlTests {
         }
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
-    /// A terminal no view has measured starts at the grid this Mac's terminals last reported, not
-    /// at 80×24, and keeps it as its own until its surface reports one.
-    @Test func aTerminalNoViewMeasuredStartsAtTheLastLocalGrid() async throws {
-        let app = try AppHarness(inProcess: true)
-        defer { app.stop() }
-        let space = Fixture.space(path: app.dir.path)
-        let measured = Fixture.agent("measured", in: space, order: 0, auxiliary: 1)
-        let unseen = Fixture.agent("unseen", in: space, order: 1)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [measured, unseen]))
-
-        let first = vm.sessions.session(for: measured.auxiliary[0], in: measured.tab)
-        try await eventuallyOnMain("the first terminal's shell to go live") {
-            vm.hostTerminalSession(measured.auxiliary[0].id) != nil
-        }
-        // How Ghostty reports a surface's grid.
-        first.terminal.onResize?(132, 41)
-
-        let terminal = try await openTerminal(running: "stty size", for: unseen, in: app, vm: vm, id: 20)
-        let tab = try #require(vm.state.tabs.first { $0.id == unseen.tab.id })
-        let printed = try await printedGrid(of: terminal, for: unseen, in: app)
-        #expect(printed == "41 132")
-        let second = vm.sessions.session(for: terminal, in: tab)
-        #expect(second.lastCols == 132 && second.lastRows == 41)
-
-        second.terminal.onResize?(100, 30)
-        #expect(second.lastCols == 100 && second.lastRows == 30, "the surface's own report replaces the estimate")
-    }
-#endif
-
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
-    /// Before any terminal has reported a grid there is nothing to estimate from.
+    /// The host starts a terminal no view has measured at 80×24.
     @Test func aTerminalStartsAt80By24BeforeAnySurfaceHasMeasured() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -359,10 +317,7 @@ struct PaneControlTests {
         let terminal = try await openTerminal(running: "stty size", for: agent, in: app, vm: vm, id: 21)
         let printed = try await printedGrid(of: terminal, for: agent, in: app)
         #expect(printed == "24 80")
-        let session = vm.sessions.session(for: terminal, in: try #require(vm.state.tabs.first { $0.id == agent.tab.id }))
-        #expect(session.lastCols == 80 && session.lastRows == 24)
     }
-#endif
 
     /// The agent's terminal_open: a new terminal beside its thread running `command`.
     private func openTerminal(running command: String, for agent: AgentFixture, in app: AppHarness,
@@ -399,7 +354,7 @@ struct PaneControlTests {
 @MainActor
 struct PaneLayoutTests {
     @Test func aNewTerminalIsATabUnderTheThreadInItsFolderAndTakesTheKeyboard() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
@@ -407,7 +362,9 @@ struct PaneLayoutTests {
         vm.selectAgent(agent.agent.id)
 
         vm.newTerminalTab()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
+            vm.focusedPaneID != nil && vm.focusedPaneID != agent.piPane.id
+        }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         let leaves = layout.leaves
@@ -418,7 +375,7 @@ struct PaneLayoutTests {
     }
 
     @Test func closingTheFocusedTerminalReturnsFocusToTheThread() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -427,9 +384,9 @@ struct PaneLayoutTests {
         vm.focusedPaneID = agent.auxiliary[0].id
 
         vm.closeFocusedTerminal()
-        await app.settle()
+        let server = app.server
+        try await eventuallyOnMain("the host to close the terminal") { server.state.tabs.first?.layout.leaves.map(\.id) == [agent.piPane.id] }
 
-        #expect(app.server.state.tabs.first?.layout.leaves.map(\.id) == [agent.piPane.id])
         #expect(vm.focusedPaneID == agent.piPane.id)
     }
 
@@ -450,7 +407,7 @@ struct PaneLayoutTests {
     }
 
     @Test func restructuringALayoutKeepsItsTerminalsSessionBindings() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let sessionID = SessionID()

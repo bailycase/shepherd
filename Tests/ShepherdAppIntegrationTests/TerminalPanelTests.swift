@@ -12,7 +12,7 @@ import Testing
 @MainActor
 struct TerminalPanelTests {
     @Test func aNewTabIsATerminalBesideTheThreadAndTakesTheKeyboard() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -20,7 +20,9 @@ struct TerminalPanelTests {
         vm.selectAgent(agent.agent.id)
 
         vm.newTerminalTab()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
+            (vm.focusedPaneID).map { ![agent.piPane.id, agent.auxiliary[0].id].contains($0) } == true
+        }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         let tabs = TerminalPanel.tabs(in: layout, thread: agent.piPane.id)
@@ -33,7 +35,7 @@ struct TerminalPanelTests {
 
     /// ⌘D in a terminal no longer splits it: it opens a new tab, from a terminal as from the thread.
     @Test func newTerminalFromATerminalOpensATabNotASplit() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -42,7 +44,7 @@ struct TerminalPanelTests {
         vm.focusedPaneID = agent.auxiliary[0].id
 
         vm.newTerminalTab()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal") { app.server.state.tabs.first?.layout.leaves.count == 3 }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         #expect(TerminalPanel.tabs(in: layout, thread: agent.piPane.id).count == 2)
@@ -52,7 +54,7 @@ struct TerminalPanelTests {
     /// ⌘J in a thread with no terminal opens one in the thread's folder, shows the panel on it and
     /// gives it the keyboard: there is never an empty panel to show.
     @Test func showingTheTerminalWithNoneOpensOne() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
@@ -62,7 +64,9 @@ struct TerminalPanelTests {
         #expect(!vm.isTerminalPanelShowing)
 
         vm.toggleTerminalPanel()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
+            vm.focusedPaneID != nil && vm.focusedPaneID != agent.piPane.id && vm.terminalTarget?.tabs.count == 1
+        }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         let terminal = try #require(layout.leaves.first { $0.id != agent.piPane.id })
@@ -155,7 +159,7 @@ struct TerminalPanelTests {
     }
 
     @Test func closingATabClosesItsTerminalButNeverTheThread() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -166,7 +170,7 @@ struct TerminalPanelTests {
         let tab = try #require(target.tabs.first)
 
         vm.closeTerminalTab(tab, target: target)
-        await app.settle()
+        try await eventuallyOnMain("the host to close the terminal") { vm.terminalTarget?.tabs.isEmpty == true }
 
         #expect(app.server.state.tabs.first?.layout.leaves.map(\.id) == [agent.piPane.id])
         #expect(vm.focusedPaneID == agent.piPane.id)
