@@ -515,8 +515,7 @@ struct NewAgentSheet: View {
             return
         }
         Task {
-            let server = vm.server
-            let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
+            let listing = await vm.modelListing()
             guard defaults.requestID == requestID else { return }
             models = listing
         }

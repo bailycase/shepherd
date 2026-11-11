@@ -205,13 +205,10 @@ extension ShepherdViewModel {
         state.agents.first(where: { $0.id == id }).map { ($0, state) }
     }
 
-    /// Record a worktree thread's branch or base where it runs: this app's server, or This Mac's host.
+    /// Record a worktree thread's branch or base where it runs: This Mac's host.
     func recordWorktree(_ id: AgentID, branch: String? = nil, base: String? = nil) async throws {
-        if let ref = localRef(id) {
-            _ = try await remoteHosts.agentQuery(ref, query: .setWorktree(branch: branch, base: base))
-        } else {
-            try await server.setAgentWorktree(id, branch: branch, base: base)
-        }
+        guard let ref = localRef(id) else { throw BackgroundHostClient.HostStarting() }
+        _ = try await remoteHosts.agentQuery(ref, query: .setWorktree(branch: branch, base: base))
     }
 
     nonisolated static func standard(_ path: String) -> String {

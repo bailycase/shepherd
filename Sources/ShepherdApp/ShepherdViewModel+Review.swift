@@ -8,21 +8,7 @@ import ShepherdRemote
 @MainActor
 extension ShepherdViewModel {
     func installReviewHandler() {
-        server.onReviewRequest = { [weak self] request, respond in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    respond(.failed(code: "unavailable", message: "workspace is gone"))
-                    return
-                }
-                guard case .start(let agentID, let cwd, let reference) = request else {
-                    respond(.failed(code: "invalid_request", message: "unsupported review request"))
-                    return
-                }
-                self.beginReview(agentID: agentID, cwd: cwd, reference: reference, respond: respond)
-            }
-        }
-        // The background host on this Mac has no window: what its agents ask of one is answered
-        // here, as this app answers its own server's agents.
+        // The background host on this Mac has no window: what its agents ask of one is answered here.
         remoteHosts.onAppRelay = { [weak self] client, token, job in
             let answer = { (result: AppRelayResult) in client.appRelayAnswer(token: token, result: result) }
             guard let self else { return answer(.failed(code: "unavailable", message: "The workspace is gone.")) }
@@ -48,8 +34,8 @@ extension ShepherdViewModel {
             case .hostUpdate(let request):
                 // The host checked the device before relaying; its gate fences the install.
                 Task { answer(.hostUpdate(status: await AppUpdater.shared.remoteUpdate(request, authorized: { true }))) }
-            // A Project the host owns reaches a paired Mac through this app's connection to it, as
-            // the app's own Projects did in process; the host keeps the owner's checks.
+            // A Project the host owns reaches a paired Mac through this app's connection to it; the
+            // host keeps the owner's checks.
             case .projectPlacement(let host, let request):
                 let executors = self.remoteHosts.projectExecutors
                 Task {
@@ -531,23 +517,9 @@ extension ShepherdViewModel {
 
     /// This Mac's engine for an agent's review (`cwd`: the directory under review).
     func localChangesEngine(agentID: AgentID, cwd: String) -> ChangesEngine {
-        // The background host's Changes engine follows its agents' turns.
-        if let ref = localRef(agentID) { return remoteChangesEngine(ref) }
-        let changes = server.changes
-        return ChangesEngine(
-            overview: { try await changes.overview(agentID: agentID, cwd: cwd) },
-            list: { scope, options in try await changes.list(agentID: agentID, scope: scope, options: options, cwd: cwd) },
-            diffs: { list, options in
-                let files = try await changes.diffs(agentID: agentID, revision: list.revision, options: options, cwd: cwd)
-                // The engine cuts a file at `ChangesLimits.fileLines`; one that reaches it was cut.
-                let cut = files.filter { $0.hunks.reduce(0) { $0 + $1.lines.count } >= ChangesLimits.fileLines }
-                return (files, Set(cut.map(\.id)))
-            },
-            file: { revision, file, options in
-                try await changes.file(agentID: agentID, revision: revision, path: file.path, oldPath: file.oldPath, options: options, cwd: cwd)
-            },
-            branches: { try await changes.branches(agentID: agentID, cwd: cwd) },
-            patch: { revision, options in (try await changes.patch(agentID: agentID, revision: revision, options: options, cwd: cwd), false) })
+        // The background host's Changes engine follows its agents' turns (a host not connected
+        // yet answers nothing).
+        remoteChangesEngine(localRef(agentID) ?? RemoteAgentRef(hostID: UUID(), agentID: agentID))
     }
 
     /// A remote host's engine (`changes.v1`): each file's hunks is its own request, a few at a
@@ -624,12 +596,8 @@ extension ShepherdViewModel {
         do {
             switch owner {
             case .local(let agentID):
-                if let ref = localRef(agentID) {
-                    _ = try await remoteHosts.agentQuery(ref, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
-                    return nil
-                }
-                _ = redo ? try await server.changes.redoTurn(agentID: agentID, turnID: turnID)
-                    : try await server.changes.undoTurn(agentID: agentID, turnID: turnID)
+                guard let ref = localRef(agentID) else { throw BackgroundHostClient.HostStarting() }
+                _ = try await remoteHosts.agentQuery(ref, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
             case .remote(let target):
                 _ = try await remoteHosts.agentQuery(target, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
             }

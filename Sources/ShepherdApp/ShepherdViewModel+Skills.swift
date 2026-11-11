@@ -73,8 +73,8 @@ extension ShepherdViewModel {
     /// Where This Mac keeps a skill, on or off; nil when it isn't here.
     func skillFolder(_ name: String) -> URL? {
         let store = server.skills
-        // The background host keeps its skills' state in the support directory, as an in-process server does.
-        let state = localHost == nil ? store.stateDirectory : ShepherdPaths.supportDirectory().appendingPathComponent("skills", isDirectory: true)
+        // The background host keeps its skills' state in the support directory.
+        let state = ShepherdPaths.supportDirectory().appendingPathComponent("skills", isDirectory: true)
         for base in [store.directory, state.appendingPathComponent("off", isDirectory: true)] {
             let folder = base.appendingPathComponent(name, isDirectory: true)
             if FileManager.default.fileExists(atPath: folder.appendingPathComponent("SKILL.md").path) { return folder }

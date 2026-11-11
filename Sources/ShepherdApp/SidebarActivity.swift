@@ -308,7 +308,6 @@ extension ShepherdViewModel {
         guard let agent, let stamp = agent.completedAt, Int(stamp) == completion, agent.completionSeen == false else { return }
         Task {
             if let ref { try? await remoteHosts.agentAction(ref, action: .markSeen(upTo: stamp)) }
-            else { try? await server.markCompletionSeen(agent.id, upTo: stamp) }
         }
     }
 }

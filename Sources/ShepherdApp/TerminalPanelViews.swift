@@ -220,12 +220,9 @@ struct TerminalActivityPoll: ViewModifier {
         content.task(id: active) {
             guard active, let agent else { return }
             while !Task.isCancelled {
-                if let remote = remote ?? vm.localRef(agent) {
-                    if case .terminals(let rows)? = try? await vm.remoteHosts.agentQuery(remote, query: .terminals) {
-                        vm.terminalPanels.setActivity(rows, for: key)
-                    }
-                } else {
-                    vm.terminalPanels.setActivity(await vm.server.terminalActivity(agentID: agent), for: key)
+                if let remote = remote ?? vm.localRef(agent),
+                   case .terminals(let rows)? = try? await vm.remoteHosts.agentQuery(remote, query: .terminals) {
+                    vm.terminalPanels.setActivity(rows, for: key)
                 }
                 try? await Task.sleep(for: AppLayout.terminalActivityInterval)
             }
