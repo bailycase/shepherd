@@ -80,8 +80,8 @@ Previews: each domain has a suite in `Tests/ShepherdPreviewTests` (`ThreadPrevie
 `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`, `SettingsPreviewTests`,
 `DesignPreviewTests`, `PreviewTests` for the rest). `Preview.render` draws light and dark;
 `Preview.renderMatrix` adds text scale 1.3. `PreviewWorkspace` serves its workspace as a host and
-draws the view model as its client; the This Mac renders compare against the PNGs in
-`Tests/ShepherdPreviewTests/Baselines`. Drive a preview from the real producer (a store, an
+draws the view model as its client; the `this-mac-*` renders (`LocalHostRuntimePreviewTests`) compare
+against the PNGs in `Tests/ShepherdPreviewTests/Baselines`. Drive a preview from the real producer (a store, an
 extension's output, a formatter), not strings copied from a design.
 
 ## Rules
