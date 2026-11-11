@@ -283,6 +283,12 @@ struct ThreadInputTests {
         input.add(urls: [file], store: local, localFiles: true)
         #expect(local.attachedFiles.map(\.path) == [file.path])
         #expect(input.attachments.error == nil)
+        // A bundle (an .xccrashpoint) is a folder; it attaches by path like a file.
+        let bundle = directory.appendingPathComponent("crash.xccrashpoint")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        input.add(urls: [bundle], store: local, localFiles: true)
+        #expect(local.attachedFiles.map(\.path) == [file.path, bundle.path])
+        #expect(input.attachments.error == nil)
         input.add(urls: [file], store: remote, localFiles: false)
         #expect(remote.attachedFiles.isEmpty)
         #expect(input.attachments.error?.contains("remote thread") == true)
