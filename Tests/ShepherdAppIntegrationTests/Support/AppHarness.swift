@@ -172,6 +172,36 @@ enum Fixture {
     }
 }
 
+// MARK: Host terminals
+
+@MainActor
+extension ShepherdViewModel {
+    /// The session the host bound to a pane, as its state says.
+    func hostTerminalSession(_ pane: PaneID) -> SessionID? {
+        state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane)?.sessionID }.first
+    }
+
+    /// The app's side of the shell the host runs in `pane` (what `HostTerminalLeaf` draws), once
+    /// the host has bound one; made and attached on first use, as the leaf does.
+    func hostPaneSession(_ pane: PaneID) -> RemotePaneSession? {
+        guard let connection = localHost, let id = hostTerminalSession(pane) else { return nil }
+        return remoteHosts.paneSession(connection: connection, sessionID: id)
+    }
+
+    /// Has the host start `pane`'s shell, as showing it does, and waits until the app is attached to it.
+    @discardableResult
+    func startHostTerminal(_ pane: PaneID, of agent: AgentID) async throws -> RemotePaneSession {
+        let ref = try #require(localRef(agent))
+        try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane))
+        var session: RemotePaneSession?
+        try await eventuallyOnMain("the app to attach to the host's shell", timeout: .seconds(30)) {
+            session = hostPaneSession(pane)
+            return session?.phase == .live
+        }
+        return try #require(session)
+    }
+}
+
 // MARK: Stub pi
 
 extension AppHarness {

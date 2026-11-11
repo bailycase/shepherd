@@ -988,8 +988,8 @@ final class RemotePaneSession {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     @ObservationIgnored private var uploading = false
     @ObservationIgnored private weak var client: RemoteHostClient?
-    @ObservationIgnored private var lastCols = 80
-    @ObservationIgnored private var lastRows = 24
+    @ObservationIgnored private(set) var lastCols = 80
+    @ObservationIgnored private(set) var lastRows = 24
     @ObservationIgnored private var hasReportedGrid = false
     @ObservationIgnored private var attachStarted = false
     /// Debounce the initial attach and later resizes to a settled grid.

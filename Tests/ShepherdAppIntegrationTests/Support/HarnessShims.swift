@@ -21,14 +21,6 @@ extension AppHarness {
     struct Weak { weak var harness: AppHarness? }
 }
 
-@MainActor
-extension ShepherdViewModel {
-    /// The session the host bound to a pane, as its state says.
-    func hostTerminalSession(_ pane: PaneID) -> SessionID? {
-        state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane)?.sessionID }.first
-    }
-}
-
 /// A view model a test made itself, taking `scratch`'s server as its host as `ShepherdApp` does.
 @MainActor
 func connectAsHost(_ vm: ShepherdViewModel, to scratch: ScratchServer) async throws {
