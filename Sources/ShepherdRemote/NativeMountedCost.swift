@@ -13,7 +13,7 @@ import Foundation
 ///   bounded thumbnail);
 /// - text (paragraph, heading, list item, quote, footnote): `textByte` a byte;
 /// - a closed disclosure: its summary as text, and a `line` (its content is not drawn until it is opened);
-/// - a Mermaid diagram: `mermaid`, mostly in its WebContent process, counted for what it costs the system;
+/// - a Mermaid diagram or an agent's page (`html-render`): `mermaid`, mostly in its WebContent process, counted for what it costs the system;
 /// - any other line of a row (an activity burst, a thought, a note, an error): `line`; a steer is a `line` and its words
 ///   as text, like a user row's; a subagent record is a `line` each, though a Project's or worker's thread draws none;
 /// - a row: `rowBase` and its items.
@@ -84,7 +84,8 @@ import Foundation
 ///
 /// Left out: chunks a lazy stack realizes for a reader scrolled up inside a giant reply, history rows the thread's
 /// lazy stack realizes above its eager rows, and that a Mermaid fence still being written is drawn as code
-/// (`SHMermaidBlock.renders` wants it finished) though costed as a diagram.
+/// (`SHMermaidBlock.renders` wants it finished) though costed as a diagram, and that a page is costed as one where it
+/// stays code (iOS, issue bodies, repository files: `SHHTMLBlock` draws it only in a Mac reply).
 ///
 /// Costs are computed with the parse (a chunk's) and in the store's `derive` (a row's), never in a view body.
 public enum NativeMountedCost {
@@ -123,7 +124,7 @@ public enum NativeMountedCost {
         case .quote(let inner):
             return inner.reduce(0) { $0 + block($1) }
         case .code(let text, let language):
-            if language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "mermaid" { return mermaid }
+            if ["mermaid", "html-render"].contains(language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) { return mermaid }
             return fenceFloor + max(0, text.utf8.count - NativeMarkdownBlock.codeFloor) * fenceSlope
         case .rule:
             return 0

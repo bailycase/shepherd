@@ -192,15 +192,22 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
     }
 
     func render(source: String, colors: ThemeColors, fontSize: CGFloat, viewer: Bool = false) {
-        let input = source + String(describing: colors) + String(describing: fontSize) + String(viewer)
+        load(key: source + String(describing: colors) + String(describing: fontSize) + String(viewer)) { revision in
+            source.utf8.count <= SHMermaidMetrics.maximumSourceBytes
+                ? Self.document(source: source, colors: colors, fontSize: fontSize, viewer: viewer, revision: revision) : nil
+        }
+    }
+
+    /// Loads the document `make` builds for a fresh revision, once per `input`; nil fails at once. The document reports
+    /// `{revision, state: "ready" | "error", height}` to the `diagram` handler (an agent's HTML block does too, `SHHTMLBlock`).
+    func load(key input: String, _ make: (String) -> String?) {
         guard key != input else { return }
         key = input
         revision = UUID().uuidString
         let current = revision
         timeout?.cancel()
         publish(.loading, nil)
-        guard source.utf8.count <= SHMermaidMetrics.maximumSourceBytes,
-              let html = Self.document(source: source, colors: colors, fontSize: fontSize, viewer: viewer, revision: current) else {
+        guard let html = make(current) else {
             webView.loadHTMLString("", baseURL: nil)
             publish(.failed, nil)
             return
@@ -252,7 +259,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         fail()
     }
 
-    private static let fontData: String? = {
+    static let fontData: String? = {
         guard let url = Bundle.module.url(forResource: "Geist-Regular", withExtension: "otf", subdirectory: "Fonts") else { return nil }
         return (try? Data(contentsOf: url))?.base64EncodedString()
     }()

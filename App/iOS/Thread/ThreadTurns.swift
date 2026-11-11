@@ -156,6 +156,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             .equatable()
         case .prose(_, _, let prose):
             ProseView(prose: prose, writingFence: live && prose.endsInOpenFence).equatable()
+                .environment(\.shProseHTML, true)
         case .activity(_, let bursts):
             // The proposals card stands for its call.
             let shown = proposals == nil ? bursts : bursts.filter { !$0.calls.allSatisfy { $0.name == "markup_propose" } }

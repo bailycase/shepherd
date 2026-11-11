@@ -31,6 +31,9 @@ extension FixtureCatalog {
                           routes: [.thread(preview)]),
             FixtureScreen(name: "thread-rich", hosts: ThreadFixtures.hosts(
                 preview: ThreadFixtures.reply(MarkdownFixtures.structureReply(image: "docs/thread-table.png"))), routes: [.thread(preview)]),
+            // ThreadHTMLDiagram, ThreadHTMLInteractive: a reply's html-render pages, drawn live.
+            FixtureScreen(name: "thread-html", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.htmlReply)),
+                          routes: [.thread(preview)]),
             FixtureScreen(name: "thread-wide", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.wideReply)),
                           routes: [.thread(preview)]),
             // A reply of about 240 blocks in chunks, every chunk laid out (`ProseView.lazyChunks`). On the iPhone on iOS 27.0 this
