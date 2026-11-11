@@ -331,8 +331,9 @@ struct SidebarActivityFlowTests {
         var state = Fixture.state(spaces: [space], agents: fixtures)
         state.automations = [Automation(name: "nightly", prompt: "p", cwd: app.dir.path, agentID: fixtures[5].agent.id)]
         state.designs = [Design(name: "Dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4)]
+        // The design is drawn: with the tool off this Mac would not show it, and the harness waits for the whole workspace.
+        app.settings.designToolEnabled = true
         let vm = try await app.start(with: state)
-        vm.settings.designToolEnabled = true
         vm.pinThread(.local(fixtures[0].agent.id))
         var completed = vm.state
         completed.agents[2].status = .done

@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdSessions
 import ShepherdProtocol
+import ShepherdTestSupport
 
 extension ShepherdState {
     /// The session a host bound to `pane`, as its state says.
@@ -48,4 +49,17 @@ func stagedPiSetup(home: URL) throws -> PiSetup {
         throw TimedOut(what: "the staged pi engine (python3 scripts/pi_engine.py stage)")
     }
     return PiSetup(engine: .bundled(engine), home: home)
+}
+
+@MainActor
+extension AppHarness {
+    /// The host's server started again after a `server.stop()`, as a host restart: it listens on
+    /// `host.sock` again and this Mac's app reconnects and adopts its workspace.
+    func relisten() async throws {
+        try server.startLocalListener(path: hostSocket, tokenURL: dir.appendingPathComponent("remote-token"))
+        let server = server, vm = vm!
+        try await eventuallyOnMain("the app back on its host", timeout: .seconds(30)) {
+            vm.localHost?.phase == .connected && vm.state == server.state
+        }
+    }
 }
