@@ -69,6 +69,8 @@ final class ShepherdViewModel {
         }
     }
     @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
+    /// The run on screen that Run Now is replacing: its going is no reason to show another thread.
+    @ObservationIgnored var replacingRun: AgentID?
     /// Last ten measured tool-completion rates per agent, not a decorative waveform. Each agent's
     /// box is observed by its own row alone, so one agent's tool call redraws no other row.
     @ObservationIgnored var sidebarActivityBoxes: [AgentID: SidebarActivityBox] = [:]
@@ -1117,7 +1119,7 @@ final class ShepherdViewModel {
         // With nothing on screen (the shown agent went away, or the app just launched), the
         // agent shown before it comes back, else the most recently active on this Mac; with no
         // agents at all, the New thread page shows. A page the user opened stays.
-        if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil {
+        if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil, replacingRun == nil || replacingRun != selectedAgentID {
             // A Project's threads live under the Project: none is shown in its place unless the person opened it before.
             let live = Set(state.agents.filter { $0.coordinatorFor == nil }.map(\.id))
             if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
@@ -1126,6 +1128,9 @@ final class ShepherdViewModel {
                 willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(agent.id))
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID
+            } else if selectedAgentID != nil {
+                // The one shown went and none comes back: nothing is selected.
+                selectedAgentID = nil
             }
         }
         if let focused = focusedPaneID, activeTab?.layout.contains(focused) == true {
