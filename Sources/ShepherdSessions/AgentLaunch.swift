@@ -12,7 +12,8 @@ public struct AgentLaunchSettings: Equatable, Sendable {
     public var nativeSubagents = false
     public var childEnvironment: [String: String] = [:]
     public var goals = false
-    public var namingModel = ""
+    /// Settings ▸ Agents ▸ Text generation model; "" for Automatic.
+    public var textGenerationModel = ""
     public var designTool = false
     public var designReferences = false
     public var browser = true
@@ -85,7 +86,7 @@ public enum AgentLaunch {
             goalsEnabled: settings.goals,
             namerExtensionPath: try NamerExtension.installedPath(),
             needsName: !agent.nameIsFinal,
-            namingModel: settings.namingModel,
+            textGenerationModel: settings.textGenerationModel,
             isAutomation: isAutomation,
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),

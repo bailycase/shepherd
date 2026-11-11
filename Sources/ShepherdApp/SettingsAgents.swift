@@ -48,18 +48,18 @@ struct AgentSettings: View {
                                       options: ServiceTier.allCases.map { ($0, $0.title) })
                 }
             }
-            SettingsGroup(title: "Session naming") {
-                SettingsRow(title: "Session naming model",
-                            subtitle: "Sessions are named automatically from their first prompt. Your manual renames are never overwritten. Automatic prefers a low-cost model you’re signed in to.") {
-                    SHPopupMenu(settings.namingModel.isEmpty ? "Automatic" : settings.namingModel,
-                                mono: !settings.namingModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
-                        Button("Automatic") { settings.namingModel = "" }
+            SettingsGroup(title: "Text generation") {
+                SettingsRow(title: "Text generation model",
+                            subtitle: "The model Shepherd uses to generate short text itself: a thread's title from its first prompt, and the commit messages drafted from a diff. Your manual renames are never overwritten. Automatic prefers a low-cost model you’re signed in to, then the thread's own model.") {
+                    SHPopupMenu(settings.textGenerationModel.isEmpty ? "Automatic" : settings.textGenerationModel,
+                                mono: !settings.textGenerationModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
+                        Button("Automatic") { settings.textGenerationModel = "" }
                         Divider()
                         ForEach(modelOptions, id: \.self) { id in
-                            Button(id) { settings.namingModel = id }
+                            Button(id) { settings.textGenerationModel = id }
                         }
                     }
-                    .accessibilityLabel("Session naming model")
+                    .accessibilityLabel("Text generation model")
                 }
             }
             SettingsGroup(title: "While the agent is working") {

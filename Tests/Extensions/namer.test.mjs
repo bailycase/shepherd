@@ -102,6 +102,37 @@ test("only the current session's detached naming result is reported, including s
   }
 });
 
+test("the text generation model env names the candidate; the retired namer name does not", { timeout: 5000 }, async () => {
+  const keys = ["SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_TEXT_GENERATION_MODELS", "SHEPHERD_NAMER_MODELS"];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  // A socket path nothing listens on: the sibling lookup and the report both fail quietly.
+  const dead = path.join(os.tmpdir(), `sh-namer-dead-${process.pid}`);
+  const used = [];
+  const titleWith = async (env) => {
+    for (const k of keys) delete process.env[k];
+    Object.assign(process.env, { SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: dead }, env);
+    const handlers = new Map();
+    install({ on: (event, handler) => handlers.set(event, handler) });
+    const own = { provider: "own", id: "big" };
+    const ctx = { model: own, sessionManager: { getSessionId: () => "s", getSessionName: () => undefined,
+        getEntries: () => [{ type: "message", message: { role: "user", content: "Task" } }] },
+      modelRegistry: { getAvailable: () => [own], find: (provider, id) => ({ provider, id }), hasConfiguredAuth: () => true,
+        complete: async (model) => { used.push(`${model.provider}/${model.id}`); return { content: [{ type: "toolCall", name: "propose_title", arguments: { title: "Fix thing" } }] }; } } };
+    const before = used.length;
+    handlers.get("session_start")({ reason: "resume" }, ctx);
+    while (used.length === before) await new Promise((resolve) => setTimeout(resolve, 5));
+    handlers.get("session_shutdown")();
+  };
+  try {
+    await titleWith({ SHEPHERD_TEXT_GENERATION_MODELS: "cheap/mini" });
+    // The old setting's env name is retired with it: the cheapest-first defaults apply instead.
+    await titleWith({ SHEPHERD_NAMER_MODELS: "cheap/mini" });
+    assert.deepEqual(used, ["cheap/mini", "anthropic/claude-haiku-4-5"]);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v;
+  }
+});
+
 test("a title that opens like a sibling's leads with the developer's own label", () => {
   assert.equal(promptLabel("Scale test 4: list the files here and write a haiku about four"), "Scale test 4");
   assert.equal(promptLabel("PR-123 - fix the flaky retry"), "PR-123");

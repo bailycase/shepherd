@@ -210,9 +210,9 @@ public enum ReviewCommitGit {
         """
     }
 
-    /// A message drafted from the diff of `paths` by the model that drafts PR descriptions,
-    /// else the plain one written from the file list.
-    @MainActor public static func draftMessage(root: String, paths: [String], pi: PiSetup,
+    /// A message drafted from the diff of `paths` by the text generation model (`model`, "" for
+    /// Automatic), else the plain one written from the file list.
+    @MainActor public static func draftMessage(root: String, paths: [String], model: String, pi: PiSetup,
                                         runner: @escaping Runner) async -> (title: String, body: String, drafted: Bool) {
         let wanted = Set(paths)
         let files = (try? await Task.detached { try GitDiff.load(cwd: root, reference: nil) }.value) ?? []
@@ -221,7 +221,7 @@ public enum ReviewCommitGit {
         guard !chosen.isEmpty, await Task.detached(priority: .userInitiated, operation: { pi.prepare() == nil }).value else {
             return (fallback.title, fallback.body, false)
         }
-        let output = await runner(LoginShell.draftCommand(prompt: prompt(context: promptContext(chosen)), home: pi.files), root)
+        let output = await runner(LoginShell.draftCommand(prompt: prompt(context: promptContext(chosen)), model: model, home: pi.files), root)
         guard output.status == 0, let message = reviewCommitMessage(fromModel: output.stdout) else {
             return (fallback.title, fallback.body, false)
         }

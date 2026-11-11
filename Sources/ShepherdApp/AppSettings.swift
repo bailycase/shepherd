@@ -79,7 +79,10 @@ final class AppSettings {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
-        static let namingModel = "shepherd.agent.namingModel"
+        static let textGenerationModel = "shepherd.agent.textGenerationModel"
+        /// Where the same choice lived while the setting was the session naming model. Read once
+        /// at load to move the choice over, then removed: the old setting is gone.
+        static let legacyNamingModel = "shepherd.agent.namingModel"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
@@ -129,7 +132,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, namingModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
+            defaultThinking, defaultServiceTier, textGenerationModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -200,10 +203,12 @@ final class AppSettings {
     }
 
 
-    /// Settings ▸ Agents ▸ Session naming model: "provider/id" the namer tries first, or "" for
-    /// Automatic (its own cheapest-first list). Either way it falls back to the agent's own model.
-    var namingModel: String {
-        didSet { store.set(namingModel, forKey: Key.namingModel) }
+    /// Settings ▸ Agents ▸ Text generation model: "provider/id" for the short text Shepherd
+    /// generates itself (a thread's title from its first prompt, a commit message drafted from a
+    /// diff), or "" for Automatic (a cheapest-first list). Either way the namer falls back to the
+    /// agent's own model; a draft falls back to Haiku.
+    var textGenerationModel: String {
+        didSet { store.set(textGenerationModel, forKey: Key.textGenerationModel) }
     }
 
     /// Settings ▸ Skills ▸ Skills in the / menu: the composer lists pi's `/skill:name` commands.
@@ -562,7 +567,13 @@ final class AppSettings {
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
-        namingModel = store.string(forKey: Key.namingModel) ?? ""
+        // The session naming model became the text generation model: move its stored choice to
+        // the new key and drop the old setting.
+        if store.string(forKey: Key.textGenerationModel) == nil, let legacy = store.string(forKey: Key.legacyNamingModel) {
+            store.set(legacy, forKey: Key.textGenerationModel)
+        }
+        store.removeObject(forKey: Key.legacyNamingModel)
+        textGenerationModel = store.string(forKey: Key.textGenerationModel) ?? ""
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         hiddenSlashCommands = Set(store.stringArray(forKey: Key.hiddenSlashCommands) ?? [])
         // The directory now uses Shepherd's public API; discard the retired credential.
@@ -680,7 +691,7 @@ final class AppSettings {
         goalsEnabled = false
         projectsEnabled = false
         shareDiagnostics = false
-        namingModel = ""
+        textGenerationModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
         mcpProjectConfig = false
@@ -725,6 +736,8 @@ final class AppSettings {
         for key in Key.resettable {
             store.removeObject(forKey: key)
         }
+        // The old naming model's key too, in case an older host process wrote it back after load.
+        store.removeObject(forKey: Key.legacyNamingModel)
     }
 
     /// Sentinel picker value meaning "use the system monospaced font".
@@ -816,7 +829,7 @@ final class AppSettings {
     private static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
         take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
-        take(\.namingModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
+        take(\.textGenerationModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
         take(\.mcpSameEverywhere), take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
         take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle), take(\.sidebarGroupByHost),

@@ -100,6 +100,20 @@ struct PiLaunchTests {
         #expect(row.line.argv == ["/bin/zsh", "-l", "-c", row.script] + row.positional)
     }
 
+    /// A draft runs on the text generation model from Settings; Automatic takes the first of the
+    /// environment's list (the namer's), else Haiku. The picked model is the one on the line.
+    @Test(arguments: [
+        ("cheap/mini", [String: String](), "cheap/mini"),
+        ("  cheap/mini  ", ["SHEPHERD_TEXT_GENERATION_MODELS": "other/model"], "cheap/mini"),
+        ("", ["SHEPHERD_TEXT_GENERATION_MODELS": "first/model, second/model"], "first/model"),
+        ("", ["SHEPHERD_TEXT_GENERATION_MODELS": "  "], "anthropic/claude-haiku-4-5"),
+        ("", [String: String](), "anthropic/claude-haiku-4-5"),
+    ])
+    func aDraftRunsOnTheTextGenerationModel(_ configured: String, environment: [String: String], model: String) {
+        #expect(LoginShell.draftModel(configured, environment: environment) == model)
+        #expect(LoginShell.draftCommand(prompt: "Write it", model: "cheap/mini", home: Self.home).contains("--model 'cheap/mini'"))
+    }
+
     /// No pi line names a `pi` or `node` for the shell to look up: each execs the launcher.
     /// A program name that isn't a plain word is quoted like any other value.
     @Test(arguments: [("node", "node"), ("node-2.0_rc", "node-2.0_rc"), ("my node", "'my node'"), ("", "''"), ("$(x)", "'$(x)'")])

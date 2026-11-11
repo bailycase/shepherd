@@ -45,23 +45,25 @@ struct DefaultsScreen: View {
                     }
                 }
             }
-            if agentDefaults {
-                SettingsSection("Session naming") {
+            if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) {
+                SettingsSection("Text generation") {
                     SHListCard {
-                        SettingsControlRow("Naming model", note: "Threads are named from their first prompt; your renames are never overwritten. Automatic prefers a low-cost model the host is signed in to.") {
+                        SettingsControlRow("Text generation model", note: "The model the host uses to generate short text itself: a thread's title from its first prompt, and commit messages drafted from a diff. Your renames are never overwritten. Automatic prefers a low-cost model the host is signed in to.") {
                             Menu {
-                                Button("Automatic") { store.hostSettings.post(.namingModel(nil), on: host) }
+                                Button("Automatic") { store.hostSettings.post(.textGenerationModel(nil), on: host) }
                                 Divider()
-                                ForEach(Self.options(models, current: settings.namingModel), id: \.self) { model in
-                                    Button(model) { store.hostSettings.post(.namingModel(model), on: host) }
+                                ForEach(Self.options(models, current: settings.textGenerationModel), id: \.self) { model in
+                                    Button(model) { store.hostSettings.post(.textGenerationModel(model), on: host) }
                                 }
                             } label: {
-                                SettingsMenuLabel(settings.namingModel ?? "Automatic", mono: settings.namingModel != nil)
+                                SettingsMenuLabel(settings.textGenerationModel ?? "Automatic", mono: settings.textGenerationModel != nil)
                             }
-                            .accessibilityLabel("Session naming model")
+                            .accessibilityLabel("Text generation model")
                         }
                     }
                 }
+            }
+            if agentDefaults {
                 SettingsSection("Context") {
                     SHListCard {
                         SettingsControlRow("Compact at", note: "How full an agent lets its context get before it compacts on its own, as a share of the model's window. The default leaves 16k tokens free.") {
