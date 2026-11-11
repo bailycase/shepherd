@@ -1160,7 +1160,7 @@ final class ShepherdViewModel {
     }
 
     /// An agent's pi stopped (`problem`: why it couldn't start), or started again: the thread's
-    /// can't-start and sign-in cards, from the in-process session or the background host's thread.
+    /// can't-start and sign-in cards, from the background host's thread or a Retry.
     func agentStopped(_ agentID: AgentID, problem: NativeStartProblem?, stopped: Bool) {
         if stopped { sidebarOpeningTurns.remove(agentID) }
         let waiting = stopped && problem != nil

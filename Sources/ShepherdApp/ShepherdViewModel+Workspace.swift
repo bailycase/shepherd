@@ -290,6 +290,8 @@ extension ShepherdViewModel {
         }
         threadStores.store(for: agentID).restarting()
         guard let ref = localRef(agentID) else { return }
+        // Its row stops reading "can't start" at once, as the banner goes; a failed start says so again.
+        agentStopped(agentID, problem: nil, stopped: false)
         // The background host runs the agent's pi and starts it again.
         Task {
             do { try await remoteHosts.agentAction(ref, action: .restartPi(newConversation: newConversation, model: model)) }
