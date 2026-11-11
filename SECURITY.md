@@ -147,7 +147,7 @@ above) and neither has a switch yet.
   Settings ▸ MCP servers' file is stored in the Keychain on the host, never in the file. At an
   agent's launch the app puts the values the derived `mcp.json` refers to into pi's environment as
   `SHEPHERD_MCP_SECRET_<SERVER>_<NAME>`; the derived file in Shepherd's pi home holds only the
-  names. OAuth tokens are pi's (`mcp-auth.json` in that home, mode `0600`).
+  names. OAuth tokens are pi's (`mcp-auth.json` in that home, mode `0600`), kept per space for a space's own servers.
 - **Who can read them.** The model's shell commands run with every `SHEPHERD_MCP_SECRET_*`
   unset, and a local server is started so that it gets only the secrets its own entry names.
   Another process of the same user can still read a running process's environment (`ps eww`), and a
