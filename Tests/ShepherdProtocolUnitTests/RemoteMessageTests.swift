@@ -450,6 +450,7 @@ struct RemoteRequestTests {
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: nil, agentID: S.agent)),
         .focusThread(id: 7, agentID: S.agent),
         .focusThread(id: 7, agentID: nil),
+        .focusThread(id: 7, agentID: S.agent, paneID: S.pane),
         .projectExecutors(id: 7, update: .hosts([
             ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!,
                                                  bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),

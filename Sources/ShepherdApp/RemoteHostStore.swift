@@ -827,10 +827,11 @@ final class RemoteHostStore {
         return await client.forge(request)
     }
 
-    /// The thread the app shows, told to the background host on this Mac (`focusThread`).
-    func focusLocalThread(_ agentID: AgentID?) {
+    /// The thread the app shows and the pane with its keyboard, told to the background host on
+    /// this Mac (`focusThread`).
+    func focusLocalThread(_ agentID: AgentID?, pane: PaneID? = nil) {
         guard let client = localHost?.client, localHost?.phase == .connected else { return }
-        Task { try? await client.focusThread(agentID) }
+        Task { try? await client.focusThread(agentID, pane: pane) }
     }
 
     /// Starts a thread on the background host on this Mac (`startThread`).

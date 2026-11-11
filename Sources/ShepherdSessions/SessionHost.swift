@@ -106,6 +106,8 @@ public enum SessionHost {
                 }
             }
             let support = server.supportDirectory
+            // The app's first launch copies the user's pi (and its sign-ins) in: no pi starts before.
+            server.holdStartsForFirstCopy()
             await serve(server, socket: support.appendingPathComponent("host.sock").path,
                         tokenURL: support.appendingPathComponent("remote-token"), respawn: respawn, configure: configure,
                         threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)

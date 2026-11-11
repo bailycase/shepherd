@@ -88,6 +88,19 @@ extension SessionServer {
         return info
     }
 
+    /// Holds every agent's pi start until the first launch's copy from the user's pi has run (the
+    /// app's, `YourPiModel.runFirstLaunch`), so none starts before its sign-ins come over. Past
+    /// `deadline` they start anyway, as the app's restored agents did; once it ran nothing waits.
+    @MainActor
+    public func holdStartsForFirstCopy(deadline: Duration = .seconds(30), poll: Duration = .milliseconds(100)) {
+        let imports = pi.importedState()
+        firstCopy = Task.detached(priority: .userInitiated) {
+            let end = ContinuousClock.now + deadline
+            // ponytail: polls the copy's state file; a file watch if the wait ever matters.
+            while !imports.copiedOnce, ContinuousClock.now < end { try? await Task.sleep(for: poll) }
+        }
+    }
+
     /// Startup respawn with no app: every agent whose unfinished work may be recovered
     /// (`agentsNeedingStartupRecovery`), in workspace order, one at a time. Recovery resumes each
     /// turn once its pi serves. Other agents wait for demand. A failed respawn is logged.
@@ -114,6 +127,11 @@ extension SessionServer {
         let agent = spawn.agent, cwd = spawn.cwd
         spawningAgents += 1
         defer { spawningAgents -= 1 }
+        if let firstCopy {
+            waitingForFirstCopy += 1
+            await firstCopy.value
+            waitingForFirstCopy -= 1
+        }
         var (fresh, problem) = (false, spawn.problem)
         if problem == nil {
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
