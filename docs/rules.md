@@ -158,7 +158,8 @@ in the view tree, apart from the deliberate unmounts below. Each layout has its 
 
 - putting the layouts back in one view graph, or giving the deck an input that changes on every update
 - reordering or rekeying the deck's hosts, or removing and re-adding a hidden one
-- a layout view reading the view model's state instead of its `AgentLayoutModel`
+- a layout view reading the view model's state instead of its `AgentLayoutModel` (a remote one: its
+  connection's state instead of its `RemoteLayoutModel`)
 - the shell reading the raw window width or building an object per update
 
 At launch only the visible layout mounts, and nothing but showing an agent mounts one. An agent
@@ -168,6 +169,14 @@ status and notifications, and remote clients all work without one. During a live
 layouts keep their frozen size. The deliberate unmounts are cold parking, only for a layout holding
 a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
 page draws: its coordinator never mounts here, and a worker only while it is the one open.
+
+A remote agent's thread (a paired Mac's, or this Mac's own while the app is the background
+service's client) is a page of its own deck (`RemoteLayoutDeck`), keyed by `RemoteAgentRef`. A page
+mounts the first time it is shown in that deck and stays while its host has the agent; nothing
+mounts one hidden. Hidden, its thread stops polling, its subagent inspector stops following and
+its terminals detach, so a hidden page never counts toward the host's smallest-viewer grid; shown
+again, they attach and the host replays their screens. A host's designs, its utility terminal and
+Project workers still draw over the deck and rebuild when shown.
 
 ## Only these paths mutate repositories
 
