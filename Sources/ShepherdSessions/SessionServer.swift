@@ -583,7 +583,7 @@ public final class SessionServer: @unchecked Sendable {
     /// server (`hooks.v1`), the Mac's page through its own catalog. Tests point it at a scratch home.
     public var hooks: HookCatalog
     /// The apps Shepherd runs (Settings › Apps): background processes, each in its own group,
-    /// stopped when Shepherd quits.
+    /// stopped when the server stops. This Mac's app drives them over `apps.v2`.
     public let apps = AppProcesses()
     /// A remote client changed this host's hooks: the GUI's Hooks page reloads. Delivered on the main actor.
     public var onHooksChanged: (() -> Void)?
@@ -1188,6 +1188,11 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+        // This Mac's app follows every app's run (Settings › Apps, the header, the output tab).
+        apps.onChange = { [weak self] states in
+            let processes = AppTools.processes(states)
+            self?.queue.async { self?.sendToLocalApps(.appsChanged(processes: processes), listing: RemoteProtocol.appsV2Capability) }
+        }
         let skills = self.skills
         projects.installSkills = { repo, paths, commit, destination in
             try skills.installCopies(repo: repo, paths: paths, commit: commit, into: destination)
@@ -2478,6 +2483,7 @@ public final class SessionServer: @unchecked Sendable {
                 hostBuild: hostBuild
             ), to: client)
             sendStartProblems(to: client)
+            sendAppProcesses(to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
         }
@@ -3645,22 +3651,25 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: a remote client's thread header lists, runs or stops a space's apps
-    /// (`apps.v1`). The space and the thread's folder are read here; the files and processes off
-    /// the queue (`AppTools.remote`).
+    /// (`apps.v1`); this Mac's app runs Settings › Apps' and reads their output (`apps.v2`). The
+    /// space and the thread's folder are read here; the files and processes off the queue
+    /// (`AppTools.remote`).
     private func remoteApps(id: Int, request: RemoteAppsRequest, client: ExtensionConnection) {
         let state = store.state
         let home = hooks.home
-        guard let space = state.spaces.first(where: { $0.id == request.spaceID && !$0.hidden }) else {
-            send(.error(id: id, code: "no_such_space", message: "That space isn't on this host."), to: client)
-            return
+        var place = AppTools.Place(space: nil, cwd: nil, home: home, unattended: false)
+        if let spaceID = request.spaceID {
+            guard let space = state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
+                send(.error(id: id, code: "no_such_space", message: "That space isn't on this host."), to: client)
+                return
+            }
+            let root = space.path == "~" ? home : space.path.hasPrefix("~/") ? home + space.path.dropFirst() : space.path
+            place.space = (space.id, space.name, root)
+            if case .run(_, _, _, let agentID?) = request, let agent = state.agents.first(where: { $0.id == agentID && $0.spaceID == space.id }) {
+                let tab = state.tabs.first { $0.id == agent.tabID }
+                place.cwd = (agent.paneID.flatMap { tab?.layout.leaf(withID: $0) } ?? tab?.layout.firstLeaf)?.cwd
+            }
         }
-        let root = space.path == "~" ? home : space.path.hasPrefix("~/") ? home + space.path.dropFirst() : space.path
-        var cwd: String?
-        if case .run(_, _, _, let agentID?) = request, let agent = state.agents.first(where: { $0.id == agentID && $0.spaceID == space.id }) {
-            let tab = state.tabs.first { $0.id == agent.tabID }
-            cwd = (agent.paneID.flatMap { tab?.layout.leaf(withID: $0) } ?? tab?.layout.firstLeaf)?.cwd
-        }
-        let place = AppTools.Place(space: (space.id, space.name, root), cwd: cwd, home: home, unattended: false)
         let apps = self.apps
         Task.detached { [weak self] in
             let result = await AppTools.remote(request, place: place, apps: apps)
@@ -4596,9 +4605,11 @@ public final class SessionServer: @unchecked Sendable {
     func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
 
     /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
-    func sendToLocalApps(_ reply: RemoteReply) {
+    /// `listing`: only to an app that also lists that capability.
+    func sendToLocalApps(_ reply: RemoteReply, listing: String? = nil) {
         for app in clients.values where app.isLocal && app.authenticated
-            && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
+            && listing.map(app.clientCapabilities.contains) != false {
             send(reply, to: app)
         }
     }
@@ -9450,6 +9461,19 @@ public final class SessionServer: @unchecked Sendable {
         }, uniquingKeysWith: { first, _ in first })
         for agent in store.state.agents {
             send(.agentStartProblem(agentID: agent.id, problem: waiting[agent.id]), to: client)
+        }
+    }
+
+    /// Server queue: every app's run, for this Mac's app that just connected (`apps.v2`).
+    private func sendAppProcesses(to client: ExtensionConnection) {
+        guard client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability),
+              client.clientCapabilities.contains(RemoteProtocol.appsV2Capability) else { return }
+        apps.snapshots { [weak self] states in
+            let processes = AppTools.processes(states)
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(.appsChanged(processes: processes), to: client)
+            }
         }
     }
 

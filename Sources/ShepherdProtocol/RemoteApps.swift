@@ -84,16 +84,42 @@ public enum RemoteAppsRequest: Codable, Hashable, Sendable {
     case list(spaceID: SpaceID)
     /// Runs one (`mac`: one saved for every space), unless it is running. A space's app runs in
     /// `agentID`'s folder when given (a worktree thread runs its own copy), else the space's.
-    case run(spaceID: SpaceID, name: String, mac: Bool, agentID: AgentID?)
-    /// SIGTERM to its process group, SIGKILL after a grace period.
-    case stop(spaceID: SpaceID, name: String, mac: Bool)
+    /// `apps.v2`: a nil space with `mac` runs This Mac's app with no space (Settings › Apps).
+    case run(spaceID: SpaceID?, name: String, mac: Bool, agentID: AgentID?)
+    /// SIGTERM to its process group, SIGKILL after a grace period. `apps.v2`: a nil space as `run`.
+    case stop(spaceID: SpaceID?, name: String, mac: Bool)
+    /// `apps.v2`: every app's run on the host, This Mac's and every space's
+    /// (`RemoteAppsResult.processes`).
+    case processes
+    /// `apps.v2`: an ended app again, the same command in the same folder. A nil space: This Mac's.
+    case restart(spaceID: SpaceID?, name: String)
+    /// `apps.v2`: the last `tail` lines of an app's output (`RemoteAppsResult.lines`), the line
+    /// still being written last. A nil space: This Mac's.
+    case output(spaceID: SpaceID?, name: String, tail: Int)
 }
 
 extension RemoteAppsRequest {
-    public var spaceID: SpaceID {
+    /// The space it is about; nil for This Mac's apps alone, or every app's runs.
+    public var spaceID: SpaceID? {
         switch self {
-        case .list(let id), .run(let id, _, _, _), .stop(let id, _, _): id
+        case .list(let id): id
+        case .run(let id, _, _, _), .stop(let id, _, _), .restart(let id, _), .output(let id, _, _): id
+        case .processes: nil
         }
+    }
+}
+
+/// One app's run on the host, keyed as the host keys it (`apps.v2`).
+public struct RemoteAppProcess: Codable, Hashable, Sendable {
+    /// Its space; nil for one of This Mac's.
+    public var spaceID: SpaceID?
+    public var name: String
+    public var run: RemoteAppRun
+
+    public init(spaceID: SpaceID?, name: String, run: RemoteAppRun) {
+        self.spaceID = spaceID
+        self.name = name
+        self.run = run
     }
 }
 
@@ -130,13 +156,21 @@ public struct RemoteAppRun: Codable, Hashable, Sendable {
     public var port: Int?
     /// Stop was asked for and it hasn't ended yet.
     public var stopping: Bool
+    /// `apps.v2`: what it runs, and where.
+    public var command: String?
+    public var directory: String?
+    /// `apps.v2`: grows with every bit of output; the output is read again when it changes.
+    public var revision: Int?
 
     public var isLive: Bool { status == .starting || status == .running }
 
-    public init(status: Status, port: Int? = nil, stopping: Bool = false) {
+    public init(status: Status, port: Int? = nil, stopping: Bool = false, command: String? = nil, directory: String? = nil, revision: Int? = nil) {
         self.status = status
         self.port = port
         self.stopping = stopping
+        self.command = command
+        self.directory = directory
+        self.revision = revision
     }
 }
 
@@ -144,9 +178,15 @@ public struct RemoteAppsResult: Codable, Hashable, Sendable {
     /// The space's name.
     public var space: String
     public var apps: [RemoteApp]
+    /// `apps.v2`'s `processes`: every app's run on the host.
+    public var processes: [RemoteAppProcess]?
+    /// `apps.v2`'s `output`: the app's last lines.
+    public var lines: [String]?
 
-    public init(space: String, apps: [RemoteApp]) {
+    public init(space: String, apps: [RemoteApp], processes: [RemoteAppProcess]? = nil, lines: [String]? = nil) {
         self.space = space
         self.apps = apps
+        self.processes = processes
+        self.lines = lines
     }
 }

@@ -264,6 +264,8 @@ final class RemoteHostStore {
     /// A tool call, or a line said, in a thread of the background host on this Mac.
     @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
     @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
+    /// Every app's run on the background host on this Mac (`appsChanged`): Settings › Apps follows.
+    @ObservationIgnored var onLocalAppsChanged: (([RemoteAppProcess]) -> Void)?
     /// Why one of the background host on this Mac's agents waits with its pi stopped; nil once it starts again.
     @ObservationIgnored var onLocalAgentStartProblem: ((AgentID, NativeStartProblem?) -> Void)?
     /// The background host on this Mac's automations changed, or one of them posts a banner.
@@ -551,6 +553,10 @@ final class RemoteHostStore {
         client.onThreadNotice = { [weak self, weak connection] agentID, message in
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalThreadNotice?(agentID, message)
+        }
+        client.onAppsChanged = { [weak self, weak connection] processes in
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAppsChanged?(processes)
         }
         client.onAgentStartProblem = { [weak self, weak connection] agentID, problem in
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }

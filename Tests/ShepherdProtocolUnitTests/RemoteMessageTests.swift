@@ -481,6 +481,11 @@ struct RemoteRequestTests {
         .apps(id: 36, request: .run(spaceID: S.space, name: "Web app", mac: false, agentID: S.agent)),
         .apps(id: 37, request: .run(spaceID: S.space, name: "Simulator", mac: true, agentID: nil)),
         .apps(id: 38, request: .stop(spaceID: S.space, name: "Web app", mac: false)),
+        .apps(id: 39, request: .run(spaceID: nil, name: "Postgres", mac: true, agentID: nil)),
+        .apps(id: 40, request: .stop(spaceID: nil, name: "Postgres", mac: true)),
+        .apps(id: 41, request: .processes),
+        .apps(id: 42, request: .restart(spaceID: S.space, name: "Web app")),
+        .apps(id: 43, request: .output(spaceID: nil, name: "Postgres", tail: 5000)),
         .projects(id: 30, request: .list()),
         .logicalProjects(id: 31, request: .list),
         .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
@@ -692,11 +697,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 57
+    static let caseCount = 58
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -748,6 +753,11 @@ struct RemoteReplyTests {
                       run: RemoteAppRun(status: .failed("Its folder doesn’t exist."), stopping: true)),
             RemoteApp(app: AppDefinition(name: "Docs", command: "make docs"), mac: true),
         ])),
+        .apps(id: 36, result: RemoteAppsResult(space: "", apps: [], processes: [
+            RemoteAppProcess(spaceID: S.space, name: "Web app",
+                             run: RemoteAppRun(status: .running, port: 3000, command: "npm run dev", directory: "/tmp/acme-web", revision: 7)),
+        ], lines: ["ready on localhost:3000"])),
+        .appsChanged(processes: [RemoteAppProcess(spaceID: nil, name: "Postgres", run: RemoteAppRun(status: .starting))]),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
         .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
@@ -1187,7 +1197,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability, RemoteProtocol.missionsRetryLaneCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).

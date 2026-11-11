@@ -380,7 +380,12 @@
     and SIGKILL after a grace period; each answers the list as it is afterwards. A hidden or missing
     space is `no_such_space`, an unknown app `no_such_app`, a refused start `start_failed`. The
     server answers itself (`AppTools.remote`, `AppProcesses`). The iPhone and iPad thread header's
-    Run reads the list while the thread is on screen; older hosts show no Run
+    Run reads the list while the thread is on screen; older hosts show no Run. `apps.v2` is how
+    this Mac's app runs Settings › Apps on its host, the one owner of app processes: `run` and
+    `stop` with no space act on This Mac's app, `restart` runs an ended one again (same command and
+    folder), `output` answers its last lines, `processes` every run (each `RemoteAppRun` then
+    carries its command, folder and output revision); a local client that lists `apps.v2` is
+    pushed `appsChanged` with every run when it connects and when one changes
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the
