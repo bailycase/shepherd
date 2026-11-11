@@ -295,7 +295,7 @@ struct RemoteBrowserDriveTests {
         defer { s.stop() }
         let session = s.session
         // The host's own page is at the address the viewer can reach through its forwarded port.
-        s.remote.host.server.onBrowserPageURL = { [port = s.port] _ in "http://localhost:\(port)/checkout" }
+        s.remote.host.server.onBrowserPageURL = { [port = s.port] _, answer in answer("http://localhost:\(port)/checkout") }
         #expect(!session.hasPage)
         try await s.showTab()
         try await eventuallyOnMain("the host's page to open here") { session.webView?.title == "Checkout" }
@@ -309,14 +309,14 @@ struct RemoteBrowserDriveTests {
         let session = s.session
         session.load(URL(string: s.url("/terms"))!)
         try await eventuallyOnMain("the viewer's own page") { session.webView?.title == "Terms" }
-        s.remote.host.server.onBrowserPageURL = { [port = s.port] _ in "http://localhost:\(port)/checkout" }
+        s.remote.host.server.onBrowserPageURL = { [port = s.port] _, answer in answer("http://localhost:\(port)/checkout") }
         try await s.showTab()
         try await Task.sleep(for: .milliseconds(300))
         #expect(session.url?.absoluteString == s.url("/terms"), "a claim replaces nothing the user opened")
 
         let other = try await setup()
         defer { other.stop() }
-        other.remote.host.server.onBrowserPageURL = { _ in "http://192.168.1.50:8080/admin" }
+        other.remote.host.server.onBrowserPageURL = { _, answer in answer("http://192.168.1.50:8080/admin") }
         try await other.showTab()
         try await Task.sleep(for: .milliseconds(300))
         #expect(!other.session.hasPage && other.session.webView == nil, "an address on the viewer's network is not adopted")

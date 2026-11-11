@@ -15,6 +15,9 @@ public enum AppRelayJob: Codable, Hashable, Sendable {
     /// through the app's own connection to exactly that host and binding, never another.
     case projectPlacement(host: ProjectHostReference, request: ProjectExecutionRequest)
     case projectWorkerThread(host: ProjectHostReference, agentID: AgentID, request: NativeThreadRequest)
+    /// A paired viewer claims the agent's browser (`RemoteRequest.browserClaim`): the address of
+    /// the app's page for it, answered `.done(text:)`; anything else, no address.
+    case browserPageURL(agentID: AgentID)
 }
 
 /// The app's answer to an `AppRelayJob`: the text the agent is told, or why not.

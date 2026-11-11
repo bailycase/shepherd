@@ -384,9 +384,10 @@ public final class SessionServer: @unchecked Sendable {
     public var onBrowserAbandoned: ((AgentID) -> Void)?
     /// A remote viewer claimed an agent's browser (`RemoteRequest.browserClaim`): the address the
     /// host's own page for that agent holds, for the viewer to open through its tunnel (nil when it
-    /// has none; only `http` and `https` ever reach the viewer). Called on the main actor; the claim
+    /// has none; only `http` and `https` ever reach the viewer). The page is the app's, so the
+    /// background host asks it (`relayWindowRequestsToApp`). Called on the server queue; the claim
     /// is answered with it.
-    public var onBrowserPageURL: ((AgentID) -> String?)?
+    public var onBrowserPageURL: ((AgentID, @escaping (String?) -> Void) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -406,6 +407,9 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor public private(set) var localAppConnected = false
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, Bool, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// Throws when a worktree operation holds this folder (`WorktreeQueries.verifyCheckoutAvailable`),
+    /// so Add space refuses it. Called on the main actor.
+    public var verifyCheckoutAvailable: (@MainActor (String) throws -> Void)?
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
     /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
     /// main actor.
@@ -912,10 +916,6 @@ public final class SessionServer: @unchecked Sendable {
     /// Jobs handed to the app's window (`relayToApp`), by token.
     private var appRelays: [Int: (fd: Int32, answer: (AppRelayResult?) -> Void)] = [:]
     private var nextAppRelayToken = 0
-    /// The repository each agent's latest `review_diff` asked to review (`cwd`), the one folder
-    /// besides its own a `changes*` read may name. Server queue.
-    // ponytail: in memory, last request only; a review retargeted before a host restart reads its own folder's error.
-    private var reviewTargets: [AgentID: String] = [:]
     /// How long a relay waits for the app to connect (or reconnect) before it fails.
     var designRelayReconnectWait: TimeInterval = 5
     /// How long a run may hear nothing from pi while it waits on the model (`RPCThreadState+Stall`).
@@ -2751,7 +2751,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             // A named folder is the agent's own or the one its `review_diff` asked for, never any path.
-            if let cwd = query.changesCwd.map(Self.reviewPath), cwd != reviewTargets[agentID],
+            if let cwd = query.changesCwd.map(Self.reviewPath),
+               cwd != store.state.agents.first(where: { $0.id == agentID })?.reviewTarget,
                cwd != Self.changesContext(store.state, agentID).map({ Self.reviewPath($0.cwd) }) {
                 send(.error(id: id, code: ChangesError.invalid, message: "The agent didn't ask to review that folder."), to: client)
                 return
@@ -4032,6 +4033,22 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "no_such_directory", message: "\(expanded) is not a directory on the host"), to: client)
             return
         }
+        if let verify = verifyCheckoutAvailable {
+            hopToMain { [weak self] in
+                let refusal = Result { try MainActor.assumeIsolated { try verify(expanded) } }
+                self?.queue.async {
+                    guard let self else { return }
+                    if case .failure(let error) = refusal {
+                        self.send(.error(id: id, code: "busy", message: String(describing: error)), to: client)
+                    } else { self.insertSpace(id: id, path: expanded, client: client) }
+                }
+            }
+            return
+        }
+        insertSpace(id: id, path: expanded, client: client)
+    }
+
+    private func insertSpace(id: Int, path expanded: String, client: ExtensionConnection) {
         guard !store.state.spaces.contains(where: { $0.path == expanded }) else {
             send(.error(id: id, code: "conflict", message: "a space for \(expanded) already exists"), to: client)
             return
@@ -5899,14 +5916,14 @@ public final class SessionServer: @unchecked Sendable {
         case .owned(nil), .unchanged:
             break
         }
-        // The host's own page for the agent is the app's: its address comes back from the main
-        // actor, and the claim stands unless another viewer took it meanwhile.
+        // The host's own page for the agent is the app's: its address comes back from the app,
+        // and the claim stands unless another viewer took it meanwhile.
         guard let handler = onBrowserPageURL else {
             send(.browserClaimed(id: id, url: nil), to: client)
             return
         }
-        hopToMain { [weak self] in
-            let url = BrowserDriveURL.offered(handler(agentID))
+        handler(agentID) { [weak self] page in
+            let url = BrowserDriveURL.offered(page)
             self?.queue.async {
                 guard let self, self.clients[client.fd] === client else { return }
                 guard self.browserOwners.owner(of: agentID) == client.fd else {
@@ -6065,7 +6082,11 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
-        if case .start(let agentID, let cwd?, _) = request { reviewTargets[agentID] = Self.reviewPath(cwd) }
+        if case .start(let agentID, let cwd?, _) = request, let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
+           store.state.agents[index].reviewTarget != Self.reviewPath(cwd) {
+            // Persisted: a review aimed at another folder still reads after a host restart.
+            try? mutateState { $0.agents[index].reviewTarget = Self.reviewPath(cwd) }
+        }
         guard let handler = onReviewRequest else {
             reply(.error(id: requestID, code: "unsupported", message: "no review handler"), to: client)
             return
@@ -7174,6 +7195,9 @@ public final class SessionServer: @unchecked Sendable {
             guard state.agents[index].worktreeBranch != nil else { throw SessionServerError.conflict("Not a worktree thread") }
             if let branch = branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
                 state.agents[index].worktreeBranch = branch
+                // The person's rename or switch: Delete removes this branch, even when the host's
+                // checkout refresh saw it first and kept the old name as Shepherd's own.
+                state.agents[index].worktreeOriginalBranch = nil
             }
             if let base = base?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
                 state.agents[index].worktreeBase = base
