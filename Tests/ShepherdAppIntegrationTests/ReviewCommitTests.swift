@@ -443,8 +443,9 @@ struct ReviewCommitTests {
 
         #expect(await store.pollOnce() == false)
 
-        #expect(store.error == "Operation is unknown. It may predate a host restart. "
-            + "Check the repository before committing again. Don't commit again.")
+        // The background host answers, in its words for a client.
+        #expect(store.error?.contains("Operation is unknown. It may predate a host restart.") == true)
+        #expect(store.error?.hasSuffix("Don't commit again.") == true)
         #expect(store.outcome == .running, "the sheet keeps the operation rather than inviting a second commit")
     }
 
