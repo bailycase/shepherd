@@ -56,16 +56,18 @@ final class PreviewWorkspace {
     func seed(_ state: ShepherdState) async throws {
         try await server.putState(state)
         let vm = vm, server = server
-        if host == nil {
-            // Served as `Shepherd --host` serves it (`ShepherdHost.Services`), the view model its client.
-            let socket = dir.appendingPathComponent("h.sock").path, tokenURL = dir.appendingPathComponent("remote-token")
-            let services = ShepherdHost.Services(settings: settings, mcpStore: vm.mcp, notifications: AgentNotifications(activate: {}),
-                                                 keepsAgentsRunning: { nil })
-            host = services
-            await services.serve(server, socket: socket, tokenURL: tokenURL, recovering: false)
-            vm.connectLocalHost(socket: socket, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
-        }
+        if host == nil { host = try await Self.serve(server, in: dir, settings: settings, to: vm) }
         try await eventuallyOnMain("the preview workspace to load") { vm.state == server.state }
+    }
+
+    /// Serves `server` as `Shepherd --host` serves it (`ShepherdHost.Services`) on a socket in `dir`, `vm` its client.
+    static func serve(_ server: SessionServer, in dir: URL, settings: AppSettings, to vm: ShepherdViewModel) async throws -> ShepherdHost.Services {
+        let socket = dir.appendingPathComponent("h.sock").path, tokenURL = dir.appendingPathComponent("remote-token")
+        let services = ShepherdHost.Services(settings: settings, mcpStore: vm.mcp, notifications: AgentNotifications(activate: {}),
+                                             keepsAgentsRunning: { nil })
+        await services.serve(server, socket: socket, tokenURL: tokenURL, recovering: false)
+        vm.connectLocalHost(socket: socket, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
+        return services
     }
 
     /// An agent record and its one-pane layout; `live` binds a running stub pi to the pane.

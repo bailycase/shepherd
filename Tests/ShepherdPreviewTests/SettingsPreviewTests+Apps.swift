@@ -43,14 +43,8 @@ extension SettingsPreviewTests {
             let (agent, tab) = try await workspace.agent("Add refund events", in: space, order: 0, live: true)
             self.agent = agent
             try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-            // Apps run on the host (`apps.v2`): the workspace's server serves the app on its
-            // local socket too, with This Mac's apps under the scratch home.
+            // Apps run on the host (`apps.v2`), with This Mac's apps under the scratch home.
             workspace.server.hooks = HookCatalog(home: workspace.vm.apps.home, support: workspace.dir.appendingPathComponent("hooks-support"))
-            let socket = workspace.dir.appendingPathComponent("h.sock").path, tokenURL = workspace.dir.appendingPathComponent("local-token")
-            try workspace.server.startLocalListener(path: socket, tokenURL: tokenURL)
-            let connection = workspace.vm.connectLocalHost(socket: socket, token: try String(contentsOf: tokenURL, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines))
-            try await eventuallyOnMain("the host connection", timeout: .seconds(30)) { connection.phase == .connected }
             workspace.vm.selectAgent(agent.id)
             let apps = workspace.vm.apps
             apps.reload()
