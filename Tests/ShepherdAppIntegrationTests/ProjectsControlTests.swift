@@ -39,11 +39,12 @@ struct ProjectsControlTests {
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
                                    looksUpPullRequests: false)
+        try await connectAsHost(vm, to: scratch)
         #expect(vm.hooks.catalog?.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
         var openedFile: String?
         vm.madeProjects = ProjectsModel { _, request in
             if case .open(_, let file) = request { openedFile = file; return .opened }
-            return try await vm.server.projects.request(request, state: vm.state)
+            return try await scratch.server.projects.request(request, state: vm.state)
         }
         vm.showSettings = true; vm.settingsSection = .projects
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, RootView(vm: vm))
@@ -290,6 +291,7 @@ struct ProjectsControlTests {
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
                                    looksUpPullRequests: false)
+        try await connectAsHost(vm, to: scratch)
         vm.showSettings = true; vm.settingsSection = .projects
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1000), dark: true, RootView(vm: vm))
         defer { window.close() }

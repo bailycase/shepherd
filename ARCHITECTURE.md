@@ -103,9 +103,9 @@ decodes on a concurrent queue while its session holds its later records in order
 - sheets, settings, appearance, and remote hosts
 
 It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
-`host.sock` (`ShepherdViewModel+LocalHost`). Its in-process server form remains only for tests. A
-persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
-model reconciles itself and `TerminalSessionStore` from `server.state`.
+`host.sock` (`ShepherdViewModel+LocalHost`); every terminal is the host's (`HostTerminalLeaf`). A
+persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
+model adopts the host's state again.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the
@@ -131,7 +131,7 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, built by `RuntimeHosting` in the app or in `Shepherd --host` |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
-| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |
+| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/HostTerminalLeaf.swift`, `TerminalHost.swift` |
 | Issues & PRs | `ShepherdSessions/Forge/`, `ShepherdApp/Forge/`; threads' pull request links and close on merge in `ShepherdSessions/PullRequestLinks.swift` |
 | Pi engine, launch, home | `PiLaunch.swift`, `PiEngine.swift`, `PiHome.swift`, [pi engine](docs/pi-engine.md) |
 

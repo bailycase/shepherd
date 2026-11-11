@@ -36,9 +36,9 @@ struct HostStores {
         }
     }
 
-    /// The host with no app: what the app's view model does with a turn's error in process. A
-    /// limit on a provider with rotation on switches accounts and continues the turn
-    /// (`LimitRotation`), and a failed refresh reads Expired in Sign-in.
+    /// What the host does with a turn's error: a limit on a provider with rotation on switches
+    /// accounts and continues the turn (`LimitRotation`; its notice reaches the app's thread as
+    /// `threadNotice`), and a failed refresh reads Expired in Sign-in.
     func serveTurnErrors(on server: SessionServer) {
         let piAuth = piAuth
         let rotation = LimitRotation(server: server, piAuth: piAuth) { [weak server] agentID, line in

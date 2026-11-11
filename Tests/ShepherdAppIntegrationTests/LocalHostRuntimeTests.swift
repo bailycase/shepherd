@@ -116,7 +116,6 @@ struct LocalHostRuntimeTests {
         let id = ProjectID()
         let made = try #require(await model.create(home: .local, id: id, name: "Checkout revamp", goal: "Ship the new checkout", spaces: [s.space.id]))
         #expect(s.host.server.state.projects.map(\.id) == [id], "the host owns it")
-        #expect(s.vm.server.state.projects.isEmpty, "nothing reaches the app's idle server")
         let ref = LogicalProjectRef(home: .local, id: id)
         try await eventuallyOnMain("the Project as This Mac's") { s.vm.state.projects.map(\.id) == [id] }
         #expect(s.vm.sidebarLogicalProjects.map(\.ref) == [ref] && s.vm.sidebarLogicalProjects.first?.hostName == nil,
@@ -306,7 +305,6 @@ struct LocalHostRuntimeTests {
         let branch = try #require(page.defaultBranches[s.space.id] ?? page.branchChoices[s.space.id]?.first)
         let id = try await page.create(goal: "Ship the new checkout", spaces: [s.space.id], model: model, branches: [s.space.id: branch])
         #expect(s.host.server.state.missions.map(\.id) == [id])
-        #expect(s.vm.server.state.missions.isEmpty)
         try await eventuallyOnMain("the new mission as This Mac's") { s.vm.state.missions.map(\.id) == [id] }
         try await eventuallyOnMain("its planning stops") { s.host.server.state.missions.first?.run?.phase.active == false || s.runtime.missions.jobs[id] == nil }
     }

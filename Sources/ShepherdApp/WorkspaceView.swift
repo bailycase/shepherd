@@ -1187,11 +1187,11 @@ struct RemoteTerminalPane: View {
     var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil in a host's utility terminal.
     var addToMessage: ((String) -> Void)? = nil
-    /// The background host's terminal in the app's own layout: `LiveTerminalPane`'s words.
+    /// The background host's terminal in the app's own layout: a local terminal's words.
     var local = false
 
     var body: some View {
-        // As `LiveTerminalPane`: placeholders fade, the surface never moves.
+        // Placeholders fade, the surface never moves.
         ZStack {
             switch pane.phase {
             case .connecting, .live:
