@@ -9,10 +9,10 @@ struct BackgroundServiceTests {
     private let nightly = ShepherdEdition.nightlyBundleIdentifier
     private let stable = "/Applications/Shepherd Nightly.app"
 
-    @Test func onlyASignedNightlyAtAStablePathOutsideTestsMayRegister() {
+    @Test func onlyASignedShepherdOrNightlyAtAStablePathOutsideTestsMayRegister() {
         #expect(BackgroundService.mayRegister(bundleIdentifier: nightly, bundlePath: stable, environment: [:], adHoc: false))
-        #expect(!BackgroundService.mayRegister(bundleIdentifier: ShepherdEdition.mainBundleIdentifier, bundlePath: "/Applications/Shepherd.app",
-                                               environment: [:], adHoc: false), "Shepherd waits for slice 11")
+        #expect(BackgroundService.mayRegister(bundleIdentifier: ShepherdEdition.mainBundleIdentifier, bundlePath: "/Applications/Shepherd.app",
+                                               environment: [:], adHoc: false))
         #expect(!BackgroundService.mayRegister(bundleIdentifier: "com.bailycase.shepherd.dev", bundlePath: stable, environment: [:], adHoc: false))
         #expect(!BackgroundService.mayRegister(bundleIdentifier: nightly, bundlePath: stable, environment: ["SHEPHERD_SUPPORT_DIR": "/tmp/s"], adHoc: false))
         #expect(!BackgroundService.mayRegister(bundleIdentifier: nightly, bundlePath: "/private/var/folders/x/T/AppTranslocation/1A2B/d/Shepherd Nightly.app",

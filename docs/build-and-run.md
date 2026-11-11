@@ -47,7 +47,7 @@ Info.plist takes the executable, the names, and the feed file (`SHEPHERD_APPCAST
 settings, and each configuration compiles only its own icon.
 
 **The background service** (`Shepherd --host` under launchd, [ARCHITECTURE](../ARCHITECTURE.md))
-registers only for Shepherd Nightly run from a stable, signed bundle (`BackgroundService.mayRegister`).
+registers only for Shepherd or Shepherd Nightly run from a stable, signed bundle (`BackgroundService.mayRegister`).
 Dev and Prod never register it (Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`), so
 they run their agents in the app's own child, `Shepherd --host --supervised` (`HostSupervisor`).
 A host you start by hand on Dev's folder (`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`)
