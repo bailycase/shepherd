@@ -79,33 +79,41 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
 
     // MARK: - UNUserNotificationCenterDelegate
 
+    // Both delegate methods take the completion-handler form, never `nonisolated async`: the
+    // async form's thunk calls UIKit's handler from a background thread, and UIKit aborts the
+    // app for it (Xcode Organizer crash point DR2HkOQ47FjS9mVYaS6nGU, build 544).
+
     /// Notification arrived while app is in foreground — show banner for both remote pushes
     /// and local goal notifications, including the thread currently being viewed.
-    nonisolated func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        Self.foregroundPresentation
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler(Self.foregroundPresentation)
     }
 
     nonisolated static var foregroundPresentation: UNNotificationPresentationOptions { [.banner, .list, .sound] }
 
     /// User tapped a notification. If the router is wired and a window is ready, route now;
     /// otherwise buffer the payload until `flushPending()`.
-    nonisolated func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
         let content = response.notification.request.content
-        guard let payload = PushPayload.from(content.userInfo) else { return }
+        guard let payload = PushPayload.from(content.userInfo) else { return completionHandler() }
+        let thread = content.threadIdentifier
         // An option button answers with its option, the way Reply… answers with the words.
-        if let option = PushButtons.optionText(response.actionIdentifier, userInfo: content.userInfo) {
-            await act(PushButtons.reply, text: option, payload: payload, thread: content.threadIdentifier)
-            return
+        let option = PushButtons.optionText(response.actionIdentifier, userInfo: content.userInfo)
+        let action = option == nil ? response.actionIdentifier : PushButtons.reply
+        let text = option ?? (response as? UNTextInputNotificationResponse)?.userText
+        let retryTarget = option == nil ? PushButtons.retryTarget(userInfo: content.userInfo, thread: thread) : nil
+        Task { @MainActor in
+            await act(action, text: text, payload: payload, thread: thread, retryTarget: retryTarget)
+            completionHandler()
         }
-        let text = (response as? UNTextInputNotificationResponse)?.userText
-        await act(response.actionIdentifier, text: text, payload: payload, thread: content.threadIdentifier,
-                  retryTarget: PushButtons.retryTarget(userInfo: content.userInfo, thread: content.threadIdentifier))
     }
 
     /// A tap or Open goes to the thread; Review and Open review to the changes; Reply… and
