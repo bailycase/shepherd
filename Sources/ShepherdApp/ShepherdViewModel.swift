@@ -266,7 +266,14 @@ final class ShepherdViewModel {
     /// host connection id + agent id on that host. Wins over every local
     /// selection; cleared by ordinary selection. Ephemeral, like all
     /// selection state.
-    var selectedRemoteAgent: RemoteAgentRef?
+    var selectedRemoteAgent: RemoteAgentRef? {
+        didSet { if let ref = selectedRemoteAgent, !remoteDeckRefs.contains(ref) { remoteDeckRefs.append(ref) } }
+    }
+    /// The remote agents shown this session, first shown first: the candidates for pages of the
+    /// remote deck (`RemoteDeckPages`). It bounds which pages' values are resolved and decides no
+    /// mounting: a page mounts when it is shown. Unobserved, as it changes only beside the
+    /// selection or a host's state, which the deck's layer reads.
+    @ObservationIgnored var remoteDeckRefs: [RemoteAgentRef] = []
     var remoteFocusedPaneID: PaneID?
     var remoteWorktreeSheet: RemoteAgentRef?
     /// What the background host reported for the worktree in Delete worktree agent's dialog
@@ -752,6 +759,7 @@ final class ShepherdViewModel {
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             })
             self.remoteThreadStores.prune(live: liveRemote)
+            self.remoteDeckRefs.removeAll { !liveRemote.contains($0) }
             self.browsers.prune(liveRemote: liveRemote, hosts: self.remoteHosts)
             self.syncRemoteBrowserDrive()
             self.pruneRemoteDesigns()

@@ -124,6 +124,7 @@ private struct SubagentRunInspector: View {
         .shAnimation(.disclosure, value: Phase(run: run, notice: forkError ?? store.notice))
         .task(id: FollowKey(runID: runID, active: active, startedAt: run?.startedAt)) {
             guard active else { return }
+            SHRenderProbe.tick("inspector.follow")
             let store = store, runID = runID
             await transcript.follow(store: store, runID: runID) { store.subagents.first { $0.runID == runID }?.isTerminal != true }
         }
@@ -539,6 +540,7 @@ final class SubagentTranscriptModel {
     }
 
     func follow(store: NativeThreadStore, runID: String, live: @escaping () -> Bool) async {
+        defer { SHRenderProbe.tick("inspector.followEnded") }
         reset(runID: runID)
         let epoch = generation
         // The thread must be connected first: the transcript request carries its session id.

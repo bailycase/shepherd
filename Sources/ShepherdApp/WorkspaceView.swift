@@ -29,7 +29,11 @@ struct WorkspaceView: View {
                 // visible one never walks the hidden ones; a hidden one is an
                 // `isHidden` AppKit view, and never follows a live resize
                 // frame by frame. The pane's `isRendering: false` stops a
-                // hidden surface's drawing via ghostty occlusion.
+                // hidden surface's drawing via ghostty occlusion. A paired
+                // host's threads are pages of a deck of their own
+                // (`RemoteDeckLayer`), flipped the same way; a hidden page
+                // detaches its terminals. A host's designs, its utility tab
+                // and Project workers draw over that deck.
                 let mounted = vm.mountedTabs
                 let visibleTabID = vm.activeTabID
                 // Each layout's values, resolved here once: a layout reruns only when its own
@@ -43,10 +47,8 @@ struct WorkspaceView: View {
                     // layout wider than the column never widens the shell around it.
                     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
 
-                if let remote = vm.selectedRemoteAgent {
-                    RemoteAgentPane(vm: vm, ref: remote)
-                        .id(remote)
-                }
+                RemoteDeckLayer(vm: vm)
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.sh.bgWindow)
@@ -825,11 +827,21 @@ extension RemoteLayoutModel {
             settingsShown = vm.showSettings
         }
 
-        /// Nil when the host is gone.
-        func presentation(for ref: RemoteAgentRef, isVisible: Bool = true) -> RemotePresentation? {
+        /// The state of each host of `refs`, for the remote deck's page rule.
+        func states(of refs: [RemoteAgentRef]) -> [UUID: ShepherdState] {
+            var states: [UUID: ShepherdState] = [:]
+            for ref in refs where states[ref.hostID] == nil {
+                states[ref.hostID] = connections.first(where: { $0.id == ref.hostID })?.state
+            }
+            return states
+        }
+
+        /// Nil when the host is gone. A `page` of the remote deck draws the agent's own layout
+        /// whatever else is open: the host's utility tab and a design draw over the deck instead.
+        func presentation(for ref: RemoteAgentRef, isVisible: Bool = true, page: Bool = false) -> RemotePresentation? {
             guard let connection = connections.first(where: { $0.id == ref.hostID }) else { return nil }
             let owner = SidePaneOwner.remote(ref)
-            let isInspecting = inspecting == ref
+            let isInspecting = !page && inspecting == ref
             let sideTab = panes.open.contains(owner) ? panes.tab(for: owner) : nil
             let terminals = terminals
             let host = Host(connection: connection, name: connection.config.name, phase: connection.phase, lastSeen: connection.lastSeen,
@@ -837,7 +849,7 @@ extension RemoteLayoutModel {
                             terminalTransport: connection.supportsTerminalStart ? connection.transportID : nil)
             let screen = Screen(
                 isVisible: isVisible, inspecting: isInspecting, inspectorTab: inspectorTabs[ref],
-                drawnDesign: isInspecting ? nil : vm.remoteDesign(drawnBy: ref)?.design.id,
+                drawnDesign: isInspecting || page ? nil : vm.remoteDesign(drawnBy: ref)?.design.id,
                 focusedPaneID: focusedPaneID, covered: covered, settingsShown: settingsShown,
                 inspectingRunID: panes.remoteRuns[ref], sideTab: sideTab, sideNews: panes.news[owner] ?? [],
                 sideMaximized: panes.maximized.contains(owner), review: reviews[ref],
@@ -866,7 +878,7 @@ struct RemoteAgentPane: View {
     }
 }
 
-private struct RemoteAgentPaneContent: View, Equatable {
+struct RemoteAgentPaneContent: View, Equatable {
     var vm: ShepherdViewModel
     let presentation: RemotePresentation
 
