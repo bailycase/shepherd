@@ -299,6 +299,68 @@ struct IncrementalMarkdownTests {
         #expect(toFinished && markdown.blocks == finished.blocks)
     }
 
+    // MARK: Random markup
+
+    /// Characters that start, join and end Markdown constructs, in no order.
+    static let markup: [String] = [
+        "-", " ", " ", "\n", "\n", "\n\n", "|", "`", "`", ">", "#", "1", ".", ")", "[", "^", "]", ":", "<", "!", "$", "~", "\t", "x", "a",
+        "*", "_", "\r", "/", "d", "e", "t", "s", "(", "=",
+    ]
+
+    static func randomMarkup(_ rng: inout SplitMix64, length: ClosedRange<Int>) -> String {
+        (0..<Int.random(in: length, using: &rng)).map { _ in markup.randomElement(using: &rng)! }.joined()
+    }
+
+    /// Texts of broken, half-written and nested Markdown, grown a few characters at a time, in either mode.
+    @Test func aWalkOverRandomMarkupMatchesAFullParse() {
+        var mismatches: [String] = []
+        for seed in 1...300 as ClosedRange<UInt64> {
+            var rng = SplitMix64(state: seed &* 104_729)
+            let scalars = Array(Self.randomMarkup(&rng, length: 1...70).unicodeScalars)
+            var markdown = NativeMarkdownState("", streaming: true)
+            var prose = NativeProseState("", streaming: true)
+            var count = 0
+            while count < scalars.count {
+                count = min(scalars.count, count + Int.random(in: 1...3, using: &rng))
+                let streaming = Bool.random(using: &rng)
+                let text = Self.prefix(scalars, count)
+                let expected = nativeMarkdownParse(text, streaming: streaming)
+                if !markdown.advance(to: text, streaming: streaming) { markdown = NativeMarkdownState(text, streaming: streaming) }
+                if !prose.advance(to: text, streaming: streaming) { prose = NativeProseState(text, streaming: streaming, reusing: prose.prose) }
+                if markdown.blocks != expected.blocks || markdown.endsInOpenFence != expected.endsInOpenFence || prose.prose != NativeProse(expected) {
+                    mismatches.append("\(text.debugDescription) (streaming \(streaming))")
+                }
+            }
+        }
+        #expect(mismatches.isEmpty, "\(mismatches.count) texts differ, the first: \(mismatches.first ?? "")")
+    }
+
+    /// The freeze rule holds for any later text that keeps the guard, not only for the text the state grew into.
+    @Test func aTextThatKeepsTheGuardAndGoesItsOwnWayMatchesAFullParse() {
+        var mismatches: [String] = []
+        var accepted = 0
+        for seed in 1...600 as ClosedRange<UInt64> {
+            var rng = SplitMix64(state: seed &* 15_485_863)
+            let first = Self.randomMarkup(&rng, length: 1...80)
+            let scalars = Array(first.unicodeScalars)
+            let second = Self.prefix(scalars, Int.random(in: 0...scalars.count, using: &rng)) + Self.randomMarkup(&rng, length: 0...40)
+            for (from, to) in [(true, true), (true, false), (false, false), (false, true)] {
+                var markdown = NativeMarkdownState(first, streaming: from)
+                var prose = NativeProseState(first, streaming: from)
+                guard markdown.advance(to: second, streaming: to) else { continue }
+                accepted += 1
+                let expected = nativeMarkdownParse(second, streaming: to)
+                let advancedProse = prose.advance(to: second, streaming: to)
+                if !advancedProse || markdown.blocks != expected.blocks || markdown.endsInOpenFence != expected.endsInOpenFence
+                    || prose.prose != NativeProse(expected) {
+                    mismatches.append("\(first.debugDescription) then \(second.debugDescription) (\(from) to \(to))")
+                }
+            }
+        }
+        #expect(accepted > 600, "\(accepted) advances were accepted")
+        #expect(mismatches.isEmpty, "\(mismatches.count) texts differ, the first: \(mismatches.first ?? "")")
+    }
+
     // MARK: The freeze rule
 
     @Test func anEditInsideTheFrozenPrefixCannotBeAdvanced() {
@@ -337,6 +399,20 @@ struct IncrementalMarkdownTests {
         #expect(single.frozenOffset == 0 && single.guardOffset == 0 && single.frozenCount == 0, "one line is all tail")
         #expect(single.tail(of: single.text + "more")?.bytes == single.text.utf8.count + 4)
         #expect(NativeMarkdownState("", streaming: false).blocks.isEmpty)
+    }
+
+    /// The parser's lookahead calls a line of vertical tabs or line separators blank, its block rules do not: such a
+    /// line ends a held table header's wait for more text, so it is no place to resume from.
+    @Test(arguments: ["\u{0B}", "\u{85}", "\u{2028}"])
+    func aLineOfOtherWhitespaceIsNoPlaceToResumeFrom(_ blank: String) {
+        let text = "Intro.\n\n| a | b\n\(blank)\n"
+        var state = NativeMarkdownState(text, streaming: true)
+        #expect(state.frozenCount == 1, "the held header's line is the last place to resume from")
+        let grown = text + "more\n"
+        let advanced = state.advance(to: grown, streaming: true)
+        #expect(advanced && state.blocks == nativeMarkdownParse(grown, streaming: true).blocks)
+        let finished = state.advance(to: grown, streaming: false)
+        #expect(finished && state.blocks == nativeMarkdownParse(grown, streaming: false).blocks)
     }
 
     @Test func aGrowingParagraphOrFenceIsItsOwnTail() throws {
