@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
@@ -919,7 +920,7 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("the failing image is on the card") { input.attachments.items.count == 1 }
         let shown = try #require(r.app.server.state.projects.first)
         _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
-        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the owner has no project, as this Mac sees it") { r.app.server.state.projects.isEmpty && r.vm.state.projects.isEmpty }
         let attempts = r.vm.logicalProjects.failure
         _ = attempts
         _ = await r.vm.logicalProjects.sendMessage(r.ref, text: "this one fails", images: input.attachments.images)
@@ -1413,7 +1414,7 @@ private static func chipsAndLinks() async throws {
         // A task the owner does not know is refused by the owner, not routed anywhere else.
         let unknown = r.vm.projectWorkerRequest(r.ref, task: ProjectTaskID())
         do { _ = try await unknown(.snapshot()); throw RigError("an unknown task was served") }
-        catch let error as LogicalProjectsError { #expect(error.code == "not_found") }
+        catch RemoteHostClientError.rejected(let code, _) { #expect(code == "not_found", "the owner, this Mac's host, refuses it") }
         // A remote home addresses its owner through the same transport, and no executor is configured on this viewer.
         #expect(r.vm.remoteHosts.connections.isEmpty, "this viewer has no executor or any other host connection")
     }
@@ -1638,8 +1639,8 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = r.vm.threadStores.store(for: coordinator)
-        let input = r.vm.threadStores.input(for: coordinator)
+        var store = r.vm.threadStores.store(for: coordinator)
+        var input = r.vm.threadStores.input(for: coordinator)
         let png = r.app.dir.appendingPathComponent("keep.png")
         let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.systemPurple.setFill(); rect.fill(); return true }
         let tiff = try #require(image.tiffRepresentation)
@@ -1652,7 +1653,12 @@ private static func chipsAndLinks() async throws {
         }
         let shown = try #require(r.app.server.state.projects.first)
         _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
-        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the owner has no project, as this Mac sees it") { r.app.server.state.projects.isEmpty && r.vm.state.projects.isEmpty }
+        // The deleted coordinator's thread went with it: the page's composer is a fresh one, given the same words and image.
+        store = r.vm.threadStores.store(for: coordinator)
+        input = r.vm.threadStores.input(for: coordinator)
+        input.add(urls: [png], store: store, localFiles: true, imagesSupported: true)
+        store.draft = "this one is refused"
         try await eventuallyOnMain("Send is still offered") { window.layout(); return window.controls().contains { $0.label == "Send" && $0.isEnabled } }
 
         // The Send button: the owner refuses, so the draft and the image stay, and the reason is shown.
@@ -1677,6 +1683,7 @@ private static func chipsAndLinks() async throws {
         // Changing the words is a different message: another operation.
         store.draft = "now with other words"
         r.vm.logicalProjects.failure = nil
+        window.layout()
         try window.press("Send")
         try await eventuallyOnMain("the changed words are another operation, refused too") {
             r.vm.logicalProjects.failure != nil && r.vm.logicalProjects.operations[r.ref]?.id != kept
@@ -1742,7 +1749,8 @@ private static func chipsAndLinks() async throws {
         let pane = try #require(agent.paneID)
         let oldSession = try #require(r.vm.state.session(boundTo: pane))
         await r.app.server.stopKeepingAgent(sessionID: oldSession)
-        try await eventuallyOnMain("coordinator exits") { r.vm.state.session(boundTo: pane) == nil }
+        let server = r.app.server
+        try await eventuallyAsync("coordinator exits") { await server.sessionInfo(sessionID: oldSession)?.isAlive != true }
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "second message"))
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "third message"))
         try await eventuallyOnMain("queued messages delivered after coordinator relaunch", timeout: .seconds(40)) {
@@ -2346,7 +2354,7 @@ private static func chipsAndLinks() async throws {
         #expect(await r.vm.logicalProjects.saveSettings(r.ref) { $0.maxConcurrentWorkers = 2 })
         let shown = try #require(r.app.server.state.projects.first)
         _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
-        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the owner has no project, as this Mac sees it") { r.app.server.state.projects.isEmpty && r.vm.state.projects.isEmpty }
         try await eventuallyOnMain("the chip is still offered") { window.layout(); return window.controls().contains { $0.label == "Model settings: Default model" && $0.isEnabled } }
         try window.press("Model settings: Default model")
         try await eventuallyOnMain("the popover") { window.layout(); return window.element("All models…") != nil }
