@@ -1106,6 +1106,7 @@ public final class NativeThreadStore {
         if text.utf8.count >= Self.offMainProseBytes {
             let previous = thinkingCache[key]
             parseOffMain(key, text: text, streaming: false, base: previous?.text.utf8.count ?? -1,
+                         holdsBase: { [weak self] in self?.thinkingCache[key]?.text == previous?.text },
                          parse: { newest in
                 if var state = previous, state.advance(to: newest, streaming: false) { return state }
                 return NativeMarkdownState(newest, streaming: false)
@@ -1143,6 +1144,7 @@ public final class NativeThreadStore {
         if text.utf8.count >= Self.offMainProseBytes {
             let previous = proseCache[key]
             parseOffMain(key, text: text, streaming: streaming, base: previous?.markdown.text.utf8.count ?? -1,
+                         holdsBase: { [weak self] in self?.proseCache[key]?.markdown.text == previous?.markdown.text },
                          parse: { newest in
                 if var state = previous, state.advance(to: newest, streaming: streaming) { return state }
                 return NativeProseState(newest, streaming: streaming, reusing: previous?.prose)
@@ -1193,9 +1195,13 @@ public final class NativeThreadStore {
         proseCosts[key] = cost
     }
 
-    /// At most two detached parses per store, one per item. Queued work is replaced by the
-    /// newest text/mode; stale results never publish, and release/session changes fence all work.
+    /// At most two detached parses per store, one per item. Queued work is replaced by the newest text/mode.
+    /// The newest request's result lands. An older one lands too, as the base the newest text is parsed from,
+    /// while a request is outstanding and the cache still holds the text it grew from (`holdsBase`): a text
+    /// that replaced the cache since makes it stale, and release or a session change (`proseEpoch`) fences all work.
+    /// Anything else never publishes.
     private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, streaming: Bool, base: Int,
+                                               holdsBase: @escaping @MainActor @Sendable () -> Bool,
                                                parse: @escaping @Sendable (String) -> Value,
                                                land: @escaping @MainActor @Sendable (Value) -> Void) {
         let wanted = ParseRequest(text: text, streaming: streaming, base: base)
@@ -1223,8 +1229,9 @@ public final class NativeThreadStore {
                 if onMain { self.mainActorLargeParses += 1 }
                 // A text wanted since is not this one, but what this parsed is the nearest base to it: it lands,
                 // and the derive that follows grows it to the newest text, or asks for that off main in turn.
-                // A key invalidated since, or any parse that release or a session change cancelled, is dropped.
-                if self.proseParsing[key] == token || (self.proseRequests[key] != nil && self.proseEpoch == epoch) {
+                // A key invalidated since, a cache replaced since, or any parse that release or a session change
+                // cancelled, is dropped.
+                if self.proseParsing[key] == token || (self.proseRequests[key] != nil && self.proseEpoch == epoch && holdsBase()) {
                     if self.proseParsing[key] == token { self.invalidateParse(key) }
                     land(value)
                     self.presentationCache[key.turn] = nil

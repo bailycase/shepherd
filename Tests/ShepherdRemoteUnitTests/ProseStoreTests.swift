@@ -161,6 +161,60 @@ struct ProseStoreTests {
         #expect(store.proseParses == 0 && store.activeProseTasks == 0)
     }
 
+    /// A parse is in flight when a short replacement is parsed on the main actor, and a long text that cannot grow
+    /// from it (the replacement has a frozen prefix the long text does not keep) is asked for behind the first.
+    /// The first is older than what the reply shows: it is dropped, not shown for the while the newest parses.
+    @Test(arguments: [false, true])
+    func aParseOlderThanTheCacheDoesNotLandOverIt(thinking: Bool) async {
+        let user = F.user("write it up", id: "u")
+        let old = "Alpha " + String(repeating: "word ", count: NativeThreadStore.offMainProseBytes / 5) + "end"
+        let short = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+        let newest = "Zeta " + String(repeating: "term ", count: NativeThreadStore.offMainProseBytes / 5) + "end"
+        func snapshot(_ revision: UInt64, _ text: String) -> NativeThreadSnapshot {
+            thinking
+                ? F.snapshot(revision: revision, messages: [user, F.assistant("Done.", thinking: text, id: "a")])
+                : F.snapshot(revision: revision, running: true, messages: [user], provisional: [F.assistant(text, status: "streaming", id: "live")])
+        }
+        func shown() -> [NativeMarkdownBlock]? {
+            store.rows.last?.presentation?.items.compactMap { item -> [NativeMarkdownBlock]? in
+                switch item {
+                case .thinking(_, _, let blocks, _, _, _) where thinking: blocks
+                case .prose(_, _, let prose) where !thinking: prose.blocks
+                default: nil
+                }
+            }.last
+        }
+        func blocks(_ text: String) -> [NativeMarkdownBlock] { nativeMarkdownParse(text, streaming: !thinking).blocks }
+        let (gate, release) = AsyncStream<Void>.makeStream()
+        let (laterGate, releaseLater) = AsyncStream<Void>.makeStream()
+        let store = manualStore()
+        store.beforeProseParse = { for await _ in gate {} }
+        let host = FakeHost(snapshot(1, old))
+        let task = await start(store, host)
+        defer { release.finish(); releaseLater.finish(); task.cancel(); store.stop() }
+        #expect(store.offMainParses == 1 && store.activeProseTasks == 1, "the cold parse is in flight")
+        let inFlight = store.proseWork
+
+        host.snapshot = snapshot(2, short)
+        await store.refresh()
+        #expect(shown() == blocks(short), "the short replacement parses on the main actor")
+
+        store.beforeProseParse = { for await _ in laterGate {} }
+        host.snapshot = snapshot(3, newest)
+        await store.refresh()
+        #expect(shown() == blocks(short), "the short replacement stands while the long one waits")
+        #expect(store.offMainParses == 1, "\(store.offMainParses) parses started")
+
+        release.finish()
+        for work in inFlight { await work.value }
+        #expect(shown() == blocks(short), "the older parse landed over the replacement")
+        releaseLater.finish()
+        await store.waitForProse()
+        #expect(shown() == blocks(newest))
+        #expect(store.offMainParses == 2, "\(store.offMainParses) parses started")
+        #expect(store.mainActorLargeParses == 0)
+    }
+
     /// The reply finishes: the same text in the other mode. The frozen prefix is final in both, so the
     /// turn end parses the tail alone, and the chunks before it are the very ones that streamed.
     @Test func aTurnEndParsesOnlyTheTailAndKeepsItsChunks() async throws {
