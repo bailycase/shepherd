@@ -21,7 +21,7 @@ extension PreviewTests {
         // Missions is an experiment, off by default; these previews draw it turned on.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = vm.missions
+        let controller = workspace.missions
         func show(_ id: MissionID?, _ name: String, widths: [CGFloat] = [1440], panes: MissionInitialPanes = MissionInitialPanes()) async throws {
             controller.selectedID = id
             controller.reviews = fixture.reviews
@@ -107,7 +107,7 @@ extension PreviewTests {
         // Missions is an experiment, off by default; these previews draw it turned on.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = vm.missions
+        let controller = workspace.missions
         try await Preview.render("missions-empty", size: CGSize(width: 1440, height: 900)) { RootView(vm: vm) }
         // New mission in the real shell, as its button opens it: empty, then with words and two repositories.
         try await Preview.render("mission-start", size: CGSize(width: 1440, height: 900),
@@ -263,7 +263,7 @@ extension PreviewTests {
         // Missions is an experiment, off by default; these previews draw it turned on.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = vm.missions
+        let controller = workspace.missions
         let reports: [MissionID: [SpaceID: SpecKitPreflight]] = [
             unconsented.id: Dictionary(uniqueKeysWithValues: repos.map { ($0.id, ready) }),
             allowed.id: Dictionary(uniqueKeysWithValues: repos.map { ($0.id, ready) }),
@@ -518,20 +518,15 @@ struct MissionPreviewFixture {
         self.state = state
     }
 
-    /// Through the revision-checked mission service, as the app writes them.
+    /// Through the host's revision-checked mission service, as the app writes them.
     @MainActor func seed(_ workspace: PreviewWorkspace) async throws {
-        try await seed(server: workspace.server)
-        let vm = workspace.vm
-        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 12 }
-    }
-
-    /// The same records on any workspace owner's server (the background host's, in `LocalHostRuntimePreviews`).
-    @MainActor func seed(server: SessionServer) async throws {
-        try await server.putState(state)
+        try await workspace.seed(state)
+        let server = workspace.server, vm = workspace.vm
         for mission in [goal, planning, pausedPlanning, draft, running, review, done, patched, merging, held, refunds, templated] {
             var saved = try await server.createMission(id: mission.id, draft: mission.draft)
             if mission.approvedPlanRevision != nil { saved = try await server.approveMissionPlan(id: mission.id, expectedRevision: saved.revision) }
             if let run = mission.run { _ = try await server.setMissionRun(id: mission.id, expectedRevision: saved.revision, run: run) }
         }
+        try await eventuallyOnMain("missions to load") { vm.state.missions.count == 12 }
     }
 }

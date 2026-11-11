@@ -113,15 +113,15 @@ extension LogicalProjectPreviewTests {
         let tasks = vm.state.projects.first?.tasks ?? []
         #expect(await vm.logicalProjects.sendMessage(ref, text: again))
         let workers = tasks.map(\.workerAgentID)
-        for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await vm.server.nativeThread(agentID: id, request: $0) }) } }
+        for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await world.server.nativeThread(agentID: id, request: $0) }) } }
         let coordinator = try #require(vm.state.projects.first?.coordinatorAgentID)
-        let server = vm.server
+        let server = world.server
         Task { await vm.threadStores.store(for: coordinator).run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         let waiting = try #require(tasks.first { $0.title == jobs[1].0 })
         let workerStore = vm.threadStores.store(for: waiting.workerAgentID)
         vm.openLogicalProject(ref)
         let ready: @MainActor () -> Bool = {
-            let conversation = vm.projectCoordinator.conversationStore(agentID: coordinator)
+            let conversation = world.coordinator.conversationStore(agentID: coordinator)
             let cards = conversation?.rows.flatMap(\.turn.messages).filter { $0.projectAction?.taskID != nil }.count ?? 0
             let said = conversation?.rows.flatMap(\.turn.messages).contains { $0.blocks.contains { $0.text.hasPrefix("All three threads") } } ?? false
             let published = vm.state.projects.first?.artifacts.filter { $0.state == .ready }.count ?? 0
@@ -193,13 +193,13 @@ extension LogicalProjectPreviewTests {
             throw PreviewError("not assigned: tasks \(p?.tasks.map { "\($0.title):\($0.phase)" } ?? []), messages \(p?.messages.map { "\($0.phase)" } ?? []), paused \(p?.paused as Any), coordinator \(p?.coordinatorAgentID as Any), failure \(vm.logicalProjects.failure?.message ?? "none")")
         }
         let workers = (vm.state.projects.first?.tasks ?? []).map(\.workerAgentID)
-        for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await vm.server.nativeThread(agentID: id, request: $0) }) } }
+        for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await world.server.nativeThread(agentID: id, request: $0) }) } }
         let coordinator = try #require(vm.state.projects.first?.coordinatorAgentID)
-        let server = vm.server
+        let server = world.server
         Task { await vm.threadStores.store(for: coordinator).run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         vm.openLogicalProject(ref)
         let ready: @MainActor () -> Bool = {
-            let store = vm.projectCoordinator.conversationStore(agentID: coordinator)
+            let store = world.coordinator.conversationStore(agentID: coordinator)
             let cards = store?.rows.flatMap(\.turn.messages).filter { $0.projectAction?.taskID != nil }.count ?? 0
             return cards == 3 && workers.allSatisfy { vm.workerActivity($0) != nil && vm.workerStarted($0) != nil }
         }
@@ -250,7 +250,7 @@ extension LogicalProjectPreviewTests {
         try Self.startup(model: "claude-sonnet-4-6", level: nil, in: URL(fileURLWithPath: space.path))
         // The worker holds before its first reply, so the person's steer is read into the assignment's own user turn.
         try Self.write(["prompts": [prompt: [["wait": "hold-workers", "timeout": 600]]], "socket": world.scratch.socketPath], to: URL(fileURLWithPath: space.path))
-        let owner = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: try #require(vm.state.projects.first).revision,
+        let owner = try await world.coordinator.perform(projectID: ref.id, expectedRevision: try #require(vm.state.projects.first).revision,
             request: .assign(operationID: UUID(), spaceID: space.id, title: "Reading widget mockup", prompt: prompt))
         let task = try #require(owner.tasks.first)
         try await eventuallyOnMain("the worker is running", timeout: .seconds(40)) { vm.state.projects.first?.tasks.first?.phase == .running }
@@ -322,11 +322,11 @@ extension LogicalProjectPreviewTests {
         try await eventuallyOnMain("the first message was delivered", timeout: .seconds(30)) { vm.state.projects.first?.messages.allSatisfy { $0.phase == .delivered } == true }
         #expect(await vm.logicalProjects.sendMessage(ref, text: "and?"))
         let coordinator = try #require(vm.state.projects.first?.coordinatorAgentID)
-        let server = vm.server
+        let server = world.server
         Task { await vm.threadStores.store(for: coordinator).run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         vm.openLogicalProject(ref)
         let ready: @MainActor () -> Bool = {
-            let rows = vm.projectCoordinator.conversationStore(agentID: coordinator)?.rows.flatMap(\.turn.messages) ?? []
+            let rows = world.coordinator.conversationStore(agentID: coordinator)?.rows.flatMap(\.turn.messages) ?? []
             return rows.contains { $0.projectAction?.taskID != nil } && rows.contains { $0.blocks.contains { $0.text.hasPrefix("The [whatever") } }
         }
         vm.logicalProjectPaneOpen = false

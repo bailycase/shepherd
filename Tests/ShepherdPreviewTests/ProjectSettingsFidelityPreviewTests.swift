@@ -78,7 +78,7 @@ struct ProjectSettingsFidelityPreviewTests {
             for space in (long ? [] : ["sample-app-web", "research"]) {
                 let id = try #require(spaces.first { $0.name == space }?.id)
                 let operation = UUID()
-                _ = try await vm.projectCoordinator.perform(projectID: project.id, expectedRevision: project.revision,
+                _ = try await world.coordinator.perform(projectID: project.id, expectedRevision: project.revision,
                                                            request: .proposeSpace(operationID: operation, path: nil, spaceID: id, originTaskID: nil))
                 try await eventuallyOnMain("the proposal is pending") { vm.state.projects.first?.spaceProposals.contains { $0.id == operation && $0.phase == .pending } == true }
                 let proposal = try #require(vm.state.projects.first?.spaceProposals.first { $0.id == operation })
