@@ -499,7 +499,8 @@ struct ExtensionReplyTests {
         .designWritten(id: 23, result: DesignWriteResult(revision: 5, changed: true, sha256: "9c0d", created: true,
                                                           warnings: [.innerHTML, .missingPreview], title: "Checkout funnel", boardCount: 1)),
         .designEdited(id: 36, result: DesignWriteResult(revision: 6, changed: true, sha256: "4b1e", created: false,
-                                                        warnings: [.globalKeyHandler], title: "Checkout funnel", boardCount: 2),
+                                                        warnings: [.globalKeyHandler], title: "Checkout funnel", boardCount: 2,
+                                                        board: UUID(uuidString: "7A51C0DE-0000-4000-8000-0000000000B1")),
                       replaced: [1, 4]),
         .designWritten(id: 37, result: DesignWriteResult(
             revision: 8, changed: true, sha256: "3f2a", created: false, title: "Checkout funnel", boardCount: 2,

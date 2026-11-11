@@ -76,6 +76,23 @@ extension SessionServer {
         }
     }
 
+    /// Keeps the board an ordinary thread just wrote with board_write or board_edit as a copy at the
+    /// revision it made (ThreadBoardEdited), which the thread draws as a card. Nil for a design's
+    /// own agent, or when the copy can't be made: the write stands and the thread keeps its text line.
+    func keepWrittenBoard(agentID: AgentID, designID: DesignID, path: DesignPath, created: Bool) async -> UUID? {
+        let state = self.state
+        guard let agent = state.agents.first(where: { $0.id == agentID }), agent.designID == nil, !state.isDesignAgent(agent),
+              let reference = DesignReference(designID: designID, board: path) else { return nil }
+        do {
+            var kept = try await DesignReferenceService(server: self).capture(reference, for: agentID, state: state, at: Self.nowMilliseconds())
+            kept.payload.written = created ? .created : .edited
+            try await designReferencePayloads.save(kept.payload)
+            return kept.payload.id
+        } catch {
+            return nil
+        }
+    }
+
     /// The user's Add to design or Apply to design (`accept`), or Discard, on a board `agentID`
     /// drew: a draft becomes a board on the canvas where the card placed it, a change replaces
     /// the board while it is still the version the agent drew from. Answers the copy as it now is.

@@ -5143,13 +5143,15 @@ public final class SessionServer: @unchecked Sendable {
         case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens, runtimeLint: true)
+                var result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens, runtimeLint: true)
+                if result.changed { result.board = await server.keepWrittenBoard(agentID: agentID, designID: designID, path: path, created: result.created == true) }
                 return .designWritten(id: id, result: result)
             }
         case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens, runtimeLint: true)
+                var edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens, runtimeLint: true)
+                if edited.result.changed { edited.result.board = await server.keepWrittenBoard(agentID: agentID, designID: designID, path: path, created: false) }
                 return .designEdited(id: id, result: edited.result, replaced: edited.replaced)
             }
         case .designEditBoards(let id, let agentID, let designID, let request):

@@ -3,7 +3,8 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// A board the agent showed with design_show (ThreadBoardShown, ThreadBoardStale): the copy it
+/// A board the agent showed with design_show, or wrote into the design with board_write or board_edit (ThreadBoardShown,
+/// ThreadBoardStale, ThreadBoardEdited): the copy it
 /// was sent, drawn as a card that keeps what the agent saw after the design moves on. A board it
 /// drew (ThreadBoardDraft, ThreadBoardChange) comes under its "Drew a board" line, with Discard
 /// and Add to design (or Apply to design) while it waits. Where the thread can't read its
@@ -12,6 +13,7 @@ struct BoardCardView<Fallback: View>: View {
     let id: UUID
     @ViewBuilder let fallback: () -> Fallback
     @Environment(\.designReferences) private var references
+    @Environment(\.presentImages) private var presentImages
     @State private var busy = false
     @State private var failure: String?
 
@@ -23,7 +25,7 @@ struct BoardCardView<Fallback: View>: View {
                 }
                 SHBoardCard(design: board.design, board: board.board, meta: board.meta, note: failure ?? board.note, size: board.size,
                             picture: board.picture.map { .picture($0.image) } ?? (board.hasPicture ? .loading : .missing),
-                            open: { references.io.showBeside(board) }) {
+                            open: board.picture == nil ? nil : { openFullSize(board) }) {
                     BoardActions(board: board, busy: busy, settle: settle, open: { references.io.open($0) })
                 }
             }
@@ -32,6 +34,16 @@ struct BoardCardView<Fallback: View>: View {
             fallback()
                 .task(id: references?.generation) { await references?.loadBoard(id) }
         }
+    }
+
+    /// The board's picture over the thread, in the viewer images open in (ThreadBoardEditedOpen). A picture that can't be read
+    /// leaves the card as it is; Open in design is still there.
+    private func openFullSize(_ board: DesignReferenceChips.Board) {
+        guard let url = board.pictureURL, let data = try? Data(contentsOf: url), let size = board.size else { return }
+        let image = ViewerImage(id: board.copy?.uuidString ?? url.lastPathComponent, name: board.board, data: data, mimeType: "image/png",
+                                pixels: CGSize(width: size.width * 2, height: size.height * 2))
+        guard image.picture != nil else { return }
+        presentImages(ImageViewerState(images: [image], origin: ([board.design] + board.meta.suffix(1)).joined(separator: " · ")))
     }
 
     private func settle(_ accept: Bool) {

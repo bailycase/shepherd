@@ -785,13 +785,13 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// Role "custom", `shepherd.hook`: the hook row's facts (`NativeHookRecord`). The text block
     /// is its readable line, what a client without it draws. Absent from older hosts.
     public var hook: NativeHookRecord?
-    /// Tool results of `design_show`: the kept copy of a design piece (`DesignReferencePayload.id`)
+    /// Tool results of `design_show`, and of `board_write` and `board_edit` in an ordinary thread: the kept copy of a design piece (`DesignReferencePayload.id`)
     /// the thread draws as a board card (ThreadBoardShown). Display only, never a grant: the card
     /// reads the copy through the thread's own references. Absent from older hosts.
     public var designBoard: UUID?
 
     /// The tools whose result names a board card's copy in `details.board`.
-    public static let designBoardTools: Set<String> = ["design_show"]
+    public static let designBoardTools: Set<String> = ["design_show", "board_write", "board_edit"]
 
     /// The copy a board tool's `details` names, else nil (a failed call, another tool).
     public static func designBoard(toolName: String?, details: JSONValue?, isError: Bool?) -> UUID? {
