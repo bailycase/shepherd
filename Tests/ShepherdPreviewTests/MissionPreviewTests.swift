@@ -291,9 +291,8 @@ extension PreviewTests {
                 }
             }
         }
-        // The drawn preflight states. The host answers the page's Spec Kit read with a fresh preflight of the
-        // record-only checkouts, not these, so until the page can be given them this waits and fails.
-        workspace.missions.specKitReports = reports
+        // The drawn preflight states: the host would preflight the record-only checkouts afresh, so the page is given these.
+        controller.injectedSpecKitReports = reports
         try await show(unconsented.id, "mission-speckit-consent")
         try await show(allowed.id, "mission-speckit-next", side: true)
         try await show(changed.id, "mission-speckit-changed")
