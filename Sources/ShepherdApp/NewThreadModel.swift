@@ -355,7 +355,7 @@ final class NewThreadState {
         catalog = nil
         loadingDefaults = true
         guard let host else {
-            if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
+            if !edited.model { model = vm.settings.defaultModel(piHome: vm.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
             if !edited.speed { serviceTier = vm.settings.defaultServiceTier }
             Task {

@@ -99,7 +99,7 @@ extension ShepherdViewModel {
     /// Shows the skills folder of the user's own pi on This Mac in Finder (its folder when it has
     /// none, Shepherd's pi home when there is no pi of theirs).
     func showPiSkillsFolder() {
-        let pi = server.pi
+        let pi = self.pi
         Task {
             let agent = await Task.detached(priority: .userInitiated) { pi.yourPi.resolve()?.agentDirectory }.value ?? pi.home
             let skills = agent.appendingPathComponent("skills", isDirectory: true)

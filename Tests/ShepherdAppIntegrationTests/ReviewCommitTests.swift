@@ -387,7 +387,8 @@ struct ReviewCommitTests {
 
         func poll(_ store: ReviewCommitStore, host: ShepherdViewModel, agentID: AgentID) async {
             guard store.submitting, let id = store.operationID else { return }
-            let known = try? await host.handleReviewCommit(agentID, query: .worktreeStatus(operationID: id))
+            let known = try? await host.remoteHosts.agentQuery(RemoteAgentRef(hostID: host.localHost?.id ?? UUID(), agentID: agentID),
+                                                               query: .worktreeStatus(operationID: id))
             hostKnew.append(known != nil)
             finished.append(await store.pollOnce())
             errors.append(store.error)
@@ -435,7 +436,8 @@ struct ReviewCommitTests {
         defer { harness.stop() }
         let vm = try await harness.start()
         let agentID = AgentID()
-        let store = ReviewCommitStore { try await vm.handleReviewCommit(agentID, query: $0) }
+        let ref = RemoteAgentRef(hostID: try #require(vm.localHost?.id), agentID: agentID)
+        let store = ReviewCommitStore { try await vm.remoteHosts.agentQuery(ref, query: $0) }
         // As after a host restart: the sheet holds an operation the host has never heard of.
         store.adopt(RemoteWorktreeOperation(id: UUID(), progress: ["check the checkout: working…"]))
 

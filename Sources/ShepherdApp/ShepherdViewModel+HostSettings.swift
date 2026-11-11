@@ -3,17 +3,6 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-extension ShepherdViewModel {
-    /// Serves this Mac's settings to remote clients (Settings on the iPhone and the iPad): what
-    /// Settings ▸ Agents, Worktrees and Pi set, and one change at a time, applied as the Mac's own
-    /// Settings would. Installed once at startup.
-    func installHostSettings() {
-        HostSettingsMapping.serve(on: server, settings: settings) { [weak self] in
-            self?.backgroundServiceStatus?.keepsAgentsRunning
-        }
-    }
-}
-
 /// This Mac's `AppSettings` as a remote client sees them (`HostSettings`), and a client's change
 /// applied to them.
 @MainActor

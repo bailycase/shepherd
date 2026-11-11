@@ -5,16 +5,6 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-extension ShepherdViewModel {
-    /// Serves this Mac's MCP servers, subagent profiles and provider sign-ins to remote clients
-    /// (Settings on the iPhone and the iPad), read-only and to change: what Settings ▸ MCP,
-    /// Subagents and Sign-in show and do. Installed once at startup.
-    func installHostConfiguration() {
-        HostStores(mcp: mcp, subagents: { [weak self, pi = server.pi] in self?.subagentDefinitions ?? SubagentDefinitionsModel(pi: pi) }, piAuth: piAuth, yourPi: yourPi,
-                   remoteSignIns: remoteSignIns).serve(on: server)
-    }
-}
-
 /// The stores Settings ▸ MCP, Subagents and Sign-in read and change, served to remote clients
 /// (`RemoteRequest.hostInventory` and `.hostConfig`) by the app or by the headless host.
 @MainActor

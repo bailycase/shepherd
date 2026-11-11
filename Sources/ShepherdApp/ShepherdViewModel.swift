@@ -968,10 +968,8 @@ final class ShepherdViewModel {
         // Remote clients see designs only while the Design tool is on here.
         server.setDesignsServed(self.settings.designToolEnabled)
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
-        installRemoteInspection()
-        installHostSettings()
+        installWorktreeHosting()
         _ = runtime
-        installHostConfiguration()
         installCompactionThreshold()
         // Adopt the persisted workspace without waiting for a pane to render
         // (an empty sidebar can never render one).

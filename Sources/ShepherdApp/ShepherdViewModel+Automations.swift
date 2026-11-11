@@ -14,7 +14,7 @@ extension ShepherdViewModel {
     func installAutomationControl() {
         var hosting = AutomationHosting(
             defaults: { [unowned self] in
-                AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
+                AutomationHosting.Defaults(model: settings.defaultModel(piHome: pi.home), thinking: settings.defaultThinking,
                                            serviceTier: settings.defaultServiceTier,
                                            worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,
                                            projectsEnabled: settings.projectsEnabled)

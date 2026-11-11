@@ -559,7 +559,7 @@ struct PaneLeafView: View, Equatable {
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
                     request: { [vm] in try await vm.nativeThread(agentID, request: $0) },
-                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot) },
+                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd, sessionsRoot: vm.pi.sessionsRoot) },
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
                     workingDirectory: pane.cwd,
@@ -576,7 +576,7 @@ struct PaneLeafView: View, Equatable {
                     authActions: ThreadAuthActions(
                         signIn: { [vm] provider in vm.openSignIn(provider, origin: .agentCard) },
                         useModel: { [vm] model in vm.useAnotherModel(agentID, model: model) },
-                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.server.pi.catalog).models.map(\.id) }),
+                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.pi.catalog).models.map(\.id) }),
                     slashLogin: vm.slashLoginActions
                 )
                 // Design references reach an ordinary thread only.

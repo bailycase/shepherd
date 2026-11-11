@@ -114,7 +114,7 @@ struct ConversationThread: View {
         let owner = vm.localHost?.state ?? vm.server.state
         guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }), let paneID = record.paneID,
               let pane = owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID) else { return nil }
-        return PiSessionFile.previewLoader(sessionID: record.effectivePiSessionID, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot)
+        return PiSessionFile.previewLoader(sessionID: record.effectivePiSessionID, cwd: pane.cwd, sessionsRoot: vm.pi.sessionsRoot)
     }
 
     /// The owner's own model catalog for a remote Project (this Mac's, when nil), as a remote thread's picker lists.
@@ -192,7 +192,7 @@ struct ConversationThread: View {
             send: { [vm, ref, project] text, images in
                 // A local Project with no model of its own is pinned to the same default every thread and automation launches on
                 // before its first message, so its coordinator never leaves pi to pick a provider (`AppSettings.defaultModel(piHome:)`).
-                if ref.home == .local, project.settings.conversationModel == nil, let model = vm.settings.defaultModel(piHome: vm.server.pi.home) {
+                if ref.home == .local, project.settings.conversationModel == nil, let model = vm.settings.defaultModel(piHome: vm.pi.home) {
                     _ = await vm.logicalProjects.saveSettings(ref) { $0.conversationModel = model }
                 }
                 return await vm.logicalProjects.sendMessage(ref, text: text, images: images)
@@ -221,7 +221,7 @@ struct ConversationThread: View {
             runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }
                                    + project.retiredWakeups),
             model: ProjectConversationModel(
-                current: project.settings.conversationModel ?? (ref.home == .local ? vm.settings.defaultModel(piHome: vm.server.pi.home) : nil),
+                current: project.settings.conversationModel ?? (ref.home == .local ? vm.settings.defaultModel(piHome: vm.pi.home) : nil),
                 // Before a coordinator exists, the level a new one starts with: the owner's default (a local owner's is known here).
                 thinking: project.settings.conversationThinking ?? (agent == nil && ref.home == .local ? vm.settings.agentDefaults.thinking.rawValue : nil),
                 choose: { [vm, ref] id, level in await vm.logicalProjects.saveSettings(ref) {

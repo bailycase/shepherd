@@ -173,7 +173,7 @@ final class RemoteMissionDriver: MissionDriving {
         var preview: NativeThreadStore.Preview?
         if isLocalHost, let agent = connection?.state.agents.first(where: { $0.id == agentID }),
            let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path {
-            preview = PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: cwd, sessionsRoot: vm.server.pi.sessionsRoot)
+            preview = PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: cwd, sessionsRoot: vm.pi.sessionsRoot)
         }
         return MissionThreadSource(agentID: agentID, store: store, request: request, preview: preview,
                                    send: steerable ? { [weak self] text in

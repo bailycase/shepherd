@@ -21,10 +21,6 @@ extension ShepherdViewModel {
         })
     }
 
-    func handleRemoteWorktree(_ agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
-        try await worktrees.worktree(agentID, query: query)
-    }
-
     func verifyCheckoutAvailable(_ cwd: String) throws {
         try worktrees.verifyCheckoutAvailable(cwd)
     }

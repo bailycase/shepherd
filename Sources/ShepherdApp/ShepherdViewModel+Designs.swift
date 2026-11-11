@@ -196,7 +196,7 @@ extension ShepherdViewModel {
             adopt(canonical)
         }
         let defaults = settings.agentDefaults
-        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: model ?? settings.defaultModel(piHome: server.pi.home),
+        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: model ?? settings.defaultModel(piHome: pi.home),
                                     thinking: thinking ?? defaults.thinking, initialPrompt: brief)
         config.initialImages = images
         config.initialName = design.name
@@ -474,15 +474,15 @@ final class NewDesignState {
     /// This Mac's model and level (Settings, else pi's default model) and its catalog, the
     /// catalog read once.
     private func loadDefaults(_ vm: ShepherdViewModel) {
-        if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
+        if !edited.model { model = vm.settings.defaultModel(piHome: vm.pi.home) ?? "" }
         if !edited.thinking { thinking = vm.settings.defaultThinking }
         guard listing == nil, !loadingDefaults else { return }
         loadingDefaults = true
-        let server = vm.server
+        let pi = vm.pi
         Task {
             defer { loadingDefaults = false }
-            let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
-            let catalog = await ModelCatalog.loadLocal(from: server.pi.catalog)
+            let listing = await vm.modelListing()
+            let catalog = await ModelCatalog.loadLocal(from: pi.catalog)
             self.listing = listing
             self.catalog = catalog
         }

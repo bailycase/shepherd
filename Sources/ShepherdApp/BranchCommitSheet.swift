@@ -209,7 +209,7 @@ struct BranchCommitSheet: View {
         error = nil
         let paths = current.info.files.filter { current.selected.contains($0.id) }.flatMap(\.paths)
         Task {
-            let message = await ReviewCommitGit.draftMessage(root: current.info.repository, paths: paths, pi: vm.server.pi) {
+            let message = await ReviewCommitGit.draftMessage(root: current.info.repository, paths: paths, pi: vm.pi) {
                 await LoginShell.run($0, cwd: $1, timeout: 45)
             }
             form?.title = message.title

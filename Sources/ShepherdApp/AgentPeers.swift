@@ -9,7 +9,7 @@ import ShepherdSessions
 extension ShepherdViewModel {
     func installAgentPeerControl() {
         server.serveAgentPeers(AgentPeerHosting(
-            defaults: { [unowned self] in (settings.defaultModel(piHome: server.pi.home), settings.defaultThinking) },
+            defaults: { [unowned self] in (settings.defaultModel(piHome: pi.home), settings.defaultThinking) },
             startAgent: { [unowned self] config in try await startAgent(config, selectAfter: false) },
             deleteAgent: { [unowned self] id, done in deleteAgent(id, completion: done) },
             moveThread: { [unowned self] id, spaceID in try await moveThread(id, to: spaceID) }))

@@ -69,7 +69,7 @@ extension ShepherdViewModel {
         let config = NewAgentConfig(
             spaceID: space.id,
             workingDirectory: identity.path,
-            model: settings.defaultModel(piHome: server.pi.home),
+            model: settings.defaultModel(piHome: pi.home),
             thinking: settings.agentDefaults.thinking,
             initialPrompt: nil,
             initialName: (identity.branch as NSString).lastPathComponent,
@@ -280,7 +280,7 @@ extension ShepherdViewModel {
         if config.piSessionID == nil {
             let empty = PiSessionPreview.empty(
                 sessionID: agent.effectivePiSessionID,
-                model: config.model ?? PiConfig.defaultModel(in: server.pi.home),
+                model: config.model ?? PiConfig.defaultModel(in: pi.home),
                 thinking: config.thinking.rawValue)
             threadStores.store(for: agentID).preview(opening.map { $0.preview(empty) } ?? empty)
         }
@@ -327,7 +327,7 @@ extension ShepherdViewModel {
             name: config.initialName, piSessionID: config.piSessionID, agentID: config.reservedAgentID,
             worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
         // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
-        let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: server.pi.home),
+        let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: pi.home),
                                            thinking: config.thinking.rawValue)
         let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id)
         threadStores.store(for: id).preview(opening.map { $0.preview(empty) } ?? empty)
