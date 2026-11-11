@@ -321,6 +321,10 @@ extension ShepherdViewModel {
     /// The person changed files in `agentID`'s working tree (a Files-tab Save): the Changes tab,
     /// which is out of sight while they edit, reloads the next time it shows.
     func workingTreeChanged(_ agentID: AgentID) {
+        // The header's chip: the host reads the checkout again (an older host doesn't know how).
+        if let ref = localRef(agentID), localHost?.supportsCheckoutRead == true {
+            Task { try? await remoteHosts.agentAction(ref, action: .readCheckout) }
+        }
         guard let session = reviewSessions.values.first(where: { $0.agentID == agentID }), !session.workingTreeChanged else { return }
         session.workingTreeChanged = true
     }

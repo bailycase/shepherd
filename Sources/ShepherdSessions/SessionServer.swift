@@ -301,7 +301,8 @@ public final class SessionServer: @unchecked Sendable {
     /// A native client requested a restored thread whose process has not started yet.
     /// Delivered on main; hidden layout mounting is not demand.
     public var onNativeThreadDemand: ((AgentID) -> Void)?
-    /// This Mac's app shows a thread (`focusThread`): its checkout is read again. Delivered on main.
+    /// This Mac's app shows a thread (`focusThread`), or asks (`readCheckout`): its checkout is read
+    /// again. Delivered on main.
     public var onThreadFocused: ((AgentID) -> Void)?
     /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
     /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
@@ -2775,7 +2776,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             // An action of a capability this host does not offer (an older host would not know it).
-            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
+            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
                 send(.error(id: id, code: "unsupported", message: "This host does not take this action."), to: client)
                 return
             }

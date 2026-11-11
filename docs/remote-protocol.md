@@ -195,6 +195,9 @@
     even with a persisted session ID (it may predate a host restart); repeated demand is idempotent.
     Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
     polls never demand processes; clients of older hosts keep the existing attach-only path.
+    `readCheckout`, behind `checkout.read.v1`, has the host read the thread's branch and changed
+    files again after a change no state carries (a file saved in the app's Files tab); this
+    Mac's `focusThread` does the same for the thread it shows.
   - **Terminal compatibility** (no wire or capability change): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
     A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or
