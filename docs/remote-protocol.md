@@ -45,7 +45,8 @@
   to, and their execution hints), and answers the host's `projectPlacement` and
   `projectWorkerThread` relays through its connection to exactly that host and binding: a Project
   the host owns places work on another Mac only while this Mac's app runs, and says to open it
-  otherwise.
+  otherwise. It also answers `browserPageURL` (the address of its page for an agent a viewer
+  claims; none with the app quit).
   Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
   run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
@@ -183,8 +184,8 @@
     answered by the server itself; thread snapshots carry `turnChanges`; `changesRevertFile`
     behind `changes.revert.v1` reverts one file of an uncommitted list to HEAD, refused when the
     file changed since the list's revision, the working tree only, as Undo; a read's `cwd`, behind
-    `changes.cwd.v1`, reviews the repository the agent's `review_diff` asked for, refused for any
-    other folder than that and the agent's own). Older hosts review the
+    `changes.cwd.v1`, reviews the repository the agent's `review_diff` asked for, kept in the
+    agent's state across a host restart, refused for any other folder than that and the agent's own). Older hosts review the
     working tree only (`review`). The terminal panel's own actions on an agent's terminals
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older

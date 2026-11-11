@@ -311,7 +311,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var reviewSentAt: [SidePaneOwner: Double] = [:]
     /// Host-side utility terminals (a remote `gh auth login`) opened for a remote agent,
     /// shown in place of the agent's own layout while `remoteInspectingAgent` is set.
-    var hostRemoteInspectors: [String: TabID] = [:]
     var remoteInspectorTabs: [RemoteAgentRef: TabID] = [:]
     var remoteInspectingAgent: RemoteAgentRef?
     var remoteInspectionRequest = UUID()

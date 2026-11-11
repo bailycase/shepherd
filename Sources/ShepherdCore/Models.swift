@@ -171,6 +171,10 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// is recorded into `worktreeBranch`: Delete Worktree deletes it, never the switched-to
     /// branch. Nil until such a switch (then `worktreeBranch` is still the original).
     public var worktreeOriginalBranch: String?
+    /// The folder the agent's latest `review_diff` asked to review (its `cwd`), the one folder
+    /// besides its own a `changes*` read may name. Persisted, so it outlives a host restart.
+    /// Nil until such a review, and from older state files.
+    public var reviewTarget: String?
     /// The base the worktree branched from ("origin/main", "feat/x") —
     /// recorded at creation so the branch card compares and updates against
     /// the branch the work actually started from. Decodes nil from older state files.
@@ -300,7 +304,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeOriginalBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
+        case piSessionID, worktreeBranch, worktreeOriginalBranch, reviewTarget, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
         case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted
     }
 
@@ -324,6 +328,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before worktree agents existed.
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeOriginalBranch = try c.decodeIfPresent(String.self, forKey: .worktreeOriginalBranch)
+        reviewTarget = try c.decodeIfPresent(String.self, forKey: .reviewTarget)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
         worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
         // Absent before Recents, and from hosts that don't report them.
@@ -368,6 +373,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(piSessionID, forKey: .piSessionID)
         try c.encodeIfPresent(worktreeBranch, forKey: .worktreeBranch)
         try c.encodeIfPresent(worktreeOriginalBranch, forKey: .worktreeOriginalBranch)
+        try c.encodeIfPresent(reviewTarget, forKey: .reviewTarget)
         try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
         try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
         try c.encodeIfPresent(lastActiveAt, forKey: .lastActiveAt)

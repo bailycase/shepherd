@@ -48,6 +48,13 @@ extension ShepherdViewModel {
                     do { answer(.nativeThread(result: try await executors.workerThread(host, agentID, request))) }
                     catch { answer(Self.relayFailure(error)) }
                 }
+            case .browserPageURL(let agentID):
+                // The host's own page for the agent is this app's, for a paired viewer that claims it.
+                guard let url = self.browsers.existing(agentID)?.tabs.agentTarget?.url,
+                      BrowserDriveURL.offered(url.absoluteString) != nil else {
+                    return answer(.failed(code: "no_page", message: "No page is open for this agent."))
+                }
+                answer(.done(text: url.absoluteString))
             }
         }
     }

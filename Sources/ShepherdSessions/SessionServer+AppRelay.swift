@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// What an agent asks of Shepherd's window, on a host with none: `review_diff` and
-/// `project_delete`'s confirmation go to the app connected over `host.sock` (`relayToApp`), which
+/// What an agent asks of Shepherd's window, on a host with none: `review_diff`,
+/// `project_delete`'s confirmation and a claimed browser page's address go to the app connected over `host.sock` (`relayToApp`), which
 /// answers. The other `project_*` tools change only the workspace, so the
 /// host answers them itself.
 extension SessionServer {
@@ -30,6 +30,13 @@ extension SessionServer {
                     }
                     respond(.submitted(text: Self.reviewWindowClosed))
                 }
+            }
+        }
+        // A paired viewer claims an agent's browser: the page, and so its address, is the app's.
+        onBrowserPageURL = { [weak self] agentID, answer in
+            guard let self else { return answer(nil) }
+            relayToApp(.browserPageURL(agentID: agentID)) { result in
+                if case .done(let url)? = result { answer(url) } else { answer(nil) }
             }
         }
         // A paired device's Update this Mac: Sparkle runs in this Mac's app, which asks the host

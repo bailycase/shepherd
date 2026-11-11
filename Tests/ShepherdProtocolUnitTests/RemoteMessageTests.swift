@@ -793,6 +793,7 @@ struct RemoteReplyTests {
         .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
         .agentNotify(agentID: AgentID(rawValue: "a"), title: "CI passed", body: "PR #42 is green"),
         .appRelay(token: 6, job: .review(agentID: AgentID(rawValue: "a"), cwd: "/tmp/acme-web", reference: "pr")),
+        .appRelay(token: 6, job: .browserPageURL(agentID: AgentID(rawValue: "a"))),
         .appRelay(token: 7, job: .confirmSpaceDelete(spaceID: SpaceID(rawValue: "6f1c2a9e-3b7d-4c51-9e2a-0d4b8f7a1c34"))),
         .appRelay(token: 8, job: .hostUpdate(request: .install(offerID: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!, authorized: true))),
         .appRelay(token: 9, job: .projectPlacement(

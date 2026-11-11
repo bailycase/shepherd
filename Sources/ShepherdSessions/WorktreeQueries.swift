@@ -281,6 +281,7 @@ extension SessionServer {
     public func serveAgentQueries(_ hosting: WorktreeHosting) -> WorktreeQueries {
         let queries = WorktreeQueries(server: self)
         queries.hosting = hosting
+        verifyCheckoutAvailable = { [weak queries] in try queries?.verifyCheckoutAvailable($0) }
         let children = HostedChildren()
         onAgentChildren = { agentID, rows in MainActor.assumeIsolated { children.runs.apply(agentID: agentID, children: rows) } }
         onRemoteAgentQuery = { [weak self] agentID, query, local, completion in
