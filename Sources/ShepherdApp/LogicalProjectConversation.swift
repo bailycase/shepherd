@@ -100,8 +100,7 @@ struct ConversationThread: View {
 
     private var workingDirectory: String? {
         // Like preview, read the owner's snapshot without observing agent removal and re-picking the thread's store.
-        let owner = vm.localHost?.state ?? vm.server.state
-        guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }),
+        guard let owner = vm.localHost?.state, let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }),
               let paneID = record.paneID else { return nil }
         return owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID)?.cwd
     }
@@ -111,8 +110,8 @@ struct ConversationThread: View {
     private var preview: NativeThreadStore.Preview? {
         // The owner's own snapshot, not the view model's observed state: the page must not re-pick its store when the agent changes.
         // The background host's, as its client (observed, but the store is picked by the agent's ID alone).
-        let owner = vm.localHost?.state ?? vm.server.state
-        guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }), let paneID = record.paneID,
+        guard let owner = vm.localHost?.state, let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }),
+              let paneID = record.paneID,
               let pane = owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID) else { return nil }
         return PiSessionFile.previewLoader(sessionID: record.effectivePiSessionID, cwd: pane.cwd, sessionsRoot: vm.pi.sessionsRoot)
     }
@@ -138,7 +137,7 @@ struct ConversationThread: View {
     }
 
     private var request: NativeThreadStore.Request {
-        if agent != nil, case .host(let host) = ref.home {
+        if agent != nil, case .host(let host) = vm.projectOwner(ref.home) {
             return { [vm, projectID = ref.id] native in
                 guard case .native(let result) = try await vm.remoteHosts.projectRuntime(
                     hostID: host, request: .conversation(projectID: projectID, request: native)) else {
@@ -147,17 +146,14 @@ struct ConversationThread: View {
                 return result
             }
         }
-        guard let agent else {
+        guard agent != nil else {
             // No coordinator exists until the first message: the thread is an empty, ready one (no turns, nothing that can be
             // steered), so the composer shows and no connection is claimed lost. It accepts a send, which is the Project's own
             // (the store's `send` is never called); images are the Project owner's to carry (`ProjectComposerSend.carriesImages`).
             return { _ in .snapshot(value: Self.emptySnapshot) }
         }
-        // The owner's own Project path, the one a remote Project reads through: the coordinator's ID is reserved before its agent is
-        // created, and only this path answers that gap with `native_starting` (the thread then waits quietly). The ordinary native
-        // dispatcher refuses an agent it does not hold as "no longer exists", which the thread would draw as a lost connection. A
-        // deleted Project or a failed launch still answers with its real error, never a healthy empty thread.
-        return { [vm, projectID = ref.id] in try await vm.server.projectConversation(projectID, request: $0) }
+        // No host connected yet.
+        return { _ in throw BackgroundHostClient.HostStarting() }
     }
 
     private static let emptySnapshot = NativeThreadSnapshot(piSessionID: "project-empty", generation: "0", revision: 0, running: false,

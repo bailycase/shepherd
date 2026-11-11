@@ -931,7 +931,6 @@ final class ShepherdViewModel {
         server.onAgentProviderError = { agentID, provider, message in
             MainActor.assumeIsolated { rotation.providerError(agentID, provider: provider, message: message) }
         }
-        installProjectControl()
         installReviewHandler()
         installDesignRenderHandler()
         installPullRequestLinks()

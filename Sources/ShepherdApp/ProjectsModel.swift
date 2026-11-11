@@ -529,15 +529,11 @@ extension ShepherdViewModel {
         if let madeProjects { return madeProjects }
         let model = ProjectsModel { [weak self] host, request in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
-            // This Mac's spaces are the background host's while the app is its client.
-            if host.id == "local", let owner = self.localHost {
+            // This Mac's spaces are the background host's.
+            if host.id == "local" {
+                guard let owner = self.localHost else { throw BackgroundHostClient.HostStarting() }
                 return try await self.remoteHosts.projects(hostID: owner.id, endpointID: owner.endpointID, request: request)
             }
-            if host.id == "local", case .organize(let id, let name, let parent) = request {
-                _ = try await self.handleProjectRequest(.edit(projectID: id, request: ProjectEdit(name: name, parentProjectID: parent?.rawValue ?? "")))
-                return try await self.server.projects.request(.list(offset: 0), state: self.server.state)
-            }
-            if host.id == "local" { return try await self.server.projects.request(request, state: self.server.state) }
             guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown space host.") }
             return try await self.remoteHosts.projects(hostID: id, endpointID: host.endpointID, request: request)
         }
@@ -551,8 +547,8 @@ extension ShepherdViewModel {
         }
         model.loadModels = { [weak self] host in
             // Only this Mac's catalog is at hand; another host's space offers its current and global model.
-            guard host.id == "local", let server = self?.server else { return [] }
-            return await Task.detached(priority: .userInitiated) { server.modelListing().models }.value
+            guard host.id == "local", let self else { return [] }
+            return await self.modelListing().models
         }
         madeProjects = model
         return model
@@ -562,22 +558,6 @@ extension ShepherdViewModel {
         ChildProjectModel(parentPath: path, parentName: name) { [weak self] request in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
             _ = try await self.handleProjectRequest(request)
-        }
-    }
-
-    func installProjectControl() {
-        server.onProjectRequest = { [weak self] request, respond in
-            MainActor.assumeIsolated {
-                _ = Task<Void, Never> { @MainActor in
-                    guard let self else {
-                        respond(.failure(ProjectFileError("unavailable", "Shepherd is closing.")))
-                        return
-                    }
-                    do { respond(.success(try await self.handleProjectRequest(request))) }
-                    catch let error as ProjectFileError { respond(.failure(error)) }
-                    catch { respond(.failure(ProjectFileError("failed", String(describing: error)))) }
-                }
-            }
         }
     }
 

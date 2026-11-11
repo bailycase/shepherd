@@ -39,12 +39,12 @@ extension ShepherdViewModel {
         return home
     }
 
-    /// The hosts the Project's OWNER knows: its own runtime answers for this Mac, and a remote owner answers for itself.
+    /// The hosts the Project's OWNER knows: the owning host answers for itself.
     func projectHostOptions(of home: LogicalProjectHome) async throws -> [ProjectHostOption] {
         var result: ProjectRuntimeResult = .hosts([])
         switch projectOwner(home) {
         case .local:
-            result = try await projectCoordinator.perform(ProjectRuntimeTransport.hosts)
+            throw BackgroundHostClient.HostStarting()
         case .host(let id):
             result = try await remoteHosts.projectRuntime(hostID: id, request: ProjectRuntimeTransport.hosts)
         }
@@ -59,10 +59,10 @@ extension ShepherdViewModel {
         return model
     }
 
-    /// One owner request: this Mac's server, or the connected host that owns the Project.
+    /// One owner request: the connected host that owns the Project (the background host for This Mac's).
     private func sendLogicalProjects(_ home: LogicalProjectHome, _ request: LogicalProjectsRequest) async throws -> LogicalProjectsResult {
         switch projectOwner(home) {
-        case .local: return try await server.logicalProjects(request)
+        case .local: throw BackgroundHostClient.HostStarting()
         case .host(let id): return try await remoteHosts.logicalProjects(hostID: id, request: request)
         }
     }
@@ -75,12 +75,12 @@ extension ShepherdViewModel {
         }
     }
 
-    /// A Project action at the revision shown, run by the Project's owner: this Mac's runtime, or the owning host's through
+    /// A Project action at the revision shown, run by the Project's owning host (the background host for This Mac's) through
     /// `ProjectRuntimeTransport.action`. A host that does not serve it (an older one) says `update_required`, and nothing runs here.
     private func performProjectRuntime(_ ref: LogicalProjectRef, _ revision: UInt64, _ request: ProjectRuntimeRequest) async throws -> Project {
         switch projectOwner(ref.home) {
         case .local:
-            return try await projectCoordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
+            throw BackgroundHostClient.HostStarting()
         case .host(let id):
             let transport = ProjectRuntimeTransport.action(projectID: ref.id, expectedRevision: revision, request: request)
             guard case .project(let project) = try await remoteHosts.projectRuntime(hostID: id, request: transport) else {
@@ -95,7 +95,7 @@ extension ShepherdViewModel {
                                        _ request: NativeThreadRequest) async throws -> NativeThreadResult {
         switch projectOwner(ref.home) {
         case .local:
-            return try await server.answerProjectQuestion(ref.id, expectedRevision: revision, taskID: task, request: request)
+            throw BackgroundHostClient.HostStarting()
         case .host(let id):
             let transport = ProjectRuntimeTransport.answer(projectID: ref.id, expectedRevision: revision, taskID: task, request: request)
             guard case .native(let result) = try await remoteHosts.projectRuntime(hostID: id, request: transport) else {
@@ -249,7 +249,7 @@ extension ShepherdViewModel {
             let transport = ProjectRuntimeTransport.worker(projectID: ref.id, taskID: task, request: native)
             let result: ProjectRuntimeResult
             switch self.projectOwner(ref.home) {
-            case .local: result = try await self.projectCoordinator.perform(transport)
+            case .local: throw BackgroundHostClient.HostStarting()
             case .host(let host): result = try await self.remoteHosts.projectRuntime(hostID: host, request: transport)
             }
             guard case .native(let value) = result else {
@@ -376,8 +376,7 @@ extension ShepherdViewModel {
     func ownerModelIDs(of home: LogicalProjectHome) async -> [String] {
         switch projectOwner(home) {
         case .local:
-            let server = self.server
-            return await Task.detached(priority: .userInitiated) { server.modelListing().models }.value
+            return []
         case .host(let id):
             return (try? await remoteHosts.listModels(hostID: id))?.models ?? []
         }
