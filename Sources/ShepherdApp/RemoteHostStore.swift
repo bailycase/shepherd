@@ -309,8 +309,8 @@ final class RemoteHostStore {
     /// page shows it. Lookups by host id (`allConnections`) still find it: requests the app routes
     /// to it go that way.
     var connections: [Connection] { pairedConnections }
-    /// The background host on this Mac: This Mac's Settings pages read and change its stores, never
-    /// the idle in-process server's. Nil in process; throws while the host is away.
+    /// The background host on this Mac: This Mac's Settings pages read and change its stores. Nil
+    /// before it is added; throws while the host is away.
     func thisMacHost() throws -> RemoteHostClient? {
         guard let host = localHost else { return nil }
         guard host.phase == .connected, let client = host.client else { throw RemoteHostClientError.disconnected }

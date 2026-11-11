@@ -57,8 +57,7 @@ extension PreviewTests {
             }
             let vm = workspace.vm
             vm.openDestination(.missions)
-            let page = vm.thisMacMissions
-            #expect((page is RemoteMissionDriver) == (mode == "client"))
+            let page = try #require(vm.thisMacMissions)
             for (id, name) in [(MissionID?.none, "list"), (fixture.draft.id, "map")] {
                 page.selectedID = id
                 try await Preview.render("this-mac-missions-\(name)-\(mode)", size: CGSize(width: 1440, height: 900),

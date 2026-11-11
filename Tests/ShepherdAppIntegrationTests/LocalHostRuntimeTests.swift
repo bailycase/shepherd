@@ -206,7 +206,7 @@ struct LocalHostRuntimeTests {
         // The page is This Mac's: the host's missions, through its connection.
         s.vm.openMission(mission.id)
         #expect(s.vm.missionsHost == nil)
-        let page = try #require(s.vm.thisMacMissions as? RemoteMissionDriver)
+        let page = try #require(s.vm.thisMacMissions)
         #expect(page.hostID == s.hosts.localHost?.id && page.selectedID == mission.id)
         try await eventuallyOnMain("the page reads the host's missions") { page.records.map(\.id) == [mission.id] }
 
@@ -299,7 +299,7 @@ struct LocalHostRuntimeTests {
         let s = try await Self.setUp()
         defer { s.stop() }
         s.vm.openNewMission()
-        let page = try #require(s.vm.thisMacMissions as? RemoteMissionDriver)
+        let page = try #require(s.vm.thisMacMissions)
         #expect(page.startRequested)
         await page.refreshModels()
         #expect(page.availableSpaces.map(\.id) == [s.space.id])

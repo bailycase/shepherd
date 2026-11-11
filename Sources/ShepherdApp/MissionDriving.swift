@@ -169,7 +169,7 @@ final class RemoteMissionDriver: MissionDriving {
         }
         let steerable = attempt.status == .running && mission.run?.phase.active == true
         let store = isLocalHost ? vm.threadStores.store(for: agentID) : vm.remoteThreadStores.store(for: ref)
-        // This Mac's session files are the app's to read, as in process: a finished step shows its history.
+        // This Mac's session files are the app's to read: a finished step shows its history.
         var preview: NativeThreadStore.Preview?
         if isLocalHost, let agent = connection?.state.agents.first(where: { $0.id == agentID }),
            let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path {

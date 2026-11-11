@@ -194,14 +194,13 @@ extension ShepherdViewModel {
         }
     }
 
-    /// This Mac's missions behind the Missions page: the background host's, as its client (it runs
-    /// them), else this app's own.
-    var thisMacMissions: any MissionDriving { localHost.flatMap { missionDriver(for: $0.id) } ?? missions }
+    /// This Mac's missions behind the Missions page: the background host's (it runs them); nil
+    /// until it is added.
+    var thisMacMissions: RemoteMissionDriver? { localHost.flatMap { missionDriver(for: $0.id) } }
 
     /// The mission This Mac's page shows, read without making a driver while a view draws.
     private var thisMacMissionsSelection: MissionID? {
-        if let host = localHost { return remoteMissionDrivers[host.id]?.selectedID }
-        return missions.selectedID
+        localHost.flatMap { remoteMissionDrivers[$0.id]?.selectedID }
     }
 
     /// A host's missions behind the Missions page, made on first use; nil for a host that is gone.
@@ -220,7 +219,7 @@ extension ShepherdViewModel {
             guard let driver = missionDriver(for: host) else { return }
             driver.selectedID = id
         } else {
-            thisMacMissions.selectedID = id
+            thisMacMissions?.selectedID = id
         }
         missionsHost = host
         openDestination(.missions)
@@ -229,7 +228,7 @@ extension ShepherdViewModel {
     /// The Missions section's "New mission": the Missions page's start page, on This Mac.
     func openNewMission() {
         guard settings.missionsEnabled else { return }
-        let page = thisMacMissions
+        guard let page = thisMacMissions else { return }
         page.selectedID = nil
         missionsHost = nil
         page.startRequested = true

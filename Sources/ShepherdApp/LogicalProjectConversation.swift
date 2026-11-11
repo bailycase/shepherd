@@ -131,7 +131,7 @@ struct ConversationThread: View {
     private var store: NativeThreadStore {
         guard let agent else { return vm.emptyProjectConversation }
         switch ref.home {
-        case .local: return vm.projectCoordinator.conversationStore(agentID: agent) ?? vm.emptyProjectConversation
+        case .local: return vm.threadStores.store(for: agent)
         case .host(let host): return vm.remoteThreadStores.store(for: RemoteAgentRef(hostID: host, agentID: agent))
         }
     }
