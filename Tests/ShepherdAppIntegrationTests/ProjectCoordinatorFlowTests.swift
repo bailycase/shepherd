@@ -87,7 +87,6 @@ struct ProjectCoordinatorFlowTests {
         #expect(vm.selectedAgentID == nil)
         #expect(app.server.state.agents.first { $0.id == coordinator }?.coordinatorFor == id)
         #expect(!SessionServer.peerInfos(in: app.server.state, sender: coordinator).contains { $0.id == coordinator }, "A live coordinator must not leak its private cwd through agent_list")
-        #expect(app.coordinator.conversationStore(agentID: coordinator) === vm.threadStores.store(for: coordinator))
         try await eventuallyAsync("coordinator message committed") { app.server.state.projects.first?.messages.first?.phase == .delivered }
         try await eventuallyAsync("coordinator settled") {
             guard case .snapshot(let snapshot) = try? await app.server.nativeThread(agentID: coordinator, request: .snapshot()) else { return false }

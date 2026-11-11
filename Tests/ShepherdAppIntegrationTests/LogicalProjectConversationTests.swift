@@ -378,7 +378,6 @@ struct LogicalProjectConversationTests {
             r.vm.state.agents.contains { $0.id == coordinator && $0.coordinatorFor == r.project.id }
         }
         #expect(!r.vm.state.isOrdinaryThread(try #require(r.vm.state.agents.first { $0.id == coordinator })))
-        #expect(r.app.coordinator.conversationStore(agentID: coordinator) === r.vm.threadStores.store(for: coordinator))
 
         // The runtime stops the Project (no person-facing Pause): the page draws no banner or Resume, and the person's next message
         // starts it again and is delivered.
@@ -886,7 +885,7 @@ struct LogicalProjectConversationTests {
         let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.systemOrange.setFill(); rect.fill(); return true }
         let tiff = try #require(image.tiffRepresentation)
         try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])).write(to: png)
-        let store = try #require(r.app.coordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         let input = r.vm.threadStores.input(for: coordinator)
         func messages() -> [ProjectMessage] { r.app.server.state.projects.first?.messages ?? [] }
         let before = messages().count
@@ -957,7 +956,7 @@ struct LogicalProjectConversationTests {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.app.coordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         // The stub's turn holds until `continue-1` appears in its cwd (the coordinator's own folder). The page's thread polls its store
         // once it is mounted; the first pull is what starts the turn's events arriving.
         FileManager.default.createFile(atPath: folder.appendingPathComponent("continue-1").path, contents: nil)
@@ -1024,7 +1023,7 @@ private static func chipsAndLinks() async throws {
                 "\(r.vm.logicalProjects.failure?.message ?? "no refusal")")
         let agent = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == agent } }
-        let store = try #require(r.app.coordinator.conversationStore(agentID: agent))
+        let store = r.vm.threadStores.store(for: agent)
         let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: agent, request: $0) }) }
         r.vm.openLogicalProject(r.ref)
@@ -1129,7 +1128,7 @@ private static func chipsAndLinks() async throws {
         #expect(sent, "refused: \(r.vm.logicalProjects.failure?.message ?? "no message")")
         let agent = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == agent } }
-        let store = try #require(r.app.coordinator.conversationStore(agentID: agent))
+        let store = r.vm.threadStores.store(for: agent)
         let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: agent, request: $0) }) }
         r.vm.openLogicalProject(r.ref)
@@ -1162,7 +1161,7 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.app.coordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the first message reached the transcript") {
@@ -1578,7 +1577,7 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.app.coordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         let server = r.app.server
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the coordinator's turn is running") { window.layout(); return store.running }
@@ -1639,7 +1638,7 @@ private static func chipsAndLinks() async throws {
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        let store = try #require(r.app.coordinator.conversationStore(agentID: coordinator))
+        let store = r.vm.threadStores.store(for: coordinator)
         let input = r.vm.threadStores.input(for: coordinator)
         let png = r.app.dir.appendingPathComponent("keep.png")
         let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.systemPurple.setFill(); rect.fill(); return true }

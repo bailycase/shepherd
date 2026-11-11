@@ -26,9 +26,12 @@ struct ChildProjectTests {
         let reply = try await Task.detached { try client.readReply() }.value
         guard case .projectResult(1, let child?, true) = reply else { Issue.record("Unexpected result: \(reply)"); return }
         #expect(FileManager.default.fileExists(atPath: path))
-        #expect(vm.state.spaces.contains(child))
-        #expect(vm.sidebarTree.projects.contains { $0.name == "Child" })
-        #expect(vm.projects.visible.first { $0.project.name == "Child" }?.parentName == "Parent")
+        // Settings ▸ Projects reads again when the spaces it knows change (its `.task(id: projectsSources)`).
+        try await eventuallyAsync("the child in the sidebar and Settings, as the host says") {
+            _ = await vm.projects.load(vm.projectsSources)
+            return vm.state.spaces.contains(child) && vm.sidebarTree.projects.contains { $0.name == "Child" }
+                && vm.projects.visible.first { $0.project.name == "Child" }?.parentName == "Parent"
+        }
         #expect(app.server.state.agents.count == 1)
         let keep = URL(fileURLWithPath: path).appendingPathComponent("keep.txt")
         try Data("untouched".utf8).write(to: keep)
