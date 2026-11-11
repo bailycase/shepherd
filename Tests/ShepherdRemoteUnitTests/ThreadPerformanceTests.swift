@@ -399,8 +399,11 @@ struct ThreadPerformanceTests {
         #expect(store.draft == "keep draft" && store.attachedFiles.count == 1)
     }
 
+    /// A replacement is only detached when it cannot grow the cached state on main: `long` is a single
+    /// line past the on-main tail budget, so it is all tail.
     @Test func revertingToACachedTextInvalidatesAnOlderDetachedReplacement() async {
-        let long = String(repeating: "words ", count: 1_500)
+        let long = String(repeating: "words ", count: NativeThreadStore.onMainTailBytes / 5)
+        #expect(long.utf8.count > NativeThreadStore.onMainTailBytes)
         let host = FakeHost(F.snapshot(messages: [F.assistant(long, thinking: long, id: "same")]))
         let store = manualStore()
         let loop = await start(store, host)
