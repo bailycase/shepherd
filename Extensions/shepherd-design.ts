@@ -468,7 +468,7 @@ export default function shepherdDesign(pi: ExtensionAPI) {
       if (result.created) lines.push("Give it a frame on the canvas with canvas_update (x, y, w, h, title).");
       const body = reportText(result.report);
       if (body) lines.push(body);
-      return text(lines.join("\n"), { revision: result.revision, created: result.created === true });
+      return text(lines.join("\n"), { revision: result.revision, created: result.created === true, ...(result.board ? { board: result.board } : {}) });
     },
   });
 
@@ -509,7 +509,7 @@ export default function shepherdDesign(pi: ExtensionAPI) {
       for (const warning of result.warnings ?? []) lines.push(`Warning: ${WARNINGS[warning] ?? warning}`);
       const body = reportText(result.report);
       if (body) lines.push(body);
-      return text(lines.join("\n"), { revision: result.revision, replaced });
+      return text(lines.join("\n"), { revision: result.revision, replaced, ...(result.board ? { board: result.board } : {}) });
     },
   });
 

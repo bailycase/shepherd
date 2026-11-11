@@ -129,6 +129,13 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
         }
     }
 
+    /// How the thread's agent wrote the board this copy holds, with board_write or board_edit
+    /// (ThreadBoardEdited): the board is already in the design, so there is nothing to add or discard.
+    public enum Written: String, Codable, Hashable, Sendable {
+        case created
+        case edited
+    }
+
     public var id: UUID
     public var agentID: AgentID
     /// The piece, pinned at the revision it was sent at.
@@ -159,6 +166,9 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var html: File?
     /// A board the agent drew (`Proposal`); nil for a piece the user sent. Absent from older copies.
     public var proposal: Proposal?
+    /// A board the agent wrote straight into the design (`Written`); nil for one the user sent or
+    /// the agent proposed. Absent from older copies.
+    public var written: Written?
     /// The element's markup as drawn, and the computed styles of it and what's under it (JSON).
     public var element: File?
     public var elementStyles: File?

@@ -20,7 +20,7 @@ public struct SHBoardCard<Actions: View>: View {
     /// The board's size in points: the picture's box before it lands, so nothing moves.
     let size: CGSize?
     let picture: Picture
-    /// Clicking the picture (the pane opens it); nil leaves it still.
+    /// Clicking the picture (the viewer opens it); nil leaves it still.
     let open: (() -> Void)?
     let actions: Actions
 
@@ -72,7 +72,7 @@ public struct SHBoardCard<Actions: View>: View {
             Group {
                 if let open {
                     Button(action: open) { drawn }.buttonStyle(.plain).shFocusRing(radius: SH.Radius.xs)
-                        .help("Open beside the thread").accessibilityLabel("Open \(board) beside the thread")
+                        .help("Open full size").accessibilityLabel("Open \(board) full size")
                 } else {
                     drawn.accessibilityLabel(board)
                 }

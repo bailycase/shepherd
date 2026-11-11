@@ -1328,6 +1328,28 @@ extension DesignReferenceIntegrationTests {
         }
     }
 
+    /// A thread's board_edit or board_write keeps the board as written beside the thread, for its
+    /// card (ThreadBoardEdited); a write that changed nothing keeps none.
+    @Test func aThreadsBoardWriteKeepsACopyForItsCard() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        h.server.setDesignsServed(true)
+        let g = try await granted(h)
+        try g.client.send(.designEditBoard(id: 1, agentID: g.pi.agent.id, designID: g.design, path: Self.board.rawValue,
+                                           edits: [.init(find: "Pay now", replace: "Pay")], baseRevision: nil))
+        guard case .designEdited(1, let edited, _) = try await g.client.reply(), let copy = edited.board else {
+            Issue.record("the edit kept no copy"); return
+        }
+        let kept = try #require(await h.server.designReferencePayload(agentID: g.pi.agent.id, payloadID: copy)?.payload)
+        #expect(kept.written == .edited && kept.proposal == nil && kept.picture != nil)
+        #expect(kept.reference.board == Self.board && kept.revision == edited.revision)
+
+        let same = DesignTests.board(root: Self.card.replacingOccurrences(of: "Pay now", with: "Pay"))
+        try g.client.send(.designWriteBoard(id: 2, agentID: g.pi.agent.id, designID: g.design, path: Self.board.rawValue, source: same, baseRevision: nil))
+        guard case .designWritten(2, let unchanged) = try await g.client.reply() else { Issue.record("the write was refused"); return }
+        #expect(!unchanged.changed && unchanged.board == nil)
+    }
+
     /// A drawn board has no grant, so a restart keeps it with its thread; a host's client settles it.
     @Test func aDrawnBoardOutlivesARestartAndAClientSettlesIt() async throws {
         let r = try RemoteHost()

@@ -748,6 +748,11 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
 /// Merge consecutive calls of one kind into bursts. A failed, stopped, or running call each
 /// stands alone; other tools merge only with the same tool.
 public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivityBurst] {
+    // A board written again later in the run keeps one card, the last write's: an earlier write's card gives way to its line.
+    var calls = calls
+    for index in calls.indices where calls[index].designBoard != nil && calls[index].board != nil {
+        if calls[(index + 1)...].contains(where: { $0.board == calls[index].board && $0.designBoard != nil }) { calls[index].designBoard = nil }
+    }
     var groups: [[NativeActivityCall]] = []
     for call in calls {
         // Each typed Project reference or explicit plan update owns its own card.

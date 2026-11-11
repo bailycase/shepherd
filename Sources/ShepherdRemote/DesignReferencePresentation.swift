@@ -113,8 +113,11 @@ public enum DesignReferencePresentation {
     /// The line above a board the agent drew: "Drew a board" or "Changed a board", and its meta
     /// ("B · Pay on phone · draft in Checkout redesign", "B · Pay on phone · from revision 13").
     public static func boardLine(_ payload: DesignReferencePayload) -> (label: String, meta: String)? {
-        guard let proposal = payload.proposal else { return nil }
         let board = payload.boardTitle ?? payload.reference.board?.stem ?? ""
+        if let written = payload.written {
+            return (written == .created ? "Drew a board" : "Changed a board", board + " · revision \(payload.revision)")
+        }
+        guard let proposal = payload.proposal else { return nil }
         return proposal.kind == .draft
             ? ("Drew a board", board + " · draft in " + payload.design)
             : ("Changed a board", board + " · from revision \(payload.revision)")

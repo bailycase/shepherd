@@ -110,6 +110,58 @@ extension ThreadPreviewTests {
             chips: Self.boardChips(freshness: .current))
     }
 
+    /// ThreadBoardEdited: the agent changed a board in the design with board_edit; the card shows
+    /// the board as written, at the revision the edit made.
+    @Test func threadBoardEdited() async throws {
+        var snapshot = Self.boardSnapshot(
+            asked: "Add the drop-off percent next to each count.",
+            said: "Done. Each count now has its drop-off percent beside it.",
+            after: "The card is the board as it is now, at revision 14.")
+        var edit = NativeThreadMessage(entryID: "e1", role: "toolResult", blocks: [.init(kind: .text, text: "Edited A.dc.html · 2 edits · revision 14")],
+                                       toolName: "board_edit", toolCallID: "e1", argumentsText: #"{"path":"A-Funnel-first.dc.html"}"#,
+                                       status: "complete", timestamp: Date().timeIntervalSince1970 * 1000 - 100_000)
+        edit.designBoard = Self.boardCopy
+        snapshot.messages.removeAll { $0.entryID == "g1" || $0.entryID == "s1" }
+        snapshot.messages.insert(edit, at: 1)
+        // The card reads a real kept copy, as the host keeps it: a payload that says the agent wrote the board, and its picture on disk.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("board-edited-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let png = NSBitmapImageRep(cgImage: Self.funnelPicture()).representation(using: .png, properties: [:])!
+        try png.write(to: folder.appendingPathComponent("board.png"))
+        var payload = DesignReferencePayload(id: Self.boardCopy, agentID: AgentID(rawValue: "preview"), reference: Self.boardReference.pinned(at: 14),
+                                             design: "Checkout redesign", boardTitle: "A · Funnel first", revision: 14, capturedAt: 0,
+                                             width: 560, height: 410,
+                                             picture: .init(name: "board.png", bytes: png.count, pixelWidth: 1120, pixelHeight: 820))
+        payload.boardPageTitle = "Checkout"
+        payload.written = .edited
+        let chips = DesignReferenceChips(agentID: AgentID(rawValue: "preview"), io: DesignReferenceChips.IO(payload: { _ in (payload, folder) }))
+        await chips.loadBoard(Self.boardCopy)
+        try await renderBoard("thread-board-edited", snapshot, chips: chips)
+    }
+
+    /// ThreadBoardEditedOpen: a click on the card opens the board full size over the thread, in the
+    /// image viewer (ThreadImageOpen): the picture on the scrim, with Copy and close in its pill.
+    @Test func threadBoardEditedOpen() async throws {
+        let chips = Self.boardChips(freshness: .current)
+        let fixture = ThreadFixture(Self.boardSnapshot(
+            asked: "Add the drop-off percent next to each count.",
+            said: "Done. Each count now has its drop-off percent beside it.",
+            after: "The card is the board as it is now, at revision 14."))
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        try await Preview.render("thread-board-edited-open", size: Self.boardSize, ready: { store.ready && !store.rows.isEmpty }) {
+            ZStack {
+                fixture.thread(title: "Build the checkout funnel page", workingDirectory: "~/Developer/dashboard-web")
+                    .environment(\.designReferences, chips)
+                SHImageViewer(name: "A · Funnel first", facts: "560 × 410 · revision 14",
+                              content: .picture(Image(decorative: Self.funnelPicture(), scale: 2)),
+                              caption: "Checkout redesign · revision 14 · Esc to close",
+                              copy: {}, pixels: CGSize(width: 1120, height: 820), close: {})
+            }
+        }
+    }
+
     /// ThreadBoardStale: the design moved on; the card keeps revision 13 and offers Show v14.
     @Test func threadBoardStale() async throws {
         try await renderBoard("thread-board-stale", Self.boardSnapshot(

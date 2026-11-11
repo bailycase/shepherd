@@ -291,7 +291,7 @@ test("design_read fences what it reads as data", async () => {
 test("board_write sends the whole board and reads back what Shepherd did", async () => {
   const results = [
     { revision: 5, changed: true, created: true, warnings: ["inner_html", "something_new"], boardCount: 1, title: "Checkout funnel" },
-    { revision: 6, changed: true, created: false, warnings: [], boardCount: 1 },
+    { revision: 6, changed: true, created: false, warnings: [], boardCount: 1, board: "7A51C0DE-0000-4000-8000-0000000000B1" },
     { revision: 6, changed: false, created: false, warnings: [], boardCount: 1 },
   ];
   let next = 0;
@@ -311,7 +311,9 @@ test("board_write sends the whole board and reads back what Shepherd did", async
     assert.equal(lines[2], "Warning: something_new", "an unknown warning still shows");
     assert.match(lines[3], /canvas_update/);
     assert.deepEqual(drew.details, { revision: 5, created: true });
-    assert.equal(firstLine(await tool.execute("t2", { path: "A.dc.html", source })), "Updated A.dc.html · revision 6");
+    const updated = await tool.execute("t2", { path: "A.dc.html", source });
+    assert.equal(firstLine(updated), "Updated A.dc.html · revision 6");
+    assert.deepEqual(updated.details, { revision: 6, created: false, board: "7A51C0DE-0000-4000-8000-0000000000B1" }, "the kept copy rides in details for the thread's card");
     assert.equal(firstLine(await tool.execute("t3", { path: "A.dc.html", source })), "A.dc.html is unchanged · revision 6");
     assert.equal(frames[1].baseRevision, undefined, "no base, no key");
     await assert.rejects(tool.execute("t4", { path: "A.dc.html", source, baseRevision: 1 }), /changed since revision 1 \(stale_revision\)/);

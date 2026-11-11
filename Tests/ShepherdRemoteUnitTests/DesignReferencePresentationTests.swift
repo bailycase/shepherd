@@ -182,6 +182,29 @@ struct DesignMentionTests {
         #expect(bursts[0].calls[0].designRef == "shepherd-design-ref://local/d1/A.dc.html@13")
     }
 
+    /// ThreadBoardEdited: a board the agent wrote into the design reads "Changed a board" at the revision it made;
+    /// a board it made reads "Drew a board". Only the last write of a board in a run keeps its card.
+    @Test func aWrittenBoardIsALineAndOneCardPerBoard() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"), revision: 14))
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 14, capturedAt: 0, width: 560, height: 410)
+        payload.written = .edited
+        #expect(DesignReferencePresentation.boardLine(payload)! == ("Changed a board", "A · Funnel first · revision 14"))
+        payload.written = .created
+        #expect(DesignReferencePresentation.boardLine(payload)!.label == "Drew a board")
+        #expect(DesignReferencePresentation.boardMeta(payload, freshness: .current).last == "revision 14")
+
+        func write(_ path: String, board: UUID) -> NativeActivityCall {
+            var message = NativeThreadMessage(entryID: "e-\(UUID())", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Edited \(path) · revision 14")],
+                                              toolName: "board_edit", toolCallID: UUID().uuidString, argumentsText: #"{"path":"\#(path)"}"#, status: "complete")
+            message.designBoard = board
+            return NativeActivityCall(message)
+        }
+        let first = UUID(), second = UUID(), other = UUID()
+        let bursts = nativeActivityBursts([write("A.dc.html", board: first), write("B.dc.html", board: other), write("A.dc.html", board: second)])
+        #expect(bursts.flatMap { $0.calls.map(\.designBoard) } == [nil, other, second])
+    }
+
     /// ThreadBoardDraft and ThreadBoardChange: a board the agent drew says where it stands, in its
     /// line, its meta and its note, until it is added, applied or discarded.
     @Test func aDrawnBoardSaysWhereItStands() throws {
