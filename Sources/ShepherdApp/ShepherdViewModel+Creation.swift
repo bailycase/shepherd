@@ -225,6 +225,11 @@ extension ShepherdViewModel {
         let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: pi.home),
                                            thinking: config.thinking.rawValue)
         let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id)
+        // Under Working while its opening turn starts, as the host's first turn will say.
+        if opening != nil || config.openingReferencesPending {
+            if config.openingReferencesPending { sidebarPreparingOpeningTurns.insert(id) }
+            sidebarOpeningTurns.insert(id)
+        }
         threadStores.store(for: id).preview(opening.map { $0.preview(empty) } ?? empty)
         // ponytail: polls for the host's push (it usually lands before the reply); a push waiter if this shows.
         for _ in 0..<100 where !state.agents.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
