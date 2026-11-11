@@ -384,7 +384,7 @@ extension SessionServer {
         guard startingTerminals.insert(paneID).inserted else { throw RemoteCreateAgentError("That terminal is starting.") }
         defer { startingTerminals.remove(paneID) }
         // No view has measured it yet: start at the grid this Mac's terminals last reported.
-        let grid = await enqueueValue { self.lastLocalGrid } ?? (80, 24)
+        let grid = await enqueueValue { self.lastLocalGrid } ?? (cols: 80, rows: 24)
         let info = try await createSession(params: CreateSessionParams(
             cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, cols: grid.cols, rows: grid.rows,
             env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
