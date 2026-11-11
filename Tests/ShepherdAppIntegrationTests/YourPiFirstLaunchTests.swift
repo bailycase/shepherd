@@ -61,16 +61,15 @@ struct YourPiFirstLaunchTests {
         return false
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
-    /// The start gate with logins to copy: nothing starts while the copy runs, not even the agent
-    /// on screen; once it is over, restored agents start signed in (the stub exits "No models
+    /// The first launch with logins to copy: the welcome holds while the copy runs; once it is
+    /// over, a restored agent the host starts comes up signed in (the stub exits "No models
     /// available" without a login in Shepherd's home) while the sheet still shows, with no
     /// click. Subscription sign-ins came over, and your pi is byte-identical.
     @Test func restoredAgentsWaitForTheCopyThenStartSignedInWithoutAClick() async throws {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi, inProcess: true)
+        let app = try AppHarness(pi: setup.pi)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         try Self.requireSignIn(in: space)
@@ -89,18 +88,16 @@ struct YourPiFirstLaunchTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true,
                                      welcomingYourPi: true, yourPi: model)
 
-        try await eventuallyOnMain("the copy to run with the restored agent's start asked for") {
-            copying.current && vm.sessions.startQueue.waiting.contains(id)
-        }
-        #expect(vm.holdsForWelcome && vm.sessions.startQueue.held && vm.sessions.startQueue.started.isEmpty)
-        #expect(Self.launch(of: sessionID) == nil, "held while the copy runs")
+        try await eventuallyOnMain("the copy to run") { copying.current }
+        #expect(vm.holdsForWelcome)
+        #expect(Self.launch(of: sessionID) == nil, "the host starts no settled agent")
 
         gate.signal()
         try await eventuallyOnMain("the sheet, done") { vm.yourPi.importSheet?.stage == .done }
         let server = app.server
         try await eventuallyAsync("the restored agent to serve, signed in", timeout: .seconds(20)) { await Self.serves(id, on: server) }
         #expect(vm.yourPi.importSheet != nil, "it started with the sheet still showing: no click")
-        #expect(!vm.holdsForWelcome && !vm.sessions.startQueue.held && !vm.cannotStart.contains(id))
+        #expect(!vm.holdsForWelcome && !vm.cannotStart.contains(id))
 
         let sheet = try #require(vm.yourPi.importSheet)
         #expect(sheet.report.first && sheet.survey.canStartAgents && sheet.missing.isEmpty && !sheet.stage.holdsAgents)
@@ -127,16 +124,14 @@ struct YourPiFirstLaunchTests {
         vm.finishImport()
         #expect(vm.yourPi.importSheet == nil)
     }
-#endif
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
-    /// The gate never blocks forever: a copy that overruns its deadline lets restored agents
-    /// start anyway, with no sheet.
+    /// The welcome never holds forever: a copy that overruns its deadline lets go, with no sheet,
+    /// and a restored agent starts.
     @Test func aCopyPastItsDeadlineNeverHoldsAgentsForever() async throws {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi, inProcess: true)
+        let app = try AppHarness(pi: setup.pi)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         let gate = DispatchSemaphore(value: 0)
@@ -149,10 +144,10 @@ struct YourPiFirstLaunchTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true,
                                      welcomingYourPi: true, yourPi: model)
 
-        try await eventuallyAsync("the restored agent's pi to start past the deadline") { Self.launch(of: agent.agent.effectivePiSessionID) != nil }
-        #expect(!vm.holdsForWelcome && !vm.sessions.startQueue.held && vm.yourPi.importSheet == nil)
+        try await eventuallyOnMain("the welcome to let go past the deadline") { !vm.holdsForWelcome && vm.yourPi.importSheet == nil }
+        _ = try? await app.server.nativeThread(agentID: agent.agent.id, request: .snapshot())
+        try await eventuallyAsync("the restored agent's pi to start") { Self.launch(of: agent.agent.effectivePiSessionID) != nil }
     }
-#endif
 
     /// Something still missing: a provider an agent (or the default model) uses has no login, key
     /// or custom provider in Shepherd's pi. The sheet asks for it, and only the agents that use
@@ -198,14 +193,13 @@ struct YourPiFirstLaunchTests {
         #expect(model.importSheet?.unresolvedDefault == nil && model.importSheet?.allSignedIn == true)
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// While the sheet asks for a missing provider, restored agents that use it wait (the sidebar
-    /// says "waiting") and the others start; Done or Skip for now starts the rest.
+    /// says "waiting"); Done or Skip for now ends the wait.
     @Test func agentsWaitingOnAMissingProviderStartWhenTheSheetCloses() async throws {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi, inProcess: true)
+        let app = try AppHarness(pi: setup.pi)
         defer { app.stop() }
         let (space, signedIn) = try setup.agent()
         var waiting = Fixture.agent("needs xai", in: space, cwd: space.path, piSession: SessionID())
@@ -217,16 +211,14 @@ struct YourPiFirstLaunchTests {
                                      welcomingYourPi: true, yourPi: model)
 
         try await eventuallyOnMain("the sheet to ask for xAI") { vm.yourPi.importSheet?.stage == .missing }
-        try await eventuallyAsync("the signed-in agent to start") { Self.launch(of: signedIn.agent.effectivePiSessionID) != nil }
-        #expect(Self.launch(of: waiting.agent.effectivePiSessionID) == nil)
-        #expect(vm.sessions.startQueue.isHeld(waiting.agent.id) && !vm.sessions.startQueue.isHeld(signedIn.agent.id))
         #expect(vm.waitingForImport == [waiting.agent.id])
+        let rows = vm.sidebarLists.recents + vm.sidebarLists.needsYou
+        #expect(rows.first { $0.id == .local(waiting.agent.id) }?.accessory == .text("waiting"))
+        #expect(rows.first { $0.id == .local(signedIn.agent.id) }?.accessory != .text("waiting"))
 
         vm.finishImport()
-        try await eventuallyAsync("the held agent to start once the sheet closes") { Self.launch(of: waiting.agent.effectivePiSessionID) != nil }
         #expect(vm.waitingForImport.isEmpty)
     }
-#endif
 
     /// Once the first copy has run, a launch copies nothing (a change in their pi stays there),
     /// shows no sheet, and starts restored agents at once.
@@ -236,26 +228,27 @@ struct YourPiFirstLaunchTests {
         defer { setup.remove() }
         #expect(setup.pi.copyYourPiOnce()?.first == true)
         try Data(#"{"xai": {"type": "api_key", "key": "$XAI_API_KEY"}}"#.utf8).write(to: setup.yours.appendingPathComponent("auth.json"))
-        let app = try AppHarness(pi: setup.pi, inProcess: true)
+        let app = try AppHarness(pi: setup.pi)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
 
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true, welcomingYourPi: true)
 
+        try await eventuallyOnMain("the welcome to let go") { !vm.holdsForWelcome }
+        _ = try? await app.server.nativeThread(agentID: agent.agent.id, request: .snapshot())
         try await eventuallyAsync("the restored agent's pi to start") { Self.launch(of: agent.agent.effectivePiSessionID) != nil }
         #expect(vm.yourPi.importSheet == nil && !vm.holdsForWelcome)
         let auth = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.home.appendingPathComponent("auth.json"))) as? [String: Any])
         #expect(auth["xai"] == nil && auth["anthropic"] != nil)
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A new user with no pi and no key in the environment sees only sign-in; skipping it is safe:
     /// every restored agent then waits on "not signed in".
     @Test func skippingSignInWithNoKeysLeavesEveryRestoredAgentWaitingNotSignedIn() async throws {
         try StubPi.installAsEngine()
         let setup = try Setup(yourPi: false)
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi, inProcess: true)
+        let app = try AppHarness(pi: setup.pi)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         try Self.requireSignIn(in: space)
@@ -265,7 +258,7 @@ struct YourPiFirstLaunchTests {
         try await eventuallyOnMain("the new user's sheet") { vm.yourPi.importSheet?.stage == .newUser }
         let sheet = try #require(vm.yourPi.importSheet)
         #expect(sheet.report.first && sheet.report.from == nil && sheet.stage.holdsAgents, "it asks to sign in, holding restored agents")
-        #expect(vm.holdsForWelcome && vm.sessions.startQueue.held && vm.sessions.startQueue.started.isEmpty)
+        #expect(vm.holdsForWelcome)
         #expect(vm.waitingForImport == [agent.agent.id])
         #expect(Self.launch(of: agent.agent.effectivePiSessionID) == nil)
 
@@ -279,7 +272,6 @@ struct YourPiFirstLaunchTests {
         #expect(store.startProblem?.kind == .notSignedIn)
         #expect(vm.cannotStart.contains(id) && vm.state.agents.contains { $0.id == id }, "the agent stays, waiting")
     }
-#endif
 
     /// A user with no pi whose Shepherd pi is already signed in (a sign-in made before this
     /// build) has nothing to be asked: no step shows, and restored agents aren't held.
@@ -320,7 +312,7 @@ struct YourPiFirstLaunchTests {
         try setup.pi.importedState().setExtension(copy.destination, on: true)
         let entry = setup.pi.home.appendingPathComponent(copy.destination).standardizedFileURL.path
         let before = try YourPiFixture.tree(setup.yours)
-        let app = try AppHarness(pi: setup.pi, inProcess: true)
+        let app = try AppHarness(pi: setup.pi)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         let id = agent.agent.id
@@ -329,6 +321,8 @@ struct YourPiFirstLaunchTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true)
 
         let server = app.server
+        // Its thread asks for it, as the one on screen does.
+        _ = try? await server.nativeThread(agentID: id, request: .snapshot())
         try await eventuallyAsync("the agent to start again, and serve without the extension", timeout: .seconds(20)) {
             guard StubPi.launches().filter({ $0.argv.contains(sessionID) }).count == 2,
                   case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
