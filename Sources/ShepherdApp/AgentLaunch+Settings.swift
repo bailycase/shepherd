@@ -40,6 +40,7 @@ extension AppSettings {
         launch.childEnvironment = childEnvironment
         launch.goals = goalsEnabled
         launch.textGenerationModel = textGenerationModel
+        launch.visionModel = visionModel
         launch.designTool = designToolEnabled
         launch.designReferences = piDesignReferences
         launch.browser = piBrowserExtension

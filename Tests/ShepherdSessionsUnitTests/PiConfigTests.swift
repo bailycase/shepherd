@@ -56,11 +56,11 @@ struct PiConfigTests {
     /// models.json in pi's own shape lists each model as "provider/id", the form `--model` takes,
     /// and says whether it reasons (pi's default is no).
     @Test(arguments: [
-        (#"{"providers":{"qa":{"baseUrl":"http://x","models":[{"id":"gemini-3.1-flash-lite"},{"id":"deep","reasoning":true}]},"# +
+        (#"{"providers":{"qa":{"baseUrl":"http://x","models":[{"id":"gemini-3.1-flash-lite","input":["text","image"]},{"id":"deep","reasoning":true,"input":["text"]}]},"# +
          #""b":{"models":[{"id":"gemini-3.1-flash-lite","reasoning":false}]}}}"#,
          [PiModelCatalog.Entry(id: "b/gemini-3.1-flash-lite", reasoning: false),
-          PiModelCatalog.Entry(id: "qa/gemini-3.1-flash-lite", reasoning: false),
-          PiModelCatalog.Entry(id: "qa/deep", reasoning: true)]),
+          PiModelCatalog.Entry(id: "qa/gemini-3.1-flash-lite", reasoning: false, images: true),
+          PiModelCatalog.Entry(id: "qa/deep", reasoning: true, images: false)]),
         (#"{"models":["anthropic/claude-4",{"id":"openai/gpt-5"}]}"#,
          [PiModelCatalog.Entry(id: "anthropic/claude-4"), PiModelCatalog.Entry(id: "openai/gpt-5")]),
         ("not json", []),

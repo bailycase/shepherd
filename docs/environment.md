@@ -68,6 +68,12 @@
   its first entry is the model a commit-message draft runs on. Settings ▸ Agents ▸ Text
   generation model sets it on each agent launch and outranks it for drafts; from the user's
   shell it applies while that setting is Automatic.
+- **`SHEPHERD_EXT_VISION`** (the installed `shepherd-vision.ts`, every agent) turns on image
+  describing for a model whose catalog input kinds lack images: each image in what the model
+  is sent is swapped for a description, and the design and browser tools keep their picture
+  for it instead of stripping it. **`SHEPHERD_VISION_MODELS`** (same shape as
+  `SHEPHERD_TEXT_GENERATION_MODELS`) is the describer Settings ▸ Agents ▸ Image reading model
+  picked; unset is Automatic, the cheapest signed-in model that takes images.
 - **`SHEPHERD_PI_ENGINE`** (Debug builds only: `swift test` and the Dev scheme) names one
   executable that takes pi's arguments, which the launcher then starts instead of the engine the
   app ships (`PiEngine`). The tests point it at a stand-in. Release builds ignore it, and a set

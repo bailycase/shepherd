@@ -14,6 +14,8 @@ public struct AgentLaunchSettings: Equatable, Sendable {
     public var goals = false
     /// Settings ▸ Agents ▸ Text generation model; "" for Automatic.
     public var textGenerationModel = ""
+    /// Settings ▸ Agents ▸ Image reading model; "" for Automatic.
+    public var visionModel = ""
     public var designTool = false
     public var designReferences = false
     public var browser = true
@@ -87,6 +89,8 @@ public enum AgentLaunch {
             namerExtensionPath: try NamerExtension.installedPath(),
             needsName: !agent.nameIsFinal,
             textGenerationModel: settings.textGenerationModel,
+            visionExtensionPath: try VisionExtension.installedPath(),
+            visionModel: settings.visionModel,
             isAutomation: isAutomation,
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),

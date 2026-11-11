@@ -267,7 +267,10 @@
     the change as unknown. `hostSettings.textGenerationModel.v1` takes the text generation
     model's change, which replaced the session naming model's: a host still applies an older
     client's `namingModel` change to the same setting, and no client offers the picker to a host
-    without the capability.
+    without the capability. `hostSettings.visionModel.v1` likewise takes the image reading
+    model's change. A `models` reply may also carry `withoutImages`, the models whose catalog
+    input kinds lack images (absent from a host that does not say: every model is then offered
+    where an image-capable one is picked).
     `hostSettings.v2` adds Subagent defaults, Deleting a worktree agent, Skills in the / menu, a
     repo's `.mcp.json`, and the slash commands with their switches (missing from an older host:
     the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while

@@ -238,7 +238,7 @@ enum RemoteSamples {
 
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
-        defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", compactAtPercent: 80,
+        defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
         backgroundService: true, designToolEnabled: true, missionsEnabled: true, missionsActive: true,
@@ -753,7 +753,8 @@ struct RemoteReplyTests {
                 withoutThinking: ["openai/gpt-5"]),
         .models(id: 12, models: ["anthropic/claude-4", "openai/gpt-5"], defaultModel: nil, withoutThinking: [],
                 thinkingLevels: ["anthropic/claude-4": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]],
-                serviceTiers: ["openai/gpt-5": ["standard", "fast"]], contexts: ["openai/gpt-5": "400K"]),
+                serviceTiers: ["openai/gpt-5": ["standard", "fast"]], contexts: ["openai/gpt-5": "400K"],
+                withoutImages: ["openai/gpt-5"]),
         .spaceAdded(id: 6, spaceID: S.space),
         .agentCreated(id: 7, agentID: S.agent),
         .automationResult(id: 22, result: .runs(S.runs)),
@@ -976,12 +977,14 @@ struct RemoteReplyTests {
         #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
         #expect(HostSettingChange.defaultServiceTier(.fast).capability == RemoteProtocol.hostSettingsAgentDefaultsCapability)
         #expect(HostSettingChange.textGenerationModel(nil).capability == RemoteProtocol.hostSettingsTextGenerationModelCapability)
+        #expect(HostSettingChange.visionModel(nil).capability == RemoteProtocol.hostSettingsVisionModelCapability)
         #expect(HostSettingChange.defaultModel(nil).capability == nil)
         var applied = HostSettings()
         applied.apply(.compactAtPercent(90))
         applied.apply(.textGenerationModel("x/y"))
+        applied.apply(.visionModel("v/w"))
         applied.apply(.defaultServiceTier(.fast))
-        #expect(applied.compactAtPercent == 90 && applied.textGenerationModel == "x/y" && applied.defaultServiceTier == .fast)
+        #expect(applied.compactAtPercent == 90 && applied.textGenerationModel == "x/y" && applied.visionModel == "v/w" && applied.defaultServiceTier == .fast)
         // An older client's naming-model change lands on the same setting.
         applied.apply(.namingModel("a/b"))
         #expect(applied.textGenerationModel == "a/b")
@@ -1218,7 +1221,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeContextCapability,
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability, RemoteProtocol.hostSettingsTextGenerationModelCapability,
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability, RemoteProtocol.hostSettingsTextGenerationModelCapability, RemoteProtocol.hostSettingsVisionModelCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
@@ -1273,6 +1276,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.changesCwdCapability == "changes.cwd.v1")
         #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
         #expect(RemoteProtocol.hostSettingsTextGenerationModelCapability == "hostSettings.textGenerationModel.v1")
+        #expect(RemoteProtocol.hostSettingsVisionModelCapability == "hostSettings.visionModel.v1")
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")
         #expect(RemoteProtocol.hostSettingsCloseOnMergeCapability == "hostSettings.closeOnMerge.v1")

@@ -78,6 +78,7 @@ enum HostSettingsMapping {
             defaultThinking: app.defaultThinking,
             defaultServiceTier: app.defaultServiceTier,
             textGenerationModel: app.textGenerationModel.isEmpty ? nil : app.textGenerationModel,
+            visionModel: app.visionModel.isEmpty ? nil : app.visionModel,
             compactAtPercent: app.compactAtPercent,
             queueDelivery: app.queueDelivery,
             goalsEnabled: app.goalsEnabled,
@@ -114,6 +115,7 @@ enum HostSettingsMapping {
         case .defaultThinking(let level): app.defaultThinking = level
         case .defaultServiceTier(let tier): app.defaultServiceTier = tier
         case .textGenerationModel(let model), .namingModel(let model): app.textGenerationModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        case .visionModel(let model): app.visionModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         case .compactAtPercent(let percent):
             // A share Settings does not offer is left as it is, as the Mac's own loader does.
             guard percent == nil || PiCompactionThreshold.choices.contains(percent!) else { return nil }

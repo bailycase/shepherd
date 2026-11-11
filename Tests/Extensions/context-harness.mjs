@@ -29,7 +29,7 @@ export const THREAD_EXTENSIONS = [
   ["instructions", "shepherd-instructions.ts"], ["panes", "shepherd-panes.ts"], ["review", "shepherd-review.ts"],
   ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["goal", "shepherd-goal.ts"], ["ask", "shepherd-ask.ts"], ["hooks", "shepherd-hooks.ts"], ["namer", "shepherd-namer.ts"],
   ["design", "shepherd-design.ts"], ["design-refs", "shepherd-design-refs.ts"],
-  ["browser", "shepherd-browser.ts"], ["mcp", null], ["context", "shepherd-context.ts"],
+  ["browser", "shepherd-browser.ts"], ["vision", "shepherd-vision.ts"], ["mcp", null], ["context", "shepherd-context.ts"],
 ];
 
 // Skills as a user's pi home might hold: a name and a one-sentence description each.
@@ -220,6 +220,7 @@ export async function startThread(options = {}) {
     const tier = path.join(dir, "tier.json");
     fs.writeFileSync(tier, JSON.stringify({ tier: "standard" }));
     env.SHEPHERD_EXT_SERVICE_TIER = tier;
+    if (wants("vision")) env.SHEPHERD_EXT_VISION = extension("shepherd-vision.ts");
     if (wants("mcp") && options.mcp !== false) mcpFixture(support, config);
     // trim: false is the switch off (the app passes no -e and no variable); "inert" loads the file without its variable.
     if (wants("context") && options.trim !== false && options.trim !== "inert") env.SHEPHERD_EXT_CONTEXT = extension("shepherd-context.ts");

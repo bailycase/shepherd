@@ -69,6 +69,7 @@ struct AppSettingsTests {
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.textGenerationModel.isEmpty, "text generation starts on Automatic")
+        #expect(settings.visionModel.isEmpty, "image reading starts on Automatic")
         #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(!settings.projectsEnabled, "Projects is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
@@ -251,6 +252,7 @@ struct AppSettingsTests {
         settings.defaultThinking = .high
         settings.defaultServiceTier = .fast
         settings.textGenerationModel = "openai/gpt-5.1-codex-mini"
+        settings.visionModel = "google/gemini-flash"
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piDesignReferences = false
@@ -272,6 +274,7 @@ struct AppSettingsTests {
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(reloaded.defaultServiceTier == .fast)
         #expect(reloaded.textGenerationModel == "openai/gpt-5.1-codex-mini")
+        #expect(reloaded.visionModel == "google/gemini-flash")
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.subagentDisplay && !reloaded.piNativeSubagents)
         #expect(!reloaded.piBrowserExtension)
@@ -372,6 +375,7 @@ struct AppSettingsTests {
         settings.defaultModel = "openai/gpt-5"
         settings.defaultServiceTier = .fast
         settings.textGenerationModel = "google/gemini-2.5-flash"
+        settings.visionModel = "google/gemini-2.5-flash"
         settings.uiDensity = 1.3
         settings.uiTextScale = 1.2
         settings.sidebarWidth = 300
@@ -381,7 +385,7 @@ struct AppSettingsTests {
 
         settings.resetToDefaults()
 
-        #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.textGenerationModel.isEmpty)
+        #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.textGenerationModel.isEmpty && settings.visionModel.isEmpty)
         #expect(settings.defaultServiceTier == .standard)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)

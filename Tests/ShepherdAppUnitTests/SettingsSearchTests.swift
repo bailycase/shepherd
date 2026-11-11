@@ -90,6 +90,7 @@ struct SettingsSearchTests {
         ("browser", .extensions, ["Browser tools"]),
         ("text generation", .agents, ["Text generation model"]),
         ("session naming", .agents, ["Text generation model"]),
+        ("vision", .agents, ["Image reading model"]),
         ("native subagents", .subagents, ["Native subagents"]),
         ("filter subagents", .subagents, ["Filter subagents"]),
         ("profiles", .subagents, ["New subagent"]),

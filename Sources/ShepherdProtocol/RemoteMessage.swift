@@ -127,6 +127,10 @@ public enum RemoteProtocol {
     /// which replaced the session naming model's. An older host knows only the old change, so a
     /// client offers the picker only here.
     public static let hostSettingsTextGenerationModelCapability = "hostSettings.textGenerationModel.v1"
+    /// The host takes the image reading model's change (`HostSettingChange.visionModel`) and
+    /// its settings carry the pick. An older host refuses the change as unknown, so a client
+    /// offers the picker only here.
+    public static let hostSettingsVisionModelCapability = "hostSettings.visionModel.v1"
     /// The host answers `RemoteRequest.hostInventory`: its MCP servers and their status, its
     /// subagent profiles, and its providers' sign-in state, read-only (`RemoteHostInventoryRequest`).
     public static let hostInventoryCapability = "hostInventory.v1"
@@ -256,7 +260,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability, pullRequestLinkCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability, pullRequestLinkCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -323,15 +327,27 @@ public struct ModelListing: Hashable, Sendable {
     public var serviceTiers: [String: [String]]?
     /// Context-window labels for picker rows, absent from older hosts.
     public var contexts: [String: String]?
+    /// The models whose catalog input kinds lack images; nil when the host does not say, in
+    /// which case every model is offered where an image-capable one is picked.
+    public var withoutImages: [String]?
 
     public init(models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil,
-                serviceTiers: [String: [String]]? = nil, contexts: [String: String]? = nil) {
+                serviceTiers: [String: [String]]? = nil, contexts: [String: String]? = nil, withoutImages: [String]? = nil) {
         self.models = models
         self.defaultModel = defaultModel
         self.withoutThinking = withoutThinking
         self.thinkingLevels = thinkingLevels
         self.serviceTiers = serviceTiers
         self.contexts = contexts
+        self.withoutImages = withoutImages
+    }
+
+    /// The models an image reading pick may offer: all of them when the host does not say
+    /// which take images, else the ones it does not list as text-only.
+    public var imageCapableModels: [String] {
+        guard let withoutImages else { return models }
+        let blind = Set(withoutImages)
+        return models.filter { !blind.contains($0) }
     }
 
     public func offeredServiceTiers(_ model: String?) -> [ServiceTier] {
@@ -1310,7 +1326,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// that take no thinking level (absent from a host that does not say; see `ModelListing`).
     /// `thinkingLevels`: the configured levels of the models that have them (`ModelListing`).
     case models(id: Int, models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil,
-                serviceTiers: [String: [String]]? = nil, contexts: [String: String]? = nil)
+                serviceTiers: [String: [String]]? = nil, contexts: [String: String]? = nil, withoutImages: [String]? = nil)
     /// Space created on the host (the state push carries the full snapshot).
     case spaceAdded(id: Int, spaceID: SpaceID)
     /// Agent created and its pi process spawned on the host.
@@ -1430,7 +1446,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case hostBuild
-        case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, attachment, options
+        case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, withoutImages, attachment, options
         case snapshot, settings, status
         case designID, revision, commentsRevision
         case url, push, missionID, live
@@ -1631,7 +1647,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                 withoutThinking: try c.decodeIfPresent([String].self, forKey: .withoutThinking),
                 thinkingLevels: try c.decodeIfPresent([String: [String]].self, forKey: .thinkingLevels),
                 serviceTiers: try c.decodeIfPresent([String: [String]].self, forKey: .serviceTiers),
-                contexts: try c.decodeIfPresent([String: String].self, forKey: .contexts)
+                contexts: try c.decodeIfPresent([String: String].self, forKey: .contexts),
+                withoutImages: try c.decodeIfPresent([String].self, forKey: .withoutImages)
             )
         case .spaceAdded:
             self = .spaceAdded(
@@ -1865,7 +1882,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
             try c.encodeIfPresent(parent, forKey: .parent)
             try c.encode(dirs, forKey: .dirs)
-        case .models(let id, let models, let defaultModel, let withoutThinking, let thinkingLevels, let serviceTiers, let contexts):
+        case .models(let id, let models, let defaultModel, let withoutThinking, let thinkingLevels, let serviceTiers, let contexts, let withoutImages):
             try c.encode(Kind.models, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(models, forKey: .models)
@@ -1874,6 +1891,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encodeIfPresent(thinkingLevels, forKey: .thinkingLevels)
             try c.encodeIfPresent(serviceTiers, forKey: .serviceTiers)
             try c.encodeIfPresent(contexts, forKey: .contexts)
+            try c.encodeIfPresent(withoutImages, forKey: .withoutImages)
         case .spaceAdded(let id, let spaceID):
             try c.encode(Kind.spaceAdded, forKey: .type)
             try c.encode(id, forKey: .id)
