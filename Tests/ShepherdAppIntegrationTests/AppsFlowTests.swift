@@ -11,10 +11,10 @@ import Testing
 @testable import ShepherdApp
 
 /// Settings › Apps and the header's Run (AppsSettings, AppsAdd, AppsQuickAction, AppsRunning,
-/// AppsNewThread boards) against a real server: Add app writes the space's `.shepherd/apps.json`;
-/// Run starts the app in the background with no thread needed; from a thread, its output opens as
-/// a read-only tab in that thread's panel, which closes without stopping the app; and quitting
-/// stops every app.
+/// AppsNewThread boards) against a real host: Add app writes the space's `.shepherd/apps.json`;
+/// Run starts the app on the host in the background with no thread needed; from a thread, its
+/// output opens as a read-only tab in that thread's panel, which closes without stopping the app;
+/// and the host's stop (Quit, with the app's own child host) stops every app.
 @Suite("Apps", .mainActorExclusive)
 @MainActor
 struct AppsFlowTests {
@@ -62,9 +62,11 @@ struct AppsFlowTests {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("ledger", path: app.dir.path)
+        let worker = AppDefinition(name: "Worker", command: "pwd; echo 'up on localhost:4100'; sleep 60", quickAction: true)
+        try AppsFile.save([worker], to: AppsFile.url(in: app.dir.path))
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
         let key = AppKey(scope: .space(space.id), name: "Worker")
-        vm.runApp(AppDefinition(name: "Worker", command: "pwd; echo 'up on localhost:4100'; sleep 60", quickAction: true), key: key)
+        vm.runApp(worker, key: key)
         let apps = vm.apps
         try await eventuallyOnMain("the app to run on its port", timeout: .seconds(20)) {
             apps.process(key)?.status == .running && apps.process(key)?.port == 4100
@@ -81,17 +83,19 @@ struct AppsFlowTests {
         defer { app.stop() }
         let space = Fixture.space("payments", path: app.dir.path)
         let thread = Fixture.agent("Add refund events", in: space)
+        let worker = AppDefinition(name: "Worker", command: "echo worker-up; sleep 60")
+        try AppsFile.save([worker], to: AppsFile.url(in: app.dir.path))
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [thread]))
         vm.selectAgent(thread.agent.id)
         let key = AppKey(scope: .space(space.id), name: "Worker")
-        vm.runApp(AppDefinition(name: "Worker", command: "echo worker-up; sleep 60"), key: key, showOutput: true)
+        vm.runApp(worker, key: key, showOutput: true)
         let apps = vm.apps, panels = vm.terminalPanels
         let panel = TerminalPanelKey(host: nil, tab: thread.tab.id)
         try await eventuallyOnMain("the output tab", timeout: .seconds(20)) { panels.appTabs[panel]?.count == 1 }
         #expect(vm.state.tabs.first { $0.id == thread.tab.id }?.layout.leaves.count == 1, "no terminal joins the layout")
         #expect(panels.panel(panel).shown)
-        try await eventuallyOnMain("its output", timeout: .seconds(20)) { apps.process(key)?.lineCount == 1 }
-        #expect(await vm.server.apps.lines(key, tail: 5) == ["worker-up"])
+        try await eventuallyAsync("its output", timeout: .seconds(20)) { await vm.appOutput(key, tail: 5) == ["worker-up"] }
+        try await eventuallyOnMain("the host's run") { apps.process(key)?.status.isLive == true }
 
         let target = try #require(vm.terminalTarget)
         let tab = try #require(panels.appTabs[panel]?.first)
@@ -103,16 +107,19 @@ struct AppsFlowTests {
     }
 
     @Test func quittingStopsEveryApp() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         let space = Fixture.space("payments", path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
         let key = AppKey(scope: .mac, name: "Postgres")
-        // This Mac's apps run from home.
+        // This Mac's apps run from home, the host's as the app's.
         try FileManager.default.createDirectory(atPath: vm.apps.home, withIntermediateDirectories: true)
-        vm.runApp(AppDefinition(name: "Postgres", command: "sleep 300 & echo \"child $!\"; wait"), key: key)
+        app.server.hooks = HookCatalog(home: vm.apps.home, support: app.dir.appendingPathComponent("hooks-support"))
+        let postgres = AppDefinition(name: "Postgres", command: "sleep 300 & echo \"child $!\"; wait")
+        try AppsFile.save([postgres], to: vm.apps.macFile)
+        vm.runApp(postgres, key: key)
         var child: pid_t?
         try await eventuallyAsync("the child's pid", timeout: .seconds(20)) {
-            child = await vm.server.apps.lines(key, tail: 5).lazy.compactMap { $0.hasPrefix("child ") ? pid_t($0.dropFirst(6)) : nil }.first
+            child = await vm.appOutput(key, tail: 5).lazy.compactMap { $0.hasPrefix("child ") ? pid_t($0.dropFirst(6)) : nil }.first
             return child != nil
         }
         let pid = try #require(child)
@@ -169,7 +176,7 @@ struct AppsFlowTests {
             try await eventuallyOnMain("\(place)'s Restart to run it", timeout: .seconds(20)) { apps.process(key)?.status.isLive == true }
             vm.stopApp(key)
             try await eventuallyOnMain("it to stop") { apps.process(key)?.status.isLive == false }
-            vm.server.apps.forget(key)
+            app.server.apps.forget(key)
             try await eventuallyOnMain("it to be forgotten") { apps.process(key) == nil }
         }
         vm.settingsSection = .apps
@@ -191,7 +198,7 @@ struct AppsFlowTests {
 @MainActor
 struct AppToolsFlowTests {
     @Test func anAgentRunsReadsAndStopsItsSpacesAppAndIsRefusedTheRest() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let payments = app.dir.appendingPathComponent("payments"), ledger = app.dir.appendingPathComponent("ledger")
         try AppsFile.save([AppDefinition(name: "Worker", command: "echo worker-up; sleep 60", agents: true),
@@ -214,7 +221,10 @@ struct AppToolsFlowTests {
         #expect(started.hasPrefix("Started Worker"))
         let key = AppKey(scope: .space(space.id), name: "Worker")
         let apps = vm.apps
-        try await eventuallyOnMain("Settings and the header to see it run", timeout: .seconds(20)) { apps.process(key)?.lineCount == 1 }
+        // One set of processes: the run the agent started on the host is the one Settings and
+        // the header show, and its output the one the app's output tab reads.
+        try await eventuallyOnMain("Settings and the header to see it run", timeout: .seconds(20)) { apps.process(key)?.status.isLive == true }
+        try await eventuallyAsync("the app's output tab to read it", timeout: .seconds(20)) { await vm.appOutput(key, tail: 5) == ["worker-up"] }
         let logs = try #require(text(try await app.extensionRequest(.app(id: 3, agentID: agent, action: .logs, name: "Worker", lines: 5))))
         #expect(logs.hasSuffix("\nworker-up"), "\(logs)")
 

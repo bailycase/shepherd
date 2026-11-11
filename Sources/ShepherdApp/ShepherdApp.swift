@@ -95,7 +95,6 @@ public struct ShepherdMacApp: App {
                 vm.backgroundServiceStatus = status
                 // The supervisor starts the host again; the store reconnects on its own.
                 HostSupervisor.agents = { [weak vm] in vm?.remoteHosts.localHost?.state.agents ?? [] }
-                AppDelegate.stopApps = { [weak vm] in vm?.server.apps.stopAll() }
                 if let supervisor = HostSupervisor.shared {
                     supervisor.onFailure = { failure in
                         if HostSupervisor.StartFailed.show(failure, canRetry: true) { supervisor.retry() } else { NSApp.terminate(nil) }
@@ -218,13 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return QuitConfirmation.shared.shouldTerminate(agents: HostSupervisor.agents())
     }
 
-    /// Settings ▸ Apps' processes run in the app (`ShepherdViewModel+Apps`) and stop with it, as
-    /// they did when the app ran its own server.
-    @MainActor static var stopApps: (() -> Void)?
-
     func applicationWillTerminate(_ notification: Notification) {
         BoundedCommand.stopForAppTermination()
-        MainActor.assumeIsolated { Self.stopApps?() }
         HostSupervisor.shared?.stop()
     }
 
