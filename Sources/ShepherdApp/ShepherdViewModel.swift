@@ -28,20 +28,11 @@ final class ShepherdViewModel {
     /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
     /// over the same transport; none while the branch has no pull request.
     var branchPullRequests: [AgentID: ForgeStore] = [:]
-    /// Each local thread's link to its branch's pull request, as the server last looked it up
-    /// (`PullRequestLinks.links`): the sidebar's badge and the pane read it.
+    /// Each local thread's link to its branch's pull request, as the host last looked it up and
+    /// pushed it (`RemoteReply.pullRequestLinks`): the sidebar's badge reads it.
     var pullRequestLinks: [AgentID: ThreadPullRequest] = [:]
-    /// Why a merged pull request's thread was kept open (`PullRequestLinks.closeNotes`).
+    /// Why a merged pull request's thread was kept open (`PullRequestLinks.closeNotes`), as pushed.
     var pullRequestCloseNotes: [AgentID: String] = [:]
-    @ObservationIgnored var pullRequestPoll: Task<Void, Never>?
-    @ObservationIgnored var pullRequestLinker: PullRequestLinks?
-    /// Off in model-only tests: no `gh` lookups at turn end or on a poll.
-    @ObservationIgnored let looksUpPullRequests: Bool
-    /// The branch's pull request in a checkout (`gh pr view`); tests replace it.
-    @ObservationIgnored var branchPullRequestLookup: @MainActor (String) async -> ThreadPullRequest? = { cwd in
-        let output = await LoginShell.run("gh pr view --json \(ThreadPullRequest.fields)", cwd: cwd, timeout: 20)
-        return output.status == 0 ? ThreadPullRequest(json: output.stdout) : nil
-    }
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
     /// The host whose missions the Missions page shows; nil is This Mac.
@@ -660,7 +651,6 @@ final class ShepherdViewModel {
         themeInstaller: @escaping (ShepherdTheme) throws -> Void = { theme in
             try ShepherdThemeMarker.install(for: theme)
         },
-        looksUpPullRequests: Bool = true,
         mcp: MCPStore? = nil,
         welcomesYourPi: Bool = false,
         yourPi: YourPiModel? = nil,
@@ -672,7 +662,6 @@ final class ShepherdViewModel {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
         self.pi = pi
-        self.looksUpPullRequests = looksUpPullRequests
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
         logicalProjectPane = RightPaneState(widthKey: Self.logicalProjectPaneWidthKey,
@@ -783,7 +772,6 @@ final class ShepherdViewModel {
         }
         installReviewHandler()
         installDesignRenderHandler()
-        installPullRequestLinks()
         installRemoteBrowserDrive()
         self.settings.onProjectsChange = { [weak self] _ in self?.projectsExperimentChanged() }
         // Host role: bind the remote listener at VM creation, not from a
@@ -832,7 +820,6 @@ final class ShepherdViewModel {
             }
         }
         installMissingSpaceWatch()
-        installPullRequestPoll()
         installProjectRuntime()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
@@ -941,7 +928,6 @@ final class ShepherdViewModel {
             NotificationCenter.default.removeObserver(becomeActiveObserver)
         }
         missingSpaceWatch?.cancel()
-        pullRequestPoll?.cancel()
     }
 
     /// Chord→intent classification for the navigation fast path. Pure and
@@ -1191,10 +1177,6 @@ final class ShepherdViewModel {
             }
             // A turn ending reads the branch card again (commits, a push, the PR's checks).
             if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
-            // A turn that ended may have opened, pushed to or merged the branch's pull request.
-            if old == .working, status == .done || status == .idle, looksUpPullRequests {
-                Task { await refreshPullRequestLink(id) }
-            }
             // A session (re)start reports idle; the server still remembers the failure until a
             // turn starts, so the row keeps reading failed.
             let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])

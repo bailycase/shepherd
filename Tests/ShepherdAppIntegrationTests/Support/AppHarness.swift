@@ -46,18 +46,17 @@ final class AppHarness {
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
     /// host's snapshot. `restoringAgents` has the host recover unfinished work as it does at its
-    /// start. `readingCheckouts` turns on the app's pull request lookups (`gh`).
+    /// start.
     /// `welcomingYourPi` runs the first launch's copy from "your pi" and its welcome step, which
     /// hold restored agents, as the app does; `yourPi` replaces the model that runs them.
     @discardableResult
     func start(with state: ShepherdState? = nil, restoringAgents: Bool = false,
-               readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false,
+               mcp: MCPStore? = nil, welcomingYourPi: Bool = false,
                yourPi: YourPiModel? = nil, piAuth: PiAuthStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
             pi: server.pi, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-            looksUpPullRequests: readingCheckouts,
             mcp: mcp,
             welcomesYourPi: welcomingYourPi,
             yourPi: yourPi,
@@ -101,6 +100,8 @@ final class AppHarness {
                 settings: hostSettings,
                 mcpStore: mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { _ in }, copy: { _ in })),
                 notifications: AgentNotifications(activate: {}), keepsAgentsRunning: { nil })
+            // No `gh` on this Mac: a test that wants a pull request stands one in.
+            services.pullRequestLookup = { _ in nil }
             host = services
             hostBanners = await services.serve(server, socket: hostSocket, tokenURL: tokenURL, recovering: recovering)
         }

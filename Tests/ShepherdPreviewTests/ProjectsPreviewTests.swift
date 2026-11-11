@@ -291,8 +291,7 @@ final class ProjectsPreviewWorld {
         let hosts = RemoteHostStore(defaults: defaults)
         vm = ShepherdViewModel(pi: local.server.pi, settings: settings, keybindings: KeybindingsStore(store: defaults),
                                themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
-                               remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-                               looksUpPullRequests: false)
+                               remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in })
         vm.showSettings = true; vm.settingsSection = .projects
         if !empty {
             let names = [long ? "dashboard-with-a-very-long-name-and-an-equally-long-directory" : detail ? "payments" : "dashboard", "mobile", "ops-scripts"]

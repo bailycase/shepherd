@@ -45,7 +45,7 @@ struct ProjectsRemoteControlTests {
         try await eventuallyOnMain("the authenticated Projects host") { hosts.connections.first?.phase == .connected }
         let vm = ShepherdViewModel(pi: local.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false)
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in })
         vm.showSettings = true; vm.settingsSection = .projects
         let model = vm.projects
         await model.load(vm.projectsSources)

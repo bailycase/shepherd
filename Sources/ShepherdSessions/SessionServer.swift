@@ -301,8 +301,8 @@ public final class SessionServer: @unchecked Sendable {
     /// A native client requested a restored thread whose process has not started yet.
     /// Delivered on main; hidden layout mounting is not demand.
     public var onNativeThreadDemand: ((AgentID) -> Void)?
-    /// This Mac's app shows a thread (`focusThread`), or asks (`readCheckout`): its checkout is read
-    /// again. Delivered on main.
+    /// This Mac's app shows a thread (`focusThread`), or asks (`readCheckout`), or the host loaded
+    /// its review or committed from it: its checkout is read again. Delivered on main.
     public var onThreadFocused: ((AgentID) -> Void)?
     /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
     /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
@@ -698,6 +698,9 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var automationHosting: AutomationHosting?
     /// Main actor: each thread's pull request link (`servePullRequestLinks`); nil until served.
     @MainActor public internal(set) var pullRequestLinks: PullRequestLinks?
+    /// Server queue: the links and notes last pushed to this Mac's app (`RemoteReply.pullRequestLinks`),
+    /// for an app that connects later.
+    var pullRequestLinksPush: RemoteReply?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
     /// Main actor: terminal panes whose shell `startTerminal` is starting now.
     @MainActor var startingTerminals = Set<PaneID>()
@@ -2494,6 +2497,9 @@ public final class SessionServer: @unchecked Sendable {
             ), to: client)
             sendStartProblems(to: client)
             sendAppProcesses(to: client)
+            if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+                send(links, to: client)
+            }
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
         }
@@ -2753,7 +2759,15 @@ public final class SessionServer: @unchecked Sendable {
                 } catch { result = .failure(ChangesError(ChangesError.gitFailed, String(describing: error))) }
                 self?.queue.async {
                     let client = connection.value
-                    guard let self, self.clients[client.fd] === client else { return }
+                    guard let self else { return }
+                    // The header's branch chip follows what a review loaded or changed.
+                    switch (query, result) {
+                    case (.changesList(_, _, nil), .success), (.changesRevertFile, .success), (.changesUndoTurn, .success),
+                         (.changesRedoTurn, .success):
+                        self.hopToMain { [weak self] in self?.onThreadFocused?(agentID) }
+                    default: break
+                    }
+                    guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let value): self.send(.agentResult(id: id, result: value), to: client)
                     case .failure(let error): self.send(.error(id: id, code: error.code, message: error.message), to: client)
@@ -3908,6 +3922,16 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue {
             self.designRevised(designID)
             self.pushDesignChanged(designID, revision: nil, commentsRevision: revision)
+        }
+    }
+
+    /// Any thread: the daily look for newer skill commits, when it's due (`SkillsStore.checkUpdatesIfDue`),
+    /// on the skills queue; a check that ran tells this Mac's app, whose Skills page reads it again.
+    public func checkSkillUpdatesIfDue() {
+        let skillsStore = skills
+        skillsQueue.async { [weak self] in
+            guard skillsStore.checkUpdatesIfDue() != nil else { return }
+            self?.queue.async { self?.pushSettingsChanged(.skills) }
         }
     }
 

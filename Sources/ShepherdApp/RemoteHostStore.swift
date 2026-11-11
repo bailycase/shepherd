@@ -272,6 +272,8 @@ final class RemoteHostStore {
     /// The background host on this Mac's automations changed, or one of them posts a banner.
     @ObservationIgnored var onLocalAutomationsChanged: (() -> Void)?
     @ObservationIgnored var onLocalAutomationNotify: ((String, String) -> Void)?
+    /// The background host on this Mac's threads' pull request links and kept-open notes.
+    @ObservationIgnored var onLocalPullRequestLinks: (([AgentID: ThreadPullRequest], [AgentID: String]) -> Void)?
     /// A design's thread notes changed on the background host on this Mac.
     @ObservationIgnored var onLocalDesignNotesChanged: ((DesignID) -> Void)?
     /// A design's Git state changed on the background host on this Mac.
@@ -570,6 +572,10 @@ final class RemoteHostStore {
         client.onAutomationNotify = { [weak self, weak connection] title, body in
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAutomationNotify?(title, body)
+        }
+        client.onPullRequestLinks = { [weak self, weak connection] links, notes in
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalPullRequestLinks?(links, notes)
         }
         client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }

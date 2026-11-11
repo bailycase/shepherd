@@ -196,6 +196,8 @@ public enum RemoteProtocol {
     public static let terminalStartCapability = "terminal.start.v1"
     /// `RemoteAgentAction.readCheckout`: the host reads a thread's checkout again.
     public static let checkoutReadCapability = "checkout.read.v1"
+    /// `RemoteAgentQuery.pullRequest`: the host looks a thread's branch's pull request up again.
+    public static let pullRequestLinkCapability = "pullrequest.link.v1"
     /// The host starts a thread's stopped pi again on request (`RemoteAgentAction.restartPi`).
     public static let agentRestartCapability = "agent.restart.v1"
     /// The host keeps which completion of each thread was opened (`Agent.seenCompletedAt`) and
@@ -250,7 +252,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability, pullRequestLinkCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -588,6 +590,9 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Saves `text` over an existing UTF-8 file in the thread's folder only while it still holds `expected`, the
     /// text the client edited from; both at most `ThreadFilesLimits.readBytes` (`filesWriteCapability`).
     case fileWrite(path: String, text: String, expected: String)
+    /// Looks the thread's branch's pull request up again and answers it (`pullRequestLinkCapability`):
+    /// the side pane's Pull request tab.
+    case pullRequest
 
     /// `files`, `fileRead` or `fileWrite`: answered by the host's server itself.
     public var isFiles: Bool {
@@ -644,6 +649,8 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case fileData(Data)
     /// A save's outcome (`RemoteAgentQuery.fileWrite`).
     case fileWrite(ThreadFileSaveResult)
+    /// The thread's branch's pull request (`RemoteAgentQuery.pullRequest`); nil for none, or gh couldn't say.
+    case pullRequest(ThreadPullRequest?)
 }
 
 /// Client → host. The first message on a connection must be a successful
@@ -1404,6 +1411,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// An automation's banner on the background host (`AutomationHosting.notify`), pushed only to
     /// this Mac's app that shows its threads as its own, which posts it; the host doesn't.
     case automationNotify(title: String, body: String)
+    /// Each of the background host's threads' pull request links, and why a merged one was kept
+    /// open (`PullRequestLinks`), pushed only to this Mac's app that shows its threads as its own,
+    /// when they change and as it connects: the sidebar's badges.
+    case pullRequestLinks(links: [AgentID: ThreadPullRequest], notes: [AgentID: String])
 
     private enum CodingKeys: String, CodingKey {
         case result, frame, executionKey, executionRevision
@@ -1418,6 +1429,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case title, body
         case page, tool, problem
         case processes
+        case links, notes
     }
 
     private enum Kind: String, Codable {
@@ -1432,6 +1444,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
         case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, agentStartProblem, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress, appsChanged
+        case pullRequestLinks
     }
 
     public init(from decoder: Decoder) throws {
@@ -1477,6 +1490,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .appsChanged(processes: try c.decode([RemoteAppProcess].self, forKey: .processes))
         case .automationNotify:
             self = .automationNotify(title: try c.decode(String.self, forKey: .title), body: try c.decode(String.self, forKey: .body))
+        case .pullRequestLinks:
+            self = .pullRequestLinks(links: try c.decode([AgentID: ThreadPullRequest].self, forKey: .links),
+                                     notes: try c.decode([AgentID: String].self, forKey: .notes))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1798,6 +1814,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.automationNotify, forKey: .type)
             try c.encode(title, forKey: .title)
             try c.encode(body, forKey: .body)
+        case .pullRequestLinks(let links, let notes):
+            try c.encode(Kind.pullRequestLinks, forKey: .type)
+            try c.encode(links, forKey: .links)
+            try c.encode(notes, forKey: .notes)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

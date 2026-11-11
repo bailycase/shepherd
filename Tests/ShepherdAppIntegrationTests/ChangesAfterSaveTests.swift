@@ -38,7 +38,7 @@ struct ChangesAfterSaveTests {
         let repo = try makeScratchRepo(files: ["notes.txt": "before\n"])
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), readingCheckouts: true)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let id = agent.agent.id
         try await eventuallyOnMain("the first checkout read") {
             vm.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 0)

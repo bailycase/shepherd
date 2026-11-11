@@ -37,8 +37,7 @@ struct ProjectsControlTests {
         let defaults = ScratchDefaults()
         let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-                                   looksUpPullRequests: false)
+                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
         try await connectAsHost(vm, to: scratch)
         #expect(vm.hooks.catalog?.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
         var openedFile: String?
@@ -289,8 +288,7 @@ struct ProjectsControlTests {
         let defaults = ScratchDefaults()
         let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-                                   looksUpPullRequests: false)
+                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
         try await connectAsHost(vm, to: scratch)
         vm.showSettings = true; vm.settingsSection = .projects
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1000), dark: true, RootView(vm: vm))
