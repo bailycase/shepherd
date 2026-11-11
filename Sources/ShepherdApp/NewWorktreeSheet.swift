@@ -155,7 +155,9 @@ struct NewWorktreeSheet: View {
                 initialPrompt: nil,
                 initialName: (branch as NSString).lastPathComponent,
                 worktreeBranch: branch,
-                worktreeBase: trimmedBase.isEmpty ? nil : trimmedBase
+                worktreeBase: trimmedBase.isEmpty ? nil : trimmedBase,
+                // The checkout made above: the host starts the thread in it rather than making another.
+                worktreePath: path
             )
             do {
                 try await vm.startAgent(config)
