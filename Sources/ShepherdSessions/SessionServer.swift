@@ -88,8 +88,8 @@ public final class SessionServer: @unchecked Sendable {
     /// gets room for several whole-state frames (`NDJSON.localMaxPayloadBytes`) before it is
     /// dropped, and its terminals' PTYs wait for it (`localOutputHighWaterMark`) instead.
     static let maxQueuedLocalReplyBytes = 64 * 1024 * 1024
-    /// A terminal stops being read while this Mac's app has this much unwritten (in-process, the
-    /// app's renderer pauses it the same way, `outputHighWaterMark`); it reads again below a quarter.
+    /// A terminal stops being read while this Mac's app has this much unwritten (an in-process
+    /// renderer pauses it the same way, `outputHighWaterMark`); it reads again below a quarter.
     static let localOutputHighWaterMark = 4 * 1024 * 1024
     /// Bounds bytes retained between the PTY and the renderer. The in-flight
     /// delivery is counted with the pending bytes, so the renderer cannot keep
@@ -3505,7 +3505,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.automationResult(id: id, result: .ok), to: client)
             return
         case .setRunPullRequest(let agentID, let url):
-            // This Mac's app reads it with its gh, as in process; no paired device sets one.
+            // This Mac's app reads it with its gh; no paired device sets one.
             guard client.isLocal else { return fail("unsupported", "Only Shepherd on this Mac records a run's pull request.") }
             guard url.hasPrefix("https://") else { return fail("invalid_url", "A pull request's address starts with https://.") }
             runLog.setPullRequest(agentID: agentID, url: url)
@@ -3812,7 +3812,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: one Missions request (`missions.v1`). Reads come from the store; everything else
     /// goes to the GUI's mission owner. Replies are encoded off the queue (a record is up to 256 KiB)
     /// and refused `too_large` past the frame cap.
-    /// Issues & PRs for a remote client: the same `forge` answer the Mac gets in process, run off
+    /// Issues & PRs for a remote client: the same `forge` answer this Mac's app gets, run off
     /// the queue (gh can take seconds) and sent back on it.
     private func remoteForge(id: Int, request: RemoteForgeRequest, client: ExtensionConnection) {
         let connection = ChangesUnchecked(value: client)
@@ -4208,7 +4208,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: this Mac's own Import, from its app (the host reads the same disk), with the
-    /// choices the in-process Import offers: unreadable boards and a project already in Designs ask.
+    /// choices Import offers: unreadable boards and a project already in Designs ask.
     private func localDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
         guard client.isLocal else {
             send(.error(id: id, code: "local_only", message: "Only this Mac's app imports from its disk."), to: client)
@@ -4556,7 +4556,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// This Mac's app showing the host's threads as its own (`localThreadsCapability`): it draws
-    /// Projects, their coordinators and workers, and missions from the state, as in process.
+    /// Projects, their coordinators and workers, and missions from the state.
     private func takesWholeWorkspace(_ client: ExtensionConnection) -> Bool {
         client.isLocal && client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
     }
@@ -4644,7 +4644,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
-    /// page's data changed here; in process there is none, and the GUI's own `on…Changed` follow.
+    /// page's data changed here.
     func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
 
     /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
@@ -5401,8 +5401,8 @@ public final class SessionServer: @unchecked Sendable {
         designNotesChanged(designID)
     }
 
-    /// A design's thread notes changed: the app's canvas reads them again, in process or as the
-    /// background host's client (`designNotesChanged`). Any thread.
+    /// A design's thread notes changed: this Mac's app's canvas reads them again
+    /// (`designNotesChanged`). Any thread.
     func designNotesChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
         queue.async { [self] in sendToLocalApps(.designNotesChanged(designID: designID)) }
@@ -5800,7 +5800,7 @@ public final class SessionServer: @unchecked Sendable {
         if routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client) { return }
         guard let handler = onBrowserRequest else {
             // The background host has no page of its own: the app's window, connected over
-            // `host.sock`, runs it as it would in process.
+            // `host.sock`, runs it.
             if let app = localBrowserClient(),
                routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client, ownerFD: app.fd) { return }
             reply(.error(id: requestID, code: "unavailable",
@@ -6469,7 +6469,7 @@ public final class SessionServer: @unchecked Sendable {
         if !missionsChanged || before.withoutMissions != state.withoutMissions {
             broadcastRemoteState(state)
         } else {
-            // This Mac's app draws missions from the state, as in process.
+            // This Mac's app draws missions from the state.
             broadcastRemoteState(state, wholeOnly: true)
         }
         if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
@@ -6790,8 +6790,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Moves a space to sit just before `target`, or last when `target` is nil: the order the
     /// sidebar's project tree draws its projects in.
-    /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`), as its in-process
-    /// view model makes it.
+    /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`).
     func performSpaceAction(_ action: RemoteSpaceAction, on spaceID: SpaceID) async throws {
         func updating(_ change: (inout Space) -> Void) async throws {
             guard var space = await enqueueValue({ self.store.state.spaces.first { $0.id == spaceID } }) else {
@@ -6810,7 +6809,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Locate Folder… as the app does it in process (`ShepherdViewModel.relocateSpace`): the threads
+    /// Locate Folder… for this Mac's app (`ShepherdViewModel.relocateSpace`): the threads
     /// inside the old folder stop, the space moves, and their conversations follow. Starting them
     /// again is the caller's.
     func relocateSpaceStoppingThreads(_ spaceID: SpaceID, to path: String) async throws {

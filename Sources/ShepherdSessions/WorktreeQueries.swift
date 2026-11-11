@@ -4,8 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// What a workspace owner (the app's view model in process, or the headless host) gives the
-/// worktree and commit-from-review queries.
+/// What the host gives the worktree and commit-from-review queries.
 public struct WorktreeHosting {
     /// Settings ▸ Worktrees, read at each request.
     public struct Defaults: Sendable {
@@ -59,7 +58,7 @@ public final class WorktreeQueries {
     }
 
     /// `local`: the request is this Mac's own app's (the background host's client), whose loss
-    /// rule is the in-process one; a paired Mac's counts every commit no remote has.
+    /// rule spares commits another local branch reaches; a paired Mac's counts every commit no remote has.
     public func worktree(_ agentID: AgentID, query: RemoteAgentQuery, local: Bool = false) async throws -> RemoteAgentResult {
         let hosting = try hosted()
         if case .deleteKeepingWorktree = query {

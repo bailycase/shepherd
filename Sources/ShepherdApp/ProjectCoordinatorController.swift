@@ -125,7 +125,7 @@ final class ProjectCoordinatorController {
         }
         try await server.validateProjectPlacementRequest(request)
         // The executor's own checks (its exact binding, the Space still visible there) run where
-        // the connection is: here in process, in this Mac's app for a background host.
+        // the connection is: in this Mac's app.
         return try await hosting.executors.place(host, request)
     }
 
@@ -229,7 +229,7 @@ extension RemoteHostStore {
     }
 
     /// The paired hosts that may run a Project's work, each reached only by its exact host id and
-    /// binding: the app's own Projects in process, and its background host's through the app.
+    /// binding: the host's Projects, through this Mac's app.
     var projectExecutors: RuntimeHosting.ProjectExecutors {
         func capable(_ connection: Connection) -> RemoteHostClient? {
             guard let client = connection.browserClient,

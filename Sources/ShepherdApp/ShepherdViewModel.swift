@@ -538,7 +538,7 @@ final class ShepherdViewModel {
     /// Settings' host picker: the remote host a host-level page shows; nil for this Mac.
     var settingsHostID: UUID?
     /// The background host's launchd job, when this launch may use it (`BackgroundService.prepare`);
-    /// nil keeps the app in process with no Settings line. Set at launch.
+    /// nil has the app supervise its own host, with no Settings line. Set at launch.
     @ObservationIgnored var backgroundService: BackgroundService?
     /// Its status as Settings last read it.
     var backgroundServiceStatus: BackgroundService.Status?

@@ -3,8 +3,7 @@ import ShepherdCore
 
 /// What a background host's agent asks of Shepherd's window, which the host doesn't have: the host
 /// hands it to the app over `host.sock` (`RemoteReply.appRelay`, only to a local client that lists
-/// `RemoteProtocol.appRelayCapability`), and the app answers (`RemoteRequest.appRelayAnswer`) as
-/// it answers the agent in process.
+/// `RemoteProtocol.appRelayCapability`), and the app answers (`RemoteRequest.appRelayAnswer`).
 public enum AppRelayJob: Codable, Hashable, Sendable {
     /// `review_diff`: the thread's Changes tab, marked for the user to open.
     case review(agentID: AgentID, cwd: String?, reference: String?)

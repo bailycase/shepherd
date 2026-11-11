@@ -3,8 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 
 /// What peer requests (`agent_list`, `agent_send`, `agent_spawn`, `agent_move`, `agent_delete`)
-/// start, delete and move threads with: the app's view model in process, the server itself in
-/// the background host (`serveThreads`).
+/// start, delete and move threads with: the host's server itself (`serveThreads`).
 public struct AgentPeerHosting {
     public var defaults: @MainActor () -> (model: String?, thinking: ThinkingLevel)
     public var startAgent: @MainActor (NewAgentConfig) async throws -> AgentID

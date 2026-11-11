@@ -436,7 +436,7 @@ public struct RemoteThreadStart: Codable, Hashable, Sendable {
 }
 
 /// What this Mac's own app does to a space of its background host (`RemoteRequest.spaceAction`),
-/// as the in-process app does to its own: the sidebar's project menu and the base picker.
+/// the sidebar's project menu and the base picker.
 public enum RemoteSpaceAction: Codable, Hashable, Sendable {
     case rename(name: String)
     /// The branch new worktrees start from; nil goes back to Settings ▸ Worktrees.
@@ -702,7 +702,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// to one of its background host's spaces. Answered `spaceAdded` with the space.
     case projectRequest(id: Int, request: RemoteProjectRequest)
     /// Local clients only (`localCapability`): this Mac's own app starts a thread on its
-    /// background host as it would in process. Answered `agentCreated`.
+    /// host. Answered `agentCreated`.
     case startThread(id: Int, thread: RemoteThreadStart)
     /// Local clients only (`localCapability`): the thread this Mac's own app shows with Shepherd
     /// in front (nil: none), so the host's phone pushes for it stay quiet. Answered `ok`.
@@ -1395,7 +1395,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// Why one of the background host's agents waits with its pi stopped (it couldn't start, or
     /// stopped on its own), or nil once pi starts again. Pushed only to this Mac's app that shows
     /// its threads as its own, as it happens and for every waiting agent when the app connects:
-    /// the thread's can't-start and sign-in cards, opened or not, as the in-process session's exit.
+    /// the thread's can't-start and sign-in cards, opened or not.
     case agentStartProblem(agentID: AgentID, problem: NativeStartProblem?)
     /// The background host's automations changed: a run's log, or a trigger's status. Pushed only
     /// to this Mac's app that shows its threads as its own, which reads them again. A hint; it

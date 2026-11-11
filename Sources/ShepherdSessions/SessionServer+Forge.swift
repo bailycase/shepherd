@@ -3,8 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 
 extension SessionServer {
-    /// Issues & PRs in process: the Mac's one entry point, answering exactly what a paired device's
-    /// `RemoteRequest.forge` gets. The workspace is read on the server queue; gh runs off it.
+    /// Issues & PRs: what this Mac's app and a paired device get for `RemoteRequest.forge`. The workspace is read on the server queue; gh runs off it.
     public func forge(_ request: RemoteForgeRequest) async -> Result<RemoteForgeResult, ForgeError> {
         let context = await withCheckedContinuation { continuation in
             queue.async { continuation.resume(returning: self.forgeContext()) }
