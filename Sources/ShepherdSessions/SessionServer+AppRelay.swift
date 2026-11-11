@@ -4,7 +4,7 @@ import ShepherdProtocol
 
 /// What an agent asks of Shepherd's window, on a host with none: `review_diff` and
 /// `project_delete`'s confirmation go to the app connected over `host.sock` (`relayToApp`), which
-/// answers as it does in process. The other `project_*` tools change only the workspace, so the
+/// answers. The other `project_*` tools change only the workspace, so the
 /// host answers them itself.
 extension SessionServer {
     static let reviewWindowClosed = "Shepherd's window is closed, so nothing is marked yet. The review is in this thread's "
@@ -97,8 +97,7 @@ extension SessionServer {
 
 /// A background host has no connections to paired Macs: this Mac's own app does. While the app is
 /// connected it says which paired Macs it reaches (`ProjectExecutorsUpdate`), and the host's
-/// Projects place work there through it (`AppRelayJob.projectPlacement`), as they did when the app
-/// ran them in process. With the app quit, placing on another Mac says to open it.
+/// Projects place work there through it (`AppRelayJob.projectPlacement`). With the app quit, placing on another Mac says to open it.
 extension SessionServer {
     /// Why a Project the host owns can't reach another Mac right now.
     public static let appClosedForPlacement = "Open Shepherd on this Mac to place work on another Mac."

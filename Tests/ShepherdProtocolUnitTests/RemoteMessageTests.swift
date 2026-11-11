@@ -61,7 +61,12 @@ enum RemoteSamples {
                                                               confirmedWhileWorking: true)),
         .commit(operationID: op, options: RemoteCommitOptions(head: "", files: [commitFile], title: "t", body: "", push: .none)),
         .commit(operationID: op, options: RemoteCommitOptions(head: "abc", files: [commitFile], title: "t", body: "", push: .upstream)),
-        .changesOverview,
+        .changesOverview(),
+        .changesOverview(cwd: "/tmp/acme-web"),
+        .changesList(scope: .uncommitted, options: ChangesOptions(), cwd: "/tmp/acme-web"),
+        .changesFile(revision: revision, path: "a.go", oldPath: nil, options: ChangesOptions(), cwd: "/tmp/acme-web"),
+        .changesBranches(cwd: "/tmp/acme-web"),
+        .changesPatch(revision: revision, options: ChangesOptions(), cwd: "/tmp/acme-web"),
         .changesList(scope: .lastTurn, options: ChangesOptions()),
         .changesList(scope: .turn(id: op), options: ChangesOptions(ignoreWhitespace: true)),
         .changesList(scope: .uncommitted, options: ChangesOptions(fullFiles: true)),
@@ -75,7 +80,7 @@ enum RemoteSamples {
         .changesFile(revision: revision, path: "new name.go", oldPath: "old.go", options: ChangesOptions()),
         .changesRevertFile(revision: revision, path: "ledger/outbox.go", oldPath: nil),
         .changesRevertFile(revision: revision, path: "new name.go", oldPath: "old.go"),
-        .changesBranches,
+        .changesBranches(),
         .changesPatch(revision: revision, options: ChangesOptions()),
         .changesUndoTurn(turnID: op),
         .changesRedoTurn(turnID: op),
@@ -393,13 +398,13 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 53
+    static let caseCount = 54
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -439,6 +444,9 @@ struct RemoteRequestTests {
         .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
         .spaceAction(id: 5, spaceID: S.space, action: .delete),
         .spaceAction(id: 5, spaceID: S.space, action: .relocate(path: "/Users/demo/Developer/acme-web")),
+        .projectRequest(id: 5, request: .register(path: "/Users/demo/Developer/acme-web", name: "acme-web")),
+        .projectRequest(id: 5, request: .edit(spaceID: S.space, edit: ProjectEdit(parentProjectID: ""))),
+        .projectRequest(id: 5, request: .child(parentPath: "/Users/demo/Developer/acme", path: "/Users/demo/Developer/acme/web", name: "web", create: true)),
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: nil, agentID: S.agent)),
         .focusThread(id: 7, agentID: S.agent),
         .focusThread(id: 7, agentID: nil),
@@ -481,6 +489,11 @@ struct RemoteRequestTests {
         .apps(id: 36, request: .run(spaceID: S.space, name: "Web app", mac: false, agentID: S.agent)),
         .apps(id: 37, request: .run(spaceID: S.space, name: "Simulator", mac: true, agentID: nil)),
         .apps(id: 38, request: .stop(spaceID: S.space, name: "Web app", mac: false)),
+        .apps(id: 39, request: .run(spaceID: nil, name: "Postgres", mac: true, agentID: nil)),
+        .apps(id: 40, request: .stop(spaceID: nil, name: "Postgres", mac: true)),
+        .apps(id: 41, request: .processes),
+        .apps(id: 42, request: .restart(spaceID: S.space, name: "Web app")),
+        .apps(id: 43, request: .output(spaceID: nil, name: "Postgres", tail: 5000)),
         .projects(id: 30, request: .list()),
         .logicalProjects(id: 31, request: .list),
         .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
@@ -557,7 +570,7 @@ struct RemoteRequestTests {
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
                       .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false)])
+                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -570,6 +583,15 @@ struct RemoteRequestTests {
         let json = #"{"name":"pdf","summary":"PDFs.","isOn":true,"invocation":"automatic","updatedAt":1,"files":[]}"#
         let skill = try JSONDecoder().decode(InstalledSkill.self, from: Data(json.utf8))
         #expect(skill.copiedFrom == nil && skill.source == nil)
+    }
+
+    /// An older client's `changes*` reads name no folder: the agent's own.
+    @Test func anOlderClientsChangesReadsNameNoFolder() throws {
+        for json in [#"{"changesOverview":{}}"#, #"{"changesBranches":{}}"#] {
+            let query = try JSONDecoder().decode(RemoteAgentQuery.self, from: Data(json.utf8))
+            #expect(query.isChanges && query.changesCwd == nil)
+        }
+        #expect(String(decoding: try JSONEncoder().encode(RemoteAgentQuery.changesOverview()), as: UTF8.self) == #"{"changesOverview":{}}"#)
     }
 
     @Test func anOlderClientsRunInTerminalIsNoLongerAnAction() {
@@ -692,11 +714,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 57
+    static let caseCount = 58
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -748,6 +770,11 @@ struct RemoteReplyTests {
                       run: RemoteAppRun(status: .failed("Its folder doesn’t exist."), stopping: true)),
             RemoteApp(app: AppDefinition(name: "Docs", command: "make docs"), mac: true),
         ])),
+        .apps(id: 36, result: RemoteAppsResult(space: "", apps: [], processes: [
+            RemoteAppProcess(spaceID: S.space, name: "Web app",
+                             run: RemoteAppRun(status: .running, port: 3000, command: "npm run dev", directory: "/tmp/acme-web", revision: 7)),
+        ], lines: ["ready on localhost:3000"])),
+        .appsChanged(processes: [RemoteAppProcess(spaceID: nil, name: "Postgres", run: RemoteAppRun(status: .starting))]),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
         .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
@@ -1173,10 +1200,10 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
-            RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
+            RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
-            RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
+            RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
             RemoteProtocol.checkpointRecoveryCapability,
@@ -1187,7 +1214,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability, RemoteProtocol.missionsRetryLaneCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
@@ -1224,6 +1251,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
         #expect(RemoteProtocol.changesRevertCapability == "changes.revert.v1")
+        #expect(RemoteProtocol.changesCwdCapability == "changes.cwd.v1")
         #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")

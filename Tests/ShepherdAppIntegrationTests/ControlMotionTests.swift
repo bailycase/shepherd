@@ -327,13 +327,18 @@ struct SettingsMotionTests {
     /// Motion it is still a (shorter) cross-fade.
     @Test(arguments: [false, true])
     func settingsCrossFadesInAndOutHoweverItOpens(reduceMotion: Bool) async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let window = OffscreenWindow(size: Self.window, dark: false,
                                      RootView(vm: vm).environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         let strip = CGRect(x: 0, y: Self.window.height / 2, width: Self.window.width, height: 1)
+        // What the host sends after the first snapshot (its settings, models) lands before the picture is taken.
+        try await eventuallyAsync("the workspace to settle", timeout: .seconds(10)) {
+            let still = await MotionProbe.record(window, region: strip) {}
+            return still.inBetween.isEmpty && still.settled.matches(still.before)
+        }
 
         let opening = await MotionProbe.record(window, region: strip) { vm.showSettings = true }
         #expect(!opening.settled.matches(opening.before), "Settings showed")

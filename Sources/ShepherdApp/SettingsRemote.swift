@@ -109,6 +109,7 @@ struct RemoteSettings: View {
         .shAnimation(.content, value: editingID)
         .shAnimation(.disclosure, value: vm.remoteListenerProblem)
         .shAnimation(.content, value: vm.remoteListenerStatus)
+        .task { await vm.refreshRemoteListener() }
     }
 
     private func save() {
@@ -152,6 +153,12 @@ struct RemoteListenerFailure: Equatable {
     init(_ error: Error, port: UInt16) {
         sentence = Self.sentence(for: error, port: port)
         detail = String(describing: error)
+    }
+
+    /// As the host said it (`HostSettings.listenerProblem`).
+    init(sentence: String, detail: String) {
+        self.sentence = sentence
+        self.detail = detail
     }
 
     static func sentence(for error: Error, port: UInt16) -> String {

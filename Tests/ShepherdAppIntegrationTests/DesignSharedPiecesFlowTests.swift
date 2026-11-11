@@ -95,7 +95,7 @@ struct DesignSharedPiecesFlowTests {
     }
 
     @Test func aPieceEditedOnceRedrawsEveryBoardThatImportsItAndNoOther() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (_, window, design, screen, host) = try await openCanvas(app)
         defer { window.close() }
@@ -130,7 +130,7 @@ struct DesignSharedPiecesFlowTests {
     }
 
     @Test func aPieceSaysHowManyBoardsUseItAndAUseOffersGoToSourceNotTweak() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (_, window, design, screen, host) = try await openCanvas(app)
         defer { window.close() }

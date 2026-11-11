@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-// Design systems in the app (DZSystem, NavDesigns): the catalog read from the server, a system's
+// Design systems in the app (DZSystem, NavDesigns): the catalog read from the host, a system's
 // page, and "Build one from a repo". A system an agent builds from a repository belongs to a
 // design made for it (`Design.buildsSystem`): its page is that design agent's layout, with the
 // agent's report in its chat, so opening it is a visibility flip like any design. Every other
@@ -16,24 +16,19 @@ extension ShepherdViewModel {
     static let systemBuildBrief = DesignBrief.systemBuild
 
     var designSystemReader: DesignSystemReader {
-        // As the background host's client, its systems are the page's own, read through it.
-        if let library = localHost?.designs {
-            return DesignSystemReader(summaries: { @MainActor in
-                await library.refresh()
-                return library.listing?.systems ?? []
-            }, system: { @MainActor namespace in
-                try await library.system(namespace)
-            }, resync: { @MainActor namespace in
-                guard case .systemSynced(let result) = try await Self.remoteDesign(library, .resyncSystem(namespace: namespace)) else {
-                    throw RemoteDesignReply.unexpected
-                }
-                return result
-            })
-        }
-        let server = server
-        return DesignSystemReader(summaries: { await server.designSystemSummaries() },
-                                  system: { try await server.designSystem($0) },
-                                  resync: { try await server.resyncDesignSystem($0) })
+        // The background host's systems are the page's own, read through it.
+        let library = localDesigns
+        return DesignSystemReader(summaries: { @MainActor in
+            await library.refresh()
+            return library.listing?.systems ?? []
+        }, system: { @MainActor namespace in
+            try await library.system(namespace)
+        }, resync: { @MainActor namespace in
+            guard case .systemSynced(let result) = try await Self.remoteDesign(library, .resyncSystem(namespace: namespace)) else {
+                throw RemoteDesignReply.unexpected
+            }
+            return result
+        })
     }
 
     /// Reads the systems again.
@@ -41,7 +36,7 @@ extension ShepherdViewModel {
         await designSystems.load(designSystemReader)
     }
 
-    /// The server says a system changed: its page and cards read it again.
+    /// The host says a system changed: its page and cards read it again.
     func designSystemsChanged() {
         guard designToolEnabled || designSystems.loaded else { return }
         Task { await loadDesignSystems() }
@@ -118,23 +113,14 @@ extension ShepherdViewModel {
         Task {
             defer { startingSystemBuilds.remove(spaceID) }
             do {
-                // As the background host's client the host makes the build and starts its agent.
-                if let library = localHost?.designs {
-                    guard case .created(let build, _) = try await Self.remoteDesign(library, .buildSystem(spaceID: spaceID)) else {
-                        throw RemoteDesignReply.unexpected
-                    }
-                    // ponytail: polls for the host's push, as `startHostedAgent` does.
-                    for _ in 0..<100 where design(build) == nil { try await Task.sleep(for: .milliseconds(20)) }
-                    lastDesignSystem = .build(build)
-                    return
+                // The background host makes the build and starts its agent.
+                guard case .created(let build, _) = try await Self.remoteDesign(localDesigns, .buildSystem(spaceID: spaceID)) else {
+                    throw RemoteDesignReply.unexpected
                 }
-                let design = Design(name: space.name, createdAt: SessionServer.nowMilliseconds(), buildsSystem: true,
-                                    sourceSpaceID: space.id)
-                _ = try await server.createDesign(design)
-                adopt(server.state)
-                lastDesignSystem = .build(design.id)
-                // A build whose agent failed to start still opens later, and starts one then.
-                try await startDesignAgent(design, brief: Self.systemBuildBrief, images: [])
+                // ponytail: polls for the host's push, as `startHostedAgent` does.
+                for _ in 0..<100 where design(build) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                // Its page opens, as a new design's does.
+                openSystemBuild(build)
             } catch {
                 remoteActionError = "Couldn't build a design system from \(space.name): \(error)"
             }
@@ -197,8 +183,7 @@ extension ShepherdViewModel {
         let specimens = designRendering.specimens
         guard !specimens.has(namespace, revision: revision) else { return }
         let read: [String: Data]?
-        if let library = localHost?.designs { read = try? await library.systemFiles(namespace) }
-        else { read = try? await server.designSystemContents(namespace) }
+        read = try? await localDesigns.systemFiles(namespace)
         guard let files = read else { return }
         let tokens = designSystems.tokens(namespace)
         let background = DesignSystemPresentation.background(tokens)?.light

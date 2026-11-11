@@ -28,8 +28,7 @@ struct AdvancedSettings: View {
     }
 
     var body: some View {
-        SettingsPage(title: "Advanced", explanation: vm.ownsWorkspace ? "Files, resets and app updates. Quitting Shepherd stops every agent."
-                     : "Files, resets and app updates. Agents keep running in the background when you quit Shepherd.") {
+        SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Agents keep running in the background when you quit Shepherd.") {
             if vm.backgroundServiceStatus == .requiresApproval {
                 SettingsGroup(title: "Background") {
                     SettingsRow(title: "Shepherd stops its agents when you quit",

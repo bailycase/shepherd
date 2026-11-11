@@ -28,8 +28,8 @@ struct ProjectWorkerOpenThreadTests {
         init() throws {
             AccessibilityNode.enable()
             let catalog: SessionServer.ModelCatalog = { .init(models: ["anthropic/claude-sonnet-4-5"], defaultModel: "anthropic/claude-sonnet-4-5") }
-            owner = try AppHarness(modelCatalog: catalog, inProcess: true)
-            executor = try AppHarness(modelCatalog: catalog, inProcess: true)
+            owner = try AppHarness(modelCatalog: catalog)
+            executor = try AppHarness(modelCatalog: catalog)
             owner.settings.projectsEnabled = true; executor.settings.projectsEnabled = true
             local = Space(name: "Owner", path: owner.dir.path)
             remote = Space(name: "Executor", path: executor.dir.path)
@@ -45,9 +45,10 @@ struct ProjectWorkerOpenThreadTests {
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             owner.remoteHosts.addHost(name: "Fixture executor", host: "127.0.0.1", port: port, token: token)
             try await eventuallyOnMain("loopback executor connected") { self.owner.remoteHosts.connections.first?.phase == .connected }
-            let config = try #require(owner.remoteHosts.hosts.first)
+            let config = try #require(owner.remoteHosts.connections.first?.config)
             executorHostID = config.id
             binding = .remote(hostID: config.id, bindingID: config.bindingID)
+            try await owner.hostReaches(binding, spaces: [remote.id])
             _ = try await owner.server.logicalProjects(.create(projectID: projectID, name: "Owner Project", goal: "", linkedSpaceIDs: [local.id]))
             _ = try await owner.server.logicalProjects(.settings(projectID: projectID, expectedRevision: project.revision,
                 settings: .init(threadModel: "anthropic/claude-sonnet-4-5", allowedHosts: [.local, binding])))
@@ -57,12 +58,12 @@ struct ProjectWorkerOpenThreadTests {
         /// A real worker, settled then resolved by the owner.
         func resolvedTask(remote placed: Bool) async throws -> ProjectTask {
             let before = Set(project.tasks.map(\.id))
-            _ = try await owner.vm.projectCoordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .assign(
+            _ = try await owner.coordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .assign(
                 operationID: UUID(), spaceID: placed ? remote.id : local.id, title: placed ? "Remote work" : "Local work", prompt: "tools:0",
                 host: placed ? binding : nil))
             let id = try #require(project.tasks.first { !before.contains($0.id) }?.id)
             try await eventuallyOnMain("the worker settles") { self.project.tasks.first { $0.id == id }?.phase == .settled }
-            _ = try await owner.vm.projectCoordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .resolve(taskID: id))
+            _ = try await owner.coordinator.perform(projectID: projectID, expectedRevision: project.revision, request: .resolve(taskID: id))
             return try #require(project.tasks.first { $0.id == id && $0.phase == .resolved })
         }
 
@@ -140,13 +141,13 @@ struct ProjectWorkerOpenThreadTests {
         let r = try Rig(); defer { r.stop() }
         try await r.start()
         let task = try await r.resolvedTask(remote: true)
-        let config = try #require(r.owner.remoteHosts.hosts.first)
+        let config = try #require(r.owner.remoteHosts.connections.first?.config)
         let window = try Self.detail(r.owner.vm, .init(home: .local, id: r.projectID), task.id); defer { window.close() }
         let before = Untouched(r)
 
         // Same host ID, new binding: another endpoint now answers to that name, so the old route is not followed.
         r.owner.remoteHosts.updateHost(id: config.id, name: config.name, host: config.host, port: config.port, token: config.token + "-rotated")
-        #expect(r.owner.remoteHosts.hosts.first?.bindingID != config.bindingID)
+        #expect(r.owner.remoteHosts.connections.first?.config.bindingID != config.bindingID)
         try await Self.pressOpen(window)
         #expect(r.owner.vm.remoteActionError?.contains("no longer set up") == true, "\(r.owner.vm.remoteActionError ?? "nil")")
         #expect(r.owner.vm.selectedRemoteAgent == nil && r.owner.vm.destination == .project)
@@ -170,14 +171,14 @@ struct ProjectWorkerOpenThreadTests {
         let ownerWorker = try await r.resolvedTask(remote: false)
         let placed = try await r.resolvedTask(remote: true)
 
-        let viewer = try AppHarness(inProcess: true); defer { viewer.stop() }
+        let viewer = try AppHarness(); defer { viewer.stop() }
         viewer.settings.projectsEnabled = true
         _ = try await viewer.start()
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")
         let port = try r.owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         viewer.remoteHosts.addHost(name: "Owner Mac", host: "127.0.0.1", port: port, token: token)
-        let ownerHost = try #require(viewer.remoteHosts.hosts.first).id
+        let ownerHost = try #require(viewer.remoteHosts.connections.first?.config).id
         let ref = LogicalProjectRef(home: .host(ownerHost), id: r.projectID)
         try await eventuallyOnMain("the viewer sees the owner's resolved tasks and its worker") {
             viewer.vm.logicalProjects.project(ref)?.tasks.filter { $0.phase == .resolved }.count == 2
@@ -208,6 +209,9 @@ struct ProjectWorkerOpenThreadTests {
         let r = try Rig(); defer { r.stop() }
         try await r.start()
         let task = try await r.resolvedTask(remote: true)
+        try await eventuallyOnMain("the app sees the task resolved") {
+            r.owner.vm.state.projects.first { $0.id == r.projectID }?.tasks.first { $0.id == task.id }?.phase == .resolved
+        }
         let window = try detail(r.owner.vm, .init(home: .local, id: r.projectID), task.id); defer { window.close() }
         try await eventuallyOnMain("the More menu") { window.layout(); return more(window) != nil }
         let before = Untouched(r)

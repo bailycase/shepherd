@@ -22,7 +22,8 @@ the host drains and restarts on its own when an update replaces the bundle (`Hos
 `Shepherd --host --supervised` as its child (`HostSupervisor`) and is its client the same way. The
 supervisor restarts it with backoff after a crash and stops it at Quit (after the mid-turn
 question); an app crash closes its stdin, which stops it too. Relaunching restores the workspace
-and respawns each agent in its pi session. Only tests run a `SessionServer` in process.
+and respawns each agent in its pi session. The app never runs a `SessionServer`; tests serve one
+over a scratch `host.sock`.
 
 Either owner can also serve its agents to other devices over an authenticated TCP listener.
 
@@ -103,13 +104,13 @@ decodes on a concurrent queue while its session holds its later records in order
 - sheets, settings, appearance, and remote hosts
 
 It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
-`host.sock` (`ShepherdViewModel+LocalHost`). Its in-process server form remains only for tests. A
-persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
-model reconciles itself and `TerminalSessionStore` from `server.state`.
+`host.sock` (`ShepherdViewModel+LocalHost`); every terminal is the host's (`HostTerminalLeaf`). A
+persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
+model adopts the host's state again.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the
-worktree models, terminal sessions) are `@MainActor @Observable`. Views read only what they draw and
+worktree models, terminal panels) are `@MainActor @Observable`. Views read only what they draw and
 take plain `Equatable` values, so a status report or a poll re-renders just the views whose
 values changed. The menu bar reads `MenuState` (`AppCommands.swift`), narrow cached values that
 change only when a menu's own value does.
@@ -128,10 +129,10 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |
 | MCP | `Extensions/shepherd-mcp-*`, `ShepherdApp/MCP/`, `ShepherdSessions/ProjectMCP*.swift` |
-| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, built by `RuntimeHosting` in the app or in `Shepherd --host` |
+| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, in `Shepherd --host` (`RuntimeHosting.headless`) |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
-| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |
+| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/HostTerminalLeaf.swift`, `TerminalHost.swift` |
 | Issues & PRs | `ShepherdSessions/Forge/`, `ShepherdApp/Forge/`; threads' pull request links and close on merge in `ShepherdSessions/PullRequestLinks.swift` |
 | Pi engine, launch, home | `PiLaunch.swift`, `PiEngine.swift`, `PiHome.swift`, [pi engine](docs/pi-engine.md) |
 

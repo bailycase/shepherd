@@ -244,17 +244,8 @@ final class AppUpdater {
         updater.checkForUpdates()
     }
 
-    /// Installed once by the app lifecycle, never by a view or a headless server: in process, a
-    /// paired device's requests reach the server's handler; as the background host's client the
-    /// host relays them (`ShepherdViewModel.installReviewHandler`).
-    func connectRemoteUpdates(to server: SessionServer) {
-        connectRemoteUpdates(gate: .server(server))
-        server.onRemoteHostUpdate = { [weak self] request, authorized, completion in
-            guard let self else { return }
-            Task { completion(await self.remoteUpdate(request, authorized: authorized)) }
-        }
-    }
-
+    /// Installed once by the app lifecycle: a paired device's requests reach the background host,
+    /// which relays them (`ShepherdViewModel.installReviewHandler`).
     func connectRemoteUpdates(gate: HostUpdateGate) {
         self.gate = gate
         guard available, started else { return }
@@ -363,7 +354,7 @@ final class AppUpdater {
 }
 
 /// What an update installed for a paired device asks of whoever owns the agents it restarts:
-/// the in-process server, or the background host over `host.sock` (`hostUpdateGate`).
+/// the background host over `host.sock` (`hostUpdateGate`).
 struct HostUpdateGate: Sendable {
     var reserve: @Sendable () async -> Bool
     var release: @Sendable () -> Void
@@ -371,17 +362,6 @@ struct HostUpdateGate: Sendable {
     var blockReason: @Sendable () async -> String?
     /// Answers off the main queue: AppKit's termination modal loop doesn't drain it.
     var canTerminate: @Sendable (@escaping @Sendable (Bool) -> Void) -> Void
-
-    static func server(_ server: SessionServer) -> HostUpdateGate {
-        HostUpdateGate(reserve: { [weak server] in await server?.reserveHostUpdate() ?? false },
-                       release: { [weak server] in server?.releaseHostUpdate() },
-                       canRestart: { [weak server] in await server?.hostUpdateCanRestart() ?? false },
-                       blockReason: { [weak server] in await server?.hostUpdateBlockReason() },
-                       canTerminate: { [weak server] done in
-                           guard let server else { return done(false) }
-                           server.checkHostUpdateTermination(done)
-                       })
-    }
 
     /// The background host on this Mac, through whatever connection `client` reads now. A host
     /// out of reach refuses everything.

@@ -125,7 +125,7 @@ final class ProjectCoordinatorController {
         }
         try await server.validateProjectPlacementRequest(request)
         // The executor's own checks (its exact binding, the Space still visible there) run where
-        // the connection is: here in process, in this Mac's app for a background host.
+        // the connection is: in this Mac's app.
         return try await hosting.executors.place(host, request)
     }
 
@@ -229,7 +229,7 @@ extension RemoteHostStore {
     }
 
     /// The paired hosts that may run a Project's work, each reached only by its exact host id and
-    /// binding: the app's own Projects in process, and its background host's through the app.
+    /// binding: the host's Projects, through this Mac's app.
     var projectExecutors: RuntimeHosting.ProjectExecutors {
         func capable(_ connection: Connection) -> RemoteHostClient? {
             guard let client = connection.browserClient,
@@ -265,17 +265,11 @@ extension RemoteHostStore {
 }
 
 extension ShepherdViewModel {
-    /// The paired hosts a Project may place work on: the in-process server's, or, as the
-    /// background host's client, the host's (`projectExecutors`), sent when they change.
+    /// The paired hosts a Project may place work on, sent to the background host
+    /// (`projectExecutors`) when they change.
     func refreshProjectHosts() {
         let options = remoteHosts.projectHostOptions
-        guard let host = localHost else {
-            server.setProjectEligibleHosts([.local] + options.map(\.reference))
-            server.setProjectExecutionSpaces(Dictionary(options.compactMap { option in option.spaces.map { (option.reference, $0) } },
-                                                        uniquingKeysWith: { first, _ in first }))
-            return
-        }
-        guard host.phase == .connected, let client = host.browserClient else { return }
+        guard let host = localHost, host.phase == .connected, let client = host.browserClient else { return }
         let sent = (ObjectIdentifier(client), options)
         guard sentProjectHosts.map({ $0.0 != sent.0 || $0.1 != sent.1 }) ?? true else { return }
         sentProjectHosts = sent
@@ -298,8 +292,7 @@ extension ShepherdViewModel {
     /// A paired host's execution changed, or it connected again: its receipts are read again by
     /// whoever owns this Mac's Projects.
     private func projectExecutionChanged(_ host: ProjectHostReference, key: ProjectExecutionKey?) {
-        guard let local = localHost else { return server.reconcileProjectExecutions(host: host, key: key) }
-        guard case .remote(let hostID, _) = host, hostID != local.id, let client = local.browserClient else { return }
+        guard let local = localHost, case .remote(let hostID, _) = host, hostID != local.id, let client = local.browserClient else { return }
         Task { try? await client.projectExecutors(.changed(host: host, key: key)) }
     }
 }

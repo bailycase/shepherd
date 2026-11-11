@@ -149,7 +149,9 @@ let package = Package(
         ),
         .testTarget(
             name: "ShepherdPreviewTests",
-            dependencies: ["ShepherdApp", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
+            dependencies: ["ShepherdApp", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")],
+            // The in-process app's renders, which the host's client must match (always-host 7b).
+            exclude: ["Baselines"]
         ),
     ]
 )

@@ -49,7 +49,7 @@ struct BranchCardGitTests {
 @MainActor
 struct BranchCardActionTests {
     @Test func theCardListsTheSpaceAndCommitOpensItsSheet() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
         defer { try? FileManager.default.removeItem(at: repo) }
@@ -151,10 +151,18 @@ struct BranchCardActionTests {
         #expect(store.card?.branch == "main" && store.card?.space == "payments")
         #expect(store.status?.git.additions == 1)
 
+        // The host's agent reports its turns; the app follows its pushes.
+        let id = mine.agent.id
+        let reporter = try ExtensionClient(path: app.scratch.socketPath)
+        try reporter.send(.setAgentStatus(agentID: id, status: .working))
+        try await eventuallyOnMain("the turn to start") { vm.state.agents.first?.status == .working }
         let before = store.refreshRequest
-        vm.sessions.onAgentStatus?(mine.agent.id, .idle, nil)
-        #expect(store.refreshRequest == before + 1)
-        vm.sessions.onAgentStatus?(mine.agent.id, .idle, nil)
+        try reporter.send(.setAgentStatus(agentID: id, status: .idle))
+        try await eventuallyOnMain("the turn's end to ask the card to read again") { store.refreshRequest == before + 1 }
+        try reporter.send(.setAgentStatus(agentID: id, status: .idle))
+        // A later request on the host's queue: the repeated report is in.
+        _ = try await app.extensionRequest(.listPanes(id: 1, agentID: id))
+        await Task.yield()
         #expect(store.refreshRequest == before + 1, "only a turn ending asks")
     }
 }

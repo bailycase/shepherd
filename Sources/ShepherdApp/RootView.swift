@@ -281,8 +281,6 @@ private struct DestinationLayer: View {
             } else if let local = vm.localHost, let driver = vm.missionDriver(for: local.id) {
                 // The background host runs This Mac's missions; its page is This Mac's own.
                 MissionsDestination(controller: driver, chrome: chrome).id(local.id)
-            } else {
-                MissionsDestination(controller: vm.missions, chrome: chrome)
             }
         case .designs?: DesignsDestination(vm: vm, chrome: chrome)
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)

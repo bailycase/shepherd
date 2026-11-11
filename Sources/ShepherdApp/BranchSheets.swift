@@ -128,7 +128,6 @@ struct BranchUpdateSheet: View {
             } catch {
                 stage = .failed(ActionError.describe(error))
             }
-            vm.checkouts?.refresh(agentID, priority: true)
         }
     }
 
@@ -141,7 +140,6 @@ struct BranchUpdateSheet: View {
             } catch {
                 stage = .failed(ActionError.describe(error))
             }
-            vm.checkouts?.refresh(agentID, priority: true)
         }
     }
 

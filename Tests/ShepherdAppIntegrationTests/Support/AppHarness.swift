@@ -22,18 +22,13 @@ final class AppHarness {
     private(set) var vm: ShepherdViewModel!
 
     var server: SessionServer { scratch.server }
-    /// The app on the server in its own process, the mode slice 7 deletes: only the tests not
-    /// yet moved to the client harness ask for it. Every other harness's app is the client of the
-    /// scratch server served as `Shepherd --host` serves (`ShepherdHost.Services`).
-    let inProcess: Bool
     var dir: URL { scratch.dir }
 
     /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
     /// `directory` is a scratch directory the test already filled (a saved `state.json` for a cold launch).
     init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
          triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub,
-         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge, inProcess: Bool = false) throws {
-        self.inProcess = inProcess
+         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
         // Focus tracking reads NSApp even in model-only tests; no window is created.
         _ = NSApplication.shared
         let directory = try existing ?? makeScratchDirectory("srv")
@@ -50,11 +45,8 @@ final class AppHarness {
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
-    /// server's snapshot. `restoringAgents` leaves settled agents dormant and starts selected or
-    /// recoverable work, as a launch does; otherwise pi starts when asked for a pane session (most tests
-    /// seed agents only to look at them, with no pi on PATH). `readingCheckouts` turns on the
-    /// header's checkout reads, which would otherwise change the workspace under a test that
-    /// seeded a repository.
+    /// host's snapshot. `restoringAgents` has the host recover unfinished work as it does at its
+    /// start. `readingCheckouts` turns on the app's pull request lookups (`gh`).
     /// `welcomingYourPi` runs the first launch's copy from "your pi" and its welcome step, which
     /// hold restored agents, as the app does; `yourPi` replaces the model that runs them.
     @discardableResult
@@ -62,12 +54,10 @@ final class AppHarness {
                readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false,
                yourPi: YourPiModel? = nil, piAuth: PiAuthStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
-        let clientDir = dir.appendingPathComponent("client", isDirectory: true)
         let vm = ShepherdViewModel(
-            server: inProcess ? server : BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: inProcess, settings: settings, keybindings: keybindings, themeManager: themeManager,
+            pi: server.pi, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-            restoresAgentsAtLaunch: restoringAgents,
-            checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
+            looksUpPullRequests: readingCheckouts,
             mcp: mcp,
             welcomesYourPi: welcomingYourPi,
             yourPi: yourPi,
@@ -78,11 +68,6 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
-        if inProcess {
-            let server = server
-            try await eventuallyOnMain("the view model to adopt the server's workspace") { vm.state == server.state }
-            return vm
-        }
         let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
         let connection = vm.connectLocalHost(socket: hostSocket, token: token)
         let server = server
@@ -180,6 +165,36 @@ enum Fixture {
     }
 }
 
+// MARK: Host terminals
+
+@MainActor
+extension ShepherdViewModel {
+    /// The session the host bound to a pane, as its state says.
+    func hostTerminalSession(_ pane: PaneID) -> SessionID? {
+        state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane)?.sessionID }.first
+    }
+
+    /// The app's side of the shell the host runs in `pane` (what `HostTerminalLeaf` draws), once
+    /// the host has bound one; made and attached on first use, as the leaf does.
+    func hostPaneSession(_ pane: PaneID) -> RemotePaneSession? {
+        guard let connection = localHost, let id = hostTerminalSession(pane) else { return nil }
+        return remoteHosts.paneSession(connection: connection, sessionID: id)
+    }
+
+    /// Has the host start `pane`'s shell, as showing it does, and waits until the app is attached to it.
+    @discardableResult
+    func startHostTerminal(_ pane: PaneID, of agent: AgentID) async throws -> RemotePaneSession {
+        let ref = try #require(localRef(agent))
+        try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane))
+        var session: RemotePaneSession?
+        try await eventuallyOnMain("the app to attach to the host's shell", timeout: .seconds(30)) {
+            session = hostPaneSession(pane)
+            return session?.phase == .live
+        }
+        return try #require(session)
+    }
+}
+
 // MARK: Stub pi
 
 extension AppHarness {
@@ -247,8 +262,8 @@ final class RemoteHostHarness {
     let token: String
 
     init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
-         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub, inProcess: Bool = false) throws {
-        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource, inProcess: inProcess)
+         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
+        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)

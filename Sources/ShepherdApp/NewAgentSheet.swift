@@ -489,7 +489,7 @@ struct NewAgentSheet: View {
     private func loadModels() {
         let hostID = targetHostID
         let requestID = defaults.begin(hostID: hostID,
-                                       model: hostID == nil ? vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" : "",
+                                       model: hostID == nil ? vm.settings.defaultModel(piHome: vm.pi.home) ?? "" : "",
                                        thinking: hostID == nil ? vm.settings.defaultThinking : .medium)
         models = nil
         errorText = nil
@@ -515,8 +515,7 @@ struct NewAgentSheet: View {
             return
         }
         Task {
-            let server = vm.server
-            let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
+            let listing = await vm.modelListing()
             guard defaults.requestID == requestID else { return }
             models = listing
         }

@@ -12,7 +12,6 @@ import Testing
 @MainActor
 struct DesignIsolationFlowTests {
     private func start(_ app: AppHarness, designToolOn: Bool) async throws -> (ShepherdViewModel, thread: Agent, drawer: Agent) {
-        app.settings.designToolEnabled = designToolOn
         let space = Fixture.space(path: app.dir.path)
         let thread = Fixture.agent("Fix login bug", in: space)
         var drawer = Fixture.agent("Landing hero", in: space, order: 1)
@@ -20,13 +19,16 @@ struct DesignIsolationFlowTests {
         drawer.agent.designID = design.id
         var state = Fixture.state(spaces: [space], agents: [thread, drawer])
         state.designs = [design]
+        // With the tool off this Mac draws no design or its agent: the harness waits for the whole workspace first.
+        app.settings.designToolEnabled = true
         let vm = try await app.start(with: state)
+        app.settings.designToolEnabled = designToolOn
         return (vm, thread.agent, drawer.agent)
     }
 
     @Test(arguments: [false, true])
     func thePaletteListsOnlyAThreadsSubagents(designToolOn: Bool) async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, thread, drawer) = try await start(app, designToolOn: designToolOn)
 
@@ -42,7 +44,7 @@ struct DesignIsolationFlowTests {
 
     @Test(arguments: [false, true])
     func aBannersReviewNeverOpensChangesForADesignsAgent(designToolOn: Bool) async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, thread, drawer) = try await start(app, designToolOn: designToolOn)
 

@@ -44,7 +44,7 @@ struct ListPerformanceTests {
     }
 
     @Test func openingTheSidebarOverThreeHundredAgentsBuildsOnlyTheRowsOnScreen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
         var window: OffscreenWindow!
@@ -60,7 +60,7 @@ struct ListPerformanceTests {
 
     /// Scrolling Recents builds the rows that come into view, never the whole fleet.
     @Test func scrollingRecentsBuildsOnlyTheRowsComingIntoView() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (_, window) = try await openSidebar(app)
         defer { window.close() }
@@ -78,7 +78,7 @@ struct ListPerformanceTests {
     /// A status change moves its row to the matching group and updates both counts, without
     /// redrawing its neighbors or the destinations. Activity order still follows the stamp.
     @Test func aStatusReportRedrawsOnlyItsRow() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openSidebar(app)
         defer { window.close() }
@@ -104,7 +104,7 @@ struct ListPerformanceTests {
 
     /// One row changing (a settled name) redraws that row alone.
     @Test func oneRowChangingRedrawsThatRowAlone() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openSidebar(app)
         defer { window.close() }
@@ -125,7 +125,7 @@ struct ListPerformanceTests {
 
     /// A selection moving redraws the row it leaves and the row it lands on.
     @Test func aSelectionMovingRedrawsTheTwoRowsItTouches() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openSidebar(app)
         defer { window.close() }
@@ -156,7 +156,7 @@ struct ListPerformanceTests {
     }
 
     @Test func openingTheSidebarWithPinnedThreadsBuildsOnlyTheRowsOnScreen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         var fleet = ListFixtures.fleet(in: app.dir)
         for index in fleet.agents.indices { fleet.agents[index].status = .idle }
@@ -180,7 +180,7 @@ struct ListPerformanceTests {
     /// Pinning redraws the row that moves and the headers that change, not the rows it shifts:
     /// the first pin brings Pinned in; every pin updates Pinned and Recents' counts.
     @Test func pinningAThreadRedrawsOnlyTheRowThatMovesAndTheHeaders() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openPinnedSidebar(app, pinned: 0)
         defer { window.close() }
@@ -202,7 +202,7 @@ struct ListPerformanceTests {
     }
 
     @Test func unpinningAThreadRedrawsOnlyTheRowThatMovesAndTheHeaders() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openPinnedSidebar(app, pinned: 2)
         defer { window.close() }
@@ -225,7 +225,7 @@ struct ListPerformanceTests {
     /// A status report on a pinned thread redraws its row and nothing else: the pins hold their
     /// order, and no header changes.
     @Test func aStatusReportOnAPinnedThreadRedrawsOnlyItsRow() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openPinnedSidebar(app, pinned: 6)
         defer { window.close() }
@@ -266,7 +266,7 @@ struct ListPerformanceTests {
     }
 
     @Test func openingTheProjectTreeOverThreeHundredAgentsBuildsOnlyTheRowsOnScreen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
         vm.settings.sidebarStyle = .projects
@@ -285,7 +285,7 @@ struct ListPerformanceTests {
     }
 
     @Test func threeHundredNestedProjectsStillBuildOnlyVisibleRows() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let parent = Fixture.space("Platform", path: app.dir.path)
         let children = (0..<300).map { Fixture.space("Child \($0)", path: app.dir.appendingPathComponent("child-\($0)").path) }
@@ -305,7 +305,7 @@ struct ListPerformanceTests {
 
     /// Scrolling the tree builds the rows that come into view, never the whole fleet.
     @Test func scrollingTheProjectTreeBuildsOnlyTheRowsComingIntoView() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (_, window) = try await openProjectsSidebar(app)
         defer { window.close() }
@@ -324,7 +324,7 @@ struct ListPerformanceTests {
     /// A status report redraws its row (and its project's, whose roll-up may change), never the
     /// other rows or the destinations, and derives the tree once.
     @Test func aStatusReportRedrawsOnlyItsRowInTheTree() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openProjectsSidebar(app)
         defer { window.close() }
@@ -348,7 +348,7 @@ struct ListPerformanceTests {
 
     /// Opening a closed project builds its threads and redraws its own row; nothing derives.
     @Test func expandingAProjectBuildsOnlyItsRows() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window) = try await openProjectsSidebar(app)
         defer { window.close() }
@@ -392,7 +392,7 @@ struct ListPerformanceTests {
     }
 
     @Test func openingTheDesignsPageBuildsOnlyTheCardsOnScreen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let make = try await openDesigns(app)
         var window: OffscreenWindow!
@@ -408,7 +408,7 @@ struct ListPerformanceTests {
 
     /// Scrolling the cards builds the rows that come into view, never all 120 cards.
     @Test func scrollingTheDesignsPageBuildsOnlyTheCardsComingIntoView() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let make = try await openDesigns(app)
         let window = make()
@@ -426,7 +426,7 @@ struct ListPerformanceTests {
     /// A host's 120 designs (`designs.v1`) under its name: the page builds the cards on screen,
     /// as it does for this Mac's.
     @Test func openingTheDesignsPageBuildsOnlyTheHostsCardsOnScreen() async throws {
-        let app = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         app.settings.designToolEnabled = true
         remote.host.settings.designToolEnabled = true
@@ -458,7 +458,7 @@ struct ListPerformanceTests {
     /// The Export sheet over a design of 172 boards: it builds the rows it shows (eight, then it
     /// scrolls), and a tick redraws the row it changed.
     @Test func theExportSheetBuildsOnlyTheBoardRowsItShowsAndATickRedrawsOne() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         app.settings.designToolEnabled = true
         let space = Fixture.space(path: app.dir.path)
@@ -470,6 +470,8 @@ struct ListPerformanceTests {
         try await eventuallyOnMain("the design to arrive") { vm.state.designs.count == 1 }
         await vm.designScreen(design.id).refresh()
         vm.openDesignExport(design.id)
+        // The sheet opens over this Mac's synced copy of the host's design.
+        try await eventuallyOnMain("the export sheet", timeout: .seconds(30)) { vm.designExport != nil }
         let model = try #require(vm.designExport)
         #expect(model.selection.rows.count == 172)
 
@@ -517,7 +519,7 @@ struct ListPerformanceTests {
     /// The Designs page over the store's 100 systems (no designs): only the system rows on
     /// screen are built.
     @Test func openingTheDesignsPageBuildsOnlyTheSystemCardsOnScreen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         app.settings.designToolEnabled = true
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space(path: app.dir.path)]))
@@ -540,7 +542,7 @@ struct ListPerformanceTests {
 
     /// A system's page over 300 colors: only the color rows on screen are built.
     @Test func openingASystemsPageBuildsOnlyTheSwatchesOnScreen() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         app.settings.designToolEnabled = true
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space(path: app.dir.path)]))
@@ -1596,7 +1598,7 @@ struct ListPerformanceTests {
     /// Launching into a workspace of many agents builds the visible layout first: its first
     /// frame holds one layout and its thread, and the rest mount after it, a few per turn.
     @Test func launchBuildsOnlyTheVisibleLayoutFirst() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, agents) = try await MountedWorkspace.start(12, in: app)
         var window: OffscreenWindow!
@@ -1616,7 +1618,7 @@ struct ListPerformanceTests {
     /// their size until the drag ends, and the shell around them (the root view, the sidebar,
     /// the palette's overlay) takes no update while the width changes nothing it lays out.
     @Test func aResizeFrameRelaysOutOnlyTheVisibleLayout() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, agents) = try await MountedWorkspace.start(6, in: app)
         let window = OffscreenWindow(size: CGSize(width: 1400, height: 800), dark: true, RootView(vm: vm))
@@ -1653,7 +1655,7 @@ struct ListPerformanceTests {
     /// Narrowing a window changes the shell's sidebar geometry. Its image-viewer action must
     /// keep a stable identity so all fixed-size hidden threads are not invalidated with it.
     @Test func aShellResizeDoesNotInvalidateEveryMountedThread() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, agents) = try await MountedWorkspace.start(6, in: app)
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
@@ -1683,7 +1685,7 @@ struct ListPerformanceTests {
     /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves
     /// each layout's values, and only a layout whose values changed runs again.
     @Test func aStatusReportRedrawsNoMountedLayout() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
         defer { window.close() }
@@ -1707,7 +1709,7 @@ struct ListPerformanceTests {
     /// not in a layout's model, so a change of it reruns no layout, thread or composer, hidden or
     /// not; only the card on screen is asked to read again.
     @Test func aCheckoutCountChangeAmongEightAgentsRedrawsNoLayout() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
         defer { window.close() }
@@ -1735,7 +1737,7 @@ struct ListPerformanceTests {
     /// The count still reaches the card that shows it: the visible thread's card is asked to
     /// read again, a hidden one is not, and reads when its thread shows.
     @Test func aCountChangeReadsOnlyTheCardOnScreenAgain() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
         defer { window.close() }
@@ -1771,7 +1773,7 @@ struct ListPerformanceTests {
     /// (`RemoteLayoutModel`): not the layout, its panel, the thread or the composer. With design
     /// references on, the thread pane once read the connection for them, so every push rebuilt it.
     @Test func aHostPushForAnotherThreadRedrawsNoRemoteLayout() async throws {
-        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         local.settings.designToolEnabled = true
         remote.host.settings.designToolEnabled = true
@@ -1824,7 +1826,7 @@ struct ListPerformanceTests {
 
     /// Opening a review docks it beside one layout, and redraws that layout alone.
     @Test func openingAReviewRedrawsOnlyItsLayout() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
         defer { window.close() }
@@ -1843,7 +1845,7 @@ struct ListPerformanceTests {
     }
 
     static func visibleUpdates(hidden: Int) async throws -> VisibleUpdates {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let workspace = try await HiddenAgentsWorkspace.open(hidden: hidden, in: app)
         defer { workspace.close() }
@@ -1977,7 +1979,7 @@ struct ListPerformanceTests {
     /// Settings ▸ Skills over 200 skills: opening builds the rows on screen and some ahead of them,
     /// never the whole list, and one skill turning off redraws its row alone.
     @Test func oneSkillChangingRedrawsOnlyItsRow() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         for index in 0..<200 {
@@ -2011,7 +2013,7 @@ struct ListPerformanceTests {
     /// The read-only groups are lazy too: 200 skills from pi's own setup and packages build only
     /// the rows on screen, and one changing redraws its row alone.
     @Test func onePiSkillChangingRedrawsOnlyItsRow() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let pi = PiSkills(agentDirectory: "~/.pi/agent", skills: (0..<200).map { index in
@@ -2054,7 +2056,7 @@ struct ListPerformanceTests {
     /// Settings ▸ MCP servers over 200 servers: opening builds the rows on screen and some ahead
     /// of them, never the whole list, and one server changing redraws its row alone.
     @Test func oneServerChangingRedrawsOnlyItsRow() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let directory = try makeScratchDirectory()
@@ -2278,7 +2280,7 @@ struct ListPerformanceTests {
     /// The sidebar overlaid on a narrow window casts its shadow from its fill alone: on the
     /// sidebar itself, Core Animation redrew the shadow from the scrolling list on every step.
     @Test func theOverlaidSidebarCastsItsShadowFromItsFillAlone() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
         let window = OffscreenWindow(size: CGSize(width: AppLayout.windowMinWidth, height: 700), dark: true,

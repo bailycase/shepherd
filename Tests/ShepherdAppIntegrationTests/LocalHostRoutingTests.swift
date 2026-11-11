@@ -78,11 +78,10 @@ struct LocalHostRoutingTests {
         let settings = AppSettings(store: defaults)
         configure(settings)
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: false, settings: settings,
+        let vm = ShepherdViewModel(settings: settings,
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         // As `ShepherdApp` connects it.
@@ -425,11 +424,10 @@ struct LocalHostRoutingTests {
         let dir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: BackgroundHostClient.idleServer(directory: dir), ownsWorkspace: false, settings: AppSettings(store: defaults),
+        let vm = ShepherdViewModel(settings: AppSettings(store: defaults),
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
             hooks: HooksModel(home: dir.appendingPathComponent("hooks-home").path, support: dir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path))
         vm.connectLocalHost(socket: host.dir.appendingPathComponent("h.sock").path, token: token)

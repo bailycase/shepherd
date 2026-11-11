@@ -95,11 +95,10 @@ struct LocalHostRuntimeTests {
         settings.projectsEnabled = true
         settings.missionsEnabled = true
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: false, settings: settings,
+        let vm = ShepherdViewModel(settings: settings,
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         vm.connectLocalHost(socket: socket, token: token)
@@ -117,7 +116,6 @@ struct LocalHostRuntimeTests {
         let id = ProjectID()
         let made = try #require(await model.create(home: .local, id: id, name: "Checkout revamp", goal: "Ship the new checkout", spaces: [s.space.id]))
         #expect(s.host.server.state.projects.map(\.id) == [id], "the host owns it")
-        #expect(s.vm.server.state.projects.isEmpty, "nothing reaches the app's idle server")
         let ref = LogicalProjectRef(home: .local, id: id)
         try await eventuallyOnMain("the Project as This Mac's") { s.vm.state.projects.map(\.id) == [id] }
         #expect(s.vm.sidebarLogicalProjects.map(\.ref) == [ref] && s.vm.sidebarLogicalProjects.first?.hostName == nil,
@@ -206,7 +204,7 @@ struct LocalHostRuntimeTests {
         // The page is This Mac's: the host's missions, through its connection.
         s.vm.openMission(mission.id)
         #expect(s.vm.missionsHost == nil)
-        let page = try #require(s.vm.thisMacMissions as? RemoteMissionDriver)
+        let page = try #require(s.vm.thisMacMissions)
         #expect(page.hostID == s.hosts.localHost?.id && page.selectedID == mission.id)
         try await eventuallyOnMain("the page reads the host's missions") { page.records.map(\.id) == [mission.id] }
 
@@ -299,7 +297,7 @@ struct LocalHostRuntimeTests {
         let s = try await Self.setUp()
         defer { s.stop() }
         s.vm.openNewMission()
-        let page = try #require(s.vm.thisMacMissions as? RemoteMissionDriver)
+        let page = try #require(s.vm.thisMacMissions)
         #expect(page.startRequested)
         await page.refreshModels()
         #expect(page.availableSpaces.map(\.id) == [s.space.id])
@@ -307,7 +305,6 @@ struct LocalHostRuntimeTests {
         let branch = try #require(page.defaultBranches[s.space.id] ?? page.branchChoices[s.space.id]?.first)
         let id = try await page.create(goal: "Ship the new checkout", spaces: [s.space.id], model: model, branches: [s.space.id: branch])
         #expect(s.host.server.state.missions.map(\.id) == [id])
-        #expect(s.vm.server.state.missions.isEmpty)
         try await eventuallyOnMain("the new mission as This Mac's") { s.vm.state.missions.map(\.id) == [id] }
         try await eventuallyOnMain("its planning stops") { s.host.server.state.missions.first?.run?.phase.active == false || s.runtime.missions.jobs[id] == nil }
     }

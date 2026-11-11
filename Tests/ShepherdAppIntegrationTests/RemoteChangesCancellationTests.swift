@@ -36,7 +36,7 @@ struct RemoteChangesCancellationTests {
         try await eventuallyOnMain("cancelled review no longer awaits remote callbacks") { completed.current }
         #expect(peer.state.current.held.count == 4)
         peer.release()
-        _ = try await app.remoteHosts.agentQuery(target, query: .changesBranches)
+        _ = try await app.remoteHosts.agentQuery(target, query: .changesBranches())
         #expect(peer.state.current.fileRequests.count == 4)
         #expect(old.files.isEmpty)
         let newer = open()
@@ -46,9 +46,9 @@ struct RemoteChangesCancellationTests {
         #expect(connection.phase == .connected && peer.server.connections.current == 1)
     }
 
-    @Test(arguments: [RemoteAgentQuery.changesOverview, .changesList(scope: .uncommitted, options: .init()),
+    @Test(arguments: [RemoteAgentQuery.changesOverview(), .changesList(scope: .uncommitted, options: .init()),
         .changesFile(revision: ChangesPeer.revision, path: "file", oldPath: nil, options: .init()),
-        .changesBranches, .changesPatch(revision: ChangesPeer.revision, options: .init()), .search(query: "needle")])
+        .changesBranches(), .changesPatch(revision: ChangesPeer.revision, options: .init()), .search(query: "needle")])
     func cancellingAReadDropsItsCallbackAndLateReplyKeepsConnectionHealthy(query: RemoteAgentQuery) async throws {
         let peer = try ChangesPeer(holdAll: true)
         defer { peer.stop() }
@@ -127,11 +127,11 @@ private final class ChangesPeer: @unchecked Sendable {
                         switch query {
                         case .search: result = .search(snippet: "needle")
                         case .changesOverview: result = .changesOverview(ChangesOverview(repository: "/fixture", defaultScope: .uncommitted))
-                        case .changesList(let scope, _):
+                        case .changesList(let scope, _, _):
                             result = .changesList(ChangesList(scope: scope, revision: Self.revision,
                                 comparison: ChangesComparison(head: "Working tree", base: "HEAD"),
                                 files: (0..<9).map { ChangesFile(path: "file\($0)", status: .modified, added: 0, removed: 0) }))
-                        case .changesFile(_, let path, _, _):
+                        case .changesFile(_, let path, _, _, _):
                             state.fileRequests.append(path)
                             hold = true
                             result = .changesFile(ChangesFileDiff(file: DiffFile(oldPath: path, newPath: path, displayPath: path,

@@ -67,7 +67,7 @@ struct DesignExportFlowTests {
     /// The Design tool on, a plain thread, and the checkout design (A, B, C, A · phone) plus Hero,
     /// which uses an upload and imports the unlisted Badge.
     private func workspace() async throws -> Workspace {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         app.settings.designToolEnabled = true
         let space = Fixture.space(path: app.dir.path)
         let thread = Fixture.agent("Fix the login redirect", in: space)
@@ -90,11 +90,17 @@ struct DesignExportFlowTests {
         return Workspace(app: app, vm: vm, design: design, thread: thread, out: out)
     }
 
+    /// The sheet, once the host's copy of the design is synced.
+    private static func opened(_ w: Workspace) async throws -> DesignExportModel {
+        try await eventuallyOnMain("the export sheet") { w.vm.designExport != nil }
+        return try #require(w.vm.designExport)
+    }
+
     private func model(_ w: Workspace, ticking boards: [String], format: DesignExportFormat) async throws -> DesignExportModel {
         let screen = w.vm.designScreen(w.design.id)
         await screen.refresh()
         w.vm.openDesignExport(w.design.id)
-        let model = try #require(w.vm.designExport)
+        let model = try await Self.opened(w)
         for row in model.selection.rows { model.selection.setTicked(row.path, boards.contains(row.path.rawValue)) }
         model.format = format
         return model
@@ -175,7 +181,7 @@ struct DesignExportFlowTests {
         await screen.refresh()
 
         w.vm.openDesignExport(w.design.id)
-        var model = try #require(w.vm.designExport)
+        var model = try await Self.opened(w)
         #expect(model.selection.count == 5 && model.selection.exportTitle == "Export 5 boards", "nothing selected: every board")
         #expect(model.threads.map(\.id) == [w.thread.agent.id], "a design's own agent is no thread to attach to")
         w.vm.closeDesignExport()
@@ -183,7 +189,7 @@ struct DesignExportFlowTests {
 
         screen.setSelection([.init(board: try DesignPath.validate("A-phone.dc.html")), .init(board: try DesignPath.validate("A.dc.html"))])
         w.vm.openDesignExport(w.design.id)
-        model = try #require(w.vm.designExport)
+        model = try await Self.opened(w)
         #expect(model.selection.boards.map(\.rawValue) == ["A.dc.html", "A-phone.dc.html"])
         #expect(model.exportTitle == "Export 2 boards" && model.format == .html)
     }

@@ -1,74 +1,38 @@
 import Foundation
 import ShepherdProtocol
+import ShepherdSessions
 
-// A design agent's `board_render`: the server reads the
-// board's files and hands the job here; the app draws it off screen, one at a time, and answers a
-// picture sized for pi's session.
+// A design agent's `board_render`: the host reads the board's files and relays the job here
+// (`DesignRelayJob`); the app draws it off screen, one at a time, and answers a picture sized
+// for pi's session. A design's `design_export` and a reference's copy come the same way.
 
 extension ShepherdViewModel {
     func installDesignRenderHandler() {
-        // The background host on this Mac has no web view: its agents' boards are drawn here, by
-        // the same handlers this app's own server has.
+        // The background host on this Mac has no web view: its agents' boards are drawn here.
         remoteHosts.onDesignRelay = { [weak self] client, token, job in
             let answer = { (result: DesignRelayResult) in client.designRelayAnswer(token: token, result: result) }
-            let unavailable = DesignRelayResult.failed(code: "render_unavailable", message: "The workspace is gone.")
-            guard let server = self?.server else { return answer(unavailable) }
-            switch job {
-            case .render(let job):
-                guard let draw = server.onDesignRender else { return answer(unavailable) }
-                draw(job) { result in
-                    switch result {
-                    case .success(let rendered): answer(.rendered(rendered))
-                    case .failure(let failure): answer(.failed(code: failure.code, message: failure.message))
-                    }
-                }
-            case .export(let job):
-                guard let export = server.onDesignExport else { return answer(unavailable) }
-                export(job) { result in
-                    switch result {
-                    case .success: answer(.exported)
-                    case .failure(let failure): answer(.failed(code: failure.code, message: failure.message))
-                    }
-                }
-            case .capture(let request):
-                guard let capture = server.onDesignReferenceCapture else { return answer(unavailable) }
-                capture(request) { result in
-                    switch result {
-                    case .success(let captured): answer(.captured(captured))
-                    case .failure(let failure): answer(.failed(code: failure.code, message: failure.message))
-                    }
-                }
-            }
-        }
-        server.onDesignExport = { [weak self] job, respond in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    respond(.failure(DesignRenderFailure(code: "export_unavailable", message: "The workspace is gone.")))
-                    return
-                }
-                Task { @MainActor in
+            guard let self else { return answer(.failed(code: "render_unavailable", message: "The workspace is gone.")) }
+            Task { @MainActor in
+                switch job {
+                case .render(let job):
+                    do { answer(.rendered(try await self.designRendering.picture(for: job))) }
+                    catch let failure as DesignRenderFailure { answer(.failed(code: failure.code, message: failure.message)) }
+                    catch { answer(.failed(code: "render_failed", message: "\(job.path) couldn't be drawn: \(error)")) }
+                case .export(let job):
                     do {
                         try await self.designRendering.exportAgent(job)
-                        respond(.success(()))
-                    } catch {
-                        respond(.failure(DesignRenderFailure(code: "export_failed", message: String(describing: error))))
-                    }
-                }
-            }
-        }
-        server.onDesignRender = { [weak self] job, respond in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    respond(.failure(DesignRenderFailure(code: "render_unavailable", message: "The workspace is gone.")))
-                    return
-                }
-                Task { @MainActor in
+                        answer(.exported)
+                    } catch { answer(.failed(code: "export_failed", message: String(describing: error))) }
+                case .capture(let request):
                     do {
-                        respond(.success(try await self.designRendering.picture(for: job)))
-                    } catch let failure as DesignRenderFailure {
-                        respond(.failure(failure))
+                        guard let files = request.files else {
+                            throw DesignReferenceError("version_gone", "The pinned rendering inputs are no longer kept. Pick the piece again.")
+                        }
+                        answer(.captured(try await self.designRendering.capture(request, files: files)))
+                    } catch let error as DesignReferenceError {
+                        answer(.failed(code: error.code, message: error.message))
                     } catch {
-                        respond(.failure(DesignRenderFailure(code: "render_failed", message: "\(job.path) couldn't be drawn: \(error)")))
+                        answer(.failed(code: "render_failed", message: (error as? LocalizedError)?.errorDescription ?? "\(error)"))
                     }
                 }
             }

@@ -88,14 +88,12 @@ public struct ShepherdMacApp: App {
                 let service = status.map { _ in BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "") }
                 // App-side diagnostics only; the host's server metrics aren't reported to the app (#561 Q5).
                 ShepherdDiagnostics.shared.start(settings: .shared)
-                let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
-                                           restoresAgentsAtLaunch: false, welcomesYourPi: true, browserData: .persistent)
+                let vm = ShepherdViewModel(welcomesYourPi: true, browserData: .persistent)
                 vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                 vm.backgroundService = service
                 vm.backgroundServiceStatus = status
                 // The supervisor starts the host again; the store reconnects on its own.
                 HostSupervisor.agents = { [weak vm] in vm?.remoteHosts.localHost?.state.agents ?? [] }
-                AppDelegate.stopApps = { [weak vm] in vm?.server.apps.stopAll() }
                 if let supervisor = HostSupervisor.shared {
                     supervisor.onFailure = { failure in
                         if HostSupervisor.StartFailed.show(failure, canRetry: true) { supervisor.retry() } else { NSApp.terminate(nil) }
@@ -128,7 +126,6 @@ public struct ShepherdMacApp: App {
                     .task {
                         AppSignposts.launch.emitEvent("root view task")
                         vm.applyRemoteListenerSetting()
-                        vm.startSkillChecks()
                     }
                 } else {
                     LaunchSurface()
@@ -218,13 +215,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return QuitConfirmation.shared.shouldTerminate(agents: HostSupervisor.agents())
     }
 
-    /// Settings ▸ Apps' processes run in the app (`ShepherdViewModel+Apps`) and stop with it, as
-    /// they did when the app ran its own server.
-    @MainActor static var stopApps: (() -> Void)?
-
     func applicationWillTerminate(_ notification: Notification) {
         BoundedCommand.stopForAppTermination()
-        MainActor.assumeIsolated { Self.stopApps?() }
         HostSupervisor.shared?.stop()
     }
 
@@ -259,7 +251,7 @@ extension ShepherdHost {
     /// TCP listener as the app would; a change to it takes effect when the host next starts. The
     /// listener's port, when it opened.
     @discardableResult
-    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer) -> UInt16? {
+    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer, listenerFailed: ((Error) -> Void)? = nil) -> UInt16? {
         settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
@@ -283,6 +275,7 @@ extension ShepherdHost {
                                                   tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
         } catch {
             ShepherdLog.error("host's remote listener failed to start: \(error)")
+            listenerFailed?(error)
             return nil
         }
     }
@@ -336,6 +329,12 @@ public enum ShepherdHost {
         /// Missions and the Project runtime, served for the life of the host.
         private(set) var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
                                    execution: ProjectExecutionController)?
+        /// Worktree requests and commits from review, served for the life of the host.
+        private(set) var worktrees: WorktreeQueries?
+        /// Serve this Mac's listener as it started, for Settings ▸ Remote.
+        private(set) var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
+        /// Stands in for `gh` in looking up a thread's pull request (tests).
+        var pullRequestLookup: (@MainActor (String) async -> ThreadPullRequest?)?
 
         init(settings: AppSettings, mcpStore: MCPStore, notifications: AgentNotifications, keepsAgentsRunning: @escaping @MainActor () -> Bool?) {
             self.settings = settings
@@ -363,8 +362,12 @@ public enum ShepherdHost {
 
         var configure: @MainActor (SessionServer) -> Void {
             { [self] server in
-                HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning)
-                serveSettings(settings, on: server)
+                HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
+                    self?.listener ?? (nil, nil)
+                }
+                listener.port = serveSettings(settings, on: server) { [weak self, settings] error in
+                    self?.listener.failure = RemoteListenerFailure(error, port: UInt16(clamping: settings.remoteListenerPort))
+                }
                 // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
                 let subagents = SubagentDefinitionsModel(pi: server.pi)
                 let stores = HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
@@ -374,10 +377,20 @@ public enum ShepherdHost {
                 let settings = settings
                 let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                                          deleteAgent: { id, _ in try await server.deleteAgent(id) }))
+                self.worktrees = worktrees
                 // Missions and Projects run here, where their agents run: they keep acting with the app quit.
                 runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) { [notifications] in
                     notifications.post(AgentBanners.automation(title: $0, body: $1))
                 }.serve()
+                // Skills look for newer commits a minute in, then hourly once the last check is a day old.
+                let skills = server.skills
+                Task.detached(priority: .utility) {
+                    try? await Task.sleep(for: .seconds(60))
+                    while !Task.isCancelled {
+                        skills.checkUpdatesIfDue()
+                        try? await Task.sleep(for: .seconds(3_600))
+                    }
+                }
             }
         }
 
@@ -405,8 +418,13 @@ public enum ShepherdHost {
         }
 
         var pullRequests: @MainActor (SessionServer) -> PullRequestLinkHosting {
-            { [settings, notifications] server in
+            { [weak self, settings, notifications] server in
                 var hosting = server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
+                let lookup = hosting.lookup
+                hosting.lookup = { [weak self] cwd in
+                    if let stand = self?.pullRequestLookup { return await stand(cwd) }
+                    return await lookup(cwd)
+                }
                 hosting.closed = { agent, link, branch, remote in
                     notifications.post(AgentBanners.pullRequestClosed(agent, number: link.ref.number, branch: branch, remote: remote))
                 }

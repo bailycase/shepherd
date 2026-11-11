@@ -99,10 +99,13 @@ struct RemoteHostConfigFlowTests {
     }
 
     @Test func aProfileChangedSinceTheClientReadItIsRefused() async throws {
-        let app = try AppHarness(inProcess: true)
+        // The host's own Subagents store parses profiles with the engine's package.
+        let directory = try makeScratchDirectory("srv")
+        let home = directory.appendingPathComponent("pi")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let app = try AppHarness(directory: directory, pi: try stagedPiSetup(home: home))
         defer { app.stop() }
-        let vm = try await app.start()
-        vm.madeSubagentDefinitions = SubagentDefinitionsModel(store: try SubagentFixtures.store(in: app.dir))
+        try await app.start()
         let client = try await Self.connect(app)
         defer { client.disconnect() }
         let text = "---\nname: remote\ndescription: Made on the phone\ntools: [read]\n---\nRead the code.\n"

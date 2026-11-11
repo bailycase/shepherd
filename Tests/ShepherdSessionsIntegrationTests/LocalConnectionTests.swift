@@ -200,4 +200,5 @@ struct LocalConnectionTests {
         // The host gives up on it (the client, its reads paused, hears so only once it reads again).
         try await eventually("the host to drop the stalled paired client") { host.scratch.server.remoteClientCount == 0 }
     }
+
 }

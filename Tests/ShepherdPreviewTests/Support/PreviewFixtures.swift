@@ -9,9 +9,9 @@ import SwiftUI
 
 // MARK: Workspace
 
-/// A real server and view model with isolated preferences, seeded for a preview. Agents whose
-/// layouts the workspace mounts get a running stub pi, so rendering never launches anything
-/// else. Call `stop()` when done.
+/// A real server, served as the host (`seed`), and its client view model with isolated preferences,
+/// seeded for a preview. Agents whose layouts the workspace mounts get a running stub pi, so
+/// rendering never launches anything else. Call `stop()` when done.
 @MainActor
 final class PreviewWorkspace {
     let scratch: ScratchServer
@@ -24,20 +24,17 @@ final class PreviewWorkspace {
     /// Settings ▸ Pi shows `yourPi` (a fixture: never this machine's pi, nor a read of the scratch one).
     init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
          yourPi: YourPiSurvey = PreviewYourPi.imported, hooks: HooksModel? = nil,
-         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge, ownsWorkspace: Bool = true) throws {
+         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
         try PreviewEnvironment.install()
         scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog, forgeRunner: forgeRunner)
         settings = AppSettings(store: defaults)
         // Never ask a real model to draft a commit message while rendering the commit sheet.
         settings.worktreeGeneratePRDescription = false
         vm = ShepherdViewModel(
-            server: scratch.server, ownsWorkspace: ownsWorkspace, settings: settings, keybindings: KeybindingsStore(store: defaults),
+            pi: scratch.server.pi, settings: settings, keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
             remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-            // Only the agents a preview mounts get a pi, and those get the stub.
-            restoresAgentsAtLaunch: false,
-            // Fixtures set the checkout each header shows.
-            checkoutReader: nil,
+            looksUpPullRequests: false,
             mcp: mcp,
             yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi),
             // Hooks read the scratch folder's home, never this machine's.
@@ -49,11 +46,28 @@ final class PreviewWorkspace {
         vm.sidebarFooterIdentity = ("Alex", SidebarDerivation.footerDetail(computerName: "demo-mac"))
     }
 
+    /// The host's services on the scratch server, once `seed` served them.
+    private(set) var host: ShepherdHost.Services?
+    /// Missions and the Project runtime the host runs, once `seed` served them.
+    var missions: MissionController { host!.runtime!.missions }
+    var coordinator: ProjectCoordinatorController { host!.runtime!.coordinator }
+
     /// Replaces the server's workspace and waits for the view model to adopt it.
     func seed(_ state: ShepherdState) async throws {
         try await server.putState(state)
         let vm = vm, server = server
-        try await eventuallyOnMain("the preview workspace to load") { vm.state == server.state }
+        if host == nil { host = try await Self.serve(server, in: dir, settings: settings, to: vm) }
+        try await eventuallyOnMain("the preview workspace to load") { vm.localHost?.phase == .connected && vm.state == server.state }
+    }
+
+    /// Serves `server` as `Shepherd --host` serves it (`ShepherdHost.Services`) on a socket in `dir`, `vm` its client.
+    static func serve(_ server: SessionServer, in dir: URL, settings: AppSettings, to vm: ShepherdViewModel) async throws -> ShepherdHost.Services {
+        let socket = dir.appendingPathComponent("h.sock").path, tokenURL = dir.appendingPathComponent("remote-token")
+        let services = ShepherdHost.Services(settings: settings, mcpStore: vm.mcp, notifications: AgentNotifications(activate: {}),
+                                             keepsAgentsRunning: { nil })
+        await services.serve(server, socket: socket, tokenURL: tokenURL, recovering: false)
+        vm.connectLocalHost(socket: socket, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
+        return services
     }
 
     /// An agent record and its one-pane layout; `live` binds a running stub pi to the pane.
@@ -568,4 +582,17 @@ enum PreviewYourPi {
         sheet.steps[.logins] = .failed
         return sheet
     }()
+}
+
+@MainActor
+extension ShepherdViewModel {
+    /// The session the host bound to a terminal pane.
+    func hostTerminalSession(_ pane: PaneID) -> SessionID? {
+        state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane)?.sessionID }.first
+    }
+
+    /// A host terminal pane attached and live (`HostTerminalLeaf`).
+    func hostTerminalLive(_ pane: PaneID) -> Bool {
+        hostTerminalSession(pane).flatMap { localHost?.pane(for: $0) }?.phase == .live
+    }
 }

@@ -5,14 +5,13 @@ import ShepherdRemote
 import ShepherdSessions
 
 /// What Missions and Projects (`MissionController`, `ProjectCoordinatorController`,
-/// `ProjectExecutionController`) need from whoever runs them: the app's view model in process, or
-/// `Shepherd --host` (`headless`). They run where the agents run, so with the background service
+/// `ProjectExecutionController`) need from whoever runs them: `Shepherd --host` (`headless`). They run where the agents run, so with the background service
 /// on they keep acting after Quit; a restart still brings them back paused (the server's start).
 @MainActor
 struct RuntimeHosting {
     let server: SessionServer
     let settings: AppSettings
-    /// The workspace as the controllers read it: the app's observed copy, or the server's.
+    /// The workspace as the controllers read it: the server's.
     var state: () -> ShepherdState
     /// Starts a new agent; returns once its pi is spawned.
     var startAgent: (NewAgentConfig) async throws -> AgentID
@@ -111,38 +110,5 @@ struct RuntimeHosting {
         coordinator.install()
         execution.install()
         return (missions, coordinator, execution)
-    }
-}
-
-extension ShepherdViewModel {
-    /// The app's own, while it owns the workspace: agents start and restart through its sessions,
-    /// adopting the server's state first so the new thread's pane is the one it binds.
-    var runtimeHosting: RuntimeHosting {
-        let server = server
-        var hosting = RuntimeHosting(
-            server: server, settings: settings, state: { [unowned self] in state },
-            startAgent: { [unowned self] config in
-                sessions.stateDidChange(server.state)
-                state = server.state
-                return try await startAgent(config, selectAfter: false, focusWindow: false)
-            },
-            restartAgent: { [unowned self] agent, tab, pane, entry in
-                sessions.stateDidChange(server.state)
-                state = server.state
-                // A Project follow-up replaces whatever the worker's pane last held.
-                if entry != nil {
-                    sessions.detachPane(pane.id)
-                    sessions.reserveAgentPane(pane.id)
-                }
-                try await sessions.createAgentSession(pane: pane, tab: tab, agent: agent, openingPrompt: nil, requiredHistoryEntryID: entry)
-            },
-            notify: { [unowned self] title, body in notifications.post(AgentBanners.automation(title: title, body: body)) },
-            nativeThread: { [unowned self] in try await nativeThread($0, request: $1) },
-            worktrees: worktrees)
-        hosting.executors = remoteHosts.projectExecutors
-        hosting.selectAgent = { [unowned self] in selectAgent($0) }
-        hosting.threadStore = { [unowned self] in threadStores.store(for: $0) }
-        hosting.missionStartRequested = ({ [unowned self] in missionStartRequested }, { [unowned self] in missionStartRequested = $0 })
-        return hosting
     }
 }

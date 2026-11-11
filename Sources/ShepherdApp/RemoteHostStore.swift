@@ -202,6 +202,7 @@ final class RemoteHostStore {
         /// The host takes the terminal panel's Rename tab and Kill process.
         var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
         var supportsTerminalStart: Bool { client?.capabilities.contains(RemoteProtocol.terminalStartCapability) == true }
+        var supportsCheckoutRead: Bool { client?.capabilities.contains(RemoteProtocol.checkoutReadCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {
@@ -264,6 +265,8 @@ final class RemoteHostStore {
     /// A tool call, or a line said, in a thread of the background host on this Mac.
     @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
     @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
+    /// Every app's run on the background host on this Mac (`appsChanged`): Settings › Apps follows.
+    @ObservationIgnored var onLocalAppsChanged: (([RemoteAppProcess]) -> Void)?
     /// Why one of the background host on this Mac's agents waits with its pi stopped; nil once it starts again.
     @ObservationIgnored var onLocalAgentStartProblem: ((AgentID, NativeStartProblem?) -> Void)?
     /// The background host on this Mac's automations changed, or one of them posts a banner.
@@ -309,8 +312,8 @@ final class RemoteHostStore {
     /// page shows it. Lookups by host id (`allConnections`) still find it: requests the app routes
     /// to it go that way.
     var connections: [Connection] { pairedConnections }
-    /// The background host on this Mac: This Mac's Settings pages read and change its stores, never
-    /// the idle in-process server's. Nil in process; throws while the host is away.
+    /// The background host on this Mac: This Mac's Settings pages read and change its stores. Nil
+    /// before it is added; throws while the host is away.
     func thisMacHost() throws -> RemoteHostClient? {
         guard let host = localHost else { return nil }
         guard host.phase == .connected, let client = host.client else { throw RemoteHostClientError.disconnected }
@@ -551,6 +554,10 @@ final class RemoteHostStore {
         client.onThreadNotice = { [weak self, weak connection] agentID, message in
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalThreadNotice?(agentID, message)
+        }
+        client.onAppsChanged = { [weak self, weak connection] processes in
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAppsChanged?(processes)
         }
         client.onAgentStartProblem = { [weak self, weak connection] agentID, problem in
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
@@ -846,6 +853,18 @@ final class RemoteHostStore {
         return try await client.addSpace(path: path)
     }
 
+    /// This Mac's background host's space registry (`projectRequest`): the space it registered or edited.
+    func projectRequest(hostID: UUID, _ request: RemoteProjectRequest) async throws -> SpaceID {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.projectRequest(request)
+    }
+
+    /// A space's branches on a host (`creationBranches`).
+    func creationBranches(hostID: UUID, spaceID: SpaceID) async throws -> ChangesBranches {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.creationBranches(spaceID: spaceID)
+    }
+
     /// Create an agent on a host; it appears in the sidebar via state push.
     @discardableResult
     func createAgent(
@@ -948,9 +967,8 @@ final class RemoteHostStore {
 }
 
 /// One remote pane's terminal bridge: an AppTerminalModel fed from `output`
-/// frames, with input and debounced resize forwarded to the host. The remote
-/// analog of TerminalSessionStore.PaneSession, without the spawn/binding
-/// machinery — the host owns the session lifecycle.
+/// frames, with input and debounced resize forwarded to the host, which owns
+/// the session lifecycle.
 @MainActor
 @Observable
 final class RemotePaneSession {
@@ -961,6 +979,9 @@ final class RemotePaneSession {
         case exited(Int32?)
     }
 
+    /// How long a surface waits for its first real grid before replaying anyway.
+    static let gridWaitNanoseconds: UInt64 = 400_000_000
+
     let sessionID: SessionID
     let terminal: AppTerminalModel
     var phase: Phase = .connecting
@@ -968,8 +989,8 @@ final class RemotePaneSession {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     @ObservationIgnored private var uploading = false
     @ObservationIgnored private weak var client: RemoteHostClient?
-    @ObservationIgnored private var lastCols = 80
-    @ObservationIgnored private var lastRows = 24
+    @ObservationIgnored private(set) var lastCols = 80
+    @ObservationIgnored private(set) var lastRows = 24
     @ObservationIgnored private var hasReportedGrid = false
     @ObservationIgnored private var attachStarted = false
     /// Debounce the initial attach and later resizes to a settled grid.
@@ -1062,7 +1083,7 @@ final class RemotePaneSession {
     /// surface that never lays out still attaches at 80×24.
     func start() {
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: TerminalSessionStore.gridWaitNanoseconds)
+            try? await Task.sleep(nanoseconds: RemotePaneSession.gridWaitNanoseconds)
             guard let self, !self.attachStarted, !self.hasReportedGrid else { return }
             self.attachIfNeeded()
         }

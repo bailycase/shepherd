@@ -56,7 +56,7 @@ struct LogicalProjectPreviewTests {
         let space = try #require(vm.state.spaces.last { !$0.hidden })
         var revision = projects[0].revision
         for (title, prompt) in prompts {
-            let updated = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: revision,
+            let updated = try await world.coordinator.perform(projectID: ref.id, expectedRevision: revision,
                                                                  request: .assign(operationID: UUID(), spaceID: space.id, title: title, prompt: prompt))
             // The owner records each worker running asynchronously: the next assign carries the revision it really holds.
             let started = prompts.firstIndex { $0.0 == title }.map { $0 + 1 } ?? 1
@@ -80,7 +80,7 @@ struct LogicalProjectPreviewTests {
         // nothing is awaited here (its poll loop never returns).
         _ = coordinator
         if paused, let p = vm.state.projects.first {
-            _ = try await vm.projectCoordinator.perform(projectID: p.id, expectedRevision: p.revision, request: .pause)
+            _ = try await world.coordinator.perform(projectID: p.id, expectedRevision: p.revision, request: .pause)
         }
         vm.openLogicalProject(ref)
         return (world, ref)
@@ -199,7 +199,7 @@ struct LogicalProjectPreviewTests {
         let (world, _) = try await running([("Reading list research", "slow"), ("Library API draft", "slow"), ("Reading widget mockup", "slow")])
         defer { world.stop() }
         let vm = world.vm
-        let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false }
+        let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.threadStores.existing(for: $0) }?.rows.isEmpty == false }
         try await Preview.renderMatrix("lead-started", size: CGSize(width: 1368, height: 900), scales: [1], ready: ready) {
             LogicalProjectDestination(vm: vm).frame(width: 1368).background(Color.sh.bgWindow)
         }
@@ -216,12 +216,12 @@ struct LogicalProjectPreviewTests {
         // Ready once the worker's own native dialog has been read (the card draws only from it).
         // The card reads the worker's own dialog, which that worker's store loads once polling: the page's card starts it, so ready
         // is just that the coordinator's reply is in; the render waits for the dialog through its own `ready` re-check below.
-        let server = vm.server
+        let server = world.server
         let workerStore = vm.threadStores.store(for: waiting.workerAgentID)
         Task { await workerStore.run(request: { try await server.nativeThread(agentID: waiting.workerAgentID, request: $0) }, preview: nil) }
         let ready: @MainActor () -> Bool = {
             !workerStore.dialogs.isEmpty
-                && vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false
+                && vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.threadStores.existing(for: $0) }?.rows.isEmpty == false
         }
         vm.settings.sidebarStyle = .projects
         vm.collapsedProjects = Set(vm.state.spaces.map { SidebarProjectID.local($0.id).key })
@@ -266,7 +266,7 @@ struct LogicalProjectPreviewTests {
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Please refuse this one so its note shows."))
         try await eventuallyOnMain("the refusal is recorded") { vm.state.projects.first?.messages.contains { $0.phase == .failed } == true }
         let running = try #require(vm.state.projects.first)
-        _ = try await vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        _ = try await world.coordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused and acknowledged") { vm.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Use this sketch for the reading-list layout when you continue.",
@@ -274,7 +274,7 @@ struct LogicalProjectPreviewTests {
         try await eventuallyOnMain("the owner holds it") { vm.state.projects.first?.messages.last?.phase == .queued }
         vm.logicalProjectPaneOpen = false
         let ready: @MainActor () -> Bool = {
-            vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false
+            vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.threadStores.existing(for: $0) }?.rows.isEmpty == false
         }
         try await Preview.renderMatrix("lead-paused-queue", size: CGSize(width: 1136, height: 700), scales: [1, 1.3], ready: ready) {
             LogicalProjectDestination(vm: vm).frame(width: 1136).background(Color.sh.bgWindow)
@@ -310,11 +310,11 @@ struct LogicalProjectPreviewTests {
         // `onAgentChildren` path), so the row's pill is the live count, not a typed string.
         if workers.count > 1 {
             let runs = (1...2).map { ChildRun(runID: "run-\($0)", label: "worker \($0)", state: "running", startedAt: Date().timeIntervalSince1970 * 1000) }
-            vm.sessions.onAgentChildren?(workers[1], runs)
+            vm.applyAgentChildren(workers[1], runs)
         }
-        for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await vm.server.nativeThread(agentID: id, request: $0) }) } }
+        for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await world.server.nativeThread(agentID: id, request: $0) }) } }
         let ready: @MainActor () -> Bool = {
-            vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false
+            vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.threadStores.existing(for: $0) }?.rows.isEmpty == false
                 && workers.allSatisfy { vm.workerActivity($0) != nil && vm.workerStarted($0) != nil }
         }
         try await Preview.renderMatrix("win-started-activity", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .activity) }
@@ -332,7 +332,7 @@ struct LogicalProjectPreviewTests {
         let (world, _) = try await running([("Reading list research", "slow"), ("Library API draft", "slow")])
         defer { world.stop() }
         let vm = world.vm
-        let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false }
+        let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.threadStores.existing(for: $0) }?.rows.isEmpty == false }
         try await Preview.renderMatrix("lead-pane-default", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
         vm.logicalProjectPane.width = 760
         try await Preview.renderMatrix("lead-pane-wide", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
@@ -357,7 +357,7 @@ struct LogicalProjectPreviewTests {
         let folder = world.dir.appendingPathComponent("sample-app-web")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let shown = try #require(vm.state.projects.first { $0.id == ref.id })
-        _ = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: shown.revision,
+        _ = try await world.coordinator.perform(projectID: ref.id, expectedRevision: shown.revision,
             request: .proposeSpace(operationID: UUID(), path: folder.path, spaceID: nil, originTaskID: nil))
         try await eventuallyOnMain("the proposal is pending") { vm.state.projects.first { $0.id == ref.id }?.spaceProposals.contains { $0.phase == .pending } == true }
         vm.openLogicalProject(ref)
@@ -467,10 +467,13 @@ struct LogicalProjectPreviewTests {
         for text in ["Readers save bookmarks into a shared folder (demo decision).",
                      "Use simple tags so saved bookmarks stay easy to find.",
                      "Mockups go to the project’s files as single HTML pages."] {
+            // The host's runtime may move the revision between writes: each write names the current one.
+            project = try #require(world.server.state.projects.first { $0.id == project.id })
             guard case .project(let next) = try await world.server.logicalProjects(
                 .addMemory(projectID: project.id, expectedRevision: project.revision, memoryID: ProjectMemoryID(), text: text, source: "you")) else { return }
             project = next
         }
+        project = try #require(world.server.state.projects.first { $0.id == project.id })
         var settings = project.settings
         settings.instructions = "Sample App helps a small team organize reading lists.\n- API work goes in sample-app-api, the widget in sample-app-web.\n- Ask before deleting any saved links, even in a demo."
         settings.conversationModel = "claude-sonnet-4-6"

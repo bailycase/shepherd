@@ -110,13 +110,12 @@ struct DesignSystemChatPane: View {
             if let pane = model.tab.layout.leaf(withID: thread.paneID) {
                 let agentID = thread.agentID
                 AgentThreadPane(
-                    session: vm.sessions.session(for: pane, in: model.tab),
                     store: vm.threadStores.store(for: agentID),
                     input: vm.threadStores.input(for: agentID),
                     active: model.isVisible,
                     isFocused: model.focusedPaneID == thread.paneID,
                     request: { [vm] in try await vm.nativeThread(agentID, request: $0) },
-                    preview: PiSessionFile.previewLoader(sessionID: thread.piSessionID, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot),
+                    preview: PiSessionFile.previewLoader(sessionID: thread.piSessionID, cwd: pane.cwd, sessionsRoot: vm.pi.sessionsRoot),
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: thread.agentName,
                     workingDirectory: pane.cwd,

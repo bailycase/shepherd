@@ -76,7 +76,7 @@ extension ShepherdViewModel {
         guard let source = sessionSource(id) else { return }
         Task {
             do {
-                let (sessionID, cwd, root) = (source.sessionID, source.cwd, server.pi.sessionsRoot)
+                let (sessionID, cwd, root) = (source.sessionID, source.cwd, pi.sessionsRoot)
                 let forked = try await Task.detached(priority: .userInitiated) {
                     guard let file = PiSessionFile.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root) else {
                         throw PiSessionFile.ForkFailure(message: "This agent has nothing to fork yet.")
@@ -101,7 +101,7 @@ extension ShepherdViewModel {
     func copyAgentTranscript(_ id: AgentID) {
         guard let source = sessionSource(id) else { return }
         Task {
-            let (sessionID, cwd, root) = (source.sessionID, source.cwd, server.pi.sessionsRoot)
+            let (sessionID, cwd, root) = (source.sessionID, source.cwd, pi.sessionsRoot)
             let text = await Task.detached(priority: .userInitiated) {
                 PiSessionFile.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root).flatMap(PiSessionFile.transcript(file:))
             }.value

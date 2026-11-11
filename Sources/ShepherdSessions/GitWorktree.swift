@@ -323,9 +323,8 @@ public enum GitWorktree {
     }
 
     /// Destructive remote operations must not treat a failed probe as a clean checkout. A paired
-    /// Mac counts every commit no remote has; `otherBranchesKeep` (this Mac's own app, as the
-    /// background host's client) spares commits another local branch reaches too, the
-    /// in-process rule (`unreconciledWork`), in its words.
+    /// Mac counts every commit no remote has; `otherBranchesKeep` (this Mac's own app) spares
+    /// commits another local branch reaches too (`unreconciledWork`), in its words.
     public static func checkedUnreconciledWork(worktree: String, branch: String, otherBranchesKeep: Bool = false) throws -> String? {
         let status = try run(["-C", worktree, "status", "--porcelain"])
         let kept = otherBranchesKeep ? ["--exclude=\(branch)", "--branches", "--remotes"] : ["--remotes"]

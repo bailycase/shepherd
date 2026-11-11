@@ -169,7 +169,9 @@ struct AppLogView: View {
         }
         .background(Color.sh.bgWindow)
         .task(id: process?.revision) {
-            lines = await vm.server.apps.lines(app, tail: AppProcesses.maxLines)
+            // ponytail: the whole tail again per revision (the host's pushes are at most 10/s); ask
+            // for the lines after the last one read if a chatty app's output costs too much.
+            lines = await vm.appOutput(app, tail: AppProcesses.maxLines)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(app.name) output")

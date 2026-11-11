@@ -24,7 +24,6 @@ struct MermaidRenderingTests {
         let space = Fixture.space(path: firstApp.dir.path)
         let agents = (0..<2).map { Fixture.agent("diagram ($0)", in: space, order: $0) }
         let first = try await firstApp.start(with: Fixture.state(spaces: [space], agents: agents))
-        first.sessions.holdStarts()
         first.selectAgent(agents[0].agent.id)
         let second = try await secondApp.start()
         let presentation = first.diagramPresentation
@@ -85,7 +84,6 @@ struct MermaidRenderingTests {
             #expect(received == source)
             #expect(first.diagramViewer == nil && second.diagramViewer == nil)
         }
-        #expect(first.sessions.startQueue.started.isEmpty, "rendering and switching never start pi")
     }
 
     @Test func localRenderErrorAndSecurity() async throws {

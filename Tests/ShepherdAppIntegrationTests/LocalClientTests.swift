@@ -21,12 +21,11 @@ struct LocalClientTests {
         -> (ShepherdViewModel, RemoteHostStore, SessionServer, RemoteHostStore.Connection, URL, ScratchDefaults) {
         let clientDir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
-        let idle = BackgroundHostClient.idleServer(directory: clientDir)
+        let idle = SessionServer(socketPath: clientDir.appendingPathComponent("s.sock").path, stateURL: clientDir.appendingPathComponent("state.json"))
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: idle, ownsWorkspace: false, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+        let vm = ShepherdViewModel(pi: idle.pi, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
             hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         let connection = vm.connectLocalHost(socket: socket, token: token)
@@ -163,7 +162,7 @@ struct LocalClientTests {
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
         defer {
             for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
@@ -193,7 +192,7 @@ struct LocalClientTests {
         screen.draftText = "Tighten the header."
         await screen.submitComment()?.value
         #expect(try await host.server.designComments(design.id).comments.map(\.text) == ["Tighten the header."])
-        #expect(vm.server.state.designs.isEmpty, "nothing reached the idle in-process server")
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
     /// New design, Rename, Duplicate, Delete and its Undo on one of the host's designs, from the

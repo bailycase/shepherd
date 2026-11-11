@@ -23,9 +23,11 @@ final class SuggestionsModel {
     @ObservationIgnored private let request: (RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot
     @ObservationIgnored private let instructions: InstructionsModel
 
-    init(store: SuggestionsStore, instructions: InstructionsModel, remoteHosts: RemoteHostStore) {
+    /// `store`: a test's own file for This Mac while no host is connected; the app's is its host's.
+    init(store: SuggestionsStore? = nil, instructions: InstructionsModel, remoteHosts: RemoteHostStore) {
         request = { request in
             if let host = try await remoteHosts.thisMacHost() { return try await host.suggestions(request) }
+            guard let store else { throw BackgroundHostClient.HostStarting() }
             // The store's file work runs off the main actor.
             return try await Task.detached(priority: .userInitiated) { try Self.perform(request, on: store) }.value
         }
