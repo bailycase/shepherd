@@ -161,7 +161,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             // The proposals card stands for its call.
             let shown = proposals == nil ? bursts : bursts.filter { !$0.calls.allSatisfy { $0.name == "markup_propose" } }
             if !shown.isEmpty {
-                ActivityLinesView(bursts: shown, review: actions.review).equatable()
+                ActivityLinesView(bursts: shown, review: actions.review, thread: thread).equatable()
             }
         case .subagents(_, let lines):
             // Where they started, and where they finished: both open the thread's subagents.
@@ -352,15 +352,21 @@ struct ThinkingRow: View, Equatable {
 struct ActivityLinesView: View, Equatable {
     let bursts: [NativeActivityBurst]
     var review: ((String) -> Void)?
+    /// Whose thread: a board call's card reads the host's copy for it (`MobileBoardCard`).
+    var thread: AgentRef?
 
     static func == (lhs: ActivityLinesView, rhs: ActivityLinesView) -> Bool {
-        lhs.bursts == rhs.bursts && (lhs.review == nil) == (rhs.review == nil)
+        lhs.bursts == rhs.bursts && (lhs.review == nil) == (rhs.review == nil) && lhs.thread == rhs.thread
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
             ForEach(bursts) { burst in
-                ActivityLineView(burst: burst, review: review).equatable()
+                if let thread, let board = burst.calls.first?.designBoard, burst.calls.count == 1 {
+                    MobileBoardCard(thread: thread, id: board) { ActivityLineView(burst: burst, review: review).equatable() }
+                } else {
+                    ActivityLineView(burst: burst, review: review).equatable()
+                }
             }
         }
     }
