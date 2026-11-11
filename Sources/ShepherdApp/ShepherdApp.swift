@@ -330,6 +330,8 @@ public enum ShepherdHost {
                                    execution: ProjectExecutionController)?
         /// Worktree requests and commits from review, served for the life of the host.
         private(set) var worktrees: WorktreeQueries?
+        /// Stands in for `gh` in looking up a thread's pull request (tests).
+        var pullRequestLookup: (@MainActor (String) async -> ThreadPullRequest?)?
 
         init(settings: AppSettings, mcpStore: MCPStore, notifications: AgentNotifications, keepsAgentsRunning: @escaping @MainActor () -> Bool?) {
             self.settings = settings
@@ -409,8 +411,13 @@ public enum ShepherdHost {
         }
 
         var pullRequests: @MainActor (SessionServer) -> PullRequestLinkHosting {
-            { [settings, notifications] server in
+            { [weak self, settings, notifications] server in
                 var hosting = server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
+                let lookup = hosting.lookup
+                hosting.lookup = { [weak self] cwd in
+                    if let stand = self?.pullRequestLookup { return await stand(cwd) }
+                    return await lookup(cwd)
+                }
                 hosting.closed = { agent, link, branch, remote in
                     notifications.post(AgentBanners.pullRequestClosed(agent, number: link.ref.number, branch: branch, remote: remote))
                 }
