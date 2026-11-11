@@ -121,7 +121,7 @@ extension LogicalProjectPreviewTests {
         let workerStore = vm.threadStores.store(for: waiting.workerAgentID)
         vm.openLogicalProject(ref)
         let ready: @MainActor () -> Bool = {
-            let conversation = world.coordinator.conversationStore(agentID: coordinator)
+            let conversation = vm.threadStores.existing(for: coordinator)
             let cards = conversation?.rows.flatMap(\.turn.messages).filter { $0.projectAction?.taskID != nil }.count ?? 0
             let said = conversation?.rows.flatMap(\.turn.messages).contains { $0.blocks.contains { $0.text.hasPrefix("All three threads") } } ?? false
             let published = vm.state.projects.first?.artifacts.filter { $0.state == .ready }.count ?? 0
@@ -199,7 +199,7 @@ extension LogicalProjectPreviewTests {
         Task { await vm.threadStores.store(for: coordinator).run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         vm.openLogicalProject(ref)
         let ready: @MainActor () -> Bool = {
-            let store = world.coordinator.conversationStore(agentID: coordinator)
+            let store = vm.threadStores.existing(for: coordinator)
             let cards = store?.rows.flatMap(\.turn.messages).filter { $0.projectAction?.taskID != nil }.count ?? 0
             return cards == 3 && workers.allSatisfy { vm.workerActivity($0) != nil && vm.workerStarted($0) != nil }
         }
@@ -326,7 +326,7 @@ extension LogicalProjectPreviewTests {
         Task { await vm.threadStores.store(for: coordinator).run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         vm.openLogicalProject(ref)
         let ready: @MainActor () -> Bool = {
-            let rows = world.coordinator.conversationStore(agentID: coordinator)?.rows.flatMap(\.turn.messages) ?? []
+            let rows = vm.threadStores.existing(for: coordinator)?.rows.flatMap(\.turn.messages) ?? []
             return rows.contains { $0.projectAction?.taskID != nil } && rows.contains { $0.blocks.contains { $0.text.hasPrefix("The [whatever") } }
         }
         vm.logicalProjectPaneOpen = false
