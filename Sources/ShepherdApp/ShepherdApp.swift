@@ -251,7 +251,7 @@ extension ShepherdHost {
     /// TCP listener as the app would; a change to it takes effect when the host next starts. The
     /// listener's port, when it opened.
     @discardableResult
-    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer) -> UInt16? {
+    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer, listenerFailed: ((Error) -> Void)? = nil) -> UInt16? {
         settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
@@ -275,6 +275,7 @@ extension ShepherdHost {
                                                   tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
         } catch {
             ShepherdLog.error("host's remote listener failed to start: \(error)")
+            listenerFailed?(error)
             return nil
         }
     }
@@ -330,6 +331,8 @@ public enum ShepherdHost {
                                    execution: ProjectExecutionController)?
         /// Worktree requests and commits from review, served for the life of the host.
         private(set) var worktrees: WorktreeQueries?
+        /// Serve this Mac's listener as it started, for Settings ▸ Remote.
+        private(set) var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
         /// Stands in for `gh` in looking up a thread's pull request (tests).
         var pullRequestLookup: (@MainActor (String) async -> ThreadPullRequest?)?
 
@@ -359,8 +362,12 @@ public enum ShepherdHost {
 
         var configure: @MainActor (SessionServer) -> Void {
             { [self] server in
-                HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning)
-                serveSettings(settings, on: server)
+                HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
+                    self?.listener ?? (nil, nil)
+                }
+                listener.port = serveSettings(settings, on: server) { [weak self, settings] error in
+                    self?.listener.failure = RemoteListenerFailure(error, port: UInt16(clamping: settings.remoteListenerPort))
+                }
                 // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
                 let subagents = SubagentDefinitionsModel(pi: server.pi)
                 let stores = HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),

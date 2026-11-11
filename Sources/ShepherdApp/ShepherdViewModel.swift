@@ -1278,4 +1278,12 @@ final class ShepherdViewModel {
         remoteListenerFailure = nil
     }
 
+    /// The host binds the listener: its port, or why it couldn't, as its settings say.
+    func refreshRemoteListener() async {
+        guard let host = try? remoteHosts.thisMacHost(), let answer = try? await host.hostSettings() else { return }
+        if remoteListenerBoundPort != answer.listenerPort { remoteListenerBoundPort = answer.listenerPort }
+        let failure = answer.listenerProblem.map { RemoteListenerFailure(sentence: $0, detail: answer.listenerProblemDetail ?? $0) }
+        if remoteListenerFailure != failure { remoteListenerFailure = failure }
+    }
+
 }

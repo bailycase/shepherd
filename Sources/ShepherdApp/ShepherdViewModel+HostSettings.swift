@@ -29,7 +29,8 @@ enum HostSettingsMapping {
     /// host. `backgroundService` is whether this Mac keeps agents running when Shepherd
     /// is quit (`HostSettings.backgroundService`).
     static func serve(on server: SessionServer, settings app: AppSettings,
-                      backgroundService: @escaping @MainActor () -> Bool? = { nil }) {
+                      backgroundService: @escaping @MainActor () -> Bool? = { nil },
+                      listener: @escaping @MainActor () -> (port: UInt16?, failure: RemoteListenerFailure?) = { (nil, nil) }) {
         server.onRemoteHostSettings = { [weak server] request, completion in
             MainActor.assumeIsolated {
                 guard let server else {
@@ -50,6 +51,10 @@ enum HostSettingsMapping {
                     slashCommands: server.slashCommandCatalog
                 )
                 answer.backgroundService = backgroundService()
+                let (port, failure) = listener()
+                answer.listenerPort = port
+                answer.listenerProblem = failure?.sentence
+                answer.listenerProblemDetail = failure?.detail
                 let piHome = server.pi.home
                 Task.detached(priority: .userInitiated) {
                     // pi's settings.json is read off the main actor.
