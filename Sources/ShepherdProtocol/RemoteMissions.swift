@@ -12,6 +12,8 @@ extension RemoteProtocol {
     /// Offered while the host's Missions experiment is on and its app drives missions, and only to
     /// a client that lists it in `hello`.
     public static let missionsCapability = "missions.v1"
+    /// The host takes `RemoteMissionAction.retryLane` (a blocked push's Retry with hint).
+    public static let missionsRetryLaneCapability = "missions.retryLane.v1"
     /// The host serves a published mission's merge train to a client: `MissionRun.train` in the record,
     /// `pauseTrain` and `resumeTrain`. A client shows the train only on a host offering this.
     public static let missionsTrainCapability = "missions.train.v1"
@@ -89,6 +91,10 @@ public enum RemoteMissionAction: Codable, Hashable, Sendable {
     /// Saves the finished mission's map as a template: on the host's Mac, or (with `team`) through a
     /// pull request in that repository (MXTemplateSave).
     case saveTemplate(name: String, summary: String, team: SpaceID?)
+    /// Retry with hint: the stuck lane (`Mission.stuck`) gets one attempt past its limit, with `hint` in its
+    /// prompts, and the mission resumes. `attempts` is the stuck count the client showed; a lane that moved
+    /// since is refused (`missionsRetryLaneCapability`).
+    case retryLane(attempts: Int, hint: String)
 }
 
 public enum RemoteMissionRequest: Codable, Hashable, Sendable {

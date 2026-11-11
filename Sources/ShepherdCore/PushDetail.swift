@@ -82,14 +82,11 @@ public struct PushDetail: Codable, Hashable, Sendable {
             return Lane(name: clip(lane.name, Limit.laneName), states: Array(states.prefix(Limit.states)),
                         status: clip(status, Limit.status))
         }
-        var stuck: Stuck?
-        if let station = plan.stations.first(where: { $0.laneID != nil && run.latest($0.id)?.status == .failed }),
-           let lane = plan.lanes.first(where: { $0.spaceID == station.laneID }) {
-            let tries = run.attempts.filter { $0.stationID == station.id && $0.planRevision == mission.approvedPlanRevision }
-            let lines = tries.suffix(Limit.tries).compactMap { attempt in
-                attempt.output.split(whereSeparator: \.isNewline).first.map { clip(String($0), Limit.attempt) }
-            }
-            if !tries.isEmpty { stuck = Stuck(lane: clip(lane.name, Limit.laneName), count: tries.count, tries: lines) }
+        let stuck = mission.stuck.map { found in
+            Stuck(lane: clip(found.lane.name, Limit.laneName), count: found.attempts.count,
+                  tries: found.attempts.suffix(Limit.tries).compactMap { attempt in
+                      attempt.output.split(whereSeparator: \.isNewline).first.map { clip(String($0), Limit.attempt) }
+                  })
         }
         let detail = PushDetail(lanes: lanes.isEmpty ? nil : lanes, stuck: stuck, read: run.notice.map { clip($0, Limit.read) })
         return detail == PushDetail() ? nil : detail

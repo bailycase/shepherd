@@ -24,7 +24,8 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
         let preview = SHPushPreview(title: content.title, subtitle: content.subtitle, body: content.body,
                                     date: notification.date, detail: detail)
         if let actions = PushButtons.actions(kind: content.categoryIdentifier, options: detail?.options,
-                                             mission: content.threadIdentifier.hasPrefix("mission:") && detail?.lanes != nil) {
+                                             mission: content.threadIdentifier.hasPrefix("mission:") && detail?.lanes != nil,
+                                             stuck: detail?.stuck?.lane) {
             extensionContext?.notificationActions = actions
         }
         if let host {

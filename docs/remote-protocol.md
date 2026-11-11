@@ -172,6 +172,10 @@
     differ, and reports the completion it showed when the person leaves it or presses Mark all
     seen. The Mac as the background host's client sends it over `host.sock`; in process it calls
     the server. Clients of an older host (no `completedAt`) keep their own per-device Done.
+  - `agentAction.mutePushes(_:)`, behind `push.mute.v1`: the host keeps the thread's mute
+    (`Agent.pushMuted`, persisted, written only when true) and sends no push for a muted thread to
+    any phone. The Mac's thread options menu and the iPhone's row menu send it; an older host
+    offers neither.
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
@@ -402,7 +406,11 @@
     when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
     a review's files and fingerprints and one file's `DiffFile`, the Spec Kit reads, and the host's
     templates (`templates`; `create` may name one, and `saveTemplate` saves a finished mission's map;
-    the app sends these only to the background host on its own Mac). Answered
+    the app sends these only to the background host on its own Mac). `retryLane(attempts:hint:)`,
+    behind `missions.retryLane.v1`, is a blocked push's Retry with hint: the stuck lane
+    (`Mission.stuck`, as the push's `detail.stuck` shows it) gets one attempt past its retry limit
+    with the hint in its prompts, and the mission resumes; `attempts` is the stuck count the push
+    showed, and a lane that moved since is refused `stale_mission`. Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
     `consentFingerprint` the client showed, and the host checks both again. A host with

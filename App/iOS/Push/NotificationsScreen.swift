@@ -2,6 +2,7 @@ import ActivityKit
 import SwiftUI
 import UIKit
 import ShepherdUI
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -14,6 +15,7 @@ struct NotificationsScreen: View {
     @Environment(\.settingsColumn) private var inColumn
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
+    @Environment(MobileNavigator.self) private var navigator
     @State private var liveActivities = ActivityAuthorizationInfo().areActivitiesEnabled
 
     private typealias Topic = RemotePushPreferences.Topic
@@ -22,6 +24,7 @@ struct NotificationsScreen: View {
     var body: some View {
         let preferences = push.preferences
         let missions = Self.missions(hosts.hosts)
+        let muted = Self.mutedThreads(hosts.hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 SettingsSection("Send me") {
@@ -65,6 +68,23 @@ struct NotificationsScreen: View {
                                         next.missions[mission.id] = level == .everything ? nil : level
                                         save(next)
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !muted.isEmpty {
+                    SettingsSection("Muted threads") {
+                        SHListCard {
+                            ForEach(muted) { row in
+                                SettingsControlRow(row.title, note: row.host) {
+                                    Button("Unmute") {
+                                        let hosts = hosts
+                                        AgentActions.run("Couldn’t unmute the thread", navigator: navigator) {
+                                            try await AgentActions.mutePushes(row.id, false, hosts: hosts)
+                                        }
+                                    }
+                                    .buttonStyle(.sh(.secondary))
                                 }
                             }
                         }
@@ -118,6 +138,20 @@ struct NotificationsScreen: View {
         case .onlyBlocked: "Only blocked"
         case .onlyFailures: "Only failures"
         case .nothing: "Nothing"
+        }
+    }
+
+    struct MutedRow: Identifiable, Equatable {
+        let id: AgentRef
+        let title: String
+        let host: String
+    }
+
+    /// The threads muted on each connected host that keeps mutes (`pushMuteCapability`), in its order. Muting is
+    /// in a thread's long-press menu; this is where they are found again.
+    static func mutedThreads(_ hosts: [MobileHost]) -> [MutedRow] {
+        hosts.filter { $0.phase.isConnected && $0.supports(RemoteProtocol.pushMuteCapability) }.flatMap { host in
+            host.state.agents.filter(\.pushMuted).map { MutedRow(id: AgentRef(host: host.id, agent: $0.id), title: $0.name, host: host.name) }
         }
     }
 

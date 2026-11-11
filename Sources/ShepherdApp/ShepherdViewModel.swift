@@ -999,6 +999,7 @@ final class ShepherdViewModel {
                         if let model { self.sessions.modelOverrides[agentID] = model }
                         self.retryAgentStart(agentID, newConversation: newConversation)
                     case .markSeen(let upTo): try await self.server.markCompletionSeen(agentID, upTo: upTo)
+                    case .mutePushes(let muted): try await self.server.setPushMuted(agentID, muted: muted)
                     }
                     completion(.success(()))
                 } catch {

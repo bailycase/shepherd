@@ -56,6 +56,41 @@ extension ShepherdViewModel {
         spacePins = next
     }
 
+    /// Whether a thread's pushes are muted on its host (`Agent.pushMuted`); nil where its host takes no Mute
+    /// (`pushMuteCapability`) or the row is no thread.
+    func pushMuted(_ row: SidebarRowID) -> Bool? {
+        let takesMute = { (host: UUID) in self.remoteHosts.allConnections.first { $0.id == host }?.supportsPushMute == true }
+        switch row {
+        case .local(let id):
+            if let ref = localRef(id), !takesMute(ref.hostID) { return nil }
+            return state.agents.first { $0.id == id }?.pushMuted
+        case .remote(let ref):
+            guard takesMute(ref.hostID) else { return nil }
+            return remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.agents.first { $0.id == ref.agentID }?.pushMuted
+        case .design, .remoteDesign:
+            return nil
+        }
+    }
+
+    /// Mute or Unmute Notifications: the thread's host keeps it, so every phone agrees.
+    func togglePushMuted(_ row: SidebarRowID) {
+        guard let muted = pushMuted(row) else { return }
+        let hosts = remoteHosts, title = "Couldn’t change the thread’s notifications"
+        switch row {
+        case .local(let id):
+            let ref = localRef(id)
+            enqueuePersistence("thread mute", failureTitle: title) {
+                if let ref { try await hosts.agentAction(ref, action: .mutePushes(!muted)) } else { try await $0.setPushMuted(id, muted: !muted) }
+            }
+        case .remote(let ref):
+            Task {
+                do { try await hosts.agentAction(ref, action: .mutePushes(!muted)) } catch { fail(title, error) }
+            }
+        case .design, .remoteDesign:
+            break
+        }
+    }
+
     func togglePin(_ row: SidebarRowID) {
         if isPinned(row) { unpinThread(row) } else { pinThread(row) }
     }
