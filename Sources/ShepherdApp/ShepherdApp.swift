@@ -328,6 +328,8 @@ public enum ShepherdHost {
         /// Missions and the Project runtime, served for the life of the host.
         private(set) var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
                                    execution: ProjectExecutionController)?
+        /// Worktree requests and commits from review, served for the life of the host.
+        private(set) var worktrees: WorktreeQueries?
 
         init(settings: AppSettings, mcpStore: MCPStore, notifications: AgentNotifications, keepsAgentsRunning: @escaping @MainActor () -> Bool?) {
             self.settings = settings
@@ -366,6 +368,7 @@ public enum ShepherdHost {
                 let settings = settings
                 let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                                          deleteAgent: { id, _ in try await server.deleteAgent(id) }))
+                self.worktrees = worktrees
                 // Missions and Projects run here, where their agents run: they keep acting with the app quit.
                 runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) { [notifications] in
                     notifications.post(AgentBanners.automation(title: $0, body: $1))

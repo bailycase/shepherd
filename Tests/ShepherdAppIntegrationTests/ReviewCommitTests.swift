@@ -300,7 +300,6 @@ struct ReviewCommitTests {
 
     // MARK: Through the host
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aRemoteClientCommitsThroughTheHostAndPollsTheOperation() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
@@ -310,9 +309,9 @@ struct ReviewCommitTests {
         let space = Fixture.space("proj", path: sandbox.repo.path)
         let agent = Fixture.agent(in: space)
         remote.host.settings.worktreeGeneratePRDescription = false
-        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let runner = Runner()
-        hostVM.reviewCommitRunner = runner.closure
+        remote.host.host?.worktrees?.commitRunner = runner.closure
         try await local.start()
         let connection = try await remote.connect(local.remoteHosts)
         #expect(connection.supportsReviewCommit)
@@ -338,9 +337,7 @@ struct ReviewCommitTests {
         #expect(try git(["log", "-1", "--format=%s", "main"], in: sandbox.origin).hasPrefix("Update the readme"))
         #expect(try status(sandbox) == "?? new.txt\n")
     }
-#endif
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func theHostRefusesACommitWhileItsAgentWorksUntilConfirmed() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
@@ -349,8 +346,8 @@ struct ReviewCommitTests {
         let space = Fixture.space("proj", path: sandbox.repo.path)
         let agent = Fixture.agent("busy", in: space, status: .working)
         remote.host.settings.worktreeGeneratePRDescription = false
-        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        hostVM.reviewCommitRunner = Runner().closure
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        remote.host.host?.worktrees?.commitRunner = Runner().closure
         // The host resets persisted statuses at start: the agent reports working again.
         let reporter = try ExtensionClient(path: remote.host.scratch.socketPath)
         try reporter.send(.setAgentStatus(agentID: agent.agent.id, status: .working))
@@ -380,7 +377,6 @@ struct ReviewCommitTests {
         }
         #expect(try status(sandbox).isEmpty)
     }
-#endif
 
     /// What a poll made while the host was still taking the commit (the sheet polls as soon as
     /// the commit has an id).
@@ -399,9 +395,8 @@ struct ReviewCommitTests {
         }
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aPollWhileTheHostTakesTheCommitWaitsForItInsteadOfCallingItUnknown() async throws {
-        let harness = try AppHarness(inProcess: true)
+        let harness = try AppHarness()
         let sandbox = try WorktreeSandbox(origin: true)
         defer { harness.stop(); sandbox.remove() }
         try write("changed\n", "README.md", in: sandbox)
@@ -410,7 +405,8 @@ struct ReviewCommitTests {
         harness.settings.worktreeGeneratePRDescription = false
         let vm = try await harness.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let runner = Runner()
-        vm.reviewCommitRunner = runner.closure
+        let worktrees = try #require(harness.host?.worktrees)
+        worktrees.commitRunner = runner.closure
         vm.selectAgent(agent.agent.id)
         vm.openUserReview()
         let session = try #require(vm.reviewSessions.values.first)
@@ -421,7 +417,7 @@ struct ReviewCommitTests {
         let early = EarlyPolls()
         let agentID = agent.agent.id
         // The host checks the checkout before it takes the commit: poll from inside that check.
-        vm.reviewCommitRunner = { [weak vm] script, cwd in
+        worktrees.commitRunner = { [weak vm] script, cwd in
             if let vm { await early.poll(store, host: vm, agentID: agentID) }
             return Runner.run(script, cwd: cwd)
         }
@@ -435,7 +431,6 @@ struct ReviewCommitTests {
         try await eventuallyAsync("the commit to finish", timeout: .seconds(20)) { await store.pollOnce() }
         #expect(store.outcome == .succeeded(prURL: nil) && store.error == nil)
     }
-#endif
 
     @Test func anOperationTheHostNeverTookStillSaysItsOutcomeIsUnknown() async throws {
         let harness = try AppHarness()
@@ -455,9 +450,8 @@ struct ReviewCommitTests {
         #expect(store.outcome == .running, "the sheet keeps the operation rather than inviting a second commit")
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aLocalReviewCommitsTheDirectoryItsDiffCameFromAndReloads() async throws {
-        let harness = try AppHarness(inProcess: true)
+        let harness = try AppHarness()
         let sandbox = try WorktreeSandbox(origin: true)
         defer { harness.stop(); sandbox.remove() }
         try write("changed\n", "README.md", in: sandbox)
@@ -465,7 +459,7 @@ struct ReviewCommitTests {
         let agent = Fixture.agent(in: space)
         harness.settings.worktreeGeneratePRDescription = false
         let vm = try await harness.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        vm.reviewCommitRunner = Runner().closure
+        harness.host?.worktrees?.commitRunner = Runner().closure
         vm.selectAgent(agent.agent.id)
         vm.openUserReview()
         let session = try #require(vm.reviewSessions.values.first)
@@ -484,5 +478,4 @@ struct ReviewCommitTests {
         try await eventuallyOnMain("the review to reload without the committed file") { !session.isLoading && session.files.isEmpty }
         #expect(vm.reviewCommitStore(for: session) !== store, "the next Commit… starts over")
     }
-#endif
 }
