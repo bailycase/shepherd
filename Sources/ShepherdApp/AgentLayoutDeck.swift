@@ -52,34 +52,7 @@ struct AgentLayoutDeck: View, Equatable {
         }
     }
 
-    /// A layout's hosting view. It sizes nothing around it, and has no safe area of its own:
-    /// the workspace's column decides both, as it did for the layouts in its own graph.
-    final class Host: NSHostingView<PageRoot> {
-        required init(rootView: PageRoot) {
-            super.init(rootView: rootView)
-            sizingOptions = []
-            safeAreaRegions = []
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-        /// Hidden, a layout holds no focus and offers none. AppKit asks every hosting view under
-        /// the window whether it accepts first responder when it recomputes the hidden title
-        /// bar's drag regions and the key view loop, and SwiftUI answers by walking the layout's
-        /// focusable items (a transcript's every link and button): with the fleet's layouts
-        /// retained, that walk was a seventh of the main thread's hang time
-        /// (docs/audit/2026-11-05). A hidden layout answers at once.
-        override var acceptsFirstResponder: Bool { isHidden ? false : super.acceptsFirstResponder }
-        override var needsPanelToBecomeKey: Bool { isHidden ? false : super.needsPanelToBecomeKey }
-
-        override func layout() {
-            SHRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")
-            // Even at fixed hidden bounds, AppKit needs this pass to remove transitioned views.
-            // Avoid resize work by retaining host frames, never by skipping lifecycle callbacks.
-            super.layout()
-        }
-    }
+    typealias Host = DeckHost<PageRoot>
 
     /// Hidden thread-only layouts retain their size until reveal. Hidden terminal layouts
     /// take the final column size after a resize so their PTY grid stays correct.
@@ -114,16 +87,6 @@ struct AgentLayoutDeck: View, Equatable {
         /// The visible layout alone: VoiceOver never reaches a hidden one.
         override func accessibilityChildren() -> [Any]? {
             pages.values.filter { !$0.host.isHidden }.map(\.host)
-        }
-
-        /// Hides `host`, giving up the keyboard first if it holds it, so the first responder
-        /// never moves to whatever AppKit picks as the next key view. The layout shown instead
-        /// claims focus as it always has (its focused pane, from its values).
-        func hide(_ host: Host) {
-            if let window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: host) {
-                window.makeFirstResponder(nil)
-            }
-            host.isHidden = true
         }
     }
 
@@ -168,7 +131,7 @@ struct AgentLayoutDeck: View, Equatable {
                 }
             }
             // After the layout shown instead is in place.
-            for host in hiding { container.hide(host) }
+            for host in hiding { hideDeckHost(host, in: container) }
             for (id, entry) in container.pages where !mounted.contains(id) {
                 entry.host.removeFromSuperview()
                 container.pages[id] = nil
@@ -181,4 +144,56 @@ struct AgentLayoutDeck: View, Equatable {
             proposal.replacingUnspecifiedDimensions()
         }
     }
+}
+
+/// The probe names a deck's hosts tick as they lay out, so a second deck's passes stay out of the
+/// first one's counts.
+struct DeckProbe {
+    let visible: StaticString
+    let hidden: StaticString
+
+    static let local = DeckProbe(visible: "deck.layout", hidden: "deck.hiddenLayout")
+    static let remote = DeckProbe(visible: "remoteDeck.layout", hidden: "remoteDeck.hiddenLayout")
+}
+
+/// A layout's hosting view. It sizes nothing around it, and has no safe area of its own:
+/// the workspace's column decides both, as it did for the layouts in its own graph.
+final class DeckHost<Root: View>: NSHostingView<Root> {
+    var probe = DeckProbe.local
+
+    required init(rootView: Root) {
+        super.init(rootView: rootView)
+        sizingOptions = []
+        safeAreaRegions = []
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Hidden, a layout holds no focus and offers none. AppKit asks every hosting view under
+    /// the window whether it accepts first responder when it recomputes the hidden title
+    /// bar's drag regions and the key view loop, and SwiftUI answers by walking the layout's
+    /// focusable items (a transcript's every link and button): with the fleet's layouts
+    /// retained, that walk was a seventh of the main thread's hang time
+    /// (docs/audit/2026-11-05). A hidden layout answers at once.
+    override var acceptsFirstResponder: Bool { isHidden ? false : super.acceptsFirstResponder }
+    override var needsPanelToBecomeKey: Bool { isHidden ? false : super.needsPanelToBecomeKey }
+
+    override func layout() {
+        SHRenderProbe.tick(isHidden ? probe.hidden : probe.visible)
+        // Even at fixed hidden bounds, AppKit needs this pass to remove transitioned views.
+        // Avoid resize work by retaining host frames, never by skipping lifecycle callbacks.
+        super.layout()
+    }
+}
+
+/// Hides `host`, giving up the keyboard first if it holds it, so the first responder never moves
+/// to whatever AppKit picks as the next key view. The layout shown instead claims focus as it
+/// always has (its focused pane, from its values).
+@MainActor
+func hideDeckHost(_ host: NSView, in container: NSView) {
+    if let window = container.window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: host) {
+        window.makeFirstResponder(nil)
+    }
+    host.isHidden = true
 }

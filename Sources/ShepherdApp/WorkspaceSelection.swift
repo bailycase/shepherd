@@ -31,8 +31,8 @@ struct WorkspaceSelection: Equatable {
     let state: ShepherdState
     let selectedSpaceID: SpaceID?
     let selectedAgentID: AgentID?
-    /// True while a remote agent is selected: no local layout is visible (the
-    /// remote pane renders instead), but everything stays mounted.
+    /// True while a remote agent is selected: no local layout is visible (a remote deck page
+    /// or the remote pane shows instead), but everything stays mounted.
     var remoteSelectionActive: Bool = false
     /// A page the main column shows in place of a thread (New thread, Automations, Hosts): no
     /// layout is visible, and every mounted one stays mounted, as for a remote selection.
