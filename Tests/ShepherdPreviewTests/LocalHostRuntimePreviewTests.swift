@@ -23,15 +23,15 @@ extension PreviewTests {
         let vm = workspace.vm
         vm.openDestination(.missions)
         let page = try #require(vm.thisMacMissions)
+        // Every mission, in the host's order: one fetched on its own change hint waits for the list to place it.
+        let hostOrder = workspace.server.state.missions.map(\.id)
         for (id, name) in [(MissionID?.none, "list"), (fixture.draft.id, "map")] {
             page.selectedID = id
             try await Preview.render("this-mac-missions-\(name)", size: CGSize(width: 1440, height: 900),
-                                     ready: { !page.availableModels.isEmpty && page.records.count == 12 }) { RootView(vm: vm) }
+                                     ready: { !page.availableModels.isEmpty && page.records.map(\.id) == hostOrder }) { RootView(vm: vm) }
         }
         try await Preview.render("this-mac-missions-sidebar", size: CGSize(width: 232, height: 900)) { SidebarView(vm: vm) }
-        // The list's last row is one of two missions written in the same instant, which tie in its order.
-        try expectBaseline("this-mac-missions-list", masking: [CGRect(x: 233, y: 860, width: 1207, height: 40)])
-        for surface in ["map", "sidebar"] { try expectBaseline("this-mac-missions-\(surface)") }
+        for surface in ["list", "map", "sidebar"] { try expectBaseline("this-mac-missions-\(surface)") }
     }
 
     /// The Projects page and the sidebar with a Project's working threads, its workers started by the
