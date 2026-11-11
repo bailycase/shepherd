@@ -142,7 +142,6 @@ extension ShepherdViewModel {
     func moveProject(_ space: SpaceID, before target: SpaceID?) {
         guard let moved = state.spaces.moving(space, before: target), moved != state.spaces else { return }
         state.spaces = moved
-        sessions.stateDidChange(state)
         persistSpace(space, "move project", failureTitle: "Couldn’t move the space", host: .move(before: target))
     }
 
@@ -151,7 +150,6 @@ extension ShepherdViewModel {
     func setProjectHiddenFromSidebar(_ id: SpaceID, _ hidden: Bool) {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }), state.spaces[index].sidebarHidden != hidden else { return }
         state.spaces[index].sidebarHidden = hidden
-        sessions.stateDidChange(state)
         persistSpace(id, hidden ? "hide project" : "show project", failureTitle: hidden ? "Couldn’t hide the space" : "Couldn’t show the space",
                      host: .setSidebarHidden(hidden: hidden))
     }

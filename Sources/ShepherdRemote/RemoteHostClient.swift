@@ -494,6 +494,17 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Registers, edits or adds a child to one of the background host's spaces (`projectRequest`;
+    /// this Mac's own app only). Returns the space.
+    public func projectRequest(_ request: RemoteProjectRequest) async throws -> SpaceID {
+        let reply = try await self.request { id in .projectRequest(id: id, request: request) }
+        switch reply {
+        case .spaceAdded(_, let spaceID): return spaceID
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected projectRequest reply")
+        }
+    }
+
     /// Create a space from a directory on the host.
     @discardableResult
     public func addSpace(path: String) async throws -> SpaceID {

@@ -14,7 +14,6 @@ extension ShepherdViewModel {
               let index = state.spaces.firstIndex(where: { $0.id == id }),
               state.spaces[index].name != trimmed else { return }
         state.spaces[index].name = trimmed
-        sessions.stateDidChange(state)
         persistSpace(id, "rename space", failureTitle: "Couldn’t rename the space", host: .rename(name: trimmed))
         let committed = persistenceTail
         Task { @MainActor [weak self] in
@@ -29,7 +28,6 @@ extension ShepherdViewModel {
     func setWorktreeBase(_ base: String?, for id: SpaceID) {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }), state.spaces[index].worktreeBase != base else { return }
         state.spaces[index].worktreeBase = base
-        sessions.stateDidChange(state)
         persistSpace(id, "set worktree base", failureTitle: "Couldn’t save the project’s default base", host: .setWorktreeBase(base: base))
     }
 
@@ -47,14 +45,6 @@ extension ShepherdViewModel {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return }
         let doomedAgents = Set(state.agents.filter { $0.spaceID == id }.map(\.id))
         let doomedTabs = state.tabs.filter { $0.spaceID == id }
-
-        // Detach views before the host kills processes (same ordering as
-        // deleteAgent: no exit callback may race a half-removed UI tree).
-        for tab in doomedTabs {
-            for leaf in tab.layout.leaves {
-                sessions.detachPane(leaf.id)
-            }
-        }
 
         let doomedTabIDs = Set(doomedTabs.map(\.id))
         state.spaces.remove(at: index)
@@ -81,7 +71,6 @@ extension ShepherdViewModel {
                 }
             }
         }
-        sessions.stateDidChange(state)
         syncFocus()
         persistSpace(id, "space deletion", failureTitle: "Couldn’t remove the space", host: .delete)
     }

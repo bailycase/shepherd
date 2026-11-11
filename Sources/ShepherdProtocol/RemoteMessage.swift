@@ -442,6 +442,14 @@ public enum RemoteSpaceAction: Codable, Hashable, Sendable {
     case relocate(path: String)
 }
 
+/// What this Mac's own app asks of its background host's space registry (`RemoteRequest.projectRequest`),
+/// as an agent's project tool does: Add space, Space settings, and a child space.
+public enum RemoteProjectRequest: Codable, Hashable, Sendable {
+    case register(path: String, name: String)
+    case edit(spaceID: SpaceID, edit: ProjectEdit)
+    case child(parentPath: String, path: String, name: String, create: Bool)
+}
+
 public struct RemoteWorktreeInfo: Codable, Hashable, Sendable {
     public var path: String
     public var branch: String
@@ -671,6 +679,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Local clients only (`localCapability`): this Mac's own app changes one of its background
     /// host's spaces. Answered `ok`.
     case spaceAction(id: Int, spaceID: SpaceID, action: RemoteSpaceAction)
+    /// Local clients only (`localCapability`): this Mac's own app registers, edits or adds a child
+    /// to one of its background host's spaces. Answered `spaceAdded` with the space.
+    case projectRequest(id: Int, request: RemoteProjectRequest)
     /// Local clients only (`localCapability`): this Mac's own app starts a thread on its
     /// background host as it would in process. Answered `agentCreated`.
     case startThread(id: Int, thread: RemoteThreadStart)
@@ -776,7 +787,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, startThread, focusThread, projectExecutors, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, projectRequest, startThread, focusThread, projectExecutors, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -951,6 +962,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .projectExecutors(id: try c.decode(Int.self, forKey: .id), update: try c.decode(ProjectExecutorsUpdate.self, forKey: .update))
         case .startThread:
             self = .startThread(id: try c.decode(Int.self, forKey: .id), thread: try c.decode(RemoteThreadStart.self, forKey: .thread))
+        case .projectRequest:
+            self = .projectRequest(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteProjectRequest.self, forKey: .request))
         case .spaceAction:
             self = .spaceAction(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1198,6 +1211,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.startThread, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(thread, forKey: .thread)
+        case .projectRequest(let id, let request):
+            try c.encode(Kind.projectRequest, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .spaceAction(let id, let spaceID, let action):
             try c.encode(Kind.spaceAction, forKey: .type)
             try c.encode(id, forKey: .id)

@@ -10,7 +10,7 @@ import ShepherdRemote
 /// Disambiguates from SwiftUI.Tab for every file in this module.
 typealias Tab = ShepherdCore.Tab
 
-/// GUI-owned view state over the in-process session server's snapshot.
+/// GUI-owned view state over the host's workspace snapshot (`localHost`).
 /// Navigation is the sidebar: an agent row shows that agent's thread (and any terminal panes
 /// beside it); a space row is a disclosure. Tabs exist only in persisted state as per-agent
 /// layout containers — there is no tab UI.
@@ -18,15 +18,13 @@ typealias Tab = ShepherdCore.Tab
 @Observable
 final class ShepherdViewModel {
     var state: ShepherdState
-    /// Missions and the Project runtime this app runs on its own server, while it owns the workspace
-    /// (`RuntimeHosting`); as the background host's client the host runs them.
-    @ObservationIgnored lazy var runtime = runtimeHosting.serve()
-    var missions: MissionController { runtime.missions }
-    var projectCoordinator: ProjectCoordinatorController { runtime.coordinator }
-    /// Issues & PRs, read through this Mac's server (`SessionServer.forge`).
+    /// Issues & PRs, read through this Mac's host (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
     })
+    /// The branch card's pull request read (`gh` on this Mac, as its git reads are); it pins nothing.
+    @ObservationIgnored lazy var branchForge = ForgeService(
+        pinsURL: pi.home.deletingLastPathComponent().appendingPathComponent("forge-pins.json"))
     /// Each local thread's branch's pull request (the side pane's Pull request tab), its own page
     /// over the same transport; none while the branch has no pull request.
     var branchPullRequests: [AgentID: ForgeStore] = [:]
@@ -36,6 +34,9 @@ final class ShepherdViewModel {
     /// Why a merged pull request's thread was kept open (`PullRequestLinks.closeNotes`).
     var pullRequestCloseNotes: [AgentID: String] = [:]
     @ObservationIgnored var pullRequestPoll: Task<Void, Never>?
+    @ObservationIgnored var pullRequestLinker: PullRequestLinks?
+    /// Off in model-only tests: no `gh` lookups at turn end or on a poll.
+    @ObservationIgnored let looksUpPullRequests: Bool
     /// The branch's pull request in a checkout (`gh pr view`); tests replace it.
     @ObservationIgnored var branchPullRequestLookup: @MainActor (String) async -> ThreadPullRequest? = { cwd in
         let output = await LoginShell.run("gh pr view --json \(ThreadPullRequest.fields)", cwd: cwd, timeout: 20)
@@ -50,16 +51,7 @@ final class ShepherdViewModel {
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
     var missingSpaces: Set<SpaceID> = []
-    var selectedAgentID: AgentID? {
-        didSet {
-            // Fallback selections after removal also wake their terminals. Initial restoration
-            // must classify dormant panes before starting the selected agent.
-            if didStartRestoredAgents, selectedAgentID != oldValue,
-               selectedRemoteAgent == nil, destination == nil, let selectedAgentID {
-                sessions.startAhead(selectedAgentID)
-            }
-        }
-    }
+    var selectedAgentID: AgentID?
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
@@ -169,10 +161,7 @@ final class ShepherdViewModel {
     /// Designs on screen: only their revisions are pushed (`SessionServer.onDesignRevision`).
     @ObservationIgnored var visibleDesigns: Set<DesignID> = []
     /// Designs whose agent is being started, so a second open waits for it.
-    var startingDesignAgents: Set<DesignID> {
-        get { server.startingDesignAgents }
-        set { server.startingDesignAgents = newValue }
-    }
+    var startingDesignAgents: Set<DesignID> = []
     /// Each remote design's canvas, kept for the app's run like a local one's.
     @ObservationIgnored var remoteDesignScreens: [RemoteDesignRef: DesignScreenModel] = [:]
     /// Each remote host's renderers, made when one of its designs is first drawn.
@@ -192,10 +181,7 @@ final class ShepherdViewModel {
     @ObservationIgnored var lastDesignSystem: DesignSystemTarget?
     @ObservationIgnored var designSystemPageCache: [DesignSystemTarget: (inputs: DesignSystemPageInputs, model: DesignSystemPageModel)] = [:]
     /// Projects whose system build is being started, so a second click waits for it.
-    var startingSystemBuilds: Set<SpaceID> {
-        get { server.startingSystemBuilds }
-        set { server.startingSystemBuilds = newValue }
-    }
+    var startingSystemBuilds: Set<SpaceID> = []
     /// Draws every design's boards (`DesignHost.swift`), once a design or the Designs page is
     /// first shown.
     var designRendering: DesignRendering {
@@ -210,8 +196,10 @@ final class ShepherdViewModel {
     /// (`connectLocalHost`): the host writes them; the app draws them from where they are.
     @ObservationIgnored var localHostDesigns: DesignStore?
 
-    /// Where the designs' files are on this Mac: the background host's folder as its client, else the server's.
-    var designStore: DesignStore { localHostDesigns ?? server.designs }
+    /// Where the designs' files are on this Mac: the background host's folder, else the support folder's.
+    var designStore: DesignStore { localHostDesigns ?? supportDesigns }
+    @ObservationIgnored private lazy var supportDesigns = DesignStore(
+        directory: pi.home.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
     /// Tests turn Google Fonts off so boards never reach the network, and previews take no live
     /// views; both are set before the first design draws.
     @ObservationIgnored var designNetwork: DesignRenderingNetwork = .googleFonts
@@ -295,32 +283,8 @@ final class ShepherdViewModel {
     @ObservationIgnored var sentProjectHosts: (ObjectIdentifier, [ProjectHostOption])?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
-    /// This Mac's worktree operations and commits from review, as a host; the headless host has
-    /// its own.
-    let worktrees: WorktreeQueries
-    var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] {
-        get { worktrees.operations }
-        set { worktrees.operations = newValue }
-    }
-    var hostWorktreeOperationAgents: [UUID: AgentID] {
-        get { worktrees.operationAgents }
-        set { worktrees.operationAgents = newValue }
-    }
-    var hostBusyWorktrees: Set<String> {
-        get { worktrees.busy }
-        set { worktrees.busy = newValue }
-    }
     /// A review pane's Commit… sheet by review session, kept while its commit runs.
     @ObservationIgnored var reviewCommitStores: [UUID: ReviewCommitStore] = [:]
-    /// Runs commit from review's git and gh (tests stub gh here); reads time out, mutations don't.
-    var reviewCommitRunner: ReviewCommitGit.Runner {
-        get { worktrees.commitRunner }
-        set { worktrees.commitRunner = newValue }
-    }
-    var startingCheckoutUsers: [UUID: String] {
-        get { worktrees.starting }
-        set { worktrees.starting = newValue }
-    }
     var remoteChildren: [RemoteAgentRef: [ChildRun]] {
         Dictionary(uniqueKeysWithValues: remoteHosts.allConnections.flatMap { connection in
             connection.children.map { (RemoteAgentRef(hostID: connection.id, agentID: $0.key), $0.value) }
@@ -383,9 +347,8 @@ final class ShepherdViewModel {
     @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
     /// Each remote host's hooks, made when first shown (`hooks(for:)`).
     @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
-    /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
+    /// Settings ▸ Skills: every host's agent skills, This Mac's through its host.
     let skills: ClientSkills
-    @ObservationIgnored let localSkills: LocalSkillsClient
     /// Settings ▸ MCP servers: this Mac's servers, their sign-ins, and the credentials agents ask for.
     let mcp: MCPStore
     /// Settings ▸ Pi's sign-ins and From your pi, and the first launch's copy and welcome step.
@@ -408,8 +371,6 @@ final class ShepherdViewModel {
     @ObservationIgnored private(set) var membershipPrunes = 0
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
     @ObservationIgnored var mcpOpenServer: String?
-    /// This Mac's daily look for newer skills (`startSkillChecks`).
-    @ObservationIgnored var skillChecks: Task<Void, Never>?
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
@@ -587,7 +548,7 @@ final class ShepherdViewModel {
     @ObservationIgnored let remoteSuggestions = ClientSuggestions()
     var subagentDefinitions: SubagentDefinitionsModel {
         if let madeSubagentDefinitions { return madeSubagentDefinitions }
-        let model = SubagentDefinitionsModel(pi: server.pi)
+        let model = SubagentDefinitionsModel(pi: pi)
         madeSubagentDefinitions = model
         return model
     }
@@ -616,7 +577,6 @@ final class ShepherdViewModel {
     /// True while ⌘ has been held ~250ms — sidebar rows show their ⌘1–9 keycaps.
     var showAgentShortcutBadges = false
 
-    let sessions: TerminalSessionStore
     /// Native thread state per local agent and per remote agent.
     let threadStores = NativeThreadStores<AgentID>()
     let remoteThreadStores = NativeThreadStores<RemoteAgentRef>()
@@ -637,7 +597,7 @@ final class ShepherdViewModel {
     /// When local threads' turns and questions post (`ThreadBanners`): through `notifications`,
     /// quiet while you watch.
     @ObservationIgnored lazy var threadBanners = ThreadBanners(
-        server: server, state: { [unowned self] in self.state },
+        state: { [unowned self] in self.state },
         sink: .init(post: { [unowned self] in self.notifications.post($0) },
                     remove: { [unowned self] in self.notifications.remove($0) },
                     isWatching: { [unowned self] in self.isWatching($0) },
@@ -656,9 +616,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var missingSpaceWatch: Task<Void, Never>?
     /// `paths`: the spaces the last adopt-time pass read, so a broadcast that moved no space runs none.
     @ObservationIgnored var missingSpaceCheck = (running: false, again: false, paths: [String]?.none)
-    /// Reads each local agent's branch and changed files for the header (`CheckoutMonitor`);
-    /// nil when the harness turned it off.
-    @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
     /// Whether each space's folder is a git checkout (the New thread page offers a worktree
@@ -680,12 +637,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
-    /// The first adoption starts selected/restorable work, leaving settled agents dormant.
-    /// Off in harnesses that seed agents only to draw them: their pi then starts when a layout
-    /// mounts or a test asks, as before.
-    @ObservationIgnored let restoresAgentsAtLaunch: Bool
-    /// One-shot launch guard for starting the restored agents' pi.
-    @ObservationIgnored var didStartRestoredAgents = false
     /// Recently selected agents, most recent last, no duplicates. When the
     /// selected agent goes away (⌘⇧W, process exit) selection returns to the
     /// agent you were on before it — not the space's blank shell.
@@ -695,14 +646,11 @@ final class ShepherdViewModel {
     /// explicit and gives failures one reconciliation path.
     @ObservationIgnored var persistenceTail: Task<Void, Never>?
 
-    let server: SessionServer
-    /// False while the background host owns the workspace and this app is its client
-    /// (`BackgroundHostClient`): the host serves this Mac to other devices, not the app.
-    let ownsWorkspace: Bool
+    /// The local pi home: sessions root, catalog, home.
+    let pi: PiSetup
 
     init(
-        server: SessionServer = .shared,
-        ownsWorkspace: Bool = true,
+        pi: PiSetup = .app,
         settings: AppSettings? = nil,
         keybindings: KeybindingsStore? = nil,
         themeManager: ThemeManager? = nil,
@@ -711,8 +659,7 @@ final class ShepherdViewModel {
         themeInstaller: @escaping (ShepherdTheme) throws -> Void = { theme in
             try ShepherdThemeMarker.install(for: theme)
         },
-        restoresAgentsAtLaunch: Bool = true,
-        checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git,
+        looksUpPullRequests: Bool = true,
         mcp: MCPStore? = nil,
         welcomesYourPi: Bool = false,
         yourPi: YourPiModel? = nil,
@@ -723,10 +670,8 @@ final class ShepherdViewModel {
     ) {
         self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
-        self.server = server
-        self.ownsWorkspace = ownsWorkspace
-        self.worktrees = WorktreeQueries(server: server)
-        self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
+        self.pi = pi
+        self.looksUpPullRequests = looksUpPullRequests
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
         logicalProjectPane = RightPaneState(widthKey: Self.logicalProjectPaneWidthKey,
@@ -743,25 +688,22 @@ final class ShepherdViewModel {
         remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
         hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.allConnections.first { $0.id == ref.hostID }?.config.name }
-        let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
-        instructions.piHome = server.pi.home
+        let instructions = InstructionsModel(remoteHosts: hosts, defaults: sidebarDefaults)
+        instructions.piHome = pi.home
         self.instructions = instructions
-        self.suggestions = SuggestionsModel(store: server.suggestions, instructions: instructions, remoteHosts: hosts)
+        self.suggestions = SuggestionsModel(instructions: instructions, remoteHosts: hosts)
         self.skills = ClientSkills(defaults: sidebarDefaults)
-        self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
-        self.hooks = hooks ?? HooksModel(catalog: server.hooks)
-        self.apps = apps ?? AppsModel(home: server.hooks.home)
-        self.localSkills = LocalSkillsClient(store: server.skills)
-        self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
+        // The host's catalog arrives on connect (`localHostSettingsChanged`).
+        self.slashCommands = SlashCommandsModel(hidden: self.settings.hiddenSlashCommands)
+        // This Mac's hook files, as the host reads them.
+        let hookHome = HookCatalog.home(fallback: pi.userHome)
+        self.hooks = hooks ?? HooksModel(home: hookHome, support: pi.home.deletingLastPathComponent())
+        self.apps = apps ?? AppsModel(home: hookHome)
+        self.mcp = mcp ?? MCPStore(dependencies: .app(pi: pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
-        self.sessions = TerminalSessionStore(server: server)
-        self.sessions.mcpLaunch = { [settings = self.settings, mcp = self.mcp] in
-            try MCPLaunch.forAgents(settings: settings, store: mcp)
-        }
-        server.projects.editor = { [settings = self.settings] in settings.editor }
-        self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
-        self.piAuth = piAuth ?? PiAuthStore(pi: server.pi)
+        self.yourPi = yourPi ?? YourPiModel(pi: pi)
+        self.piAuth = piAuth ?? PiAuthStore(pi: pi)
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
@@ -779,11 +721,6 @@ final class ShepherdViewModel {
         sidebarPins = SidebarPins(defaults: sidebarDefaults)
         spacePins = SpacePins(defaults: sidebarDefaults)
 
-        sessions.onStateChanged = { [weak self] serverState in
-            // As the host's client, the idle in-process server's empty workspace is nobody's.
-            guard let self, self.localHost == nil else { return }
-            self.adopt(serverState)
-        }
         // The selected thread keeps its history whatever its recency (`NativeThreadStores`).
         threadStores.protected = { [weak self] in self?.selectedAgentID.map { [$0] } ?? [] }
         remoteThreadStores.protected = { [weak self] in self?.selectedRemoteAgent.map { [$0] } ?? [] }
@@ -798,79 +735,19 @@ final class ShepherdViewModel {
         self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
-        // Settings ▸ Instructions follows a remote client's save here, and sends a host that
-        // comes back what it is owed.
-        server.onInstructionsChanged = { [weak instructions = self.instructions] snapshot in
-            MainActor.assumeIsolated { instructions?.localChanged(snapshot) }
-        }
+        // A host that comes back takes the instruction and skill changes it is owed.
         hosts.onHostConnected = { [weak self, weak instructions = self.instructions] hostID in
             instructions?.hostConnected(hostID)
             self?.skillsHostConnected(hostID)
         }
-        // Settings ▸ Skills follows a remote client's change to This Mac's skills.
-        server.onSkillsChanged = { [weak skills = self.skills] snapshot in
-            MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
-        }
-        // Settings › Hooks follows a remote client's change to this Mac's hooks.
-        server.onHooksChanged = { [weak hooks = self.hooks] in
-            MainActor.assumeIsolated { hooks?.reload() }
-        }
-        server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
-            MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }
-        }
-        sessions.onTabLayoutChanged = { [weak self] tabID, layout in
-            guard let self, let index = self.state.tabs.firstIndex(where: { $0.id == tabID }),
-                  self.state.tabs[index].layout != layout else { return }
-            self.state.tabs[index].layout = layout
-        }
-        sessions.onAgentStatus = { [weak self] agentID, status, failure in
-            self?.applyAgentStatus(agentID, status, failure: failure)
-        }
-        // A thread on screen shows pi's history the moment pi serves it, not at its next poll.
-        sessions.onThreadServable = { [weak self] agentID in
-            self?.threadStores.existing(for: agentID)?.revisionAvailable()
-            self?.reconcileSidebarOpeningTurn(agentID)
-        }
-        // And each revision pi reaches after, within a frame: the server pushes the threads on
-        // screen (those whose poll loop runs), and the store pulls at most every
-        // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
         threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }
         threadStores.drafts = ComposerDrafts(defaults: sidebarDefaults)
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }
             watchThreadRevisions(of: live.union(sidebarOpeningTurns))
         }
-        sessions.onThreadRevision = { [weak self] agentID in
-            self?.threadStores.existing(for: agentID)?.revisionAvailable()
-            self?.reconcileSidebarOpeningTurn(agentID)
-        }
-        // A design on screen pulls what changed as the agent draws.
-        server.onDesignRevision = { [weak self] designID in
-            MainActor.assumeIsolated {
-                self?.designRevised(designID)
-                // A board write changes the Git panel's file list.
-                if self?.designGitStates[designID]?.state != nil { self?.refreshDesignGit(designID) }
-            }
-        }
-        server.onDesignGitChanged = { [weak self] designID in
-            MainActor.assumeIsolated { if self?.designGitStates[designID] != nil { self?.refreshDesignGit(designID) } }
-        }
-        // A system an agent wrote, or a re-sync, reaches its page and cards.
-        server.onDesignSystemsChanged = { [weak self] in
-            MainActor.assumeIsolated { self?.designSystemsChanged() }
-        }
         notifications.onResponse = { [weak self] response in
             self?.respond(to: response)
-        }
-        // Banners from a previous app run point at dead sessions; drop them. The background
-        // host's sessions outlive the app, and its banners (questions, merged PRs) stay.
-        if ownsWorkspace { notifications.removeAll() }
-        sessions.reserveCheckoutForLaunch = { [weak self] cwd in
-            guard let self else { throw AgentStartFailure(message: "Workspace closed") }
-            try self.verifyCheckoutAvailable(cwd)
-            let id = UUID()
-            self.startingCheckoutUsers[id] = cwd
-            return { [weak self] in self?.startingCheckoutUsers.removeValue(forKey: id) }
         }
         self.remoteHosts.onDropError = { [weak self] in self?.remoteActionError = $0 }
         self.remoteHosts.onDesignChanged = { [weak self] host, design, revision, comments in
@@ -903,70 +780,19 @@ final class ShepherdViewModel {
                 if self.remoteFocusedPaneID == oldPaneID { self.remoteFocusedPaneID = review.paneID }
             }
         }
-        sessions.onAgentChildren = { [weak self] agentID, children in
-            self?.applyAgentChildren(agentID, children)
-        }
-        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in self?.agentStopped(agentID, problem: problem, stopped: stopped) }
-        sessions.onNotify = { [weak self] agentID, title, body in
-            guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
-            self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
-        }
-        if let checkoutReader {
-            let monitor = CheckoutMonitor(read: checkoutReader) { [server] ids, cwd, checkout in
-                await server.setAgentCheckouts(ids, checkout, directory: cwd)
-            }
-            monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
-            checkouts = monitor
-        }
-        server.onAgentToolFinished = { [weak self] agentID, tool in
-            guard let self else { return }
-            recordSidebarActivity(agentID)
-            if CheckoutMonitor.touchesFiles(tool: tool) { checkouts?.refresh(agentID, after: .seconds(1)) }
-        }
-        // A limit on a provider with saved accounts and rotation on: the next account takes over,
-        // the thread says so, and the turn goes on with it.
-        let rotation = LimitRotation(server: server, piAuth: self.piAuth) { [weak self] agentID, line in
-            self?.threadStores.store(for: agentID).reportActionNotice(line)
-        }
-        server.onAgentProviderError = { agentID, provider, message in
-            MainActor.assumeIsolated { rotation.providerError(agentID, provider: provider, message: message) }
-        }
         installReviewHandler()
         installDesignRenderHandler()
         installPullRequestLinks()
         installRemoteBrowserDrive()
-        server.setProjectsEnabled(self.settings.projectsEnabled)
-        self.settings.onProjectsChange = { [weak server, weak self] on in
-            server?.setProjectsEnabled(on)
-            self?.projectsExperimentChanged()
-        }
+        self.settings.onProjectsChange = { [weak self] _ in self?.projectsExperimentChanged() }
         // Host role: bind the remote listener at VM creation, not from a
         // window's .task — a restored-minimized or slow-to-render window
-        // must not leave a host Mac unreachable. The TCP listener is
-        // independent of server.start()'s Unix socket, so ordering is safe;
-        // the .task call remains as a no-op-if-bound backstop.
+        // must not leave a host Mac unreachable; the .task call remains as a
+        // no-op-if-bound backstop.
         applyRemoteListenerSetting()
-        // Queues go the way Settings ▸ Agents says, unless an agent's own ••• menu chose.
-        server.setDefaultQueueMode(self.settings.queueDelivery)
-        self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
-        server.setGoalsEnabled(self.settings.goalsEnabled)
-        self.settings.onGoalsChange = { [weak server] on in server?.setGoalsEnabled(on) }
         // The `/` menu of every thread leaves out what Settings ▸ Pi ▸ Slash commands turned off.
-        server.setHiddenSlashCommands(self.settings.hiddenSlashCommands)
-        self.settings.onHiddenSlashCommandsChange = { [weak server, weak model = self.slashCommands] names in
-            server?.setHiddenSlashCommands(names)
-            model?.setHidden(names)
-        }
-        server.onSlashCommandCatalogChanged = { [weak model = self.slashCommands] catalog in model?.catalog = catalog }
-        // Remote clients see designs only while the Design tool is on here.
-        server.setDesignsServed(self.settings.designToolEnabled)
-        self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
-        installWorktreeHosting()
-        _ = runtime
+        self.settings.onHiddenSlashCommandsChange = { [weak model = self.slashCommands] names in model?.setHidden(names) }
         installCompactionThreshold()
-        // Adopt the persisted workspace without waiting for a pane to render
-        // (an empty sidebar can never render one).
-        sessions.warmUp()
 
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             MainActor.assumeIsolated {
@@ -994,8 +820,7 @@ final class ShepherdViewModel {
                 self?.syncFocusedThread()
             }
         }
-        // Back from another app (a commit in a terminal, an editor's save): read the checkout on
-        // screen again.
+        // Back from another app: spaces whose folder went, and the focused thread.
         becomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -1003,8 +828,6 @@ final class ShepherdViewModel {
                 guard let self else { return }
                 self.checkMissingSpaces()
                 self.syncFocusedThread()
-                guard self.selectedRemoteAgent == nil, let id = self.selectedAgentID else { return }
-                self.checkouts?.refresh(id)
             }
         }
         installMissingSpaceWatch()
@@ -1019,7 +842,6 @@ final class ShepherdViewModel {
         // until the welcome step closes.
         if welcomesYourPi {
             holdsForWelcome = true
-            sessions.holdStarts()
             Task { [weak self] in
                 guard let self else { return }
                 self.applyFirstLaunchHold(await self.yourPi.runFirstLaunch(models: { [weak self] in self?.firstLaunchModels ?? [] }))
@@ -1033,7 +855,6 @@ final class ShepherdViewModel {
         yourPi.importSheet = nil
         piAuth.closeSheet()
         releaseStarts()
-        sessions.releaseHeldAgents()
         if !waitingForImport.isEmpty { waitingForImport = [] }
         // The copy (or a default chosen on the sheet) changed what a new thread starts on: the open page's chip names it.
         if destination == .newThread { newThread.prepare(for: self) }
@@ -1051,7 +872,6 @@ final class ShepherdViewModel {
             if waitingForImport != all { waitingForImport = all }
         case .agents(let providers):
             let held = agentIDs(using: providers)
-            sessions.holdStarts(of: held)
             releaseStarts()
             if waitingForImport != held { waitingForImport = held }
         }
@@ -1088,8 +908,7 @@ final class ShepherdViewModel {
     /// The models restored agents use, and Shepherd's default: their providers are what the first
     /// launch's sheet asks for when nothing covers them.
     var firstLaunchModels: [String] {
-        // The server's copy: the workspace may not be adopted yet when the copy ends.
-        server.state.agents.compactMap(\.model) + [settings.agentDefaults.model].compactMap { $0 }
+        state.agents.compactMap(\.model) + [settings.agentDefaults.model].compactMap { $0 }
     }
 
     /// The first launch's hold is over: restored agents start, the one on screen first, and so do
@@ -1097,7 +916,6 @@ final class ShepherdViewModel {
     private func releaseStarts() {
         guard holdsForWelcome else { return }
         holdsForWelcome = false
-        sessions.releaseStarts()
         if didAdopt, !didAutoStartAutomations {
             didAutoStartAutomations = true
             autoStartAutomations()
@@ -1223,13 +1041,7 @@ final class ShepherdViewModel {
 
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
-        // The run log is current by the time a broadcast lands; it is the one thing a broadcast
-        // of an unchanged workspace can carry. As the background host's client, the host's run
-        // log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
-        if localHost == nil {
-            let runs = server.openAutomationRuns
-            if runs != openAutomationRuns { openAutomationRuns = runs }
-        }
+        // The host's run log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
         // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
@@ -1279,19 +1091,11 @@ final class ShepherdViewModel {
         reconcileThreadStores()
         browsers.prune(state: state)
         notifyLocalQuestions()
-        if let checkouts {
-            checkouts.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
-        }
         // A deleted agent waits on no sign-in.
         if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {
             notSignedIn = notSignedIn.filter { entry in state.agents.contains { $0.id == entry.key } }
             let needed = Set(notSignedIn.values.compactMap(\.provider))
             if piAuth.needed != needed { piAuth.needed = needed }
-        }
-        // The first launch's copy holds every restored agent until it is over.
-        if holdsForWelcome, restoresAgentsAtLaunch, sessions.startQueue.held {
-            let all = Set(state.agents.map(\.id))
-            if waitingForImport != all { waitingForImport = all }
         }
         didAdopt = true
         changedAdoptions += 1
@@ -1323,13 +1127,6 @@ final class ShepherdViewModel {
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID
             }
-        }
-        // Classify restored panes before hidden layouts mount. Selected and unfinished ordinary
-        // work start now; settled threads wait for selection or explicit native/remote demand.
-        if restoresAgentsAtLaunch, !didStartRestoredAgents {
-            didStartRestoredAgents = true
-            sessions.restoreAgents(localRecentsOrder + state.agents.map(\.id),
-                                         first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
         if let focused = focusedPaneID, activeTab?.layout.contains(focused) == true {
             // Focused pane survived the new snapshot; keep it.
@@ -1385,12 +1182,10 @@ final class ShepherdViewModel {
                 sidebarActivityBoxes[id]?.samples = []
                 sidebarActivityLast[id] = Date()
             }
-            // A turn starting or ending may have changed files.
-            if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             // A turn ending reads the branch card again (commits, a push, the PR's checks).
             if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
             // A turn that ended may have opened, pushed to or merged the branch's pull request.
-            if old == .working, status == .done || status == .idle, checkouts != nil {
+            if old == .working, status == .done || status == .idle, looksUpPullRequests {
                 Task { await refreshPullRequestLink(id) }
             }
             // A session (re)start reports idle; the server still remembers the failure until a
@@ -1469,8 +1264,8 @@ final class ShepherdViewModel {
     /// The technical reason: that line's tooltip.
     var remoteListenerProblemDetail: String? { remoteListenerFailure?.detail }
 
-    /// Applied at startup (ShepherdApp calls this after server.start()) and
-    /// from the Settings toggle.
+    /// Applied at startup and from the Settings toggle. The host binds the listener
+    /// (`ShepherdHost.serveSettings`), following the setting.
     func applyRemoteListenerSetting() {
         setRemoteListenerEnabled(settings.remoteListenerEnabled, persist: false)
     }
@@ -1478,25 +1273,6 @@ final class ShepherdViewModel {
     func setRemoteListenerEnabled(_ enabled: Bool, persist: Bool = true) {
         if persist { settings.remoteListenerEnabled = enabled }
         remoteListenerFailure = nil
-        guard ownsWorkspace else { return }
-        if enabled {
-            guard remoteListenerBoundPort == nil else { return }
-            let port = UInt16(clamping: settings.remoteListenerPort)
-            do {
-                remoteListenerBoundPort = try server.startRemoteListener(
-                    port: port,
-                    tokenURL: ShepherdPaths.remoteTokenURL()
-                )
-            } catch {
-                // Surfaced in Settings AND logged — on a headless host nobody
-                // is looking at Settings.
-                remoteListenerFailure = RemoteListenerFailure(error, port: port)
-                NSLog("Shepherd: remote listener failed to start: \(error)")
-            }
-        } else if remoteListenerBoundPort != nil {
-            server.stopRemoteListener()
-            remoteListenerBoundPort = nil
-        }
     }
 
 }

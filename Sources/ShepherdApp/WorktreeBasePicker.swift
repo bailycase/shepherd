@@ -93,7 +93,7 @@ struct WorktreeBasePicker: View {
                 }))
         }
         .task {
-            do { branches = try await vm.server.changes.branches(agentID: nil, cwd: (repo as NSString).expandingTildeInPath) }
+            do { branches = try await vm.hostBranches(space: space) }
             catch { failure = (error as? ChangesError)?.message ?? "Couldn’t read this project’s branches." }
         }
     }

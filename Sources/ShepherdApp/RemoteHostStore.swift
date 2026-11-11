@@ -852,6 +852,18 @@ final class RemoteHostStore {
         return try await client.addSpace(path: path)
     }
 
+    /// This Mac's background host's space registry (`projectRequest`): the space it registered or edited.
+    func projectRequest(hostID: UUID, _ request: RemoteProjectRequest) async throws -> SpaceID {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.projectRequest(request)
+    }
+
+    /// A space's branches on a host (`creationBranches`).
+    func creationBranches(hostID: UUID, spaceID: SpaceID) async throws -> ChangesBranches {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.creationBranches(spaceID: spaceID)
+    }
+
     /// Create an agent on a host; it appears in the sidebar via state push.
     @discardableResult
     func createAgent(
@@ -954,9 +966,8 @@ final class RemoteHostStore {
 }
 
 /// One remote pane's terminal bridge: an AppTerminalModel fed from `output`
-/// frames, with input and debounced resize forwarded to the host. The remote
-/// analog of TerminalSessionStore.PaneSession, without the spawn/binding
-/// machinery — the host owns the session lifecycle.
+/// frames, with input and debounced resize forwarded to the host, which owns
+/// the session lifecycle.
 @MainActor
 @Observable
 final class RemotePaneSession {
@@ -966,6 +977,9 @@ final class RemotePaneSession {
         case failed(String)
         case exited(Int32?)
     }
+
+    /// How long a surface waits for its first real grid before replaying anyway.
+    static let gridWaitNanoseconds: UInt64 = 400_000_000
 
     let sessionID: SessionID
     let terminal: AppTerminalModel
@@ -1068,7 +1082,7 @@ final class RemotePaneSession {
     /// surface that never lays out still attaches at 80×24.
     func start() {
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: TerminalSessionStore.gridWaitNanoseconds)
+            try? await Task.sleep(nanoseconds: RemotePaneSession.gridWaitNanoseconds)
             guard let self, !self.attachStarted, !self.hasReportedGrid else { return }
             self.attachIfNeeded()
         }

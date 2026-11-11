@@ -88,8 +88,7 @@ public struct ShepherdMacApp: App {
                 let service = status.map { _ in BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "") }
                 // App-side diagnostics only; the host's server metrics aren't reported to the app (#561 Q5).
                 ShepherdDiagnostics.shared.start(settings: .shared)
-                let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
-                                           restoresAgentsAtLaunch: false, welcomesYourPi: true, browserData: .persistent)
+                let vm = ShepherdViewModel(welcomesYourPi: true, browserData: .persistent)
                 vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                 vm.backgroundService = service
                 vm.backgroundServiceStatus = status
@@ -127,7 +126,6 @@ public struct ShepherdMacApp: App {
                     .task {
                         AppSignposts.launch.emitEvent("root view task")
                         vm.applyRemoteListenerSetting()
-                        vm.startSkillChecks()
                     }
                 } else {
                     LaunchSurface()
@@ -372,6 +370,15 @@ public enum ShepherdHost {
                 runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) { [notifications] in
                     notifications.post(AgentBanners.automation(title: $0, body: $1))
                 }.serve()
+                // Skills look for newer commits a minute in, then hourly once the last check is a day old.
+                let skills = server.skills
+                Task.detached(priority: .utility) {
+                    try? await Task.sleep(for: .seconds(60))
+                    while !Task.isCancelled {
+                        skills.checkUpdatesIfDue()
+                        try? await Task.sleep(for: .seconds(3_600))
+                    }
+                }
             }
         }
 

@@ -18,9 +18,6 @@ extension ShepherdViewModel {
         localHost.map { RemoteAgentRef(hostID: $0.id, agentID: id) }
     }
 
-    /// The local pi home: sessions root, catalog, home.
-    var pi: PiSetup { server.pi }
-
     /// Connects the background host on this Mac (`ShepherdApp`), its workspace taken as the app's own.
     @discardableResult
     func connectLocalHost(socket: String, token: String) -> RemoteHostStore.Connection {
@@ -34,7 +31,6 @@ extension ShepherdViewModel {
     /// Takes the background host's workspace as the app's own (`connectLocalHost`, before the host
     /// is added). Its threads' revision hints go to the host.
     func adoptLocalHost() {
-        sessions.startsSessions = false
         // The host keeps its own settings from the shared preferences: each side follows the other's writes.
         settings.followOtherProcesses()
         // Its design systems are the Designs page's own.

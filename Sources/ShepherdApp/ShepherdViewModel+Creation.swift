@@ -86,11 +86,6 @@ extension ShepherdViewModel {
     @discardableResult
     func addSpace(at url: URL, select: Bool = true) async -> SpaceID? {
         let path = url.path
-        do { try verifyCheckoutAvailable(path) }
-        catch { fail("Couldn’t add the space", error); return nil }
-        let reservation = UUID()
-        startingCheckoutUsers[reservation] = path
-        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         guard let host = localHost else { fail("Couldn’t add the space", BackgroundHostClient.HostStarting()); return nil }
         // The background host adds it (on top of its tree), and it shows as its push lands.
         do {
@@ -148,7 +143,6 @@ extension ShepherdViewModel {
             return
         }
         update()
-        sessions.updateAppearance(theme.terminal)
         remoteHosts.updateAppearance(theme.terminal)
     }
 
@@ -156,7 +150,6 @@ extension ShepherdViewModel {
     /// every live ghostty surface in place, exactly like theme changes —
     /// no surface replacement, no replay, no blank panes.
     func rebuildSurfaces() {
-        sessions.updateSurfaceConfiguration()
         remoteHosts.updateSurfaceConfiguration()
     }
 

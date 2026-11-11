@@ -116,9 +116,6 @@ extension ShepherdViewModel {
             syncParkSweepTimer()
             return
         }
-        for tab in state.tabs where candidates.contains(tab.id) {
-            for leaf in tab.layout.leaves { sessions.parkPane(leaf.id) }
-        }
         parkedTabIDs.formUnion(candidates)
         syncParkSweepTimer()
     }
@@ -172,7 +169,6 @@ extension ShepherdViewModel {
     /// Reconcile optimistic UI state after a queued persistence failure.
     private func reconcileFromServer() {
         guard let canonical = localHost?.state else { return }
-        sessions.stateDidChange(canonical)
         adopt(canonical)
     }
 
@@ -421,20 +417,9 @@ extension ShepherdViewModel {
         }
     }
 
-    func deleteAgentPersisted(_ id: AgentID, worktreeOperation: Bool = false) async throws {
-        if !worktreeOperation, let agent = state.agents.first(where: { $0.id == id }),
-           let branch = agent.worktreeBranch,
-           let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path {
-            let path = URL(fileURLWithPath: agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch))
-                .resolvingSymlinksInPath().standardized.path
-            guard !hostBusyWorktrees.contains(path) else { throw GitWorktree.Failure(message: "A worktree operation is running for this checkout") }
-        }
-        let doomedTabs = state.tabs.filter { tab in
-            state.agents.contains { $0.id == id && $0.tabID == tab.id }
-        }
+    func deleteAgentPersisted(_ id: AgentID) async throws {
         guard let ref = localRef(id) else { throw BackgroundHostClient.HostStarting() }
         try await remoteHosts.agentAction(ref, action: .deleteKeepingWorktree)
-        for leaf in doomedTabs.flatMap({ $0.layout.leaves }) { sessions.detachPane(leaf.id) }
         cancelReviews(for: id)
         subagentInspector.runByAgent.removeValue(forKey: id)
         childRuns.clear(agent: id)
@@ -443,7 +428,6 @@ extension ShepherdViewModel {
         if selectedAgentID == id { selectPreviousAgent(after: id) }
         else { selectionHistory.removeAll { $0 == id } }
         if let canonical = localHost?.state { adopt(canonical) }
-        sessions.stateDidChange(state)
     }
 
 }
@@ -517,7 +501,6 @@ extension ShepherdViewModel {
 
     /// "Use another model": an agent not signed in starts again on `model`.
     func useAnotherModel(_ agentID: AgentID, model: String) {
-        if localHost == nil { sessions.modelOverrides[agentID] = model }
         retryAgentStart(agentID, model: model)
     }
 }

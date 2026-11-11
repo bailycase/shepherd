@@ -186,7 +186,6 @@ struct DesignChatPane: View {
                 if let pane = model.tab.layout.leaf(withID: thread.paneID) {
                     let agentID = thread.agentID
                     AgentThreadPane(
-                        session: vm.sessions.session(for: pane, in: model.tab),
                         store: vm.threadStores.store(for: agentID),
                         input: vm.threadStores.input(for: agentID),
                         active: model.isVisible,

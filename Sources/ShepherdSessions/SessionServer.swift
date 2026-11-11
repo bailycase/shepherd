@@ -3201,6 +3201,35 @@ public final class SessionServer: @unchecked Sendable {
                     else { self.send(.ok(id: id), to: client) }
                 }
             }
+        case .projectRequest(let id, let request):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
+                return
+            }
+            let connection = ChangesUnchecked(value: client)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let reply: RemoteReply
+                do {
+                    let space: Space
+                    switch request {
+                    case .register(let path, let name): space = try await self.registerProject(path: path, name: name).space
+                    case .edit(let spaceID, let edit): space = try await self.editProject(spaceID, edit: edit)
+                    case .child(let parentPath, let path, let name, let create):
+                        space = try await self.addChildProject(parentPath: parentPath, path: path, name: name, create: create).space
+                    }
+                    reply = .spaceAdded(id: id, spaceID: space.id)
+                } catch let error as ProjectFileError {
+                    reply = .error(id: id, code: error.code, message: error.description)
+                } catch {
+                    reply = .error(id: id, code: "failed", message: String(describing: error))
+                }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    self.send(reply, to: client)
+                }
+            }
         case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             let images = initialImages ?? []
             // Refused before anything is made: pi would refuse them once the agent exists.

@@ -126,6 +126,11 @@ public final class PullRequestLinks {
         self.hosting = hosting
     }
 
+    /// A host's client's own badges: links looked up against `hosting.state`; it closes nothing.
+    public init(hosting: PullRequestLinkHosting) {
+        self.hosting = hosting
+    }
+
     /// A lookup for the thread is under way.
     public func isLookingUp(_ id: AgentID) -> Bool { lookups.contains(id) }
 

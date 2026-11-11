@@ -337,7 +337,7 @@ extension ShepherdViewModel {
     func coordinatorHeldOff(_ agent: AgentID) -> Bool {
         if missionStepFinished(agent) { return true }
         guard let project = state.projects.first(where: { $0.coordinatorAgentID == agent }) else { return false }
-        let live = state.agents.first { $0.id == agent }?.paneID.flatMap { sessions.liveSession(forPane: $0) } != nil
+        let live = state.agents.first { $0.id == agent }?.paneID.flatMap { pane in state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane)?.sessionID }.first } != nil
         return ProjectComposerSend.isOffline(paused: project.paused, messages: project.messages, coordinatorLive: live)
     }
 

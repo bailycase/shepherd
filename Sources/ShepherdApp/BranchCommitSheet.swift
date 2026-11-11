@@ -233,8 +233,6 @@ struct BranchCommitSheet: View {
                 vm.branchSheet = nil
                 if push, let branch {
                     vm.branchGit(id, "Committed \(commit), but couldn’t push \(branch)") { try BranchGit.push(cwd: cwd, branch: branch) }
-                } else {
-                    vm.checkouts?.refresh(id, priority: true)
                 }
             } catch {
                 self.error = ActionError.describe(error)

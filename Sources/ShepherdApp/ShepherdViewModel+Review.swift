@@ -318,11 +318,9 @@ extension ShepherdViewModel {
 
     // MARK: Loading
 
-    /// The person changed files in `agentID`'s working tree (a Files-tab Save): the branch chip
-    /// counts them now, and the Changes tab, which is out of sight while they edit, reloads the
-    /// next time it shows.
+    /// The person changed files in `agentID`'s working tree (a Files-tab Save): the Changes tab,
+    /// which is out of sight while they edit, reloads the next time it shows.
     func workingTreeChanged(_ agentID: AgentID) {
-        checkouts?.refresh(agentID, priority: true)
         guard let session = reviewSessions.values.first(where: { $0.agentID == agentID }), !session.workingTreeChanged else { return }
         session.workingTreeChanged = true
     }
@@ -368,9 +366,6 @@ extension ShepherdViewModel {
                 session.loadError = String(describing: error)
             }
             session.isLoading = false
-            // The header's count follows what the review just read (a commit or a revert
-            // reloads it too).
-            checkouts?.refresh(session.agentID)
         }
     }
 
@@ -415,7 +410,6 @@ extension ShepherdViewModel {
                 session.loadErrorIsNotice = [ChangesError.unavailable, ChangesError.notARepository].contains(changes?.code)
             }
             session.isLoading = false
-            if case .local(let agentID)? = owner(of: session) { checkouts?.refresh(agentID) }
         }
         loadChangesOverview(session)
     }

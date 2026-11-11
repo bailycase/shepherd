@@ -542,18 +542,16 @@ struct PaneLeafView: View, Equatable {
 
     var body: some View {
         let pane = model.pane
-        // As the background host's client, the host runs every session: none starts here.
+        // The host runs every session: none starts here.
         let host = vm.localHost
         Group {
             if pane.isReview == true {
                 PanePlaceholder(text: "review unavailable")
             } else if let agentID = model.agentID {
-                // The thread is the agent's pane; the session binding still goes through the
-                // store so a pi exit closes the pane. Its right pane docks beside the whole layout
+                // The thread is the agent's pane. Its right pane docks beside the whole layout
                 // (`AgentLayoutView`).
                 let inspecting = model.inspectingRunID
                 AgentThreadPane(
-                    session: host == nil ? vm.sessions.session(for: pane, in: tab) : nil,
                     store: vm.threadStores.store(for: agentID),
                     input: vm.threadStores.input(for: agentID),
                     active: model.isVisible,
@@ -591,18 +589,8 @@ struct PaneLeafView: View, Equatable {
                                  isFocused: model.isFocused, isVisible: model.isVisible,
                                  addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } })
             } else {
-                LiveTerminalPane(
-                    session: vm.sessions.session(for: pane, in: tab),
-                    isFocused: model.isFocused,
-                    isRendering: model.isVisible,
-                    onFocusAcquired: { [vm] in vm.focusedPaneID = pane.id },
-                    addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } }
-                )
-                // A restored terminal stays dormant until its tab shows; showing it is the demand
-                // that spawns its shell (visible-first, as the iOS client asks its host).
-                .onChange(of: model.isVisible, initial: true) { _, visible in
-                    if visible { vm.sessions.activateTerminal(pane, in: tab) }
-                }
+                // No host connected yet.
+                PanePlaceholder(text: "starting session…")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -612,11 +600,8 @@ struct PaneLeafView: View, Equatable {
     }
 }
 
-/// An agent's only surface. Observes the pane session for exit/failure so a dead pi shows
-/// the same placeholder a shell pane would.
+/// An agent's only surface: the host's thread says when pi stops.
 struct AgentThreadPane: View {
-    /// Nil where the background host runs the agent: its thread says when pi stops.
-    var session: TerminalSessionStore.PaneSession?
     var store: NativeThreadStore
     var input: ThreadInput? = nil
     let active: Bool
@@ -641,85 +626,11 @@ struct AgentThreadPane: View {
     var designChat = false
 
     var body: some View {
-        // The placeholder cross-fades in when pi dies; connecting → live changes nothing here, nor
-        // does a pi that stopped: its thread says why.
-        ZStack {
-            switch session?.phase ?? .live {
-            case .connecting, .live, .stopped:
-                ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
-                           agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
-                           steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
-                           restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
-                           designChat: designChat, allowsLocalFiles: true, retainedInput: input)
-            case .failed(let reason):
-                PanePlaceholder(text: "session unavailable · \(reason)")
-                    .shTransition(.content)
-            case .exited(let code):
-                PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
-                    .shTransition(.content)
-            }
-        }
-        .shAnimation(.content, value: session?.phase.isRunning ?? true)
-    }
-}
-
-extension TerminalSessionStore.PaneSession.Phase {
-    /// Connecting or live: the session's view is up (a thread, a terminal surface). A stopped
-    /// agent's thread stays up too.
-    var isRunning: Bool {
-        switch self {
-        case .connecting, .live, .stopped: true
-        case .failed, .exited: false
-        }
-    }
-}
-
-struct LiveTerminalPane: View {
-    var session: TerminalSessionStore.PaneSession
-    let isFocused: Bool
-    /// False for a mounted-but-hidden pane, which keeps its surface but must
-    /// stop running a render loop.
-    var isRendering: Bool = true
-    var onFocusAcquired: (() -> Void)? = nil
-    /// Puts a selection in the thread's composer; nil where the layout has no thread.
-    var addToMessage: ((String) -> Void)? = nil
-
-    var body: some View {
-        // A hidden restored pane mounts its surface only on first demand. Once activated,
-        // it stays mounted across selection changes and connecting → live transitions.
-        if session.isDormant {
-            PanePlaceholder(text: "starting shell…")
-        } else {
-            ZStack {
-                switch session.phase {
-                case .connecting, .live:
-                    ZStack(alignment: .topLeading) {
-                        AppTerminalView(model: session.terminal, isFocused: isFocused, isRendering: isRendering)
-                        if case .connecting = session.phase {
-                            PanePlaceholder(text: "starting session…")
-                                .allowsHitTesting(false)
-                                .shTransition(.content)
-                        }
-                        if let addToMessage {
-                            TerminalSelectionOverlay(terminal: session.terminal, add: addToMessage)
-                        }
-                    }
-                case .failed(let reason):
-                    PanePlaceholder(text: "session unavailable · \(reason)")
-                        .shTransition(.content)
-                case .exited(let code):
-                    PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
-                        .shTransition(.content)
-                case .stopped:
-                    // Only an agent's own pane stops; a shell never does.
-                    PanePlaceholder(text: "session stopped")
-                        .shTransition(.content)
-                }
-            }
-            .shAnimation(.content, value: session.phase)
-            .onAppear { session.terminal.onFocusAcquired = onFocusAcquired }
-            .onDisappear { session.terminal.onFocusAcquired = nil }
-        }
+        ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
+                   agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
+                   steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
+                   restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
+                   designChat: designChat, allowsLocalFiles: true, retainedInput: input)
     }
 }
 

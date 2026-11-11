@@ -22,15 +22,6 @@ enum BackgroundHostClient {
         ShepherdPaths.supportDirectory(environment: environment).appendingPathComponent("host.sock").path
     }
 
-    /// The app's server in client mode: never started, on throwaway paths, so it owns nothing,
-    /// reads none of the host's files and its workspace stays empty. ponytail: the view model still
-    /// needs a server; a client protocol in its place is the upgrade once local threads go.
-    static func idleServer(directory: URL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("shepherd-client-\(getpid())", isDirectory: true)) -> SessionServer {
-        SessionServer(socketPath: directory.appendingPathComponent("s.sock").path,
-                      stateURL: directory.appendingPathComponent("state.json"))
-    }
-
     /// Whether the app asks its host to drain: the host is an older build that takes `drain`.
     /// An older host without it drains once it sees the new bundle on disk; one whose build
     /// can't be compared is left alone.
