@@ -16,6 +16,11 @@
   "project-action" / "project-plan" one tool call whose result is the JSON in `project-tool-result.json` /
            `project-plan-result.json` (cwd: {"toolName", "content", "details"}), then it waits for `continue-1`
   a `project-script.json` in the cwd: `{"prompts": {prompt: items}, "events": [items], "socket": path}` plays `script_turn`: replies, tool calls, owner calls, holds
+  "boundary-row" / "boundary-hidden" a reply, agent_end, then an entry_appended custom message entry (a displayed
+           shepherd.hook row with details, a hidden shepherd.goal.continue), saved as the transcript lists it, with
+           the entry's time in ms; then agent_settled. "entry-custom" / "entry-usage" the same with an entry the
+           transcript lists nothing for (nothing saved), "entry-compaction" with a compaction (the history as a
+           compaction leaves it, no compaction events), "malformed-record" with a line that is not JSON.
   "toolcall" the model writing a tool call's arguments slowly (a big `write`): a line of text,
            then toolcall_start, toolcall_delta fragments of the arguments' JSON text (each the
            next few characters, not the text so far), toolcall_end, the reply's message_end,
@@ -146,7 +151,7 @@ tool calls in the assistant ones), and what a compaction drops stays in its tota
 session changes. "tools:N", "question", "toolcall", the default streaming turn ("slow" too) and a
 script's turns save this way; the last two emit each tool result's message events after its
 tool_execution_end. These still save without events (a host that counts messages has something to
-find): "fill", the seeds and $STUB_PI_STRESS, "stream", "provider-error", "project-action",
+find): "fill", the seeds and $STUB_PI_STRESS, "stream", the boundary prompts' entries, "provider-error", "project-action",
 "project-plan", "project-tools", "child-report-noise", "context", and the prompts that rewrite the
 history ("newsession" and the resume prompts).
 
@@ -684,11 +689,13 @@ def compact_preflight(cmd):
         streaming_turn(cmd["message"])
 
 
-def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
+def compaction(reason, instructions, will_retry=False, keep=2, gate=None, events=True):
     """pi's compaction: the summary replaces all but the last `keep` messages. As in pi's list, the
     summary comes first, then what it kept, with their own timestamps; `will_retry` is an overflow
-    compaction the run goes on after."""
-    emit({"type": "compaction_start", "reason": reason})
+    compaction the run goes on after. Without `events` nothing is emitted: a compaction pi announces
+    only as an appended entry."""
+    if events:
+        emit({"type": "compaction_start", "reason": reason})
     if gate:
         # The summary takes pi a model call: the host reads the history it has so far meanwhile.
         wait_for_file(gate, timeout=90)
@@ -696,8 +703,9 @@ def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
         wait_for_file("compact-done")
     conversation = [m for m in MESSAGES if m.get("role") != "system"]
     if len(conversation) < 3:
-        emit({"type": "compaction_end", "reason": reason, "aborted": False, "willRetry": False,
-              "errorMessage": "Compaction failed: Nothing to compact (session too small)"})
+        if events:
+            emit({"type": "compaction_end", "reason": reason, "aborted": False, "willRetry": False,
+                  "errorMessage": "Compaction failed: Nothing to compact (session too small)"})
         return None
     before = (STATS.get("contextUsage") or {}).get("tokens") or 184000
     summary = "## Goal\nMake the thread rows match the spec.\n\n## Done\nLabels removed.\n\n## Next\nPush the branch."
@@ -715,7 +723,8 @@ def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
     STATS["contextUsage"] = {"tokens": None, "contextWindow": 200000, "percent": None}
     result = {"summary": summary, "firstKeptEntryId": "kept", "tokensBefore": before, "estimatedTokensAfter": 23000,
               "details": {}}
-    emit({"type": "compaction_end", "reason": reason, "result": result, "aborted": False, "willRetry": will_retry})
+    if events:
+        emit({"type": "compaction_end", "reason": reason, "result": result, "aborted": False, "willRetry": will_retry})
     return result
 
 
@@ -1233,6 +1242,65 @@ def question_turn(prompt):
         with open(messages_file, "w") as f:
             json.dump(MESSAGES, f)
     emit({"type": "agent_end", "messages": new, "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
+def iso_time(ms):
+    """pi's ISO text for a time in ms, as an entry carries it."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ms // 1000)) + ".%03dZ" % (ms % 1000)
+
+
+def boundary_turn(prompt):
+    """A reply, then something pi saves or announces outside any message event, after agent_end and before
+    agent_settled. `boundary-row` and `boundary-hidden` are custom message entries (a displayed shepherd.hook
+    row with details, a hidden shepherd.goal.continue), saved to the history as its transcript lists them: the
+    entry's time in ms. `entry-custom` and `entry-usage` are entries the transcript lists nothing for;
+    `entry-compaction` is a compaction (the history as compaction() leaves it); `malformed-record` writes a line
+    that is not JSON."""
+    user = {"role": "user", "content": prompt, "timestamp": now_ms()}
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": user})
+    message_end(user)
+    reply = {"role": "assistant", "content": [{"type": "text", "text": f"Reply to {prompt}"}], "stopReason": "stop",
+             "timestamp": now_ms() + 1}
+    emit({"type": "message_start", "message": dict(reply, content=[])})
+    message_end(reply)
+    emit({"type": "turn_end", "message": reply, "toolResults": []})
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": [user, reply], "willRetry": False})
+    saved = now_ms() + 2
+    if prompt in ("boundary-row", "boundary-hidden"):
+        shown = prompt == "boundary-row"
+        kind = "shepherd.hook" if shown else "shepherd.goal.continue"
+        details = {"kind": "sentBack", "event": "Stop", "name": "Keep going", "lines": ["The tests still fail."],
+                   "meta": "exit 2 · 41 ms"} if shown else None
+        text = "Stop hook: the tests still fail." if shown else "Continue the goal."
+        entry = {"type": "custom_message", "id": f"entry-{prompt}", "parentId": "entry-parent", "timestamp": iso_time(saved),
+                 "customType": kind, "content": text, "display": shown}
+        listed = {"role": "custom", "customType": kind, "content": [{"type": "text", "text": text}], "display": shown,
+                  "timestamp": saved}
+        if details:
+            entry["details"] = details
+            listed["details"] = details
+        with out_lock:
+            emit({"type": "entry_appended", "entry": entry}, save=listed)
+    elif prompt in ("entry-custom", "entry-usage"):
+        entry = {"type": prompt.split("-")[1], "id": f"entry-{prompt}", "parentId": "entry-parent", "timestamp": iso_time(saved)}
+        if prompt == "entry-custom":
+            entry.update(customType="stub-state", data={"count": 1})
+        else:
+            entry.update(usage={"input": 1, "output": 1})
+        emit({"type": "entry_appended", "entry": entry})
+    elif prompt == "entry-compaction":
+        with out_lock:
+            compaction("threshold", None, events=False)
+            emit({"type": "entry_appended", "entry": {"type": "compaction", "id": "entry-compaction", "parentId": "entry-parent",
+                                                      "timestamp": iso_time(saved), "summary": "Compacted.", "tokensBefore": 1000}})
+    elif prompt == "malformed-record":
+        with out_lock:
+            out.write(b"{not json\n")
+            out.flush()
     emit({"type": "agent_settled"})
 
 
@@ -1929,6 +1997,9 @@ for raw in sys.stdin.buffer:
         elif message in ("question", "question-timeout", "question-timeout-late-host"):
             turn_thread = threading.Thread(target=question_turn, args=(message,), daemon=True)
             turn_thread.start()
+        elif message in ("boundary-row", "boundary-hidden", "entry-custom", "entry-usage", "entry-compaction", "malformed-record"):
+            turn_thread = threading.Thread(target=boundary_turn, args=(message,), daemon=True)
+            turn_thread.start()
         elif message == "ask-choice":
             pending_ui = "uuid-7"
             emit({"type": "agent_start"})
@@ -2052,6 +2123,12 @@ for raw in sys.stdin.buffer:
                 fail_switched_history = True
             if message in ("resume-stale-history", "resume-history-failure"):
                 stale_history = list(MESSAGES)
+                # A displayed message, saved to the old session: an idle host reads at once, before the agent_end below
+                # asks get_state, so the read reaches pi first and is the stale one held behind the changed identity.
+                report = {"role": "custom", "customType": "stub-report", "display": True,
+                          "content": [{"type": "text", "text": "Stub report"}], "timestamp": now_ms()}
+                emit({"type": "message_start", "message": report})
+                message_end(report)
             if goal_file:
                 goal = None
                 publish_goal()

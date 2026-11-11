@@ -54,18 +54,19 @@ extension RPCThreadState {
     }
 
     /// The same placement for any rows the host keeps beside pi's history: each `row` goes
-    /// where the thread showed it at `at` (ms).
-    static func interleave(_ rows: [(at: Double, row: NativeThreadMessage)], into history: [NativeThreadMessage]) -> [NativeThreadMessage] {
+    /// where the thread showed it at `at` (ms). `afterEarlierRows`: `history` continues rows that
+    /// came before it, so a record ahead of its first row is not one a compaction left behind.
+    static func interleave(_ rows: [(at: Double, row: NativeThreadMessage)], into history: [NativeThreadMessage],
+                           afterEarlierRows: Bool = false) -> [NativeThreadMessage] {
         guard !rows.isEmpty else { return history }
         let ordered = rows.sorted { $0.at < $1.at }
         let compacted = history.contains { $0.role == "compactionSummary" }
         var result: [NativeThreadMessage] = []
         result.reserveCapacity(history.count + ordered.count)
         var next = 0
-        var placedAny = false
+        var placedAny = afterEarlierRows
         for row in history {
-            let start = row.role == "toolResult" ? row.startedAt ?? row.timestamp : row.timestamp
-            if let start {
+            if let start = rowStart(row) {
                 while next < ordered.count, ordered[next].at <= start {
                     if placedAny || !compacted { result.append(ordered[next].row) }
                     next += 1

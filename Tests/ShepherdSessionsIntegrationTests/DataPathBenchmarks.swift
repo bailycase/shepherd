@@ -61,6 +61,45 @@ struct DataPathBenchmarks {
         Bench.report("project.output\(bytes)bytes", Bench.median(costs), "us/row")
     }
 
+    // MARK: Folding a turn
+
+    /// A turn end on a thread of `rows` messages: 20 messages folded in. The projector is moved into the fold, never copied, so the
+    /// cost is the same at every size.
+    @Test(arguments: [12_000, 36_000, 120_000])
+    func foldCost(rows: Int) async throws {
+        let dir = try makeScratchDirectory("fold-cost")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("messages.json")
+        let base = 1_790_000_000_000.0
+        func message(_ index: Int) -> String {
+            index % 2 == 0
+                ? #"{"role":"user","content":"row \#(index) of a long thread","timestamp":\#(Int(base) + index)}"#
+                : #"{"role":"assistant","content":[{"type":"text","text":"row \#(index) answered"}],"stopReason":"stop","timestamp":\#(Int(base) + index)}"#
+        }
+        try ("[" + (0..<rows).map(message).joined(separator: ",") + "]").write(to: file, atomically: true, encoding: .utf8)
+        let t = try ThreadEventTests.Thread(env: ["STUB_PI_MESSAGES_FILE": file.path])
+        defer { t.stop() }
+        try await eventually("the history to load", timeout: .seconds(300)) { t.queue.sync { t.state.history.count == rows } }
+        var samples: [Double] = []
+        var next = rows
+        for _ in 0..<7 {
+            let events = try (next..<(next + 20)).map { index in
+                try JSONDecoder().decode(RPCEvent.self, from: Data(#"{"type":"message_end","message":\#(message(index))}"#.utf8))
+            }
+            next += 20
+            let before = t.queue.sync { t.state.historyFoldedMessageCount }
+            // The settle of a run requests the fold, which runs inline at the end of the event: no stats check follows to read.
+            samples.append(t.queue.sync {
+                Bench.time {
+                    events.forEach(t.state.handle)
+                    t.state.handle(.agentSettled)
+                }
+            })
+            #expect(t.queue.sync { t.state.historyFoldedMessageCount } == before + 20)
+        }
+        Bench.report("fold.\(rows)rows", Bench.median(samples), "ms", "20 messages")
+    }
+
     // MARK: Streaming
 
     @Test(arguments: [1_000, 2_000, 4_000])

@@ -52,6 +52,17 @@ struct PiAgent {
         return try #require(match)
     }
 
+    /// Runs `body` on the agent's thread state, on the server queue.
+    func thread<T>(_ body: @escaping (RPCThreadState) -> T) async throws -> T {
+        let host = host, id = agent.id
+        return try await host.server.enqueue { body(host.server.rpcThread(forAgent: id)!) }
+    }
+
+    /// Once no fold or read is due or in flight and no history check is outstanding.
+    func historySettled() async throws {
+        try await eventually("the history work to settle") { try await thread { !$0.historyWorkPending } }
+    }
+
     /// Once pi has reported its session and history.
     func ready() async throws -> NativeThreadSnapshot {
         try await snapshot("the agent to bootstrap") { !$0.piSessionID.isEmpty && !$0.messages.isEmpty }

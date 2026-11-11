@@ -1127,6 +1127,13 @@ struct QueueTests {
         let op = UUID()
         _ = try await pi.send("tools:0 next", operationID: op, from: running)
         _ = try await pi.snapshot { $0.queue?.items.count == 1 }
+        // A run's end no longer reads the history (its messages fold), so the read is asked for as the run settles: after the
+        // run's last event and before the queue sends pi its next prompt, where the run's own read used to come.
+        try await h.server.enqueue {
+            let thread = try #require(h.server.rpcThread(forAgent: pi.agent.id))
+            let previous = thread.onActualTurnSettled
+            thread.onActualTurnSettled = { [weak thread] in previous?(); thread?.refreshMessages() }
+        }
 
         armed.withValue { $0 = true }
         pi.finishTool(1)

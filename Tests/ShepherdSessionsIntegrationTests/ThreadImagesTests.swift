@@ -269,6 +269,41 @@ struct ThreadImagesTests {
                 "serving read the image off the owner's queue: \(seen.all)")
     }
 
+    /// A turn whose messages carry a picture folds into history off the thread's queue: the bytes the events carry are hashed there
+    /// (a reply's screenshot is megabytes), and the id the fold gives the image is the one a whole read gives.
+    @Test func aTurnWithAnImageFoldsOffTheQueue() async throws {
+        final class Seen: @unchecked Sendable {
+            private let lock = NSLock()
+            private var queues: [String] = []
+            func add(_ label: String) { lock.withLock { queues.append(label) } }
+            var all: [String] { lock.withLock { queues } }
+        }
+        let seen = Seen()
+        let unique = Self.png(side: 47, bytes: 88_211)
+        let mine = unique.base64EncodedString().utf8.count
+        ThreadImages.onHeavyWork = { size in if size == mine { seen.add(String(cString: __dispatch_queue_get_label(nil))) } }
+        defer { ThreadImages.onHeavyWork = nil }
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let ready = try await pi.ready()
+        let reads = pi.stdin("get_messages").count
+        #expect(try await pi.send("tools:0 look at this", images: [Self.nativeImage(unique)], from: ready).failureCode == nil)
+        let folded = try await pi.snapshot("the turn with its picture") { !$0.running && $0.messages.last?.blocks.first?.text == "Reply to tools:0 look at this" }
+        try await pi.historySettled()
+        let id = try #require(folded.messages.flatMap(\.blocks).compactMap(\.imageID).first)
+        let owners: Set<String> = ["shepherd.rpc", "shepherd.sessions"]
+        #expect(!seen.all.isEmpty && seen.all.allSatisfy { !owners.contains($0) }, "the fold hashed the picture off the owner's queue: \(seen.all)")
+        #expect(pi.stdin("get_messages").count == reads, "folding it read nothing")
+
+        let landed = Locked(false)
+        try await pi.thread { $0.refreshMessages { _ in landed.withValue { $0 = true } } }
+        try await eventually("a whole read to land") { landed.current }
+        try await pi.historySettled()
+        let read = try await pi.snapshot("the whole read") { $0.messages.last?.blocks.first?.text == "Reply to tools:0 look at this" }
+        #expect(read.messages.flatMap(\.blocks).compactMap(\.imageID) == [id], "the image has the id a whole read gives it")
+    }
+
     // MARK: Identity is the whole content
 
     /// Two different valid PNGs of one length that agree on their first and last 64 base64 characters, as a partial-content key would

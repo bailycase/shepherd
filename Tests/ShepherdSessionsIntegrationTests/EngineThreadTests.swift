@@ -378,6 +378,63 @@ struct EngineThreadTests {
         #expect(compacted.context?.summaryEntryID == summary.entryID, "the context points at the summary: \(String(describing: compacted.context))")
     }
 
+    /// Each finished turn folds into history from the events the real engine emits, in the order it saves them. Turns with a tool
+    /// call, reasoning, a picture, a dialog, a command's note and a template leave no whole read to project; the compaction reads;
+    /// and a whole read at the end finds the history the folds left. Run on every pin bump: it guards the engine's event and save
+    /// order, which the fold relies on.
+    @Test func foldedTurnsMatchWhatTheRealEngineSaved() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let pi = try await RealPi.launch(engine: engine)
+        defer { pi.stop() }
+        var latest = try await pi.ready()
+        let start = try await pi.agent.thread { $0.historyProjectionCount }
+        let png = ThreadImagesTests.nativeImage(ThreadImagesTests.png(side: 24, bytes: 20_000))
+        for text in ["hello", "tool please", "think about it"] {
+            _ = try await pi.send(text, from: latest)
+            latest = try await pi.settled("the reply to \(text)") { s in
+                s.messages.contains { $0.blocks.first?.text == text } && s.messages.last?.role == "assistant"
+            }
+        }
+        _ = try await pi.agent.send("look at this", images: [png], from: latest)
+        latest = try await pi.settled("the reply to the picture") { s in
+            s.messages.contains { $0.blocks.contains { $0.imageID != nil } } && s.messages.last?.role == "assistant"
+        }
+        try await pi.agent.historySettled()
+        #expect(try await pi.agent.thread { $0.historyProjectionCount } == start, "four turn ends, and no whole history projected")
+        #expect(try await pi.agent.thread { $0.historyFoldedMessageCount } > 0)
+
+        // A dialog, a command's note and a template: commands read after they answer.
+        let beforeTheDialog = latest
+        async let asked = pi.send("/ask-me", from: beforeTheDialog)
+        let asking = try await pi.snapshot("pi's question") { !$0.dialogs.isEmpty }
+        let dialog = try #require(asking.dialogs.first)
+        _ = try await pi.request(.answer(expectedSessionID: asking.piSessionID, generation: asking.generation, operationID: UUID(),
+                                         dialogID: dialog.id, answer: .select(value: "beta")))
+        latest = try await pi.snapshot("the answer's note") { s in
+            s.dialogs.isEmpty && (s.messages + s.provisional).contains { $0.blocks.contains { $0.text == "picked:beta" } }
+        }
+        _ = try await asked
+        _ = try await pi.send("/greet Ada", from: latest)
+        latest = try await pi.settled("the template's turn") { s in
+            s.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text.contains("Ada") } } && s.messages.last?.role == "assistant"
+        }
+
+        _ = try await pi.request(.compact(expectedSessionID: latest.piSessionID, generation: latest.generation, operationID: UUID()))
+        _ = try await pi.snapshot("the compaction") { s in !s.running && s.messages.contains { $0.role == "compactionSummary" } }
+        _ = try await pi.send("after the compaction", from: latest)
+        _ = try await pi.settled("the turn after it") { $0.messages.last?.role == "assistant" && $0.messages.contains { $0.blocks.first?.text == "after the compaction" } }
+        try await pi.agent.historySettled()
+
+        let folded = try await pi.agent.thread { ($0.history, $0.estimate) }
+        let landed = Locked(false)
+        try await pi.agent.thread { $0.refreshMessages { _ in landed.withValue { $0 = true } } }
+        try await eventually("a whole read to land") { landed.current }
+        try await pi.agent.historySettled()
+        let read = try await pi.agent.thread { ($0.history, $0.estimate) }
+        #expect(folded.0.map(\.entryID) == read.0.map(\.entryID), "the same rows, in the same order")
+        #expect(folded.0 == read.0 && folded.1 == read.1)
+    }
+
     /// What pi writes to the session file reads back as the thread the app showed: the preview a
     /// resumed agent draws before its pi serves (`PiSessionPreview`), over a turn, a tool call and
     /// a reasoning block, and then over a compaction (which, as in pi's own context, leaves what

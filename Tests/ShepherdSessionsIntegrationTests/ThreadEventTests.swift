@@ -67,6 +67,12 @@ struct ThreadEventTests {
             return try #require(result.snapshotValue, "expected a snapshot, got \(result)")
         }
 
+        /// Once no fold or read is due or in flight and no history check is outstanding: history is then what pi saved, with
+        /// no duplicate of a reply the stub had already saved when its event was fed.
+        func historySettled() async throws {
+            try await eventually("the history work to settle") { queue.sync { !state.historyWorkPending } }
+        }
+
         /// Once pi's state, history, stats, and commands have all landed.
         func ready() async throws -> NativeThreadSnapshot {
             var latest: NativeThreadSnapshot?
@@ -947,6 +953,8 @@ struct ThreadEventTests {
             history = try await t.snapshot()
             return history?.provisional.isEmpty == true && history?.running == false
         }
+        try await t.historySettled()
+        history = try await t.snapshot()
         #expect(history?.messages.last?.thinkingSeconds == answered)
     }
 
@@ -1055,9 +1063,13 @@ struct ThreadEventTests {
         defer { t.stop() }
         _ = try await t.ready()
         for i in 0..<(RPCThreadState.pageSize + 5) {
+            // As pi does: the call ends, then its result is saved and announced.
+            let result = #"{"role":"toolResult","toolCallId":"call_\#(i)","toolName":"bash","content":[{"type":"text","text":"ok"}],"isError":false}"#
             try await t.feed(
                 #"{"type":"tool_execution_start","toolCallId":"call_\#(i)","toolName":"bash"}"#,
-                #"{"type":"tool_execution_end","toolCallId":"call_\#(i)","toolName":"bash","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}"#)
+                #"{"type":"tool_execution_end","toolCallId":"call_\#(i)","toolName":"bash","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}"#,
+                #"{"type":"message_start","message":\#(result)}"#,
+                #"{"type":"message_end","message":\#(result)}"#)
         }
         try await eventually("the dropped rows to fold into history") {
             let s = try await t.snapshot()

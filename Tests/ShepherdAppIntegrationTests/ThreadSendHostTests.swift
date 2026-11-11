@@ -120,9 +120,16 @@ struct ThreadSendHostTests {
         #expect(rig.store.notice == nil)
     }
 
-    /// From now on the host's read of a history with images waits for `held`, counting in `reads`.
+    /// From now on the host's read of a history with images waits for `held`, counting in `reads`. A run's end folds its
+    /// messages and reads nothing, so a read is asked for as each run settles, before pi's next prompt (a compaction or a count
+    /// check would ask for one).
     nonisolated static func holdHistoryImages(_ server: SessionServer, _ agent: AgentID, held: DispatchSemaphore, reads: Locked<Int>) async throws {
-        try await server.enqueue { server.rpcThread(forAgent: agent)?.beforeHistoryImages = { reads.withValue { $0 += 1 }; held.wait() } }
+        try await server.enqueue {
+            guard let thread = server.rpcThread(forAgent: agent) else { return }
+            thread.beforeHistoryImages = { reads.withValue { $0 += 1 }; held.wait() }
+            let previous = thread.onActualTurnSettled
+            thread.onActualTurnSettled = { [weak thread] in previous?(); thread?.refreshMessages() }
+        }
     }
 
     /// The first send into a freshly opened thread of tall rows, with a draft of several lines: the

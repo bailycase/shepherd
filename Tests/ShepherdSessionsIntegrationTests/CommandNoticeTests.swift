@@ -30,9 +30,15 @@ struct CommandNoticeTests {
     }
 
     @Test func aToastDuringACommandTheUserSentBecomesARow() async throws {
-        let t = try Thread()
-        defer { t.stop() }
+        // The read an answered command makes is held, so the live row can be seen before history places it.
+        let gateDir = try makeScratchDirectory("notice-gate")
+        defer { try? FileManager.default.removeItem(at: gateDir) }
+        let gate = gateDir.appendingPathComponent("history-gate")
+        try Data().write(to: gate)
+        let t = try Thread(env: ["STUB_PI_HISTORY_GATE": gate.path])
+        defer { t.stop(); try? Data().write(to: gate) }
         _ = try await t.ready()
+        try FileManager.default.removeItem(at: gate)
         await t.sendAsUser("/session-name info Session named")
 
         let s = try await t.settle("the row") { !notices($0).isEmpty }
@@ -41,6 +47,11 @@ struct CommandNoticeTests {
         #expect(row.role == "custom" && row.blocks == [NativeThreadBlock(kind: .text, text: "Session named")])
         #expect(s.provisional.map(\.entryID) == [row.entryID], "it shows where the user is looking, until history places it")
         #expect(s.messages.count == 2, "pi's history is its own")
+
+        try Data().write(to: gate)
+        try await t.historySettled()
+        let placed = try await t.snapshot()
+        #expect(placed.provisional.isEmpty && placed.messages.map(\.entryID).last == row.entryID, "the command's read placed it")
     }
 
     @Test(arguments: ["warning", "error"])
@@ -103,6 +114,7 @@ struct CommandNoticeTests {
         for _ in 1...2 {
             try await t.feed(Self.agentEnd)
             await barrier(t)
+            try await t.historySettled()
             let s = try await t.snapshot()
             #expect(s.provisional.isEmpty, "history placed it")
             #expect(notices(s).map(\.entryID) == [id], "one row under the same id, never a second")
@@ -141,6 +153,8 @@ struct CommandNoticeTests {
         _ = try await t.ready()
         t.queue.sync { t.state.commandNoticeGrace = 60 }
         await t.sendAsUser("/session-name quiet")
+        // The command's own read must land before the toasts do, or it places the ones that came first.
+        try await t.historySettled()
         for i in 0..<(RPCThreadState.noticeLimit + 4) {
             try await t.feed(#"{"type":"extension_ui_request","id":"n\#(i)","method":"notify","message":"toast \#(i)","notifyType":"info"}"#)
         }
@@ -172,13 +186,16 @@ struct CommandNoticeTests {
         let s = try await pi.snapshot("the command list") { $0.commands != nil }
         #expect(try await pi.send("/session-name warning Check the build", from: s).failureCode == nil)
 
-        let local = try await pi.snapshot("the row") { $0.provisional.contains { $0.entryID.hasPrefix("n:") } }
-        let row = try #require(local.provisional.first { $0.entryID.hasPrefix("n:") })
+        // The command's read places the row in history; both clients show it there.
+        _ = try await pi.snapshot("the row") { snapshot in (snapshot.messages + snapshot.provisional).contains { $0.entryID.hasPrefix("n:") } }
+        try await pi.historySettled()
+        let local = try await pi.snapshot("the row in history") { $0.messages.contains { $0.entryID.hasPrefix("n:") } }
+        let row = try #require(local.messages.first { $0.entryID.hasPrefix("n:") })
         #expect(row.role == "warning" && row.blocks.first?.text == "Check the build")
         #expect(pi.stdin("prompt").map { $0["message"] as? String } == ["/session-name warning Check the build"])
 
         let client = try await remote.typed()
         let seen = try #require(try await client.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue)
-        #expect(seen.provisional.first { $0.entryID == row.entryID } == row)
+        #expect(seen.messages.first { $0.entryID == row.entryID } == row)
     }
 }
