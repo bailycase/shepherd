@@ -15,9 +15,7 @@ extension ShepherdViewModel {
               state.spaces[index].name != trimmed else { return }
         state.spaces[index].name = trimmed
         sessions.stateDidChange(state)
-        persistSpace(id, "rename space", failureTitle: "Couldn’t rename the space", host: .rename(name: trimmed)) {
-            _ = try await $0.editProject(id, edit: ProjectEdit(name: trimmed))
-        }
+        persistSpace(id, "rename space", failureTitle: "Couldn’t rename the space", host: .rename(name: trimmed))
         let committed = persistenceTail
         Task { @MainActor [weak self] in
             await committed?.value
@@ -32,10 +30,7 @@ extension ShepherdViewModel {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }), state.spaces[index].worktreeBase != base else { return }
         state.spaces[index].worktreeBase = base
         sessions.stateDidChange(state)
-        let space = state.spaces[index]
-        persistSpace(id, "set worktree base", failureTitle: "Couldn’t save the project’s default base", host: .setWorktreeBase(base: base)) {
-            try await $0.updateSpace(space)
-        }
+        persistSpace(id, "set worktree base", failureTitle: "Couldn’t save the project’s default base", host: .setWorktreeBase(base: base))
     }
 
     /// Delete a space and everything in it (agents, layouts, sessions). Spaces nested under it by path are independent
@@ -53,7 +48,7 @@ extension ShepherdViewModel {
         let doomedAgents = Set(state.agents.filter { $0.spaceID == id }.map(\.id))
         let doomedTabs = state.tabs.filter { $0.spaceID == id }
 
-        // Detach views before the server kills processes (same ordering as
+        // Detach views before the host kills processes (same ordering as
         // deleteAgent: no exit callback may race a half-removed UI tree).
         for tab in doomedTabs {
             for leaf in tab.layout.leaves {
@@ -88,7 +83,7 @@ extension ShepherdViewModel {
         }
         sessions.stateDidChange(state)
         syncFocus()
-        persistSpace(id, "space deletion", failureTitle: "Couldn’t remove the space", host: .delete) { try await $0.deleteSpace(id) }
+        persistSpace(id, "space deletion", failureTitle: "Couldn’t remove the space", host: .delete)
     }
 }
 
@@ -153,57 +148,17 @@ extension ShepherdViewModel {
     /// folder, and they start again there. A refusal shows why.
     func relocateSpace(_ id: SpaceID, to path: String) async {
         guard let old = state.spaces.first(where: { $0.id == id })?.path else { return }
-        if let host = localHost {
-            // The background host stops, moves and keeps them; they start again as Retry does.
-            let moving = state.agents.filter { agent in
-                state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())
-                    .map { SessionServer.relocated($0.cwd, from: old, to: path) != nil } == true
-            }
-            do { try await remoteHosts.spaceAction(hostID: host.id, spaceID: id, .relocate(path: path)) }
-            catch { fail("Couldn’t move the space", error) }
-            // Retry reads the folder from the workspace: wait for the host's push.
-            for _ in 0..<100 where state.spaces.first(where: { $0.id == id })?.path == old { try? await Task.sleep(for: .milliseconds(20)) }
-            checkMissingSpaces()
-            for agent in moving { retryAgentStart(agent.id) }
-            return
+        guard let host = localHost else { return fail("Couldn’t move the space", BackgroundHostClient.HostStarting()) }
+        // The background host stops, moves and keeps them; they start again as Retry does.
+        let moving = state.agents.filter { agent in
+            state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())
+                .map { SessionServer.relocated($0.cwd, from: old, to: path) != nil } == true
         }
-        let target = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
-        let moving = state.agents.compactMap { agent -> (agent: Agent, from: String, to: String, session: SessionID?)? in
-            guard let pane = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID()),
-                  let to = SessionServer.relocated(pane.cwd, from: old, to: target) else { return nil }
-            return (agent, pane.cwd, to, pane.sessionID)
-        }
-        do {
-            // Stop the threads first: a pi still running would write to the conversation being moved.
-            let deadline = ContinuousClock.now + .seconds(10)
-            for thread in moving {
-                guard let session = thread.session, await server.sessionInfo(sessionID: session)?.isAlive == true else { continue }
-                await server.stopKeepingAgent(sessionID: session)
-                while await server.sessionInfo(sessionID: session)?.isAlive == true {
-                    guard ContinuousClock.now < deadline else { throw AgentStartFailure(message: "\(thread.agent.name) did not stop. Nothing was moved.") }
-                    try await Task.sleep(for: .milliseconds(50))
-                }
-            }
-            _ = try await server.relocateSpace(id, to: path)
-        } catch {
-            fail("Couldn’t move the space", error)
-            for thread in moving {
-            threadStores.store(for: thread.agent.id).restarting()
-            sessions.retryStart(thread.agent.id)
-        }
-            return
-        }
-        let root = server.pi.sessionsRoot
-        let files = moving.map { ($0.agent.effectivePiSessionID, $0.from, $0.to) }
-        await Task.detached(priority: .userInitiated) {
-            for (session, from, to) in files { PiSessionFile.relocate(sessionID: session, from: from, to: to, sessionsRoot: root) }
-        }.value
-        let canonical = server.state
-        sessions.stateDidChange(canonical)
-        adopt(canonical)
-        for thread in moving {
-            threadStores.store(for: thread.agent.id).restarting()
-            sessions.retryStart(thread.agent.id)
-        }
+        do { try await remoteHosts.spaceAction(hostID: host.id, spaceID: id, .relocate(path: path)) }
+        catch { fail("Couldn’t move the space", error) }
+        // Retry reads the folder from the workspace: wait for the host's push.
+        for _ in 0..<100 where state.spaces.first(where: { $0.id == id })?.path == old { try? await Task.sleep(for: .milliseconds(20)) }
+        checkMissingSpaces()
+        for agent in moving { retryAgentStart(agent.id) }
     }
 }

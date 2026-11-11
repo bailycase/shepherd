@@ -201,7 +201,6 @@ extension ShepherdViewModel {
         case .design(let design, _): id = design
         case .board(let reference, _, _): id = reference.designID
         }
-        let server = server
         Task {
             guard let snapshot = try? await ownerDesignSnapshot(id) else { return }
             rendering.boardPictures.request(id, snapshot: snapshot)

@@ -315,30 +315,6 @@ struct PaneControlTests {
         }
     }
 
-    /// A terminal opened beside a thread to run a command gets its shell, and the command typed
-    /// into it, before any view draws it.
-    @Test func aTerminalOpenedBesideAThreadToRunACommandStartsWithoutAView() async throws {
-        let app = try AppHarness(inProcess: true)
-        defer { app.stop() }
-        let space = Fixture.space(path: app.dir.path)
-        let agent = Fixture.agent(in: space)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-
-        vm.openTerminalPane(besideAgent: agent.agent, running: "printf 'tab-%s\\n' ready")
-
-        var opened: LeafPane?
-        try await eventuallyOnMain("the terminal to join the layout") {
-            opened = vm.state.tabs.first { $0.id == agent.tab.id }?.layout.leaves.first { $0.id != agent.piPane.id }
-            return opened != nil
-        }
-        let terminal = try #require(opened)
-        try await eventuallyOnMain("its shell to go live") { vm.sessions.liveSession(forPane: terminal.id) != nil }
-        let session = try #require(vm.sessions.liveSession(forPane: terminal.id))
-        try await eventuallyAsync("the command's output to reach its screen", timeout: .seconds(20)) {
-            await app.server.screenText(sessionID: session)?.contains { $0.contains("tab-ready") } == true
-        }
-    }
-
     /// A terminal no view has measured starts at the grid this Mac's terminals last reported, not
     /// at 80×24, and keeps it as its own until its surface reports one.
     @Test func aTerminalNoViewMeasuredStartsAtTheLastLocalGrid() async throws {
@@ -467,24 +443,6 @@ struct PaneLayoutTests {
         #expect(app.server.state.tabs.first?.layout == agent.tab.layout)
     }
 
-    @Test func layoutWritesPersistInOrderAndARejectedWriteRollsBack() async throws {
-        let app = try AppHarness(inProcess: true)
-        defer { app.stop() }
-        let space = Fixture.space(path: app.dir.path)
-        let first = LeafPane(cwd: space.path), second = LeafPane(cwd: space.path)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(first))
-        let vm = try await app.start(with: ShepherdState(spaces: [space], tabs: [tab]))
-        let committed = PaneNode.split(axis: .vertical, ratio: 0.6, first: .leaf(first), second: .leaf(second))
-        let invalid = PaneNode.split(axis: .vertical, ratio: 1.0, first: .leaf(first), second: .leaf(second))
-
-        vm.setLayout(committed, forTab: tab.id)
-        vm.setLayout(invalid, forTab: tab.id)
-        await app.settle()
-
-        #expect(app.server.state.tabs.first?.layout == committed)
-        #expect(vm.state.tabs.first?.layout == committed)
-    }
-
     @Test func restructuringALayoutKeepsItsTerminalsSessionBindings() async throws {
         let app = try AppHarness(inProcess: true)
         defer { app.stop() }
@@ -492,12 +450,11 @@ struct PaneLayoutTests {
         let sessionID = SessionID()
         let pane = LeafPane(sessionID: sessionID, cwd: space.path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let vm = try await app.start(with: ShepherdState(spaces: [space], tabs: [tab]))
+        _ = try await app.start(with: ShepherdState(spaces: [space], tabs: [tab]))
 
-        // The view rebuilds leaves without their bindings; the server must keep them.
-        vm.setLayout(.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(id: pane.id, cwd: space.path)),
-                            second: .leaf(LeafPane(cwd: space.path))), forTab: tab.id)
-        await app.settle()
+        // A client rebuilds leaves without their bindings; the server must keep them.
+        try await app.server.updateLayoutStructure(tabID: tab.id, layout: .split(axis: .vertical, ratio: 0.5,
+            first: .leaf(LeafPane(id: pane.id, cwd: space.path)), second: .leaf(LeafPane(cwd: space.path))))
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         #expect(layout.leaves.count == 2)

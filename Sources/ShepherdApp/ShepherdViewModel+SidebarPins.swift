@@ -80,7 +80,8 @@ extension ShepherdViewModel {
         case .local(let id):
             let ref = localRef(id)
             enqueuePersistence("thread mute", failureTitle: title) {
-                if let ref { try await hosts.agentAction(ref, action: .mutePushes(!muted)) } else { try await $0.setPushMuted(id, muted: !muted) }
+                guard let ref else { throw BackgroundHostClient.HostStarting() }
+                try await hosts.agentAction(ref, action: .mutePushes(!muted))
             }
         case .remote(let ref):
             Task {
@@ -100,7 +101,7 @@ extension ShepherdViewModel {
     /// of a host that has sent its threads.
     func pruneSidebarPins() {
         // As a client, nothing is pruned until the host has sent its workspace.
-        if !ownsWorkspace, localHost?.phase != .connected { return }
+        if localHost?.phase != .connected { return }
         if didAdopt {
             var spaces = spacePins
             if spaces.prune(keeping: Set(state.spaces.filter { !$0.hidden }.map(\.id))) { spacePins = spaces }

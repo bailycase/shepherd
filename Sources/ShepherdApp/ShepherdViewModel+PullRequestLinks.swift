@@ -16,13 +16,10 @@ extension ShepherdViewModel {
     func installPullRequestLinks() {
         var hosting = PullRequestLinkHosting(
             // The background host closes its own merged threads; its app only shows their links.
-            closeOnMerge: { [weak self] in self?.localHost == nil && self?.settings.worktreeCloseOnMerge == true },
+            closeOnMerge: { false },
             lookup: { [weak self] cwd in await self?.branchPullRequestLookup(cwd) },
-            removeWorktreeAgent: { [weak self] id in
-                guard let self else { throw CancellationError() }
-                try await self.removeWorktreeAgent(id)
-            })
-        hosting.state = { [weak self] in self?.localHost == nil ? nil : self?.state }
+            removeWorktreeAgent: { _ in throw BackgroundHostClient.HostStarting() })
+        hosting.state = { [weak self] in self?.state }
         hosting.changed = { [weak self] in
             guard let self, let links = server.pullRequestLinks else { return }
             if pullRequestLinks != links.links { pullRequestLinks = links.links }

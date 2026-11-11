@@ -906,9 +906,6 @@ final class ShepherdViewModel {
         sessions.onAgentChildren = { [weak self] agentID, children in
             self?.applyAgentChildren(agentID, children)
         }
-        sessions.onPaneSessionExited = { [weak self] paneID in
-            self?.handleSessionExited(paneID: paneID)
-        }
         sessions.onAgentStopped = { [weak self] agentID, problem, stopped in self?.agentStopped(agentID, problem: problem, stopped: stopped) }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
@@ -934,11 +931,8 @@ final class ShepherdViewModel {
         server.onAgentProviderError = { agentID, provider, message in
             MainActor.assumeIsolated { rotation.providerError(agentID, provider: provider, message: message) }
         }
-        // Agents drive their own panes through the server's extension socket.
-        installPaneControl()
         installProjectControl()
         installReviewHandler()
-        installDesignReferenceHandler()
         installDesignRenderHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
@@ -979,105 +973,6 @@ final class ShepherdViewModel {
         _ = runtime
         installHostConfiguration()
         installCompactionThreshold()
-        server.onRemoteAgentAction = { [weak self] agentID, action, completion in
-            Task { @MainActor in
-                guard let self else {
-                    completion(.failure(RemoteCreateAgentError("Host is shutting down")))
-                    return
-                }
-                do {
-                    switch action {
-                    case .rename(let name): try await self.server.renameAgent(agentID, to: name)
-                    case .reorder(let target): try await self.server.reorderAgent(agentID, onto: target)
-                    case .move(let spaceID): try await self.moveThread(agentID, to: spaceID)
-                    case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
-                    case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
-                    case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
-                    case .startTerminal(let paneID): try self.startTerminalPane(paneID, of: agentID)
-                    case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
-                    case .restartPi(let newConversation, let model):
-                        if let model { self.sessions.modelOverrides[agentID] = model }
-                        self.retryAgentStart(agentID, newConversation: newConversation)
-                    case .markSeen(let upTo): try await self.server.markCompletionSeen(agentID, upTo: upTo)
-                    case .mutePushes(let muted): try await self.server.setPushMuted(agentID, muted: muted)
-                    }
-                    completion(.success(()))
-                } catch {
-                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
-                }
-            }
-        }
-        server.onRemoteCreationOptions = { [weak self] spaceID, cwd, fetchFirst, completion in
-            Task { @MainActor in
-                guard let self, let space = self.server.state.spaces.first(where: { $0.id == spaceID }) else {
-                    completion(.failure(RemoteCreateAgentError("Space no longer exists"))); return
-                }
-                let repo = cwd ?? space.path
-                let mode = self.settings.worktreeBaseMode
-                let fetch = fetchFirst ?? self.settings.worktreeFetchBeforeCreate
-                let projectBase = space.worktreeBase
-                let resolution = await Task.detached {
-                    cwd == nil ? GitWorktree.BaseResolution(startPoint: nil, display: "", note: "")
-                        : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
-                }.value
-                completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.defaultModel(piHome: self.server.pi.home),
-                                          thinking: self.settings.defaultThinking, serviceTier: self.settings.defaultServiceTier)))
-            }
-        }
-        // Remote clients create agents through this host's normal spawn flow.
-        server.onRemoteCreateAgent = { [weak self] request, completion in
-            guard let self else {
-                completion(.failure(RemoteCreateAgentError("host is shutting down")))
-                return
-            }
-            let space = self.state.spaces.first { $0.id == request.spaceID }
-            var config = NewAgentConfig(
-                spaceID: request.spaceID,
-                workingDirectory: request.cwd ?? space?.path ?? "~",
-                model: request.model ?? self.settings.defaultModel(piHome: self.server.pi.home),
-                thinking: request.thinking ?? self.settings.defaultThinking,
-                initialPrompt: request.initialPrompt
-            )
-            config.initialImages = request.initialImages
-            config.serviceTier = request.serviceTier
-            Task { @MainActor in
-                do {
-                    if let branch = request.worktreeBranch {
-                        let repo = config.workingDirectory
-                        let mode = self.settings.worktreeBaseMode
-                        let fetchFirst = request.worktreeFetchFirst ?? self.settings.worktreeFetchBeforeCreate
-                        guard let space else { throw RemoteCreateAgentError("Space no longer exists") }
-                        let (path, base) = try await Task.detached {
-                            guard try GitWorktree.primaryCheckout(at: repo) == GitWorktree.primaryCheckout(at: space.path) else {
-                                throw RemoteCreateAgentError("Choose a directory in the selected space's repository")
-                            }
-                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst, projectBase: space.worktreeBase)
-                            let base = request.worktreeBase?.trimmingCharacters(in: .whitespacesAndNewlines)
-                            return (try GitWorktree.add(repo: repo, branch: branch, from: base?.isEmpty == false ? base : resolution.startPoint), base?.isEmpty == false ? base! : resolution.display)
-                        }.value
-                        config.workingDirectory = path
-                        config.worktreeBranch = branch
-                        config.worktreeBase = base
-                        config.worktreePath = path
-                    }
-                    let agentID = try await self.startAgent(config, selectAfter: false)
-                    completion(.success(agentID))
-                } catch {
-                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
-                }
-            }
-        }
-        // Another device's New design, Open, Import and Build, made here as this Mac's own are.
-        server.serveDesigns(DesignHosting(startAgent: { [weak self] design, brief, options in
-            guard let self else { throw RemoteCreateAgentError("host is shutting down") }
-            return try await self.startDesignAgent(design, brief: brief, images: options.images, select: false,
-                                                   model: options.model, thinking: options.thinking)
-        }, changed: { [weak self] in
-            guard let self else { return }
-            self.adopt(self.server.state)
-            await self.loadDesignSystems()
-        }))
         // Adopt the persisted workspace without waiting for a pane to render
         // (an empty sidebar can never render one).
         sessions.warmUp()

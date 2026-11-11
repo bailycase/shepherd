@@ -50,17 +50,11 @@ extension ShepherdViewModel {
             return PreparedDesignReference(pin: pin, host: hostID)
         }
         // The background host's design, as this app's own: the host pins it, named as it sees it (`local`).
-        if let library = localHost?.designs {
-            guard case .referencePinned(let pin) = try await Self.remoteDesign(library, .pinReference(reference)) else {
-                throw RemoteDesignReply.unexpected
-            }
-            return PreparedDesignReference(pin: pin, host: nil)
+        guard let library = localHost?.designs else { throw BackgroundHostClient.HostStarting() }
+        guard case .referencePinned(let pin) = try await Self.remoteDesign(library, .pinReference(reference)) else {
+            throw RemoteDesignReply.unexpected
         }
-        do {
-            return try await server.pinDesignReference(reference)
-        } catch let error as DesignReferenceError {
-            throw DesignReferenceFailure(error.message)
-        }
+        return PreparedDesignReference(pin: pin, host: nil)
     }
 
     /// The @ picker, a pasted reference, "Send vN": `reference` waits in `agentID`'s composer
@@ -121,11 +115,10 @@ extension ShepherdViewModel {
     /// host for the thread's session (waiting while its pi starts), then sends at it. While pi
     /// works it waits in the host's queue, as any follow-up does.
     private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage] = [], to agentID: AgentID) async throws {
-        let server = server
         try await sendDirectly(references, text: text, images: images) { try await nativeThread(agentID, request: $0) }
     }
 
-    /// `sendDirectly` through whatever serves the thread: this Mac's server, or a host.
+    /// `sendDirectly` through whatever serves the thread: a host.
     private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage],
                               thread: (NativeThreadRequest) async throws -> NativeThreadResult) async throws {
         do {
@@ -198,34 +191,6 @@ extension ShepherdViewModel {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { throw DesignReferenceFailure("That thread is gone.") }
         guard !state.isDesignAgent(agent), agent.designID == nil else {
             throw DesignReferenceFailure("A design's agent reads its design with its own tools, not references.")
-        }
-    }
-
-    /// Draws references' copies for the server when a send keeps them (`onDesignReferenceCapture`).
-    func installDesignReferenceHandler() {
-        // A thread left a note back, or one was removed: the canvas shows it.
-        server.onDesignThreadNotesChanged = { [weak self] designID in
-            MainActor.assumeIsolated { self?.designThreadNotesChanged(designID) }
-        }
-        server.onDesignReferenceCapture = { [weak self] request, respond in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    respond(.failure(DesignReferenceError("unavailable", "The workspace is gone.")))
-                    return
-                }
-                Task { @MainActor in
-                    do {
-                        guard let files = request.files else {
-                            throw DesignReferenceError("version_gone", "The pinned rendering inputs are no longer kept. Pick the piece again.")
-                        }
-                        respond(.success(try await self.designRendering.capture(request, files: files)))
-                    } catch let error as DesignReferenceError {
-                        respond(.failure(error))
-                    } catch {
-                        respond(.failure(DesignReferenceError("render_failed", (error as? LocalizedError)?.errorDescription ?? "\(error)")))
-                    }
-                }
-            }
         }
     }
 }

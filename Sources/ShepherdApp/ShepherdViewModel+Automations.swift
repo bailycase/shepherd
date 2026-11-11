@@ -69,7 +69,7 @@ extension ShepherdViewModel {
     }
 
     func deleteAutomation(_ id: AutomationID) {
-        guard ownerState.automations.first(where: { $0.id == id })?.projectID == nil else {
+        guard state.automations.first(where: { $0.id == id })?.projectID == nil else {
             remoteActionError = "Use the Project's revision-checked automation settings."
             return
         }
