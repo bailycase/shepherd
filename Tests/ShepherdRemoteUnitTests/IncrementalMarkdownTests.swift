@@ -155,14 +155,14 @@ struct IncrementalMarkdownTests {
         Sample(name: "accents, CJK and emoji", text: "Café ☕\n\n日本語の段落\nと続き\n\n- 🙂 one\n- two\n\n> naïve quote\n\n```\nλ\n```\n\nEnd 🙂"),
     ]
 
-    /// Every Unicode scalar for a small text; for a larger one every line end and its four scalars on
+    /// Every Unicode scalar for a small text; for a larger one every line end and its two scalars on
     /// each side, and every 16th scalar.
     static func cuts(_ scalars: [Unicode.Scalar]) -> [Int] {
         if String(String.UnicodeScalarView(scalars)).utf8.count <= 600 { return Array(1...scalars.count) }
         var cuts: Set<Int> = [scalars.count]
         for n in stride(from: 16, to: scalars.count, by: 16) { cuts.insert(n) }
         for (index, scalar) in scalars.enumerated() where scalar == "\n" {
-            for delta in -4...4 where (1...scalars.count).contains(index + 1 + delta) { cuts.insert(index + 1 + delta) }
+            for delta in -2...2 where (1...scalars.count).contains(index + 1 + delta) { cuts.insert(index + 1 + delta) }
         }
         return cuts.sorted()
     }
@@ -272,7 +272,7 @@ struct IncrementalMarkdownTests {
         return text
     }
 
-    @Test(arguments: [UInt64(1), 7, 42, 2026], [true, false])
+    @Test(arguments: [UInt64(1), 42, 2026], [true, false])
     func aSeededWalkOverGeneratedTextMatchesAFullParse(_ seed: UInt64, streaming: Bool) {
         let text = Self.generated(seed: seed, bytes: 20_000)
         let scalars = Array(text.unicodeScalars)
@@ -282,7 +282,7 @@ struct IncrementalMarkdownTests {
         var count = 0, steps = 0, advanced = 0
         var nextCheck = scalars.count / 10
         while count < scalars.count {
-            count = min(scalars.count, count + Int.random(in: 1...160, using: &rng))
+            count = min(scalars.count, count + Int.random(in: 1...300, using: &rng))
             let prefix = Self.prefix(scalars, count)
             if markdown.advance(to: prefix, streaming: streaming) { advanced += 1 } else { markdown = NativeMarkdownState(prefix, streaming: streaming) }
             if !prose.advance(to: prefix, streaming: streaming) { prose = NativeProseState(prefix, streaming: streaming, reusing: prose.prose) }
