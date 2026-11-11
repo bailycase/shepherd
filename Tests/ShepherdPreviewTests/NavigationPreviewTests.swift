@@ -202,8 +202,9 @@ extension PreviewTests {
         let config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
                                     thinking: .medium, initialPrompt: "Fix the sidebar startup jump")
         let id = try await workspace.vm.startAgent(config, focusWindow: false)
-        #expect(workspace.vm.sidebarLists.working.map(\.id) == [.local(id)])
-        #expect(workspace.vm.sidebarLists.recents.isEmpty)
+        let vm = workspace.vm
+        try await eventuallyOnMain("the host's new thread in Working") { vm.sidebarLists.working.map(\.id) == [.local(id)] }
+        #expect(vm.sidebarLists.recents.isEmpty)
         try await Preview.renderMatrix("sidebar-opening-thread", size: CGSize(width: 232, height: 820)) {
             SidebarView(vm: workspace.vm).shDensity(.standard)
         }
@@ -572,6 +573,8 @@ extension PreviewTests {
         panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
             .splitting(pane: thread, axis: .horizontal, newPane: second)!
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
+        // The tab off screen runs a shell the host started (a restored one starts only when shown).
+        _ = try await workspace.server.startTerminal(second.id, inTab: panel.id, shell: try #require(workspace.host).shell())
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
         vm.terminalPanels.update(key) {
@@ -603,6 +606,8 @@ extension PreviewTests {
         panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
             .splitting(pane: thread, axis: .horizontal, newPane: dev)!
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
+        // The tab off screen runs a shell the host started (a restored one starts only when shown).
+        _ = try await workspace.server.startTerminal(dev.id, inTab: panel.id, shell: try #require(workspace.host).shell())
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
         vm.terminalPanels.update(key) {
@@ -611,7 +616,7 @@ extension PreviewTests {
         }
         let store = vm.threadStores.store(for: agent.id)
         let shells = [shell, dev].map(\.id)
-        try await eventuallyOnMain("the dev terminal's session") { vm.hostTerminalLive(dev.id) }
+        try await eventuallyOnMain("the dev terminal's session") { vm.hostTerminalSession(dev.id) != nil }
         workspace.server.typeCommand("sleep 600", sessionID: try #require(vm.hostTerminalSession(dev.id)))
         try await Preview.render("app-window-terminal-running", size: CGSize(width: 1440, height: 900), ready: {
             store.ready && shells.allSatisfy(vm.hostTerminalLive) && vm.terminalPanels.activity[key]?[dev.id]?.isRunning == true
@@ -633,6 +638,8 @@ extension PreviewTests {
         panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
             .splitting(pane: thread, axis: .horizontal, newPane: logs)!
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
+        // The tab off screen runs a shell the host started (a restored one starts only when shown).
+        _ = try await workspace.server.startTerminal(logs.id, inTab: panel.id, shell: try #require(workspace.host).shell())
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
         vm.terminalPanels.update(key) {

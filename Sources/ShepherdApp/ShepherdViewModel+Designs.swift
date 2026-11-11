@@ -229,12 +229,14 @@ extension ShepherdViewModel {
     private func localHostDesignScreen(_ id: DesignID, library: RemoteDesignLibrary, keep: Bool = true) -> DesignScreenModel {
         let source = library.source(id)
         let tweak = Self.remoteDesignTweak(library, id)
-        let actions = remoteDesignCanvasActions(library, agent: design(id)?.agentID.map { RemoteAgentRef(hostID: library.hostID, agentID: $0) },
+        var actions = remoteDesignCanvasActions(library, agent: design(id)?.agentID.map { RemoteAgentRef(hostID: library.hostID, agentID: $0) },
                                                 ask: { [weak self] agentID, text, record in
             guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return false }
             await self.threadStores.store(for: agentID).send(text: text, designContext: record)
             return true
         })
+        // "Used in N boards", read from the host's folder on this Mac.
+        actions.usage = { [store = designStore] in try await store.usage($0) }
         let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
                                        snapshot: { _ in try await source.sync().snapshot },
                                        source: { _, path in try await source.source(path) },

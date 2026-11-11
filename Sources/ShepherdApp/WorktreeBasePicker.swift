@@ -94,6 +94,7 @@ struct WorktreeBasePicker: View {
         }
         .task {
             do { branches = try await vm.hostBranches(space: space) }
+            catch RemoteHostClientError.rejected(_, let message) { failure = message } // the host's own refusal
             catch { failure = (error as? ChangesError)?.message ?? "Couldn’t read this project’s branches." }
         }
     }

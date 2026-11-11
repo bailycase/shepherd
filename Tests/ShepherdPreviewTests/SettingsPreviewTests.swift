@@ -134,6 +134,8 @@ struct SettingsPreviewTests {
         }
         try store.setOn("changelog", on: false)
         store.copiedFrom = { ["go-table-tests": "/Users/you/.pi/agent/skills/go-table-tests"] }
+        // The page reads This Mac's skills from its host.
+        try await workspace.seed(ShepherdState())
         let vm = workspace.vm
         vm.settingsSection = .skills
         try await Preview.render("settings-skills-installed", size: CGSize(width: 1440, height: 900),
@@ -157,6 +159,7 @@ struct SettingsPreviewTests {
         store.piSkills = { _ in Self.piSkills }
         try store.install(repo: "file://" + repo.path, paths: ["skills/pdf", "skills/frontend-design", "skills/webapp-testing"],
                           commit: nil, invocation: nil)
+        try await workspace.seed(ShepherdState())
         let vm = workspace.vm
         vm.settingsSection = .skills
         try await Preview.render("settings-skills-from-pi", size: CGSize(width: 1440, height: 1100),
@@ -456,6 +459,8 @@ struct SettingsPreviewTests {
         }
         let oldest = try #require(store.snapshot().waiting.last)
         try store.add(oldest.id)
+        // The page reads This Mac's suggestions from its host.
+        try await workspace.seed(ShepherdState())
         let model = workspace.vm.suggestions
         await model.refresh()
         let editing = try #require(model.snapshot.waiting.first)
@@ -731,11 +736,13 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         let repo = try makeScratchRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        try "changed\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        // A real worktree with uncommitted work, which the host's probe reads.
+        let checkout = try GitWorktree.add(repo: repo.path, branch: "worktree/fix-login")
+        try "changed\n".write(to: URL(fileURLWithPath: checkout).appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         let space = Space(name: "Shepherd", path: repo.path)
-        let (seeded, tab) = try await workspace.agent("Fix the login redirect", in: space, order: 0, branch: "worktree/fix-login")
+        let (seeded, tab) = try await workspace.agent("Fix the login redirect", in: space, order: 0, branch: "worktree/fix-login", cwd: checkout)
         var agent = seeded
-        agent.worktreePath = repo.path
+        agent.worktreePath = checkout
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         try await Preview.render("sheet-delete-worktree", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
                                  untilGone: "Checking", showing: "Unreconciled work") {
