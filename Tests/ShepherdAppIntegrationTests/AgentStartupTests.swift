@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 @testable import TerminalSurfaceKit
@@ -332,6 +333,8 @@ struct AgentStartupTests {
         let space = Fixture.space(path: app.dir.path)
         let agents = (0..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, auxiliary: 1, piSession: SessionID()) }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        // A layout mounted hidden is a layout shown earlier whose agent was then left; it must still demand nothing.
+        MountedWorkspace.markEveryLayoutShown(vm)
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: dark, WorkspaceView(vm: vm))
         defer { window.close() }
         try await eventuallyOnMain("all hidden native layouts to mount") { vm.mountedTabs.count == agents.count }
@@ -380,6 +383,49 @@ struct AgentStartupTests {
         }
     }
 
+    /// A restored launch mounts the layout of the agent it shows and no other. Showing another
+    /// agent mounts its layout, starts its pi and its terminals, and every later switch is a flip.
+    @Test func aRestoredLaunchMountsOnlyTheSelectedLayout() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var agents = (0..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, auxiliary: 1, piSession: SessionID()) }
+        for index in agents.indices { agents[index].agent.lastActiveAt = Double(4 - index) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: false, WorkspaceView(vm: vm))
+        defer { window.close() }
+        let selected = agents[0]
+        let other = agents[2]
+        #expect(vm.selectedAgentID == selected.agent.id)
+        try await eventuallyOnMain("the selected thread to serve") { vm.threadStores.store(for: selected.agent.id).ready }
+        ListPerf.settle(window)
+        let deck = try WorkspaceNavigationTests.deck(in: window)
+        #expect(deck.pages.count == 1 && vm.mountedTabs.map(\.id) == [selected.tab.id])
+        let server = app.server
+        #expect(await startedAgents(on: server) == [selected.agent.id])
+        #expect(vm.hostTerminalSession(other.auxiliary[0].id) == nil)
+
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        try await MountedWorkspace.show(other, in: vm, window: window)
+        #expect(SHRenderProbe.count("deck.mount") == 1)
+        let host = try #require(deck.pages[other.tab.id]?.host)
+        try await eventuallyOnMain("the shown agent's thread to serve") { vm.threadStores.store(for: other.agent.id).ready }
+        #expect(await startedAgents(on: server) == [selected.agent.id, other.agent.id])
+        vm.terminalPanels.update(.init(host: nil, tab: other.tab.id)) { $0.shown = true }
+        try await eventuallyOnMain("its terminal to bind") {
+            window.layout()
+            return vm.hostPaneSession(other.auxiliary[0].id)?.phase == .live
+        }
+
+        for agent in [selected, other] {
+            try await MountedWorkspace.show(agent, in: vm, window: window)
+            #expect(SHRenderProbe.count("deck.mount") == 1 && SHRenderProbe.count("deck.unmount") == 0)
+            #expect(deck.pages[other.tab.id]?.host === host)
+        }
+    }
+
     /// The thread selected in place of a deleted one shows its terminal, which the host starts then.
     @Test(arguments: [false, true])
     func fallbackSelectionActivatesRestoredTerminals(deletingSpace: Bool) async throws {
@@ -396,6 +442,8 @@ struct AgentStartupTests {
         next.agent.lastActiveAt = 10
         let vm = try await app.start(with: Fixture.state(spaces: [firstSpace, nextSpace], agents: [first, next]), restoringAgents: true)
         #expect(vm.selectedAgentID == first.agent.id)
+        // The other thread was shown earlier this session, so its layout mounts hidden.
+        MountedWorkspace.markEveryLayoutShown(vm)
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: false, WorkspaceView(vm: vm))
         defer { window.close() }
         vm.terminalPanels.update(.init(host: nil, tab: next.tab.id)) { $0.shown = true }

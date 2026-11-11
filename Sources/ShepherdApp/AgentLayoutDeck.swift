@@ -14,7 +14,7 @@ import SwiftUI
 /// or accessibility. Switching agents flips two hosts' `isHidden`, never a remount.
 struct AgentLayoutDeck: View, Equatable {
     var vm: ShepherdViewModel
-    /// Every mounted layout's values, in mount order.
+    /// Every mounted layout's values, in the stable (space, tab) order.
     let models: [AgentLayoutModel]
     /// Hidden terminal layouts keep this size until a live resize or wide side pane ends.
     let frozenSize: CGSize?
@@ -163,6 +163,8 @@ struct AgentLayoutDeck: View, Equatable {
                     container.addSubview(host)
                     container.pages[id] = (page, host)
                     container.needsLayout = true
+                    SHRenderProbe.tick("deck.mount")
+                    AppSignposts.thread.emitEvent("layout mounted")
                 }
             }
             // After the layout shown instead is in place.
@@ -170,6 +172,7 @@ struct AgentLayoutDeck: View, Equatable {
             for (id, entry) in container.pages where !mounted.contains(id) {
                 entry.host.removeFromSuperview()
                 container.pages[id] = nil
+                SHRenderProbe.tick("deck.unmount")
             }
             container.frozenSize = frozenSize
         }

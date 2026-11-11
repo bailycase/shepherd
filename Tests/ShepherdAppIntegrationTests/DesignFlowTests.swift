@@ -217,11 +217,14 @@ struct DesignFlowTests {
         try await eventuallyOnMain("the selected board to go live") { host.liveBoards.contains(DesignPath("A.dc.html")!) }
         let deck = try WorkspaceNavigationTests.deck(in: window)
         let page = try #require(deck.pages[drawer.tab.id]?.host)
-        let order = vm.mountedTabs.map(\.id)
+        #expect(vm.mountedTabs.map(\.id) == [drawer.tab.id], "nobody has shown the other agent")
 
         vm.selectAgent(other.agent.id)
         ListPerf.settle(window)
         #expect(page.isHidden)
+        // The other agent's first show mounted its layout beside the design's.
+        let order = vm.mountedTabs.map(\.id)
+        #expect(order == [drawer.tab.id, other.tab.id])
         try await eventuallyOnMain("the hidden design to give up its live views") { host.liveCount == 0 }
 
         vm.selectAgent(drawer.agent.id)

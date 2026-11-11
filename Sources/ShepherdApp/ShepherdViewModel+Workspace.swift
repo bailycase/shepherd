@@ -20,12 +20,12 @@ extension ShepherdViewModel {
             // A Project page left over from before the experiment went off covers nothing.
             destination: projectsEnabled || !isProjectDestination ? destination : nil,
             parkedTabIDs: parkedTabIDs,
-            pendingMountTabIDs: pendingMountTabIDs
+            shownTabIDs: shownTabIDs
         )
     }
 
-    /// `mountedTabs` for the current inputs, built once per change: the workspace body, the
-    /// parking sweep and the launch mounter each ask on every render.
+    /// `mountedTabs` for the current inputs, built once per change: the workspace body and the
+    /// parking sweep each ask on every render.
     private var resolvedMountedTabs: [Tab] {
         let selection = workspaceSelection
         if let cached = mountedTabsCache, cached.selection == selection { return cached.tabs }
@@ -34,52 +34,15 @@ extension ShepherdViewModel {
         return tabs
     }
 
-    // MARK: Mounting at launch
-
-    /// Layouts mounted per run-loop turn once the first frame is up.
-    static let mountBatch = 2
-
-    /// The first workspace with agents mounts its visible layout first: every other layout
-    /// waits (`pendingMountTabIDs`) for `drainPendingMounts`.
-    func planMounting() {
-        guard !mountingPlanned, !state.agents.isEmpty else { return }
-        mountingPlanned = true
-        let pending = Set(state.tabs.map(\.id)).subtracting([activeTabID].compactMap { $0 })
-        if pending != pendingMountTabIDs { pendingMountTabIDs = pending }
-    }
-
-    /// Mounts the next few pending layouts, the visible space's first. False once none are left.
-    @discardableResult
-    func mountNextPending() -> Bool {
-        let next = workspaceSelection.mountOrder.prefix(Self.mountBatch)
-        guard !next.isEmpty else {
-            if !pendingMountTabIDs.isEmpty { pendingMountTabIDs = [] }
-            return false
-        }
-        pendingMountTabIDs.subtract(next)
-        noteActiveTabForParking()
-        return !pendingMountTabIDs.isEmpty
-    }
-
-    /// Run by the workspace after its first frame: mounts the pending layouts a few at a time,
-    /// letting the run loop draw between batches, so no turn builds many layouts at once.
-    func drainPendingMounts() async {
-        repeat {
-            // Past the turn that drew the last frame (the first frame, first).
-            try? await Task.sleep(for: .milliseconds(1))
-        } while !Task.isCancelled && mountNextPending()
-    }
-
     /// Cold parking bookkeeping, driven from `noteActiveTabVisited` so every
-    /// selection path is covered: the newly visible layout is unparked and
-    /// forgotten as hidden; every other mounted layout that has no hidden
-    /// timestamp yet gets one now.
+    /// selection path is covered: the newly visible layout is unparked,
+    /// recorded as shown and forgotten as hidden; every other mounted layout
+    /// that has no hidden timestamp yet gets one now.
     private func noteActiveTabForParking() {
         let active = activeTabID
         if let active {
             parkedTabIDs.remove(active)
-            // Shown before its turn to mount: it stays mounted from now on.
-            if pendingMountTabIDs.contains(active) { pendingMountTabIDs.remove(active) }
+            if !shownTabIDs.contains(active) { shownTabIDs.insert(active) }
             tabHiddenSince.removeValue(forKey: active)
         }
         let liveTabIDs = Set(state.tabs.map(\.id))
@@ -88,6 +51,7 @@ extension ShepherdViewModel {
         }
         tabHiddenSince = tabHiddenSince.filter { liveTabIDs.contains($0.key) }
         parkedTabIDs = parkedTabIDs.filter { liveTabIDs.contains($0) }
+        if !shownTabIDs.isSubset(of: liveTabIDs) { shownTabIDs.formIntersection(liveTabIDs) }
         syncParkSweepTimer()
     }
 

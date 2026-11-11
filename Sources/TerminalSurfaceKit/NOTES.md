@@ -110,7 +110,7 @@ when refreshing the vendor; the model still checks window attachment and delegat
   at all. So after a view appears, the model also checks readiness with `readViewportText()` every
   10 ms for up to 500 ms. If a surface cannot attach in that time, the model keeps buffering
   rather than dropping bytes.
-- **Focus.** Focus is applied through AppKit, not SwiftUI focus state. Every layout stays mounted,
+- **Focus.** Focus is applied through AppKit, not SwiftUI focus state. Every shown layout stays mounted,
   and SwiftUI discards programmatic focus for views in inactive parts of the hierarchy, so both
   `FocusState` approaches still needed a click. Instead, a zero-size `TerminalFocusBridge`
   (`NSViewRepresentable`) behind each terminal calls `takeKeyboardFocus()` or
