@@ -102,10 +102,15 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
     public var report: DesignBoardReport?
     /// A canvas patch's deletion plan, including dry runs. Nil on older replies.
     public var canvasPlan: DesignCanvasPlan?
+    /// For a thread's board write or edit: the kept copy of the board as written
+    /// (`DesignReferencePayload.id`), which the thread draws as a board card. Nil for a design's
+    /// agent, a write that changed nothing, and a copy that could not be kept.
+    public var board: UUID?
 
     public init(revision: UInt64, changed: Bool, sha256: String? = nil, created: Bool? = nil,
                 warnings: [DesignBoardCheck.Warning] = [], title: String?, boardCount: Int, report: DesignBoardReport? = nil,
-                canvasPlan: DesignCanvasPlan? = nil) {
+                canvasPlan: DesignCanvasPlan? = nil, board: UUID? = nil) {
+        self.board = board
         self.revision = revision
         self.changed = changed
         self.sha256 = sha256

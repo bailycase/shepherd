@@ -78,6 +78,8 @@ final class DesignReferenceChips {
         var size: CGSize?
         var picture: SHReferenceImage?
         var hasPicture: Bool
+        /// The picture's file, which the full-size viewer reads.
+        var pictureURL: URL? = nil
         var reference: DesignReference
         /// The kept copy it draws.
         var copy: UUID? = nil
@@ -171,6 +173,7 @@ final class DesignReferenceChips {
             ?? DesignReferencePresentation.boardNote(standing)
         next.showLatest = DesignReferencePresentation.showLatest(standing)
         next.proposal = payload.proposal
+        next.pictureURL = file.map { kept.folder.appendingPathComponent($0.name) }
         next.copy = id
         let line = DesignReferencePresentation.boardLine(payload)
         next.lineLabel = line?.label
