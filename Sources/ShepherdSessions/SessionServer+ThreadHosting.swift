@@ -317,9 +317,10 @@ extension SessionServer {
         }
         switch request {
         case .list:
-            return .panes(TerminalPanel.tabs(in: tab.layout, thread: thread.id).map(\.leaf)
+            let focused: PaneID? = await enqueueValue { self.localFocusedPane }
+            let leaves: [LeafPane] = TerminalPanel.tabs(in: tab.layout, thread: thread.id).map(\.leaf)
                 .filter { $0.agentID == nil && $0.id != thread.id && $0.isReview != true }
-                .map { PaneInfo(id: $0.id, cwd: $0.cwd, isAgentPane: false, isFocused: false, isAlive: $0.sessionID != nil) })
+            return .panes(leaves.map { PaneInfo(id: $0.id, cwd: $0.cwd, isAgentPane: false, isFocused: $0.id == focused, isAlive: $0.sessionID != nil) })
         case .open(_, _, let cwd, _, let command):
             let terminal = LeafPane(cwd: cwd.map { ($0 as NSString).expandingTildeInPath } ?? thread.cwd)
             guard let layout = tab.layout.splitting(pane: thread.id, axis: .horizontal, newPane: terminal) else {
@@ -382,8 +383,11 @@ extension SessionServer {
         // ponytail: a second request while one starts is refused, not queued; the client retries on its next attach.
         guard startingTerminals.insert(paneID).inserted else { throw RemoteCreateAgentError("That terminal is starting.") }
         defer { startingTerminals.remove(paneID) }
+        // No view has measured it yet: start at the grid this Mac's terminals last reported.
+        let grid = await enqueueValue { self.lastLocalGrid } ?? (80, 24)
         let info = try await createSession(params: CreateSessionParams(
-            cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
+            cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, cols: grid.cols, rows: grid.rows,
+            env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
         do {
             try await updatePaneSession(tabID: tabID, paneID: paneID, sessionID: info.id)
         } catch {

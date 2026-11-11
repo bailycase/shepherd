@@ -263,7 +263,7 @@ final class FixtureHost: @unchecked Sendable {
         case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
              .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _, _, _),
              .agentAction(let id, _, _), .upload(let id, _), .hostUpdate(let id, _),
-             .hostUpdateGate(let id, _), .spaceAction(let id, _, _), .startThread(let id, _), .focusThread(let id, _),
+             .hostUpdateGate(let id, _), .spaceAction(let id, _, _), .startThread(let id, _), .focusThread(let id, _, _),
              .projectExecutors(let id, _):
             mutation(Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]

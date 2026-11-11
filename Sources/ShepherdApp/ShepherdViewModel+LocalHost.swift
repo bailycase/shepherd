@@ -71,6 +71,8 @@ extension ShepherdViewModel {
             guard let self, hostID == self.localHost?.id else { return }
             Task { for page in RemoteSettingsPage.allCases { await self.localHostSettingsChanged(page) } }
             self.refreshAutomationTriggers()
+            // A host that started again knows no focus: tell it.
+            self.syncFocusedThread()
         }
         // The host says when an agent's pi stopped and why, opened or not: the thread's
         // can't-start and sign-in cards.
@@ -97,6 +99,7 @@ extension ShepherdViewModel {
         case .slashCommands:
             guard let host = try? remoteHosts.thisMacHost(), let settings = try? await host.hostSettings() else { return }
             slashCommands.catalog = settings.slashCommands
+        case .remote: await refreshRemoteListener()
         }
     }
 

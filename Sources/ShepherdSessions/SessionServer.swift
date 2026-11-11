@@ -706,6 +706,10 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var startingTerminals = Set<PaneID>()
     /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
     @MainActor var spawningAgents = 0
+    /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
+    /// how many wait for it now.
+    @MainActor var firstCopy: Task<Void, Never>?
+    @MainActor var waitingForFirstCopy = 0
     /// Designs whose agent is starting, and spaces whose system build is, by this Mac or for a client.
     @MainActor public var startingDesignAgents = Set<DesignID>()
     @MainActor public var startingSystemBuilds = Set<SpaceID>()
@@ -837,6 +841,10 @@ public final class SessionServer: @unchecked Sendable {
     private var remoteViewports: [SessionID: [Int32: (cols: Int, rows: Int)]] = [:]
     /// The host GUI's own surface grid per session (fd -1 in the min).
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
+    /// The pane with this Mac's app's keyboard (`focusThread`): `terminal_list`'s focused one.
+    var localFocusedPane: PaneID?
+    /// The grid this Mac's app's terminals last reported: a new terminal starts at it, not 80×24.
+    var lastLocalGrid: (cols: Int, rows: Int)?
     private var clients: [Int32: ExtensionConnection] = [:]
     private struct PendingAgentRequest {
         let caller: ExtensionConnection
@@ -3184,12 +3192,13 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .focusThread(let id, let agentID):
+        case .focusThread(let id, let agentID, let paneID):
             guard client.isLocal else {
                 send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
                 return
             }
             pushNotifications.focused = agentID
+            localFocusedPane = paneID
             if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
             send(.ok(id: id), to: client)
         case .projectExecutors(let id, let update):
@@ -4375,6 +4384,7 @@ public final class SessionServer: @unchecked Sendable {
     /// delivers reports in order per client.
     private func recordRemoteViewport(sessionID: SessionID, fd: Int32, cols: Int, rows: Int) {
         guard TerminalGrid.isValid(cols: cols, rows: rows) else { return }
+        if clients[fd]?.isLocal == true { lastLocalGrid = (cols, rows) }
         remoteViewports[sessionID, default: [:]][fd] = (cols, rows)
         applyMinViewport(sessionID: sessionID)
     }
@@ -4693,6 +4703,11 @@ public final class SessionServer: @unchecked Sendable {
     /// page's data changed here.
     func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
 
+    /// Any thread: `pushSettingsChanged` on the server queue.
+    public func settingsChanged(_ page: RemoteSettingsPage) {
+        queue.async { [self] in pushSettingsChanged(page) }
+    }
+
     /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
     /// `listing`: only to an app that also lists that capability.
     func sendToLocalApps(_ reply: RemoteReply, listing: String? = nil) {
@@ -4741,6 +4756,7 @@ public final class SessionServer: @unchecked Sendable {
             localAppsChanged()
             // A closed window shows nothing: every thread's phone pushes go out again.
             pushNotifications.focused = nil
+            localFocusedPane = nil
         }
         for (token, relay) in designRelays where relay.fd == client.fd {
             endDesignRelay(token, .failed(code: relay.code, message: Self.appLeftWhileDrawing))
@@ -9539,7 +9555,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func enqueueValue<T>(_ body: @escaping () -> T) async -> T {
+    func enqueueValue<T>(_ body: @escaping () -> T) async -> T {
         await withCheckedContinuation { continuation in
             queue.async { continuation.resume(returning: body()) }
         }
