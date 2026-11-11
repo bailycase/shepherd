@@ -67,14 +67,14 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 return .mcp(try await mcp.request(directory: directory, file: file, text: "", action: action, owner: owner))
             default: break
             }
-            let canonicalDirectory = PiHome.canonical(directory)
+            let space = await mcpSpace(of: directory, state: state)
             let value = try await self.request(.read(directory: directory, file: file), state: state)
             guard case .text(let text) = value else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
             let contents: String
             if let saved = text.text { contents = saved }
             else if action == .credentials || action == .approveProject { contents = "{}" }
             else { throw ProjectFileError("missing", "Save the server before signing in.") }
-            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner, canonicalDirectory: canonicalDirectory))
+            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner, space: space))
         }
         if case .open(let directory, let file) = request {
             let value = try await self.request(.read(directory: directory, file: file), state: state)
@@ -306,6 +306,13 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     /// `extensions`: the parent's extension files (absolute) the agent loads with `-e`, since pi
     /// loads extensions only at launch: all of them but the ones the child turned off and the ones
     /// `cwd` has a file of the same name for, which pi loads itself and so win.
+    /// The folder whose project MCP sign-ins an agent in `directory` uses (`SHEPHERD_MCP_SPACE`): its parent space,
+    /// whose servers it shares, else its own. Two unrelated spaces never share one.
+    // ponytail: a subproject that redefines a parent's server name shares the parent's sign-in for it.
+    public func mcpSpace(of directory: String, state: ShepherdState) async -> String {
+        PiHome.canonical(await inheritance(of: directory, state: state)?.parent ?? directory)
+    }
+
     public func inheritance(of cwd: String, state: ShepherdState) async -> (parent: String, excluded: SpaceInheritanceExclusions, extensions: [String])? {
         await withCheckedContinuation { continuation in
             queue.async { [self] in

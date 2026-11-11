@@ -25,9 +25,12 @@ const deadline = setTimeout(() => {
 
 let session;
 try {
-  const { server, config: original, shared, directory, command } = await configured;
+  const { server, config: original, shared, directory, space, command } = await configured;
   {
   if (!/^[A-Za-z0-9_-]+$/.test(server) || !["login", "logout"].includes(command)) throw new Error("Invalid action");
+  // The space whose agents use this sign-in: Shepherd's pi keys project credentials by it (SHEPHERD_MCP_SPACE).
+  if (typeof space !== "string" || !path.isAbsolute(space)) throw new Error("Invalid space");
+  process.env.SHEPHERD_MCP_SPACE = space;
   const config = { url: original.url, headers: original.headers, oauth: original.oauth, exposure: "hidden", timeout: 30 };
   // Match the shared-file registration's expansion and separation from Shepherd's own secrets.
   if (shared) {

@@ -68,6 +68,7 @@ struct AgentStartupTests {
         let launch = try #require(StubPi.launches().last { PiHome.canonical($0.cwd) == PiHome.canonical(checkout.path) })
         #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == (mcpEnabled ? PiHome.canonical(owner.path) : nil))
         #expect(launch.env["SHEPHERD_MCP_WORKTREE_CWD"] == (mcpEnabled ? PiHome.canonical(checkout.path) : nil))
+        #expect(launch.env["SHEPHERD_MCP_SPACE"] == (mcpEnabled ? PiHome.canonical(owner.path) : nil), "A worktree uses its space's MCP sign-ins")
         #expect(launch.env["SHEPHERD_RESOURCE_OWNING_SPACE"] == PiHome.canonical(owner.path))
         #expect(launch.env["SHEPHERD_RESOURCE_WORKTREE_CWD"] == PiHome.canonical(checkout.path))
         #expect(launch.argv.contains("--approve"), "A space's checkout loads its own configuration")

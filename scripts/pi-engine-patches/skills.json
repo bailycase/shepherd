@@ -885,6 +885,28 @@
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "after": "8944fe5ed241613720eef0df6d65ce76a63aae99097efcaeeef8e23b184287b6",
       "source": "history-images.js"
+    },
+    {
+      "path": "dist/extensions/mcp/oauth.js",
+      "before": "60b5c1fde162e01639a712c0f160c7833380dd9c32fc9983aeac688d3890e0e5",
+      "after": "2178201e3760be02c55de068800cf30401cfb9902d1404d95d9111418e9e5c08",
+      "edits": [
+        {
+          "old": "function storeKeys(name, serverUrl) {\n    const legacyKey = String(new URL(serverUrl));\n    return { key: `${mcpNamespace(name)}|${legacyKey}`, legacyKey };\n}",
+          "new": "// Shepherd: a space's MCP server signs in for that space alone (SHEPHERD_MCP_SPACE), so two spaces can name the same server and URL with different accounts. Servers in the agent directory's mcp.json stay shared, and a space takes over the unscoped sign-in it used before.\nfunction shepherdMcpSpace(name) {\n    const space = process.env.SHEPHERD_MCP_SPACE;\n    if (!space) return undefined;\n    try {\n        const file = process.getBuiltinModule(\"node:path\").join(getAgentDir(), \"mcp.json\");\n        const servers = JSON.parse(process.getBuiltinModule(\"node:fs\").readFileSync(file, \"utf8\"))?.mcpServers;\n        if (servers && Object.hasOwn(servers, name)) return undefined;\n    } catch { /* No global mcp.json: the server is the space's. */ }\n    return space;\n}\nfunction storeKeys(name, serverUrl) {\n    const legacyKey = String(new URL(serverUrl));\n    const space = shepherdMcpSpace(name);\n    if (space) return { key: `${mcpNamespace(name)}@${space}|${legacyKey}`, legacyKey: `${mcpNamespace(name)}|${legacyKey}` };\n    return { key: `${mcpNamespace(name)}|${legacyKey}`, legacyKey };\n}"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-FMPAMX2W.js",
+      "before": "4378273f622a17f18ed6db86b71204186109b39afeaee00e34bfa5684bdb21c0",
+      "after": "15f52c169028200d5ffa105ca78aec2f36fe3ce0a328f7b23ed201b96daa8593",
+      "edits": [
+        {
+          "old": "function storeKeys(name,serverUrl){let legacyKey=String(new URL(serverUrl));return{key:`${mcpNamespace(name)}|${legacyKey}`,legacyKey}}",
+          "new": "// Shepherd: a space's MCP server signs in for that space alone (SHEPHERD_MCP_SPACE), so two spaces can name the same server and URL with different accounts. Servers in the agent directory's mcp.json stay shared, and a space takes over the unscoped sign-in it used before.\nfunction shepherdMcpSpace(name) {\n    const space = process.env.SHEPHERD_MCP_SPACE;\n    if (!space) return undefined;\n    try {\n        const file = process.getBuiltinModule(\"node:path\").join(getAgentDir(), \"mcp.json\");\n        const servers = JSON.parse(process.getBuiltinModule(\"node:fs\").readFileSync(file, \"utf8\"))?.mcpServers;\n        if (servers && Object.hasOwn(servers, name)) return undefined;\n    } catch { /* No global mcp.json: the server is the space's. */ }\n    return space;\n}\nfunction storeKeys(name,serverUrl){let legacyKey=String(new URL(serverUrl));let space=shepherdMcpSpace(name);if(space)return{key:`${mcpNamespace(name)}@${space}|${legacyKey}`,legacyKey:`${mcpNamespace(name)}|${legacyKey}`};return{key:`${mcpNamespace(name)}|${legacyKey}`,legacyKey}}"
+        }
+      ]
     }
   ]
 }
