@@ -99,11 +99,8 @@ struct SidebarPinnedFlowTests {
         vm.pinThread(.local(agents[1].agent.id))
         vm.pinThread(.local(agents[2].agent.id))
 
-        var next = vm.state
-        next.agents.removeAll { $0.id == agents[1].agent.id }
-        next.tabs.removeAll { $0.id == agents[1].tab.id }
-        vm.adopt(next)
-        #expect(vm.sidebarPins.threads == [.local(agents[2].agent.id)])
+        try await app.server.deleteAgent(agents[1].agent.id)
+        try await eventuallyOnMain("the pin to go with its thread") { vm.sidebarPins.threads == [.local(agents[2].agent.id)] }
         #expect(app.defaults.stringArray(forKey: SidebarPins.defaultsKey) == [PinnedThread.local(agents[2].agent.id).key])
     }
 
@@ -114,11 +111,14 @@ struct SidebarPinnedFlowTests {
         let (state, agents) = fleet(app, count: 2)
         try await app.start(with: state).pinThread(.local(agents[0].agent.id))
         let relaunched = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
-            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in },
+            remoteHosts: RemoteHostStore(defaults: ScratchDefaults()), sidebarDefaults: app.defaults, themeInstaller: { _ in },
             looksUpPullRequests: false)
         try #require(!relaunched.didAdopt && relaunched.state.agents.isEmpty)
         relaunched.pruneSidebarPins()
         #expect(relaunched.sidebarPins.threads == [.local(agents[0].agent.id)])
+        // Then it connects to its host, as the relaunched app does.
+        let token = try String(contentsOf: app.dir.appendingPathComponent("remote-token"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        _ = relaunched.connectLocalHost(socket: app.hostSocket, token: token)
         try await eventuallyOnMain("the view model to adopt the workspace") { relaunched.state == app.server.state }
         #expect(relaunched.sidebarPins.threads == [.local(agents[0].agent.id)])
     }

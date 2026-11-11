@@ -31,3 +31,21 @@ extension AppHarness {
         }
     }
 }
+
+@MainActor
+extension AppHarness {
+    /// A thread's subagents as its extension publishes them to the host (`agentChildren`).
+    func publishChildren(_ agentID: AgentID, _ children: [ChildRun]) {
+        server.onAgentChildren?(agentID, children)
+    }
+}
+
+/// The staged engine (`python3 scripts/pi_engine.py stage`), for a host whose stores need its package.
+func stagedPiSetup(home: URL) throws -> PiSetup {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+    guard let engine = BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")) else {
+        throw TimedOut(what: "the staged pi engine (python3 scripts/pi_engine.py stage)")
+    }
+    return PiSetup(engine: .bundled(engine), home: home)
+}

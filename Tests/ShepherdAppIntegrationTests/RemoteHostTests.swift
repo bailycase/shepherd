@@ -336,11 +336,11 @@ struct RemoteHostTests {
         let connection = try await remote.connect(local.remoteHosts)
         let target = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
 
-        hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "running")])
+        remote.host.publishChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "running")])
         try await eventuallyOnMain("the child to reach the client") { vm.remoteChildren[target]?.first?.state == "running" }
         #expect(vm.paletteItems.contains { $0.title == "hidden child" }, "a host's children are searchable")
 
-        hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "blocked", needsAttention: true)])
+        remote.host.publishChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "blocked", needsAttention: true)])
         try await eventuallyOnMain("the child's question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
         #expect(vm.blockedCount == 0, "a child's question is its parent's, not a thread waiting on the user")
 
@@ -366,8 +366,8 @@ struct RemoteHostTests {
         #expect(agent.status == .idle)
         let asking = ChildRun(runID: "run", label: "reviewer", state: "running", needsAttention: true)
 
-        hostVM.applyAgentChildren(agent.id, [asking])
-        #expect(hostVM.childRuns.children(of: agent.id).first?.needsAttention == true, "the question is there to read")
+        remote.host.publishChildren(agent.id, [asking])
+        try await eventuallyOnMain("the question on the host's own app, there to read") { hostVM.childRuns.children(of: agent.id).first?.needsAttention == true }
         #expect(hostVM.sidebarLists.needsYou.isEmpty)
         #expect(hostVM.sidebarLists.working.first?.id == .local(agent.id))
         #expect(hostVM.sidebarLists.working.first?.leading == .dot(.running))
