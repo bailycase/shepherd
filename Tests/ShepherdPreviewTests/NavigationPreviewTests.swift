@@ -202,8 +202,9 @@ extension PreviewTests {
         let config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
                                     thinking: .medium, initialPrompt: "Fix the sidebar startup jump")
         let id = try await workspace.vm.startAgent(config, focusWindow: false)
-        #expect(workspace.vm.sidebarLists.working.map(\.id) == [.local(id)])
-        #expect(workspace.vm.sidebarLists.recents.isEmpty)
+        let vm = workspace.vm
+        try await eventuallyOnMain("the host's new thread in Working") { vm.sidebarLists.working.map(\.id) == [.local(id)] }
+        #expect(vm.sidebarLists.recents.isEmpty)
         try await Preview.renderMatrix("sidebar-opening-thread", size: CGSize(width: 232, height: 820)) {
             SidebarView(vm: workspace.vm).shDensity(.standard)
         }

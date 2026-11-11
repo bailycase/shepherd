@@ -79,6 +79,7 @@ struct BranchCardPreviewTests {
     @Test func theSwitchBranchPicker() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
+        try await workspace.seed(ShepherdState())  // branch lists come from This Mac's host
         let (origin, clone) = try clone()
         defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
         try await Preview.render("branch-picker-switch", size: CGSize(width: 380, height: 360)) {
@@ -95,6 +96,7 @@ struct BranchCardPreviewTests {
     @Test func theSwitchBranchPickerMovesToAnotherCheckout() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
+        try await workspace.seed(ShepherdState())  // branch lists come from This Mac's host
         let (origin, clone) = try clone()
         let worktree = clone.deletingLastPathComponent().appendingPathComponent(clone.lastPathComponent + "-webhooks")
         let payout = clone.deletingLastPathComponent().appendingPathComponent(clone.lastPathComponent + "-payout")
@@ -121,6 +123,7 @@ struct BranchCardPreviewTests {
     @Test func theNewThreadBranchPicker() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
+        try await workspace.seed(ShepherdState())  // branch lists come from This Mac's host
         let (origin, clone) = try clone()
         defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
         try await Preview.render("new-thread-branch-picker", size: CGSize(width: 420, height: 380)) {

@@ -57,7 +57,7 @@ final class PreviewWorkspace {
         try await server.putState(state)
         let vm = vm, server = server
         if host == nil { host = try await Self.serve(server, in: dir, settings: settings, to: vm) }
-        try await eventuallyOnMain("the preview workspace to load") { vm.state == server.state }
+        try await eventuallyOnMain("the preview workspace to load") { vm.localHost?.phase == .connected && vm.state == server.state }
     }
 
     /// Serves `server` as `Shepherd --host` serves it (`ShepherdHost.Services`) on a socket in `dir`, `vm` its client.
