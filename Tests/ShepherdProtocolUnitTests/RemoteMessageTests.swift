@@ -49,6 +49,7 @@ enum RemoteSamples {
         .finishReview(paneID: pane, text: "feedback"),
         .finishReview(paneID: pane, text: nil),
         .children,
+        .pullRequest,
         .inspectorPane(tabID: tab, action: .split(paneID: pane, axis: .horizontal)),
         .inspectorPane(tabID: tab, action: .close(paneID: pane)),
         .inspectorPane(tabID: tab, action: .resize(split: split, ratio: 0.6)),
@@ -123,6 +124,9 @@ enum RemoteSamples {
         .inspectorFocus(pane),
         .search(snippet: "matched text"),
         .search(snippet: nil),
+        .pullRequest(ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: "acme/web", number: 31), state: .merged,
+                                       headRefName: "agent/refund-events", headRefOid: "3f2a91c")),
+        .pullRequest(nil),
         .terminals([RemoteTerminalActivity(paneID: pane, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 42),
                     RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: nil, command: nil, outputSequence: 0),
                     RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: "zsh", command: nil, outputSequence: 9,
@@ -714,11 +718,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 58
+    static let caseCount = 59
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -775,6 +779,9 @@ struct RemoteReplyTests {
                              run: RemoteAppRun(status: .running, port: 3000, command: "npm run dev", directory: "/tmp/acme-web", revision: 7)),
         ], lines: ["ready on localhost:3000"])),
         .appsChanged(processes: [RemoteAppProcess(spaceID: nil, name: "Postgres", run: RemoteAppRun(status: .starting))]),
+        .pullRequestLinks(links: [S.agent: ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: "acme/web", number: 31), state: .open)],
+                          notes: [S.agent: "2 uncommitted changes"]),
+        .pullRequestLinks(links: [:], notes: [:]),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
         .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
@@ -1203,7 +1210,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
-            RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability,
+            RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability, RemoteProtocol.pullRequestLinkCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
             RemoteProtocol.checkpointRecoveryCapability,

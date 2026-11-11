@@ -81,7 +81,7 @@ struct LocalHostRoutingTests {
         let vm = ShepherdViewModel(settings: settings,
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         // As `ShepherdApp` connects it.
@@ -427,7 +427,7 @@ struct LocalHostRoutingTests {
         let vm = ShepherdViewModel(settings: AppSettings(store: defaults),
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: HooksModel(home: dir.appendingPathComponent("hooks-home").path, support: dir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path))
         vm.connectLocalHost(socket: host.dir.appendingPathComponent("h.sock").path, token: token)

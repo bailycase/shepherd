@@ -84,8 +84,7 @@ struct SidebarPinnedFlowTests {
         vm.pinThread(.local(agents[1].agent.id))
 
         let relaunched = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
-            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in },
-            looksUpPullRequests: false)
+            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in })
         #expect(relaunched.sidebarPins == vm.sidebarPins)
         #expect(relaunched.sidebarPins.threads == [.local(agents[3].agent.id), .local(agents[1].agent.id)])
     }
@@ -111,8 +110,7 @@ struct SidebarPinnedFlowTests {
         let (state, agents) = fleet(app, count: 2)
         try await app.start(with: state).pinThread(.local(agents[0].agent.id))
         let relaunched = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
-            remoteHosts: RemoteHostStore(defaults: ScratchDefaults()), sidebarDefaults: app.defaults, themeInstaller: { _ in },
-            looksUpPullRequests: false)
+            remoteHosts: RemoteHostStore(defaults: ScratchDefaults()), sidebarDefaults: app.defaults, themeInstaller: { _ in })
         try #require(!relaunched.didAdopt && relaunched.state.agents.isEmpty)
         relaunched.pruneSidebarPins()
         #expect(relaunched.sidebarPins.threads == [.local(agents[0].agent.id)])

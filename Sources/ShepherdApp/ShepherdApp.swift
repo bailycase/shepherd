@@ -383,11 +383,10 @@ public enum ShepherdHost {
                     notifications.post(AgentBanners.automation(title: $0, body: $1))
                 }.serve()
                 // Skills look for newer commits a minute in, then hourly once the last check is a day old.
-                let skills = server.skills
                 Task.detached(priority: .utility) {
                     try? await Task.sleep(for: .seconds(60))
                     while !Task.isCancelled {
-                        skills.checkUpdatesIfDue()
+                        server.checkSkillUpdatesIfDue()
                         try? await Task.sleep(for: .seconds(3_600))
                     }
                 }

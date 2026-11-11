@@ -40,7 +40,8 @@
   it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
   post), `automationsChanged` (a run log or trigger changed: read the runs and statuses again) and
   `agentStartProblem` (why an agent's pi stopped and it waits, nil once pi starts again; every
-  agent's once when the client connects).
+  agent's once when the client connects), and `pullRequestLinks` (every thread's pull request link
+  and why a merged one was kept open, the sidebar's badges; as they change and when it connects).
   A local client with `appRelay.v1` also sends `projectExecutors` (the paired Macs it is connected
   to, and their execution hints), and answers the host's `projectPlacement` and
   `projectWorkerThread` relays through its connection to exactly that host and binding: a Project
@@ -195,8 +196,11 @@
     Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
     polls never demand processes; clients of older hosts keep the existing attach-only path.
     `readCheckout`, behind `checkout.read.v1`, has the host read the thread's branch and changed
-    files again after a change no state carries (a file saved in the app's Files tab); this
-    Mac's `focusThread` does the same for the thread it shows.
+    files again after a change no state carries (a file saved in the app's Files tab, a branch
+    card git action); this Mac's `focusThread` does the same for the thread it shows, as do the
+    host's own review loads and commits from review. The `pullRequest` agent query, behind
+    `pullrequest.link.v1`, has the host look the thread's branch's pull request up again and
+    answers it (the side pane's Pull request tab).
   - **Terminal compatibility** (no wire or capability change): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
     A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or

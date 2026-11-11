@@ -3,38 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// A local thread's link to its branch's pull request, as `gh pr view` in its checkout read it.
-public struct ThreadPullRequest: Equatable, Sendable {
-    public var ref: ForgeItemRef
-    public var state: PullRequestState
-    public var headRefName: String
-    /// The head commit GitHub has: a checkout still at it has nothing unpushed.
-    public var headRefOid: String
-
-    public static let fields = "url,number,state,isDraft,headRefName,headRefOid"
-
-    /// gh's `--json` answer; nil for anything that isn't a pull request.
-    public init?(json: String) {
-        struct Read: Decodable { var url: String; var state: String; var isDraft: Bool?; var headRefName: String?; var headRefOid: String? }
-        guard let read = try? JSONDecoder().decode(Read.self, from: Data(json.utf8)),
-              let ref = ForgeItemRef(link: read.url), ref.kind == .pullRequest else { return nil }
-        let state: PullRequestState = switch read.state.uppercased() {
-        case "MERGED": .merged
-        case "CLOSED": .closed
-        default: read.isDraft == true ? .draft : .open
-        }
-        self.init(ref: ref, state: state, headRefName: read.headRefName ?? "", headRefOid: read.headRefOid ?? "")
-    }
-
-    public init(ref: ForgeItemRef, state: PullRequestState, headRefName: String = "", headRefOid: String = "") {
-        self.ref = ref
-        self.state = state
-        self.headRefName = headRefName
-        self.headRefOid = headRefOid
-    }
-
-    public var isOpen: Bool { state == .open || state == .draft }
-
+extension ThreadPullRequest {
     /// `gh pr view` in `cwd` through a login shell: the lookup a host with no app uses.
     public static func lookup(cwd: String) async -> ThreadPullRequest? {
         await Task.detached {
@@ -60,9 +29,6 @@ public struct PullRequestLinkHosting {
     public var closed: @MainActor (_ agent: Agent, _ link: ThreadPullRequest, _ branch: String, _ remote: String) -> Void = { _, _, _, _ in }
     /// A merged thread was kept, for `reason` (said once per reason).
     public var keptOpen: @MainActor (_ agent: Agent, _ link: ThreadPullRequest, _ reason: String) -> Void = { _, _, _ in }
-    /// The workspace whose threads are linked, when it isn't the server's own (the background
-    /// host's, mirrored in its app); nil reads the server's.
-    public var state: @MainActor () -> ShepherdState? = { nil }
 
     public init(closeOnMerge: @escaping @MainActor () -> Bool,
                 lookup: @escaping @MainActor (String) async -> ThreadPullRequest?,
@@ -87,13 +53,29 @@ extension SessionServer {
         return hosting
     }
 
-    /// Keeps each thread's pull request link from here on, closing merged ones per the switch.
-    /// Once per server.
+    /// Keeps each thread's pull request link from here on, closing merged ones per the switch,
+    /// looked up again as a turn ends; this Mac's app is pushed the links and notes. Once per server.
     @MainActor
     @discardableResult
     public func servePullRequestLinks(_ hosting: PullRequestLinkHosting) -> PullRequestLinks {
+        var hosting = hosting
+        let changed = hosting.changed
+        hosting.changed = { [weak self] in
+            changed()
+            guard let self, let links = self.pullRequestLinks else { return }
+            let push = RemoteReply.pullRequestLinks(links: links.links, notes: links.closeNotes)
+            self.queue.async {
+                self.pullRequestLinksPush = push
+                self.sendToLocalApps(push)
+            }
+        }
         let links = PullRequestLinks(server: self, hosting: hosting)
         pullRequestLinks = links
+        let onStatus = onAgentStatus
+        onAgentStatus = { id, status, failure in
+            onStatus?(id, status, failure)
+            MainActor.assumeIsolated { links.statusChanged(id, status) }
+        }
         return links
     }
 }
@@ -115,24 +97,27 @@ public final class PullRequestLinks {
     private var seenOpen: [AgentID: ForgeItemRef] = [:]
     /// Threads the poll has looked up at least once in this host's run.
     private var polled: Set<AgentID> = []
+    /// Threads whose turn runs: the one that ends looks its link up again.
+    private var working: Set<AgentID> = []
     private var closing: Set<AgentID> = []
     private var lookups: Set<AgentID> = []
     private weak var server: SessionServer?
     private let hosting: PullRequestLinkHosting
-    private var workspace: ShepherdState? { hosting.state() ?? server?.state }
+    private var workspace: ShepherdState? { server?.state }
 
     init(server: SessionServer, hosting: PullRequestLinkHosting) {
         self.server = server
         self.hosting = hosting
     }
 
-    /// A host's client's own badges: links looked up against `hosting.state`; it closes nothing.
-    public init(hosting: PullRequestLinkHosting) {
-        self.hosting = hosting
+    /// A turn that ended may have opened, pushed to or merged the branch's pull request.
+    func statusChanged(_ id: AgentID, _ status: AgentStatus) {
+        if status == .working {
+            working.insert(id)
+        } else if working.remove(id) != nil, status == .done || status == .idle {
+            Task { await refresh(id) }
+        }
     }
-
-    /// A lookup for the thread is under way.
-    public func isLookingUp(_ id: AgentID) -> Bool { lookups.contains(id) }
 
     /// Looks the thread's pull request up again and records the link; a merge seen happening may
     /// close the thread. Returns the link (nil: none, or gh couldn't say).
@@ -167,6 +152,9 @@ public final class PullRequestLinks {
     // ponytail: one gh call per thread, threads sharing a checkout included; group by folder if that shows up.
     public func poll() async {
         guard let state = workspace else { return }
+        // Deleted threads' links go with them.
+        let ids = Set(state.agents.map(\.id))
+        for id in Set(links.keys).union(closeNotes.keys).union(polled) where !ids.contains(id) { forget(id) }
         for agent in state.agents where state.isOrdinaryThread(agent) {
             let id = agent.id
             guard !polled.contains(id) || links[id]?.isOpen == true || closeNotes[id] != nil else { continue }
