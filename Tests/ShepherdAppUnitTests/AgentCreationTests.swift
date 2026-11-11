@@ -189,6 +189,7 @@ struct AgentLaunchCommandTests {
     private func command(
         enabled: Set<Int> = [],
         needsName: Bool = false,
+        textGenerationModel: String = "",
         isAutomation: Bool = false,
         goalsEnabled: Bool = false,
         worktreeOwningSpace: String? = nil,
@@ -203,7 +204,7 @@ struct AgentLaunchCommandTests {
             panesExtensionPath: path(0), reviewExtensionPath: path(1), subagentsExtensionPath: path(2),
             childrenExtensionPath: path(4), childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7"],
             goalsEnabled: goalsEnabled,
-            namerExtensionPath: path(3), needsName: needsName, isAutomation: isAutomation,
+            namerExtensionPath: path(3), needsName: needsName, textGenerationModel: textGenerationModel, isAutomation: isAutomation,
             worktreeOwningSpace: worktreeOwningSpace,
             model: model, thinking: thinking
         )
@@ -343,6 +344,14 @@ struct AgentLaunchCommandTests {
         #expect(command(enabled: [3], needsName: true).env["SHEPHERD_NEEDS_NAME"] == "1")
         #expect(command(enabled: [3], needsName: false).env["SHEPHERD_NEEDS_NAME"] == nil)
         #expect(command(enabled: [], needsName: true).env["SHEPHERD_NEEDS_NAME"] == nil)
+    }
+
+    /// The text generation model rides along only with a title request; Automatic leaves the
+    /// namer to its own cheapest-first list.
+    @Test func theTextGenerationModelRidesAlongWithATitleRequest() {
+        #expect(command(enabled: [3], needsName: true, textGenerationModel: "cheap/mini").env["SHEPHERD_TEXT_GENERATION_MODELS"] == "cheap/mini")
+        #expect(command(enabled: [3], needsName: true).env["SHEPHERD_TEXT_GENERATION_MODELS"] == nil)
+        #expect(command(enabled: [3], needsName: false, textGenerationModel: "cheap/mini").env["SHEPHERD_TEXT_GENERATION_MODELS"] == nil)
     }
 
     /// Settings ▸ Instructions reach pi through their extension, loaded right after status, and

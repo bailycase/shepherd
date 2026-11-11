@@ -18,7 +18,7 @@ struct RemoteHostSettingsPreviewTests {
     final class Host: SettingsClient, @unchecked Sendable {
         let settings = HostSettings(
             shepherdVersion: "0.9.0", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus-4", defaultThinking: .high,
-            namingModel: nil, compactAtPercent: 80, goalsEnabled: true, projectsEnabled: false,
+            textGenerationModel: nil, compactAtPercent: 80, goalsEnabled: true, projectsEnabled: false,
             designToolEnabled: false, missionsEnabled: true, missionsActive: true,
             subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: nil, thinking: .low, context: .fork),
             worktreeDeleteAction: .keepWorktree,
@@ -65,6 +65,7 @@ struct RemoteHostSettingsPreviewTests {
     }
 
     static let newer: Set<String> = [RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
+                                     RemoteProtocol.hostSettingsTextGenerationModelCapability,
                                      RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostInventoryCapability,
                                      RemoteProtocol.hostConfigCapability, RemoteProtocol.goalExperimentCapability,
                                      RemoteProtocol.projectsExperimentCapability, RemoteProtocol.designToolExperimentCapability,

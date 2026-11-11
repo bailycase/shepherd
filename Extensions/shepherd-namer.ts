@@ -18,10 +18,11 @@ import { textLines } from "./shepherd-lines.mjs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-// Small/fast models tried before the agent's own, cheapest first. Override
-// with SHEPHERD_NAMER_MODELS ("provider/id,provider/id"); an entry without a
-// slash matches any provider offering that model id.
-const DEFAULT_NAMER_MODELS = [
+// Small/fast models tried before the agent's own, cheapest first. Shepherd's
+// text generation model setting (Settings ▸ Agents) arrives as
+// SHEPHERD_TEXT_GENERATION_MODELS ("provider/id,provider/id"); an entry
+// without a slash matches any provider offering that model id.
+const DEFAULT_TEXT_GENERATION_MODELS = [
   "anthropic/claude-haiku-4-5",
   "openai/gpt-5.1-codex-mini",
   "google/gemini-2.5-flash",
@@ -125,11 +126,11 @@ export default function shepherdNamer(pi: ExtensionAPI) {
   // ---- model selection -----------------------------------------------------
 
   function candidateSpecs(): string[] {
-    const configured = (process.env.SHEPHERD_NAMER_MODELS ?? "")
+    const configured = (process.env.SHEPHERD_TEXT_GENERATION_MODELS ?? "")
       .split(",")
       .map((s: string) => s.trim())
       .filter((s: string) => s.length > 0);
-    return configured.length > 0 ? configured : DEFAULT_NAMER_MODELS;
+    return configured.length > 0 ? configured : DEFAULT_TEXT_GENERATION_MODELS;
   }
 
   // Resolve "provider/id" or a bare "id" against the authed catalogue, in the

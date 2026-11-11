@@ -238,7 +238,7 @@ enum RemoteSamples {
 
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
-        defaultServiceTier: .fast, namingModel: "anthropic/claude-haiku", compactAtPercent: 80,
+        defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
         backgroundService: true, designToolEnabled: true, missionsEnabled: true, missionsActive: true,
@@ -268,7 +268,7 @@ enum RemoteSamples {
     ]
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
-        .defaultServiceTier(.fast), .namingModel("openai/gpt-5-mini"), .namingModel(nil), .compactAtPercent(70), .compactAtPercent(nil),
+        .defaultServiceTier(.fast), .textGenerationModel("openai/gpt-5-mini"), .textGenerationModel(nil), .namingModel("openai/gpt-5-mini"), .compactAtPercent(70), .compactAtPercent(nil),
         .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
@@ -957,24 +957,34 @@ struct RemoteReplyTests {
     }
 
     /// A host from before `hostSettings.agentDefaults.v1` sends none of the three fields: Standard,
-    /// Automatic naming and pi's own compaction; a tier this client does not know reads as Standard.
+    /// Automatic text generation and pi's own compaction; a tier this client does not know reads
+    /// as Standard. The text generation model travels as `textGenerationModel`; the `namingModel`
+    /// a host from before the rename reports is not read (its picker needs the newer host).
     @Test func aLegacyHostsAgentDefaultsReadAsTheMacsDefaults() throws {
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
-        for key in ["defaultServiceTier", "namingModel", "compactAtPercent"] { json.removeValue(forKey: key) }
+        #expect(json["textGenerationModel"] as? String == "anthropic/claude-haiku" && json["namingModel"] == nil)
+        for key in ["defaultServiceTier", "textGenerationModel", "compactAtPercent"] { json.removeValue(forKey: key) }
         var expected = RemoteSamples.hostSettings
         expected.defaultServiceTier = .standard
-        expected.namingModel = nil
+        expected.textGenerationModel = nil
         expected.compactAtPercent = nil
         #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json["namingModel"] = "anthropic/claude-haiku"
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json.removeValue(forKey: "namingModel")
         json["defaultServiceTier"] = "hyperspeed"
         #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
         #expect(HostSettingChange.defaultServiceTier(.fast).capability == RemoteProtocol.hostSettingsAgentDefaultsCapability)
+        #expect(HostSettingChange.textGenerationModel(nil).capability == RemoteProtocol.hostSettingsTextGenerationModelCapability)
         #expect(HostSettingChange.defaultModel(nil).capability == nil)
         var applied = HostSettings()
         applied.apply(.compactAtPercent(90))
-        applied.apply(.namingModel("x/y"))
+        applied.apply(.textGenerationModel("x/y"))
         applied.apply(.defaultServiceTier(.fast))
-        #expect(applied.compactAtPercent == 90 && applied.namingModel == "x/y" && applied.defaultServiceTier == .fast)
+        #expect(applied.compactAtPercent == 90 && applied.textGenerationModel == "x/y" && applied.defaultServiceTier == .fast)
+        // An older client's naming-model change lands on the same setting.
+        applied.apply(.namingModel("a/b"))
+        #expect(applied.textGenerationModel == "a/b")
     }
 
     @Test func aLegacyHostNeverGrantsCrossProviderConsent() throws {
@@ -1208,7 +1218,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeContextCapability,
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability, RemoteProtocol.hostSettingsTextGenerationModelCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
@@ -1262,6 +1272,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.changesRevertCapability == "changes.revert.v1")
         #expect(RemoteProtocol.changesCwdCapability == "changes.cwd.v1")
         #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
+        #expect(RemoteProtocol.hostSettingsTextGenerationModelCapability == "hostSettings.textGenerationModel.v1")
         #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.hostSettingsV2Capability == "hostSettings.v2")
         #expect(RemoteProtocol.hostSettingsCloseOnMergeCapability == "hostSettings.closeOnMerge.v1")

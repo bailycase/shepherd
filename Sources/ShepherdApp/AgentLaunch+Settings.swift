@@ -39,7 +39,7 @@ extension AppSettings {
         launch.nativeSubagents = piNativeSubagents
         launch.childEnvironment = childEnvironment
         launch.goals = goalsEnabled
-        launch.namingModel = namingModel
+        launch.textGenerationModel = textGenerationModel
         launch.designTool = designToolEnabled
         launch.designReferences = piDesignReferences
         launch.browser = piBrowserExtension

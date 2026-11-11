@@ -6,13 +6,16 @@ import ShepherdRemote
 
 /// What the host gives the worktree and commit-from-review queries.
 public struct WorktreeHosting {
-    /// Settings ▸ Worktrees, read at each request.
+    /// Settings ▸ Worktrees and the text generation model, read at each request.
     public struct Defaults: Sendable {
         /// Draft commit messages from review with a model.
         public var generateDescription: Bool
+        /// Settings ▸ Agents ▸ Text generation model; "" for Automatic.
+        public var textGenerationModel: String
 
-        public init(generateDescription: Bool) {
+        public init(generateDescription: Bool, textGenerationModel: String = "") {
             self.generateDescription = generateDescription
+            self.textGenerationModel = textGenerationModel
         }
     }
 
@@ -217,7 +220,7 @@ public final class WorktreeQueries {
                 let fallback = reviewCommitFallbackMessage(reviewCommitFiles(files) { _ in "" }.filter { $0.paths.contains(where: wanted.contains) })
                 return .commitMessage(title: fallback.title, body: fallback.body, drafted: false)
             }
-            let message = await ReviewCommitGit.draftMessage(root: root, paths: paths, pi: server.pi) { await LoginShell.run($0, cwd: $1, timeout: 45) }
+            let message = await ReviewCommitGit.draftMessage(root: root, paths: paths, model: defaults.textGenerationModel, pi: server.pi) { await LoginShell.run($0, cwd: $1, timeout: 45) }
             return .commitMessage(title: message.title, body: message.body, drafted: message.drafted)
         case .commit(let id, let options):
             if let existing = operations[id] {

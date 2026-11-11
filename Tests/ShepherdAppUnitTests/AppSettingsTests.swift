@@ -35,6 +35,31 @@ struct AppSettingsTests {
         #expect(!AppSettings.monospacedFamilies(including: AppSettings.systemFontFamily).contains(AppSettings.systemFontFamily))
     }
 
+    /// A model picked while the setting was the session naming model moves to the text generation
+    /// model's key at load, and the old setting's key is gone.
+    @Test func aNamingModelChosenBeforeTheRenameMovesToTheTextGenerationModel() {
+        let store = Fixture.defaults()
+        store.set("anthropic/claude-haiku-4-5", forKey: "shepherd.agent.namingModel")
+        #expect(AppSettings(store: store).textGenerationModel == "anthropic/claude-haiku-4-5")
+        #expect(store.string(forKey: "shepherd.agent.namingModel") == nil)
+        #expect(store.string(forKey: "shepherd.agent.textGenerationModel") == "anthropic/claude-haiku-4-5")
+        // A choice already under the new key wins over a stale old one.
+        store.set("openai/gpt-5-mini", forKey: "shepherd.agent.textGenerationModel")
+        store.set("anthropic/claude-haiku-4-5", forKey: "shepherd.agent.namingModel")
+        #expect(AppSettings(store: store).textGenerationModel == "openai/gpt-5-mini")
+        #expect(store.string(forKey: "shepherd.agent.namingModel") == nil)
+    }
+
+    /// Commit from review drafts on the text generation model: the worktree queries read it with
+    /// the Worktrees switches at each request.
+    @Test func theWorktreeHostingDefaultsCarryTheTextGenerationModel() {
+        let settings = AppSettings(store: Fixture.defaults())
+        settings.textGenerationModel = "cheap/mini"
+        #expect(settings.worktreeHostingDefaults.textGenerationModel == "cheap/mini")
+        settings.textGenerationModel = ""
+        #expect(settings.worktreeHostingDefaults.textGenerationModel.isEmpty)
+    }
+
     @Test func freshSettingsUseThePublishedDefaults() {
         let settings = AppSettings(store: Fixture.defaults())
 
@@ -43,7 +68,7 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
-        #expect(settings.namingModel.isEmpty, "session naming starts on Automatic")
+        #expect(settings.textGenerationModel.isEmpty, "text generation starts on Automatic")
         #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(!settings.projectsEnabled, "Projects is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
@@ -225,7 +250,7 @@ struct AppSettingsTests {
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
         settings.defaultServiceTier = .fast
-        settings.namingModel = "openai/gpt-5.1-codex-mini"
+        settings.textGenerationModel = "openai/gpt-5.1-codex-mini"
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piDesignReferences = false
@@ -246,7 +271,7 @@ struct AppSettingsTests {
         #expect(reloaded.terminalFontFamily == "Menlo" && reloaded.terminalFontSize == 15)
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(reloaded.defaultServiceTier == .fast)
-        #expect(reloaded.namingModel == "openai/gpt-5.1-codex-mini")
+        #expect(reloaded.textGenerationModel == "openai/gpt-5.1-codex-mini")
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.subagentDisplay && !reloaded.piNativeSubagents)
         #expect(!reloaded.piBrowserExtension)
@@ -346,7 +371,7 @@ struct AppSettingsTests {
         settings.terminalFontSize = 20
         settings.defaultModel = "openai/gpt-5"
         settings.defaultServiceTier = .fast
-        settings.namingModel = "google/gemini-2.5-flash"
+        settings.textGenerationModel = "google/gemini-2.5-flash"
         settings.uiDensity = 1.3
         settings.uiTextScale = 1.2
         settings.sidebarWidth = 300
@@ -356,7 +381,7 @@ struct AppSettingsTests {
 
         settings.resetToDefaults()
 
-        #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.namingModel.isEmpty)
+        #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.textGenerationModel.isEmpty)
         #expect(settings.defaultServiceTier == .standard)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)

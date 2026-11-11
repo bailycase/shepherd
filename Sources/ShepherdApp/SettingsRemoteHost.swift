@@ -202,10 +202,12 @@ private struct RemoteSettingsSectionPage: View {
                             SHSegmentedPicker("Speed for new threads", selection: bind(s.defaultServiceTier) { .defaultServiceTier($0) },
                                               options: ServiceTier.allCases.map { ($0, $0.title) })
                         }
-                        SettingsRow(title: "Session naming model") {
-                            ModelMenu(label: "Session naming model", none: "Automatic", current: s.namingModel,
-                                      models: settings.models(of: host, current: s.namingModel)) {
-                                settings.post(.namingModel($0), on: host)
+                    }
+                    if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) {
+                        SettingsRow(title: "Text generation model") {
+                            ModelMenu(label: "Text generation model", none: "Automatic", current: s.textGenerationModel,
+                                      models: settings.models(of: host, current: s.textGenerationModel)) {
+                                settings.post(.textGenerationModel($0), on: host)
                             }
                         }
                     }
