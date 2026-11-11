@@ -159,9 +159,8 @@ final class ThreadInput {
                 rejection = "\(url.lastPathComponent) is not an image Shepherd can attach."
             } else if !localFiles {
                 rejection = "Files cannot be attached to a remote thread yet. Images are supported."
-            } else if url.isFileURL,
-                      (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
-                      FileManager.default.isReadableFile(atPath: url.path) {
+            } else if url.isFileURL, FileManager.default.isReadableFile(atPath: url.path) {
+                // Folders and bundles (an .xccrashpoint) go too: pi gets the path and reads inside.
                 store.attach(files: [NativeAttachedFile(name: url.lastPathComponent, path: url.path)])
             } else {
                 rejection = "\(url.lastPathComponent) is not a readable file."

@@ -488,6 +488,12 @@ struct ComposerTextField: NSViewRepresentable {
             if !super.readSelection(from: board, type: type) { NSSound.beep() }
             breakUndoCoalescing()
         }
+        /// Dropped files and images attach like pasted ones instead of inserting their paths.
+        override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+            let providers = AppImageDrop.providers(from: sender.draggingPasteboard)
+            if isEditable, !providers.isEmpty, let attach { attach(providers); return true }
+            return super.performDragOperation(sender)
+        }
         override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
             if item.action == #selector(paste(_:)) {
                 return isEditable && pasteboard().availableType(from: readablePasteboardTypes) != nil
