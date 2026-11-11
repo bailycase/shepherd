@@ -399,7 +399,7 @@ struct RemoteRequestTests {
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 53
+    static let caseCount = 54
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
