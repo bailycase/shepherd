@@ -86,10 +86,14 @@ public final class WorktreeQueries {
               let space = server.state.spaces.first(where: { $0.id == agent.spaceID }) else {
             throw RemoteCreateAgentError("Worktree agent no longer exists")
         }
-        let path = agent.worktreePath ?? GitWorktree.existingDestination(repo: space.path, branch: branch)
+        let deletedBranch = agent.worktreeOriginalBranch ?? branch
+        let path = agent.worktreePath ?? GitWorktree.existingDestination(repo: space.path, branch: deletedBranch)
         let identity = try await Task.detached { try GitWorktree.identity(at: path) }.value
         let repo = try await Task.detached { try GitWorktree.primaryCheckout(at: space.path) }.value
-        guard identity.repo == repo, identity.branch == branch else {
+        // The checkout's own branch is read now: a `git switch` the host hasn't recorded yet is
+        // still this agent's checkout. Delete removes the branch Shepherd made, never the one
+        // switched to (`GitWorktree.remove`).
+        guard identity.repo == repo else {
             throw RemoteCreateAgentError("Checkout identity changed. Nothing was removed.")
         }
         try verifyCheckoutUnused(identity.path, except: agentID)
@@ -97,7 +101,7 @@ public final class WorktreeQueries {
             throw RemoteCreateAgentError("Another worktree operation is running for this checkout")
         }
         let warning = try await Task.detached {
-            try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch, otherBranchesKeep: local)
+            try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: identity.branch, otherBranchesKeep: local)
         }.value
         // Probes suspend the main actor. Recheck both operation identity and agent identity before accepting.
         if let id = operationID, let existing = operations[id] {
@@ -130,13 +134,13 @@ public final class WorktreeQueries {
                     try await retireWorktreeAgent(agentID)
                     // The confirmation covers the same loss warning after the writer has stopped.
                     let current = try await Task.detached {
-                        try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch, otherBranchesKeep: local)
+                        try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: identity.branch, otherBranchesKeep: local)
                     }.value
                     guard current == confirmedWarning else {
                         throw RemoteCreateAgentError("Work changed while the agent stopped. Checkout was kept.")
                     }
                     try verifyCheckoutUnused(identity.path, except: agentID)
-                    try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: identity.path, fingerprint: fingerprint) }.value
+                    try await Task.detached { try GitWorktree.remove(repo: repo, branch: deletedBranch, worktree: identity.path, fingerprint: fingerprint, checkoutBranch: identity.branch) }.value
                     operations[id]?.progress = ["agent, checkout and local branch removed"]
                 } catch { operations[id]?.error = String(describing: error) }
                 operations[id]?.finished = true

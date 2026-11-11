@@ -7062,7 +7062,10 @@ public final class SessionServer: @unchecked Sendable {
                (try? self.mutateState({ state in
                    for index in indices {
                        state.agents[index].checkout = checkout
-                       if state.agents[index].worktreeBranch != nil { state.agents[index].worktreeBranch = switched }
+                       if let recorded = state.agents[index].worktreeBranch {
+                           if state.agents[index].worktreeOriginalBranch == nil { state.agents[index].worktreeOriginalBranch = recorded }
+                           state.agents[index].worktreeBranch = switched
+                       }
                    }
                })) != nil { return }
             self.store.updateLive { state in
