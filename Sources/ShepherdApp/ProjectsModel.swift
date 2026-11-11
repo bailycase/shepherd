@@ -172,6 +172,11 @@ final class ProjectsModel {
     @ObservationIgnored var loadModels: @MainActor (ProjectsHost) async -> [String] = { _ in [] }
     /// The last save found the file changed elsewhere: saving waits for Reload latest.
     private(set) var conflict = false
+    /// The file changed under the save: in this process, or as the host's (`conflict`) answer.
+    static func isConflict(_ error: Error) -> Bool {
+        if case RemoteHostClientError.rejected(code: "conflict", _) = error { return true }
+        return (error as? ProjectFileError)?.code == "conflict"
+    }
 
     func deriveForm() {
         guard selectedFile?.category == .pi else { formSettings = nil; if !formGroups.isEmpty { formGroups = [] }; return }
@@ -497,7 +502,7 @@ final class ProjectsModel {
             await compareHosts(token: token, text: value.text, file: file, selected: selected)
             if category == .mcp, token == generation { await refreshMCPCredentials() }
         } catch {
-            if token == generation { fileError = String(describing: error); conflict = (error as? ProjectFileError)?.code == "conflict" }
+            if token == generation { fileError = String(describing: error); conflict = Self.isConflict(error) }
         }
         saving = false
     }
