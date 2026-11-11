@@ -143,6 +143,7 @@ struct SHProseBlocks<Code: View>: View {
     var voice = SHProseVoice.reply
     let code: (String, String?) -> Code
     @Environment(\.shWritingFence) private var writingFence
+    @Environment(\.shProseHTML) private var pages
     @Environment(\.shProseSize) private var size
     @Environment(\.shProseHalfLeading) private var halfLeading
     @Environment(\.shProseTaskLinks) private var taskLinks
@@ -176,6 +177,8 @@ struct SHProseBlocks<Code: View>: View {
             case .code(let text, let language):
                 if SHMermaidBlock.renders(language: language, writing: blockPath == writingFence) {
                     SHMermaidBlock(text)
+                } else if SHHTMLBlock<EmptyView>.renders(language: language, pages: pages) {
+                    SHHTMLBlock(source: text, writing: blockPath == writingFence) { code(text, "html") }
                 } else {
                     code(text, language)
                 }

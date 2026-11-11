@@ -61,6 +61,11 @@ interface TerminalInfo {
   isAlive: boolean;
 }
 
+const VISUAL_GUIDELINE =
+  "To show a diagram, chart or small widget, write a self-contained HTML page in a ```html-render block (or use " +
+  "```mermaid); the thread renders it live. No network or links; color with var(--bg), var(--text), var(--line) and " +
+  "var(--accent) so it reads in light and dark.";
+
 export default function shepherdPanes(pi: ExtensionAPI) {
   const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
   const socketPath = process.env.SHEPHERD_SOCKET ?? "";
@@ -999,18 +1004,18 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     },
   });
 
-  // What to do with a message from another agent holds for every thread, loaded agent_* tools or not: they bring the
-  // rule with them (pi writes a repeated rule once), and until they load this does.
-  if (deferPeers) {
-    pi.on("before_agent_start", (event) => {
-      try {
-        const rules = event?.systemPromptOptions?.promptGuidelines;
-        if (Array.isArray(rules) && !rules.includes(PEER_GUIDELINES[1])) rules.push(PEER_GUIDELINES[1]);
-      } catch {
-        // The rule is never worth a failed turn.
-      }
-    });
-  }
+  // The thread draws html-render and mermaid fences (SHHTMLBlock, SHMermaidBlock); without this line an agent never knows
+  // to write them. What to do with a message from another agent holds for every thread, loaded agent_* tools or not:
+  // they bring the rule with them (pi writes a repeated rule once), and until they load this does.
+  const promptRules = deferPeers ? [VISUAL_GUIDELINE, PEER_GUIDELINES[1]] : [VISUAL_GUIDELINE];
+  pi.on("before_agent_start", (event) => {
+    try {
+      const rules = event?.systemPromptOptions?.promptGuidelines;
+      if (Array.isArray(rules)) for (const rule of promptRules) if (!rules.includes(rule)) rules.push(rule);
+    } catch {
+      // A rule is never worth a failed turn.
+    }
+  });
 
   // Connect eagerly so pushes can reach this agent before it ever uses a
   // Shepherd tool. Failures are fine — request() reconnects on demand.

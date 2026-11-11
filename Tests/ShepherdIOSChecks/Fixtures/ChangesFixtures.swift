@@ -225,10 +225,10 @@ enum ChangesFixture {
             switch query {
             case .changesOverview:
                 result = .changesOverview(overview(repo))
-            case .changesList(let scope, _):
+            case .changesList(let scope, _, _):
                 if let error = repo.listError { return .error(id: id, code: ChangesError.gitFailed, message: error) }
                 result = .changesList(list(repo, scope: scope))
-            case .changesFile(_, let path, _, _):
+            case .changesFile(_, let path, _, _, _):
                 guard let file = repo.files.first(where: { $0.id == path }) else {
                     return .error(id: id, code: ChangesError.invalid, message: "\(path) is not in this diff.")
                 }

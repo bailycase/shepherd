@@ -56,6 +56,26 @@ public enum MarkdownFixtures {
     }
 
     /// A wide table (more columns than the thread holds), a keycap, a Mermaid chart and math source.
+    /// A reply with two agent pages (`html-render`): a diagram, then a widget whose button runs a script.
+    public static let htmlReply = """
+    Every request goes through Caddy to the API, and the API reads the session from Postgres on each call.
+
+    ```html-render
+    <title>Session read path</title>
+    <style>.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.box{padding:8px 12px;border:1px solid var(--line-strong);border-radius:8px;background:var(--bg-raised)}.new{border-style:dashed;border-color:var(--accent);color:var(--accent)}</style>
+    <div class="row"><div class="box">Browser</div>→<div class="box">Caddy</div>→<div class="box">api</div>→<div class="box">Postgres</div><div class="box new">Redis</div></div>
+    ```
+
+    ```html-render
+    <title>Retry delay</title>
+    <button id="t" style="font:inherit;padding:6px 10px">Show added wait</button>
+    <p id="o">Retry after 400 ms: 0.6% of checkouts still fail</p>
+    <script>document.getElementById('t').onclick = () => document.getElementById('o').textContent = 'Retry after 400 ms adds 0.4 s at p95'</script>
+    ```
+
+    Want me to add the Redis read with Postgres as the fallback?
+    """
+
     public static let wideReply = """
     Benchmarks across the fixtures (press <kbd>⌘</kbd><kbd>C</kbd> on a table to copy it as Markdown):
 

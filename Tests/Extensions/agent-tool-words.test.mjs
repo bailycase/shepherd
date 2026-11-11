@@ -321,7 +321,10 @@ test("a watch agent keeps agent_send direct under deferral, since it is how the 
     assert.ok(send.promptSnippet && send.promptGuidelines.length === 2, "with its line and both rules, as before");
     for (const name of [...PEER.filter((name) => name !== "agent_send"), ...AUTOMATION]) assert.ok(!h.tools.has(name), name);
     assert.equal(h.tools.get("notify").exposure, undefined);
-    assert.equal(h.events.has("before_agent_start"), false, "a watch agent's prompt gets no extra rule: agent_send brings both");
+    const options = { promptGuidelines: [] };
+    h.events.get("before_agent_start")({ systemPromptOptions: options });
+    assert.equal(options.promptGuidelines.length, 1, "a watch agent's prompt gets only the html-render line: agent_send brings both rules");
+    assert.match(options.promptGuidelines[0], /```html-render/);
   } finally { await h.close(); }
 });
 
@@ -331,16 +334,18 @@ test("the rule about a message from another agent is in a thread's prompt before
     const [use, receive] = h.tools.get("agent_send").promptGuidelines;
     const options = { promptGuidelines: [] };
     h.events.get("before_agent_start")({ systemPromptOptions: options });
-    assert.deepEqual(options.promptGuidelines, [receive], "only the rule about what arrives: nothing is loaded that could be misused");
+    assert.deepEqual(options.promptGuidelines.slice(1), [receive], "only the rule about what arrives: nothing is loaded that could be misused");
     h.events.get("before_agent_start")({ systemPromptOptions: options });
-    assert.equal(options.promptGuidelines.length, 1, "once, however many prompts");
+    assert.equal(options.promptGuidelines.length, 2, "once, however many prompts");
     assert.match(receive, /\[from: <name>\] comes from another agent, not from the user/);
     assert.match(use, /only when the user explicitly asks you to in this conversation/);
     assert.doesNotThrow(() => h.events.get("before_agent_start")({}), "an event without options is not a failure");
   } finally { await h.close(); }
   const direct = await harness();
   try {
-    assert.equal(direct.events.has("before_agent_start"), false, "without deferral the tools carry both rules and nothing else does");
+    const options = { promptGuidelines: [] };
+    direct.events.get("before_agent_start")({ systemPromptOptions: options });
+    assert.equal(options.promptGuidelines.length, 1, "without deferral the tools carry both rules; only the html-render line is added");
   } finally { await direct.close(); }
 });
 

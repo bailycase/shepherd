@@ -340,6 +340,13 @@ struct FixtureDesigns: Sendable {
 
     var designs: [Item]
     var systems: [DesignSystemRead] = []
+    /// Copies the host kept of boards its threads showed or wrote (`referenceKept`), with their pictures.
+    var kept: [UUID: Kept] = [:]
+
+    struct Kept: Sendable {
+        var payload: DesignReferencePayload
+        var picture: Data
+    }
 
     func answer(_ request: RemoteDesignRequest) -> Result<RemoteDesignResult, Refusal> {
         switch request {
@@ -392,8 +399,11 @@ struct FixtureDesigns: Sendable {
                                                                  outline: DesignReferenceOutline(kind: pinned.kind, styles: 11, tokens: 6,
                                                                                                  system: item.design.systemNamespace)))
             }
-        case .referenceKept, .referencePicture:
-            return .failure(Refusal(code: "no_such_reference", message: "The fixture keeps no copies."))
+        case .referenceKept(_, let id):
+            guard let copy = kept[id] else { return .failure(Refusal(code: "no_such_reference", message: "The fixture keeps no such copy.")) }
+            return .success(.referenceKept(copy.payload, picture: copy.picture, freshness: .current))
+        case .referencePicture:
+            return .failure(Refusal(code: "no_such_reference", message: "Every kept picture fits one reply."))
         case .referenceFreshness:
             return .success(.referenceFreshness(.current))
         case .referenceLookedAt:

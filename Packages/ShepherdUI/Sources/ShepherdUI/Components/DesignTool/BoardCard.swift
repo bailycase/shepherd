@@ -135,9 +135,24 @@ public struct SHBoardFooterLine<Actions: View>: View {
         self.actions = actions()
     }
 
+    /// The actions beside the name where everything fits untruncated, else on their own row under it (a phone's card).
     public var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                name
+                Spacer(minLength: SH.Space.m)
+                HStack(spacing: SH.Space.xs) { actions }
+            }
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                name
+                HStack(spacing: SH.Space.xs) { actions }
+            }
+        }
+    }
+
+    private var name: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.m + SH.Space.xxs) {
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Image(systemName: "pencil.tip")
                 .font(.sh(.ui))
                 .foregroundStyle(sh.textSecondary)
@@ -154,8 +169,6 @@ public struct SHBoardFooterLine<Actions: View>: View {
                     .lineLimit(1)
             }
             .accessibilityElement(children: .combine)
-            Spacer(minLength: SH.Space.m)
-            HStack(spacing: SH.Space.xs) { actions }
         }
     }
 }

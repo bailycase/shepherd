@@ -31,6 +31,17 @@ extension FixtureCatalog {
                           routes: [.thread(preview)]),
             FixtureScreen(name: "thread-rich", hosts: ThreadFixtures.hosts(
                 preview: ThreadFixtures.reply(MarkdownFixtures.structureReply(image: "docs/thread-table.png"))), routes: [.thread(preview)]),
+            // ThreadHTMLDiagram, ThreadHTMLInteractive: a reply's html-render pages, drawn live.
+            FixtureScreen(name: "thread-html", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.htmlReply)),
+                          routes: [.thread(preview)]),
+            // ThreadBoardShown, ThreadBoardEdited, ThreadBoardDraft: boards the agent showed, wrote and drew, as cards.
+            FixtureScreen(name: "thread-boards", hosts: ThreadFixtures.boards(), routes: [.thread(preview)]),
+            // ThreadBoardEditedOpen: a card's picture tapped opens it full size in the image viewer.
+            FixtureScreen(name: "thread-boards-open", hosts: ThreadFixtures.boards(), routes: [.thread(preview)],
+                          prepare: { _ in
+                              SidebarAutomationsCheck.enableAccessibility()
+                              await TriggerFlowCheck.press("Open A · phone full size")
+                          }),
             FixtureScreen(name: "thread-wide", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.wideReply)),
                           routes: [.thread(preview)]),
             // A reply of about 240 blocks in chunks, every chunk laid out (`ProseView.lazyChunks`). On the iPhone on iOS 27.0 this
@@ -258,6 +269,62 @@ enum ThreadFixtures {
             F.assistant("m7", "Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.\n\nFocused regression test and Mac Dev build passed.",
                         at: 192_000),
         ], turnChanges: [F.previewTurn()]))
+    }
+
+    /// The preview thread with three board cards: one the agent showed, one it edited in the design, and one it drew for you
+    /// to add; the host keeps each copy and its picture.
+    static func boards() -> [FixtureHostData] {
+        typealias F = FixtureData
+        let shown = UUID(uuidString: "B0A2D000-0000-4000-8000-000000000001")!
+        let edited = UUID(uuidString: "B0A2D000-0000-4000-8000-000000000002")!
+        let drawn = UUID(uuidString: "B0A2D000-0000-4000-8000-000000000003")!
+        let design = DesignID(rawValue: "design-checkout")
+        func call(_ id: String, _ tool: String, board: UUID, at offset: Double) -> NativeThreadMessage {
+            var message = F.tool(id, tool, args: #"{"board":"A.dc.html"}"#, output: "ok", at: offset)
+            message.designBoard = board
+            return message
+        }
+        func copy(_ id: UUID, board: String, title: String, revision: UInt64, written: DesignReferencePayload.Written? = nil,
+                  proposal: DesignReferencePayload.Proposal? = nil, accent: UIColor) -> FixtureDesigns.Kept {
+            var payload = DesignReferencePayload(id: id, agentID: F.preview, reference: DesignReference(designID: design, board: DesignPath(board)!)!,
+                                                 design: "Checkout redesign", boardTitle: title, revision: revision, capturedAt: F.start,
+                                                 width: 1280, height: 800, picture: .init(name: "board.png", bytes: 0, pixelWidth: 1280, pixelHeight: 800))
+            payload.written = written
+            payload.proposal = proposal
+            return FixtureDesigns.Kept(payload: payload, picture: boardPicture(accent))
+        }
+        var hosts = ThreadFixtures.hosts(preview: rpc(F.snapshot([
+            F.user("m1", "What did we decide the funnel should look like? Then tighten the counts and draw a phone version."),
+            F.assistant("m2", "This is the board from Checkout redesign.", at: 6_000),
+            call("m3", "design_show", board: shown, at: 8_000),
+            F.assistant("m4", "I tightened the counts on the board itself.", at: 20_000),
+            call("m5", "board_edit", board: edited, at: 24_000),
+            F.assistant("m6", "And a phone version for you to add.", at: 30_000),
+            call("m7", "design_show", board: drawn, at: 34_000),
+            F.assistant("m8", "Add the phone board if it looks right.", at: 36_000),
+        ])))
+        hosts[0].designs = FixtureDesigns(designs: [], kept: [
+            shown: copy(shown, board: "A.dc.html", title: "A · Funnel first", revision: 13, accent: .systemBlue),
+            edited: copy(edited, board: "A.dc.html", title: "A · Funnel first", revision: 14, written: .edited, accent: .systemTeal),
+            drawn: copy(drawn, board: "A-phone.dc.html", title: "A · phone", revision: 14, proposal: .init(kind: .draft), accent: .systemOrange),
+        ])
+        return hosts
+    }
+
+    /// A board's picture: a light page with a title bar, three counts and the funnel's bars in `accent`.
+    static func boardPicture(_ accent: UIColor) -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        return UIGraphicsImageRenderer(size: CGSize(width: 640, height: 400), format: format).pngData { context in
+            UIColor(white: 0.97, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 640, height: 400))
+            UIColor(white: 0.15, alpha: 1).setFill()
+            context.fill(CGRect(x: 32, y: 32, width: 220, height: 22))
+            UIColor.white.setFill()
+            for index in 0..<3 { context.fill(CGRect(x: 32 + CGFloat(index) * 196, y: 84, width: 180, height: 90)) }
+            accent.setFill()
+            for (index, width) in [520.0, 330, 200].enumerated() { context.fill(CGRect(x: 32, y: 210 + CGFloat(index) * 52, width: width, height: 28)) }
+        }
     }
 
     /// A question and an answer in rich Markdown (MarkdownFixtures).
