@@ -175,7 +175,7 @@ final class NewThreadState {
     /// background host is This Mac: its workspace is the app's own (`localHost`), or it is
     /// listed as a host and the app's own empty workspace isn't offered.
     static func hosts(_ vm: ShepherdViewModel) -> [NewThreadPlaces.Host] {
-        (vm.ownsWorkspace || vm.localHost != nil ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
+        (vm.localHost != nil ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
             + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
                 NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden })
             }
@@ -355,7 +355,7 @@ final class NewThreadState {
         catalog = nil
         loadingDefaults = true
         guard let host else {
-            if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
+            if !edited.model { model = vm.settings.defaultModel(piHome: vm.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
             if !edited.speed { serviceTier = vm.settings.defaultServiceTier }
             Task {
@@ -477,12 +477,9 @@ final class NewThreadState {
                     let spaceID: SpaceID
                     let directory: String
                     var projectBase: String?
-                    if standaloneID != nil, vm.localHost != nil {
+                    if standaloneID != nil {
                         // The background host makes the thread's folder as it starts it.
                         (spaceID, directory) = (SpaceID(rawValue: ""), "")
-                    } else if let standaloneID {
-                        (spaceID, directory) = try await vm.server.standaloneThreadFolder(for: standaloneID)
-                        vm.adopt(vm.server.state)
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {
                         spaceID = space.id
                         directory = space.path

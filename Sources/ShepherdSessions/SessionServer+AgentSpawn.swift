@@ -88,6 +88,19 @@ extension SessionServer {
         return info
     }
 
+    /// Holds every agent's pi start until the first launch's copy from the user's pi has run (the
+    /// app's, `YourPiModel.runFirstLaunch`), so none starts before its sign-ins come over. Past
+    /// `deadline` they start anyway, as the app's restored agents did; once it ran nothing waits.
+    @MainActor
+    public func holdStartsForFirstCopy(deadline: Duration = .seconds(30), poll: Duration = .milliseconds(100)) {
+        let imports = pi.importedState()
+        firstCopy = Task.detached(priority: .userInitiated) {
+            let end = ContinuousClock.now + deadline
+            // ponytail: polls the copy's state file; a file watch if the wait ever matters.
+            while !imports.copiedOnce, ContinuousClock.now < end { try? await Task.sleep(for: poll) }
+        }
+    }
+
     /// Startup respawn with no app: every agent whose unfinished work may be recovered
     /// (`agentsNeedingStartupRecovery`), in workspace order, one at a time. Recovery resumes each
     /// turn once its pi serves. Other agents wait for demand. A failed respawn is logged.
@@ -114,6 +127,11 @@ extension SessionServer {
         let agent = spawn.agent, cwd = spawn.cwd
         spawningAgents += 1
         defer { spawningAgents -= 1 }
+        if let firstCopy {
+            waitingForFirstCopy += 1
+            await firstCopy.value
+            waitingForFirstCopy -= 1
+        }
         var (fresh, problem) = (false, spawn.problem)
         if problem == nil {
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
@@ -126,21 +144,27 @@ extension SessionServer {
         let parent = inheritance?.parent
         let inherited = await projects.launchDefaults(for: cwd)
         let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
+        let owningSpace = StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree)
+        let mcpSpace = await projects.mcpSpace(of: owningSpace ?? cwd, state: state)
         // RPC mode ignores a positional prompt; an opening prompt goes to the session afterwards.
         let command = try problem.map(AgentLaunch.refusedCommand)
             ?? AgentLaunch.rpcCommand(for: agent, cwd: cwd, pi: pi, settings: spawn.settings, sessionIsFresh: fresh,
                                       isAutomation: spawn.isAutomation,
                                       project: state.projectContext(for: agent.id),
-                                      worktreeOwningSpace: StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree),
+                                      worktreeOwningSpace: owningSpace,
                                       suggestFiles: suggestions.snapshot().settings.files(for: spawn.isAutomation ? .automation : .thread),
                                       modelOverride: spawn.takeModelOverride(),
                                       specKit: spawn.specKit ? state.specKitLaunch(for: agent.id, cwd: cwd) : nil,
                                       inherited: inherited,
                                       mcp: {
-                                          // Parent skills come through the same extension, so a child space gets them with MCP off too.
+                                          // Parent skills and commands come through the same extension, so a child space gets them with MCP off too.
                                           let launch = try spawn.mcp(parent, agent, cwd, state, verifiedWorktree)
                                               ?? (parent == nil ? nil : MCPLaunch(extensions: spawn.settings.deferTools ? ["builtin:tool-search"] : [], environment: [:]).sharingParent(parent))
-                                          return launch?.excluding(inheritance?.excluded ?? SpaceInheritanceExclusions())
+                                          var scoped = launch?.excluding(inheritance?.excluded ?? SpaceInheritanceExclusions())
+                                              .loadingParentExtensions(inheritance?.extensions ?? [])
+                                          // Project MCP sign-ins belong to the space (Shepherd's pi engine patch).
+                                          scoped?.environment["SHEPHERD_MCP_SPACE"] = mcpSpace
+                                          return scoped
                                       })
         // A forked transcript resumes: pi not finding it is a start problem, never a new session.
         let resuming = spawn.checksResume && !fresh ? agent.effectivePiSessionID : nil

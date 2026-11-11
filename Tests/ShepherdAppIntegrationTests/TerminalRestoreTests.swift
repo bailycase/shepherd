@@ -35,24 +35,22 @@ struct TerminalRestoreTests {
         defer { window.close() }
         vm.terminalPanels.update(.init(host: nil, tab: shown.tab.id)) { $0.shown = true }
 
-        /// The live PTY bound to `pane` in both the store and the persisted layout, once it is.
+        /// The live PTY the host bound to `pane`, once the app is attached to it.
         func bound(_ pane: LeafPane, in tab: ShepherdCore.Tab) async -> SessionID? {
-            guard let id = vm.sessions.liveSession(forPane: pane.id),
-                  vm.state.tabs.first(where: { $0.id == tab.id })?.layout.leaf(withID: pane.id)?.sessionID == id,
-                  vm.sessions.session(for: pane, in: tab).phase == .live,
-                  let info = await app.server.sessionInfo(sessionID: id), info.isAlive, !info.command.contains("--mode") else { return nil }
+            guard let id = vm.hostTerminalSession(pane.id),
+                  app.server.state.tabs.first(where: { $0.id == tab.id })?.layout.leaf(withID: pane.id)?.sessionID == id,
+                  let info = await app.server.sessionInfo(sessionID: id), info.isAlive, !info.command.contains("--mode"),
+                  vm.hostPaneSession(pane.id)?.phase == .live else { return nil }
             return id
         }
         try await eventuallyAsync("the shown tab's shell to respawn and bind") { await bound(shown.auxiliary[0], in: shown.tab) != nil }
         #expect(await bound(shown.auxiliary[0], in: shown.tab) != stale.shown, "a session that died with the last run is no binding")
 
-        let dormant = vm.sessions.session(for: hidden.auxiliary[0], in: hidden.tab)
-        #expect(dormant.isDormant && vm.sessions.liveSession(forPane: hidden.auxiliary[0].id) == nil, "a hidden tab spawns nothing")
+        #expect(await bound(hidden.auxiliary[0], in: hidden.tab) == nil, "a hidden tab spawns nothing")
 
         vm.selectAgent(hidden.agent.id)
         vm.terminalPanels.update(.init(host: nil, tab: hidden.tab.id)) { $0.shown = true }
         try await eventuallyAsync("the newly shown tab's shell to spawn and bind") { await bound(hidden.auxiliary[0], in: hidden.tab) != nil }
-        #expect(!dormant.isDormant && dormant.hasTerminalModel)
         #expect(await bound(hidden.auxiliary[0], in: hidden.tab) != stale.hidden)
     }
 }

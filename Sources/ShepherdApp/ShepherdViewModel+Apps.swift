@@ -5,26 +5,31 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// Run and Stop for an app (AppsSettings, AppsRunning boards). Shepherd runs it in the
-/// background (`AppProcesses`, owned by the server); no thread or terminal owns it. Its output
-/// shows as a read-only tab in a thread's terminal panel, and a browser app's page opens in that
-/// thread's Browser once its address answers.
+/// Run and Stop for an app (AppsSettings, AppsRunning boards). The host runs it in the
+/// background (its server's `AppProcesses`, over `apps.v2`); no thread or terminal owns it. Its
+/// output shows as a read-only tab in a thread's terminal panel, and a browser app's page opens
+/// in that thread's Browser once its address answers.
 extension ShepherdViewModel {
-    /// Wires the server's app processes to Settings, the header and New thread. Called once.
+    /// Follows the host's app runs in Settings, the header and New thread. Called once.
     func installApps() {
-        server.apps.onChange = { [weak self] snapshots in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.apps.adopt(snapshots)
-                    // A page waiting on an app that ended never answers: stop waiting.
-                    for (key, thread) in self.appPageWaits where snapshots[key]?.status.isLive != true {
-                        self.browsers.existing(thread)?.stopWaiting()
-                        self.appPageWaits[key] = nil
-                    }
-                }
-            }
+        remoteHosts.onLocalAppsChanged = { [weak self] processes in self?.adoptAppProcesses(processes) }
+    }
+
+    func adoptAppProcesses(_ processes: [RemoteAppProcess]) {
+        let snapshots = Dictionary(processes.map { (AppKey(scope: $0.spaceID.map(AppScope.space) ?? .mac, name: $0.name), AppProcessSnapshot($0.run)) },
+                                   uniquingKeysWith: { first, _ in first })
+        apps.adopt(snapshots)
+        // A page waiting on an app that ended never answers: stop waiting.
+        for (key, thread) in appPageWaits where snapshots[key]?.status.isLive != true {
+            browsers.existing(thread)?.stopWaiting()
+            appPageWaits[key] = nil
         }
+    }
+
+    /// The host's apps request (`apps.v2`); throws while the host is away.
+    func appsRequest(_ request: RemoteAppsRequest) async throws -> RemoteAppsResult {
+        guard let host = try remoteHosts.thisMacHost() else { throw BackgroundHostClient.HostStarting() }
+        return try await host.apps(request)
     }
 
     /// The thread on screen on this Mac when it is in `scope`'s space (any space for This Mac's
@@ -35,40 +40,27 @@ extension ShepherdViewModel {
         return agent
     }
 
-    /// Where an app runs: a space's under the thread on screen when it is in that space (so a
-    /// worktree thread runs its own copy), else under the space's folder; This Mac's from home.
-    func appDirectory(_ app: AppDefinition, key: AppKey, thread: Agent?) -> String? {
-        switch key.scope {
-        case .mac: return app.directory(root: nil, home: apps.home)
-        case .space(let id):
-            guard let space = state.spaces.first(where: { $0.id == id }) else { return nil }
-            let root = thread.map(agentCwd) ?? HooksModel.expand(space.path, home: apps.home)
-            return app.directory(root: root, home: apps.home)
-        }
-    }
-
-    /// Run: starts the app in the background. From a thread (`showOutput`), its output opens in
-    /// that thread's panel and its page in its Browser.
+    /// Run: the host starts the app in the background, a space's under the thread on screen when
+    /// it is in that space (so a worktree thread runs its own copy), else under the space's
+    /// folder; This Mac's from home. From a thread (`showOutput`), its output opens in that
+    /// thread's panel and its page in its Browser.
     func runApp(_ app: AppDefinition, key: AppKey, showOutput: Bool = false) {
         guard apps.process(key)?.status.isLive != true else { return }
         let thread = appThreadOnScreen(for: key.scope)
-        guard let directory = appDirectory(app, key: key, thread: thread) else { NSSound.beep(); return }
-        server.apps.start(key, command: app.command, directory: directory, address: app.url) { [weak self] snapshot in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    if case .failed(let why) = snapshot.status {
-                        self.apps.problem = "Couldn’t run \(app.name): \(why)"
-                        return
-                    }
-                    guard showOutput, let thread else { return }
-                    self.showAppOutput(key, title: app.name, in: thread)
-                    if let url = app.url {
-                        self.showSidePane(.local(thread.id), tab: .browser)
-                        self.browsers.session(for: thread.id).wait(for: url)
-                        self.appPageWaits[key] = thread.id
-                    }
-                }
+        Task {
+            do {
+                try await appsRequest(.run(spaceID: key.spaceID, name: key.name, mac: key.scope == .mac,
+                                           agentID: key.scope == .mac ? nil : thread?.id))
+            } catch {
+                apps.problem = "Couldn’t run \(app.name): \(Self.appsFailure(error))"
+                return
+            }
+            guard showOutput, let thread else { return }
+            showAppOutput(key, title: app.name, in: thread)
+            if let url = app.url {
+                showSidePane(.local(thread.id), tab: .browser)
+                browsers.session(for: thread.id).wait(for: url)
+                appPageWaits[key] = thread.id
             }
         }
     }
@@ -76,13 +68,25 @@ extension ShepherdViewModel {
     /// Restart, after an app exited: the same command in the same folder.
     func restartApp(_ key: AppKey) {
         guard let process = apps.process(key), !process.status.isLive else { return }
-        let address = apps.apps(in: key.spaceID).first { $0.key == key }?.app.url
-        server.apps.start(key, command: process.command, directory: process.directory, address: address)
+        Task {
+            do { try await appsRequest(.restart(spaceID: key.spaceID, name: key.name)) }
+            catch { apps.problem = "Couldn’t run \(key.name): \(Self.appsFailure(error))" }
+        }
     }
 
     /// Stop: SIGTERM to the app's process group, SIGKILL after a grace period.
     func stopApp(_ key: AppKey) {
-        server.apps.stop(key)
+        Task { try? await appsRequest(.stop(spaceID: key.spaceID, name: key.name, mac: key.scope == .mac)) }
+    }
+
+    /// The last `tail` lines the app printed; none while the host is away.
+    func appOutput(_ key: AppKey, tail: Int) async -> [String] {
+        (try? await appsRequest(.output(spaceID: key.spaceID, name: key.name, tail: tail)))?.lines ?? []
+    }
+
+    static func appsFailure(_ error: Error) -> String {
+        if case RemoteHostClientError.rejected(_, let message) = error { return message }
+        return String(describing: error)
     }
 
     /// The app's output in `thread`'s terminal panel, on its own tab.

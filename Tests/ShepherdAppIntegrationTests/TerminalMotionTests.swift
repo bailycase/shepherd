@@ -80,8 +80,8 @@ struct TerminalMotionTests {
         defer { window.close() }
         try await eventuallyOnMain("both layouts to mount") { vm.mountedTabs.count == 2 }
         ListPerf.settle(window)
-        let shell = vm.sessions.session(for: hidden.auxiliary[0], in: hidden.tab)
-        try await eventuallyOnMain("the hidden shell to start", timeout: .seconds(30)) { shell.phase == .live }
+        // The host keeps a shell that runs while its layout is hidden.
+        let shell = try await vm.startHostTerminal(hidden.auxiliary[0].id, of: hidden.agent.id)
         var grids: [String] = []
         let report = shell.terminal.onResize
         shell.terminal.onResize = { cols, rows in
@@ -111,7 +111,7 @@ struct TerminalMotionTests {
         #expect(grids.count == 1, "one SIGWINCH for the whole drag: \(grids)")
         // The grid it takes is the one the window ended at: the shell on screen, in the same
         // layout, has it too.
-        let visibleShell = vm.sessions.session(for: shown.auxiliary[0], in: shown.tab)
+        let visibleShell = try #require(vm.hostPaneSession(shown.auxiliary[0].id))
         #expect(grids.last == "\(visibleShell.lastCols)x\(visibleShell.lastRows)", "hidden \(grids), shown \(visibleShell.lastCols)x\(visibleShell.lastRows)")
     }
 
@@ -163,7 +163,7 @@ struct ShellTerminalMotionTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         vm.changesEngineOverride = { _, _ in .fixed([]) }
         vm.selectAgent(agent.agent.id)
-        let shell = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab)
+        let shell = try await vm.startHostTerminal(agent.auxiliary[0].id, of: agent.agent.id)
         let log = GridLog()
         let forward = shell.terminal.onResize
         shell.terminal.onResize = { cols, rows in
@@ -175,7 +175,6 @@ struct ShellTerminalMotionTests {
         defer { window.close() }
         let store = vm.threadStores.store(for: agent.agent.id)
         try await eventuallyOnMain("the thread to load", timeout: .seconds(20)) { store.ready }
-        try await eventuallyOnMain("the shell to go live", timeout: .seconds(30)) { shell.phase == .live }
         try await quiet(log)
         // Through the sidebar's first section header and the workspace beside it.
         let row = CGRect(x: 0, y: 62, width: size.width, height: 1)

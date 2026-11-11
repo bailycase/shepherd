@@ -569,8 +569,7 @@ private struct TreeBuilder {
             if case .local(let space) = id { return !hiddenLocal.contains(space) }
             return true
         }
-        // In client mode the host on this Mac is "This Mac"; the app's own workspace is empty.
-        if options.groupByHost, !source.hosts.contains(where: \.thisMac) {
+        if options.groupByHost {
             tree.sections.append(SidebarTreeSection(
                 header: .host(name: "This Mac", id: nil, unreachable: false),
                 projects: shown.compactMap { if case .local = $0 { built[$0] } else { nil } }))

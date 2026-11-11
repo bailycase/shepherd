@@ -32,49 +32,16 @@ struct ThreadMoveDrag: Codable, Equatable {
 @MainActor extension ShepherdViewModel {
     func moveThread(_ agentID: AgentID, to spaceID: SpaceID) async throws {
         // The background host stops and starts the thread's pi itself.
-        if let ref = localRef(agentID) {
-            try await remoteHosts.agentAction(ref, action: .move(spaceID: spaceID))
-            openProjectHoldingSelection()
-            return
-        }
-        try await restartingAfterMove(agentID) { try await self.server.moveThread(agentID, to: spaceID) }
+        guard let ref = localRef(agentID) else { throw BackgroundHostClient.HostStarting() }
+        try await remoteHosts.agentAction(ref, action: .move(spaceID: spaceID))
         openProjectHoldingSelection()
     }
 
     /// The Switch branch picker's "move here": the thread's pi starts again in `path`, another
     /// checkout already on `branch` (`SessionServer.moveThreadToCheckout`).
     func moveThreadToCheckout(_ agentID: AgentID, path: String, branch: String) async throws {
-        if let ref = localRef(agentID) {
-            _ = try await remoteHosts.agentQuery(ref, query: .moveToCheckout(path: path, branch: branch))
-            return
-        }
-        try await restartingAfterMove(agentID) { try await self.server.moveThreadToCheckout(agentID, path: path, branch: branch) }
-    }
-
-    /// `move` stops the thread's pi; it starts again wherever the thread now is, or where it was
-    /// when the move failed after stopping it.
-    private func restartingAfterMove(_ agentID: AgentID, _ move: () async throws -> Bool) async throws {
-        let before = server.state
-        let sessionID = before.agents.first { $0.id == agentID }.flatMap { agent in
-            before.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
-        }
-        let wasAlive = if let sessionID { await server.sessionInfo(sessionID: sessionID)?.isAlive == true } else { false }
-        do {
-            guard try await move() else { return }
-        } catch {
-            // A filesystem failure after shutdown leaves the original workspace intact.
-            let code = (error as? ProjectFileError)?.code
-            if wasAlive, code != "thread_active", code != "thread_moving" {
-                sessions.stateDidChange(server.state)
-                sessions.retryStart(agentID)
-            }
-            throw error
-        }
-        let canonical = server.state
-        sessions.stateDidChange(canonical)
-        adopt(canonical)
-        threadStores.store(for: agentID).restarting()
-        sessions.retryStart(agentID)
+        guard let ref = localRef(agentID) else { throw BackgroundHostClient.HostStarting() }
+        _ = try await remoteHosts.agentQuery(ref, query: .moveToCheckout(path: path, branch: branch))
     }
 
     func threadMoveSpaces(_ row: SidebarRowID) -> [Space] {

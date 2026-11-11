@@ -4,8 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// What a workspace owner (the app's view model in process, or the headless host) gives the
-/// worktree and commit-from-review queries.
+/// What the host gives the worktree and commit-from-review queries.
 public struct WorktreeHosting {
     /// Settings ▸ Worktrees, read at each request.
     public struct Defaults: Sendable {
@@ -59,7 +58,7 @@ public final class WorktreeQueries {
     }
 
     /// `local`: the request is this Mac's own app's (the background host's client), whose loss
-    /// rule is the in-process one; a paired Mac's counts every commit no remote has.
+    /// rule spares commits another local branch reaches; a paired Mac's counts every commit no remote has.
     public func worktree(_ agentID: AgentID, query: RemoteAgentQuery, local: Bool = false) async throws -> RemoteAgentResult {
         let hosting = try hosted()
         if case .deleteKeepingWorktree = query {
@@ -86,10 +85,14 @@ public final class WorktreeQueries {
               let space = server.state.spaces.first(where: { $0.id == agent.spaceID }) else {
             throw RemoteCreateAgentError("Worktree agent no longer exists")
         }
-        let path = agent.worktreePath ?? GitWorktree.existingDestination(repo: space.path, branch: branch)
+        let deletedBranch = agent.worktreeOriginalBranch ?? branch
+        let path = agent.worktreePath ?? GitWorktree.existingDestination(repo: space.path, branch: deletedBranch)
         let identity = try await Task.detached { try GitWorktree.identity(at: path) }.value
         let repo = try await Task.detached { try GitWorktree.primaryCheckout(at: space.path) }.value
-        guard identity.repo == repo, identity.branch == branch else {
+        // The checkout's own branch is read now: a `git switch` the host hasn't recorded yet is
+        // still this agent's checkout. Delete removes the branch Shepherd made, never the one
+        // switched to (`GitWorktree.remove`).
+        guard identity.repo == repo else {
             throw RemoteCreateAgentError("Checkout identity changed. Nothing was removed.")
         }
         try verifyCheckoutUnused(identity.path, except: agentID)
@@ -97,7 +100,7 @@ public final class WorktreeQueries {
             throw RemoteCreateAgentError("Another worktree operation is running for this checkout")
         }
         let warning = try await Task.detached {
-            try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch, otherBranchesKeep: local)
+            try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: identity.branch, otherBranchesKeep: local)
         }.value
         // Probes suspend the main actor. Recheck both operation identity and agent identity before accepting.
         if let id = operationID, let existing = operations[id] {
@@ -130,13 +133,13 @@ public final class WorktreeQueries {
                     try await retireWorktreeAgent(agentID)
                     // The confirmation covers the same loss warning after the writer has stopped.
                     let current = try await Task.detached {
-                        try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: branch, otherBranchesKeep: local)
+                        try GitWorktree.checkedUnreconciledWork(worktree: identity.path, branch: identity.branch, otherBranchesKeep: local)
                     }.value
                     guard current == confirmedWarning else {
                         throw RemoteCreateAgentError("Work changed while the agent stopped. Checkout was kept.")
                     }
                     try verifyCheckoutUnused(identity.path, except: agentID)
-                    try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: identity.path, fingerprint: fingerprint) }.value
+                    try await Task.detached { try GitWorktree.remove(repo: repo, branch: deletedBranch, worktree: identity.path, fingerprint: fingerprint, checkoutBranch: identity.branch) }.value
                     operations[id]?.progress = ["agent, checkout and local branch removed"]
                 } catch { operations[id]?.error = String(describing: error) }
                 operations[id]?.finished = true
@@ -253,6 +256,8 @@ public final class WorktreeQueries {
                 }
                 operations[id]?.finished = true
                 hosting.committed(agentID)
+                // The header's branch chip follows the commit (and a new branch) at once.
+                server.onThreadFocused?(agentID)
             }
             return .worktreeOperation(operations[id]!)
         default:
@@ -278,6 +283,7 @@ extension SessionServer {
     public func serveAgentQueries(_ hosting: WorktreeHosting) -> WorktreeQueries {
         let queries = WorktreeQueries(server: self)
         queries.hosting = hosting
+        verifyCheckoutAvailable = { [weak queries] in try queries?.verifyCheckoutAvailable($0) }
         let children = HostedChildren()
         onAgentChildren = { agentID, rows in MainActor.assumeIsolated { children.runs.apply(agentID: agentID, children: rows) } }
         onRemoteAgentQuery = { [weak self] agentID, query, local, completion in
@@ -299,6 +305,8 @@ extension SessionServer {
             return try await queries.worktree(agentID, query: query, local: local)
         case .commitInfo, .commitMessage, .commit:
             return try await queries.commit(agentID, query: query)
+        case .pullRequest:
+            return .pullRequest(await pullRequestLinks?.refresh(agentID))
         case .children:
             // Swept on read rather than on a timer: a publisher that went quiet keeps only its
             // finished transcripts.
@@ -314,6 +322,8 @@ extension SessionServer {
                 return .search(snippet: matches.first?.snippet)
             }
             let pullRequest = if case .review(pullRequest: true) = query { true } else { false }
+            // The header's count follows what the review reads.
+            defer { onThreadFocused?(agentID) }
             return try await Task.detached {
                 let reference = pullRequest ? GitDiff.pullRequestReference(cwd: cwd) : nil
                 return RemoteAgentResult.review(files: try JSONEncoder().encode(GitDiff.load(cwd: cwd, reference: reference)), reference: reference)

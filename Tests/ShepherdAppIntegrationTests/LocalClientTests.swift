@@ -9,7 +9,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The app as the background host's client (`SHEPHERD_BACKGROUND_HOST=1`): a headless host serves
+/// The app as its host's client: a headless host serves
 /// threads and terminals on its local socket, and the app's view model, on an idle server that
 /// owns nothing, takes the host's workspace as its own (`connectLocalHost`).
 @Suite("The app as the background host's client", .mainActorExclusive)
@@ -21,12 +21,11 @@ struct LocalClientTests {
         -> (ShepherdViewModel, RemoteHostStore, SessionServer, RemoteHostStore.Connection, URL, ScratchDefaults) {
         let clientDir = try makeScratchDirectory("cli")
         let defaults = ScratchDefaults()
-        let idle = BackgroundHostClient.idleServer(directory: clientDir)
+        let idle = SessionServer(socketPath: clientDir.appendingPathComponent("s.sock").path, stateURL: clientDir.appendingPathComponent("state.json"))
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: idle, ownsWorkspace: false, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+        let vm = ShepherdViewModel(pi: idle.pi, settings: settings ?? AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         let connection = vm.connectLocalHost(socket: socket, token: token)
@@ -38,7 +37,7 @@ struct LocalClientTests {
         return (vm, hosts, idle, connection, clientDir, defaults)
     }
 
-    @Test func aNewerAppAsksItsHostToDrainAndHearsWhenItsHostIsGone() async throws {
+    @Test func aNewerAppAsksItsHostToDrainAndReconnectsWhenItsHostIsGone() async throws {
         let host = try ScratchServer()
         defer { host.stop() }
         host.server.hostBuild = "1201"
@@ -51,15 +50,13 @@ struct LocalClientTests {
 
         let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
         hosts.appBuild = "1202"
-        var lost = 0
-        hosts.onLocalHostLost = { lost += 1 }
         let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
         defer { hosts.removeHost(id: connection.id) }
         try await eventuallyOnMain("the app to connect") { connection.phase == .connected }
         try await eventuallyOnMain("the older host to be asked to drain") { asked.current == 1 }
 
         host.stop()
-        try await eventuallyOnMain("the app to hear its host is gone") { lost >= 1 }
+        try await eventuallyOnMain("the app to see its host is gone") { connection.phase != .connected }
     }
 
     @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysShepherdIsNotOpen() async throws {
@@ -165,7 +162,7 @@ struct LocalClientTests {
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let (vm, hosts, _, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
+        let (vm, hosts, idle, _, clientDir, _) = try await Self.app(socket: socket, token: token, host: host)
         defer {
             for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
             try? FileManager.default.removeItem(at: clientDir)
@@ -195,7 +192,7 @@ struct LocalClientTests {
         screen.draftText = "Tighten the header."
         await screen.submitComment()?.value
         #expect(try await host.server.designComments(design.id).comments.map(\.text) == ["Tighten the header."])
-        #expect(vm.server.state.designs.isEmpty, "nothing reached the idle in-process server")
+        #expect(idle.state.designs.isEmpty, "nothing reached the idle in-process server")
     }
 
     /// New design, Rename, Duplicate, Delete and its Undo on one of the host's designs, from the

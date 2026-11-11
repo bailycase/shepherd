@@ -360,7 +360,7 @@ struct NewThreadPage: View {
                     let base = draft.worktreeBase ?? draft.projectBase(vm)
                     BranchPickerMenu(first: "New branch from \(base.map(BranchCardGitReader.baseName) ?? "base")",
                                      selected: { if case .existing(let name)? = draft.worktreeBranch { name } else { nil } }(),
-                                     load: { try await vm.branchPickerList(cwd: space.path) },
+                                     load: { try await vm.branchPickerList(cwd: space.path, space: space.id) },
                                      choose: { name in
                                          draft.worktreeBranch = name.map(NewThreadBranch.existing)
                                          menu = .place

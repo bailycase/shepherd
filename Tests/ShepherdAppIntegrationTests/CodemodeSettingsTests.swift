@@ -22,7 +22,8 @@ struct CodemodeSettingsTests {
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
-        let settings = AppSettings.shared
+        // The app's settings, which the host follows as `Shepherd --host` follows the app's.
+        let settings = app.settings
         #expect(settings.codemode)
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 1400), dark: true,
                                      AgentSettings(pi: app.server.pi, settings: settings))
@@ -32,6 +33,7 @@ struct CodemodeSettingsTests {
                 let control = try window.press("Codemode", role: ControlRole.checkBox)
                 #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty)
             }
+            try await eventuallyOnMain("the host to follow the switch") { app.hostSettings?.codemode == expected }
             let id = try await vm.startAgent(NewAgentConfig(spaceID: space.id, workingDirectory: app.dir.path,
                                                            model: "anthropic/claude-opus-4-5", thinking: .medium, initialPrompt: "hello"), selectAfter: false)
             let agent = try #require(vm.state.agents.first { $0.id == id })
@@ -40,7 +42,7 @@ struct CodemodeSettingsTests {
             let saved = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
             #expect(PiCodemode.projectOverride(in: saved) == expected)
             #expect((saved["extensions"] as? [String])?.contains("-builtin:codemode") == true)
-            #expect(AppSettings().codemode == expected)
+            #expect(AppSettings(store: UserDefaults(suiteName: app.defaults.name)!).codemode == expected)
         }
         let live = await app.server.listSessions().filter(\.isAlive)
         #expect(live.count == 3, "a toggle does not kill or restart an existing agent")

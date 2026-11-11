@@ -67,7 +67,7 @@ struct ProjectCoordinatorFlowTests {
         let settings = LogicalProjectSettings(conversationModel: "anthropic/claude-opus-4-5", threadModel: "anthropic/claude-sonnet-4-5", instructions: "Use the existing tests.",
                                               conversationThinking: "high")
         guard case .project(let configured) = try await app.server.logicalProjects(.settings(projectID: id, expectedRevision: project.revision, settings: settings)) else { Issue.record("Missing settings"); return }
-        let sent = try await vm.projectCoordinator.sendProjectMessage(projectID: id, expectedRevision: configured.revision, operationID: UUID(), text: "hello")
+        let sent = try await app.coordinator.sendProjectMessage(projectID: id, expectedRevision: configured.revision, operationID: UUID(), text: "hello")
         let coordinator = try #require(sent.coordinatorAgentID)
         try await eventuallyAsync("coordinator session through the app") {
             StubPi.launches().contains { $0.argv.contains(coordinator.rawValue) }
@@ -87,7 +87,6 @@ struct ProjectCoordinatorFlowTests {
         #expect(vm.selectedAgentID == nil)
         #expect(app.server.state.agents.first { $0.id == coordinator }?.coordinatorFor == id)
         #expect(!SessionServer.peerInfos(in: app.server.state, sender: coordinator).contains { $0.id == coordinator }, "A live coordinator must not leak its private cwd through agent_list")
-        #expect(vm.projectCoordinator.conversationStore(agentID: coordinator) === vm.threadStores.store(for: coordinator))
         try await eventuallyAsync("coordinator message committed") { app.server.state.projects.first?.messages.first?.phase == .delivered }
         try await eventuallyAsync("coordinator settled") {
             guard case .snapshot(let snapshot) = try? await app.server.nativeThread(agentID: coordinator, request: .snapshot()) else { return false }
@@ -96,7 +95,7 @@ struct ProjectCoordinatorFlowTests {
         var changed = settings; changed.conversationModel = "anthropic/claude-sonnet-4-5"; changed.conversationThinking = "low"
         let ready = try #require(app.server.state.projects.first)
         guard case .project(let updated) = try await app.server.logicalProjects(.settings(projectID: id, expectedRevision: ready.revision, settings: changed)) else { Issue.record("Missing settings"); return }
-        _ = try await vm.projectCoordinator.sendProjectMessage(projectID: id, expectedRevision: updated.revision, operationID: UUID(), text: "Use updated model")
+        _ = try await app.coordinator.sendProjectMessage(projectID: id, expectedRevision: updated.revision, operationID: UUID(), text: "Use updated model")
         try await eventuallyAsync("live model and reasoning choice applied to next turn") {
             guard case .snapshot(let snapshot) = try? await app.server.nativeThread(agentID: coordinator, request: .snapshot()) else { return false }
             return !snapshot.running && snapshot.model == "anthropic/claude-sonnet-4-5" && snapshot.thinking == "low"

@@ -71,8 +71,8 @@ final class RemoteHostStore {
     final class Connection: Identifiable {
         /// Editable in Settings; the store reconnects after a change.
         fileprivate(set) var config: HostConfig
-        /// The background host on this Mac (client mode), shown as This Mac.
-        var isThisMac: Bool { config.localSocket != nil }
+        /// The background host on this Mac (client mode), whose workspace is the app's own.
+        var isLocalHost: Bool { config.localSocket != nil }
         var phase: Phase = .disconnected {
             didSet {
                 if oldValue == .connected, phase != .connected { lastSeen = Date() }
@@ -137,6 +137,7 @@ final class RemoteHostStore {
 
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
         var supportsThreadMove: Bool { client?.capabilities.contains(RemoteProtocol.moveThreadCapability) == true }
+        var supportsPushMute: Bool { client?.capabilities.contains(RemoteProtocol.pushMuteCapability) == true }
         /// The host deletes a design for this Mac, with Undo (`design.delete.v1`, while it serves
         /// designs).
         var supportsDesignDelete: Bool {
@@ -187,6 +188,8 @@ final class RemoteHostStore {
         var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
         var supportsProjectResources: Bool { client?.capabilities.contains(RemoteProtocol.projectResourcesCapability) == true }
         var supportsProjectInheritance: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritanceCapability) == true }
+        var supportsProjectInheritedResources: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritedResourcesCapability) == true }
+        var supportsProjectParent: Bool { client?.capabilities.contains(RemoteProtocol.projectParentCapability) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// What Settings' host picker reads and changes the host's settings through, while it's connected.
@@ -199,6 +202,7 @@ final class RemoteHostStore {
         /// The host takes the terminal panel's Rename tab and Kill process.
         var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
         var supportsTerminalStart: Bool { client?.capabilities.contains(RemoteProtocol.terminalStartCapability) == true }
+        var supportsCheckoutRead: Bool { client?.capabilities.contains(RemoteProtocol.checkoutReadCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {
@@ -261,9 +265,15 @@ final class RemoteHostStore {
     /// A tool call, or a line said, in a thread of the background host on this Mac.
     @ObservationIgnored var onLocalToolFinished: ((AgentID, String) -> Void)?
     @ObservationIgnored var onLocalThreadNotice: ((AgentID, String) -> Void)?
+    /// Every app's run on the background host on this Mac (`appsChanged`): Settings › Apps follows.
+    @ObservationIgnored var onLocalAppsChanged: (([RemoteAppProcess]) -> Void)?
+    /// Why one of the background host on this Mac's agents waits with its pi stopped; nil once it starts again.
+    @ObservationIgnored var onLocalAgentStartProblem: ((AgentID, NativeStartProblem?) -> Void)?
     /// The background host on this Mac's automations changed, or one of them posts a banner.
     @ObservationIgnored var onLocalAutomationsChanged: (() -> Void)?
     @ObservationIgnored var onLocalAutomationNotify: ((String, String) -> Void)?
+    /// The background host on this Mac's threads' pull request links and kept-open notes.
+    @ObservationIgnored var onLocalPullRequestLinks: (([AgentID: ThreadPullRequest], [AgentID: String]) -> Void)?
     /// A design's thread notes changed on the background host on this Mac.
     @ObservationIgnored var onLocalDesignNotesChanged: ((DesignID) -> Void)?
     /// A design's Git state changed on the background host on this Mac.
@@ -273,9 +283,6 @@ final class RemoteHostStore {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
-    /// The background host on this Mac dropped its connection, or a reconnect to it failed (it
-    /// stopped, drained, or was turned off in Login Items). The store reconnects either way.
-    @ObservationIgnored var onLocalHostLost: (() -> Void)?
     /// This app's build, compared with the background host's (`BackgroundHostClient.asksToDrain`).
     @ObservationIgnored var appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     @ObservationIgnored var onProjectExecutorConnected: ((ProjectHostReference) -> Void)?
@@ -296,30 +303,27 @@ final class RemoteHostStore {
     /// What each host was asked to hint about, and the threads on screen to ask for (`updateThreadHints`).
     @ObservationIgnored private var threadHints = RemoteThreadHints()
     @ObservationIgnored private var liveThreads: Set<RemoteAgentRef> = []
-    /// The background host's threads polling on screen, as the app's own (`hidesLocalHost`).
+    /// The background host's threads polling on screen, as the app's own.
     @ObservationIgnored private var localLiveThreads: Set<AgentID> = []
     /// Every host's design files, by hash (in memory).
     let designCache = RemoteDesignCache()
     /// Every connection, the background host on this Mac's included. Lookups by host id use it.
     private(set) var allConnections: [Connection] = [] { didSet { onProjectionChanged?() } }
-    /// The hosts the UI lists: every connection, less the background host on this Mac while its
-    /// threads are the app's own (`hidesLocalHost`).
-    var connections: [Connection] { hidesLocalHost ? pairedConnections : allConnections }
-    /// The background host on this Mac is transport only: its workspace is the app's own
-    /// (`ShepherdViewModel.localHost`), so no host list, picker or page shows it. Lookups by host
-    /// id (`allConnections`) still find it: requests the app routes to it go that way.
-    var hidesLocalHost = false
-    /// The background host on this Mac while its workspace is the app's own (`hidesLocalHost`):
-    /// This Mac's Settings pages read and change its stores, never the idle in-process server's.
-    /// Nil in process; throws while the host is away.
+    /// The hosts the UI lists: the paired ones. The background host on this Mac is transport only:
+    /// its workspace is the app's own (`ShepherdViewModel.localHost`), so no host list, picker or
+    /// page shows it. Lookups by host id (`allConnections`) still find it: requests the app routes
+    /// to it go that way.
+    var connections: [Connection] { pairedConnections }
+    /// The background host on this Mac: This Mac's Settings pages read and change its stores. Nil
+    /// before it is added; throws while the host is away.
     func thisMacHost() throws -> RemoteHostClient? {
-        guard hidesLocalHost else { return nil }
-        guard let host = localHost, host.phase == .connected, let client = host.client else { throw RemoteHostClientError.disconnected }
+        guard let host = localHost else { return nil }
+        guard host.phase == .connected, let client = host.client else { throw RemoteHostClientError.disconnected }
         return client
     }
 
-    /// The background host on this Mac, whatever `hidesLocalHost` says.
-    var localHost: Connection? { allConnections.first(where: \.isThisMac) }
+    /// The background host on this Mac, when the app is its client.
+    var localHost: Connection? { allConnections.first(where: \.isLocalHost) }
 
     private let defaults: UserDefaults
     private let childRefreshInterval: Duration
@@ -380,7 +384,7 @@ final class RemoteHostStore {
     }
 
     /// The hosts the user added: every connection but the background host on this Mac.
-    var pairedConnections: [Connection] { allConnections.filter { !$0.isThisMac } }
+    var pairedConnections: [Connection] { allConnections.filter { !$0.isLocalHost } }
 
     /// The background host on this Mac, through its local socket at `socket`; not persisted.
     @discardableResult
@@ -483,7 +487,7 @@ final class RemoteHostStore {
                     token: connection.config.token,
                     clientName: Host.current().localizedName ?? "shepherd",
                     capabilities: RemoteProtocol.clientCapabilities
-                        + (connection.isThisMac && self.hidesLocalHost ? [RemoteProtocol.localThreadsCapability] : [])
+                        + (connection.isLocalHost ? [RemoteProtocol.localThreadsCapability] : [])
                 )
                 guard !Task.isCancelled,
                       connection.client === client,
@@ -493,7 +497,7 @@ final class RemoteHostStore {
                 }
                 if connection.stateGeneration == stateGeneration {
                     connection.state = state
-                    if connection.isThisMac { self.onLocalHostState?(state) }
+                    if connection.isLocalHost { self.onLocalHostState?(state) }
                 }
                 connection.phase = .connected
                 self.rebindPanes(connection, to: client)
@@ -504,7 +508,7 @@ final class RemoteHostStore {
                 connection.connectMissions(client)
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
-                if connection.isThisMac, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
+                if connection.isLocalHost, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
                                                                           capabilities: client.capabilities) {
                     Task { do { try await client.drain() } catch { NSLog("Shepherd: background host didn't drain: \(error)") } }
                 }
@@ -519,7 +523,6 @@ final class RemoteHostStore {
                 let failure = RemoteHostFailure(error)
                 connection.phase = .failed(failure)
                 if failure.retries { self.scheduleReconnect(connection) }
-                if connection.isThisMac { self.onLocalHostLost?() }
             }
         }
     }
@@ -531,45 +534,57 @@ final class RemoteHostStore {
             self?.onProjectExecutionChanged?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID), key)
         }
         client.onSettingsChanged = { [weak self, weak connection] page in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalSettingsChanged?(page)
         }
         client.onToolFinished = { [weak self, weak connection] agentID, tool in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalToolFinished?(agentID, tool)
         }
         client.onDesignNotesChanged = { [weak self, weak connection] designID in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalDesignNotesChanged?(designID)
         }
         client.onDesignGitChanged = { [weak self, weak connection] designID in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalDesignGitChanged?(designID)
         }
         client.onDesignImportProgress = { [weak self, weak connection] step in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalDesignImportProgress?(step)
         }
         client.onThreadNotice = { [weak self, weak connection] agentID, message in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalThreadNotice?(agentID, message)
         }
+        client.onAppsChanged = { [weak self, weak connection] processes in
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAppsChanged?(processes)
+        }
+        client.onAgentStartProblem = { [weak self, weak connection] agentID, problem in
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalAgentStartProblem?(agentID, problem)
+        }
         client.onAutomationsChanged = { [weak self, weak connection] in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAutomationsChanged?()
         }
         client.onAutomationNotify = { [weak self, weak connection] title, body in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAutomationNotify?(title, body)
         }
+        client.onPullRequestLinks = { [weak self, weak connection] links, notes in
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onLocalPullRequestLinks?(links, notes)
+        }
         client.onAgentNotify = { [weak self, weak connection] agentID, title, body in
-            guard let connection, connection.isThisMac, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAgentNotify?(agentID, title, body)
         }
         client.onStateChanged = { [weak self, weak connection] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            defer { if connection.isThisMac { self?.onLocalHostState?(state) } }
+            defer { if connection.isLocalHost { self?.onLocalHostState?(state) } }
             let liveSessionIDs = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
@@ -596,7 +611,7 @@ final class RemoteHostStore {
         client.onDesignSystemsChanged = { [weak self, weak connection] in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.systemsChanged()
-            if connection.isThisMac { self?.onLocalDesignSystemsChanged?() }
+            if connection.isLocalHost { self?.onLocalDesignSystemsChanged?() }
         }
         client.onMissionChanged = { [weak connection] mission, revision in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
@@ -616,11 +631,11 @@ final class RemoteHostStore {
         }
         // Only the background host on this Mac asks; its paths are this Mac's.
         client.onDesignRelay = { [weak self, weak connection, weak client] token, job in
-            guard let self, let connection, let client, connection.client === client, connection.isThisMac else { return }
+            guard let self, let connection, let client, connection.client === client, connection.isLocalHost else { return }
             self.onDesignRelay?(client, token, job)
         }
         client.onAppRelay = { [weak self, weak connection, weak client] token, job in
-            guard let self, let connection, let client, connection.client === client, connection.isThisMac else { return }
+            guard let self, let connection, let client, connection.client === client, connection.isLocalHost else { return }
             self.onAppRelay?(client, token, job)
         }
         client.onCapabilitiesChanged = { [weak self, weak connection, weak client] capabilities in
@@ -637,7 +652,7 @@ final class RemoteHostStore {
             connection.designs.connect(nil, available: false)
             connection.connectMissions(nil)
             connection.stopChildRefresh()
-            if connection.isThisMac {
+            if connection.isLocalHost {
                 // This Mac's host keeps its terminals across a dropped link: each pane keeps its
                 // surface and attaches again once the store reconnects (`rebindPanes`).
                 for pane in connection.panes.values { pane.suspend() }
@@ -649,7 +664,6 @@ final class RemoteHostStore {
             }
             if self.allConnections.contains(where: { $0 === connection }) {
                 self.scheduleReconnect(connection)
-                if connection.isThisMac { self.onLocalHostLost?() }
             }
         }
     }
@@ -673,7 +687,7 @@ final class RemoteHostStore {
         // Exponential backoff, capped at 30s. Reset on successful connect. The host on this Mac
         // restarts in about a second (an update's drain, a crash) and a try costs a local connect:
         // 0.25 s, then doubling, never more than 2 s.
-        let delay = connection.isThisMac ? min(connection.reconnectDelay / 4, .seconds(2)) : connection.reconnectDelay
+        let delay = connection.isLocalHost ? min(connection.reconnectDelay / 4, .seconds(2)) : connection.reconnectDelay
         connection.reconnectDelay = min(.seconds(30), connection.reconnectDelay * 2)
         connection.retryPending = true
         connection.reconnectTask = Task { [weak self, weak connection] in
@@ -819,10 +833,11 @@ final class RemoteHostStore {
         return await client.forge(request)
     }
 
-    /// The thread the app shows, told to the background host on this Mac (`focusThread`).
-    func focusLocalThread(_ agentID: AgentID?) {
+    /// The thread the app shows and the pane with its keyboard, told to the background host on
+    /// this Mac (`focusThread`).
+    func focusLocalThread(_ agentID: AgentID?, pane: PaneID? = nil) {
         guard let client = localHost?.client, localHost?.phase == .connected else { return }
-        Task { try? await client.focusThread(agentID) }
+        Task { try? await client.focusThread(agentID, pane: pane) }
     }
 
     /// Starts a thread on the background host on this Mac (`startThread`).
@@ -843,6 +858,18 @@ final class RemoteHostStore {
             throw RemoteHostClientError.disconnected
         }
         return try await client.addSpace(path: path)
+    }
+
+    /// This Mac's background host's space registry (`projectRequest`): the space it registered or edited.
+    func projectRequest(hostID: UUID, _ request: RemoteProjectRequest) async throws -> SpaceID {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.projectRequest(request)
+    }
+
+    /// A space's branches on a host (`creationBranches`).
+    func creationBranches(hostID: UUID, spaceID: SpaceID) async throws -> ChangesBranches {
+        guard let client = allConnections.first(where: { $0.id == hostID })?.client else { throw RemoteHostClientError.disconnected }
+        return try await client.creationBranches(spaceID: spaceID)
     }
 
     /// Create an agent on a host; it appears in the sidebar via state push.
@@ -947,9 +974,8 @@ final class RemoteHostStore {
 }
 
 /// One remote pane's terminal bridge: an AppTerminalModel fed from `output`
-/// frames, with input and debounced resize forwarded to the host. The remote
-/// analog of TerminalSessionStore.PaneSession, without the spawn/binding
-/// machinery — the host owns the session lifecycle.
+/// frames, with input and debounced resize forwarded to the host, which owns
+/// the session lifecycle.
 @MainActor
 @Observable
 final class RemotePaneSession {
@@ -960,6 +986,9 @@ final class RemotePaneSession {
         case exited(Int32?)
     }
 
+    /// How long a surface waits for its first real grid before replaying anyway.
+    static let gridWaitNanoseconds: UInt64 = 400_000_000
+
     let sessionID: SessionID
     let terminal: AppTerminalModel
     var phase: Phase = .connecting
@@ -967,8 +996,8 @@ final class RemotePaneSession {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     @ObservationIgnored private var uploading = false
     @ObservationIgnored private weak var client: RemoteHostClient?
-    @ObservationIgnored private var lastCols = 80
-    @ObservationIgnored private var lastRows = 24
+    @ObservationIgnored private(set) var lastCols = 80
+    @ObservationIgnored private(set) var lastRows = 24
     @ObservationIgnored private var hasReportedGrid = false
     @ObservationIgnored private var attachStarted = false
     /// Debounce the initial attach and later resizes to a settled grid.
@@ -1061,7 +1090,7 @@ final class RemotePaneSession {
     /// surface that never lays out still attaches at 80×24.
     func start() {
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: TerminalSessionStore.gridWaitNanoseconds)
+            try? await Task.sleep(nanoseconds: RemotePaneSession.gridWaitNanoseconds)
             guard let self, !self.attachStarted, !self.hasReportedGrid else { return }
             self.attachIfNeeded()
         }

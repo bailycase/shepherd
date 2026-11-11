@@ -93,10 +93,16 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onDesignImportProgress: ((DesignImportProgress) -> Void)?
     /// A line the background host on this Mac says in a thread (`threadNotice`). Main queue.
     public var onThreadNotice: ((AgentID, String) -> Void)?
+    /// Every app's run on the background host on this Mac (`appsChanged`). Main queue, in order.
+    public var onAppsChanged: (([RemoteAppProcess]) -> Void)?
+    /// Why one of the background host on this Mac's agents waits, or nil once it starts again (`agentStartProblem`). Main queue.
+    public var onAgentStartProblem: ((AgentID, NativeStartProblem?) -> Void)?
     /// The background host on this Mac's automations changed (`automationsChanged`). Main queue.
     public var onAutomationsChanged: (() -> Void)?
     /// An automation's banner from the background host on this Mac (`automationNotify`). Main queue.
     public var onAutomationNotify: ((String, String) -> Void)?
+    /// The background host on this Mac's threads' pull request links and kept-open notes (`pullRequestLinks`). Main queue.
+    public var onPullRequestLinks: (([AgentID: ThreadPullRequest], [AgentID: String]) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -175,8 +181,11 @@ public final class RemoteHostClient: @unchecked Sendable {
         case designGitChanged(DesignID)
         case designImportProgress(DesignImportProgress)
         case threadNotice(AgentID, String)
+        case appsChanged([RemoteAppProcess])
+        case agentStartProblem(AgentID, NativeStartProblem?)
         case automationsChanged
         case automationNotify(String, String)
+        case pullRequestLinks([AgentID: ThreadPullRequest], [AgentID: String])
     }
     private struct QueuedEvent {
         var event: PushedEvent
@@ -456,9 +465,16 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    /// The thread this Mac's own app shows (`focusThread`), so its phone pushes stay quiet.
-    public func focusThread(_ agentID: AgentID?) async throws {
-        let reply = try await request { id in .focusThread(id: id, agentID: agentID) }
+    /// The thread this Mac's own app shows (`focusThread`), so its phone pushes stay quiet, and
+    /// the pane with its keyboard.
+    public func focusThread(_ agentID: AgentID?, pane: PaneID? = nil) async throws {
+        let reply = try await request { id in .focusThread(id: id, agentID: agentID, paneID: pane) }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+    }
+
+    /// The paired Macs this Mac's own app is connected to, for its background host's Projects (`projectExecutors`).
+    public func projectExecutors(_ update: ProjectExecutorsUpdate) async throws {
+        let reply = try await request { id in .projectExecutors(id: id, update: update) }
         if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
     }
 
@@ -479,6 +495,17 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .ok: return
         case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
         default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected spaceAction reply")
+        }
+    }
+
+    /// Registers, edits or adds a child to one of the background host's spaces (`projectRequest`;
+    /// this Mac's own app only). Returns the space.
+    public func projectRequest(_ request: RemoteProjectRequest) async throws -> SpaceID {
+        let reply = try await self.request { id in .projectRequest(id: id, request: request) }
+        switch reply {
+        case .spaceAdded(_, let spaceID): return spaceID
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected projectRequest reply")
         }
     }
 
@@ -768,10 +795,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .moveToCheckout: RemoteProtocol.worktreeMoveCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
+        case .pullRequest: RemoteProtocol.pullRequestLinkCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .fileWrite: RemoteProtocol.filesWriteCapability
-        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch:
+            query.changesCwd == nil ? RemoteProtocol.changesCapability : RemoteProtocol.changesCwdCapability
+        case .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         case .changesRevertFile: RemoteProtocol.changesRevertCapability
         default: RemoteProtocol.agentInspectionCapability
@@ -1129,10 +1159,16 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     /// Lists, runs or stops a space's apps on the host, and answers with the space's apps as they
-    /// are afterwards. A host without `appsCapability` throws `update_required` before sending.
+    /// are afterwards. A host without `appsCapability` (`appsV2Capability` for a request only it
+    /// serves) throws `update_required` before sending.
     @discardableResult
     public func apps(_ request: RemoteAppsRequest) async throws -> RemoteAppsResult {
-        guard capabilities.contains(RemoteProtocol.appsCapability) else {
+        let v2: Bool = switch request {
+        case .list: false
+        case .run(let space, _, _, _), .stop(let space, _, _): space == nil
+        case .processes, .restart, .output: true
+        }
+        guard capabilities.contains(v2 ? RemoteProtocol.appsV2Capability : RemoteProtocol.appsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to run its apps from here.")
         }
         switch try await self.request { .apps(id: $0, request: request) } {
@@ -1256,6 +1292,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         guard !request.requiresInheritance || capabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills.")
+        }
+        guard !request.requiresParent || capabilities.contains(RemoteProtocol.projectParentCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a parent space.")
+        }
+        if case .inheritance(_, let excluded) = request, !(excluded.prompts.isEmpty && excluded.extensions.isEmpty),
+           !capabilities.contains(RemoteProtocol.projectInheritedResourcesCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited slash commands and extensions.")
         }
         let reply = try await self.request { .projects(id: $0, request: request) }
         switch reply {
@@ -1639,10 +1682,16 @@ public final class RemoteHostClient: @unchecked Sendable {
             self.push(.designImportProgress(step), bytes: line.count)
         case .threadNotice(let agentID, let message):
             self.push(.threadNotice(agentID, message), bytes: line.count)
+        case .appsChanged(let processes):
+            self.push(.appsChanged(processes), bytes: line.count)
+        case .agentStartProblem(let agentID, let problem):
+            self.push(.agentStartProblem(agentID, problem), bytes: line.count)
         case .automationsChanged:
             self.push(.automationsChanged, bytes: line.count)
         case .automationNotify(let title, let body):
             self.push(.automationNotify(title, body), bytes: line.count)
+        case .pullRequestLinks(let links, let notes):
+            self.push(.pullRequestLinks(links, notes), bytes: line.count)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -1666,7 +1715,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         func replaces(_ previous: PushedEvent) -> Bool {
             switch (previous, event) {
             case (.nativeThreadChanged(let a), .nativeThreadChanged(let b)): return a == b
-            case (.state, .state), (.capabilities, .capabilities), (.designSystemsChanged, .designSystemsChanged): return true
+            case (.state, .state), (.capabilities, .capabilities), (.designSystemsChanged, .designSystemsChanged), (.appsChanged, .appsChanged): return true
             case (.designChanged(let a, _, _), .designChanged(let b, _, _)): return a == b
             case (.projectExecutionChanged(let a, _), .projectExecutionChanged(let b, _)): return a == b
             case (.missionChanged(let a, _), .missionChanged(let b, _)): return a == b
@@ -1765,8 +1814,11 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .designGitChanged(let designID): self.onDesignGitChanged?(designID)
                 case .designImportProgress(let step): self.onDesignImportProgress?(step)
                 case .threadNotice(let agentID, let message): self.onThreadNotice?(agentID, message)
+                case .appsChanged(let processes): self.onAppsChanged?(processes)
+                case .agentStartProblem(let agentID, let problem): self.onAgentStartProblem?(agentID, problem)
                 case .automationsChanged: self.onAutomationsChanged?()
                 case .automationNotify(let title, let body): self.onAutomationNotify?(title, body)
+                case .pullRequestLinks(let links, let notes): self.onPullRequestLinks?(links, notes)
                 }
             }
             finish()

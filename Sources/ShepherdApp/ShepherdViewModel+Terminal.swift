@@ -141,25 +141,16 @@ extension ShepherdViewModel {
             }
             return
         }
-        guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), let leaf = tab.layout.leaf(withID: anchor) else {
+        guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), tab.layout.leaf(withID: anchor) != nil else {
             NSSound.beep()
             return
         }
-        if let agent = state.agents.first(where: { $0.tabID == tab.id }), let ref = localRef(agent.id) {
-            // The background host opens it, in the thread's folder, as a new tab.
-            Task {
-                do { focusedPaneID = try await remoteHosts.openPane(hostID: ref.hostID, agentID: ref.agentID, relativeTo: anchor, axis: axis) }
-                catch { fail("Couldn’t open a terminal", error) }
-            }
-            return
+        guard let agent = state.agents.first(where: { $0.tabID == tab.id }), let ref = localRef(agent.id) else { NSSound.beep(); return }
+        // The background host opens it, in the thread's folder, as a new tab.
+        Task {
+            do { focusedPaneID = try await remoteHosts.openPane(hostID: ref.hostID, agentID: ref.agentID, relativeTo: anchor, axis: axis) }
+            catch { fail("Couldn’t open a terminal", error) }
         }
-        do { try verifyCheckoutAvailable(leaf.cwd) }
-        catch { fail("Couldn’t open a terminal", error); return }
-        let terminal = LeafPane(cwd: leaf.cwd)
-        guard let layout = tab.layout.splitting(pane: anchor, axis: axis, newPane: terminal) else { NSSound.beep(); return }
-        setLayout(layout, forTab: tab.id)
-        focusedPaneID = terminal.id
-        terminalPanels.reconcile(target.key, layout: layout, thread: target.thread)
     }
 
     private func focusTerminal(_ pane: PaneID, target: TerminalTarget) {

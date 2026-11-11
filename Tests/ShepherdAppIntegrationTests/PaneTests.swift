@@ -97,7 +97,8 @@ struct PaneControlTests {
         #expect(!terminals.contains { $0.id == agent.piPane.id || $0.isAgentPane })
         #expect(Set(terminals.map(\.id)) == Set(agent.auxiliary.map(\.id)))
         #expect(terminals.map(\.id) == TerminalPanel.tabs(in: agent.tab.layout, thread: agent.piPane.id).map(\.id), "oldest first, as the tabs are")
-        #expect(terminals.first { $0.id == agent.auxiliary[0].id }?.isFocused == true)
+        // The host owns the list and has no keyboard: no terminal is focused there.
+        #expect(!terminals.contains { $0.isFocused })
     }
 
     @Test func aLayoutsOnlyTerminalCannotBeClosed() async throws {
@@ -112,7 +113,9 @@ struct PaneControlTests {
 
         let reply = try await app.extensionRequest(.closePane(id: 4, agentID: agent.id, paneID: only.id))
 
-        #expect(reply == .error(id: 4, code: "not_closable", message: "the layout's only terminal cannot be closed"))
+        // The host takes a layout's only leaf for the agent's thread, which is never closed.
+        guard case .error(4, "not_closable", _) = reply else { Issue.record("unexpected reply \(reply)"); return }
+        #expect(app.server.state.tabs.first?.layout == tab.layout)
     }
 
     @Test func closingATerminalStopsItsProcessAndCollapsesTheLayout() async throws {
@@ -136,7 +139,7 @@ struct PaneControlTests {
     }
 
     /// The agent's terminal opens as a tab under its thread without moving the user, gets a live
-    /// shell without any view drawing it, and runs the command the agent asked for.
+    /// shell on the host without any view drawing it, and runs the command the agent asked for.
     @Test func anAgentOpenedTerminalRunsItsCommandWithoutMovingTheUser() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -165,10 +168,7 @@ struct PaneControlTests {
         #expect(info.id == terminal.id && info.isAlive && !info.isAgentPane)
         #expect(vm.selectedAgentID == visible.agent.id && vm.focusedPaneID == visible.piPane.id)
         #expect(TerminalPanel.tabs(in: tab.layout, thread: background.piPane.id).map(\.id) == [terminal.id])
-        let started = await app.server.listSessions().filter(\.isAlive).count
-        // What the terminal's view does when it draws: it takes the session the open started.
-        let drawn = vm.sessions.session(for: terminal, in: tab)
-        #expect(drawn.sessionID != nil && drawn.sessionID == vm.sessions.liveSession(forPane: terminal.id))
+        #expect(vm.hostTerminalSession(terminal.id) != nil)
         var lastRead = "no reply"
         do {
             try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
@@ -186,18 +186,9 @@ struct PaneControlTests {
                 return lines.contains { $0.contains("terminal-ready") }
             }
         } catch let error as TimedOut {
-            let phase: String
-            switch drawn.phase {
-            case .connecting: phase = "connecting"
-            case .live: phase = "live"
-            case .failed: phase = "failed"
-            case .exited: phase = "exited"
-            case .stopped: phase = "stopped"
-            }
-            print("Agent-opened terminal: phase=\(phase), bound=\(drawn.sessionID != nil), reported grid=\(drawn.lastCols)x\(drawn.lastRows), last read=\(lastRead)")
+            print("Agent-opened terminal: last read=\(lastRead)")
             throw error
         }
-        #expect(await app.server.listSessions().filter(\.isAlive).count == started, "drawing the terminal started no second shell")
     }
 
     /// The panel of the thread on screen opens on the terminal the agent opened, and the keyboard
@@ -302,72 +293,20 @@ struct PaneControlTests {
 
         let opened = try await local.remoteHosts.openPane(hostID: connection.id, agentID: agent.agent.id,
                                                           relativeTo: agent.piPane.id, axis: .vertical)
-        #expect(host.sessions.liveSession(forPane: opened) != nil)
+        #expect(host.hostTerminalSession(opened) != nil)
 
         let client = try #require(connection.browserClient)
         // The command echo cannot contain its output marker, even with prompt redraws.
         try await client.openTerminal(agentID: agent.agent.id, cwd: space.path, command: "printf 'remote-%s\\n' ready")
         let layout = try #require(host.state.tabs.first { $0.id == agent.tab.id }?.layout)
         let ran = try #require(layout.leaves.first { $0.id != agent.piPane.id && $0.id != opened })
-        let session = try #require(host.sessions.liveSession(forPane: ran.id))
+        let session = try #require(host.hostTerminalSession(ran.id))
         try await eventuallyAsync("the command's output to reach the host's terminal", timeout: .seconds(20)) {
             await remote.host.server.screenText(sessionID: session)?.contains { $0.contains("remote-ready") } == true
         }
     }
 
-    /// A terminal opened beside a thread to run a command gets its shell, and the command typed
-    /// into it, before any view draws it.
-    @Test func aTerminalOpenedBesideAThreadToRunACommandStartsWithoutAView() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let space = Fixture.space(path: app.dir.path)
-        let agent = Fixture.agent(in: space)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-
-        vm.openTerminalPane(besideAgent: agent.agent, running: "printf 'tab-%s\\n' ready")
-
-        var opened: LeafPane?
-        try await eventuallyOnMain("the terminal to join the layout") {
-            opened = vm.state.tabs.first { $0.id == agent.tab.id }?.layout.leaves.first { $0.id != agent.piPane.id }
-            return opened != nil
-        }
-        let terminal = try #require(opened)
-        try await eventuallyOnMain("its shell to go live") { vm.sessions.liveSession(forPane: terminal.id) != nil }
-        let session = try #require(vm.sessions.liveSession(forPane: terminal.id))
-        try await eventuallyAsync("the command's output to reach its screen", timeout: .seconds(20)) {
-            await app.server.screenText(sessionID: session)?.contains { $0.contains("tab-ready") } == true
-        }
-    }
-
-    /// A terminal no view has measured starts at the grid this Mac's terminals last reported, not
-    /// at 80×24, and keeps it as its own until its surface reports one.
-    @Test func aTerminalNoViewMeasuredStartsAtTheLastLocalGrid() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let space = Fixture.space(path: app.dir.path)
-        let measured = Fixture.agent("measured", in: space, order: 0, auxiliary: 1)
-        let unseen = Fixture.agent("unseen", in: space, order: 1)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [measured, unseen]))
-
-        let first = vm.sessions.session(for: measured.auxiliary[0], in: measured.tab)
-        try await eventuallyOnMain("the first terminal's shell to go live") {
-            vm.sessions.liveSession(forPane: measured.auxiliary[0].id) != nil
-        }
-        // How Ghostty reports a surface's grid.
-        first.terminal.onResize?(132, 41)
-
-        let terminal = try await openTerminal(running: "stty size", for: unseen, in: app, vm: vm, id: 20)
-        let tab = try #require(vm.state.tabs.first { $0.id == unseen.tab.id })
-        let printed = try await printedGrid(of: terminal, for: unseen, in: app)
-        #expect(printed == "41 132")
-        let second = vm.sessions.session(for: terminal, in: tab)
-        #expect(second.lastCols == 132 && second.lastRows == 41)
-
-        second.terminal.onResize?(100, 30)
-        #expect(second.lastCols == 100 && second.lastRows == 30, "the surface's own report replaces the estimate")
-    }
-
-    /// Before any terminal has reported a grid there is nothing to estimate from.
+    /// The host starts a terminal no view has measured at 80×24.
     @Test func aTerminalStartsAt80By24BeforeAnySurfaceHasMeasured() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -378,8 +317,6 @@ struct PaneControlTests {
         let terminal = try await openTerminal(running: "stty size", for: agent, in: app, vm: vm, id: 21)
         let printed = try await printedGrid(of: terminal, for: agent, in: app)
         #expect(printed == "24 80")
-        let session = vm.sessions.session(for: terminal, in: try #require(vm.state.tabs.first { $0.id == agent.tab.id }))
-        #expect(session.lastCols == 80 && session.lastRows == 24)
     }
 
     /// The agent's terminal_open: a new terminal beside its thread running `command`.
@@ -425,7 +362,9 @@ struct PaneLayoutTests {
         vm.selectAgent(agent.agent.id)
 
         vm.newTerminalTab()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
+            vm.focusedPaneID != nil && vm.focusedPaneID != agent.piPane.id
+        }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         let leaves = layout.leaves
@@ -445,9 +384,9 @@ struct PaneLayoutTests {
         vm.focusedPaneID = agent.auxiliary[0].id
 
         vm.closeFocusedTerminal()
-        await app.settle()
+        let server = app.server
+        try await eventuallyOnMain("the host to close the terminal") { server.state.tabs.first?.layout.leaves.map(\.id) == [agent.piPane.id] }
 
-        #expect(app.server.state.tabs.first?.layout.leaves.map(\.id) == [agent.piPane.id])
         #expect(vm.focusedPaneID == agent.piPane.id)
     }
 
@@ -467,24 +406,6 @@ struct PaneLayoutTests {
         #expect(app.server.state.tabs.first?.layout == agent.tab.layout)
     }
 
-    @Test func layoutWritesPersistInOrderAndARejectedWriteRollsBack() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let space = Fixture.space(path: app.dir.path)
-        let first = LeafPane(cwd: space.path), second = LeafPane(cwd: space.path)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(first))
-        let vm = try await app.start(with: ShepherdState(spaces: [space], tabs: [tab]))
-        let committed = PaneNode.split(axis: .vertical, ratio: 0.6, first: .leaf(first), second: .leaf(second))
-        let invalid = PaneNode.split(axis: .vertical, ratio: 1.0, first: .leaf(first), second: .leaf(second))
-
-        vm.setLayout(committed, forTab: tab.id)
-        vm.setLayout(invalid, forTab: tab.id)
-        await app.settle()
-
-        #expect(app.server.state.tabs.first?.layout == committed)
-        #expect(vm.state.tabs.first?.layout == committed)
-    }
-
     @Test func restructuringALayoutKeepsItsTerminalsSessionBindings() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -492,12 +413,11 @@ struct PaneLayoutTests {
         let sessionID = SessionID()
         let pane = LeafPane(sessionID: sessionID, cwd: space.path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let vm = try await app.start(with: ShepherdState(spaces: [space], tabs: [tab]))
+        _ = try await app.start(with: ShepherdState(spaces: [space], tabs: [tab]))
 
-        // The view rebuilds leaves without their bindings; the server must keep them.
-        vm.setLayout(.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(id: pane.id, cwd: space.path)),
-                            second: .leaf(LeafPane(cwd: space.path))), forTab: tab.id)
-        await app.settle()
+        // A client rebuilds leaves without their bindings; the server must keep them.
+        try await app.server.updateLayoutStructure(tabID: tab.id, layout: .split(axis: .vertical, ratio: 0.5,
+            first: .leaf(LeafPane(id: pane.id, cwd: space.path)), second: .leaf(LeafPane(cwd: space.path))))
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         #expect(layout.leaves.count == 2)

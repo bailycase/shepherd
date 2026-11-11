@@ -1,6 +1,7 @@
 # Architecture
 
-Shepherd runs its session server in one of two processes. Whichever holds `<support>/server.lock`
+Shepherd's session server runs in one process, the host: the app's own executable run as
+`Shepherd --host` (`SessionHost`, `ShepherdHost`). Whichever host holds `<support>/server.lock`
 owns:
 
 - the workspace
@@ -10,20 +11,38 @@ owns:
 - the extension socket
 - the remote listeners
 
-**Background service** (Shepherd Nightly, while Login Items allows it): the app's own executable,
-run by launchd as `Shepherd --host` (`SessionHost`, `ShepherdHost`; the LaunchAgent is
-`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`). It owns
-everything above and has no UI. The app is its client over `<support>/host.sock`, through the same
-remote-host paths it uses for a paired Mac, plus `local.v1` for what only this Mac's app gets (the
-Browser and design drawing run in the app's web views). Quitting the app leaves agents running;
-the host drains and restarts on its own when an update replaces the bundle (`HostDrain`).
+The app never runs agents. It is always the host's client over `<support>/host.sock`, through the
+remote-host paths it uses for a paired Mac plus `local.v1` and `local.threads.v1` for what only this
+Mac's app gets: the host's whole workspace (threads, designs, automations, Projects, missions,
+Settings) as the app's own, why a thread's pi can't start (`agentStartProblem`, opened or not), and
+what needs a window (the Browser, design drawing, `review_diff`, Update this Mac) relayed to it.
+The host on this Mac is transport only: no host list, picker or page shows it, and no view asks
+whether a connection is this Mac's (`RemoteHostStore.connections` is the paired hosts). Only the
+app holds connections to paired Macs, so a Project the host owns places work on one through the
+app (`projectExecutors`, `AppRelayJob.projectPlacement`) while it runs, and says to open it
+otherwise. Who starts the host:
 
-**In process** (Shepherd and Dev, the service off in Login Items, or tests): the app owns
-everything above itself. Quitting Shepherd ends every child process, and relaunching restores the
-workspace and respawns each agent in its pi session. `SHEPHERD_BACKGROUND_HOST=1` lets any build be
-a running host's client.
+- **The background service** (Shepherd Nightly, while Login Items allows it): launchd runs it
+  (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
+  Quitting the app leaves agents running; the host drains and restarts on its own when an update
+  replaces the bundle (`HostDrain`).
+- **The app's own child** (Shepherd, Dev, the service off, a failed registration): `HostSupervisor`
+  runs `Shepherd --host --supervised`, restarts it after a crash with backoff (shown after three
+  failed starts in a row, with Try Again or Quit), and stops it when the app quits (SIGTERM, then
+  SIGKILL), so agents end with the app as they always have. The child also stops when its stdin
+  pipe from the app closes, so an app crash takes it down. Quit asks first while agents are
+  mid-turn. The child has no bundle watch and no drain. A host that finds the workspace owned
+  exits with `SessionHost.ownedExitStatus`, and the app follows the owner until it lets go.
+  Relaunching restores the workspace and respawns each agent in its pi session.
 
-Either owner can also serve its agents to other devices over an authenticated TCP listener.
+The app never runs a `SessionServer`. App tests serve one in process over a scratch `host.sock`
+and connect the app to it the way it connects to a real host.
+
+Both hosts are the same executable and log the same way: `ShepherdLog.connection` lines (the
+supervisor's lifecycle among them) reach unified logging under `com.shepherd.app`; the other
+`ShepherdLog` lines go to stderr, which is the app's console for its child.
+
+Either host can also serve its agents to other devices over an authenticated TCP listener.
 
 [DESIGN.md](DESIGN.md) holds the UI rules. This document covers module boundaries, ownership,
 and where each feature lives. The code and its tests are the detail. [AGENTS.md](AGENTS.md) is
@@ -101,15 +120,14 @@ decodes on a concurrent queue while its session holds its later records in order
 - the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
-In process it calls the server directly, with no socket, and adopts its `onStateChanged`
-snapshots; as the background service's client it never starts a server (`BackgroundHostClient`)
-and takes the host's workspace as its own over `host.sock` (`ShepherdViewModel+LocalHost`). A
-persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
-model reconciles itself and `TerminalSessionStore` from `server.state`.
+It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
+`host.sock` (`ShepherdViewModel+LocalHost`); every terminal is the host's (`HostTerminalLeaf`). A
+persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
+model adopts the host's state again.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the
-worktree models, terminal sessions) are `@MainActor @Observable`. Views read only what they draw and
+worktree models, terminal panels) are `@MainActor @Observable`. Views read only what they draw and
 take plain `Equatable` values, so a status report or a poll re-renders just the views whose
 values changed. The menu bar reads `MenuState` (`AppCommands.swift`), narrow cached values that
 change only when a menu's own value does.
@@ -128,10 +146,10 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |
 | MCP | `Extensions/shepherd-mcp-*`, `ShepherdApp/MCP/`, `ShepherdSessions/ProjectMCP*.swift` |
-| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, built by `RuntimeHosting` in the app or in `Shepherd --host` |
+| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, in `Shepherd --host` (`RuntimeHosting.headless`) |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
-| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |
+| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/HostTerminalLeaf.swift`, `TerminalHost.swift` |
 | Issues & PRs | `ShepherdSessions/Forge/`, `ShepherdApp/Forge/`; threads' pull request links and close on merge in `ShepherdSessions/PullRequestLinks.swift` |
 | Pi engine, launch, home | `PiLaunch.swift`, `PiEngine.swift`, `PiHome.swift`, [pi engine](docs/pi-engine.md) |
 

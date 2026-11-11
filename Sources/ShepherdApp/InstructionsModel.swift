@@ -101,12 +101,14 @@ final class InstructionsModel {
     /// name from System Settings, read locally (never a network lookup).
     static let machineName: String = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "a Mac"
 
-    init(store: InstructionsStore, remoteHosts: RemoteHostStore, defaults: UserDefaults = .standard,
+    /// `store`: a test's own files for This Mac while no host is connected; the app's are its host's.
+    init(store: InstructionsStore? = nil, remoteHosts: RemoteHostStore, defaults: UserDefaults = .standard,
          request: ((Machine, RemoteInstructionsRequest) async throws -> InstructionsSnapshot)? = nil) {
         self.request = request ?? { machine, request in
             switch machine {
             case .local:
                 if let host = try await remoteHosts.thisMacHost() { return try await host.instructions(request) }
+                guard let store else { throw BackgroundHostClient.HostStarting() }
                 return try await Task.detached(priority: .userInitiated) {
                     switch request {
                     case .fetch: return store.snapshot()

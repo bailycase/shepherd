@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// What a host with no app starts a client's threads and terminals with (`serveThreads`), read
+/// What the host starts a client's threads and terminals with (`serveThreads`), read
 /// at each request.
 public struct ThreadHosting {
     public struct Defaults: Sendable {
@@ -39,10 +39,8 @@ public struct ThreadHosting {
     }
 }
 
-/// Threads and terminals with no app: the requests a client (the app over `host.sock`, an
-/// iPhone, another Mac) makes of them, and an agent's own `terminal_*` tools, answered here as the
-/// app's view model answers them in process. The app keeps pane binding for its own views; here
-/// a terminal's shell starts when a client asks for it.
+/// Threads and terminals on the host: the requests a client (the app over `host.sock`, an
+/// iPhone, another Mac) makes of them, and an agent's own `terminal_*` tools, answered here. A terminal's shell starts when a client asks for it.
 extension SessionServer {
     /// Serves threads and terminals from here on. Once per server, before clients connect.
     @MainActor
@@ -155,6 +153,9 @@ extension SessionServer {
             onStatus?(id, status, failure)
             MainActor.assumeIsolated { monitor.refresh(id, after: .milliseconds(300)) }
         }
+        // The thread the app shows, after a selection or the app coming back: a commit in a
+        // terminal or an editor's save changed no state.
+        onThreadFocused = { id in MainActor.assumeIsolated { monitor.refresh(id, priority: true) } }
         monitor.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
     }
 
@@ -292,6 +293,8 @@ extension SessionServer {
             }
             await startThreadPi(agentID, hosting: hosting, checksResume: !newConversation, model: model)
         case .markSeen(let upTo): try await markCompletionSeen(agentID, upTo: upTo)
+        case .mutePushes(let muted): try await setPushMuted(agentID, muted: muted)
+        case .readCheckout: onThreadFocused?(agentID)
         }
     }
 
@@ -314,9 +317,10 @@ extension SessionServer {
         }
         switch request {
         case .list:
-            return .panes(TerminalPanel.tabs(in: tab.layout, thread: thread.id).map(\.leaf)
+            let focused: PaneID? = await enqueueValue { self.localFocusedPane }
+            let leaves: [LeafPane] = TerminalPanel.tabs(in: tab.layout, thread: thread.id).map(\.leaf)
                 .filter { $0.agentID == nil && $0.id != thread.id && $0.isReview != true }
-                .map { PaneInfo(id: $0.id, cwd: $0.cwd, isAgentPane: false, isFocused: false, isAlive: $0.sessionID != nil) })
+            return .panes(leaves.map { PaneInfo(id: $0.id, cwd: $0.cwd, isAgentPane: false, isFocused: $0.id == focused, isAlive: $0.sessionID != nil) })
         case .open(_, _, let cwd, _, let command):
             let terminal = LeafPane(cwd: cwd.map { ($0 as NSString).expandingTildeInPath } ?? thread.cwd)
             guard let layout = tab.layout.splitting(pane: thread.id, axis: .horizontal, newPane: terminal) else {
@@ -379,8 +383,11 @@ extension SessionServer {
         // ponytail: a second request while one starts is refused, not queued; the client retries on its next attach.
         guard startingTerminals.insert(paneID).inserted else { throw RemoteCreateAgentError("That terminal is starting.") }
         defer { startingTerminals.remove(paneID) }
+        // No view has measured it yet: start at the grid this Mac's terminals last reported.
+        let grid = await enqueueValue { self.lastLocalGrid } ?? (cols: 80, rows: 24)
         let info = try await createSession(params: CreateSessionParams(
-            cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
+            cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, cols: grid.cols, rows: grid.rows,
+            env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
         do {
             try await updatePaneSession(tabID: tabID, paneID: paneID, sessionID: info.id)
         } catch {

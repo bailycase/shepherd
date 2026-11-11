@@ -295,7 +295,7 @@ struct RemoteBrowserDriveTests {
         defer { s.stop() }
         let session = s.session
         // The host's own page is at the address the viewer can reach through its forwarded port.
-        s.remote.host.server.onBrowserPageURL = { [port = s.port] _ in "http://localhost:\(port)/checkout" }
+        s.remote.host.server.onBrowserPageURL = { [port = s.port] _, answer in answer("http://localhost:\(port)/checkout") }
         #expect(!session.hasPage)
         try await s.showTab()
         try await eventuallyOnMain("the host's page to open here") { session.webView?.title == "Checkout" }
@@ -309,14 +309,14 @@ struct RemoteBrowserDriveTests {
         let session = s.session
         session.load(URL(string: s.url("/terms"))!)
         try await eventuallyOnMain("the viewer's own page") { session.webView?.title == "Terms" }
-        s.remote.host.server.onBrowserPageURL = { [port = s.port] _ in "http://localhost:\(port)/checkout" }
+        s.remote.host.server.onBrowserPageURL = { [port = s.port] _, answer in answer("http://localhost:\(port)/checkout") }
         try await s.showTab()
         try await Task.sleep(for: .milliseconds(300))
         #expect(session.url?.absoluteString == s.url("/terms"), "a claim replaces nothing the user opened")
 
         let other = try await setup()
         defer { other.stop() }
-        other.remote.host.server.onBrowserPageURL = { _ in "http://192.168.1.50:8080/admin" }
+        other.remote.host.server.onBrowserPageURL = { _, answer in answer("http://192.168.1.50:8080/admin") }
         try await other.showTab()
         try await Task.sleep(for: .milliseconds(300))
         #expect(!other.session.hasPage && other.session.webView == nil, "an address on the viewer's network is not adopted")
@@ -498,10 +498,11 @@ struct RemoteBrowserDriveTests {
         try await Task.sleep(for: .milliseconds(300))
         #expect(session.remote?.claimant.phase == .idle && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == nil, "nothing was claimed")
 
-        // The agent drives the host's own page, and no dot reaches the viewer.
+        // The agent's page stays the host's own, and no dot reaches the viewer. (With its capability taken
+        // away this host's own app can't run that page either, so the open itself isn't checked here.)
         let agent = try s.extensionConnection()
         let hostPage = s.web.url("/terms").absoluteString.replacingOccurrences(of: "127.0.0.1", with: "localhost")
-        #expect(try await agent.text(.open(url: hostPage, note: nil)).contains("Page: Terms"))
+        _ = try await agent.ask(.open(url: hostPage, note: nil))
         try await Task.sleep(for: .milliseconds(300))
         #expect(!session.hasPage && session.openedByAgent == nil)
     }

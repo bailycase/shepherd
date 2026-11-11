@@ -142,10 +142,7 @@ extension ShepherdViewModel {
     func moveProject(_ space: SpaceID, before target: SpaceID?) {
         guard let moved = state.spaces.moving(space, before: target), moved != state.spaces else { return }
         state.spaces = moved
-        sessions.stateDidChange(state)
-        persistSpace(space, "move project", failureTitle: "Couldn’t move the space", host: .move(before: target)) {
-            try await $0.moveSpace(space, before: target)
-        }
+        persistSpace(space, "move project", failureTitle: "Couldn’t move the space", host: .move(before: target))
     }
 
     /// The project menu's Hide from Sidebar: its threads stay in ⌘K and Activity, and the +
@@ -153,10 +150,8 @@ extension ShepherdViewModel {
     func setProjectHiddenFromSidebar(_ id: SpaceID, _ hidden: Bool) {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }), state.spaces[index].sidebarHidden != hidden else { return }
         state.spaces[index].sidebarHidden = hidden
-        sessions.stateDidChange(state)
-        let space = state.spaces[index]
         persistSpace(id, hidden ? "hide project" : "show project", failureTitle: hidden ? "Couldn’t hide the space" : "Couldn’t show the space",
-                     host: .setSidebarHidden(hidden: hidden)) { try await $0.updateSpace(space) }
+                     host: .setSidebarHidden(hidden: hidden))
     }
 
     // MARK: Project menu

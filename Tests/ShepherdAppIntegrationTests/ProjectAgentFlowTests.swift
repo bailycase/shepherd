@@ -35,9 +35,12 @@ struct ProjectAgentFlowTests {
         #expect(value.name == "psp-hub")
         #expect(value.path == directory.resolvingSymlinksInPath().path)
         #expect(app.server.state.spaces == [value, parent])
-        #expect(vm.state.spaces == app.server.state.spaces)
-        #expect(vm.sidebarTree.projects.contains { $0.name == "psp-hub" })
-        #expect(vm.projects.rows.contains { $0.project.name == "psp-hub" && $0.project.directory == value.path })
+        // Settings ▸ Projects reads again when the spaces it knows change (its `.task(id: projectsSources)`).
+        try await eventuallyAsync("the project in the sidebar and Settings, as the host says") {
+            _ = await vm.projects.load(vm.projectsSources)
+            return vm.state.spaces == app.server.state.spaces && vm.sidebarTree.projects.contains { $0.name == "psp-hub" }
+                && vm.projects.rows.contains { $0.project.name == "psp-hub" && $0.project.directory == value.path }
+        }
         #expect(vm.selectedAgentID == agent.agent.id)
         #expect(app.server.state.tabs == tabs)
         #expect(app.server.state.agents.count == 1)
@@ -48,8 +51,7 @@ struct ProjectAgentFlowTests {
         #expect(duplicate == .projectResult(id: 2, space: value, created: false))
         #expect(app.server.state.spaces == [value, parent])
 
-        // Force a stale local presentation, then refresh from the live server, not state.json.
-        vm.adopt(Fixture.state(spaces: [parent], agents: [agent]))
+        // The host answers a refresh from its live workspace, not state.json; this Mac follows its pushes.
         let refreshed = try await ask(.refreshProjects(id: 3, agentID: agent.agent.id), app: app)
         #expect(refreshed == .projectResult(id: 3, space: nil, created: false))
         #expect(vm.state.spaces == app.server.state.spaces)

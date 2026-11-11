@@ -128,7 +128,7 @@ struct BranchUpdateSheet: View {
             } catch {
                 stage = .failed(ActionError.describe(error))
             }
-            vm.checkouts?.refresh(agentID, priority: true)
+            vm.readCheckoutOnHost(agentID)
         }
     }
 
@@ -141,7 +141,7 @@ struct BranchUpdateSheet: View {
             } catch {
                 stage = .failed(ActionError.describe(error))
             }
-            vm.checkouts?.refresh(agentID, priority: true)
+            vm.readCheckoutOnHost(agentID)
         }
     }
 
@@ -241,5 +241,5 @@ struct BranchSheetView: View {
         }
     }
 
-    private func agent(_ id: AgentID) -> Agent? { vm.state.agents.first { $0.id == id } ?? vm.thisMacAgent(id)?.agent }
+    private func agent(_ id: AgentID) -> Agent? { vm.state.agents.first { $0.id == id } }
 }

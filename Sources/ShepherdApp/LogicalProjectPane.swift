@@ -312,8 +312,7 @@ private struct WorkerThread: View {
 
     private var workingDirectory: String? {
         // Do not observe agent removal here: a mounted thread must keep its store and draft.
-        let owner = vm.server.state
-        guard case .local = home, let record = owner.agents.first(where: { $0.id == task.workerAgentID }),
+        guard let owner = vm.localHost?.state, case .local = home, let record = owner.agents.first(where: { $0.id == task.workerAgentID }),
               let paneID = record.paneID else { return nil }
         return owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID)?.cwd
     }

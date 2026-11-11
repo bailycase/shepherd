@@ -209,7 +209,7 @@ struct BranchCommitSheet: View {
         error = nil
         let paths = current.info.files.filter { current.selected.contains($0.id) }.flatMap(\.paths)
         Task {
-            let message = await ReviewCommitGit.draftMessage(root: current.info.repository, paths: paths, pi: vm.server.pi) {
+            let message = await ReviewCommitGit.draftMessage(root: current.info.repository, paths: paths, pi: vm.pi) {
                 await LoginShell.run($0, cwd: $1, timeout: 45)
             }
             form?.title = message.title
@@ -234,7 +234,7 @@ struct BranchCommitSheet: View {
                 if push, let branch {
                     vm.branchGit(id, "Committed \(commit), but couldn’t push \(branch)") { try BranchGit.push(cwd: cwd, branch: branch) }
                 } else {
-                    vm.checkouts?.refresh(id, priority: true)
+                    vm.readCheckoutOnHost(id)
                 }
             } catch {
                 self.error = ActionError.describe(error)

@@ -104,23 +104,29 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
             return
         }
         let text = (response as? UNTextInputNotificationResponse)?.userText
-        await act(response.actionIdentifier, text: text, payload: payload, thread: content.threadIdentifier)
+        await act(response.actionIdentifier, text: text, payload: payload, thread: content.threadIdentifier,
+                  retryTarget: PushButtons.retryTarget(userInfo: content.userInfo, thread: content.threadIdentifier))
     }
 
     /// A tap or Open goes to the thread; Review and Open review to the changes; Reply… and
     /// Approve act on the host, saying so in a notification when they couldn't.
     @MainActor
-    func act(_ action: String, text: String?, payload: PushPayload, thread: String) async {
+    func act(_ action: String, text: String?, payload: PushPayload, thread: String,
+             retryTarget: (mission: String, attempts: Int)? = nil) async {
         switch action {
-        case PushButtons.reply, PushButtons.approve:
+        case PushButtons.reply, PushButtons.approve, PushButtons.retry:
             guard let hosts = mobileHosts else { return }
             do {
-                try await PushActions.perform(action, text: text, payload: payload, hosts: hosts)
+                try await PushActions.perform(action, text: text, payload: payload, hosts: hosts, retryTarget: retryTarget)
                 if action == PushButtons.approve { receive(payload, to: .missionReview) }
             } catch {
                 let failure = (error as? GlanceFailure)?.message ?? error.localizedDescription
                 let content = UNMutableNotificationContent()
-                content.title = action == PushButtons.reply ? "Your answer wasn’t sent" : "Not approved"
+                content.title = switch action {
+                case PushButtons.reply: "Your answer wasn’t sent"
+                case PushButtons.retry: "The lane didn’t retry"
+                default: "Not approved"
+                }
                 content.body = failure
                 content.threadIdentifier = thread
                 try? await UNUserNotificationCenter.current().add(
@@ -128,6 +134,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
             }
         case PushButtons.review: receive(payload, to: .changes)
         case PushButtons.openReview: receive(payload, to: .missionReview)
+        // An automation run that never started has no thread: its push names the automation, and opens it.
+        case _ where thread.hasPrefix("automation:") && payload.agentID.lowercased() == thread.dropFirst("automation:".count):
+            receive(payload, to: .automation(String(thread.dropFirst("automation:".count))))
         case PushButtons.openMission where thread.hasPrefix("mission:"):
             receive(payload, to: .mission(String(thread.dropFirst("mission:".count))))
         default: receive(payload)

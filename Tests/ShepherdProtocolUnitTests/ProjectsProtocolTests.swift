@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ShepherdProtocol
+import ShepherdCore
 
 @Suite("Project settings protocol")
 struct ProjectsProtocolTests {
@@ -20,7 +21,10 @@ struct ProjectsProtocolTests {
                       .installSkills(directory: "/host/repo", repo: "acme/skills", paths: ["skills/pdf"], commit: nil),
                       .installSkills(directory: "/host/repo", repo: "https://example.invalid/skills.git", paths: [], commit: "main"),
                       .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(mcp: ["docs"], skills: ["ledger-review"])),
-                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions())])
+                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions()),
+                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(prompts: ["ship"], extensions: ["lint.ts"])),
+                      .organize(spaceID: SpaceID(rawValue: "web"), name: "acme-web", parentID: SpaceID(rawValue: "acme")),
+                      .organize(spaceID: SpaceID(rawValue: "web"), name: nil, parentID: nil)])
     func eachRequestRoundTrips(_ request: RemoteProjectsRequest) throws {
         let value = RemoteRequest.projects(id: 7, request: request)
         #expect(try NDJSON.decode(RemoteRequest.self, from: NDJSON.encode(value)) == value)
@@ -48,6 +52,13 @@ struct ProjectsProtocolTests {
         #expect(try JSONDecoder().decode(SpaceInheritanceExclusions.self, from: Data(#"{"mcp":["docs"]}"#.utf8)) == SpaceInheritanceExclusions(mcp: ["docs"]))
         #expect(!RemoteProjectsRequest.context(directory: "/a").requiresInheritance)
         #expect(RemoteProjectsRequest.inheritance(directory: "/a", excluded: .init()).requiresInheritance)
+        #expect(RemoteProjectsRequest.organize(spaceID: SpaceID(rawValue: "a"), name: nil, parentID: nil).requiresParent)
+        #expect(!RemoteProjectsRequest.inheritance(directory: "/a", excluded: .init()).requiresParent)
+        // An older host's record never sees the new keys while they are empty.
+        let written = String(decoding: try JSONEncoder().encode(SpaceInheritanceExclusions(mcp: ["docs"])), as: UTF8.self)
+        #expect(!written.contains("prompts") && !written.contains("extensions"))
+        let both = SpaceInheritanceExclusions(skills: ["a"], prompts: ["ship"], extensions: ["lint.ts"])
+        #expect(try JSONDecoder().decode(SpaceInheritanceExclusions.self, from: JSONEncoder().encode(both)) == both)
     }
 }
 

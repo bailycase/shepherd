@@ -470,6 +470,8 @@ struct ListPerformanceTests {
         try await eventuallyOnMain("the design to arrive") { vm.state.designs.count == 1 }
         await vm.designScreen(design.id).refresh()
         vm.openDesignExport(design.id)
+        // The sheet opens over this Mac's synced copy of the host's design.
+        try await eventuallyOnMain("the export sheet", timeout: .seconds(30)) { vm.designExport != nil }
         let model = try #require(vm.designExport)
         #expect(model.selection.rows.count == 172)
 

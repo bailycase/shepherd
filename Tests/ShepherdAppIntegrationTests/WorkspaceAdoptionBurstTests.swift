@@ -31,12 +31,11 @@ struct WorkspaceAdoptionBurstTests {
         #expect(vm.membershipPrunes == prunes, "status-only snapshots prune nothing")
 
         vm.pinThread(.local(agents[3].agent.id))
-        var removed = vm.state
-        removed.agents.removeAll { $0.id == agents[3].agent.id }
-        removed.tabs.removeAll { $0.id == agents[3].tab.id }
-        vm.adopt(removed)
+        // A deletion is the host's: its push is the snapshot without the agent.
+        let server = app.server
+        try await server.deleteAgent(agents[3].agent.id)
+        try await eventuallyOnMain("the host's push without the agent") { vm.state == server.state }
         #expect(vm.membershipPrunes == prunes + 1)
         #expect(!vm.isPinned(.local(agents[3].agent.id)), "a deletion still prunes at once")
-        #expect(vm.state == removed)
     }
 }

@@ -88,8 +88,8 @@ public final class SessionServer: @unchecked Sendable {
     /// gets room for several whole-state frames (`NDJSON.localMaxPayloadBytes`) before it is
     /// dropped, and its terminals' PTYs wait for it (`localOutputHighWaterMark`) instead.
     static let maxQueuedLocalReplyBytes = 64 * 1024 * 1024
-    /// A terminal stops being read while this Mac's app has this much unwritten (in-process, the
-    /// app's renderer pauses it the same way, `outputHighWaterMark`); it reads again below a quarter.
+    /// A terminal stops being read while this Mac's app has this much unwritten (an in-process
+    /// renderer pauses it the same way, `outputHighWaterMark`); it reads again below a quarter.
     static let localOutputHighWaterMark = 4 * 1024 * 1024
     /// Bounds bytes retained between the PTY and the renderer. The in-flight
     /// delivery is counted with the pending bytes, so the renderer cannot keep
@@ -301,6 +301,9 @@ public final class SessionServer: @unchecked Sendable {
     /// A native client requested a restored thread whose process has not started yet.
     /// Delivered on main; hidden layout mounting is not demand.
     public var onNativeThreadDemand: ((AgentID) -> Void)?
+    /// This Mac's app shows a thread (`focusThread`), or asks (`readCheckout`), or the host loaded
+    /// its review or committed from it: its checkout is read again. Delivered on main.
+    public var onThreadFocused: ((AgentID) -> Void)?
     /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
     /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
     /// (`revisionPushSpacing`): every agent revised while one delivery waits rides it, so a
@@ -381,9 +384,10 @@ public final class SessionServer: @unchecked Sendable {
     public var onBrowserAbandoned: ((AgentID) -> Void)?
     /// A remote viewer claimed an agent's browser (`RemoteRequest.browserClaim`): the address the
     /// host's own page for that agent holds, for the viewer to open through its tunnel (nil when it
-    /// has none; only `http` and `https` ever reach the viewer). Called on the main actor; the claim
+    /// has none; only `http` and `https` ever reach the viewer). The page is the app's, so the
+    /// background host asks it (`relayWindowRequestsToApp`). Called on the server queue; the claim
     /// is answered with it.
-    public var onBrowserPageURL: ((AgentID) -> String?)?
+    public var onBrowserPageURL: ((AgentID, @escaping (String?) -> Void) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -403,6 +407,9 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor public private(set) var localAppConnected = false
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, Bool, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// Throws when a worktree operation holds this folder (`WorktreeQueries.verifyCheckoutAvailable`),
+    /// so Add space refuses it. Called on the main actor.
+    public var verifyCheckoutAvailable: (@MainActor (String) throws -> Void)?
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
     /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
     /// main actor.
@@ -583,7 +590,7 @@ public final class SessionServer: @unchecked Sendable {
     /// server (`hooks.v1`), the Mac's page through its own catalog. Tests point it at a scratch home.
     public var hooks: HookCatalog
     /// The apps Shepherd runs (Settings › Apps): background processes, each in its own group,
-    /// stopped when Shepherd quits.
+    /// stopped when the server stops. This Mac's app drives them over `apps.v2`.
     public let apps = AppProcesses()
     /// A remote client changed this host's hooks: the GUI's Hooks page reloads. Delivered on the main actor.
     public var onHooksChanged: (() -> Void)?
@@ -659,8 +666,11 @@ public final class SessionServer: @unchecked Sendable {
     private let hooksQueue = DispatchQueue(label: "shepherd.hooks", qos: .userInitiated)
 
     let queue = DispatchQueue(label: "shepherd.sessions")
-    lazy var pushNotifications = PushNotifications(
-        file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
+    lazy var pushNotifications: PushNotifications = {
+        let pushes = PushNotifications(file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
+        pushes.muted = { [weak self] id in self?.store.state.agents.first { $0.id == id }?.pushMuted == true }
+        return pushes
+    }()
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
     /// Recovery checkpoints gate a thread's published output (`RPCThreadState.commit`), so they
     /// never wait behind project file reads or state staging on `logicalProjectFiles` (#449).
@@ -688,11 +698,18 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var automationHosting: AutomationHosting?
     /// Main actor: each thread's pull request link (`servePullRequestLinks`); nil until served.
     @MainActor public internal(set) var pullRequestLinks: PullRequestLinks?
+    /// Server queue: the links and notes last pushed to this Mac's app (`RemoteReply.pullRequestLinks`),
+    /// for an app that connects later.
+    var pullRequestLinksPush: RemoteReply?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
     /// Main actor: terminal panes whose shell `startTerminal` is starting now.
     @MainActor var startingTerminals = Set<PaneID>()
     /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
     @MainActor var spawningAgents = 0
+    /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
+    /// how many wait for it now.
+    @MainActor var firstCopy: Task<Void, Never>?
+    @MainActor var waitingForFirstCopy = 0
     /// Designs whose agent is starting, and spaces whose system build is, by this Mac or for a client.
     @MainActor public var startingDesignAgents = Set<DesignID>()
     @MainActor public var startingSystemBuilds = Set<SpaceID>()
@@ -733,6 +750,10 @@ public final class SessionServer: @unchecked Sendable {
     public var projectEligibleHosts: [ProjectHostReference] = [.local]
     /// Owner-relative connected, execution-capable destinations. Never a path mapping.
     var projectExecutionSpaces: [ProjectHostReference: [Space]] = [:]
+    /// The paired Macs this Mac's own app reaches, for a host's Projects (`applyProjectExecutors`).
+    var appExecutors: [ProjectHostOption] = []
+    /// Placement on another Mac goes through this Mac's app (a background host's).
+    var projectPlacementThroughApp = false
     // Only current directory routes retain tokens. Removed/restored routes get a new authority.
     var projectExecutionSpaceAuthority: [ProjectHostReference: [SpaceID: UUID]] = [:]
     public var onProjectDefaultModel: (@Sendable () async -> String?)?
@@ -820,6 +841,10 @@ public final class SessionServer: @unchecked Sendable {
     private var remoteViewports: [SessionID: [Int32: (cols: Int, rows: Int)]] = [:]
     /// The host GUI's own surface grid per session (fd -1 in the min).
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
+    /// The pane with this Mac's app's keyboard (`focusThread`): `terminal_list`'s focused one.
+    var localFocusedPane: PaneID?
+    /// The grid this Mac's app's terminals last reported: a new terminal starts at it, not 80×24.
+    var lastLocalGrid: (cols: Int, rows: Int)?
     private var clients: [Int32: ExtensionConnection] = [:]
     private struct PendingAgentRequest {
         let caller: ExtensionConnection
@@ -903,6 +928,9 @@ public final class SessionServer: @unchecked Sendable {
         let requestID: Int
         let agentID: AgentID
         let ownerFD: Int32
+        /// The address the app's own page opens for a host with none (no viewer owns it): its
+        /// viewers hear of it once it loads, as they did when the app ran the host.
+        var opened: String? = nil
     }
 
     /// One child process per session, on a PTY (terminal panes) or on
@@ -1181,6 +1209,11 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+        // This Mac's app follows every app's run (Settings › Apps, the header, the output tab).
+        apps.onChange = { [weak self] states in
+            let processes = AppTools.processes(states)
+            self?.queue.async { self?.sendToLocalApps(.appsChanged(processes: processes), listing: RemoteProtocol.appsV2Capability) }
+        }
         let skills = self.skills
         projects.installSkills = { repo, paths, commit, destination in
             try skills.installCopies(repo: repo, paths: paths, commit: commit, into: destination)
@@ -2470,6 +2503,11 @@ public final class SessionServer: @unchecked Sendable {
                 capabilities: offeredCapabilities(to: client),
                 hostBuild: hostBuild
             ), to: client)
+            sendStartProblems(to: client)
+            sendAppProcesses(to: client)
+            if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+                send(links, to: client)
+            }
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
         }
@@ -2712,6 +2750,13 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
                 return
             }
+            // A named folder is the agent's own or the one its `review_diff` asked for, never any path.
+            if let cwd = query.changesCwd.map(Self.reviewPath),
+               cwd != store.state.agents.first(where: { $0.id == agentID })?.reviewTarget,
+               cwd != Self.changesContext(store.state, agentID).map({ Self.reviewPath($0.cwd) }) {
+                send(.error(id: id, code: ChangesError.invalid, message: "The agent didn't ask to review that folder."), to: client)
+                return
+            }
             let changes = changes
             // The connection is only touched back on the server queue.
             let connection = ChangesUnchecked(value: client)
@@ -2722,7 +2767,15 @@ public final class SessionServer: @unchecked Sendable {
                 } catch { result = .failure(ChangesError(ChangesError.gitFailed, String(describing: error))) }
                 self?.queue.async {
                     let client = connection.value
-                    guard let self, self.clients[client.fd] === client else { return }
+                    guard let self else { return }
+                    // The header's branch chip follows what a review loaded or changed.
+                    switch (query, result) {
+                    case (.changesList(_, _, nil), .success), (.changesRevertFile, .success), (.changesUndoTurn, .success),
+                         (.changesRedoTurn, .success):
+                        self.hopToMain { [weak self] in self?.onThreadFocused?(agentID) }
+                    default: break
+                    }
+                    guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let value): self.send(.agentResult(id: id, result: value), to: client)
                     case .failure(let error): self.send(.error(id: id, code: error.code, message: error.message), to: client)
@@ -2759,7 +2812,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             // An action of a capability this host does not offer (an older host would not know it).
-            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
+            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
                 send(.error(id: id, code: "unsupported", message: "This host does not take this action."), to: client)
                 return
             }
@@ -2828,6 +2881,8 @@ public final class SessionServer: @unchecked Sendable {
                     guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let value): self.send(.logicalProjectRuntime(id: id, result: value), to: client)
+                    // A thread's own refusal (its pi `native_starting`) keeps its code, as the thread's own request does.
+                    case .failure(RemoteHostClientError.rejected(let code, let message)): self.send(.error(id: id, code: code, message: message), to: client)
                     case .failure(let error): self.send(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }
                 }
@@ -2925,6 +2980,14 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard !request.requiresInheritance || offeredCapabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills."), to: client)
+                return
+            }
+            guard !request.requiresParent || offeredCapabilities.contains(RemoteProtocol.projectParentCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to choose a parent space."), to: client)
+                return
+            }
+            if case .organize(let spaceID, let name, let parentID) = request {
+                remoteOrganizeSpace(id: id, spaceID: spaceID, name: name, parentID: parentID, client: client)
                 return
             }
             guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
@@ -3129,12 +3192,21 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .focusThread(let id, let agentID):
+        case .focusThread(let id, let agentID, let paneID):
             guard client.isLocal else {
                 send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
                 return
             }
             pushNotifications.focused = agentID
+            localFocusedPane = paneID
+            if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
+            send(.ok(id: id), to: client)
+        case .projectExecutors(let id, let update):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says which Macs it reaches."), to: client)
+                return
+            }
+            applyProjectExecutors(update)
             send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
             guard client.isLocal else {
@@ -3170,6 +3242,35 @@ public final class SessionServer: @unchecked Sendable {
                     guard self.clients[client.fd] === client else { return }
                     if let failure { self.send(.error(id: id, code: "space_action", message: failure), to: client) }
                     else { self.send(.ok(id: id), to: client) }
+                }
+            }
+        case .projectRequest(let id, let request):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
+                return
+            }
+            let connection = ChangesUnchecked(value: client)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let reply: RemoteReply
+                do {
+                    let space: Space
+                    switch request {
+                    case .register(let path, let name): space = try await self.registerProject(path: path, name: name).space
+                    case .edit(let spaceID, let edit): space = try await self.editProject(spaceID, edit: edit)
+                    case .child(let parentPath, let path, let name, let create):
+                        space = try await self.addChildProject(parentPath: parentPath, path: path, name: name, create: create).space
+                    }
+                    reply = .spaceAdded(id: id, spaceID: space.id)
+                } catch let error as ProjectFileError {
+                    reply = .error(id: id, code: error.code, message: error.description)
+                } catch {
+                    reply = .error(id: id, code: "failed", message: String(describing: error))
+                }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    self.send(reply, to: client)
                 }
             }
         case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
@@ -3433,7 +3534,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.automationResult(id: id, result: .ok), to: client)
             return
         case .setRunPullRequest(let agentID, let url):
-            // This Mac's app reads it with its gh, as in process; no paired device sets one.
+            // This Mac's app reads it with its gh; no paired device sets one.
             guard client.isLocal else { return fail("unsupported", "Only Shepherd on this Mac records a run's pull request.") }
             guard url.hasPrefix("https://") else { return fail("invalid_url", "A pull request's address starts with https://.") }
             runLog.setPullRequest(agentID: agentID, url: url)
@@ -3622,22 +3723,25 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: a remote client's thread header lists, runs or stops a space's apps
-    /// (`apps.v1`). The space and the thread's folder are read here; the files and processes off
-    /// the queue (`AppTools.remote`).
+    /// (`apps.v1`); this Mac's app runs Settings › Apps' and reads their output (`apps.v2`). The
+    /// space and the thread's folder are read here; the files and processes off the queue
+    /// (`AppTools.remote`).
     private func remoteApps(id: Int, request: RemoteAppsRequest, client: ExtensionConnection) {
         let state = store.state
         let home = hooks.home
-        guard let space = state.spaces.first(where: { $0.id == request.spaceID && !$0.hidden }) else {
-            send(.error(id: id, code: "no_such_space", message: "That space isn't on this host."), to: client)
-            return
+        var place = AppTools.Place(space: nil, cwd: nil, home: home, unattended: false)
+        if let spaceID = request.spaceID {
+            guard let space = state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
+                send(.error(id: id, code: "no_such_space", message: "That space isn't on this host."), to: client)
+                return
+            }
+            let root = space.path == "~" ? home : space.path.hasPrefix("~/") ? home + space.path.dropFirst() : space.path
+            place.space = (space.id, space.name, root)
+            if case .run(_, _, _, let agentID?) = request, let agent = state.agents.first(where: { $0.id == agentID && $0.spaceID == space.id }) {
+                let tab = state.tabs.first { $0.id == agent.tabID }
+                place.cwd = (agent.paneID.flatMap { tab?.layout.leaf(withID: $0) } ?? tab?.layout.firstLeaf)?.cwd
+            }
         }
-        let root = space.path == "~" ? home : space.path.hasPrefix("~/") ? home + space.path.dropFirst() : space.path
-        var cwd: String?
-        if case .run(_, _, _, let agentID?) = request, let agent = state.agents.first(where: { $0.id == agentID && $0.spaceID == space.id }) {
-            let tab = state.tabs.first { $0.id == agent.tabID }
-            cwd = (agent.paneID.flatMap { tab?.layout.leaf(withID: $0) } ?? tab?.layout.firstLeaf)?.cwd
-        }
-        let place = AppTools.Place(space: (space.id, space.name, root), cwd: cwd, home: home, unattended: false)
         let apps = self.apps
         Task.detached { [weak self] in
             let result = await AppTools.remote(request, place: place, apps: apps)
@@ -3737,7 +3841,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: one Missions request (`missions.v1`). Reads come from the store; everything else
     /// goes to the GUI's mission owner. Replies are encoded off the queue (a record is up to 256 KiB)
     /// and refused `too_large` past the frame cap.
-    /// Issues & PRs for a remote client: the same `forge` answer the Mac gets in process, run off
+    /// Issues & PRs for a remote client: the same `forge` answer this Mac's app gets, run off
     /// the queue (gh can take seconds) and sent back on it.
     private func remoteForge(id: Int, request: RemoteForgeRequest, client: ExtensionConnection) {
         let connection = ChangesUnchecked(value: client)
@@ -3830,6 +3934,16 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Any thread: the daily look for newer skill commits, when it's due (`SkillsStore.checkUpdatesIfDue`),
+    /// on the skills queue; a check that ran tells this Mac's app, whose Skills page reads it again.
+    public func checkSkillUpdatesIfDue() {
+        let skillsStore = skills
+        skillsQueue.async { [weak self] in
+            guard skillsStore.checkUpdatesIfDue() != nil else { return }
+            self?.queue.async { self?.pushSettingsChanged(.skills) }
+        }
+    }
+
     /// A remote client reading or changing this host's skills. Looking up, installing and
     /// checking for updates fetch from git, so every request runs on the skills queue and its
     /// answer comes back here; a change tells the GUI, whose Skills page follows.
@@ -3919,6 +4033,22 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "no_such_directory", message: "\(expanded) is not a directory on the host"), to: client)
             return
         }
+        if let verify = verifyCheckoutAvailable {
+            hopToMain { [weak self] in
+                let refusal = Result { try MainActor.assumeIsolated { try verify(expanded) } }
+                self?.queue.async {
+                    guard let self else { return }
+                    if case .failure(let error) = refusal {
+                        self.send(.error(id: id, code: "busy", message: String(describing: error)), to: client)
+                    } else { self.insertSpace(id: id, path: expanded, client: client) }
+                }
+            }
+            return
+        }
+        insertSpace(id: id, path: expanded, client: client)
+    }
+
+    private func insertSpace(id: Int, path expanded: String, client: ExtensionConnection) {
         guard !store.state.spaces.contains(where: { $0.path == expanded }) else {
             send(.error(id: id, code: "conflict", message: "a space for \(expanded) already exists"), to: client)
             return
@@ -3932,6 +4062,30 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         send(.spaceAdded(id: id, spaceID: space.id), to: client)
+    }
+
+    /// Server queue: a paired device sets a space's parent and name (`RemoteProjectsRequest.organize`),
+    /// as Add space and the space's Settings do on this Mac (`editProject`), then gets the listing's
+    /// first page back.
+    private func remoteOrganizeSpace(id: Int, spaceID: SpaceID, name: String?, parentID: SpaceID?, client: ExtensionConnection) {
+        let connection = ChangesUnchecked(value: client)
+        Task { [weak self] in
+            guard let self else { return }
+            let result: Result<RemoteProjectsResult, Error>
+            do {
+                _ = try await self.editProject(spaceID, edit: ProjectEdit(name: name, parentProjectID: parentID?.rawValue ?? ""))
+                result = .success(try await self.projects.request(.list(offset: 0), state: self.state))
+            } catch { result = .failure(error) }
+            self.queue.async {
+                let client = connection.value
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let value): self.send(.projects(id: id, result: value), to: client)
+                case .failure(let error):
+                    self.send(.error(id: id, code: (error as? ProjectFileError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                }
+            }
+        }
     }
 
     /// Server queue: a remote New design, made by the app (like `remoteCreateAgent`) once the
@@ -4109,7 +4263,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: this Mac's own Import, from its app (the host reads the same disk), with the
-    /// choices the in-process Import offers: unreadable boards and a project already in Designs ask.
+    /// choices Import offers: unreadable boards and a project already in Designs ask.
     private func localDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
         guard client.isLocal else {
             send(.error(id: id, code: "local_only", message: "Only this Mac's app imports from its disk."), to: client)
@@ -4230,6 +4384,7 @@ public final class SessionServer: @unchecked Sendable {
     /// delivers reports in order per client.
     private func recordRemoteViewport(sessionID: SessionID, fd: Int32, cols: Int, rows: Int) {
         guard TerminalGrid.isValid(cols: cols, rows: rows) else { return }
+        if clients[fd]?.isLocal == true { lastLocalGrid = (cols, rows) }
         remoteViewports[sessionID, default: [:]][fd] = (cols, rows)
         applyMinViewport(sessionID: sessionID)
     }
@@ -4457,7 +4612,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// This Mac's app showing the host's threads as its own (`localThreadsCapability`): it draws
-    /// Projects, their coordinators and workers, and missions from the state, as in process.
+    /// Projects, their coordinators and workers, and missions from the state.
     private func takesWholeWorkspace(_ client: ExtensionConnection) -> Bool {
         client.isLocal && client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
     }
@@ -4545,13 +4700,20 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: tells this Mac's app showing the host's threads as its own that a Settings
-    /// page's data changed here; in process there is none, and the GUI's own `on…Changed` follow.
+    /// page's data changed here.
     func pushSettingsChanged(_ page: RemoteSettingsPage) { sendToLocalApps(.settingsChanged(page: page)) }
 
+    /// Any thread: `pushSettingsChanged` on the server queue.
+    public func settingsChanged(_ page: RemoteSettingsPage) {
+        queue.async { [self] in pushSettingsChanged(page) }
+    }
+
     /// Server queue: sends `reply` to each of this Mac's apps that show the host's threads as their own.
-    func sendToLocalApps(_ reply: RemoteReply) {
+    /// `listing`: only to an app that also lists that capability.
+    func sendToLocalApps(_ reply: RemoteReply, listing: String? = nil) {
         for app in clients.values where app.isLocal && app.authenticated
-            && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            && app.clientCapabilities.contains(RemoteProtocol.localThreadsCapability)
+            && listing.map(app.clientCapabilities.contains) != false {
             send(reply, to: app)
         }
     }
@@ -4594,11 +4756,13 @@ public final class SessionServer: @unchecked Sendable {
             localAppsChanged()
             // A closed window shows nothing: every thread's phone pushes go out again.
             pushNotifications.focused = nil
+            localFocusedPane = nil
         }
         for (token, relay) in designRelays where relay.fd == client.fd {
             endDesignRelay(token, .failed(code: relay.code, message: Self.appLeftWhileDrawing))
         }
         for (token, relay) in appRelays where relay.fd == client.fd { appRelays.removeValue(forKey: token)?.answer(nil) }
+        if client.isLocal { appExecutorsLeft() }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -5299,8 +5463,8 @@ public final class SessionServer: @unchecked Sendable {
         designNotesChanged(designID)
     }
 
-    /// A design's thread notes changed: the app's canvas reads them again, in process or as the
-    /// background host's client (`designNotesChanged`). Any thread.
+    /// A design's thread notes changed: this Mac's app's canvas reads them again
+    /// (`designNotesChanged`). Any thread.
     func designNotesChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
         queue.async { [self] in sendToLocalApps(.designNotesChanged(designID: designID)) }
@@ -5698,7 +5862,7 @@ public final class SessionServer: @unchecked Sendable {
         if routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client) { return }
         guard let handler = onBrowserRequest else {
             // The background host has no page of its own: the app's window, connected over
-            // `host.sock`, runs it as it would in process.
+            // `host.sock`, runs it.
             if let app = localBrowserClient(),
                routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client, ownerFD: app.fd) { return }
             reply(.error(id: requestID, code: "unavailable",
@@ -5752,14 +5916,14 @@ public final class SessionServer: @unchecked Sendable {
         case .owned(nil), .unchanged:
             break
         }
-        // The host's own page for the agent is the app's: its address comes back from the main
-        // actor, and the claim stands unless another viewer took it meanwhile.
+        // The host's own page for the agent is the app's: its address comes back from the app,
+        // and the claim stands unless another viewer took it meanwhile.
         guard let handler = onBrowserPageURL else {
             send(.browserClaimed(id: id, url: nil), to: client)
             return
         }
-        hopToMain { [weak self] in
-            let url = BrowserDriveURL.offered(handler(agentID))
+        handler(agentID) { [weak self] page in
+            let url = BrowserDriveURL.offered(page)
             self?.queue.async {
                 guard let self, self.clients[client.fd] === client else { return }
                 guard self.browserOwners.owner(of: agentID) == client.fd else {
@@ -5783,6 +5947,7 @@ public final class SessionServer: @unchecked Sendable {
         guard let pending = driveRequests[token], pending.ownerFD == client.fd else { return }
         driveRequests.removeValue(forKey: token)
         reply(outcome.fromViewer.reply(id: pending.requestID), to: pending.asker)
+        if let url = pending.opened, case .result = outcome { announceBrowserPageOpened(agentID: pending.agentID, url: url) }
     }
 
     /// Hands a request to the viewer that owns the agent's browser. False when none does, and the
@@ -5802,7 +5967,17 @@ public final class SessionServer: @unchecked Sendable {
         }
         nextDriveToken += 1
         let token = nextDriveToken
-        driveRequests[token] = DriveRequest(asker: client, requestID: requestID, agentID: agentID, ownerFD: ownerFD)
+        func address(_ request: BrowserRequest) -> String? {
+            switch request {
+            case .open(let url, _): url
+            case .newTab(let url, _): url
+            case .tab(_, let request): address(request)
+            default: nil
+            }
+        }
+        let ownPage = browserOwners.owner(of: agentID) == nil
+        driveRequests[token] = DriveRequest(asker: client, requestID: requestID, agentID: agentID, ownerFD: ownerFD,
+                                            opened: ownPage ? address(request) : nil)
         queue.asyncAfter(deadline: .now() + browserDeadline) { [weak self] in
             guard let self, let pending = self.driveRequests.removeValue(forKey: token) else { return }
             self.reply(.error(id: pending.requestID, code: "timeout", message: "The viewer showing the page did not answer in time."),
@@ -5907,6 +6082,11 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
+        if case .start(let agentID, let cwd?, _) = request, let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
+           store.state.agents[index].reviewTarget != Self.reviewPath(cwd) {
+            // Persisted: a review aimed at another folder still reads after a host restart.
+            try? mutateState { $0.agents[index].reviewTarget = Self.reviewPath(cwd) }
+        }
         guard let handler = onReviewRequest else {
             reply(.error(id: requestID, code: "unsupported", message: "no review handler"), to: client)
             return
@@ -6366,7 +6546,7 @@ public final class SessionServer: @unchecked Sendable {
         if !missionsChanged || before.withoutMissions != state.withoutMissions {
             broadcastRemoteState(state)
         } else {
-            // This Mac's app draws missions from the state, as in process.
+            // This Mac's app draws missions from the state.
             broadcastRemoteState(state, wholeOnly: true)
         }
         if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
@@ -6504,9 +6684,11 @@ public final class SessionServer: @unchecked Sendable {
             let previous = before.tabs.first(where: { $0.id == tabID })?.layout.leaf(withID: paneID)?.sessionID
             // A pi started again in place of one that stopped takes over the
             // opening prompt that one never read.
-            if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous),
-               let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
-                thread.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.id)
+            if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous) {
+                self.startProblemCleared(kept, sessionID: sessionID ?? previous)
+                if let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
+                    thread.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.id)
+                }
             }
             // Revisions pi reached before its pane was bound had no agent to reach.
             if let sessionID, self.sessions[sessionID]?.thread != nil {
@@ -6685,8 +6867,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Moves a space to sit just before `target`, or last when `target` is nil: the order the
     /// sidebar's project tree draws its projects in.
-    /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`), as its in-process
-    /// view model makes it.
+    /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`).
     func performSpaceAction(_ action: RemoteSpaceAction, on spaceID: SpaceID) async throws {
         func updating(_ change: (inout Space) -> Void) async throws {
             guard var space = await enqueueValue({ self.store.state.spaces.first { $0.id == spaceID } }) else {
@@ -6705,7 +6886,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Locate Folder… as the app does it in process (`ShepherdViewModel.relocateSpace`): the threads
+    /// Locate Folder… for this Mac's app (`ShepherdViewModel.relocateSpace`): the threads
     /// inside the old folder stop, the space moves, and their conversations follow. Starting them
     /// again is the caller's.
     func relocateSpaceStoppingThreads(_ spaceID: SpaceID, to path: String) async throws {
@@ -6968,7 +7149,10 @@ public final class SessionServer: @unchecked Sendable {
                (try? self.mutateState({ state in
                    for index in indices {
                        state.agents[index].checkout = checkout
-                       if state.agents[index].worktreeBranch != nil { state.agents[index].worktreeBranch = switched }
+                       if let recorded = state.agents[index].worktreeBranch {
+                           if state.agents[index].worktreeOriginalBranch == nil { state.agents[index].worktreeOriginalBranch = recorded }
+                           state.agents[index].worktreeBranch = switched
+                       }
                    }
                })) != nil { return }
             self.store.updateLive { state in
@@ -7011,6 +7195,9 @@ public final class SessionServer: @unchecked Sendable {
             guard state.agents[index].worktreeBranch != nil else { throw SessionServerError.conflict("Not a worktree thread") }
             if let branch = branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
                 state.agents[index].worktreeBranch = branch
+                // The person's rename or switch: Delete removes this branch, even when the host's
+                // checkout refresh saw it first and kept the old name as Shepherd's own.
+                state.agents[index].worktreeOriginalBranch = nil
             }
             if let base = base?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
                 state.agents[index].worktreeBase = base
@@ -7029,6 +7216,16 @@ public final class SessionServer: @unchecked Sendable {
             let seen = min(upTo, agent.completedAt ?? upTo)
             guard seen > (agent.seenCompletedAt ?? -.infinity) else { return }
             state.agents[index].seenCompletedAt = seen
+        }
+    }
+
+    /// Mutes or unmutes the thread's pushes on this host, for every phone (`RemoteAgentAction.mutePushes`).
+    public func setPushMuted(_ agentID: AgentID, muted: Bool) async throws {
+        try await mutateStateOffQueue { state in
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            state.agents[index].pushMuted = muted
         }
     }
 
@@ -7111,7 +7308,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// A triggered run that never started.
     public func recordAutomationFailure(_ automationID: AutomationID, trigger: String?, triggerURL: String?, message: String) async {
-        await enqueueValue { self.runLog.recordFailure(automationID, trigger: trigger, triggerURL: triggerURL, message: message) }
+        await enqueueValue {
+            self.runLog.recordFailure(automationID, trigger: trigger, triggerURL: triggerURL, message: message)
+            // No thread to fail: the automation itself is what the push names (and opens).
+            guard let automation = self.store.state.automations.first(where: { $0.id == automationID }),
+                  let id = UUID(uuidString: automationID.rawValue) else { return }
+            self.pushNotifications.send(agentID: AgentID(rawValue: id.uuidString.lowercased()), kind: .error, title: automation.name,
+                                        preview: message, group: "automation:\(automationID.rawValue)", subtitle: "Automation failed")
+        }
     }
 
     /// The user opened a run's thread: its runs lose their unread dot.
@@ -7762,10 +7966,15 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: whether this Mac's own app is connected and answers relays (`relayToApp`).
+    var appRelayConnected: Bool {
+        clients.values.contains { $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability) }
+    }
+
     /// Hands `job` to the app connected over `host.sock`, for a host with no window of its own.
     /// `answer` gets the app's result, or nil when no such app is connected or it went away
     /// first. Any thread; `answer` is called on the server queue.
-    func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
+    public func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
         queue.async { [self] in
             guard let app = clients.values.first(where: {
                 $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability)
@@ -8368,7 +8577,11 @@ public final class SessionServer: @unchecked Sendable {
     /// (Retry): its thread says it is starting until the new pi is bound to the pane
     /// (`updatePaneSession`), which takes the opening prompt the stopped pi never read.
     public func retryStart(sessionID: SessionID) async {
-        await enqueueValue { self.keptStarts[sessionID]?.retrying = true }
+        await enqueueValue {
+            guard let kept = self.keptStarts[sessionID], !kept.retrying else { return }
+            self.keptStarts[sessionID]?.retrying = true
+            self.startProblemCleared(kept, sessionID: sessionID)
+        }
     }
 
     /// Held across process shutdown, conversation copy and the atomic workspace update.
@@ -9212,7 +9425,10 @@ public final class SessionServer: @unchecked Sendable {
             } else {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
-            if let problem, let agent { recordAgentFailure(agentID: agent, problem.title) }
+            if let problem, let agent {
+                recordAgentFailure(agentID: agent, problem.title)
+                sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
+            }
             // A thread on screen pulls the problem now, not at its next poll.
             threadRevised(sessionID: sessionID)
             notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code, keepsAgent: true, startProblem: problem))
@@ -9339,7 +9555,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func enqueueValue<T>(_ body: @escaping () -> T) async -> T {
+    func enqueueValue<T>(_ body: @escaping () -> T) async -> T {
         await withCheckedContinuation { continuation in
             queue.async { continuation.resume(returning: body()) }
         }
@@ -9353,6 +9569,40 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: the agent whose own pane runs this session. Streaming asks on every
     /// revision, so the lookup is rebuilt once per committed state rather than scanned.
+    /// Server queue: this Mac's app hears that the agent whose pane holds `sessionID` no longer
+    /// waits on `kept`'s start problem (`RemoteReply.agentStartProblem`).
+    private func startProblemCleared(_ kept: KeptStart, sessionID: SessionID) {
+        guard kept.problem != nil, !kept.retrying, let agent = agentID(forSession: sessionID) else { return }
+        sendToLocalApps(.agentStartProblem(agentID: agent, problem: nil))
+    }
+
+    /// Server queue: every agent's start problem, nil for the agents not waiting on one, for this
+    /// Mac's app that just connected: what it knew from a host that restarted goes.
+    private func sendStartProblems(to client: ExtensionConnection) {
+        guard client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) else { return }
+        let waiting = Dictionary(keptStarts.compactMap { sessionID, kept -> (AgentID, NativeStartProblem)? in
+            guard !kept.retrying, sessions[sessionID]?.isAlive != true, let problem = kept.problem,
+                  let agent = agentID(forSession: sessionID) else { return nil }
+            return (agent, problem)
+        }, uniquingKeysWith: { first, _ in first })
+        for agent in store.state.agents {
+            send(.agentStartProblem(agentID: agent.id, problem: waiting[agent.id]), to: client)
+        }
+    }
+
+    /// Server queue: every app's run, for this Mac's app that just connected (`apps.v2`).
+    private func sendAppProcesses(to client: ExtensionConnection) {
+        guard client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability),
+              client.clientCapabilities.contains(RemoteProtocol.appsV2Capability) else { return }
+        apps.snapshots { [weak self] states in
+            let processes = AppTools.processes(states)
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(.appsChanged(processes: processes), to: client)
+            }
+        }
+    }
+
     /// Server queue: the agent's bound pi stopped and its thread waits for Retry (not yet starting again).
     private func agentWaitsForRetry(_ agentID: AgentID) -> Bool {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
@@ -9857,6 +10107,10 @@ private struct ChangesUnchecked<Value>: @unchecked Sendable {
 
 extension SessionServer {
     /// Server queue, from the committed state: the agent's thread pane directory and branch base.
+    static func reviewPath(_ cwd: String) -> String {
+        URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardized.path
+    }
+
     fileprivate static func changesContext(_ state: ShepherdState, _ agentID: AgentID) -> ChangesService.AgentContext? {
         guard let agent = state.agents.first(where: { $0.id == agentID }),
               let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }

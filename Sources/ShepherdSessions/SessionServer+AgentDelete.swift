@@ -12,7 +12,7 @@ extension SessionServer {
                                             processTimeout: Duration = .seconds(10)) async throws {
         let state = self.state
         guard let agent = state.agents.first(where: { $0.id == id }),
-              let branch = agent.worktreeBranch,
+              let branch = agent.worktreeOriginalBranch ?? agent.worktreeBranch,
               let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
         let path = agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch)
         let sessionIDs = state.tabs.filter { $0.id == agent.tabID }.flatMap { $0.layout.leaves.compactMap(\.sessionID) }

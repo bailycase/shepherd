@@ -66,6 +66,14 @@ struct ThreadRowMenuItems: View {
                 if abilities.rename {
                     Button("Rename…", systemImage: "pencil") { navigator.present(.search(.rename(thread))) }
                 }
+                if let muted = abilities.muted {
+                    Button(muted ? "Unmute Notifications" : "Mute Notifications", systemImage: muted ? "bell" : SHGlyph.mute.symbolName) {
+                        let (ref, hosts) = (thread, hosts)
+                        AgentActions.run("Couldn’t change the thread’s notifications", navigator: navigator) {
+                            try await AgentActions.mutePushes(ref, !muted, hosts: hosts)
+                        }
+                    }
+                }
                 if !abilities.moveSpaces.isEmpty {
                     Menu("Move to Space", systemImage: "folder") {
                         ForEach(abilities.moveSpaces) { space in

@@ -90,6 +90,8 @@ struct PiHomeLaunchTests {
         let home = app.server.pi.files
         for (agent, name, bytes) in [(plain, plainName, plainBytes), (linked, linkedName, linkedBytes)] {
             let sessionID = agent.agent.effectivePiSessionID
+            // The host starts a settled thread's pi when it is asked for.
+            _ = try? await app.server.nativeThread(agentID: agent.agent.id, request: .snapshot())
             try await eventuallyAsync("\(agent.agent.name)'s pi to start") { Self.launch(of: sessionID) != nil }
             let copy = home.sessionDirectory(forCwd: agent.piPane.cwd).appendingPathComponent(name)
             #expect(try Data(contentsOf: copy) == bytes, "\(agent.agent.name): its conversation, copied")

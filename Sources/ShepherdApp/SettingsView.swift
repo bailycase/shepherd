@@ -178,7 +178,7 @@ struct SettingsView: View {
 
     private var versions: String {
         let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: vm.server.pi.engine.version,
+        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: vm.pi.engine.version,
                              on: vm.settingsSection)
     }
 
@@ -228,10 +228,10 @@ struct SettingsView: View {
         switch vm.settingsSection {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
-        case .agents: AgentSettings(pi: vm.server.pi, settings: vm.settings)
-        case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.server.pi, settings: vm.settings))
+        case .agents: AgentSettings(pi: vm.pi, settings: vm.settings)
+        case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.pi, settings: vm.settings))
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
-        case .pi: PiSettings(pi: vm.server.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
+        case .pi: PiSettings(pi: vm.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)

@@ -63,7 +63,7 @@ struct HostsDestination: View {
 
     var body: some View {
         let _ = SHRenderProbe.tick("page.hosts")
-        HostsPage(model: vm.hostsPage(agentVersion: vm.server.pi.engine.version), actions: HostsPageActions(
+        HostsPage(model: vm.hostsPage(agentVersion: vm.pi.engine.version), actions: HostsPageActions(
             retry: { vm.remoteHosts.reconnect(id: $0) },
             remove: { id in
                 if vm.settings.skipped(.removeHost) != nil { vm.remoteHosts.removeHost(id: id) } else { removing = id }

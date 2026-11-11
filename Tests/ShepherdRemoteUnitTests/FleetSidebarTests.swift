@@ -244,14 +244,23 @@ struct FleetSidebarTests {
         let state = ShepherdState(spaces: [F.space, F.hidden, space2], agents: [agent])
         let all = Set(RemoteProtocol.capabilities)
         let full = FleetThreadAbilities(agent: agent, state: state, connected: true, capabilities: all)
+        func offline(_ capabilities: Set<String>) -> FleetThreadAbilities {
+            FleetThreadAbilities(agent: agent, state: state, connected: false, capabilities: capabilities)
+        }
         #expect(full.rename && full.delete && full.pin && full.review)
         #expect(full.moveSpaces.map(\.id) == [F.space.id, space2.id], "never a hidden space")
 
         let older = FleetThreadAbilities(agent: agent, state: state, connected: true,
                                          capabilities: all.subtracting([RemoteProtocol.moveThreadCapability]))
         #expect(older.moveSpaces.isEmpty && older.rename)
+        #expect(full.muted == false && offline(all).muted == nil, "Mute reads the host's setting, only while connected")
+        #expect(FleetThreadAbilities(agent: agent, state: state, connected: true,
+                                     capabilities: all.subtracting([RemoteProtocol.pushMuteCapability])).muted == nil, "an older host keeps no mutes")
+        var muted = agent
+        muted.pushMuted = true
+        #expect(FleetThreadAbilities(agent: muted, state: state, connected: true, capabilities: all).muted == true)
 
-        let offline = FleetThreadAbilities(agent: agent, state: state, connected: false, capabilities: all)
+        let offline = offline(all)
         #expect(!offline.rename && !offline.delete && !offline.review && offline.moveSpaces.isEmpty)
         #expect(offline.pin, "a pin is this device's, so Unpin stays while the host is offline")
 

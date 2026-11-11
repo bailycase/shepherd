@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestSupport
 @testable import ShepherdApp
 @testable import ShepherdSessions
@@ -43,7 +44,8 @@ struct ProjectAutomationAppTests {
         // The menu's mirrored row is stale. Ownership must come from the server, not this copy.
         vm.state.automations[0].projectID = nil
         vm.stopAutomation(automation)
-        #expect(vm.remoteActionError == "Use the Project's revision-checked automation controls.")
+        // The host refuses it: the Project owns the run.
+        try await eventuallyOnMain("the host's refusal") { vm.remoteActionError?.contains("revision-checked") == true }
         await app.settle()
         #expect(app.server.state.projects == before.projects)
         #expect(app.server.state.agents == before.agents)
@@ -80,7 +82,7 @@ struct ProjectAutomationAppTests {
         let artifact = app.dir.appendingPathComponent("ordinary-worker-artifact")
         try Data("keep".utf8).write(to: artifact)
         let revision = try #require(server.state.projects.first?.revision)
-        _ = try await vm.projectCoordinator.perform(projectID: project, expectedRevision: revision, request: .pause)
+        _ = try await app.coordinator.perform(projectID: project, expectedRevision: revision, request: .pause)
         #expect(server.state.agents == [worker.agent])
         #expect(server.state.tabs == [worker.tab])
         #expect(server.state.automations.first?.agentID == nil)
@@ -104,7 +106,7 @@ struct ProjectAutomationAppTests {
         await app.server.autoStartAutomations()
         #expect(await app.server.listSessions().isEmpty)
         do { try await vm.startAutomation(automation); Issue.record("Expected Project scope refusal") }
-        catch let error as LogicalProjectsError { #expect(error.code == "project_scope") }
+        catch RemoteHostClientError.rejected(let code, _) { #expect(code == "project_scope", "the host refuses it") }
         #expect(app.server.state.agents.isEmpty)
         #expect(app.server.state.automations.first?.agentID == nil)
         #expect(await app.server.listSessions().isEmpty)

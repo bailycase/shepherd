@@ -267,7 +267,7 @@ struct BrowserDriveHostTests {
             pushes.withValue { $0.append(push) }
             if case .request(let token, _, _) = push { client.browserAnswer(token: token, outcome: .text("from the viewer")) }
         }
-        s.server.onBrowserPageURL = { _ in "http://localhost:5173/checkout" }
+        s.server.onBrowserPageURL = { _, answer in answer("http://localhost:5173/checkout") }
         let adopted = try await client.browserClaim(agentID: s.a.id)
         #expect(adopted == "http://localhost:5173/checkout")
 
@@ -285,6 +285,34 @@ struct BrowserDriveHostTests {
         } catch RemoteHostClientError.rejected(let code, _) {
             #expect(code == "no_such_agent")
         }
+    }
+
+    /// On a background host the page is this Mac's app's: a viewer's claim gets its address
+    /// through the app relay, and none while no app is connected.
+    @Test func aClaimGetsThePageAddressFromThisMacsApp() async throws {
+        let s = try await setup()
+        defer { s.stop() }
+        await MainActor.run { s.server.relayWindowRequestsToApp() }
+        let viewer = try await s.host.typed()
+        defer { viewer.disconnect() }
+        #expect(try await viewer.browserClaim(agentID: s.a.id) == nil)
+
+        let socket = s.host.host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = s.host.host.dir.appendingPathComponent("local-token")
+        try s.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let app = RemoteHostClient(localSocket: socket)
+        defer { app.disconnect() }
+        let asked = Locked<[AgentID]>([])
+        app.onAppRelay = { [weak app] token, job in
+            guard case .browserPageURL(let agentID) = job else { return }
+            asked.withValue { $0.append(agentID) }
+            app?.appRelayAnswer(token: token, result: .done(text: "http://localhost:5173/checkout"))
+        }
+        _ = try await app.connect(host: "", port: 0, token: try String(contentsOf: tokenURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), clientName: "Shepherd")
+
+        #expect(try await viewer.browserClaim(agentID: s.a.id) == "http://localhost:5173/checkout")
+        #expect(asked.current == [s.a.id])
     }
 
     // MARK: The viewer goes
@@ -443,7 +471,7 @@ struct BrowserDriveHostTests {
         defer { s.stop() }
         let viewer = try await s.viewer()
         let page = Locked<String?>("http://localhost:5173/checkout")
-        s.server.onBrowserPageURL = { _ in page.current }
+        s.server.onBrowserPageURL = { _, answer in answer(page.current) }
         #expect(try await claim(viewer, s.a) == .browserClaimed(id: 7, url: "http://localhost:5173/checkout"))
 
         // Only a web address is offered: a file, a script and a giant one are not.

@@ -54,7 +54,7 @@ private struct SidebarDestinations: View {
             ForEach(rows) { row in
                 SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
                     // The Missions row opens the list; a mission's own row (its section) opens that mission.
-                    if row.target == .page(.missions) { vm.thisMacMissions.selectedID = nil; vm.missionsHost = nil }
+                    if row.target == .page(.missions) { vm.thisMacMissions?.selectedID = nil; vm.missionsHost = nil }
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()

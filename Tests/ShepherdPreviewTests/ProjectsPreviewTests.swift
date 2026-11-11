@@ -70,7 +70,7 @@ struct ProjectsPreviewTests {
                       Space(name: "backend", path: backend.path), Space(name: "admin", path: admin.path),
                       Space(name: "payments", path: payments.path)]
         try await world.local.server.putState(ShepherdState(spaces: spaces))
-        world.vm.adopt(world.local.server.state)
+        try await world.synced()
         let daemon = URL(fileURLWithPath: world.remote.server.pi.userHome).appendingPathComponent("srv/daemon")
         try write(daemon, ".shepherd/settings.json", #"{"extensions":["./a.ts","./b.ts"]}"#)
         try await world.remote.server.putState(ShepherdState(spaces: [Space(name: "daemon", path: daemon.path)]))
@@ -272,9 +272,12 @@ final class ProjectsPreviewWorld {
     let local: ScratchServer
     let remote: ScratchServer
     let vm: ShepherdViewModel
+    /// This Mac's host: `local`, served as `Shepherd --host` serves it.
+    private(set) var host: ShepherdHost.Services?
 
     /// `supportPi` puts Shepherd's pi home where the app keeps it, under the home's Application Support.
-    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false, supportPi: Bool = false) async throws {
+    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false, supportPi: Bool = false,
+         remoteCapabilities: [String]? = nil) async throws {
         let dir = try makeScratchDirectory("prv-projects")
         let home = dir.appendingPathComponent("home")
         let pi = PiSetup(engine: PiSetup.app.engine, home: supportPi ? home.appendingPathComponent("Library/Application Support/Shepherd/pi") : dir.appendingPathComponent("pi"),
@@ -286,10 +289,9 @@ final class ProjectsPreviewWorld {
         let defaults = ScratchDefaults()
         let settings = AppSettings(store: defaults)
         let hosts = RemoteHostStore(defaults: defaults)
-        vm = ShepherdViewModel(server: local.server, settings: settings, keybindings: KeybindingsStore(store: defaults),
+        vm = ShepherdViewModel(pi: local.server.pi, settings: settings, keybindings: KeybindingsStore(store: defaults),
                                themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
-                               remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-                               restoresAgentsAtLaunch: false, checkoutReader: nil)
+                               remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in })
         vm.showSettings = true; vm.settingsSection = .projects
         if !empty {
             let names = [long ? "dashboard-with-a-very-long-name-and-an-equally-long-directory" : detail ? "payments" : "dashboard", "mobile", "ops-scripts"]
@@ -332,10 +334,12 @@ final class ProjectsPreviewWorld {
             try JSONEncoder().encode(DesignSystemInfo(namespace: "dashboard", title: "Dashboard", createdAt: 0, spaceID: localSpaces[0].id)).write(to: system)
             try await local.server.putState(ShepherdState(spaces: localSpaces))
             try await remote.server.putState(ShepherdState(spaces: remoteSpaces))
-            vm.adopt(local.server.state)
         }
+        host = try await PreviewWorkspace.serve(local.server, in: dir, settings: settings, to: vm)
+        try await synced()
         let tokenURL = remote.dir.appendingPathComponent("token")
         if legacy { remote.server.advertisedCapabilities = [] }
+        if let remoteCapabilities { remote.server.advertisedCapabilities = remoteCapabilities }
         let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         hosts.addHost(name: detail ? "Build-01" : "build-01", host: "127.0.0.1", port: port, token: token)
@@ -343,8 +347,14 @@ final class ProjectsPreviewWorld {
         await vm.projects.load(vm.projectsSources)
     }
 
+    /// The app shows This Mac's host's workspace.
+    func synced() async throws {
+        let vm = vm, server = local.server
+        try await eventuallyOnMain("This Mac's workspace", timeout: .seconds(30)) { vm.state == server.state }
+    }
+
     func stop() {
-        for connection in vm.remoteHosts.connections { vm.remoteHosts.removeHost(id: connection.id) }
+        for connection in vm.remoteHosts.allConnections { vm.remoteHosts.removeHost(id: connection.id) }
         remote.stop(); local.stop()
     }
 }

@@ -67,14 +67,14 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 return .mcp(try await mcp.request(directory: directory, file: file, text: "", action: action, owner: owner))
             default: break
             }
-            let canonicalDirectory = PiHome.canonical(directory)
+            let space = await mcpSpace(of: directory, state: state)
             let value = try await self.request(.read(directory: directory, file: file), state: state)
             guard case .text(let text) = value else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
             let contents: String
             if let saved = text.text { contents = saved }
             else if action == .credentials || action == .approveProject { contents = "{}" }
             else { throw ProjectFileError("missing", "Save the server before signing in.") }
-            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner, canonicalDirectory: canonicalDirectory))
+            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner, space: space))
         }
         if case .open(let directory, let file) = request {
             let value = try await self.request(.read(directory: directory, file: file), state: state)
@@ -152,14 +152,19 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         guard let index = history.firstIndex(where: { $0.directory == directory }) else {
                             throw ProjectFileError("unknown_project", "This directory is not a known project.")
                         }
-                        let clean = SpaceInheritanceExclusions(mcp: Array(Set(excluded.mcp)).sorted(), skills: Array(Set(excluded.skills)).sorted())
-                        guard (clean.mcp + clean.skills).allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }), clean.mcp.count + clean.skills.count <= 512 else {
-                            throw ProjectFileError("invalid", "Inherited server and skill names must be 1 to 128 bytes.")
+                        func unique(_ names: [String]) -> [String] { Array(Set(names)).sorted() }
+                        let clean = SpaceInheritanceExclusions(mcp: unique(excluded.mcp), skills: unique(excluded.skills),
+                                                               prompts: unique(excluded.prompts), extensions: unique(excluded.extensions))
+                        guard clean.names.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }), clean.names.count <= 512 else {
+                            throw ProjectFileError("invalid", "Inherited server, skill, command and extension names must be 1 to 128 bytes.")
                         }
                         let original = history
                         history[index].excluded = clean.isEmpty ? nil : clean
                         do { try saveHistory() } catch { history = original; throw error }
                         return .context(try context(root: root))
+                    case .organize:
+                        // A space's parent is workspace state, which only the server changes (`SessionServer.editProject`).
+                        throw ProjectFileError("unsupported", "Set a space's parent through Shepherd, not its settings files.")
                     case .mcp:
                         preconditionFailure("MCP is handled after file validation above.")
                     case .open:
@@ -297,7 +302,18 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     /// project folder that holds it (`ProjectNesting`), shared by `shepherd-mcp-parent.ts`. With it,
     /// what the child space holding `cwd` (the innermost known folder at or above it, below the
     /// parent) turns off. Reads the history on this store's worker, never the caller's queue.
-    public func inheritance(of cwd: String, state: ShepherdState) async -> (parent: String, excluded: SpaceInheritanceExclusions)? {
+    ///
+    /// `extensions`: the parent's extension files (absolute) the agent loads with `-e`, since pi
+    /// loads extensions only at launch: all of them but the ones the child turned off and the ones
+    /// `cwd` has a file of the same name for, which pi loads itself and so win.
+    /// The folder whose project MCP sign-ins an agent in `directory` uses (`SHEPHERD_MCP_SPACE`): its parent space,
+    /// whose servers it shares, else its own. Two unrelated spaces never share one.
+    // ponytail: a subproject that redefines a parent's server name shares the parent's sign-in for it.
+    public func mcpSpace(of directory: String, state: ShepherdState) async -> String {
+        PiHome.canonical(await inheritance(of: directory, state: state)?.parent ?? directory)
+    }
+
+    public func inheritance(of cwd: String, state: ShepherdState) async -> (parent: String, excluded: SpaceInheritanceExclusions, extensions: [String])? {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 try? load()
@@ -306,7 +322,17 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 guard let parent = ProjectNesting.parent(of: here, among: parentCandidates()) else { continuation.resume(returning: nil); return }
                 let child = history.filter { $0.directory != parent && ($0.directory == here || here.hasPrefix($0.directory + "/")) && $0.directory.hasPrefix(parent + "/") }
                     .max { $0.directory.count < $1.directory.count }
-                continuation.resume(returning: (parent, child?.excluded ?? SpaceInheritanceExclusions()))
+                let excluded = child?.excluded ?? SpaceInheritanceExclusions()
+                func extensions(_ root: String) -> [String] {
+                    spaceResourcePaths(root: URL(fileURLWithPath: root)).filter { $0.0 == .extension }.map(\.1)
+                }
+                let own = Set(extensions(here).map { ($0 as NSString).lastPathComponent })
+                var seen = Set<String>()
+                let inherited = extensions(parent).filter { path in
+                    let name = (path as NSString).lastPathComponent
+                    return !own.contains(name) && !excluded.extensions.contains(name) && seen.insert(name).inserted
+                }.map { parent + "/" + $0 }
+                continuation.resume(returning: (parent, excluded, inherited))
             }
         }
     }

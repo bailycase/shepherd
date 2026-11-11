@@ -143,8 +143,9 @@ struct NewThreadDesignTests {
         try await eventuallyOnMain("the new agent to be selected") { w.vm.selectedAgentID != nil && !draft.starting }
         let id = try #require(w.vm.selectedAgentID)
         #expect(draft.prompt.isEmpty && draft.references.isEmpty, "the draft went with the thread")
-        #expect(w.vm.sidebarLists.working.contains { $0.id == .local(id) })
-        #expect(!w.vm.sidebarLists.recents.contains { $0.id == .local(id) })
+        try await eventuallyOnMain("the opening thread under Working, as the host says") {
+            w.vm.sidebarLists.working.contains { $0.id == .local(id) } && !w.vm.sidebarLists.recents.contains { $0.id == .local(id) }
+        }
         FileManager.default.createFile(atPath: w.app.dir.appendingPathComponent("release-opening").path, contents: nil)
 
         // The agent's name is provisional, so pi's namer settles it on its first turn as usual.
@@ -239,10 +240,10 @@ struct NewThreadDesignTests {
         w.vm.openNewThread()
         let draft = w.vm.newThread
         _ = try await w.app.server.deleteDesign(w.design.id)
-        let error = await #expect(throws: DesignReferenceFailure.self) {
+        let error = await #expect(throws: (any Error).self) {
             try await draft.attach(reference: DesignReference(designID: w.design.id, board: Self.heroPath)!, vm: w.vm)
         }
-        #expect(error?.message.isEmpty == false)
+        #expect(error.map { String(describing: $0) }?.isEmpty == false, "the host says why")
         #expect(draft.references.isEmpty)
     }
 

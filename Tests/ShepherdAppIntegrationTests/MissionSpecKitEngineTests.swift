@@ -416,7 +416,7 @@ struct MissionSpecKitEngineTests {
             // Missions is an opt-in experiment (off by default); these journeys turn it on as a person would.
             vm.settings.missionsEnabled = true
             vm.openDestination(.missions)
-            controller = vm.missions
+            controller = app.missions
             await controller.refreshModels()
         }
 

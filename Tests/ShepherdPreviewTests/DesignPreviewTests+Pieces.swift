@@ -63,8 +63,11 @@ extension DesignPreviewTests {
         vm.selectSidebarRow(.design(checkout.id))
         let screen = vm.designScreen(checkout.id)
         let tweak = try #require(screen.tweak)
-        await screen.refresh()
-        #expect(screen.boards.first { $0.id == "Card.dc.html" }?.usage == "used in 2 boards")
+        // The host's new boards reach this Mac's synced copy.
+        try await eventuallyAsync("the piece's use") {
+            await screen.refresh()
+            return screen.boards.first { $0.id == "Card.dc.html" }?.usage == "used in 2 boards"
+        }
         if state == "use" {
             let use = DesignElementPick(board: home, id: try #require(DesignElementID(board: home.viewName, tid: 4, path: [1, 1])),
                                         rect: CGRect(x: 32, y: 72, width: 360, height: 96), kind: .shape, label: nil,

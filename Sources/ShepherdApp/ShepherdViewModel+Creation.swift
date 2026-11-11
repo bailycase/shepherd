@@ -13,12 +13,6 @@ extension ShepherdViewModel {
     /// Every "new space" affordance opens the app's own directory browser
     /// (RootView presents it); local and remote are the same UI.
     func addSpaceFromPanel() {
-        // Under the background host this Mac's spaces are the host's: the in-process server is idle,
-        // and a space added to it never reaches the sidebar or the space menu.
-        if !ownsWorkspace, localHost == nil, let host = remoteHosts.localHost {
-            spacePickerTarget = .host(host.id)
-            return
-        }
         spacePickerTarget = .local
     }
 
@@ -69,7 +63,7 @@ extension ShepherdViewModel {
         let config = NewAgentConfig(
             spaceID: space.id,
             workingDirectory: identity.path,
-            model: settings.defaultModel(piHome: server.pi.home),
+            model: settings.defaultModel(piHome: pi.home),
             thinking: settings.agentDefaults.thinking,
             initialPrompt: nil,
             initialName: (identity.branch as NSString).lastPathComponent,
@@ -92,38 +86,17 @@ extension ShepherdViewModel {
     @discardableResult
     func addSpace(at url: URL, select: Bool = true) async -> SpaceID? {
         let path = url.path
-        do { try verifyCheckoutAvailable(path) }
-        catch { fail("Couldn’t add the space", error); return nil }
-        let reservation = UUID()
-        startingCheckoutUsers[reservation] = path
-        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
-        if let host = localHost {
-            // The background host adds it (on top of its tree, as below), and it shows as its push lands.
-            do {
-                let id = try await remoteHosts.addSpace(hostID: host.id, path: path)
-                for _ in 0..<100 where !state.spaces.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
-                if select { selectSpace(id) }
-                return id
-            } catch {
-                fail("Couldn’t add the space", error)
-                return nil
-            }
-        }
-        let space = Space(name: url.lastPathComponent, path: path)
+        guard let host = localHost else { fail("Couldn’t add the space", BackgroundHostClient.HostStarting()); return nil }
+        // The background host adds it (on top of its tree), and it shows as its push lands.
         do {
-            // New projects go on top of the sidebar's project tree.
-            try await server.addSpace(space, first: true)
+            let id = try await remoteHosts.addSpace(hostID: host.id, path: path)
+            for _ in 0..<100 where !state.spaces.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+            if select { selectSpace(id) }
+            return id
         } catch {
-            NSLog("Shepherd: add space failed: \(error)")
-            NSSound.beep()
+            fail("Couldn’t add the space", error)
             return nil
         }
-        // Adopt the canonical snapshot here too: the callback may arrive after this await.
-        let canonical = server.state
-        sessions.stateDidChange(canonical)
-        adopt(canonical)
-        if select { selectSpace(space.id) }
-        return space.id
     }
 
     /// The Space a Project links for a folder the person chose: the one already registered at that path, else a new one. Neither opens a
@@ -133,7 +106,7 @@ extension ShepherdViewModel {
             URL(fileURLWithPath: (path as NSString).expandingTildeInPath).resolvingSymlinksInPath().standardized.path
         }
         let wanted = canonical(url.path)
-        if let existing = server.state.spaces.first(where: { !$0.hidden && canonical($0.path) == wanted }) { return existing.id }
+        if let existing = state.spaces.first(where: { !$0.hidden && canonical($0.path) == wanted }) { return existing.id }
         return await addSpace(at: url, select: false)
     }
 
@@ -170,7 +143,6 @@ extension ShepherdViewModel {
             return
         }
         update()
-        sessions.updateAppearance(theme.terminal)
         remoteHosts.updateAppearance(theme.terminal)
     }
 
@@ -178,7 +150,6 @@ extension ShepherdViewModel {
     /// every live ghostty surface in place, exactly like theme changes —
     /// no surface replacement, no replay, no blank panes.
     func rebuildSurfaces() {
-        sessions.updateSurfaceConfiguration()
         remoteHosts.updateSurfaceConfiguration()
     }
 
@@ -221,7 +192,7 @@ extension ShepherdViewModel {
     // MARK: New agent
 
     func sessionCaption() async -> String {
-        let count = await server.listSessions().count
+        let count = state.tabs.flatMap(\.layout.leaves).filter { $0.sessionID != nil }.count
         return "\(count) session\(count == 1 ? "" : "s") running"
     }
 
@@ -232,84 +203,8 @@ extension ShepherdViewModel {
     /// from the key window already.
     @discardableResult
     func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true, focusWindow: Bool = true) async throws -> AgentID {
-        if let host = localHost {
-            return try await startHostedAgent(config, host: host, selectAfter: selectAfter, focusWindow: focusWindow)
-        }
-        guard let space = state.spaces.first(where: { $0.id == config.spaceID }) else {
-            throw AgentStartFailure(message: "space no longer exists")
-        }
-        guard !missingSpaces.contains(space.id), Self.folderExists(config.workingDirectory) else {
-            checkMissingSpaces()
-            throw AgentStartFailure(message: "\(space.name)'s folder is missing. Locate it or remove the space.")
-        }
-        try verifyCheckoutAvailable(config.workingDirectory)
-        let reservation = UUID()
-        startingCheckoutUsers[reservation] = config.workingDirectory
-        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
-        let agentID = config.reservedAgentID ?? AgentID()
-        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
-        if opening != nil || config.openingReferencesPending {
-            sidebarPreparingOpeningTurns.insert(agentID)
-            sidebarOpeningTurns.insert(agentID)
-        }
-        let (agent, tab, primary) = config.thread(id: agentID, in: state, defaultServiceTier: settings.defaultServiceTier)
-
-        // Reserve before addAgent broadcasts: the broadcast mounts the new
-        // pane, whose view would otherwise lazily spawn its own pi process in
-        // parallel with createAgentSession below (doubled TUI output).
-        sessions.reserveAgentPane(primary.id)
-        do {
-            try await server.addAgent(agent, withTab: tab)
-        } catch {
-            sessions.unreserveAgentPane(primary.id)
-            sidebarPreparingOpeningTurns.remove(agentID)
-            sidebarOpeningTurns.remove(agentID)
-            throw AgentStartFailure(message: "server rejected agent: \(error)")
-        }
-
-        // The mutation broadcasts on the main queue and may be adopted before
-        // this continuation resumes. Always replace the mirror with the
-        // canonical state; appending here used to duplicate the new agent and
-        // tab in SwiftUI, producing undefined view identity and stale surfaces.
-        let canonical = server.state
-        sessions.stateDidChange(canonical)
-        state = canonical
-        // A new agent's thread is known to be empty: it draws at once, ready to type into, while
-        // pi boots behind it. A resumed session (a forked transcript) is read from its file.
-        // Its opening prompt shows at once too, as the row the host's first snapshot will carry.
-        if config.piSessionID == nil {
-            let empty = PiSessionPreview.empty(
-                sessionID: agent.effectivePiSessionID,
-                model: config.model ?? PiConfig.defaultModel(in: server.pi.home),
-                thinking: config.thinking.rawValue)
-            threadStores.store(for: agentID).preview(opening.map { $0.preview(empty) } ?? empty)
-        }
-
-        // Optimistic switch: the agent's thread appears immediately in its connecting
-        // state while pi boots behind it.
-        if selectAfter {
-            selectAgent(agentID)
-        }
-        if selectAfter, focusWindow {
-            // A new agent is something you immediately talk to, so the window must be key
-            // for its composer to take focus; it may not be when the New Agent sheet was just
-            // dismissed.
-            NSApp.activate(ignoringOtherApps: false)
-            window?.makeKeyAndOrderFront(nil)
-        }
-
-        do {
-            try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, openingPrompt: opening, isAutomation: config.isAutomation)
-        } catch {
-            sidebarPreparingOpeningTurns.remove(agentID)
-            sidebarOpeningTurns.remove(agentID)
-            throw AgentStartFailure(message: "session failed: \(error)")
-        }
-        if !config.openingReferencesPending {
-            sidebarPreparingOpeningTurns.remove(agentID)
-            reconcileSidebarOpeningTurn(agentID)
-        }
-        return agentID
+        guard let host = localHost else { throw BackgroundHostClient.HostStarting() }
+        return try await startHostedAgent(config, host: host, selectAfter: selectAfter, focusWindow: focusWindow)
     }
 
     /// `startAgent` as the background host's client: the host makes the thread (its worktree, when
@@ -321,24 +216,42 @@ extension ShepherdViewModel {
         guard config.designID == nil, config.coordinatorFor == nil, space != nil || config.reservedAgentID != nil else {
             throw AgentStartFailure(message: space == nil ? "space no longer exists" : "Shepherd's background service can't start this kind of thread yet.")
         }
-        let id = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
-            spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
-            serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
-            name: config.initialName, piSessionID: config.piSessionID, agentID: config.reservedAgentID,
-            worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
-        // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
-        let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: server.pi.home),
-                                           thinking: config.thinking.rawValue)
+        // Its id is chosen here, so its opening turn and prompt show from the host's first push.
+        let id = config.reservedAgentID ?? AgentID()
         let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id)
+        if opening != nil || config.openingReferencesPending {
+            sidebarPreparingOpeningTurns.insert(id)
+            sidebarOpeningTurns.insert(id)
+        }
+        // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
+        let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: pi.home),
+                                           thinking: config.thinking.rawValue)
         threadStores.store(for: id).preview(opening.map { $0.preview(empty) } ?? empty)
+        do {
+            _ = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
+                spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
+                serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
+                name: config.initialName, piSessionID: config.piSessionID, agentID: id,
+                worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
+        } catch {
+            sidebarPreparingOpeningTurns.remove(id)
+            sidebarOpeningTurns.remove(id)
+            throw error
+        }
         // ponytail: polls for the host's push (it usually lands before the reply); a push waiter if this shows.
         for _ in 0..<100 where !state.agents.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+        // Its revisions could not be asked for before the host had it.
+        if sidebarOpeningTurns.contains(id) { watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns)) }
         if selectAfter {
             selectAgent(id)
             if focusWindow {
                 NSApp?.activate(ignoringOtherApps: false)
                 window?.makeKeyAndOrderFront(nil)
             }
+        }
+        if !config.openingReferencesPending {
+            sidebarPreparingOpeningTurns.remove(id)
+            reconcileSidebarOpeningTurn(id)
         }
         return id
     }

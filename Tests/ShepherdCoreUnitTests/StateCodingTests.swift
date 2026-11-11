@@ -87,6 +87,15 @@ struct StateCodingTests {
         #expect(agent.checkout == nil, "older hosts and state files carry no checkout")
         #expect(agent.completedAt == nil && agent.seenCompletedAt == nil && agent.completionSeen == nil,
                 "an older host leaves Done to each device")
+        #expect(!agent.pushMuted, "older state files mute nothing")
+    }
+
+    /// A muted thread stays muted across state.json, and an unmuted one writes no key.
+    @Test func aThreadsPushMuteRoundTripsAndIsOmittedWhenOff() throws {
+        var agent = Agent(name: "n", spaceID: SpaceID(), tabID: TabID())
+        #expect(!String(decoding: try JSONEncoder().encode(agent), as: UTF8.self).contains("pushMuted"))
+        agent.pushMuted = true
+        #expect(try Fixture.roundTrip(agent).pushMuted)
     }
 
     /// The host's completion and what was seen of it cross the wire and state.json; Done follows them.

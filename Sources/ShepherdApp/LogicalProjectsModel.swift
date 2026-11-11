@@ -24,7 +24,7 @@ extension ShepherdViewModel {
     /// The pages that exist only while Projects is on.
     var isProjectDestination: Bool { destination == .project || destination == .projectSettings }
 
-    /// Call from the backend's `settings.onProjectsChange`, after `server.setProjectsEnabled`. Off closes only Project navigation: the
+    /// Call from the view model's `settings.onProjectsChange` (the host turns Projects on or off itself). Off closes only Project navigation: the
     /// page on screen, the New project and New thread sheets, and the pane's task and file. Projects, their files, conversation drafts
     /// and the pane's tab and filter stay. On does nothing, so nothing reopens and no work resumes.
     func projectsExperimentChanged() {

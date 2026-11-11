@@ -39,8 +39,9 @@ struct ProjectPlacementFlowTests {
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             owner.remoteHosts.addHost(name: "Executor", host: "127.0.0.1", port: port, token: token)
             try await eventuallyOnMain("authenticated executor") { self.owner.remoteHosts.connections.first?.phase == .connected }
-            let config = try #require(owner.remoteHosts.hosts.first)
+            let config = try #require(owner.remoteHosts.connections.first?.config)
             host = .remote(hostID: config.id, bindingID: config.bindingID)
+            try await owner.hostReaches(host, spaces: [spaceB.id])
             _ = try await owner.server.logicalProjects(.create(projectID: projectID, name: "Owner", goal: "", linkedSpaceIDs: [spaceA.id]))
             _ = try await owner.server.logicalProjects(.settings(projectID: projectID, expectedRevision: project.revision,
                 settings: .init(threadModel: "anthropic/claude-sonnet-4-5", allowedHosts: [.local, host])))
@@ -49,7 +50,7 @@ struct ProjectPlacementFlowTests {
         func perform(_ request: ProjectRuntimeRequest) async throws {
             try await eventuallyAsync("revision-fenced owner action") {
                 do {
-                    _ = try await self.owner.vm.projectCoordinator.perform(projectID: self.projectID, expectedRevision: self.project.revision, request: request)
+                    _ = try await self.owner.coordinator.perform(projectID: self.projectID, expectedRevision: self.project.revision, request: request)
                     return true
                 } catch let error as LogicalProjectsError where ["stale_project", "project_busy"].contains(error.code) { return false }
             }
@@ -403,6 +404,9 @@ struct ProjectPlacementFlowTests {
         try r.owner.server.start()
         // A restart starts nothing and pauses nothing: queued work waits for the person's next action.
         #expect(!r.project.paused)
+        // The host listens again; this Mac's app reconnects and says again which Macs it reaches.
+        try r.owner.server.startLocalListener(path: r.owner.hostSocket, tokenURL: r.owner.dir.appendingPathComponent("remote-token"))
+        try await r.owner.hostReaches(r.host)
         r.owner.server.reconcileProjectExecutions(host: r.host)
         try await eventuallyOnMain("read-only reconciliation after restart") { r.project.tasks.filter { $0.phase == .settled }.count == 3 }
         #expect(!r.project.paused && r.project.tasks.last?.phase == .queued)
@@ -477,7 +481,7 @@ struct ProjectPlacementFlowTests {
         await #expect(throws: (any Error).self) { _ = try await viewer.projectRuntime(.worker(projectID: ProjectID(), taskID: task.id, request: .snapshot())) }
         await #expect(throws: (any Error).self) { _ = try await viewer.projectRuntime(.worker(projectID: r.projectID, taskID: ProjectTaskID(), request: .snapshot())) }
         if remote {
-            let config = try #require(r.owner.remoteHosts.hosts.first)
+            let config = try #require(r.owner.remoteHosts.connections.first?.config)
             r.owner.remoteHosts.updateHost(id: config.id, name: config.name, host: "localhost", port: config.port, token: config.token)
             try await eventuallyOnMain("replacement executor connected") { r.owner.remoteHosts.connections.first?.phase == .connected }
             await #expect(throws: (any Error).self) { _ = try await viewer.projectRuntime(read) }
@@ -619,14 +623,14 @@ struct ProjectPlacementFlowTests {
         try await r.assign("slow")
         try await eventuallyOnMain("remote turn consumed") { r.project.tasks.first?.executionReceipt?.phase == .sent }
         let task = try #require(r.project.tasks.first)
-        let config = try #require(r.owner.remoteHosts.hosts.first)
+        let config = try #require(r.owner.remoteHosts.connections.first?.config)
         r.owner.remoteHosts.updateHost(id: config.id, name: config.name, host: "localhost", port: config.port, token: config.token)
         try await eventuallyOnMain("replacement binding connected") { r.owner.remoteHosts.connections.first?.phase == .connected }
-        #expect(r.owner.remoteHosts.hosts.first?.bindingID != config.bindingID)
+        #expect(r.owner.remoteHosts.connections.first?.config.bindingID != config.bindingID)
         #expect(r.project.tasks.first?.phase.occupiesSlot == true)
         #expect(r.project.tasks.first?.executionAssignment == task.executionAssignment)
         await #expect(throws: (any Error).self) {
-            try await r.owner.vm.projectCoordinator.place(host: r.host, request: .execute(try #require(task.executionAssignment)))
+            try await r.owner.coordinator.place(host: r.host, request: .execute(try #require(task.executionAssignment)))
         }
         await #expect(throws: (any Error).self) { try await r.assign("must not fall back") }
         #expect(r.owner.server.state.agents.isEmpty)

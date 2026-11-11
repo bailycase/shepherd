@@ -5,16 +5,6 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-extension ShepherdViewModel {
-    /// Serves this Mac's MCP servers, subagent profiles and provider sign-ins to remote clients
-    /// (Settings on the iPhone and the iPad), read-only and to change: what Settings ▸ MCP,
-    /// Subagents and Sign-in show and do. Installed once at startup.
-    func installHostConfiguration() {
-        HostStores(mcp: mcp, subagents: { [weak self, pi = server.pi] in self?.subagentDefinitions ?? SubagentDefinitionsModel(pi: pi) }, piAuth: piAuth, yourPi: yourPi,
-                   remoteSignIns: remoteSignIns).serve(on: server)
-    }
-}
-
 /// The stores Settings ▸ MCP, Subagents and Sign-in read and change, served to remote clients
 /// (`RemoteRequest.hostInventory` and `.hostConfig`) by the app or by the headless host.
 @MainActor
@@ -46,9 +36,9 @@ struct HostStores {
         }
     }
 
-    /// The host with no app: what the app's view model does with a turn's error in process. A
-    /// limit on a provider with rotation on switches accounts and continues the turn
-    /// (`LimitRotation`), and a failed refresh reads Expired in Sign-in.
+    /// What the host does with a turn's error: a limit on a provider with rotation on switches
+    /// accounts and continues the turn (`LimitRotation`; its notice reaches the app's thread as
+    /// `threadNotice`), and a failed refresh reads Expired in Sign-in.
     func serveTurnErrors(on server: SessionServer) {
         let piAuth = piAuth
         let rotation = LimitRotation(server: server, piAuth: piAuth) { [weak server] agentID, line in

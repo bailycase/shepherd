@@ -158,7 +158,7 @@ struct WorkspaceNavigationTests {
 
     /// Cold parking at the view-model seam: a layout holding a terminal pane, hidden past the
     /// delay and outside the four most recently shown, unmounts; selecting it again remounts it
-    /// at once. An agent's pane is its RPC thread, so its pane session survives parking.
+    /// at once.
     @Test func hiddenLayoutsParkPastTheDelayAndUnparkWhenSelected() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -172,8 +172,6 @@ struct WorkspaceNavigationTests {
             vm.selectAgent(agent.agent.id)
             vm.noteActiveTabVisited()
         }
-        let firstSession = vm.sessions.session(for: agents[0].piPane, in: agents[0].tab)
-        try await eventuallyOnMain("the first agent's pane to bind its running pi") { firstSession.phase == .live }
         #expect(vm.mountedTabs.count == 6)
 
         vm.sweepColdPanes()
@@ -182,7 +180,6 @@ struct WorkspaceNavigationTests {
         vm.sweepColdPanes(now: Date().addingTimeInterval(60))
         #expect(vm.parkedTabIDs == [agents[0].tab.id])
         #expect(!vm.mountedTabs.contains { $0.id == agents[0].tab.id })
-        #expect(vm.sessions.session(for: agents[0].piPane, in: agents[0].tab) === firstSession)
 
         vm.selectAgent(agents[0].agent.id)
         vm.noteActiveTabVisited()
@@ -463,18 +460,16 @@ struct WorkspaceNavigationTests {
         let deck = try Self.deck(in: window)
 
         // The shown agent's terminal draws in its panel and reports the grid it measured.
-        let measuring = vm.sessions.session(for: shown.auxiliary[0], in: shown.tab)
-        var measured: [String] = []
-        let report = measuring.terminal.onResize
-        measuring.terminal.onResize = { cols, rows in
-            measured.append("\(rows) \(cols)")
-            report?(cols, rows)
-        }
         vm.terminalPanels.update(.init(host: nil, tab: shown.tab.id)) { $0.shown = true }
-        try await eventuallyOnMain("the shown agent's terminal to draw and report its grid", timeout: .seconds(30)) {
+        let measuring = try await vm.startHostTerminal(shown.auxiliary[0].id, of: shown.agent.id)
+        let server = app.server
+        try await eventuallyAsync("the host to take the grid the shown terminal measured", timeout: .seconds(30)) {
             ListPerf.settle(window)
-            return !measured.isEmpty && TerminalFirstResponder.view(ownedBy: measuring.terminal.model.viewState, in: window.window) != nil
+            let grid = "\(measuring.lastRows) \(measuring.lastCols)"
+            guard grid != "24 80", TerminalFirstResponder.view(ownedBy: measuring.terminal.model.viewState, in: window.window) != nil else { return false }
+            return await server.listSessions().first { $0.id == measuring.sessionID }.map { "\($0.rows) \($0.cols)" } == grid
         }
+        let measured = "\(measuring.lastRows) \(measuring.lastCols)"
         #expect(deck.pages[unopened.tab.id] == nil, "nobody has opened the other agent")
 
         // Its pi opens a terminal beside its thread, running a command that prints this shell's grid.
@@ -488,18 +483,10 @@ struct WorkspaceNavigationTests {
         let marker = try await readTerminal(terminal.id, for: unopened, in: app, until: { lines in
             lines.contains { $0.contains("terminal-ready") } && !Self.grids(in: lines).isEmpty
         })
-        #expect(Self.grids(in: marker) == [try #require(measured.last)], "the shell started at the grid already measured")
+        #expect(Self.grids(in: marker) == [measured], "the shell started at the grid already measured")
         #expect(deck.pages[unopened.tab.id] == nil && !vm.mountedTabs.contains { $0.id == unopened.tab.id }, "still no layout")
 
         // Showing the agent mounts its layout, its panel on that terminal, drawing the same shell.
-        let session = vm.sessions.session(for: terminal, in: tab)
-        #expect(session.sessionID != nil && session.sessionID == vm.sessions.liveSession(forPane: terminal.id))
-        var drawn: [String] = []
-        let reportDrawn = session.terminal.onResize
-        session.terminal.onResize = { cols, rows in
-            drawn.append("\(rows) \(cols)")
-            reportDrawn?(cols, rows)
-        }
         SHRenderProbe.start()
         defer { SHRenderProbe.stop() }
         try await MountedWorkspace.show(unopened, in: vm, window: window)
@@ -510,15 +497,16 @@ struct WorkspaceNavigationTests {
         #expect(target.tabs.map(\.id) == [terminal.id])
         #expect(panel.shown && TerminalPanel.selected(target.tabs, chosen: panel.chosenTab, focused: target.focused)?.id == terminal.id,
                 "the panel is up, on the terminal the tool opened")
-        try await eventuallyOnMain("the terminal's surface to draw and report its own grid", timeout: .seconds(30)) {
+        let session = try #require(vm.hostPaneSession(terminal.id))
+        let sessionID = session.sessionID
+        #expect(sessionID == vm.hostTerminalSession(terminal.id), "the pane attaches to the shell that was already running")
+        try await eventuallyOnMain("the terminal's surface to draw and attach", timeout: .seconds(30)) {
             ListPerf.settle(window)
-            return !drawn.isEmpty && TerminalFirstResponder.view(ownedBy: session.terminal.model.viewState, in: window.window) != nil
+            return session.phase == .live && TerminalFirstResponder.view(ownedBy: session.terminal.model.viewState, in: window.window) != nil
         }
-        #expect(session.phase == .live && session.sessionID == vm.sessions.liveSession(forPane: terminal.id))
-        let sessionID = try #require(session.sessionID)
-        let server = app.server
+        let drawn = "\(session.lastRows) \(session.lastCols)"
         try await eventuallyAsync("the shell to take the grid its surface measured", timeout: .seconds(20)) {
-            await server.listSessions().first { $0.id == sessionID }.map { "\($0.rows) \($0.cols)" } == drawn.last
+            await server.listSessions().first { $0.id == sessionID }.map { "\($0.rows) \($0.cols)" } == drawn
         }
 
         // The shell's size follows the surface's report a moment later, so a command typed meanwhile can still see the old one.
@@ -530,9 +518,9 @@ struct WorkspaceNavigationTests {
             guard case .ok = typed else { return false }
             let screen = try await self.readTerminal(terminal.id, for: unopened, in: app, until: { $0.contains { $0.hasPrefix("\(key)=") } })
             printed = screen.first { $0.hasPrefix("\(key)=") }.map { String($0.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces) } ?? ""
-            return printed == drawn.last
+            return printed == drawn
         }
-        #expect(printed == drawn.last, "the shell prints the grid its surface measured")
+        #expect(printed == drawn, "the shell prints the grid its surface measured")
     }
 
     /// An agent nobody has opened has no layout and needs none: a status report reaches its
@@ -573,7 +561,7 @@ struct WorkspaceNavigationTests {
             if case .snapshot? = try? await server.nativeThread(agentID: unopened.agent.id, request: .snapshot()) { return true }
             return false
         }
-        #expect(vm.sessions.startQueue.started.contains(unopened.agent.id), "asking for the thread started its pi")
+        #expect(await startedAgents(on: server).contains(unopened.agent.id), "asking for the thread started its pi")
         ListPerf.settle(window)
         #expect(deck.pages[unopened.tab.id] == nil && !vm.mountedTabs.contains { $0.id == unopened.tab.id })
     }
@@ -881,6 +869,9 @@ struct WorkspaceNavigationTests {
         defer { window.close() }
         try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
         let deck = try Self.deck(in: window)
+        // The host runs every layout's shell, hidden or not.
+        var terminals: [AppTerminalModel] = []
+        for agent in agents { terminals.append(try await vm.startHostTerminal(agent.auxiliary[0].id, of: agent.agent.id).terminal) }
 
         for shown in [0, 2, 1, 0] {
             vm.selectAgent(agents[shown].agent.id)
@@ -888,7 +879,7 @@ struct WorkspaceNavigationTests {
                 ListPerf.settle(window)
                 return agents.indices.allSatisfy { index in
                     let agent = agents[index]
-                    let terminal = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab).terminal.model
+                    let terminal = terminals[index].model
                     guard let surface = TerminalFirstResponder.view(ownedBy: terminal.viewState, in: window.window) else { return false }
                     let visible = index == shown
                     return vm.threadStores.store(for: agent.agent.id).isLive == visible

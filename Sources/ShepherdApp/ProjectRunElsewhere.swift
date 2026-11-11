@@ -122,7 +122,7 @@ struct RunElsewhereSheet: View {
     private var hosts: [RunElsewhereHost] {
         guard let project, let task, let options else { return [] }
         let offline = draft.ref.home == .local
-            ? vm.remoteHosts.connections.filter { $0.phase != .connected && !$0.isThisMac }
+            ? vm.remoteHosts.connections.filter { $0.phase != .connected }
                 .map { RunElsewhereHosts.Offline(id: $0.id, name: $0.config.name, lastSeen: $0.lastSeen) }
             : []
         return RunElsewhereHosts.rows(options: options, settings: project.settings, from: task.destination, spaceName: spaceName,

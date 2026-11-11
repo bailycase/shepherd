@@ -87,10 +87,8 @@ struct SidebarActivityFlowTests {
         for section in SidebarActivitySection.allCases { vm.toggleActivitySection(section) }
         #expect(vm.sidebarWalkRows.isEmpty)
         #expect(vm.sidebarShortcutRows.isEmpty)
-        let relaunched = ShepherdViewModel(
-            server: app.server, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
-            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in },
-            restoresAgentsAtLaunch: false, checkoutReader: nil)
+        let relaunched = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
+            remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in })
         #expect(relaunched.collapsedActivitySections == Set(SidebarActivitySection.allCases))
         vm.selectAgent(done.agent.id)
         #expect(!vm.collapsedActivitySections.contains(.done))
@@ -211,7 +209,7 @@ struct SidebarActivityFlowTests {
         let parent = Fixture.agent("remote parent", in: space, status: .done)
         let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [parent]))
         let child = ChildRun(runID: "child", label: "worker", state: "running")
-        hostVM.applyAgentChildren(parent.agent.id, [child])
+        remote.host.publishChildren(parent.agent.id, [child])
         let vm = try await app.start()
         let connection = try await remote.connect(app.remoteHosts)
         let id = SidebarRowID.remote(.init(hostID: connection.id, agentID: parent.agent.id))
@@ -220,13 +218,13 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarLists.working.first?.accessory == .tag(connection.config.name))
         #expect(vm.sidebarTree.projects.first?.rollup == .running)
         #expect(connection.state.agents.first?.status == .done && hostVM.state.agents.first?.status == .done)
-        hostVM.applyAgentChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
+        remote.host.publishChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
         try await eventuallyOnMain("remote child completion") { vm.sidebarLists.done.map(\.id) == [id] }
         let first = try #require(vm.sidebarLists.done.first?.completion)
         vm.markAllSidebarDoneSeen()
-        hostVM.applyAgentChildren(parent.agent.id, [child])
+        remote.host.publishChildren(parent.agent.id, [child])
         try await eventuallyOnMain("remote child work to resume") { vm.sidebarLists.working.map(\.id) == [id] }
-        hostVM.applyAgentChildren(parent.agent.id, [])
+        remote.host.publishChildren(parent.agent.id, [])
         try await eventuallyOnMain("remote removal to create another unseen completion") { vm.sidebarLists.done.map(\.id) == [id] }
         #expect(vm.sidebarLists.done.first?.completion != first)
         remote.host.server.stopRemoteListener()
@@ -248,7 +246,7 @@ struct SidebarActivityFlowTests {
         try await eventuallyOnMain("the parent's initial completion") { vm.sidebarLists.done.map(\.id) == [id] }
         vm.markAllSidebarDoneSeen()
         let child = ChildRun(runID: "child", label: "worker", state: "running")
-        hostVM.applyAgentChildren(parent.agent.id, [child])
+        remote.host.publishChildren(parent.agent.id, [child])
         try await eventuallyOnMain("live remote child work") { vm.sidebarLists.working.map(\.id) == [id] }
         let before = try #require(vm.sidebarCompletions.records[id])
         #expect(!before.finished)
@@ -267,7 +265,7 @@ struct SidebarActivityFlowTests {
         if childState == "deleted" {
             try await remote.host.server.putState(ShepherdState(spaces: [space]))
         } else if childState != "running" {
-            hostVM.applyAgentChildren(parent.agent.id, childState == "removed" ? [] :
+            remote.host.publishChildren(parent.agent.id, childState == "removed" ? [] :
                 [ChildRun(runID: "child", label: "worker", state: childState)])
         }
         if disconnect {
@@ -286,7 +284,7 @@ struct SidebarActivityFlowTests {
                     connection.phase == .connected && vm.sidebarLists.working.map(\.id) == [id]
                 }
                 #expect(vm.sidebarCompletions.records[id] == before, "reconnecting to the same live child is not another completion")
-                hostVM.applyAgentChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
+                remote.host.publishChildren(parent.agent.id, [ChildRun(runID: "child", label: "worker", state: "complete")])
             }
             try await eventuallyOnMain("the fresh child's actual completion") { vm.sidebarLists.done.map(\.id) == [id] }
             #expect(connection.children[parent.agent.id] == (childState == "removed" ? [] :
@@ -332,8 +330,9 @@ struct SidebarActivityFlowTests {
         var state = Fixture.state(spaces: [space], agents: fixtures)
         state.automations = [Automation(name: "nightly", prompt: "p", cwd: app.dir.path, agentID: fixtures[5].agent.id)]
         state.designs = [Design(name: "Dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4)]
+        // The design is drawn: with the tool off this Mac would not show it, and the harness waits for the whole workspace.
+        app.settings.designToolEnabled = true
         let vm = try await app.start(with: state)
-        vm.settings.designToolEnabled = true
         vm.pinThread(.local(fixtures[0].agent.id))
         var completed = vm.state
         completed.agents[2].status = .done

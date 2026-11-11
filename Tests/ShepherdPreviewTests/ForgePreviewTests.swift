@@ -289,7 +289,7 @@ extension PreviewTests {
         defer { workspace.stop() }
         let vm = workspace.vm
         let agentID = try #require(vm.state.agents.first).id
-        vm.branchPullRequestLookup = { _ in ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: ForgeFixtures.repo, number: 31), state: .open) }
+        workspace.host?.pullRequestLookup = { _ in ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: ForgeFixtures.repo, number: 31), state: .open) }
         vm.refreshBranchPullRequest(agentID)
         try await eventuallyOnMain("the pane's pull request") { vm.branchPullRequests[agentID]?.pullRequest != nil }
         let store = try #require(vm.branchPullRequests[agentID])
