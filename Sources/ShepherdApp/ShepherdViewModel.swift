@@ -1112,6 +1112,9 @@ final class ShepherdViewModel {
         if let gone = shownBefore, destination == nil, !state.designs.contains(where: { $0.id == gone }) {
             openDestination(.designs)
         }
+        // The host's push removed the selected agent (deleted here first, then restated by an
+        // earlier push, or deleted elsewhere): nothing points at it.
+        if selectedAgentID != nil, selectedAgent == nil { selectedAgentID = nil }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }
         // With nothing on screen (the shown agent went away, or the app just launched), the
