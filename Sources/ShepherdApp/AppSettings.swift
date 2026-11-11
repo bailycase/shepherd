@@ -427,11 +427,15 @@ final class AppSettings {
     static let sidebarKeepIdleChoices = [1, 3, 7, 14, 30, 0]
 
     /// Serve this Mac's sessions to remote Shepherd clients (the mini role).
-    /// Applied at launch and on toggle; persists so a host stays a host
-    /// across reboots.
+    /// The host applies it at launch and on toggle (`ShepherdHost.serveSettings`); persists so a
+    /// host stays a host across reboots.
     var remoteListenerEnabled: Bool {
-        didSet { store.set(remoteListenerEnabled, forKey: Key.remoteListenerEnabled) }
+        didSet {
+            store.set(remoteListenerEnabled, forKey: Key.remoteListenerEnabled)
+            if remoteListenerEnabled != oldValue { onRemoteListenerChange?(remoteListenerEnabled) }
+        }
     }
+    @ObservationIgnored var onRemoteListenerChange: ((Bool) -> Void)?
 
     var remoteListenerPort: Int {
         didSet { store.set(remoteListenerPort, forKey: Key.remoteListenerPort) }
@@ -780,7 +784,6 @@ final class AppSettings {
     /// Darwin notification `notice`; on one from anywhere the store is read back and what differs is
     /// assigned, so each `on*Change` fires as if it was set here. (`UserDefaults`'
     /// `didChangeNotification` is this process's only, and its KVO can't watch a dotted key.)
-    /// Remote's listener applies when the host next starts.
     func followOtherProcesses(notice: String = AppSettings.changeNotice) {
         guard follower == nil else { return }
         follower = SettingsFollower(store: store, notice: notice) { [weak self] in self?.reload() }
@@ -809,7 +812,7 @@ final class AppSettings {
         }
     }
 
-    /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them.
+    /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them, and Serve this Mac's switch.
     private static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
         take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
@@ -823,7 +826,7 @@ final class AppSettings {
         take(\.editor), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
         take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),
         take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled), take(\.missionsEnabled),
-        take(\.implementOpensThread),
+        take(\.implementOpensThread), take(\.remoteListenerEnabled),
     ]
 }
 

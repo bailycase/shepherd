@@ -381,4 +381,45 @@ struct ThreadHostingTests {
         try await client.closePane(agentID: id, paneID: opened)
         #expect(leaf(opened) == nil)
     }
+
+    /// The app tells the host which pane has its keyboard (`focusThread`) and its terminals report
+    /// their grid: `terminal_list` marks the focused one, and a terminal no view measured starts at
+    /// the last grid this Mac's app reported, not 80×24. The focus goes with the app.
+    @Test func theAppsFocusedTerminalAndLastGridReachTheHost() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        try await h.server.addSpace(space)
+        let client = try await connect(path, token)
+        let id = try await client.createAgent(spaceID: space.id, cwd: nil, model: nil, thinking: nil, initialPrompt: nil)
+        let agent = try #require(h.server.state.agents.first { $0.id == id })
+        let hosting = ThreadHosting(defaults: { fatalError() }, launch: { AgentLaunchSettings() },
+                                    shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) })
+        func focused() async -> [PaneID] {
+            guard case .panes(let panes) = await h.server.handleTerminalRequest(.list(agentID: id), hosting: hosting) else { return [] }
+            return panes.filter(\.isFocused).map(\.id)
+        }
+
+        let measured = try await client.openPane(agentID: id, relativeTo: agent.paneID!, axis: .vertical)
+        let session = try #require(h.server.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: measured)?.sessionID)
+        _ = try await client.attach(sessionID: session, cols: 132, rows: 41)
+        try await client.focusThread(id, pane: measured)
+        #expect(await focused() == [measured])
+
+        guard case .opened(let unseen) = await h.server.handleTerminalRequest(
+            .open(agentID: id, axis: .vertical, cwd: nil, relativeTo: nil, command: "stty size"), hosting: hosting) else {
+            Issue.record("no terminal opened")
+            return
+        }
+        let unseenSession = try #require(h.server.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: unseen.id)?.sessionID)
+        try await h.waitForScreen(unseenSession, toContain: "41 132")
+
+        client.disconnect()
+        let server = h.server
+        try await eventually("the app's focus to go with it") { @Sendable in
+            await server.enqueueValue { @Sendable in server.localFocusedPane } == nil
+        }
+        #expect(await focused().isEmpty)
+    }
 }

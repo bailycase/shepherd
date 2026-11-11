@@ -357,6 +357,12 @@ public struct YourPiImport: Sendable {
         return try? decoder.decode(YourPiImportState.self, from: data)
     }
 
+    /// Whether the first copy (`copyOnce`) has run, its sign-ins with it: its state is there.
+    public var copiedOnce: Bool {
+        var info = stat()
+        return lstat(stateURL.path, &info) == 0 && state()?.copied != false
+    }
+
     func save(_ state: YourPiImportState) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

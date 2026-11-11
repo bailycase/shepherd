@@ -112,6 +112,45 @@ struct HostModeSettingsTests {
         try await eventuallyOnMain("the app to follow the host") { !vm.settings.goalsEnabled }
     }
 
+    /// Settings ▸ Remote's Serve this Mac opens and closes the host's TCP listener at once, and the
+    /// page follows its port.
+    @Test func serveThisMacOpensAndClosesTheHostsListenerAtOnce() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let defaults = ScratchDefaults()
+        let notice = Self.notice()
+        let hostSettings = AppSettings(store: defaults)
+        hostSettings.remoteListenerPort = 0
+        hostSettings.followOtherProcesses(notice: notice)
+        var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
+        HostSettingsMapping.serve(on: host.server, settings: hostSettings) { nil } listener: { listener }
+        #expect(ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port } == nil)
+
+        let (socket, token, phone) = try await Self.listen(host)
+        phone.disconnect()
+        let appSettings = AppSettings(store: try #require(UserDefaults(suiteName: defaults.name)))
+        appSettings.followOtherProcesses(notice: notice)
+        let (vm, hosts, _, _, clientDir, _) = try await LocalClientTests.app(socket: socket, token: token, host: host, settings: appSettings)
+        defer {
+            for connection in hosts.allConnections { hosts.removeHost(id: connection.id) }
+            try? FileManager.default.removeItem(at: clientDir)
+        }
+
+        vm.setRemoteListenerEnabled(true)
+        try await eventuallyOnMain("the page to show the host's port") { vm.remoteListenerBoundPort != nil }
+        let port = try #require(vm.remoteListenerBoundPort)
+        let iPhone = RemoteHostClient()
+        _ = try await iPhone.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+        defer { iPhone.disconnect() }
+
+        vm.setRemoteListenerEnabled(false)
+        try await eventuallyOnMain("the page to show the listener off") { vm.remoteListenerBoundPort == nil }
+        let refused = RemoteHostClient()
+        await #expect(throws: (any Error).self) {
+            _ = try await refused.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+        }
+    }
+
     /// Instructions and Suggested instructions are the host's: the app's saves land there, and a
     /// paired device's save or an agent's suggestion on the host reaches the app's pages.
     @Test func instructionsAndSuggestionsAreTheHosts() async throws {

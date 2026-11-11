@@ -31,10 +31,10 @@
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
   worktree's loss by the same rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
   `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
-  `focusThread` (the thread it shows, so phone pushes for it stay quiet; cleared when it
-  disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
+  `focusThread` (the thread it shows, so phone pushes for it stay quiet, and the pane with its
+  keyboard, which `terminal_list` marks focused; cleared when it disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
   `agentNotify` push instead of posting on the host, and a `settingsChanged` push names the
-  Settings page (instructions, suggestions, skills, hooks, slash commands) whose data changed on the
+  Settings page (instructions, suggestions, skills, hooks, slash commands, remote) whose data changed on the
   host, for the app to read again. `toolFinished` (a thread's finished tool call, for the sidebar's
   activity) and `threadNotice` (a line the host says in a thread, such as an account rotation) go to
   it the same way, as do `automationNotify` (an automation's banner, which the host then doesn't
@@ -58,7 +58,7 @@
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`). It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
-  (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
+  (`ShepherdHost.serveSettings`; switching it opens or closes it at once), and
   `hostInventory` and `hostConfig` through `HostStores`. It answers
   worktree info and delete, commit from review (`WorktreeQueries`), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.

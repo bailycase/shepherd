@@ -465,9 +465,10 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    /// The thread this Mac's own app shows (`focusThread`), so its phone pushes stay quiet.
-    public func focusThread(_ agentID: AgentID?) async throws {
-        let reply = try await request { id in .focusThread(id: id, agentID: agentID) }
+    /// The thread this Mac's own app shows (`focusThread`), so its phone pushes stay quiet, and
+    /// the pane with its keyboard.
+    public func focusThread(_ agentID: AgentID?, pane: PaneID? = nil) async throws {
+        let reply = try await request { id in .focusThread(id: id, agentID: agentID, paneID: pane) }
         if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
     }
 

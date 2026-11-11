@@ -247,11 +247,13 @@ enum WorkspaceInUseAlert {
 extension ShepherdHost {
     /// What the app's view model applies to its server from Settings, applied to the host's: at
     /// start, on each change a client makes (`HostSettingsMapping`), and on each the app's own
-    /// Settings pages write to the shared preferences (`followOtherProcesses`). Serve this Mac opens the
-    /// TCP listener as the app would; a change to it takes effect when the host next starts. The
-    /// listener's port, when it opened.
+    /// Settings pages write to the shared preferences (`followOtherProcesses`). Serve this Mac opens and
+    /// closes the TCP listener with its switch, as the app did; `listener` hears each outcome (its
+    /// port, or why it didn't open) and the app's Settings ▸ Remote reads it again. The
+    /// listener's port, when it opened at start.
     @discardableResult
-    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer, listenerFailed: ((Error) -> Void)? = nil) -> UInt16? {
+    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer,
+                                         listener: ((UInt16?, Error?) -> Void)? = nil) -> UInt16? {
         settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
@@ -269,15 +271,28 @@ extension ShepherdHost {
         }
         compact(settings.compactAtPercent)
         settings.onCompactAtChange = { compact($0) }
-        guard settings.remoteListenerEnabled else { return nil }
-        do {
-            return try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort),
-                                                  tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
-        } catch {
-            ShepherdLog.error("host's remote listener failed to start: \(error)")
-            listenerFailed?(error)
-            return nil
+        let listen = { [weak server, settings] (on: Bool) -> UInt16? in
+            guard let server, on else {
+                listener?(nil, nil)
+                return nil
+            }
+            do {
+                let port = try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort),
+                                                          tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
+                listener?(port, nil)
+                return port
+            } catch {
+                ShepherdLog.error("host's remote listener failed to start: \(error)")
+                listener?(nil, error)
+                return nil
+            }
         }
+        settings.onRemoteListenerChange = { [weak server] on in
+            server?.stopRemoteListener()
+            _ = listen(on)
+            server?.settingsChanged(.remote)
+        }
+        return listen(settings.remoteListenerEnabled)
     }
 }
 
@@ -365,8 +380,8 @@ public enum ShepherdHost {
                 HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
                     self?.listener ?? (nil, nil)
                 }
-                listener.port = serveSettings(settings, on: server) { [weak self, settings] error in
-                    self?.listener.failure = RemoteListenerFailure(error, port: UInt16(clamping: settings.remoteListenerPort))
+                serveSettings(settings, on: server) { [weak self, settings] port, error in
+                    self?.listener = (port, error.map { RemoteListenerFailure($0, port: UInt16(clamping: settings.remoteListenerPort)) })
                 }
                 // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
                 let subagents = SubagentDefinitionsModel(pi: server.pi)

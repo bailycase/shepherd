@@ -712,8 +712,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// host. Answered `agentCreated`.
     case startThread(id: Int, thread: RemoteThreadStart)
     /// Local clients only (`localCapability`): the thread this Mac's own app shows with Shepherd
-    /// in front (nil: none), so the host's phone pushes for it stay quiet. Answered `ok`.
-    case focusThread(id: Int, agentID: AgentID?)
+    /// in front (nil: none), so the host's phone pushes for it stay quiet, and the pane with its
+    /// keyboard (`paneID`, nil: none; the terminal list's focused one). Answered `ok`.
+    case focusThread(id: Int, agentID: AgentID?, paneID: PaneID? = nil)
     /// Local clients only (`appRelayCapability`): the paired Macs this Mac's own app is connected
     /// to, for the Projects its background host owns (`ProjectExecutorsUpdate`). Answered `ok`.
     case projectExecutors(id: Int, update: ProjectExecutorsUpdate)
@@ -983,7 +984,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 path: try c.decode(String.self, forKey: .path)
             )
         case .focusThread:
-            self = .focusThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decodeIfPresent(AgentID.self, forKey: .agentID))
+            self = .focusThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decodeIfPresent(AgentID.self, forKey: .agentID),
+                                paneID: try c.decodeIfPresent(PaneID.self, forKey: .paneID))
         case .projectExecutors:
             self = .projectExecutors(id: try c.decode(Int.self, forKey: .id), update: try c.decode(ProjectExecutorsUpdate.self, forKey: .update))
         case .startThread:
@@ -1225,10 +1227,11 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(path, forKey: .path)
-        case .focusThread(let id, let agentID):
+        case .focusThread(let id, let agentID, let paneID):
             try c.encode(Kind.focusThread, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encodeIfPresent(agentID, forKey: .agentID)
+            try c.encodeIfPresent(paneID, forKey: .paneID)
         case .projectExecutors(let id, let update):
             try c.encode(Kind.projectExecutors, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1267,6 +1270,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 /// (`RemoteReply.settingsChanged`).
 public enum RemoteSettingsPage: String, Codable, Hashable, Sendable, CaseIterable {
     case instructions, suggestions, skills, hooks, slashCommands
+    /// Settings ▸ Remote's Serve this Mac: the listener opened, closed or failed.
+    case remote
 }
 
 /// Host → client. Replies correlate by request `id`; `stateChanged` is an
