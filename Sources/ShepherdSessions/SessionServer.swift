@@ -301,6 +301,8 @@ public final class SessionServer: @unchecked Sendable {
     /// A native client requested a restored thread whose process has not started yet.
     /// Delivered on main; hidden layout mounting is not demand.
     public var onNativeThreadDemand: ((AgentID) -> Void)?
+    /// This Mac's app shows a thread (`focusThread`): its checkout is read again. Delivered on main.
+    public var onThreadFocused: ((AgentID) -> Void)?
     /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
     /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
     /// (`revisionPushSpacing`): every agent revised while one delivery waits rides it, so a
@@ -3157,6 +3159,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             pushNotifications.focused = agentID
+            if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
             send(.ok(id: id), to: client)
         case .projectExecutors(let id, let update):
             guard client.isLocal else {

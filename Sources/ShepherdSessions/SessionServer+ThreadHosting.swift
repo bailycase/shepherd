@@ -155,6 +155,9 @@ extension SessionServer {
             onStatus?(id, status, failure)
             MainActor.assumeIsolated { monitor.refresh(id, after: .milliseconds(300)) }
         }
+        // The thread the app shows, after a selection or the app coming back: a commit in a
+        // terminal or an editor's save changed no state.
+        onThreadFocused = { id in MainActor.assumeIsolated { monitor.refresh(id, priority: true) } }
         monitor.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
     }
 
