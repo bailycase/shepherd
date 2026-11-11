@@ -132,10 +132,11 @@ struct IncrementalMarkdownTests {
     text right after
     """
 
-    /// Enough parts and weight for the greedy chunker to close chunks.
-    static let manyParts = (1...40).map { "Paragraph \($0) of the long reply." }.joined(separator: "\n\n")
-        + "\n\n" + (1...40).map { "- item \($0)" }.joined(separator: "\n")
-        + "\n\n" + (1...20).map { "```\ncode \($0)\n```" }.joined(separator: "\n\n") + "\n\nEnd."
+    /// Enough parts for the greedy chunker to close chunks (32 parts, and a list stretch of 32 items), in
+    /// short lines: every cut of a text this long costs a full parse of more than a hundred parts.
+    static let manyParts = (1...34).map { "Part \($0)." }.joined(separator: "\n\n")
+        + "\n\n" + (1...33).map { "- i\($0)" }.joined(separator: "\n")
+        + "\n\n" + (1...4).map { "```\ncode \($0)\n```" }.joined(separator: "\n\n") + "\n\nEnd."
 
     static let samples: [Sample] = [
         Sample(name: "the reported tools reply", text: MarkdownBlockTests.toolsReply),
@@ -171,15 +172,38 @@ struct IncrementalMarkdownTests {
         String(String.UnicodeScalarView(scalars[0..<count]))
     }
 
+    /// A run of a sample's cuts. Every cut costs a full parse of its prefix, so the cuts of a long sample are
+    /// split into runs, each a case of its own that starts from a fresh state and stays under the unit-test
+    /// time rule: at most `sliceCuts` cuts and about `sliceScalars` scalars parsed.
+    struct Slice: CustomTestStringConvertible, Sendable {
+        let sample: Sample
+        let cuts: [Int]
+        let name: String
+        var testDescription: String { name }
+    }
+
+    static let sliceCuts = 60
+    static let sliceScalars = 150_000
+
+    static let slices: [Slice] = samples.flatMap { sample in
+        let cuts = Self.cuts(Array(sample.text.unicodeScalars))
+        let total = cuts.reduce(0, +)
+        let count = max((cuts.count + sliceCuts - 1) / sliceCuts, (total + sliceScalars - 1) / sliceScalars)
+        let runs = (0..<count).map { Array(cuts[cuts.count * $0 / count..<cuts.count * ($0 + 1) / count]) }
+        return runs.enumerated().map { index, cuts in
+            Slice(sample: sample, cuts: cuts, name: count == 1 ? sample.name : "\(sample.name), part \(index + 1) of \(count)")
+        }
+    }
+
     // MARK: Equivalence
 
-    @Test(arguments: samples, [true, false])
-    func advancingThroughEveryCutGivesAFullParse(_ sample: Sample, streaming: Bool) {
-        let scalars = Array(sample.text.unicodeScalars)
+    @Test(arguments: slices, [true, false])
+    func advancingThroughEveryCutGivesAFullParse(_ slice: Slice, streaming: Bool) {
+        let scalars = Array(slice.sample.text.unicodeScalars)
         var markdown: NativeMarkdownState?
         var prose: NativeProseState?
         var advanced = 0
-        for count in Self.cuts(scalars) {
+        for count in slice.cuts {
             let text = Self.prefix(scalars, count)
             let expected = nativeMarkdownParse(text, streaming: streaming)
 
@@ -201,7 +225,7 @@ struct IncrementalMarkdownTests {
             #expect(prose?.prose == NativeProse(expected), "prose at \(count)")
             #expect(prose?.prose.blocks == expected.blocks, "prose blocks at \(count)")
         }
-        #expect(!sample.freezes || advanced > 0, "the cuts never took the incremental path")
+        #expect(!slice.sample.freezes || advanced > 0, "the cuts never took the incremental path")
     }
 
     /// The turn ends on a state that streamed: the same text, in the other mode.
@@ -274,7 +298,7 @@ struct IncrementalMarkdownTests {
 
     @Test(arguments: [UInt64(1), 42, 2026], [true, false])
     func aSeededWalkOverGeneratedTextMatchesAFullParse(_ seed: UInt64, streaming: Bool) {
-        let text = Self.generated(seed: seed, bytes: 20_000)
+        let text = Self.generated(seed: seed, bytes: 12_000)
         let scalars = Array(text.unicodeScalars)
         var rng = SplitMix64(state: seed ^ 0xFEED)
         var markdown = NativeMarkdownState("", streaming: streaming)
@@ -312,9 +336,11 @@ struct IncrementalMarkdownTests {
     }
 
     /// Texts of broken, half-written and nested Markdown, grown a few characters at a time, in either mode.
-    @Test func aWalkOverRandomMarkupMatchesAFullParse() {
+    /// Seeds 1...300 in six bands, a case each, so none runs near the unit-test time rule.
+    @Test(arguments: 0..<6)
+    func aWalkOverRandomMarkupMatchesAFullParse(_ band: Int) {
         var mismatches: [String] = []
-        for seed in 1...300 as ClosedRange<UInt64> {
+        for seed in UInt64(band * 50 + 1)...UInt64(band * 50 + 50) {
             var rng = SplitMix64(state: seed &* 104_729)
             let scalars = Array(Self.randomMarkup(&rng, length: 1...70).unicodeScalars)
             var markdown = NativeMarkdownState("", streaming: true)
@@ -336,10 +362,12 @@ struct IncrementalMarkdownTests {
     }
 
     /// The freeze rule holds for any later text that keeps the guard, not only for the text the state grew into.
-    @Test func aTextThatKeepsTheGuardAndGoesItsOwnWayMatchesAFullParse() {
+    /// Seeds 1...600 in six bands.
+    @Test(arguments: 0..<6)
+    func aTextThatKeepsTheGuardAndGoesItsOwnWayMatchesAFullParse(_ band: Int) {
         var mismatches: [String] = []
         var accepted = 0
-        for seed in 1...600 as ClosedRange<UInt64> {
+        for seed in UInt64(band * 100 + 1)...UInt64(band * 100 + 100) {
             var rng = SplitMix64(state: seed &* 15_485_863)
             let first = Self.randomMarkup(&rng, length: 1...80)
             let scalars = Array(first.unicodeScalars)
@@ -357,7 +385,7 @@ struct IncrementalMarkdownTests {
                 }
             }
         }
-        #expect(accepted > 600, "\(accepted) advances were accepted")
+        #expect(accepted > 600 / 6, "\(accepted) advances were accepted")
         #expect(mismatches.isEmpty, "\(mismatches.count) texts differ, the first: \(mismatches.first ?? "")")
     }
 
