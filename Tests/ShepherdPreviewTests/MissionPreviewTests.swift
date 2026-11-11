@@ -14,14 +14,15 @@ import Testing
 extension PreviewTests {
     @Test func missionsShell() async throws {
         let workspace = try PreviewWorkspace()
+        // Missions is an experiment, off by default; these previews draw it turned on, before the host serves them.
+        workspace.settings.missionsEnabled = true
         defer { workspace.stop() }
         let fixture = try MissionPreviewFixture(dir: workspace.dir)
         try await fixture.seed(workspace)
         let vm = workspace.vm
-        // Missions is an experiment, off by default; these previews draw it turned on.
-        vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = workspace.missions
+        // The page drives This Mac's missions through the host.
+        let controller = try #require(vm.thisMacMissions)
         func show(_ id: MissionID?, _ name: String, widths: [CGFloat] = [1440], panes: MissionInitialPanes = MissionInitialPanes()) async throws {
             controller.selectedID = id
             controller.reviews = fixture.reviews
@@ -100,14 +101,14 @@ extension PreviewTests {
 
     @Test func missionsEmptyAndStart() async throws {
         let workspace = try PreviewWorkspace()
+        // Missions is an experiment, off by default; these previews draw it turned on, before the host serves them.
+        workspace.settings.missionsEnabled = true
         defer { workspace.stop() }
         let fixture = try MissionPreviewFixture(dir: workspace.dir)
         try await workspace.seed(fixture.state)
         let vm = workspace.vm
-        // Missions is an experiment, off by default; these previews draw it turned on.
-        vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = workspace.missions
+        let controller = try #require(vm.thisMacMissions)
         try await Preview.render("missions-empty", size: CGSize(width: 1440, height: 900)) { RootView(vm: vm) }
         // New mission in the real shell, as its button opens it: empty, then with words and two repositories.
         try await Preview.render("mission-start", size: CGSize(width: 1440, height: 900),
@@ -164,13 +165,15 @@ extension PreviewTests {
 
 /// Stock Spec Kit missions over the same repositories: each preflight state the owner can meet, the
 /// explicit grant, the next stock command, and a converge report waiting for acceptance. The reports
-/// are the controller's in-memory preflight results, set as `reviews` are.
+/// are the host controller's in-memory preflight results.
 extension PreviewTests {
     @Test func missionSpecKit() async throws {
         let workspace = try PreviewWorkspace()
+        // Missions is an experiment, off by default; these previews draw it turned on, before the host serves them.
+        workspace.settings.missionsEnabled = true
         defer { workspace.stop() }
         let fixture = try MissionPreviewFixture(dir: workspace.dir)
-        try await workspace.server.putState(fixture.state)
+        try await workspace.seed(fixture.state)
         let repos = fixture.spaces
         let lanes = repos.map { MissionLane(spaceID: $0.id, name: $0.name, baseBranch: "refs/heads/main") }
         let goal = fixture.draft.draft.goal
@@ -260,10 +263,8 @@ extension PreviewTests {
         }
         let vm = workspace.vm
         try await eventuallyOnMain("missions to load") { vm.state.missions.count == 7 }
-        // Missions is an experiment, off by default; these previews draw it turned on.
-        vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = workspace.missions
+        let controller = try #require(vm.thisMacMissions)
         let reports: [MissionID: [SpaceID: SpecKitPreflight]] = [
             unconsented.id: Dictionary(uniqueKeysWithValues: repos.map { ($0.id, ready) }),
             allowed.id: Dictionary(uniqueKeysWithValues: repos.map { ($0.id, ready) }),
@@ -283,14 +284,16 @@ extension PreviewTests {
             controller.selectedID = id
             for width: CGFloat in [1440, 720] {
                 try await Preview.render(width == 1440 ? name : "\(name)-720", size: CGSize(width: width, height: 1100),
-                                         ready: { !controller.availableModels.isEmpty },
-                                         afterReady: { controller.error = nil; controller.specKitReports = reports }) {
+                                         ready: { !controller.availableModels.isEmpty && (reports[id] == nil || controller.specKitReports[id] == reports[id]) },
+                                         afterReady: { controller.error = nil }) {
                     // Narrow windows show the brief, where the Spec Kit section lives.
                     RootView(vm: vm).environment(\.missionInitialPanes, MissionInitialPanes(side: side && width < 1440))
                 }
             }
         }
-        controller.specKitReports = reports
+        // The drawn preflight states. The host answers the page's Spec Kit read with a fresh preflight of the
+        // record-only checkouts, not these, so until the page can be given them this waits and fails.
+        workspace.missions.specKitReports = reports
         try await show(unconsented.id, "mission-speckit-consent")
         try await show(allowed.id, "mission-speckit-next", side: true)
         try await show(changed.id, "mission-speckit-changed")

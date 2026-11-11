@@ -96,8 +96,8 @@ final class RemoteMissionDriver: MissionDriving {
     var error: String?
     var viewed: [MissionID: Set<String>] = [:]
     var startRequested = false
-    /// Each review read, with every file's hunks.
-    private(set) var reviews: [MissionID: [MissionRepositoryReview]] = [:]
+    /// Each review read, with every file's hunks (set by previews whose worktrees are records).
+    var reviews: [MissionID: [MissionRepositoryReview]] = [:]
     @ObservationIgnored private weak var vm: ShepherdViewModel?
 
     init(connection: RemoteHostStore.Connection, vm: ShepherdViewModel) {
