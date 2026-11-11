@@ -296,7 +296,9 @@ export default function shepherdGoal(pi: ExtensionAPI) {
   pi.on("tool_execution_end", (event, ctx) => {
     if (questions.delete(event.toolCallId) && !questions.size && goal?.state === "needsYou"
       && goal.reason === "waiting for your answer") {
-      transition("needsYou", ctx, "answer received · resume to continue");
+      // The run continues with the answer, so the goal does too. A failed or dismissed ask leaves it on the user.
+      if (event.isError || event.result?.details?.cancelled) transition("needsYou", ctx, "no answer · resume to continue");
+      else { transition("working", ctx); startClock(ctx); }
     }
   });
   pi.events.on("shepherd:children:v1", (data) => {
