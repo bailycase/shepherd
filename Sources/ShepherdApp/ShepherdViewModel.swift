@@ -934,13 +934,7 @@ final class ShepherdViewModel {
         installProjectControl()
         installReviewHandler()
         installDesignRenderHandler()
-        // Any pi session can create automations through the same socket.
-        installAutomationControl()
         installPullRequestLinks()
-        // Agents can see, message, and spawn peer threads.
-        installAgentPeerControl()
-        // Agents drive their thread's Browser page.
-        installBrowserAgentControl()
         installRemoteBrowserDrive()
         server.setProjectsEnabled(self.settings.projectsEnabled)
         self.settings.onProjectsChange = { [weak server, weak self] on in
