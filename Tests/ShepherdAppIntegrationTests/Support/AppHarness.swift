@@ -20,21 +20,15 @@ final class AppHarness {
     let themeManager: ThemeManager
     let remoteHosts: RemoteHostStore
     private(set) var vm: ShepherdViewModel!
-    /// Each started view model's harness (`HarnessShims`).
-    static var started: [ObjectIdentifier: Weak] = [:]
 
     var server: SessionServer { scratch.server }
-    /// No longer means anything: every harness's app is the client of the scratch server served
-    /// as `Shepherd --host` serves (`ShepherdHost.Services`). The tests still passing it move next.
-    let inProcess: Bool
     var dir: URL { scratch.dir }
 
     /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
     /// `directory` is a scratch directory the test already filled (a saved `state.json` for a cold launch).
     init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
          triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub,
-         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge, inProcess: Bool = false) throws {
-        self.inProcess = inProcess
+         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
         // Focus tracking reads NSApp even in model-only tests; no window is created.
         _ = NSApplication.shared
         let directory = try existing ?? makeScratchDirectory("srv")
@@ -74,7 +68,6 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
-        Self.started[ObjectIdentifier(vm)] = Weak(harness: self)
         let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
         let connection = vm.connectLocalHost(socket: hostSocket, token: token)
         let server = server
@@ -269,8 +262,8 @@ final class RemoteHostHarness {
     let token: String
 
     init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
-         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub, inProcess: Bool = false) throws {
-        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource, inProcess: inProcess)
+         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
+        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)

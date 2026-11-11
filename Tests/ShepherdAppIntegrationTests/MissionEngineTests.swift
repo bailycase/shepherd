@@ -74,7 +74,7 @@ struct MissionEngineTests {
         // Missions is an opt-in experiment (off by default); these journeys turn it on as a person would.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        let controller = vm.missions
+        let controller = app.missions
         controller.newMissionBackend = .legacyMap
         await controller.refreshModels()
         #expect(controller.availableModels == [MissionRuntimeFixture.model])

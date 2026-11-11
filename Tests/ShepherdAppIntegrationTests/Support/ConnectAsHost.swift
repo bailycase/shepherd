@@ -4,23 +4,6 @@ import ShepherdCore
 import ShepherdTestSupport
 import ShepherdSessions
 
-/// The view model has no server, Missions or Project runtime of its own (always-host 7b). Until the
-/// tests that still read them move to the harness, these read the harness's server and its host's runtime.
-@MainActor
-extension ShepherdViewModel {
-    private var harness: AppHarness {
-        guard let harness = AppHarness.started[ObjectIdentifier(self)]?.harness else { fatalError("a view model no AppHarness started") }
-        return harness
-    }
-    var server: SessionServer { harness.server }
-    var missions: MissionController { harness.host!.runtime!.missions }
-    var projectCoordinator: ProjectCoordinatorController { harness.host!.runtime!.coordinator }
-}
-
-extension AppHarness {
-    struct Weak { weak var harness: AppHarness? }
-}
-
 /// A view model a test made itself, taking `scratch`'s server as its host as `ShepherdApp` does.
 @MainActor
 func connectAsHost(_ vm: ShepherdViewModel, to scratch: ScratchServer) async throws {
