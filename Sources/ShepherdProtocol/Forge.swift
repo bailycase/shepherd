@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 
 // Issues & PRs (`RemoteProtocol.forgeCapability`): GitHub issues and pull requests read and
-// changed through the host's own `gh`, for the Mac (in process, `SessionServer.forge`) and
-// paired devices (`RemoteRequest.forge`) alike. Everything here came from GitHub and is
+// changed through the host's own `gh`, for this Mac's app and
+// paired devices (`RemoteRequest.forge`, `SessionServer.forge`) alike. Everything here came from GitHub and is
 // untrusted text: show it, quote it as data in prompts, never run it.
 
 // MARK: - Identity
@@ -125,6 +125,39 @@ public enum ForgeLinks {
         guard branch.hasPrefix("agent/issue-") else { return nil }
         return Int(branch.dropFirst("agent/issue-".count).prefix { $0.isNumber })
     }
+}
+
+/// A local thread's link to its branch's pull request, as `gh pr view` in its checkout read it.
+public struct ThreadPullRequest: Codable, Hashable, Sendable {
+    public var ref: ForgeItemRef
+    public var state: PullRequestState
+    public var headRefName: String
+    /// The head commit GitHub has: a checkout still at it has nothing unpushed.
+    public var headRefOid: String
+
+    public static let fields = "url,number,state,isDraft,headRefName,headRefOid"
+
+    /// gh's `--json` answer; nil for anything that isn't a pull request.
+    public init?(json: String) {
+        struct Read: Decodable { var url: String; var state: String; var isDraft: Bool?; var headRefName: String?; var headRefOid: String? }
+        guard let read = try? JSONDecoder().decode(Read.self, from: Data(json.utf8)),
+              let ref = ForgeItemRef(link: read.url), ref.kind == .pullRequest else { return nil }
+        let state: PullRequestState = switch read.state.uppercased() {
+        case "MERGED": .merged
+        case "CLOSED": .closed
+        default: read.isDraft == true ? .draft : .open
+        }
+        self.init(ref: ref, state: state, headRefName: read.headRefName ?? "", headRefOid: read.headRefOid ?? "")
+    }
+
+    public init(ref: ForgeItemRef, state: PullRequestState, headRefName: String = "", headRefOid: String = "") {
+        self.ref = ref
+        self.state = state
+        self.headRefName = headRefName
+        self.headRefOid = headRefOid
+    }
+
+    public var isOpen: Bool { state == .open || state == .draft }
 }
 
 // MARK: - States
@@ -780,7 +813,7 @@ public struct ForgeError: Error, Codable, Hashable, Sendable {
 
 // MARK: - Requests
 
-/// A forge request (`RemoteRequest.forge`, or `SessionServer.forge` in process). Repositories
+/// A forge request (`RemoteRequest.forge`, answered by `SessionServer.forge`). Repositories
 /// are "owner/name". Changes go through gh at once; nothing polls.
 public enum RemoteForgeRequest: Codable, Hashable, Sendable {
     /// The repositories this host knows (`ForgeRepo`): the picker. Answered `repos`.

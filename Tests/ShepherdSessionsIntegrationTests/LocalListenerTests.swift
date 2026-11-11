@@ -123,4 +123,26 @@ struct LocalListenerTests {
         local.host.stop()
         #expect(!FileManager.default.fileExists(atPath: local.path))
     }
+
+    /// Add space, Space settings and a child space from this Mac's app reach the host's registry
+    /// (`projectRequest`), answered with the space.
+    @Test func theAppRegistersEditsAndNestsSpacesOnItsHost() async throws {
+        let local = try Local()
+        defer { local.host.stop() }
+        let (client, _) = try await local.client()
+        defer { client.disconnect() }
+        let parent = local.host.dir.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+
+        let id = try await client.projectRequest(.register(path: parent.path, name: "acme"))
+        #expect(local.host.server.state.spaces.contains { $0.id == id && $0.name == "acme" })
+        #expect(try await client.projectRequest(.edit(spaceID: id, edit: ProjectEdit(name: "acme-web"))) == id)
+        #expect(local.host.server.state.spaces.first { $0.id == id }?.name == "acme-web")
+        let child = try await client.projectRequest(.child(parentPath: parent.path, path: parent.appendingPathComponent("api").path,
+                                                          name: "api", create: true))
+        #expect(local.host.server.state.spaces.contains { $0.id == child && $0.name == "api" })
+        await #expect(throws: RemoteHostClientError.self) {
+            try await client.projectRequest(.edit(spaceID: SpaceID(), edit: ProjectEdit(name: "nobody")))
+        }
+    }
 }

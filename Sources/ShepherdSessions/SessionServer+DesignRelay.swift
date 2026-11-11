@@ -3,7 +3,7 @@ import ShepherdProtocol
 
 /// Boards drawn for a host with no web view: `board_render` (and `board_interact`, a render with
 /// steps), `design_export` and a reference's copy go to the app connected over `host.sock`
-/// (`relayDesign`), which draws them as it does in process. With no app connected they are
+/// (`relayDesign`), which draws them. With no app connected they are
 /// refused, saying so.
 extension SessionServer {
     static let appNotOpen = "Drawing a design needs the Shepherd app, which isn't open. Open Shepherd and try again."

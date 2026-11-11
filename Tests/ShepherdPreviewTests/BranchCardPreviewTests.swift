@@ -81,8 +81,11 @@ struct BranchCardPreviewTests {
         defer { workspace.stop() }
         let (origin, clone) = try clone()
         defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
+        // Branch lists come from This Mac's host, for one of its spaces.
+        let space = Space(name: "payments", path: clone.path)
+        try await workspace.seed(ShepherdState(spaces: [space]))
         try await Preview.render("branch-picker-switch", size: CGSize(width: 380, height: 360)) {
-            BranchPickerMenu(title: "Switch branch", selected: "agent/refund-events", load: { try await workspace.vm.branchPickerList(cwd: clone.path) },
+            BranchPickerMenu(title: "Switch branch", selected: "agent/refund-events", load: { try await workspace.vm.branchPickerList(cwd: clone.path, space: space.id) },
                              choose: { _ in }, newBranch: {}, fetch: {}, close: {})
                 .padding(SH.Space.xl)
                 .frame(width: 380, height: 360, alignment: .top)
@@ -102,7 +105,10 @@ struct BranchCardPreviewTests {
         try git(["switch", "-q", "main"], in: clone)
         try git(["worktree", "add", "-q", "-b", "agent/webhook-retries", worktree.path], in: clone)
         try git(["worktree", "add", "-q", "--no-track", "-b", "sam/payout-ui", payout.path, "origin/sam/payout-ui"], in: clone)
-        var list = try await workspace.vm.branchPickerList(cwd: worktree.path)
+        // Branch lists come from This Mac's host, for one of its spaces.
+        let space = Space(name: "payments", path: worktree.path)
+        try await workspace.seed(ShepherdState(spaces: [space]))
+        var list = try await workspace.vm.branchPickerList(cwd: worktree.path, space: space.id)
         list.threads[ShepherdViewModel.standard(PiSessionFolder.realPath(payout.path))] = "Payout screen"
         for busy in [nil, "running"] as [String?] {
             list.busy = busy
@@ -123,8 +129,11 @@ struct BranchCardPreviewTests {
         defer { workspace.stop() }
         let (origin, clone) = try clone()
         defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
+        // Branch lists come from This Mac's host, for one of its spaces.
+        let space = Space(name: "payments", path: clone.path)
+        try await workspace.seed(ShepherdState(spaces: [space]))
         try await Preview.render("new-thread-branch-picker", size: CGSize(width: 420, height: 380)) {
-            BranchPickerMenu(first: "New branch from main", selected: nil, load: { try await workspace.vm.branchPickerList(cwd: clone.path) },
+            BranchPickerMenu(first: "New branch from main", selected: nil, load: { try await workspace.vm.branchPickerList(cwd: clone.path, space: space.id) },
                              choose: { _ in }, newBranch: {}, fetch: {}, close: {})
             .padding(SH.Space.xl)
             .frame(width: 420, height: 380, alignment: .topLeading)

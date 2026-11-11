@@ -52,7 +52,7 @@ final class MissionRuntimeFixture {
         // Missions is an opt-in experiment (off by default); these journeys turn it on as a person would.
         vm.settings.missionsEnabled = true
         vm.openDestination(.missions)
-        controller = vm.missions
+        controller = app.missions
         // These scenarios cover the map runner; Spec Kit missions have their own fixture.
         controller.newMissionBackend = .legacyMap
         await controller.refreshModels()
@@ -244,6 +244,10 @@ final class MissionRuntimeFixture {
         elif prompt.startswith('SHEPHERD MISSION STATION: validator'):
             valid = pathlib.Path('result.txt').read_text() == 'after\n' and 'HOST_CHECK_OK' in prompt
             passed = valid and not (root / 'fail-validation').exists()
+            # `fail-lane` names a lane whose validator rejects until the owner's hint reaches it.
+            stuck = root / 'fail-lane'
+            if stuck.exists() and ('Owned lane: ' + stuck.read_text()) in prompt and 'HINT-FOR-THE-FIXTURE' not in prompt:
+                passed = False
             reply = json.dumps(dict(passed=passed, evidence='Read actual result.txt; host command reports HOST_CHECK_OK.' if passed else 'Fixture rejects the acceptance condition; repair required.'))
         else:
             raise RuntimeError('Unexpected mission prompt: ' + prompt[:80])

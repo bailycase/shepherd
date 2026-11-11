@@ -5,7 +5,7 @@ import SwiftUI
 
 /// A terminal of the background host's thread in the app's own layout (`ShepherdViewModel.localHost`):
 /// the host runs its shell, and the pane attaches to it. Showing it is the demand that starts a
-/// restored shell, as `LiveTerminalPane`'s is.
+/// restored shell.
 struct HostTerminalLeaf: View {
     var vm: ShepherdViewModel
     let connection: RemoteHostStore.Connection

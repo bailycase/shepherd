@@ -84,7 +84,7 @@ extension ShepherdViewModel {
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected,
-                    missionAgents: $0.missions.agentIDs, thisMac: $0.isThisMac)
+                    missionAgents: $0.missions.agentIDs)
             }, designs: designToolEnabled, missingSpaces: missingSpaces, pullRequests: sidebarPullRequests)
     }
 
@@ -211,8 +211,6 @@ extension ShepherdViewModel {
         if destination != nil { destination = nil }
         selectionHistory.removeAll { $0 == id }
         selectionHistory.append(id)
-        // A restored agent still waiting to start its pi starts now, ahead of the others.
-        sessions.startAhead(id)
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
         markAutomationRunsRead(id)
@@ -221,7 +219,6 @@ extension ShepherdViewModel {
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }
         openActivitySectionHoldingSelection()
         sidebarRevealRequest += 1
-        checkouts?.refresh(id, priority: true)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 

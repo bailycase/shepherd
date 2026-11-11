@@ -199,6 +199,32 @@ final class MissionController {
         try await launch(id: id, revision: saved.revision)
     }
 
+    /// Retry with hint (a blocked push's long press): the stuck lane (`Mission.stuck`) gets one attempt past its
+    /// limit, the owner's hint in its next prompts, and the mission resumes as Launch resumes it. `attempts` is the
+    /// stuck count the owner saw; a lane that moved since, or a mission that isn't stopped on it, is refused.
+    func retryLane(id: MissionID, revision: UInt64, attempts: Int, hint: String) async throws {
+        let mission = try record(id)
+        let hint = Self.safeText(hint.trimmingCharacters(in: .whitespacesAndNewlines), bytes: MissionRetryGrant.hintBytes)
+        guard !hint.isEmpty else { throw MissionError("mission_hint", "Type a hint for the stuck lane.") }
+        guard mission.revision == revision, var run = mission.run, !run.phase.active, jobs[id] == nil,
+              let stuck = mission.stuck, stuck.attempts.count == attempts else {
+            throw MissionError("stale_mission", "That lane isn't stuck where the notification left it. Open the mission to see where it is.")
+        }
+        guard run.publicationApproval == nil else { throw MissionError("mission_published", "This mission has published work.") }
+        let lane = stuck.lane.spaceID
+        let extra = run.extraAttempts(lane) + 1
+        guard extra <= 20 else { throw MissionError("mission_retry_limit", "This lane has had 20 retries with hints. Revise its task in the mission.") }
+        run.retryGrants = (run.retryGrants ?? [:]).merging([lane: MissionRetryGrant(extra: extra, hint: hint)]) { $1 }
+        let saved = try await server.setMissionRun(id: id, expectedRevision: revision, run: run)
+        try await launch(id: id, revision: saved.revision)
+    }
+
+    /// The owner's latest hint for `lane`, as a prompt line (empty without one).
+    nonisolated static func hintLine(_ run: MissionRun?, lane: SpaceID?) -> String {
+        guard let hint = lane.flatMap({ run?.retryGrants?[$0]?.hint }) else { return "" }
+        return "\nThe owner's hint for this retry (follow it within the approved scope): \(hint)"
+    }
+
     func openThread(_ id: AgentID) { hosting.selectAgent(id) }
 
     func record(_ id: MissionID, runID: UUID? = nil) throws -> Mission {

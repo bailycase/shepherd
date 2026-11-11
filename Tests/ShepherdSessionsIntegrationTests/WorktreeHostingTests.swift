@@ -107,6 +107,46 @@ struct WorktreeHostingTests {
         #expect(!(try git(["branch", "--format=%(refname:short)"], in: hosted.repo)).contains("agent/fix-login"))
     }
 
+    /// The branch card renames the branch, and the host's checkout refresh records the new name
+    /// first (keeping the old one as Shepherd's own): Delete still removes the renamed branch.
+    @Test func deleteRemovesABranchRenamedAfterTheHostRecordedIt() async throws {
+        let hosted = try await host()
+        defer { hosted.stop() }
+        let checkout = try GitWorktree.add(repo: hosted.repo.path, branch: "agent/fix-login")
+        let agentID = try await addAgent("fix-login", cwd: checkout, in: hosted, branch: "agent/fix-login")
+        try git(["branch", "-m", "agent/fix-login", "agent/sign-in"], in: URL(fileURLWithPath: checkout))
+        await hosted.scratch.server.setAgentCheckout(agentID, AgentCheckout(branch: "agent/sign-in", changedFiles: 0))
+        #expect(hosted.scratch.server.state.agents.first { $0.id == agentID }?.worktreeOriginalBranch == "agent/fix-login")
+
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .setWorktree(branch: "agent/sign-in", base: nil))
+        guard case .worktreeInfo(let info) = try await hosted.client.agentQuery(agentID: agentID, query: .worktreeInfo) else {
+            Issue.record("expected worktree info"); return
+        }
+        let id = UUID()
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .deleteWorktree(operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint))
+        let operation = try await finished(id, agentID: agentID, in: hosted)
+
+        #expect(operation.error == nil)
+        #expect(!FileManager.default.fileExists(atPath: checkout))
+        #expect(!(try git(["branch", "--format=%(refname:short)"], in: hosted.repo)).contains("agent/sign-in"))
+    }
+
+    /// Add space on the host refuses a folder a worktree operation holds, and takes it once the operation lets go.
+    @Test func aCheckoutWithAWorktreeOperationRunningCannotBecomeASpace() async throws {
+        let hosted = try await host()
+        defer { hosted.stop() }
+        let checkout = try GitWorktree.add(repo: hosted.repo.path, branch: "agent/busy")
+        let canonical = URL(fileURLWithPath: checkout).resolvingSymlinksInPath().standardized.path
+        hosted.queries.busy.insert(canonical)
+
+        await #expect(throws: (any Error).self) { _ = try await hosted.client.addSpace(path: checkout) }
+        #expect(!hosted.scratch.server.state.spaces.contains { $0.path == checkout })
+
+        hosted.queries.busy.remove(canonical)
+        let id = try await hosted.client.addSpace(path: checkout)
+        #expect(hosted.scratch.server.state.spaces.contains { $0.id == id })
+    }
+
     @Test func aClientCommitsAThreadsChangeThroughTheHost() async throws {
         let hosted = try await host()
         defer { hosted.stop() }
@@ -132,6 +172,29 @@ struct WorktreeHostingTests {
         #expect(operation.error == nil)
         #expect(try git(["log", "-1", "--format=%s"], in: hosted.repo).hasPrefix("Update the readme"))
         #expect(try git(["status", "--porcelain"], in: hosted.repo) == "?? notes.txt\n")
+    }
+
+    /// The header's branch chip follows a commit from review and a review's load at once: the
+    /// host reads the thread's checkout again (`onThreadFocused`, what `watchCheckouts` reads on).
+    @Test func aCommitOrAReviewLoadReadsTheCheckoutAgain() async throws {
+        let hosted = try await host()
+        defer { hosted.stop() }
+        try "changed\n".write(to: hosted.repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let agentID = try await addAgent("docs", cwd: hosted.repo.path, in: hosted)
+        let reads = Locked<[AgentID]>([])
+        hosted.scratch.server.onThreadFocused = { id in reads.withValue { $0.append(id) } }
+
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .changesList(scope: .uncommitted, options: ChangesOptions()))
+        try await eventuallyOnMain("the review's load to read the checkout") { reads.current == [agentID] }
+
+        guard case .commitInfo(let info) = try await hosted.client.agentQuery(agentID: agentID, query: .commitInfo) else {
+            Issue.record("expected commit info"); return
+        }
+        let id = UUID()
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .commit(operationID: id, options: RemoteCommitOptions(
+            head: info.head, files: info.files, title: "Update the readme", body: "", push: .none)))
+        #expect(try await finished(id, agentID: agentID, in: hosted).error == nil)
+        try await eventuallyOnMain("the commit to read the checkout") { reads.current == [agentID, agentID] }
     }
 
     @Test func aClientReadsAThreadsSubagentsTranscriptAndWorkingTree() async throws {

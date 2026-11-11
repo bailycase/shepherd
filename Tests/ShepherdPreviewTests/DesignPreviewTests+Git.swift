@@ -103,7 +103,7 @@ extension DesignPreviewTests {
                                        scales: state == "changes" ? [1, 1.3] : [1], ready: {
             screen.isDrawn && (state != "changes" || git.preview != nil)
                 && (state == "share" || git.state != nil)
-                && (state != "running" || (vm.server.rpcThread(forAgent: agent.id)?.piBusy == true && git.state?.merge?.phase == .running))
+                && (state != "running" || (server.rpcThread(forAgent: agent.id)?.piBusy == true && git.state?.merge?.phase == .running))
         }) {
             RootView(vm: vm)
         }

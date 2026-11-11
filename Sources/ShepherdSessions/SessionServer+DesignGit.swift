@@ -425,8 +425,8 @@ extension SessionServer {
 
     // MARK: Announcing
 
-    /// The design's Git state changed: the app reads it again, in process or as the background
-    /// host's client (`designGitChanged`). Any thread.
+    /// The design's Git state changed: this Mac's app reads it again
+    /// (`designGitChanged`). Any thread.
     func designGitChanged(_ designID: DesignID) {
         hopToMain { [weak self] in self?.onDesignGitChanged?(designID) }
         queue.async { [self] in sendToLocalApps(.designGitChanged(designID: designID)) }

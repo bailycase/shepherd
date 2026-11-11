@@ -1,8 +1,9 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdUI
 
-/// MCP servers and skills a child space inherits from the space whose folder holds it
+/// MCP servers, skills, slash commands and extensions a child space inherits from the space whose folder holds it
 /// (ProjectChildMCP, ProjectChildMCPOverride, ProjectChildSkills boards), and the parent's side
 /// (ProjectParentMCP). A child turns an inherited one off for itself in Shepherd's own record on the
 /// host (`RemoteProjectsRequest.inheritance`), or overrides it with its own copy; it never writes
@@ -49,20 +50,36 @@ extension ProjectsModel {
     }
 
     func isExcluded(mcp name: String) -> Bool { context.excluded?.mcp.contains(name) == true }
-    func isExcluded(skill name: String) -> Bool { context.excluded?.skills.contains(name) == true }
 
-    /// Turns one inherited server or skill on or off for this space only.
-    func setInherited(mcp: String? = nil, skill: String? = nil, on: Bool) async {
-        guard canExcludeInherited, let selected, var excluded = context.excluded else { return }
-        if let mcp { excluded.mcp.removeAll { $0 == mcp }; if !on { excluded.mcp.append(mcp) } }
-        if let skill { excluded.skills.removeAll { $0 == skill }; if !on { excluded.skills.append(skill) } }
+    /// Turns one inherited server on or off for this space only.
+    func setInherited(mcp: String, on: Bool) async {
+        guard var excluded = context.excluded else { return }
+        excluded.mcp.removeAll { $0 == mcp }; if !on { excluded.mcp.append(mcp) }
+        await saveExclusions(excluded, resource: false)
+    }
+
+    /// Turns one inherited skill, slash command or extension on or off for this space only.
+    func setInherited(_ kind: ProjectResource.Kind, _ name: String, on: Bool) async {
+        guard var excluded = context.excluded else { return }
+        func set(_ list: inout [String]) { list.removeAll { $0 == name }; if !on { list.append(name) } }
+        switch kind {
+        case .skill: set(&excluded.skills)
+        case .prompt: set(&excluded.prompts)
+        case .extension: set(&excluded.extensions)
+        case .agent: return
+        }
+        await saveExclusions(excluded, resource: true)
+    }
+
+    private func saveExclusions(_ excluded: SpaceInheritanceExclusions, resource: Bool) async {
+        guard canExcludeInherited, let selected else { return }
         do {
             guard case .context(let next) = try await request(selected.host, .inheritance(directory: selected.project.directory, excluded: excluded)) else {
                 throw ProjectFileError("protocol", "Unexpected space context reply.")
             }
             if self.selected?.id == selected.id { context = next }
         } catch {
-            if skill != nil { resources.message = String(describing: error) } else { fileError = String(describing: error) }
+            if resource { resources.message = String(describing: error) } else { fileError = String(describing: error) }
         }
     }
 
@@ -80,5 +97,53 @@ extension ProjectsModel {
         guard selected == nil else { return }
         await open(parent)
         if tab != .instructions { await navigate(.category(tab)) }
+    }
+}
+
+/// The space's parent space (Settings tab), as Add space sets it: Shepherd's organization
+/// (`Space.parentID`), on this Mac or another host with `projectParentCapability`.
+extension ProjectsModel {
+    /// Why the parent can't be changed here, or nil when it can.
+    var parentProblem: String? {
+        guard let selected else { return "" }
+        if selected.unavailable != nil { return "Host offline. Reconnect to change the parent space." }
+        if selected.host.id != "local", !selected.host.supportsParent { return "Update Shepherd on \(selected.host.name) to choose a parent space." }
+        if selected.project.projectID == nil { return "Add this folder as a space to choose its parent." }
+        return nil
+    }
+
+    var parentSpaceName: String? {
+        guard let selected, let parent = selected.project.parent else { return nil }
+        return rows.first { $0.host.id == selected.host.id && $0.project.directory == parent }?.project.name
+    }
+
+    /// Spaces on the same host that can hold this one: never itself or one of its own child spaces.
+    var parentChoices: [AddSpaceModel.Parent] {
+        guard let selected else { return [] }
+        let same = rows.filter { $0.host.id == selected.host.id }
+        let byDirectory = Dictionary(same.map { ($0.project.directory, $0.project.parent) }, uniquingKeysWith: { first, _ in first })
+        func descends(_ directory: String) -> Bool {
+            var cursor: String? = directory, steps = 0
+            while let current = cursor, steps < 32 {
+                if current == selected.project.directory { return true }
+                cursor = byDirectory[current] ?? nil; steps += 1
+            }
+            return false
+        }
+        return same.compactMap { row in
+            guard let id = row.project.projectID, !descends(row.project.directory) else { return nil }
+            return AddSpaceModel.Parent(id: id, name: row.project.name)
+        }
+    }
+
+    /// Saves at once, like turning an inherited server off: it is Shepherd's record, not a space file.
+    func setParent(_ parentID: SpaceID?) async {
+        guard parentProblem == nil, !settingParent, let selected, let id = selected.project.projectID else { return }
+        settingParent = true; parentError = nil
+        defer { settingParent = false }
+        do {
+            _ = try await request(selected.host, .organize(spaceID: id, name: nil, parentID: parentID))
+            await load(hosts, force: true)
+        } catch { parentError = String(describing: error) }
     }
 }

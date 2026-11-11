@@ -137,6 +137,8 @@ struct DesignPreviewTests {
         let phone = try #require(DesignPath("A-phone.dc.html"))
         screen.setSelection(state == "zip" ? [] : [.init(board: a), .init(board: phone)])
         vm.openDesignExport(checkout.id)
+        // The sheet opens once the host's design files are synced here.
+        try await eventuallyOnMain("the export sheet") { vm.designExport != nil }
         let model = try #require(vm.designExport)
         switch state {
         case "zip": model.format = .zip
@@ -621,6 +623,7 @@ struct DesignPreviewTests {
         defer { workspace.stop() }
         let vm = workspace.vm
         await vm.loadDesignThumbnails()
+        vm.designThumbnailVisibility(.local(checkout.id), visible: true)
         try await Preview.render("design-card-menu", size: CGSize(width: 620, height: 340), ready: {
             vm.designRendering.thumbnails.image(checkout.id) != nil
         }) {
@@ -687,8 +690,9 @@ struct DesignPreviewTests {
         let vm = workspace.vm
         vm.openDestination(.designs)
         if state == "deleted" {
-            await vm.deleteDesign(.local(checkout.id), name: checkout.name)
-            #expect(!vm.state.designs.contains { $0.id == checkout.id })
+            // This Mac's designs are its host's: deleted through it, as the card's menu does.
+            await vm.deleteDesign(.remote(try #require(vm.hostDesign(checkout.id))), name: checkout.name)
+            try await eventuallyOnMain("the host deletes it") { !vm.state.designs.contains { $0.id == checkout.id } }
         } else {
             vm.showDesignToast(DesignToast(kind: .designFailed(checkout.id, host: nil), name: checkout.name,
                                            reason: "build-01, where it’s saved, didn’t answer, so it’s back."))

@@ -17,14 +17,13 @@ extension ShepherdViewModel {
 
     /// What a local design's canvas does with references and notes.
     func designReferenceCanvasActions() -> DesignReferenceCanvasActions {
-        let server = server
         return DesignReferenceCanvasActions(
             implement: { [weak self] in self?.openImplementSheet($0) },
             copy: { [weak self] in self?.copyDesignReference($0) },
             notes: { [weak self] id in
-                // As the background host's client, its notes (`threadNotes`), else the server's.
+                // The background host's notes (`threadNotes`).
                 guard let self, let library = self.hostDesign(id).flatMap({ _ in self.localHost?.designs }) else {
-                    return try await server.designThreadNotes(id)
+                    throw BackgroundHostClient.HostStarting()
                 }
                 guard case .threadNotes(let notes) = try await Self.remoteDesign(library, .threadNotes(designID: id)) else {
                     throw RemoteDesignReply.unexpected
@@ -33,7 +32,7 @@ extension ShepherdViewModel {
             },
             removeNote: { [weak self] id, note in
                 guard let self, let library = self.hostDesign(id).flatMap({ _ in self.localHost?.designs }) else {
-                    return try await server.removeDesignThreadNote(id, noteID: note)
+                    throw BackgroundHostClient.HostStarting()
                 }
                 _ = try await Self.remoteDesign(library, .removeThreadNote(designID: id, noteID: note))
             },
@@ -161,7 +160,7 @@ extension ShepherdViewModel {
         guard let project = model.chosenProject, let space = state.spaces.first(where: { $0.id == project.id }) else {
             throw DesignReferenceFailure("That space is gone.")
         }
-        var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path, model: settings.defaultModel(piHome: server.pi.home),
+        var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path, model: settings.defaultModel(piHome: pi.home),
                                     thinking: settings.defaultThinking, initialPrompt: nil)
         config.initialName = "Implement " + piece
         if project.isRepo {

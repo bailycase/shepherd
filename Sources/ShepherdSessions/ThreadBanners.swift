@@ -29,7 +29,8 @@ public final class ThreadBanners {
         }
     }
 
-    private let server: SessionServer
+    /// The host's server, observed by `observeServer`; nil in the app, which reports to it.
+    private let server: SessionServer?
     private let state: @MainActor () -> ShepherdState
     /// The threads' requests: the server's, or the background host's for its app.
     private let request: @MainActor (AgentID, NativeThreadRequest) async throws -> NativeThreadResult
@@ -47,6 +48,15 @@ public final class ThreadBanners {
         self.state = state
         self.sink = sink
         self.request = request ?? { [server] in try await server.nativeThread(agentID: $0, request: $1) }
+    }
+
+    /// The app's, whose threads' requests go to its host.
+    public init(state: @escaping @MainActor () -> ShepherdState, sink: Sink,
+                request: @escaping @MainActor (AgentID, NativeThreadRequest) async throws -> NativeThreadResult) {
+        self.server = nil
+        self.state = state
+        self.sink = sink
+        self.request = request
     }
 
     /// Whether an agent's turns and questions post as a thread's. A design's agent never does:
@@ -194,12 +204,13 @@ extension ThreadBanners {
     /// notify tool's always post. Wraps the server's `onAgentStatus`, `onStateChanged` and
     /// `onNotify` (whatever they were set to still runs first).
     public func observeServer() {
+        guard let server else { return }
         var statuses = Dictionary(server.state.agents.map { ($0.id, $0.status) }, uniquingKeysWith: { first, _ in first })
         let (onStatus, onState, onNotify) = (server.onAgentStatus, server.onStateChanged, server.onNotify)
-        server.onAgentStatus = { [weak self] id, status, failure in
+        server.onAgentStatus = { [weak self, weak server] id, status, failure in
             onStatus?(id, status, failure)
             MainActor.assumeIsolated {
-                guard let self, var agent = self.server.state.agents.first(where: { $0.id == id }) else { return }
+                guard let self, let server, var agent = server.state.agents.first(where: { $0.id == id }) else { return }
                 let old = statuses[id] ?? agent.status
                 statuses[id] = status
                 agent.status = status
@@ -214,12 +225,12 @@ extension ThreadBanners {
                 self?.questions()
             }
         }
-        server.onNotify = { [weak self] id, title, body in
+        server.onNotify = { [weak self, weak server] id, title, body in
             onNotify?(id, title, body)
             MainActor.assumeIsolated {
-                guard let self, let agent = self.server.state.agents.first(where: { $0.id == id }) else { return }
+                guard let self, let server, let agent = server.state.agents.first(where: { $0.id == id }) else { return }
                 // The app showing these threads as its own posts it, and its click opens the thread there.
-                if self.sink.quiet(), self.server.relayNotifyToLocalApp(agentID: id, title: title, body: body) { return }
+                if self.sink.quiet(), server.relayNotifyToLocalApp(agentID: id, title: title, body: body) { return }
                 self.sink.post(AgentBanners.agentNotify(agent, title: title, body: body))
             }
         }

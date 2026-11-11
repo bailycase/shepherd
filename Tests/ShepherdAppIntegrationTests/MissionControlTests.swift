@@ -63,10 +63,10 @@ struct MissionControlTests {
         defer { fixture.stop() }
         try await fixture.start()
         try Data().write(to: fixture.root.appendingPathComponent("ask-clarification"))
-        let controller = fixture.app.vm.missions
+        let controller = fixture.app.missions
         #expect(controller === fixture.controller)
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: dark,
-                                     MissionsDestination(controller: fixture.app.vm.missions)
+                                     MissionsDestination(controller: fixture.app.missions)
                                         .environment(\.colorScheme, dark ? .dark : .light))
         defer { window.close() }
         var images: [String] = []

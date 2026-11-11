@@ -22,7 +22,9 @@ actor ProjectMCPService {
     private var resolvedURLs: [String: String] = [:]
     init(pi: PiSetup, timeout: TimeInterval = ProjectMCPService.timeout) { self.pi = pi; self.timeout = timeout }
 
-    func request(directory: String, file: String, text: String, action: ProjectMCPAction, owner: UUID?, canonicalDirectory: String? = nil) async throws -> ProjectMCPResult {
+    /// `space` is the canonical folder whose agents use a sign-in (`ProjectSettingsStore.mcpSpace`).
+    func request(directory: String, file: String, text: String, action: ProjectMCPAction, owner: UUID?, space: String? = nil) async throws -> ProjectMCPResult {
+        let space = space ?? PiHome.canonical(directory)
         try Task.checkCancellation()
         switch action {
         case .poll(let id), .complete(let id, _), .cancel(let id):
@@ -40,14 +42,16 @@ actor ProjectMCPService {
             return .init(projectTrusted: true)
         case .credentials:
             let entries = try servers(text)
-            let data = try? Data(contentsOf: pi.home.appendingPathComponent("mcp-auth.json"))
-            let auth = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let auth = Self.json(pi.home.appendingPathComponent("mcp-auth.json"))
+            let global = (Self.json(pi.home.appendingPathComponent("mcp.json"))["mcpServers"] as? [String: Any]) ?? [:]
             let signed = entries.compactMap { name, value -> String? in
                 guard let url = value["url"] as? String else { return nil }
                 let alias = directory + "\n" + file + "\n" + name + "\n" + url
                 guard let canonical = resolvedURLs[alias] ?? Self.canonicalURL(url, shared: file == ".mcp.json") else { return nil }
                 let key = "mcp__" + name.replacingOccurrences(of: "-", with: "_") + "|" + canonical
-                let state = (auth[key] ?? auth[canonical]) as? [String: Any]
+                // pi's patched store: a server the global mcp.json doesn't name signs in per space, taking over its old unscoped key.
+                let scoped = global[name] == nil ? "mcp__" + name.replacingOccurrences(of: "-", with: "_") + "@" + space + "|" + canonical : key
+                let state = (auth[scoped] ?? auth[key] ?? auth[canonical]) as? [String: Any]
                 return (state?["tokens"] as? [String: Any])?["access_token"] is String ? name : nil
             }
             // `projectTrusted` stays true for older clients, which would otherwise draw a space as blocked.
@@ -100,11 +104,15 @@ actor ProjectMCPService {
                 await self?.remove(id)
             }
             let command: String = if case .logout = action { "logout" } else { "login" }
-            let payload: [String: Any] = ["server": server, "config": entry, "shared": file == ".mcp.json", "directory": directory, "command": command]
+            let payload: [String: Any] = ["server": server, "config": entry, "shared": file == ".mcp.json", "directory": directory, "space": space, "command": command]
             let data = try JSONSerialization.data(withJSONObject: payload)
             bridge.send(.answer(id: "config", value: String(decoding: data, as: UTF8.self)))
             return runs[id]!.result
         }
+    }
+
+    private static func json(_ url: URL) -> [String: Any] {
+        (try? Data(contentsOf: url)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
     }
 
     private func servers(_ text: String) throws -> [String: [String: Any]] {

@@ -133,6 +133,12 @@ enum PinWords {
     static func paletteTitle(pinned: Bool) -> String { pinned ? "Unpin thread" : "Pin thread" }
 }
 
+/// Mute Notifications in the thread options menu (the brief for the notification follow-ups; no board).
+enum MuteWords {
+    static func menuTitle(muted: Bool) -> String { muted ? "Unmute Notifications" : "Mute Notifications" }
+    static func symbol(muted: Bool) -> String { muted ? "bell" : SHGlyph.mute.symbolName }
+}
+
 /// This Mac's spaces pinned to the top of the Spaces tree, oldest pin first. View state of this
 /// Mac beside the thread pins: not in state.json, never sent to another device.
 struct SpacePins: Equatable {

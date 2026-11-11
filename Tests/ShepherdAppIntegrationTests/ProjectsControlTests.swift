@@ -35,15 +35,15 @@ struct ProjectsControlTests {
         try Data("# Check\n".utf8).write(to: skills)
         try await scratch.server.putState(ShepherdState(spaces: [Space(name: "dashboard", path: root.path)]))
         let defaults = ScratchDefaults()
-        let vm = ShepherdViewModel(server: scratch.server, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+        let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-                                   restoresAgentsAtLaunch: false, checkoutReader: nil)
+                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
+        try await connectAsHost(vm, to: scratch)
         #expect(vm.hooks.catalog?.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
         var openedFile: String?
         vm.madeProjects = ProjectsModel { _, request in
             if case .open(_, let file) = request { openedFile = file; return .opened }
-            return try await vm.server.projects.request(request, state: vm.state)
+            return try await scratch.server.projects.request(request, state: vm.state)
         }
         vm.showSettings = true; vm.settingsSection = .projects
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, RootView(vm: vm))
@@ -286,10 +286,10 @@ struct ProjectsControlTests {
         try Data(#"{"mcpServers": {"docs": {"command": "true"}, "shared": {"command": "true"}}}"#.utf8).write(to: acme.appendingPathComponent(".shepherd/mcp.json"))
         try await scratch.server.putState(ShepherdState(spaces: [Space(name: "acme", path: acme.path), Space(name: "web", path: web.path)]))
         let defaults = ScratchDefaults()
-        let vm = ShepherdViewModel(server: scratch.server, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+        let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-                                   restoresAgentsAtLaunch: false, checkoutReader: nil)
+                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
+        try await connectAsHost(vm, to: scratch)
         vm.showSettings = true; vm.settingsSection = .projects
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1000), dark: true, RootView(vm: vm))
         defer { window.close() }

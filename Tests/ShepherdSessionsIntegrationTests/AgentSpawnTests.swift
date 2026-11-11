@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 
 /// `SessionServer.spawnAgent`: an agent's pi started by the server from settings passed in as
@@ -38,6 +38,24 @@ struct AgentSpawnTests {
         let launch = try #require(StubPi.launches().last { $0.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue })
         #expect(launch.argv.contains("--mode"))
         #expect(launch.env["SHEPHERD_SOCKET"] != nil)
+    }
+
+    /// The first launch: no pi starts before the copy from the user's pi (and its sign-ins) has run.
+    @Test func aSpawnWaitsForTheFirstCopyFromTheUsersPi() async throws {
+        try StubPi.installAsEngine()
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let imports = h.server.pi.importedState()
+        #expect(!imports.copiedOnce)
+        h.server.holdStartsForFirstCopy(deadline: .seconds(600), poll: .milliseconds(20))
+        let spawn = AgentSpawn(agent: try await agent(on: h), cwd: h.dir.path, settings: AgentLaunchSettings())
+        let started = Task { try await h.server.spawnAgent(spawn) }
+        try await eventuallyOnMain("the start to wait for the copy") { h.server.waitingForFirstCopy == 1 }
+        #expect(await h.server.listSessions().isEmpty)
+
+        _ = imports.copyOnce()
+        #expect(try await started.value?.isAlive == true)
+        #expect(h.server.waitingForFirstCopy == 0)
     }
 
     @Test func aPaneThatStoppedWantingItSpawnsNothing() async throws {

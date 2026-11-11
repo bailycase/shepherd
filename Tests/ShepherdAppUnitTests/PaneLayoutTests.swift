@@ -183,23 +183,3 @@ struct PrimaryAgentPaneTests {
         #expect(primaryAgent(in: tab, pane: pane, agents: [agent]) == nil)
     }
 }
-
-/// Replay into a fresh surface is a snapshot plus the output after its watermark: chunks at or
-/// below it are already in the snapshot and must not be fed twice.
-@Suite("Attach replay watermark")
-@MainActor
-struct AttachReplayWatermarkTests {
-    private typealias Buffered = TerminalSessionStore.PaneSession.BufferedOutput
-
-    @Test func onlyOutputAfterTheWatermarkIsFedAfterTheSnapshot() {
-        let buffered = [10, 11, 12, 13].map { Buffered(data: Data("chunk \($0)".utf8), sequence: UInt64($0)) }
-        let fresh = TerminalSessionStore.PaneSession.output(after: 11, from: buffered)
-        #expect(fresh.map(\.sequence) == [12, 13])
-        #expect(fresh.map { String(decoding: $0.data, as: UTF8.self) } == ["chunk 12", "chunk 13"])
-    }
-
-    @Test func aWatermarkPastEverythingFeedsNothing() {
-        let buffered = [Buffered(data: Data("x".utf8), sequence: 3)]
-        #expect(TerminalSessionStore.PaneSession.output(after: 3, from: buffered).isEmpty)
-    }
-}

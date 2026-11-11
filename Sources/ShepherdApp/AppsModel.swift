@@ -39,8 +39,8 @@ final class AppsModel {
     private(set) var loaded = false
     @ObservationIgnored private var loading = false
     @ObservationIgnored private var reloadAgain = false
-    /// What each app Shepherd has started is doing (`AppProcesses`, the one owner of app
-    /// processes). Never persisted: nothing restarts on the next launch.
+    /// What each app Shepherd has started is doing (the host's `AppProcesses`, the one owner of
+    /// app processes, pushed as `appsChanged`). Never persisted: nothing restarts on the next launch.
     private(set) var processes: [AppKey: AppProcessSnapshot] = [:]
     /// The Add or Edit sheet.
     var editor: AppEditor?

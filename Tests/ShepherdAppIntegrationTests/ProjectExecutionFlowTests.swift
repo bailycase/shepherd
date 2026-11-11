@@ -16,7 +16,7 @@ struct ProjectExecutionFlowTests {
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment; set before start so the view model's binding applies it
         let messages = app.dir.appendingPathComponent("retained-stub-messages.json")
         try JSONSerialization.data(withJSONObject: ["messagesFile": messages.path]).write(to: app.dir.appendingPathComponent("stub-pi-startup.json"))
-        var vm = try await app.start()
+        let vm = try await app.start()
         let space = Space(name: "Executor", path: app.dir.path)
         try await app.server.addSpace(space)
         let first = ProjectExecutionAssignment(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()),
@@ -46,7 +46,7 @@ struct ProjectExecutionFlowTests {
         try data.write(to: file)
         app.server.stop()
         try app.server.start()
-        vm = try await app.start()
+        try await app.relisten()
         var second = first; second.key.operationID = UUID(); second.prompt = "tools:0 explicit continuation"
         _ = try await app.server.projectExecution(.execute(second))
         try await eventuallyAsync("explicit idle restore and follow-up") {
@@ -62,7 +62,7 @@ struct ProjectExecutionFlowTests {
         app.server.stop()
         try FileManager.default.removeItem(at: file)
         try app.server.start()
-        vm = try await app.start()
+        try await app.relisten()
         var third = first; third.key.operationID = UUID(); third.prompt = "tools:0 cannot resurrect missing history"
         _ = try await app.server.projectExecution(.execute(third))
         try await eventuallyAsync("missing history refused") {

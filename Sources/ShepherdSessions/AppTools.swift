@@ -102,25 +102,39 @@ public enum AppTools {
 
     /// A remote thread header's apps (`RemoteRequest.apps`): every app of the space, then every
     /// one of This Mac's (as the Mac's header lists them, not only the agents'), each with its run.
-    /// Run and Stop act as the Mac's own buttons do; the answer is the list afterwards.
+    /// Run and Stop act as the Mac's own buttons do; the answer is the list afterwards. With no
+    /// space (`apps.v2`: Settings › Apps' This Mac apps, every run, an app's output), This Mac's alone.
     public static func remote(_ request: RemoteAppsRequest, place: Place, apps: AppProcesses) async -> Result<RemoteAppsResult, Refusal> {
-        guard let space = place.space else { return .failure(Refusal(code: "no_such_space", message: "That space isn't on this host.")) }
+        let space = place.space
+        guard request.spaceID == nil || space != nil else { return .failure(Refusal(code: "no_such_space", message: "That space isn't on this host.")) }
         func load(_ root: String, _ scope: AppScope) -> [(key: AppKey, app: AppDefinition)] {
             ((try? AppsFile.load(AppsFile.url(in: root))) ?? []).map { (AppKey(scope: scope, name: $0.name), $0) }
         }
-        let all = load(space.root, .space(space.id)) + load(place.home, .mac)
+        let all = (space.map { load($0.root, .space($0.id)) } ?? []) + load(place.home, .mac)
+        func key(_ name: String, mac: Bool) -> AppKey { AppKey(scope: mac ? .mac : space.map { .space($0.id) } ?? .mac, name: name) }
+        var lines: [String]?
         switch request {
-        case .list:
+        case .list, .processes:
             break
+        case .output(_, let name, let tail):
+            lines = await apps.lines(key(name, mac: request.spaceID == nil), tail: min(max(tail, 0), AppProcesses.maxLines))
+        case .restart(_, let name):
+            let key = key(name, mac: request.spaceID == nil)
+            guard let ended = await apps.snapshots()[key], !ended.status.isLive else { break }
+            let address = all.first { $0.key == key }?.app.url
+            let started = await withCheckedContinuation { continuation in
+                apps.start(key, command: ended.command, directory: ended.directory, address: address) { continuation.resume(returning: $0) }
+            }
+            if case .failed(let why) = started.status { return .failure(Refusal(code: "start_failed", message: why)) }
         case .run(_, let name, let mac, _), .stop(_, let name, let mac):
-            let key = AppKey(scope: mac ? .mac : .space(space.id), name: name)
+            let key = key(name, mac: mac)
             guard let app = all.first(where: { $0.key == key })?.app else {
-                return .failure(Refusal(code: "no_such_app", message: "\(name) isn't one of \(space.name)'s apps."))
+                return .failure(Refusal(code: "no_such_app", message: "\(name) isn't one of \(space?.name ?? "This Mac")'s apps."))
             }
             if case .stop = request {
                 await withCheckedContinuation { continuation in apps.stop(key) { continuation.resume() } }
             } else {
-                let directory = app.directory(root: mac ? nil : place.cwd ?? space.root, home: place.home)
+                let directory = app.directory(root: key.scope == .mac ? nil : place.cwd ?? space?.root, home: place.home)
                 let started = await withCheckedContinuation { continuation in
                     apps.start(key, command: app.command, directory: directory, address: app.url) { continuation.resume(returning: $0) }
                 }
@@ -128,9 +142,17 @@ public enum AppTools {
             }
         }
         let states = await apps.snapshots()
-        return .success(RemoteAppsResult(space: space.name, apps: all.map { key, app in
+        return .success(RemoteAppsResult(space: space?.name ?? "", apps: all.map { key, app in
             RemoteApp(app: app, mac: key.scope == .mac, run: states[key].map(RemoteAppRun.init))
-        }))
+        }, processes: request == .processes ? processes(states) : nil, lines: lines))
+    }
+
+    /// Every app's run, as `apps.v2` sends it (`RemoteAppsRequest.processes`, `RemoteReply.appsChanged`).
+    static func processes(_ states: [AppKey: AppProcessSnapshot]) -> [RemoteAppProcess] {
+        states.map { key, state in
+            let space: SpaceID? = if case .space(let id) = key.scope { id } else { nil }
+            return RemoteAppProcess(spaceID: space, name: key.name, run: RemoteAppRun(state))
+        }
     }
 
     /// "running · port 3000", "exited with code 1", "not running".
@@ -153,6 +175,21 @@ extension RemoteAppRun {
         case .exited(let code): .exited(code: code)
         case .failed(let why): .failed(why)
         }
-        self.init(status: status, port: snapshot.port, stopping: snapshot.stopping)
+        self.init(status: status, port: snapshot.port, stopping: snapshot.stopping,
+                  command: snapshot.command, directory: snapshot.directory, revision: snapshot.revision)
+    }
+}
+
+extension AppProcessSnapshot {
+    /// A run on the host as this Mac's app shows it (`apps.v2`).
+    public init(_ run: RemoteAppRun) {
+        let status: AppStatus = switch run.status {
+        case .starting: .starting
+        case .running: .running
+        case .exited(let code): .exited(code)
+        case .failed(let why): .failed(why)
+        }
+        self.init(status: status, port: run.port, directory: run.directory ?? "", command: run.command ?? "",
+                  lineCount: 0, revision: run.revision ?? 0, stopping: run.stopping)
     }
 }

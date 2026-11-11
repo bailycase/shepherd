@@ -178,17 +178,18 @@ extension ShepherdViewModel {
             await self?.loadBranchCard(id, card) ?? BranchCardStatus(git: BranchCardGit())
         }, perform: { [weak self] action in self?.performBranchCard(action, on: id) }, branches: { [weak self] in
             guard let self, let directory = self.checkoutDirectory(of: id) else { throw BranchGit.Failure(message: "This thread has no checkout.") }
-            return try await self.branchPickerList(cwd: directory, for: self.cardAgent(id)?.agent)
+            return try await self.branchPickerList(cwd: directory, agent: id)
         })
     }
 
-    /// A checkout's branches for a picker: `ChangesBranches` with each worktree's thread named,
-    /// and whether `agent` could move to another checkout now.
-    func branchPickerList(cwd: String, for agent: Agent? = nil) async throws -> BranchPickerList {
+    /// A checkout's branches for a picker, read by This Mac's host (a thread's checkout, else its
+    /// space's): `ChangesBranches` with each worktree's thread named, and whether `agent` could
+    /// move to another checkout now.
+    func branchPickerList(cwd: String, agent id: AgentID? = nil, space: SpaceID? = nil) async throws -> BranchPickerList {
         let directory = (cwd as NSString).expandingTildeInPath
-        let read = try await server.changes.branches(agentID: nil, cwd: directory)
-        let agents = state.agents + (remoteHosts.connections.first(where: \.isThisMac)?.state.agents ?? [])
-        let threads = Dictionary(agents.compactMap { agent in agent.worktreePath.map { (Self.standard($0), agent.name) } },
+        let read = try await hostBranches(agent: id, space: space)
+        let agent = id.flatMap { cardAgent($0)?.agent }
+        let threads = Dictionary(state.agents.compactMap { agent in agent.worktreePath.map { (Self.standard($0), agent.name) } },
                                  uniquingKeysWith: { first, _ in first })
         // git names worktrees by their real path (/private/var, not /var).
         let main = await Task.detached { (try? GitWorktree.primaryCheckout(at: directory)).map { Self.standard(PiSessionFolder.realPath($0)) } }.value
@@ -201,27 +202,29 @@ extension ShepherdViewModel {
         return agent.status == .working ? "running" : nil
     }
 
-    /// A thread of This Mac's background host: its checkout is on this machine, so its branch card
-    /// reads and changes git here, and asks the host only to record a worktree's branch or base.
-    func thisMacAgent(_ id: AgentID) -> (agent: Agent, connection: RemoteHostStore.Connection, ref: RemoteAgentRef)? {
-        guard let connection = remoteHosts.connections.first(where: \.isThisMac),
-              let agent = connection.state.agents.first(where: { $0.id == id }) else { return nil }
-        return (agent, connection, RemoteAgentRef(hostID: connection.id, agentID: id))
-    }
-
-    /// The agent the card is for, wherever it runs, and the workspace it is listed in.
-    func cardAgent(_ id: AgentID) -> (agent: Agent, state: ShepherdState)? {
-        if let agent = state.agents.first(where: { $0.id == id }) { return (agent, state) }
-        return thisMacAgent(id).map { ($0.agent, $0.connection.state) }
-    }
-
-    /// Record a worktree thread's branch or base where it runs: this app's server, or This Mac's host.
-    func recordWorktree(_ id: AgentID, branch: String? = nil, base: String? = nil) async throws {
-        if let ref = localRef(id) ?? thisMacAgent(id)?.ref {
-            _ = try await remoteHosts.agentQuery(ref, query: .setWorktree(branch: branch, base: base))
-        } else {
-            try await server.setAgentWorktree(id, branch: branch, base: base)
+    /// A thread's checkout's branches (`changesBranches`), or a space's (`creationBranches`), as This Mac's host reads them.
+    func hostBranches(agent: AgentID? = nil, space: SpaceID? = nil) async throws -> ChangesBranches {
+        guard let host = localHost else { throw BackgroundHostClient.HostStarting() }
+        if let agent {
+            guard case .changesBranches(let branches) = try await remoteHosts.agentQuery(RemoteAgentRef(hostID: host.id, agentID: agent),
+                                                                                          query: .changesBranches()) else {
+                throw ChangesError(ChangesError.unavailable, "Couldn’t read the branches.")
+            }
+            return branches
         }
+        guard let space else { throw ChangesError(ChangesError.invalid, "No checkout to read.") }
+        return try await remoteHosts.creationBranches(hostID: host.id, spaceID: space)
+    }
+
+    /// The agent the card is for, and the workspace it is listed in.
+    func cardAgent(_ id: AgentID) -> (agent: Agent, state: ShepherdState)? {
+        state.agents.first(where: { $0.id == id }).map { ($0, state) }
+    }
+
+    /// Record a worktree thread's branch or base where it runs: This Mac's host.
+    func recordWorktree(_ id: AgentID, branch: String? = nil, base: String? = nil) async throws {
+        guard let ref = localRef(id) else { throw BackgroundHostClient.HostStarting() }
+        _ = try await remoteHosts.agentQuery(ref, query: .setWorktree(branch: branch, base: base))
     }
 
     nonisolated static func standard(_ path: String) -> String {
@@ -238,7 +241,7 @@ extension ShepherdViewModel {
     private func loadBranchCard(_ id: AgentID, _ card: BranchCardModel) async -> BranchCardStatus {
         guard let directory = card.directory else { return BranchCardStatus(git: BranchCardGit()) }
         let base = cardAgent(id)?.agent.worktreeBase
-        let forge = server.forge
+        let forge = branchForge
         async let git = Task.detached { BranchCardGitReader.read(cwd: directory, base: base) }.value
         async let pull = forge.pullRequest(directory: (directory as NSString).expandingTildeInPath, branch: card.branch)
         let read = await git
@@ -249,7 +252,7 @@ extension ShepherdViewModel {
     func performBranchCard(_ action: BranchCardAction, on id: AgentID) {
         switch action {
         case .showChanges:
-            if let remote = thisMacAgent(id) { openRemoteReview(remote.ref, path: nil) } else { openReview(agentID: id, path: nil) }
+            openReview(agentID: id, path: nil)
         case .commit: branchSheet = .commit(id)
         case .copyBranch:
             guard let branch = branchCard(id)?.branch else { return }
@@ -261,7 +264,7 @@ extension ShepherdViewModel {
         // The thread's own pull request opens beside it, in the side pane's Pull request tab.
         case .openPull(let ref): showBranchPullRequest(ref, for: id)
         case .select(let other):
-            if let remote = thisMacAgent(other) { selectRemoteAgent(hostID: remote.ref.hostID, agentID: other) } else { selectAgent(other) }
+            selectAgent(other)
         case .pickBranch, .pickBase: break
         case .update: branchSheet = .update(id)
         case .newBranch: branchSheet = .newBranch(id)
@@ -275,15 +278,10 @@ extension ShepherdViewModel {
         case .moveToCheckout(let branch, let path):
             Task {
                 do {
-                    if let remote = thisMacAgent(id) {
-                        _ = try await remoteHosts.agentQuery(remote.ref, query: .moveToCheckout(path: path, branch: branch))
-                    } else {
-                        try await moveThreadToCheckout(id, path: path, branch: branch)
-                    }
+                    try await moveThreadToCheckout(id, path: path, branch: branch)
                 } catch {
                     actionError = ActionError(title: "Couldn’t move to \(branch)", message: ActionError.describe(error))
                 }
-                checkouts?.refresh(id, priority: true)
                 branchCardStores[id]?.requestRefresh()
             }
         case .changeBase(let base):
@@ -308,7 +306,7 @@ extension ShepherdViewModel {
             } catch {
                 actionError = ActionError(title: failure, message: ActionError.describe(error))
             }
-            checkouts?.refresh(id, priority: true)
+            readCheckoutOnHost(id)
             branchCardStores[id]?.requestRefresh()
         }
     }

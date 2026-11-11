@@ -8,7 +8,7 @@ import Testing
 
 /// Close threads when their pull request merges (Settings ▸ Worktrees): a worktree thread's link
 /// to its branch's pull request, and the close a merge seen happening drives, on real scratch
-/// repositories. gh is stood in for: the lookup by `branchPullRequestLookup`, GitHub's branch
+/// repositories. gh is stood in for: the host's lookup by `pullRequestLookup`, GitHub's branch
 /// deletion by the forge runner.
 @Suite("Pull request auto-close", .mainActorExclusive)
 @MainActor
@@ -51,11 +51,27 @@ struct PullRequestAutoCloseTests {
             self.agent = agent
             vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
             app.settings.worktreeCloseOnMerge = true
-            vm.branchPullRequestLookup = { [unowned self] _ in
+            // The host looks links up, closes merged threads and pushes the app its badges.
+            app.host?.pullRequestLookup = { [unowned self] _ in
                 ThreadPullRequest(ref: PullRequestAutoCloseTests.ref, state: pullState,
                                   headRefName: PullRequestAutoCloseTests.branch, headRefOid: headRefOid)
             }
+            let app = app
+            try await eventuallyOnMain("the host to follow the switch") { app.hostSettings?.worktreeCloseOnMerge == true }
+            // The host starts every thread idle: the agent reports how it is.
+            if status != .idle {
+                let reporter = try ExtensionClient(path: app.scratch.socketPath)
+                try reporter.send(.setAgentStatus(agentID: agent.agent.id, status: status))
+                let server = app.server, id = agent.agent.id
+                try await eventuallyOnMain("the host to see the agent \(status)") { server.state.agents.first { $0.id == id }?.status == status }
+            }
         }
+
+        /// What the host says of a merged thread it kept.
+        var closeNote: String? { app.server.pullRequestLinks?.closeNotes[id] }
+
+        /// Looks the thread's pull request up on the host, as its poll or a turn's end does.
+        func refresh() async { _ = await app.server.pullRequestLinks?.refresh(id) }
 
         var id: AgentID { agent.agent.id }
         var checkout: String { agent.agent.worktreePath! }
@@ -64,9 +80,9 @@ struct PullRequestAutoCloseTests {
         /// Seen open, then merged: what the poll or a turn's end would read.
         func merge() async {
             pullState = .open
-            await vm.refreshPullRequestLink(id)
+            await refresh()
             pullState = .merged
-            await vm.refreshPullRequestLink(id)
+            await refresh()
         }
 
         func stop() { app.stop(); sandbox.remove() }
@@ -77,10 +93,10 @@ struct PullRequestAutoCloseTests {
         defer { setup.stop() }
         let vm = setup.vm
 
-        let link = await vm.refreshPullRequestLink(setup.id)
+        let link = await setup.app.server.pullRequestLinks?.refresh(setup.id)
 
         #expect(link?.ref == Self.ref && link?.state == .open)
-        #expect(vm.pullRequestLinks[setup.id] == link)
+        try await eventuallyOnMain("the host's link pushed to the app") { vm.pullRequestLinks[setup.id] == link }
         let row = try #require(vm.sidebarLists.all.first { $0.id == .local(setup.id) })
         #expect(row.pullRequest?.text == "#31")
         #expect(row.help.contains("Pull request #31 open"))
@@ -100,7 +116,7 @@ struct PullRequestAutoCloseTests {
         #expect(setup.deletedOnGitHub, "the branch on GitHub goes too")
         let delete = setup.commands.withValue { $0 }.first { $0.starts(with: ["gh", "api", "--method=DELETE"]) }
         #expect(delete?.last == "repos/acme/payments/git/refs/heads/agent/refund-events")
-        #expect(setup.vm.pullRequestLinks.isEmpty && setup.vm.remoteActionError == nil)
+        #expect(setup.app.server.pullRequestLinks?.links.isEmpty == true && setup.vm.remoteActionError == nil)
     }
 
     enum Skip: String, CaseIterable {
@@ -111,7 +127,6 @@ struct PullRequestAutoCloseTests {
     func aThreadThatMightLoseWorkStays(_ skip: Skip) async throws {
         let setup = try await Setup(status: skip == .running ? .working : skip == .asking ? .blocked : .idle)
         defer { setup.stop() }
-        let vm = setup.vm
         let checkout = URL(fileURLWithPath: setup.checkout)
         switch skip {
         case .dirty:
@@ -122,6 +137,8 @@ struct PullRequestAutoCloseTests {
             try git(["commit", "-qm", "Not pushed"], in: checkout)
         case .settingOff:
             setup.app.settings.worktreeCloseOnMerge = false
+            let app = setup.app
+            try await eventuallyOnMain("the host to follow the switch") { app.hostSettings?.worktreeCloseOnMerge == false }
         default:
             break
         }
@@ -129,13 +146,13 @@ struct PullRequestAutoCloseTests {
         switch skip {
         case .closedUnmerged:
             setup.pullState = .open
-            await vm.refreshPullRequestLink(setup.id)
+            await setup.refresh()
             setup.pullState = .closed
-            await vm.refreshPullRequestLink(setup.id)
+            await setup.refresh()
         case .mergedBeforeSeenOpen:
             // Found merged on the first look (a restart): never closed.
             setup.pullState = .merged
-            await vm.refreshPullRequestLink(setup.id)
+            await setup.refresh()
         default:
             await setup.merge()
         }
@@ -145,7 +162,7 @@ struct PullRequestAutoCloseTests {
         #expect(FileManager.default.fileExists(atPath: setup.checkout))
         #expect(try setup.sandbox.branches().contains(Self.branch))
         #expect(!setup.deletedOnGitHub)
-        let note = vm.pullRequestCloseNotes[setup.id]
+        let note = setup.closeNote
         switch skip {
         case .running: #expect(note == "it's running")
         case .asking: #expect(note == "it's waiting on your answer")
@@ -153,9 +170,10 @@ struct PullRequestAutoCloseTests {
         case .unpushed: #expect(note == "1 unpushed commit")
         case .closedUnmerged, .settingOff, .mergedBeforeSeenOpen: #expect(note == nil)
         }
-        if note != nil {
-            let row = try #require(vm.sidebarLists.all.first { $0.id == .local(setup.id) })
-            #expect(row.help.contains("kept open: \(note!)"), "the row says why")
+        // The sidebar's badge says why, from the host's push.
+        if let note {
+            let vm = setup.vm, id = setup.id
+            try await eventuallyOnMain("the note pushed to the app") { vm.pullRequestCloseNotes[id] == note }
         }
     }
 }

@@ -545,7 +545,7 @@ struct ChangesTurnTests {
 
         let client = try await remote.typed()
         #expect(client.capabilities.contains(RemoteProtocol.changesCapability))
-        guard case .changesOverview(let overview) = try await client.agentQuery(agentID: pi.agent.id, query: .changesOverview) else {
+        guard case .changesOverview(let overview) = try await client.agentQuery(agentID: pi.agent.id, query: .changesOverview()) else {
             Issue.record("expected an overview"); return
         }
         #expect(overview.lastTurn?.fileCount == 1 && overview.entries.first?.files == 1)

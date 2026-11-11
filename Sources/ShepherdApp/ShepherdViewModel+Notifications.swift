@@ -24,10 +24,10 @@ extension ShepherdViewModel {
         destination == nil && !showSettings && !showComponentGallery
     }
 
-    /// Tells the server which local thread you are watching, so its phone pushes stay quiet too.
+    /// Tells the background host which local thread you are watching, so its phone pushes stay quiet too.
     func syncFocusedThread() {
         let watched = selectedAgentID.flatMap { isWatching(.agent($0)) ? $0 : nil }
-        if localHost != nil { remoteHosts.focusLocalThread(watched) } else { server.setFocusedThread(watched) }
+        if localHost != nil { remoteHosts.focusLocalThread(watched, pane: focusedPaneID) }
     }
 
     /// Calls `syncFocusedThread` now and whenever the selection or what covers it changes.
@@ -80,23 +80,19 @@ extension ShepherdViewModel {
         guard notifications.available else { return }
         var live = Set<RemoteAgentRef>()
         var hosts = Set<UUID>()
-        // The background host's threads are the app's own and post as in process; any the app's
-        // copy doesn't hold yet post here, as a host's.
-        let own = localHost.map { host in (host.id, Set(state.agents.map(\.id))) }
-        for connection in remoteHosts.allConnections {
+        // The background host on this Mac is transport only: its threads are the app's own and post
+        // as the app's own, and losing it means the host is restarting, never a host-offline banner.
+        for connection in remoteHosts.connections {
             hosts.insert(connection.id)
-            let mirrored = own.flatMap { $0.0 == connection.id ? $0.1 : nil }
-            let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen, thisMac: connection.isThisMac)
+            let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen)
             let offline = BannerTarget.host(connection.id)
-            if mirrored != nil {
-                // Transport only: losing it is `onLocalHostLost`'s, never a host-offline banner.
-            } else if away, notifications.offlineHosts.insert(connection.id).inserted, !isWatching(offline) {
+            if away, notifications.offlineHosts.insert(connection.id).inserted, !isWatching(offline) {
                 notifications.post(AgentBanners.hostOffline(name: connection.config.name, hostID: connection.id))
             } else if !away, notifications.offlineHosts.remove(connection.id) != nil {
                 notifications.remove([AgentBanners.identifier("offline", offline)])
             }
             guard connection.phase == .connected else { continue }
-            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) && mirrored?.contains(agent.id) != true {
+            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) {
                 let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
                 let target = BannerTarget.remote(ref)
                 live.insert(ref)
@@ -113,7 +109,7 @@ extension ShepherdViewModel {
         }
         // Agents a connected host no longer has, and every agent of a removed host. A host away
         // keeps its questions, so one still asked when it is back does not post again.
-        let connected = Set(remoteHosts.allConnections.filter { $0.phase == .connected }.map(\.id))
+        let connected = Set(remoteHosts.connections.filter { $0.phase == .connected }.map(\.id))
         let gone = notifications.remoteAsks.prune { ref in
             !hosts.contains(ref.hostID) || (connected.contains(ref.hostID) && !live.contains(ref))
         }

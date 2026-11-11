@@ -154,7 +154,17 @@ extension ShepherdViewModel {
                 await self.remoteThreadStores.store(for: agent).send(text: text, designContext: record)
                 return true
             },
-            report: { [weak self] in self?.remoteActionError = $0 })
+            report: { [weak self] in self?.remoteActionError = $0 },
+            usage: { id in
+                // Which boards import which, from this Mac's synced copy, as the host's `designUsage` reads its own.
+                let source = library.source(id)
+                var imports: [DesignPath: [DesignImports.Reference]] = [:]
+                for file in try await source.sync().files {
+                    guard let path = DesignPath.systemComponent(file.path) ?? DesignPath(file.path) else { continue }
+                    imports[path] = DesignBoardTree(source: try await source.source(path)).map { DesignImports.references(in: $0, of: path) } ?? []
+                }
+                return DesignUsageIndex.build(imports: imports, boards: Set(imports.keys))
+            })
     }
 
     /// Comments through the host: pinned, answered and resolved there, handed to its design agent
@@ -216,7 +226,7 @@ extension ShepherdViewModel {
     /// A host pushed a change to a design on screen: its canvas pulls what changed.
     func remoteDesignChanged(_ ref: RemoteDesignRef, revision: UInt64?, comments: UInt64?) {
         // The background host's designs are this app's own (`localHostDesignScreen`).
-        let own = ref.hostID == localHost?.id && Self.routesThisMacLocally
+        let own = ref.hostID == localHost?.id
         // A board write changes the Git panel's file list, as the server's `onDesignRevision` does.
         if own, revision != nil, designGitStates[ref.designID]?.state != nil { refreshDesignGit(ref.designID) }
         guard let screen = own ? designScreens[ref.designID] : remoteDesignScreens[ref] else { return }
@@ -275,10 +285,8 @@ extension ShepherdViewModel {
     /// Each host that serves designs, as the Designs page lists it under its name.
     var remoteDesignSections: [DesignsPageModel.HostSection] {
         let now = Date()
-        return remoteHosts.allConnections.filter(\.supportsDesigns).compactMap { connection in
-            // The background host's designs and systems are the page's own (slice 2).
-            guard !(connection.id == localHost?.id && Self.routesThisMacLocally),
-                  let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
+        return remoteHosts.connections.filter(\.supportsDesigns).compactMap { connection in
+            guard let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
             let thumbnails = remoteDesignRenderings[connection.id]?.thumbnails
             let query = designsPageFilter.trimmingCharacters(in: .whitespacesAndNewlines)
             let cards = listing.designs.compactMap { summary -> DesignsPageModel.Card? in

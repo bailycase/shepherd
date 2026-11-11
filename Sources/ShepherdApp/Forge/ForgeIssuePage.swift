@@ -153,7 +153,7 @@ private struct ForgeHandOffCard: View {
             if path != nil {
                 SHFlowLayout(spacing: SH.Space.s) {
                     SHTag("this Mac", mono: true)
-                    if let model = vm.settings.defaultModel(piHome: vm.server.pi.home) { SHTag(model, mono: true) }
+                    if let model = vm.settings.defaultModel(piHome: vm.pi.home) { SHTag(model, mono: true) }
                     SHTag("new worktree", mono: true)
                 }
                 Button("Start a thread") { vm.forgeStartIssueThread() }

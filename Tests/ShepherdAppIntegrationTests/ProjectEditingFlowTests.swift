@@ -34,7 +34,12 @@ struct ProjectEditingFlowTests {
         let reply = try await ask(.editProject(id: 1, agentID: agent.agent.id, projectID: child.id, request: ProjectEdit(name: "Documentation", parentProjectID: b.id.rawValue)))
         guard case .projectResult(1, let edited?, false) = reply else { Issue.record("Unexpected result \(reply)"); return }
         #expect(edited.path == child.path && edited.parentID == b.id)
-        #expect(vm.sidebarTree.projects.first { $0.space == child.id }?.parentID == .local(b.id))
+        // Settings ▸ Projects reads again when the spaces it knows change (its `.task(id: projectsSources)`).
+        try await eventuallyAsync("the move in the sidebar and Settings, as the host says") {
+            _ = await vm.projects.load(vm.projectsSources)
+            return vm.sidebarTree.projects.first { $0.space == child.id }?.parentID == .local(b.id)
+                && vm.projects.visible.first { $0.project.projectID == child.id }?.parentName == "B"
+        }
         let row = try #require(vm.projects.visible.first { $0.project.projectID == child.id })
         #expect(row.parentName == "B" && row.project.inheritedFromName == "A")
         #expect(row.project.inheritedMCP == ["physical-parent"])

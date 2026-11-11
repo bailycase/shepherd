@@ -42,7 +42,7 @@ struct SettingsResetTests {
         let app = try AppHarness()
         defer { app.stop() }
         customize(app)
-        let vm = ShepherdViewModel(server: app.server, settings: app.settings, keybindings: app.keybindings,
+        let vm = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings,
                                    themeManager: app.themeManager, remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults,
                                    themeInstaller: { _ in throw CocoaError(.fileWriteNoPermission) })
 

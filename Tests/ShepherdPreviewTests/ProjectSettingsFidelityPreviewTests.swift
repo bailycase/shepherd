@@ -78,7 +78,7 @@ struct ProjectSettingsFidelityPreviewTests {
             for space in (long ? [] : ["sample-app-web", "research"]) {
                 let id = try #require(spaces.first { $0.name == space }?.id)
                 let operation = UUID()
-                _ = try await vm.projectCoordinator.perform(projectID: project.id, expectedRevision: project.revision,
+                _ = try await world.coordinator.perform(projectID: project.id, expectedRevision: project.revision,
                                                            request: .proposeSpace(operationID: operation, path: nil, spaceID: id, originTaskID: nil))
                 try await eventuallyOnMain("the proposal is pending") { vm.state.projects.first?.spaceProposals.contains { $0.id == operation && $0.phase == .pending } == true }
                 let proposal = try #require(vm.state.projects.first?.spaceProposals.first { $0.id == operation })
@@ -178,12 +178,19 @@ struct ProjectSettingsFidelityPreviewTests {
         let theirs = Space(id: shared, name: "library-api-for-the-shared-library", path: "/srv/library/api/for/the/shared/library/and/its/sandbox/keys")
         let host = ProjectHostOption(reference: .remote(hostID: UUID(), bindingID: UUID()), name: "build-machine-in-the-office-basement", spaces: [theirs])
         try await world.seed(ShepherdState(spaces: []))
-        world.server.setProjectEligibleHosts([.local, host.reference])
-        world.server.setProjectExecutionSpaces([host.reference: [theirs]])
-        let vm = world.vm
-        guard case .project(let created) = try await world.server.logicalProjects(.create(projectID: ProjectID(), name: "Sample App", goal: "", linkedSpaceIDs: [])),
-              case .project(let linked) = try await world.server.logicalProjects(.linkSpace(projectID: created.id, expectedRevision: created.revision, spaceID: shared, host: host.reference)) else {
-            throw PreviewFixtureError("the owner refused the link")
+        let vm = world.vm, server = world.server
+        guard case .project(let created) = try await server.logicalProjects(.create(projectID: ProjectID(), name: "Sample App", goal: "", linkedSpaceIDs: [])) else {
+            throw PreviewFixtureError("the owner refused the project")
+        }
+        // The app tells its host the Macs it reaches (none here) once connected: the other host is set after that lands.
+        var linked = created
+        try await eventuallyAsync("the owner links the other host's space") {
+            server.setProjectEligibleHosts([.local, host.reference])
+            server.setProjectExecutionSpaces([host.reference: [theirs]])
+            guard case .project(let made)? = try? await server.logicalProjects(.linkSpace(projectID: created.id, expectedRevision: created.revision,
+                                                                                          spaceID: shared, host: host.reference)) else { return false }
+            linked = made
+            return true
         }
         try await eventuallyOnMain("adopted") { vm.state.projects.first?.revision == linked.revision }
         vm.logicalProjects.ownerHosts = { _ in [ProjectHostOption(reference: .local, name: "This Mac"), host] }

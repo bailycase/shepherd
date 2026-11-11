@@ -8,6 +8,7 @@ import SwiftUI
 import Testing
 import WebKit
 @testable import ShepherdApp
+@testable import ShepherdSessions
 
 @MainActor
 @Suite("Project Browser controls", .mainActorExclusive)
@@ -191,11 +192,13 @@ struct ProjectBrowserControlTests {
         for space in [project, other] { try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true) }
         try await app.server.addSpace(project, first: false)
         try await app.server.addSpace(other, first: false)
-        let mine = Agent(name: "mine", spaceID: project.id, tabID: TabID())
-        let sibling = Agent(name: "sibling", spaceID: project.id, tabID: TabID())
-        let unrelated = Agent(name: "other", spaceID: other.id, tabID: TabID())
-        var state = vm.state; state.agents += [mine, sibling, unrelated]
-        vm.browsers.prune(state: state)
+        // Real threads on the host: the app keeps a browser only for a thread its workspace has.
+        let fixtures = [Fixture.agent("mine", in: project), Fixture.agent("sibling", in: project, order: 1), Fixture.agent("other", in: other, order: 2)]
+        let (mine, sibling, unrelated) = (fixtures[0].agent, fixtures[1].agent, fixtures[2].agent)
+        let server = app.server
+        let agents = fixtures.map(\.agent), tabs = fixtures.map(\.tab)
+        try await server.enqueue { @Sendable in try server.mutateState { $0.agents += agents; $0.tabs += tabs } }
+        try await eventuallyOnMain("the threads on this Mac") { vm.state.agents.count == 3 }
         for agent in [mine, sibling, unrelated] { vm.browsers.session(for: agent.id).load(URL(string: "about:blank")!) }
         let store = try #require(vm.browsers.existing(mine.id)?.webView?.configuration.websiteDataStore)
         let otherStore = try #require(vm.browsers.existing(unrelated.id)?.webView?.configuration.websiteDataStore)

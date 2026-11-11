@@ -400,4 +400,34 @@ struct ChangesEngineTests {
         #expect(list.summary == ["A small.txt"])
         #expect(list.skipped == ["dump.bin"])
     }
+
+    /// The folder an agent's `review_diff` named stays readable over `changes.cwd` after a host restart.
+    @Test func aReviewedFolderOutlivesAHostRestart() async throws {
+        let own = try ChangesRepo(), reviewed = try ChangesRepo(files: ["acme.txt": "one\n"])
+        let first = try ScratchServer.fresh()
+        let space = Space(name: "acme-web", path: own.path)
+        try await first.server.addSpace(space)
+        let pane = LeafPane(cwd: own.path)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "review", spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+        try await first.server.addAgent(agent, withTab: tab)
+        first.server.onReviewRequest = { _, respond in respond(.submitted(text: "ok")) }
+        let pi = try ExtensionClient(path: first.socketPath)
+        try pi.send(.requestReview(id: 1, agentID: agent.id, cwd: reviewed.path, reference: nil))
+        #expect(try await pi.reply() == .reviewResult(id: 1, text: "ok"))
+        first.stop(keepFiles: true)
+
+        let host = try ScratchServer(dir: first.dir)
+        defer { host.stop() }
+        let path = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: path, tokenURL: tokenURL)
+        let client = RemoteHostClient(localSocket: path)
+        defer { client.disconnect() }
+        _ = try await client.connect(host: "", port: 0, token: try String(contentsOf: tokenURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), clientName: "Shepherd")
+        guard case .changesOverview = try await client.agentQuery(agentID: agent.id, query: .changesOverview(cwd: reviewed.path)) else {
+            Issue.record("expected an overview"); return
+        }
+    }
 }

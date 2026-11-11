@@ -11,37 +11,27 @@ extension ShepherdViewModel {
         remoteHosts.onBrowserDrive = { [weak self] hostID, client, push in
             MainActor.assumeIsolated { self?.remoteBrowserDrive(hostID: hostID, client: client, push: push) }
         }
-        // The host's own address for the agent's page, for a viewer that claims it to open.
-        server.onBrowserPageURL = { [weak self] agentID in
-            MainActor.assumeIsolated {
-                guard let session = self?.browsers.existing(agentID), let url = session.tabs.agentTarget?.url,
-                      BrowserDriveURL.offered(url.absoluteString) != nil else { return nil }
-                return url.absoluteString
-            }
-        }
     }
 
     /// One thing a host said about an agent's browser.
     func remoteBrowserDrive(hostID: UUID, client: RemoteHostClient, push: BrowserDrivePush) {
         let ref = RemoteAgentRef(hostID: hostID, agentID: push.agentID)
         // A thread of the background host that the app shows as its own: its page is the thread's
-        // local one, as in process (`localHost`).
+        // local one (`localHost`).
         let own = localHost?.id == hostID && state.agents.contains { $0.id == push.agentID }
         switch push {
         case .request(let token, _, let request):
-            // Only the page this Mac claimed on this connection runs what the host sends, or any
-            // page of the background host on this Mac, which has none of its own: its agents are
-            // this Mac's, so the page acts for them as it does in process.
-            let thisMac = remoteHosts.allConnections.first { $0.id == hostID }?.isThisMac == true
+            // Only the page this Mac claimed on this connection runs what the host sends, or the
+            // thread's own page when the background host's agent is this app's.
             let claimed = browsers.existing(ref).flatMap { session in session.remote?.drives(for: client) == true ? session : nil }
-            let session = own ? browsers.session(for: push.agentID) : claimed ?? (thisMac ? browsers.session(for: ref, hosts: remoteHosts) : nil)
+            let session = own ? browsers.session(for: push.agentID) : claimed
             guard let session, own || session.remote != nil else {
                 client.browserAnswer(token: token, outcome: .failure(code: BrowserDriveCode.viewerGone,
                                                                       message: "The Mac showing this page is not driving it any more."))
                 return
             }
             Task { @MainActor [weak self] in
-                let outcome = if !thisMac, let remote = session.remote {
+                let outcome = if let remote = session.remote {
                     await session.performFromHost(request, policy: remote.policy)
                 } else {
                     await session.perform(request)

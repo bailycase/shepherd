@@ -82,7 +82,6 @@ extension ShepherdViewModel {
         // One callback per cache, shared with the @ picker and the chips: it fans out to all.
         rendering.boardPictures.landed = { [weak self] in self?.referencePicturesLanded() }
         rendering.thumbnails.landed = { [weak self] in self?.referencePicturesLanded() }
-        let server = server
         Task { [weak self] in
             if let snapshot = try? await ownerDesignSnapshot(id) { rendering.boardPictures.request(id, snapshot: snapshot) }
             await self?.loadDesignThumbnails()

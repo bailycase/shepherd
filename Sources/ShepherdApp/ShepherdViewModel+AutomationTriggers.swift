@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-/// Triggered automations: the server's `AutomationTriggers` decides when a run starts and
+/// Triggered automations: the background host's `AutomationTriggers` decides when a run starts and
 /// `SessionServer.startTriggeredRun` starts it; this is the app's view of their status and runs,
 /// and the Automations page's controls. Project-owned runs' admission is the Project runtime's
 /// (`ProjectCoordinatorController.install`).
@@ -11,27 +11,20 @@ import ShepherdSessions
 extension ShepherdViewModel {
     /// Re-reads every triggered automation's status and runs (the Automations page and sidebar).
     func refreshAutomationTriggers() {
-        let triggers = server.automationTriggers
         let automations = state.automations.filter(\.isTriggered)
         Task { @MainActor in
             var statuses: [AutomationID: AutomationTriggerStatus] = [:]
-            var allPaused: Bool
-            if localHost != nil {
-                // The host's statuses; one it can't answer keeps what was read before. Each says
-                // whether all are paused; with none triggered nothing is.
-                for automation in automations {
-                    guard let key = localAutomationKey(automation.id) else { continue }
-                    if case .status(let status)? = try? await remoteHosts.automation(key, request: .status) {
-                        statuses[automation.id] = status
-                    } else {
-                        statuses[automation.id] = automationTriggerStatuses[automation.id]
-                    }
+            // The host's statuses; one it can't answer keeps what was read before. Each says
+            // whether all are paused; with none triggered nothing is.
+            for automation in automations {
+                guard let key = localAutomationKey(automation.id) else { continue }
+                if case .status(let status)? = try? await remoteHosts.automation(key, request: .status) {
+                    statuses[automation.id] = status
+                } else {
+                    statuses[automation.id] = automationTriggerStatuses[automation.id]
                 }
-                allPaused = statuses.values.first?.allPaused ?? false
-            } else {
-                for automation in automations { statuses[automation.id] = await triggers.status(of: automation) }
-                allPaused = await triggers.allPaused
             }
+            let allPaused = statuses.values.first?.allPaused ?? false
             if statuses != automationTriggerStatuses { automationTriggerStatuses = statuses }
             if allPaused != automationTriggersAllPaused { automationTriggersAllPaused = allPaused }
             await loadLocalAutomationRuns()
@@ -57,8 +50,6 @@ extension ShepherdViewModel {
                 if output.status == 0, url.hasPrefix("https://") {
                     if let key = localAutomationKey(automationID) {
                         _ = try? await remoteHosts.automation(key, request: .setRunPullRequest(agentID: agentID, url: url))
-                    } else {
-                        await server.setAutomationRunPullRequest(agentID: agentID, url: url)
                     }
                 } else {
                     // Look again after its next turn.
@@ -74,58 +65,33 @@ extension ShepherdViewModel {
     /// The user opened a run's thread: its unread dot goes.
     func markAutomationRunsRead(_ agentID: AgentID) {
         guard localAutomationRuns.values.contains(where: { $0.contains { $0.agentID == agentID && $0.unread } }) else { return }
-        if localHost != nil {
-            for (id, runs) in localAutomationRuns {
-                guard let key = localAutomationKey(id) else { continue }
-                for run in runs where run.agentID == agentID && run.unread { sendToLocalHost(key, .markRead(runID: run.id)) }
-            }
-            return
-        }
-        Task { @MainActor in
-            await server.markAutomationRunsRead(agentID: agentID)
-            await loadLocalAutomationRuns()
+        for (id, runs) in localAutomationRuns {
+            guard let key = localAutomationKey(id) else { continue }
+            for run in runs where run.agentID == agentID && run.unread { sendToLocalHost(key, .markRead(runID: run.id)) }
         }
     }
 
     // MARK: Controls (the Automations page and sidebar)
 
     func pauseAutomationTrigger(_ id: AutomationID) {
-        if let key = localAutomationKey(id) { return sendToLocalHost(key, .pause) }
-        let triggers = server.automationTriggers
-        Task { await triggers.pause(id); refreshAutomationTriggers() }
+        if let key = localAutomationKey(id) { sendToLocalHost(key, .pause) }
     }
 
     func resumeAutomationTrigger(_ id: AutomationID) {
-        if let key = localAutomationKey(id) { return sendToLocalHost(key, .resume) }
-        let triggers = server.automationTriggers
-        Task { await triggers.resume(id); await triggers.tick(); refreshAutomationTriggers() }
+        if let key = localAutomationKey(id) { sendToLocalHost(key, .resume) }
     }
 
     func setAllAutomationTriggersPaused(_ paused: Bool) {
         // The host's request names an automation; any triggered one does.
-        if localHost != nil {
-            guard let key = state.automations.first(where: \.isTriggered).flatMap({ localAutomationKey($0.id) }) else { return }
-            return sendToLocalHost(key, .setAllPaused(paused: paused))
-        }
-        let triggers = server.automationTriggers
-        Task { await triggers.setAllPaused(paused); refreshAutomationTriggers() }
+        guard let key = state.automations.first(where: \.isTriggered).flatMap({ localAutomationKey($0.id) }) else { return }
+        sendToLocalHost(key, .setAllPaused(paused: paused))
     }
 
     func runPendingAutomationEvent(_ id: AutomationID, eventID: String) {
-        guard let automation = state.automations.first(where: { $0.id == id }) else { return }
-        if let key = localAutomationKey(id) { return sendToLocalHost(key, .runEvent(eventID: eventID)) }
-        let triggers = server.automationTriggers
-        Task { @MainActor in
-            do { try await triggers.runPending(automation, eventID: eventID) } catch {
-                remoteActionError = "Couldn't start the run: \(error)"
-            }
-            refreshAutomationTriggers()
-        }
+        if let key = localAutomationKey(id) { sendToLocalHost(key, .runEvent(eventID: eventID)) }
     }
 
     func dismissAutomationEvent(_ id: AutomationID, eventID: String) {
-        if let key = localAutomationKey(id) { return sendToLocalHost(key, .dismissEvent(eventID: eventID)) }
-        let triggers = server.automationTriggers
-        Task { await triggers.dismiss(id, eventID: eventID); refreshAutomationTriggers() }
+        if let key = localAutomationKey(id) { sendToLocalHost(key, .dismissEvent(eventID: eventID)) }
     }
 }

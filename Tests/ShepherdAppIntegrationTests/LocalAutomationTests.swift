@@ -68,9 +68,7 @@ struct LocalAutomationTests {
         #expect(vm.selectedSpaceID == runs.id)
         vm.stopAutomation(automation.id)
         try await eventuallyOnMain("the run to stop") { vm.state.agents.isEmpty }
-        await app.settle()
-        #expect(vm.selectedAgentID == nil)
-        #expect(vm.selectedSpaceID == space.id)
+        try await eventuallyOnMain("the workspace on a visible space") { vm.selectedAgentID == nil && vm.selectedSpaceID == space.id }
     }
 
     /// Run Now on the settled run on screen: the workspace goes straight to the new run's

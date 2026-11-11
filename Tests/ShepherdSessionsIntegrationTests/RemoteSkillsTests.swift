@@ -97,6 +97,34 @@ struct RemoteSkillsTests {
         #expect(heard.current == 1)
     }
 
+    /// The host's daily update check finds a newer commit: this Mac's app is told, so its Skills
+    /// page reads it again.
+    @Test func anUpdateTheHostFindsReachesThisMacsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let path = host.host.dir.appendingPathComponent("h.sock").path, tokenURL = host.host.dir.appendingPathComponent("local-token")
+        try host.server.startLocalListener(path: path, tokenURL: tokenURL)
+        let app = RemoteHostClient(localSocket: path)
+        let heard = Locked<[RemoteSettingsPage]>([])
+        app.onSettingsChanged = { page in heard.withValue { $0.append(page) } }
+        _ = try await app.connect(host: "", port: 0, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+                                  clientName: "Shepherd", capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.localThreadsCapability])
+        defer { app.disconnect() }
+        let repository = try Self.repository()
+        let repo = "file://" + repository.path
+        guard case .repo(let found) = try await app.skills(.lookUp(repo: repo)) else { Issue.record("expected the repository"); return }
+        _ = try await app.skills(.install(repo: repo, paths: ["skills/pdf"], commit: found.commit, invocation: nil))
+        try await eventually("the install heard") { heard.current == [.skills] }
+        try "---\nname: pdf\ndescription: Read and fill PDFs.\n---\n# PDF v2\n".write(
+            to: repository.appendingPathComponent("skills/pdf/SKILL.md"), atomically: true, encoding: .utf8)
+        try git(["commit", "-qam", "pdf v2"], in: repository)
+
+        host.server.checkSkillUpdatesIfDue()
+
+        try await eventually("the update heard") { heard.current == [.skills, .skills] }
+        #expect(host.server.skills.snapshot().skill("pdf")?.update != nil)
+    }
+
     @Test func aSkillTheHostDoesntHaveIsRefused() async throws {
         let host = try RemoteHost()
         defer { host.stop() }

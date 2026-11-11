@@ -95,11 +95,10 @@ struct LocalHostRuntimeTests {
         settings.projectsEnabled = true
         settings.missionsEnabled = true
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: false, settings: settings,
+        let vm = ShepherdViewModel(settings: settings,
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         vm.connectLocalHost(socket: socket, token: token)
@@ -117,7 +116,6 @@ struct LocalHostRuntimeTests {
         let id = ProjectID()
         let made = try #require(await model.create(home: .local, id: id, name: "Checkout revamp", goal: "Ship the new checkout", spaces: [s.space.id]))
         #expect(s.host.server.state.projects.map(\.id) == [id], "the host owns it")
-        #expect(s.vm.server.state.projects.isEmpty, "nothing reaches the app's idle server")
         let ref = LogicalProjectRef(home: .local, id: id)
         try await eventuallyOnMain("the Project as This Mac's") { s.vm.state.projects.map(\.id) == [id] }
         #expect(s.vm.sidebarLogicalProjects.map(\.ref) == [ref] && s.vm.sidebarLogicalProjects.first?.hostName == nil,
@@ -206,7 +204,7 @@ struct LocalHostRuntimeTests {
         // The page is This Mac's: the host's missions, through its connection.
         s.vm.openMission(mission.id)
         #expect(s.vm.missionsHost == nil)
-        let page = try #require(s.vm.thisMacMissions as? RemoteMissionDriver)
+        let page = try #require(s.vm.thisMacMissions)
         #expect(page.hostID == s.hosts.localHost?.id && page.selectedID == mission.id)
         try await eventuallyOnMain("the page reads the host's missions") { page.records.map(\.id) == [mission.id] }
 
@@ -249,12 +247,57 @@ struct LocalHostRuntimeTests {
         }
     }
 
+    /// A published mission's merge train reaches a paired device (`missions.train.v1`), and its Pause
+    /// and Resume run on the host: Resume drives the train again, Pause stops the step it is on.
+    @Test func aPairedDeviceSeesTheMergeTrainAndPausesAndResumesIt() async throws {
+        let s = try await Self.setUp()
+        defer { s.stop() }
+        let lane = s.space.id
+        let created = try await s.host.server.createMission(draft: MissionDraft(
+            title: "Checkout funnel events", goal: "Ship checkout events",
+            plan: MissionPlan(lanes: [MissionLane(spaceID: lane, name: s.space.name)])))
+        var run = MissionRun(model: "stub/model-a", phase: .done)
+        run.checkouts = [MissionCheckout(spaceID: lane, repo: s.space.path, path: s.space.path, branch: "mission/checkout-events",
+                                         base: "refs/heads/main", head: "4b825dc", prURL: "https://github.com/acme/acme-web/pull/231")]
+        // Merged, with an hour's soak left to run: the train runs no command while it soaks.
+        var train = MissionTrain(order: [lane], rules: MissionTrain.Rules(between: .soak, soakMinutes: 60), startedAt: 1)
+        for step in 0..<3 { train.cars[0].steps[step].status = .done }
+        train.pause("Paused. The train continues from this step when you resume it.")
+        run.train = train
+        _ = try await s.host.server.setMissionRun(id: created.id, expectedRevision: created.revision, run: run)
+
+        let paired = try await s.pairedClient()
+        defer { paired.disconnect() }
+        #expect(paired.capabilities.contains(RemoteProtocol.missionsTrainCapability))
+        guard case .mission(let served, _) = try await paired.mission(.get(missionID: created.id)) else { Issue.record("no mission"); return }
+        #expect(served.run?.train == train, "the host serves the train as recorded")
+
+        // Resume from the device: the host's train runs again and starts the soak.
+        guard case .done(let resumed?) = try await paired.mission(.action(missionID: created.id, revision: served.revision, action: .resumeTrain)) else {
+            Issue.record("resume answered nothing"); return
+        }
+        #expect(resumed.run?.train?.status == .running)
+        let missions = s.runtime.missions
+        try await eventuallyOnMain("the host soaks the merged pull request", timeout: .seconds(30)) {
+            s.host.server.state.missions.first?.run?.train?.cars[0].steps[3].status == .running && missions.trainJobs[created.id] != nil
+        }
+
+        // Pause from the device, against whatever revision it last saw: the step stops and nothing drives the train.
+        guard case .done(let paused?) = try await paired.mission(.action(missionID: created.id, revision: resumed.revision, action: .pauseTrain)) else {
+            Issue.record("pause answered nothing"); return
+        }
+        #expect(paused.run?.train?.status == .paused)
+        try await eventuallyOnMain("the train job ends") { missions.trainJobs[created.id] == nil }
+        let after = try #require(s.host.server.state.missions.first?.run?.train)
+        #expect(after.status == .paused && after.cars[0].steps[3].status == .pending && after.merged == 1)
+    }
+
     /// New mission from the app's page creates and plans it on the host.
     @Test func newMissionFromTheAppIsCreatedOnTheHost() async throws {
         let s = try await Self.setUp()
         defer { s.stop() }
         s.vm.openNewMission()
-        let page = try #require(s.vm.thisMacMissions as? RemoteMissionDriver)
+        let page = try #require(s.vm.thisMacMissions)
         #expect(page.startRequested)
         await page.refreshModels()
         #expect(page.availableSpaces.map(\.id) == [s.space.id])
@@ -262,7 +305,6 @@ struct LocalHostRuntimeTests {
         let branch = try #require(page.defaultBranches[s.space.id] ?? page.branchChoices[s.space.id]?.first)
         let id = try await page.create(goal: "Ship the new checkout", spaces: [s.space.id], model: model, branches: [s.space.id: branch])
         #expect(s.host.server.state.missions.map(\.id) == [id])
-        #expect(s.vm.server.state.missions.isEmpty)
         try await eventuallyOnMain("the new mission as This Mac's") { s.vm.state.missions.map(\.id) == [id] }
         try await eventuallyOnMain("its planning stops") { s.host.server.state.missions.first?.run?.phase.active == false || s.runtime.missions.jobs[id] == nil }
     }
