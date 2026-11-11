@@ -27,20 +27,6 @@ struct SpaceTests {
         #expect(vm.newThread.place == NewThreadPlace(host: nil, space: id))
     }
 
-#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
-    @Test func aCheckoutWithAWorktreeOperationRunningCannotBecomeASpace() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let vm = try await app.start()
-        vm.hostBusyWorktrees.insert(canonical(app.dir))
-
-        #expect(await vm.addSpace(at: app.dir) == nil)
-
-        #expect(vm.remoteActionError != nil)
-        #expect(app.server.state.spaces.isEmpty)
-    }
-#endif
-
     @Test func renamingASpaceChangesOnlyItsLabel() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -79,7 +65,7 @@ struct SpaceTests {
 
     /// With the last project gone, nothing is selected: never the reserved designs space.
     @Test func deletingTheLastSpaceNeverSelectsTheDesignsSpace() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space("repo", path: app.dir.path)
         let agent = Fixture.agent(in: space)
@@ -93,6 +79,7 @@ struct SpaceTests {
         await app.settle()
 
         #expect(app.server.state.spaces.map(\.id) == [designs])
+        try await eventuallyOnMain("the host's push to land") { vm.state.agents.isEmpty }
         #expect(vm.selectedSpaceID == nil && vm.selectedAgentID == nil)
     }
 
@@ -101,7 +88,7 @@ struct SpaceTests {
     /// A space whose folder moves away is marked within the watch's interval, takes no thread,
     /// and Locate Folder… points it (and a child space inside it) at the folder's new place.
     @Test func aSpaceWhoseFolderMovesIsMarkedRefusesThreadsAndCanBeLocated() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let fm = FileManager.default
         let folder = app.dir.appendingPathComponent("monitor", isDirectory: true)
@@ -120,7 +107,8 @@ struct SpaceTests {
 
         let row = try #require(vm.sidebarTree.projects.first { $0.space == parent.id })
         #expect(row.missing && row.newThreadPlace(connected: []) == nil)
-        await #expect(throws: AgentStartFailure.self) {
+        // The host refuses it: the folder is gone.
+        await #expect(throws: (any Error).self) {
             try await vm.startAgent(NewAgentConfig(spaceID: parent.id, workingDirectory: parent.path, model: nil, thinking: .medium, initialPrompt: nil),
                                     selectAfter: false)
         }
