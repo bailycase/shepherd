@@ -82,13 +82,11 @@ extension ShepherdViewModel {
         case (.open, .local(let id)): openDesign(id)
         case (.open, .remote(let ref)): openRemoteDesign(ref)
         case (.rename, _): requestDesignRename(target)
-        case (.duplicate, .local(let id)): duplicateDesign(id)
         case (.export, .local(let id)): openDesignExport(id)
         case (.export, .remote(let ref)): openRemoteDesignExport(ref)
         case (.duplicate, .remote(let ref)): duplicateRemoteDesign(ref)
         case (.removeFromRecents, .remote(let ref)): removeRemoteDesignFromRecents(ref)
         case (.showSystem, .local(let id)): if let system = design(id)?.systemNamespace { openDesignSystem(system) }
-        case (.removeFromRecents, .local(let id)): removeDesignFromRecents(id)
         case (.delete, _): requestDesignDelete(target)
         case (.implement, .remote(let ref)), (.copyReference, .remote(let ref)):
             let name = remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.designs.first { $0.id == ref.designID }?.name ?? ""
@@ -150,22 +148,8 @@ extension ShepherdViewModel {
         switch (action, target) {
         case (.open, .system(let namespace)): openDesignSystem(namespace)
         case (.open, .build(let id)): openSystemBuild(id)
-        case (.resync, .system(let namespace)):
-            Task {
-                do { _ = try await server.resyncDesignSystem(namespace) } catch { remoteActionError = "Couldn't re-sync \(namespace): \(error)" }
-            }
         case (.rename, .system(let namespace)):
             designRename = DesignRenameRequest(subject: .system(namespace), name: designSystems.summary(namespace)?.info.title ?? namespace)
-        case (.duplicateSystem, .system(let namespace)):
-            Task {
-                do {
-                    let copy = try await server.duplicateDesignSystem(namespace)
-                    await loadDesignSystems()
-                    openDesignSystem(copy.info.namespace)
-                } catch {
-                    remoteActionError = "Couldn't duplicate \(namespace): \(error)"
-                }
-            }
         case (.deleteSystem, _): requestDesignSystemDelete(target)
         case (_, .remote(let ref)): performRemoteDesignSystemMenu(action, on: ref)
         case (.open, .remoteBuild(let ref)): openRemoteSystemBuild(ref)
@@ -196,46 +180,18 @@ extension ShepherdViewModel {
         Task {
             do {
                 switch request.subject {
-                case .design(.local(let id)):
-                    try await server.renameDesign(id, to: trimmed)
-                    adopt(server.state)
+                case .design(.local), .system:
+                    // The background host's are renamed through it (`performDesignMenu`).
+                    throw BackgroundHostClient.HostStarting()
                 case .design(.remote(let ref)):
                     guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else { return }
                     _ = try await Self.remoteDesign(library, .updateIndex(designID: ref.designID, patch: .object(["title": .string(trimmed)]),
                                                                           baseRevision: nil))
-                case .system(let namespace):
-                    try await server.renameDesignSystem(namespace, to: trimmed)
-                    await loadDesignSystems()
                 case .remoteSystem(let ref):
                     try await changeRemoteSystem(ref, .renameSystem(namespace: ref.namespace, title: trimmed))
                 }
             } catch {
                 remoteActionError = "Couldn't rename \(request.name): \(error)"
-            }
-        }
-    }
-
-    /// Duplicate: a copy of the design under a new name, selected on Designs.
-    func duplicateDesign(_ id: DesignID) {
-        Task {
-            do {
-                let copy = try await server.duplicateDesign(id)
-                adopt(server.state)
-                designsPageSelection = copy.id
-            } catch {
-                remoteActionError = "Couldn't duplicate \(design(id)?.name ?? "the design"): \(error)"
-            }
-        }
-    }
-
-    /// Remove from Recents: the design's row leaves the sidebar until it next changes.
-    func removeDesignFromRecents(_ id: DesignID) {
-        Task {
-            do {
-                try await server.removeDesignFromRecents(id)
-                adopt(server.state)
-            } catch {
-                remoteActionError = "Couldn't remove \(design(id)?.name ?? "the design") from Recents: \(error)"
             }
         }
     }
@@ -276,7 +232,7 @@ extension ShepherdViewModel {
                 guard let design = design(id) else { return }
                 let snapshot = try? await ownerDesignSnapshot(id)
                 // The host's versions aren't read over the connection: the dialog leaves them out, as for a paired Mac.
-                let versions = hostDesign(id) == nil ? try? await server.designs.versionCount(id) : nil
+                let versions: Int? = nil
                 let comments = try? await ownerDesignComments(id).comments.count
                 let agent = state.agents.first { $0.id == design.agentID } ?? state.agents.first { $0.designID == id }
                 let working = agent?.status == .working
@@ -325,10 +281,9 @@ extension ShepherdViewModel {
         do {
             let deletion: DesignDeletion
             switch target {
-            case .local(let id):
-                deletion = try await server.deleteDesign(id)
-                sessions.stateDidChange(server.state)
-                adopt(server.state)
+            case .local:
+                // The background host's are deleted through it (`performDesignMenu`).
+                throw BackgroundHostClient.HostStarting()
             case .remote(let ref):
                 guard let library = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.designs else {
                     throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
@@ -390,20 +345,10 @@ extension ShepherdViewModel {
         case .deleted(let deletion, let host):
             Task {
                 do {
-                    if let host {
-                        guard let library = remoteHosts.allConnections.first(where: { $0.id == host })?.designs else {
-                            throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
-                        }
-                        _ = try await Self.remoteDesign(library, .undoDelete(designID: deletion.designID))
-                    } else {
-                        try await server.undoDesignDeletion(deletion.designID)
-                        let restored = server.state
-                        sessions.stateDidChange(restored)
-                        adopt(restored)
-                        // Its agent comes back as it was: running, its pi resuming its session.
-                        let agents = restored.agents.filter { $0.designID == deletion.designID }.map(\.id)
-                        sessions.startRestoredAgents(agents, first: [], in: restored)
+                    guard let host, let library = remoteHosts.allConnections.first(where: { $0.id == host })?.designs else {
+                        throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
                     }
+                    _ = try await Self.remoteDesign(library, .undoDelete(designID: deletion.designID))
                 } catch {
                     remoteActionError = "Couldn't bring back \(toast.name): \(Self.words(error))."
                 }
@@ -481,8 +426,9 @@ extension ShepherdViewModel {
         if shown { openDestination(.designs) }
         do {
             switch target {
-            case .system(let namespace): try await server.deleteDesignSystem(namespace)
-            case .build(let id): try await server.deleteSystemBuild(id)
+            case .system, .build:
+                // The background host's are deleted through it (`performDesignSystemMenu`).
+                throw BackgroundHostClient.HostStarting()
             case .remote(let ref):
                 try await changeRemoteSystem(ref, .deleteSystem(namespace: ref.namespace))
                 return
@@ -491,12 +437,7 @@ extension ShepherdViewModel {
                     throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
                 }
                 _ = try await Self.remoteDesign(library, .deleteSystemBuild(designID: ref.designID))
-                return
             }
-            sessions.stateDidChange(server.state)
-            adopt(server.state)
-            if lastDesignSystem == target { lastDesignSystem = nil }
-            await loadDesignSystems()
         } catch {
             showDesignToast(DesignToast(kind: .systemFailed(target), name: name, reason: Self.words(error)))
         }
@@ -556,17 +497,9 @@ extension ShepherdViewModel {
         }
     }
 
-    /// The background host's design library while the app is its client: it imports from the
-    /// same disk (`importPrepare`), with the same choices. Nil: the server imports.
-    private var importingHost: RemoteDesignLibrary? { localHost?.designs }
-
+    /// The background host imports from the same disk (`importPrepare`), with the same choices.
     private func prepareDesignImport(_ url: URL) async throws -> DesignImportPreview {
-        guard let library = importingHost else {
-            return try await server.prepareDesignImport(from: url) { [weak self] step in
-                Task { @MainActor in self?.designImporting?.apply(step) }
-            }
-        }
-        switch try await Self.remoteDesign(library, .importPrepare(path: url.path)) {
+        switch try await Self.remoteDesign(localDesigns, .importPrepare(path: url.path)) {
         case .importPrepared(let preview): return preview
         case .importFailed(let failure): throw failure
         default: throw RemoteDesignReply.unexpected
@@ -574,52 +507,32 @@ extension ShepherdViewModel {
     }
 
     private func discardDesignImport(_ id: UUID) async {
-        guard let library = importingHost else { return await server.cancelDesignImport(id) }
-        _ = try? await Self.remoteDesign(library, .importDiscard(previewID: id))
+        _ = try? await Self.remoteDesign(localDesigns, .importDiscard(previewID: id))
     }
 
     /// The import's own ending: the design recorded, opened, and its agent started on the brief
     /// that has it read the design and change nothing.
     func finishDesignImport(_ preview: DesignImportPreview, name: String? = nil, skippingUnreadable: Bool = false) async {
         designImporting?.apply(.opening(title: name ?? preview.title))
-        if let library = importingHost {
-            // The host makes it and starts its agent, as a design made on it does (`createDesign`).
-            do {
-                switch try await Self.remoteDesign(library, .importConfirm(preview: preview, name: name, skippingUnreadable: skippingUnreadable)) {
-                case .created(let designID, let agentID):
-                    // ponytail: polls for the host's push, as `createDesign` does.
-                    for _ in 0..<100 where design(designID) == nil { try await Task.sleep(for: .milliseconds(20)) }
-                    designImporting = nil
-                    designsPageSelection = designID
-                    await loadDesignSystems()
-                    if let agentID { selectAgent(agentID) } else { openDesign(designID) }
-                case .importFailed(let failure):
-                    designImporting = nil
-                    designImportPrompt = .failed(file: preview.file, failure)
-                default:
-                    throw RemoteDesignReply.unexpected
-                }
-            } catch {
-                designImporting = nil
-                remoteActionError = "Couldn't open \(preview.title): \(Self.words(error))"
-            }
-            return
-        }
+        // The host makes it and starts its agent, as a design made on it does (`createDesign`).
         do {
-            let design = try await server.finishDesignImport(preview, name: name, skippingUnreadable: skippingUnreadable)
-            designImporting = nil
-            adopt(server.state)
-            designsPageSelection = design.id
-            await loadDesignSystems()
-            _ = try await startDesignAgent(design, brief: DesignBrief.imported(file: preview.file), images: [])
-        } catch let failure as DesignImportFailure {
-            designImporting = nil
-            await discardDesignImport(preview.id)
-            designImportPrompt = .failed(file: preview.file, failure)
+            switch try await Self.remoteDesign(localDesigns, .importConfirm(preview: preview, name: name, skippingUnreadable: skippingUnreadable)) {
+            case .created(let designID, let agentID):
+                // ponytail: polls for the host's push, as `createDesign` does.
+                for _ in 0..<100 where design(designID) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                designImporting = nil
+                designsPageSelection = designID
+                await loadDesignSystems()
+                if let agentID { selectAgent(agentID) } else { openDesign(designID) }
+            case .importFailed(let failure):
+                designImporting = nil
+                designImportPrompt = .failed(file: preview.file, failure)
+            default:
+                throw RemoteDesignReply.unexpected
+            }
         } catch {
             designImporting = nil
-            await discardDesignImport(preview.id)
-            remoteActionError = "Couldn't open \(preview.title): \(error)"
+            remoteActionError = "Couldn't open \(preview.title): \(Self.words(error))"
         }
     }
 
