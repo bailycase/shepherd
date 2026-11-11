@@ -90,16 +90,42 @@ public func nativeMarkdownBlocks(_ text: String) -> [NativeMarkdownBlock] {
 /// table header still waiting for its delimiter row: a table appears as a table as soon as its
 /// delimiter row arrives, grows a whole row at a time, and never flickers through a paragraph.
 public func nativeMarkdownParse(_ text: String, streaming: Bool = false) -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) {
-    guard !text.isEmpty else { return ([], false) }
-    // Split on the UTF-16 newline (fast, and it splits "\r\n", which is one Character).
-    var lines = text.components(separatedBy: "\n").map(markdownLine)
+    let parsed = markdownParse(text, streaming: streaming, freezing: false)
+    return (parsed.blocks, parsed.endsInOpenFence)
+}
+
+/// A parse, and, when asked for, where a longer text with the same beginning can resume it.
+struct MarkdownParse {
+    var blocks: [NativeMarkdownBlock] = []
+    var endsInOpenFence = false
+    var freeze: MarkdownFreeze?
+    /// The lines of the text handed to the parser.
+    var lines = 0
+}
+
+/// The last line from which the parse can resume (see `NativeMarkdownState`), as UTF-8 offsets into the parsed text.
+struct MarkdownFreeze: Equatable, Sendable {
+    /// Where the line starts.
+    var offset: Int
+    /// Where the next line starts: the end of the bytes a longer text must keep.
+    var guardEnd: Int
+    /// How many blocks stand before the line.
+    var blocks: Int
+}
+
+func markdownParse(_ text: String, streaming: Bool, freezing: Bool) -> MarkdownParse {
+    guard !text.isEmpty else { return MarkdownParse() }
+    let split = markdownLines(text, offsets: freezing)
+    var lines = split.lines
     if streaming, let last = lines.last, nativeMarkdownPendingLine(last) { lines.removeLast() }
     let context = MarkdownContext(streaming: streaming)
-    var blocks = parseBlocks(lines, context, atEnd: true)
+    var blocks = parseBlocks(lines, context, atEnd: true, topLevel: freezing)
     if !context.footnotes.isEmpty || text.contains("[^") {
         blocks = numberFootnotes(blocks, context.footnotes, streaming: streaming)
     }
-    return (blocks, context.endsInOpenFence)
+    var parsed = MarkdownParse(blocks: blocks, endsInOpenFence: context.endsInOpenFence, lines: split.lines.count)
+    if freezing { parsed.freeze = freezePoint(context.checkpoints, lineStarts: split.starts, in: text) }
+    return parsed
 }
 
 /// Whether a streaming reply's unterminated last line is only the start of a block's marker,
@@ -133,6 +159,121 @@ func nativeMarkdownPendingLine(_ line: String) -> Bool {
     return false
 }
 
+// MARK: Growing text
+
+/// A parse a longer text can resume. A reply grows at its end, so the blocks before its last unfinished one are final.
+///
+/// A *checkpoint* is a top-level line the parser reached with no paragraph open. The *freeze point* is the last
+/// checkpoint whose line has its newline and starts at or before the first `[^` (a definition that arrives later
+/// renumbers the references before it). The blocks before it are final, and the same in streaming and finished mode,
+/// for any longer text that keeps the bytes through that line's newline (the *guard*): none of them looked past that
+/// line, and what streaming changes (the held last line, a table header waiting for its delimiter row, footnote
+/// numbers) needs a text with no later checkpoint. So the text from the freeze line, parsed alone, is the rest.
+///
+/// A single line, a long paragraph, and a growing list, table or fence have no later checkpoint: the construct is all
+/// of the tail.
+public struct NativeMarkdownState: Sendable, Equatable {
+    public private(set) var text: String
+    public private(set) var streaming: Bool
+    /// The frozen blocks, then the tail's.
+    public private(set) var blocks: [NativeMarkdownBlock]
+    public private(set) var endsInOpenFence: Bool
+    /// Where the freeze line starts, in UTF-8 bytes: the tail is the text from here.
+    public private(set) var frozenOffset: Int
+    /// The end of the freeze line's newline: a longer text must keep the bytes before it.
+    public private(set) var guardOffset: Int
+    /// The blocks before the freeze line.
+    public private(set) var frozenCount: Int
+    /// Lines handed to the parser since the state began (tests).
+    var parsedLines: Int
+
+    public init(_ text: String, streaming: Bool) {
+        let parsed = markdownParse(text, streaming: streaming, freezing: true)
+        self.text = text
+        self.text.makeContiguousUTF8()
+        self.streaming = streaming
+        blocks = parsed.blocks
+        endsInOpenFence = parsed.endsInOpenFence
+        frozenOffset = parsed.freeze?.offset ?? 0
+        guardOffset = parsed.freeze?.guardEnd ?? 0
+        frozenCount = parsed.freeze?.blocks ?? 0
+        parsedLines = parsed.lines
+    }
+
+    /// The bytes and lines the tail of `newText` would parse, or nil when `newText` does not keep the guard (it is
+    /// shorter, or something before the freeze point changed).
+    public func tail(of newText: String) -> (bytes: Int, lines: Int)? {
+        withUTF8(newText) { new -> (bytes: Int, lines: Int)? in
+            guard keepsGuard(new) else { return nil }
+            guard let base = new.baseAddress else { return (0, 1) }
+            var lines = 1
+            var at = frozenOffset
+            while at < new.count, let found = memchr(base + at, Int32(UInt8(ascii: "\n")), new.count - at) {
+                lines += 1
+                at = UnsafeRawPointer(base).distance(to: UnsafeRawPointer(found)) + 1
+            }
+            return (new.count - frozenOffset, lines)
+        }
+    }
+
+    /// Moves to `newText`, in `streaming` mode, by parsing its tail alone. False, and nothing changed, when it does not
+    /// keep the guard: the caller parses it in full. A change of mode is an ordinary advance.
+    public mutating func advance(to newText: String, streaming newStreaming: Bool) -> Bool {
+        var newText = newText
+        newText.makeContiguousUTF8()
+        let tail = withUTF8(newText) { new -> String? in
+            guard keepsGuard(new) else { return nil }
+            return String(decoding: UnsafeBufferPointer(rebasing: new[frozenOffset...]), as: UTF8.self)
+        }
+        guard let tail else { return false }
+        let parsed = markdownParse(tail, streaming: newStreaming, freezing: true)
+        blocks.removeSubrange(frozenCount...)
+        blocks.append(contentsOf: parsed.blocks)
+        endsInOpenFence = parsed.endsInOpenFence
+        if let freeze = parsed.freeze {
+            guardOffset = frozenOffset + freeze.guardEnd
+            frozenOffset += freeze.offset
+            frozenCount += freeze.blocks
+        }
+        parsedLines += parsed.lines
+        text = newText
+        streaming = newStreaming
+        return true
+    }
+
+    private func keepsGuard(_ new: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard new.count >= guardOffset else { return false }
+        guard guardOffset > 0, let newBase = new.baseAddress else { return true }
+        return withUTF8(text) { old in old.baseAddress.map { memcmp($0, newBase, guardOffset) == 0 } ?? false }
+    }
+}
+
+/// The last checkpoint with its newline and no later than the first `[^`.
+private func freezePoint(_ checkpoints: [(line: Int, blocks: Int)], lineStarts: [Int], in text: String) -> MarkdownFreeze? {
+    guard !checkpoints.isEmpty else { return nil }
+    let caret = firstFootnoteMarker(in: text)
+    for checkpoint in checkpoints.reversed() where checkpoint.line + 1 < lineStarts.count {
+        if let caret, lineStarts[checkpoint.line] > caret { continue }
+        return MarkdownFreeze(offset: lineStarts[checkpoint.line], guardEnd: lineStarts[checkpoint.line + 1], blocks: checkpoint.blocks)
+    }
+    return nil
+}
+
+/// Where the first `[^` starts, in UTF-8 bytes. Bytes, not characters: it may find one a character search would
+/// not (a combining mark after the caret), and only ever too early.
+private func firstFootnoteMarker(in text: String) -> Int? {
+    withUTF8(text) { bytes in
+        guard let base = bytes.baseAddress else { return nil }
+        var at = 0
+        while at + 1 < bytes.count, let found = memchr(base + at, Int32(UInt8(ascii: "[")), bytes.count - at) {
+            at = UnsafeRawPointer(base).distance(to: UnsafeRawPointer(found))
+            if at + 1 < bytes.count, bytes[at + 1] == UInt8(ascii: "^") { return at }
+            at += 1
+        }
+        return nil
+    }
+}
+
 // MARK: Parsing
 
 private final class MarkdownContext {
@@ -140,15 +281,38 @@ private final class MarkdownContext {
     var endsInOpenFence = false
     /// Footnote definitions in the order they were written.
     var footnotes: [(label: String, text: String)] = []
+    /// The top-level lines the parser began a construct at with no paragraph open, and how many blocks stood
+    /// before each (`topLevel` parses only).
+    var checkpoints: [(line: Int, blocks: Int)] = []
 
     init(streaming: Bool) { self.streaming = streaming }
 }
 
+/// A text's lines, split on the newline byte (so "\r\n" splits too), each through `markdownLine`, and, when asked
+/// for, where each starts in UTF-8 bytes.
+private func markdownLines(_ text: String, offsets: Bool) -> (lines: [String], starts: [Int]) {
+    withUTF8(text) { bytes in
+        var lines: [String] = []
+        var starts: [Int] = []
+        guard let base = bytes.baseAddress else { return ([""], offsets ? [0] : []) }
+        var start = 0
+        while true {
+            let found = start < bytes.count ? memchr(base + start, Int32(UInt8(ascii: "\n")), bytes.count - start) : nil
+            let end = found.map { UnsafeRawPointer(base).distance(to: UnsafeRawPointer($0)) } ?? bytes.count
+            lines.append(markdownLine(UnsafeBufferPointer(rebasing: bytes[start..<end])))
+            if offsets { starts.append(start) }
+            guard found != nil else { return (lines, starts) }
+            start = end + 1
+        }
+    }
+}
+
 /// A line with its carriage return dropped and leading tabs as four spaces.
-private func markdownLine(_ line: String) -> String {
-    var line = Substring(line)
-    if line.utf8.last == UInt8(ascii: "\r") { line = line.dropLast() }
-    guard line.first == "\t" else { return String(line) }
+private func markdownLine(_ bytes: UnsafeBufferPointer<UInt8>) -> String {
+    var bytes = bytes
+    if bytes.last == UInt8(ascii: "\r") { bytes = UnsafeBufferPointer(rebasing: bytes.dropLast()) }
+    let line = String(decoding: bytes, as: UTF8.self)
+    guard bytes.first == UInt8(ascii: "\t") else { return line }
     var lead = ""
     var rest = line[...]
     while let c = rest.first, c == "\t" || c == " " {
@@ -158,6 +322,14 @@ private func markdownLine(_ line: String) -> String {
     return lead + rest
 }
 
+/// The text's UTF-8 as contiguous bytes, copying only a string that is not already native.
+private func withUTF8<Result>(_ text: String, _ body: (UnsafeBufferPointer<UInt8>) -> Result) -> Result {
+    if let result = text.utf8.withContiguousStorageIfAvailable(body) { return result }
+    var copy = text
+    copy.makeContiguousUTF8()
+    return copy.utf8.withContiguousStorageIfAvailable(body)!
+}
+
 private func leadingSpaces(_ line: String) -> Int { line.prefix(while: { $0 == " " }).count }
 
 private extension String {
@@ -165,7 +337,7 @@ private extension String {
     var isBlank: Bool { allSatisfy(\.isWhitespace) }
 }
 
-private func parseBlocks(_ lines: [String], _ context: MarkdownContext, atEnd: Bool) -> [NativeMarkdownBlock] {
+private func parseBlocks(_ lines: [String], _ context: MarkdownContext, atEnd: Bool, topLevel: Bool = false) -> [NativeMarkdownBlock] {
     var blocks: [NativeMarkdownBlock] = []
     var paragraph: [String] = []
     func flush() {
@@ -185,6 +357,9 @@ private func parseBlocks(_ lines: [String], _ context: MarkdownContext, atEnd: B
             i += 1
             continue
         }
+        // Blocks before this line are final once its newline arrives. The lookaheads below count a line
+        // `isBlank` as blank, so such a line is no place to resume from.
+        if topLevel, paragraph.isEmpty, !line.isBlank { context.checkpoints.append((i, blocks.count)) }
         let block = indent < 4
 
         if block, let fence = MarkdownFence(trimmed) {

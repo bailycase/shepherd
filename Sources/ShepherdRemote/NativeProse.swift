@@ -103,40 +103,53 @@ public struct NativeProse: Equatable, Sendable {
     /// `previous` is the prose this one replaces: a chunk equal to the one at its index keeps
     /// that chunk's storage, so comparing the two stays cheap.
     public init(_ blocks: [NativeMarkdownBlock], endsInOpenFence: Bool = false, reusing previous: NativeProse? = nil) {
-        let parts = Self.parts(of: blocks)
         var chunks: [NativeProseChunk] = []
         var current: [NativeProsePart] = []
         var weight = 0
         func close() {
-            guard let first = current.first else { return }
-            if let old = previous?.chunks[safe: chunks.count], old.id == first.id, old.parts == current {
-                chunks.append(old)
-            } else {
-                chunks.append(NativeProseChunk(id: first.id, parts: current, weight: weight))
-            }
+            guard !current.isEmpty else { return }
+            chunks.append(Self.chunk(current, weight: weight, at: chunks.count, reusing: previous))
             current = []
             weight = 0
         }
-        for part in parts {
-            if !current.isEmpty, current.count >= Limits.parts || weight >= Limits.weight || part.continuation { close() }
+        for part in Self.parts(of: blocks[...], from: 0) {
+            if Self.closes(count: current.count, weight: weight, before: part) { close() }
             current.append(part)
             weight += part.weight
         }
         close()
+        self.init(chunks: chunks, endsInOpenFence: endsInOpenFence, blockCount: blocks.count,
+                  textBytes: blocks.reduce(0) { $0 + $1.proseBytes })
+    }
+
+    init(chunks: [NativeProseChunk], endsInOpenFence: Bool, blockCount: Int, textBytes: Int) {
         self.chunks = chunks
         self.endsInOpenFence = endsInOpenFence
-        self.blockCount = blocks.count
-        self.textBytes = blocks.reduce(0) { $0 + $1.proseBytes }
+        self.blockCount = blockCount
+        self.textBytes = textBytes
     }
 
     public init(_ parsed: (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool), reusing previous: NativeProse? = nil) {
         self.init(parsed.blocks, endsInOpenFence: parsed.endsInOpenFence, reusing: previous)
     }
 
-    private static func parts(of blocks: [NativeMarkdownBlock]) -> [NativeProsePart] {
+    /// Whether the chunk of `count` parts and `weight` so far is full before `part` joins it.
+    static func closes(count: Int, weight: Int, before part: NativeProsePart) -> Bool {
+        count > 0 && (count >= Limits.parts || weight >= Limits.weight || part.continuation)
+    }
+
+    /// The chunk at `index` of the prose it replaces, when it is the same, else a new one.
+    static func chunk(_ parts: [NativeProsePart], weight: Int, at index: Int, reusing previous: NativeProse?) -> NativeProseChunk {
+        if let old = previous?.chunks[safe: index], old.id == parts[0].id, old.parts == parts { return old }
+        return NativeProseChunk(id: parts[0].id, parts: parts, weight: weight)
+    }
+
+    /// The parts of `blocks`, the first of which is top-level block number `ordinal`.
+    static func parts(of blocks: ArraySlice<NativeMarkdownBlock>, from ordinal: Int) -> [NativeProsePart] {
         var parts: [NativeProsePart] = []
         parts.reserveCapacity(blocks.count)
-        for (ordinal, block) in blocks.enumerated() {
+        for (offset, block) in blocks.enumerated() {
+            let ordinal = ordinal + offset
             guard case .list(let ordered, let start, let items) = block, items.count > 1 else {
                 parts.append(NativeProsePart(id: .init(block: ordinal, stretch: 0), block: block, weight: block.proseWeight))
                 continue
@@ -156,6 +169,76 @@ public struct NativeProse: Equatable, Sendable {
             }
         }
         return parts
+    }
+}
+
+// MARK: Growing replies
+
+/// A reply's prose that can grow: its markdown state (`NativeMarkdownState`) and the chunks of its frozen blocks. The
+/// frozen blocks are final, so a chunk the greedy rule has closed over them is final too: it is built once and kept,
+/// and only the open chunk and the tail's are made again. `prose` always equals `NativeProse` of the full parse.
+public struct NativeProseState: Sendable {
+    public private(set) var markdown: NativeMarkdownState
+    /// Chunks of frozen parts that a part after them has closed.
+    private(set) var closed: [NativeProseChunk] = []
+    /// Frozen parts not in a closed chunk yet, and their weight.
+    private var pending: [NativeProsePart] = []
+    private var pendingWeight = 0
+    /// The frozen blocks already made into parts, and their text.
+    private var partedBlocks = 0
+    private var partedBytes = 0
+    public private(set) var prose: NativeProse = .empty
+
+    /// `previous` is the prose this one replaces; chunks equal to its own keep its storage.
+    public init(_ text: String, streaming: Bool, reusing previous: NativeProse? = nil) {
+        markdown = NativeMarkdownState(text, streaming: streaming)
+        rebuild(reusing: previous)
+    }
+
+    /// What `markdown.tail(of:)` says.
+    public func tail(of newText: String) -> (bytes: Int, lines: Int)? { markdown.tail(of: newText) }
+
+    /// False, and nothing changed, when `newText` does not keep the guard.
+    public mutating func advance(to newText: String, streaming: Bool) -> Bool {
+        guard markdown.advance(to: newText, streaming: streaming) else { return false }
+        rebuild(reusing: prose)
+        return true
+    }
+
+    private mutating func rebuild(reusing previous: NativeProse?) {
+        let blocks = markdown.blocks
+        let frozen = markdown.frozenCount
+        if frozen > partedBlocks {
+            let fresh = blocks[partedBlocks..<frozen]
+            for part in NativeProse.parts(of: fresh, from: partedBlocks) {
+                if NativeProse.closes(count: pending.count, weight: pendingWeight, before: part) {
+                    closed.append(NativeProse.chunk(pending, weight: pendingWeight, at: closed.count, reusing: previous))
+                    pending.removeAll(keepingCapacity: true)
+                    pendingWeight = 0
+                }
+                pending.append(part)
+                pendingWeight += part.weight
+            }
+            partedBytes += fresh.reduce(0) { $0 + $1.proseBytes }
+            partedBlocks = frozen
+        }
+        // The same greedy rule goes on over the tail, from the frozen parts still open.
+        let tail = blocks[frozen...]
+        var open: [NativeProseChunk] = []
+        var current = pending
+        var weight = pendingWeight
+        for part in NativeProse.parts(of: tail, from: frozen) {
+            if NativeProse.closes(count: current.count, weight: weight, before: part) {
+                open.append(NativeProse.chunk(current, weight: weight, at: closed.count + open.count, reusing: previous))
+                current = []
+                weight = 0
+            }
+            current.append(part)
+            weight += part.weight
+        }
+        if !current.isEmpty { open.append(NativeProse.chunk(current, weight: weight, at: closed.count + open.count, reusing: previous)) }
+        prose = NativeProse(chunks: closed + open, endsInOpenFence: markdown.endsInOpenFence, blockCount: blocks.count,
+                            textBytes: partedBytes + tail.reduce(0) { $0 + $1.proseBytes })
     }
 }
 
