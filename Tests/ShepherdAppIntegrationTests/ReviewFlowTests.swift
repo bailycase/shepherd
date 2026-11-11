@@ -88,7 +88,7 @@ struct ReviewFlowTests {
     /// review; without it, the agent's own directory. Comments belong to the diff they were
     /// made on, so a new target starts over and the same target keeps them.
     @Test func anAgentsReviewFollowsTheRequestedRepositoryAndStartsOverWhenItChanges() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let own = try dirtyRepo()
         let other = try makeScratchRepo(files: ["other.txt": "before\n"])
@@ -113,8 +113,7 @@ struct ReviewFlowTests {
             #expect(vm.reviewSessions.count == 1 && vm.reviewSessions.values.first === session)
             #expect(session.cwd == (cwd ?? agent.piPane.cwd))
             #expect(session.comments.isEmpty && session.summary.isEmpty && session.viewed.isEmpty)
-            try await eventuallyOnMain("the new target's diff to load") { !session.isLoading }
-            #expect(session.files.map(\.displayPath) == files)
+            try await eventuallyOnMain("the new target's diff to load") { !session.isLoading && session.files.map(\.displayPath) == files }
         }
         #expect(app.server.state.tabs.map(\.layout) == [agent.tab.layout], "a review never touches the layout")
 
